@@ -1,0 +1,287 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1536 992" fill="none" font-family="-apple-system, BlinkMacSystemFont, Helvetica, Arial, sans-serif">
+  <title>Mac Channels main-window design</title>
+  <desc>Native three-column window at 1280 by 840 points with a 248-point channel source list, a 720-point conversation and a 312-point Overview inspector. Glass is limited to navigation and controls. Example content illustrates a pending question, unread divider, agent run and composer.</desc>
+  <defs>
+    <linearGradient id="sidebar-material" x1="32" y1="32" x2="280" y2="872" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#eef0f5"/>
+      <stop offset="1" stop-color="#e8edf1"/>
+    </linearGradient>
+    <linearGradient id="toolbar-material" x1="280" y1="32" x2="280" y2="92" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#fbfcfd"/>
+      <stop offset="1" stop-color="#f4f5f7"/>
+    </linearGradient>
+  </defs>
+  <g id="native-window">
+    <rect x="32.5" y="32.5" width="1279" height="839" rx="14" fill="#ffffff" stroke="#cbd1d9"/>
+    <path d="M46 33H280V871H46A13 13 0 0 1 33 858V46A13 13 0 0 1 46 33Z" fill="url(#sidebar-material)"/>
+    <path d="M280 33H1298A13 13 0 0 1 1311 46V92H280Z" fill="url(#toolbar-material)"/>
+    <path d="M1000 92H1311V858A13 13 0 0 1 1298 871H1000Z" fill="#f7f8fa"/>
+    <path d="M280 33V871M1000 92V871M280 92H1311" stroke="#dce0e6"/>
+  </g>
+  <g id="window-controls">
+    <circle cx="54" cy="59" r="6" fill="#ff6058"/>
+    <circle cx="74" cy="59" r="6" fill="#ffbe2f"/>
+    <circle cx="94" cy="59" r="6" fill="#2bc840"/>
+    <rect x="121" y="52" width="17" height="14" rx="3" stroke="#66717c" stroke-width="1.5"/>
+    <path d="M127 53V65" stroke="#66717c" stroke-width="1.5"/>
+    <text x="154" y="64" fill="#202631" font-size="13" font-weight="600">Channels</text>
+    <path d="M250 52V66M243 59H257" stroke="#52606d" stroke-width="1.6" stroke-linecap="round"/>
+  </g>
+  <g id="channel-toolbar">
+    <text x="304" y="57" fill="#202631" font-size="14" font-weight="600">Launch review</text>
+    <text x="304" y="76" fill="#717b87" font-size="11">Make the next release feel effortless.</text>
+    <circle cx="784" cy="61" r="3" fill="#0891b2"/>
+    <text x="795" y="65" fill="#67727f" font-size="11">2 working</text>
+    <path d="M880 55H896M883 61H893M886 67H890" stroke="#5c6875" stroke-width="1.6" stroke-linecap="round"/>
+    <circle cx="925" cy="61" r="1.5" fill="#5c6875"/>
+    <circle cx="931" cy="61" r="1.5" fill="#5c6875"/>
+    <circle cx="937" cy="61" r="1.5" fill="#5c6875"/>
+    <rect x="957" y="53" width="19" height="16" rx="3" stroke="#1477dd" stroke-width="1.5"/>
+    <path d="M969 54V68" stroke="#1477dd" stroke-width="1.5"/>
+    <text x="1016" y="65" fill="#384351" font-size="13" font-weight="600">Overview</text>
+    <path d="M1280 56L1290 66M1290 56L1280 66" stroke="#7c8791" stroke-width="1.5" stroke-linecap="round"/>
+  </g>
+  <g id="channel-search">
+    <rect x="45" y="104" width="222" height="28" rx="7" fill="#ffffff" fill-opacity=".65" stroke="#d4dbe3"/>
+    <circle cx="60" cy="117" r="4" stroke="#88939e" stroke-width="1.3"/>
+    <path d="M63 120L67 124" stroke="#88939e" stroke-width="1.3" stroke-linecap="round"/>
+    <text x="76" y="122" fill="#88939e" font-size="12">Search channels</text>
+  </g>
+  <g id="selected-channel-row">
+    <rect x="40" y="148" width="232" height="64" rx="8" fill="#d3e6fa"/>
+    <rect x="49" y="164" width="28" height="28" rx="8" fill="#0891b2" fill-opacity=".12"/>
+    <path d="M59 171L57 186M66 171L64 186M54 176H69M53 182H68" stroke="#0884a3" stroke-width="1.5" stroke-linecap="round"/>
+    <text x="87" y="175" fill="#1c314c" font-size="13" font-weight="600">Launch review</text>
+    <text x="87" y="195" fill="#617285" font-size="11">toy-box</text>
+    <path d="M247 163H256A3 3 0 0 1 259 166V173A3 3 0 0 1 256 176H252L248 180V176H247A3 3 0 0 1 244 173V166A3 3 0 0 1 247 163Z" fill="#c07914"/>
+    <path d="M249 168A2 2 0 1 1 252 170V171M252 173V173.2" stroke="#ffffff" stroke-width="1.2" stroke-linecap="round"/>
+    <circle cx="231" cy="195" r="8" fill="#8b5cf6" stroke="#d3e6fa" stroke-width="1.5"/>
+    <circle cx="219" cy="195" r="8" fill="#0891b2" stroke="#d3e6fa" stroke-width="1.5"/>
+    <path d="M219 190L220.4 193L223.7 193.5L221.3 195.8L221.8 199L219 197.5L216.2 199L216.7 195.8L214.3 193.5L217.6 193Z" stroke="#ffffff" stroke-width=".8"/>
+  </g>
+  <g id="other-channel-rows">
+    <rect x="49" y="229" width="28" height="28" rx="8" fill="#0891b2" fill-opacity=".09"/>
+    <path d="M59 236L57 251M66 236L64 251M54 241H69M53 247H68" stroke="#0884a3" stroke-width="1.5" stroke-linecap="round"/>
+    <text x="87" y="239" fill="#343f4d" font-size="13" font-weight="500">Research notes</text>
+    <text x="87" y="259" fill="#7c8793" font-size="11">12 min ago</text>
+    <circle cx="252" cy="239" r="3" fill="#1685ef"/>
+    <circle cx="231" cy="259" r="8" fill="#4b9b78"/>
+    <circle cx="219" cy="259" r="8" fill="#0891b2" stroke="#edf0f4" stroke-width="1.5"/>
+    <rect x="49" y="293" width="28" height="28" rx="8" fill="#0891b2" fill-opacity=".09"/>
+    <path d="M59 300L57 315M66 300L64 315M54 305H69M53 311H68" stroke="#0884a3" stroke-width="1.5" stroke-linecap="round"/>
+    <text x="87" y="303" fill="#343f4d" font-size="13" font-weight="500">API cleanup</text>
+    <text x="87" y="323" fill="#7c8793" font-size="11">server</text>
+    <circle cx="252" cy="302" r="7" fill="#389c70"/>
+    <path d="M248.5 302L251 304.5L255.5 299.5" stroke="#ffffff" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="231" cy="323" r="8" fill="#5472c9"/>
+    <circle cx="219" cy="323" r="8" fill="#0891b2" stroke="#edf0f4" stroke-width="1.5"/>
+  </g>
+  <g id="sidebar-connection">
+    <circle cx="52" cy="847" r="3" fill="#48a67c"/>
+    <text x="63" y="851" fill="#7a8794" font-size="11">localhost:3100</text>
+  </g>
+  <g id="day-divider">
+    <text x="304" y="132" fill="#8a949f" font-size="11" font-weight="500">Today</text>
+    <path d="M347 128H976" stroke="#e3e6eb"/>
+  </g>
+  <g id="lead-request" transform="translate(0 112)">
+    <circle cx="320" cy="170" r="16" fill="#0891b2"/>
+    <path d="M320 159L323 165L329.5 166L324.7 170.7L325.8 177.3L320 174.2L314.2 177.3L315.3 170.7L310.5 166L317 165Z" stroke="#ffffff" stroke-width="1.7" stroke-linejoin="round"/>
+    <text x="348" y="174" fill="#293442" font-size="12" font-weight="600">Lead</text>
+    <text x="387" y="174" fill="#8a949f" font-size="11">9:41 AM</text>
+    <rect x="453" y="159" width="119" height="21" rx="10.5" fill="#fff3df"/>
+    <text x="464" y="173" fill="#a56b15" font-size="10" font-weight="600">Needs your reply</text>
+    <rect x="348.75" y="188.75" width="627.5" height="128.5" rx="12" fill="#fbfcfd" stroke="#cd943f" stroke-width="1.5"/>
+    <text x="361" y="214" fill="#303b49" font-size="14">
+      <tspan x="361" dy="0">The team has a clear plan for the release. I need one decision</tspan>
+      <tspan x="361" dy="20">before we finish the onboarding:</tspan>
+      <tspan x="361" dy="32" font-weight="600">Should the first launch open your most recent channel,</tspan>
+      <tspan x="361" dy="20" font-weight="600">or show the full channel list?</tspan>
+    </text>
+  </g>
+  <g id="user-direction" transform="translate(0 -192)">
+    <text x="876" y="355" fill="#8a949f" font-size="11">You</text>
+    <text x="906" y="355" fill="#8a949f" font-size="11">9:40 AM</text>
+    <rect x="570" y="365" width="406" height="62" rx="12" fill="#edf5ff"/>
+    <text x="582" y="390" fill="#304052" font-size="14">
+      <tspan x="582" dy="0">The layouts look lovely. Keep the conversation</tspan>
+      <tspan x="582" dy="20">quiet and the navigation unmistakably Mac.</tspan>
+    </text>
+    <rect x="901" y="433" width="75" height="24" rx="12" fill="#f7f9fb" stroke="#e2e6eb"/>
+    <path d="M913 445L916 448L922 441" stroke="#369b73" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="935" cy="445" r="7" fill="#8b5cf6"/>
+    <circle cx="951" cy="445" r="7" fill="#0891b2"/>
+  </g>
+  <g id="new-divider">
+    <path d="M304 480H946" stroke="#2489f3" stroke-opacity=".55"/>
+    <text x="954" y="484" fill="#1680ed" font-size="10" font-weight="600">New</text>
+  </g>
+  <g id="designer-run">
+    <circle cx="320" cy="520" r="16" fill="#8b5cf6"/>
+    <path d="M313 510H323L327 514V530H313ZM322 510V515H327M316 525L321 520L324 523L319 528H316Z" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="348" y="524" fill="#293442" font-size="12" font-weight="600">Designer</text>
+    <text x="407" y="524" fill="#7c8793" font-size="11">to Lead</text>
+    <text x="457" y="524" fill="#939ca6" font-size="11">9:44 AM</text>
+    <rect x="348.5" y="538.5" width="627" height="86" rx="12" fill="#f7f8fa" stroke="#e2e6eb"/>
+    <text x="361" y="564" fill="#35414f" font-size="14">
+      <tspan x="361" dy="0">The native direction is ready: a source list, a paper-like</tspan>
+      <tspan x="361" dy="20">conversation and a true inspector. Agent colors carry identity.</tspan>
+      <tspan x="361" dy="20">Glass belongs to the controls, not the messages.</tspan>
+    </text>
+    <rect x="348" y="632" width="51" height="24" rx="12" fill="#f7f9fb" stroke="#e2e6eb"/>
+    <path d="M359 644L362 647L368 640" stroke="#369b73" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="384" cy="644" r="7" fill="#0891b2"/>
+  </g>
+  <g id="working-row">
+    <circle cx="314" cy="686" r="10" fill="#0891b2"/>
+    <circle cx="329" cy="686" r="10" fill="#8b5cf6" stroke="#ffffff" stroke-width="1.5"/>
+    <text x="347" y="690" fill="#939da7" font-size="11">2 agents are working</text>
+    <circle cx="465" cy="686" r="1.3" fill="#a7afb8"/>
+    <circle cx="470" cy="686" r="1.3" fill="#a7afb8"/>
+    <circle cx="475" cy="686" r="1.3" fill="#a7afb8"/>
+  </g>
+  <g id="composer-tray">
+    <path d="M280 709H1000" stroke="#e4e8ed"/>
+    <rect x="304" y="721" width="275" height="25" rx="7" fill="#f7f8fa" stroke="#e2e6eb"/>
+    <path d="M316 728H322L325 731V739H316ZM322 728V732H325" stroke="#7a8794" stroke-width="1.1" stroke-linejoin="round"/>
+    <text x="333" y="738" fill="#647180" font-size="11">Release design notes</text>
+    <text x="553" y="738" fill="#89949f" font-size="11">+2</text>
+    <rect x="773" y="721" width="111" height="25" rx="7" fill="#f7f8fa" stroke="#e2e6eb"/>
+    <text x="783" y="738" fill="#647180" font-size="11">Tasks 3/8</text>
+    <rect x="842" y="731" width="31" height="3" rx="1.5" fill="#dce3e9"/>
+    <rect x="842" y="731" width="12" height="3" rx="1.5" fill="#58a2e8"/>
+    <rect x="892" y="721" width="84" height="25" rx="7" fill="#f7f8fa" stroke="#e2e6eb"/>
+    <path d="M904 728V738L912 733Z" stroke="#7a8794" stroke-width="1.1" stroke-linejoin="round"/>
+    <text x="919" y="738" fill="#647180" font-size="11">Preview</text>
+  </g>
+  <g id="composer">
+    <rect x="304.5" y="756.5" width="671" height="87" rx="12" fill="#ffffff" stroke="#d3dbe4"/>
+    <text x="317" y="783" fill="#a2abb5" font-size="14">Reply to Lead, or @mention an agent</text>
+    <rect x="316" y="812" width="18" height="15" rx="3" stroke="#7d8997" stroke-width="1.3"/>
+    <circle cx="321" cy="817" r="1.5" fill="#7d8997"/>
+    <path d="M317 825L322 821L325 824L330 819L333 823" stroke="#7d8997" stroke-width="1.1" stroke-linejoin="round"/>
+    <rect x="345" y="808" width="89" height="24" rx="12" fill="#f1f4f7"/>
+    <text x="355" y="824" fill="#7c8793" font-size="11">To</text>
+    <circle cx="378" cy="820" r="7" fill="#0891b2"/>
+    <text x="391" y="824" fill="#4b5a69" font-size="11" font-weight="500">Lead</text>
+    <rect x="442" y="808" width="119" height="24" rx="12" fill="#fff6e7"/>
+    <path d="M454 815A3 3 0 1 1 458 818V820M458 823V823.2" stroke="#ae7b25" stroke-width="1.3" stroke-linecap="round"/>
+    <text x="469" y="824" fill="#a47322" font-size="11" font-weight="500">Input needed</text>
+    <circle cx="950" cy="820" r="14" fill="#e9edf2"/>
+    <path d="M950 826V814M945 819L950 814L955 819" stroke="#a3adb8" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <g id="inspector-purpose">
+    <text x="1016" y="121" fill="#4e5a68" font-size="13">
+      <tspan x="1016" dy="0">Make the next release feel effortless.</tspan>
+      <tspan x="1016" dy="19">A focused team for the details that</tspan>
+      <tspan x="1016" dy="19">make a product feel finished.</tspan>
+    </text>
+    <path d="M1017 181H1023L1026 184H1033V193H1017Z" stroke="#8894a1" stroke-width="1.2" stroke-linejoin="round"/>
+    <text x="1042" y="192" fill="#778492" font-size="11">~/Projects/toy-box</text>
+  </g>
+  <g id="inspector-team">
+    <text x="1016" y="230" fill="#42505f" font-size="12" font-weight="600">Team</text>
+    <rect x="1051" y="218" width="19" height="17" rx="8.5" fill="#e9edf2"/>
+    <text x="1057" y="230" fill="#8894a0" font-size="10">3</text>
+    <circle cx="1031" cy="265" r="18" stroke="#a0bdcc" stroke-width="1.3" stroke-dasharray="2 3"/>
+    <circle cx="1031" cy="265" r="14" fill="#0891b2"/>
+    <path d="M1031 256L1033.5 261L1039 261.7L1035 265.7L1035.9 271.3L1031 268.7L1026.1 271.3L1027 265.7L1023 261.7L1028.5 261Z" stroke="#ffffff" stroke-width="1.3" stroke-linejoin="round"/>
+    <text x="1056" y="261" fill="#3d4a59" font-size="13" font-weight="500">Lead</text>
+    <text x="1056" y="279" fill="#a7792c" font-size="11">Waiting for your launch preference</text>
+    <circle cx="1031" cy="313" r="18" stroke="#c3b4eb" stroke-width="1.3" stroke-dasharray="86 28"/>
+    <circle cx="1031" cy="313" r="14" fill="#8b5cf6"/>
+    <path d="M1025 305H1034L1038 309V322H1025ZM1033 305V310H1038M1028 317L1032 313L1035 316L1031 320H1028Z" stroke="#ffffff" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="1056" y="309" fill="#3d4a59" font-size="13" font-weight="500">Designer</text>
+    <text x="1056" y="327" fill="#8995a1" font-size="11">Polishing the native window</text>
+    <circle cx="1031" cy="361" r="18" stroke="#a7cad0" stroke-width="1.3" stroke-dasharray="86 28"/>
+    <circle cx="1031" cy="361" r="14" fill="#327e8d"/>
+    <path d="M1024 358L1031 354L1038 358L1031 362ZM1024 362L1031 366L1038 362M1024 366L1031 370L1038 366" stroke="#ffffff" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="1056" y="357" fill="#3d4a59" font-size="13" font-weight="500">Core</text>
+    <text x="1056" y="375" fill="#8995a1" font-size="11">Verifying the channel connection</text>
+    <circle cx="1031" cy="403" r="10" stroke="#b6c0ca" stroke-dasharray="2 2"/>
+    <path d="M1027 403H1035M1031 399V407" stroke="#9ba8b6" stroke-width="1.2" stroke-linecap="round"/>
+    <text x="1056" y="407" fill="#8794a1" font-size="11">Add an agent</text>
+  </g>
+  <g id="inspector-tasks">
+    <text x="1016" y="452" fill="#42505f" font-size="12" font-weight="600">Tasks</text>
+    <rect x="1055" y="440" width="31" height="17" rx="8.5" fill="#e9edf2"/>
+    <text x="1061" y="452" fill="#8894a0" font-size="10">3/8</text>
+    <text x="1208" y="452" fill="#3d9c75" font-size="10" font-family="SFMono-Regular, Menlo, monospace">+248</text>
+    <text x="1253" y="452" fill="#be7477" font-size="10" font-family="SFMono-Regular, Menlo, monospace">-36</text>
+    <circle cx="1024" cy="480" r="7" fill="#dcefe7"/>
+    <path d="M1020 480L1023 483L1028 477" stroke="#4d9c7a" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="1040" y="484" fill="#8995a1" font-size="12">Channel connection</text>
+    <circle cx="1280" cy="480" r="8" fill="#327e8d"/>
+    <circle cx="1024" cy="515" r="7" stroke="#6da4d3" stroke-width="1.5" stroke-dasharray="31 14"/>
+    <path d="M1039 512L1043 516L1047 512" stroke="#7f8c9a" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="1055" y="519" fill="#49586a" font-size="12">Native window</text>
+    <rect x="1148" y="507" width="30" height="17" rx="8.5" fill="#e9edf2"/>
+    <text x="1154" y="519" fill="#8995a1" font-size="10">1/2</text>
+    <circle cx="1280" cy="515" r="8" fill="#8b5cf6"/>
+    <path d="M1040 534V589" stroke="#e0e5eb"/>
+    <circle cx="1056" cy="549" r="6" fill="#dcefe7"/>
+    <path d="M1053 549L1055 551L1059 547" stroke="#4d9c7a" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="1072" y="553" fill="#8995a1" font-size="12">Source list and toolbar</text>
+    <circle cx="1056" cy="581" r="6" stroke="#6da4d3" stroke-width="1.5" stroke-dasharray="27 11"/>
+    <text x="1072" y="585" fill="#49586a" font-size="12">Transcript and composer</text>
+    <circle cx="1024" cy="615" r="7" stroke="#b5c0cb" stroke-width="1.3"/>
+    <text x="1040" y="619" fill="#49586a" font-size="12">Keyboard and accessibility</text>
+  </g>
+  <g id="inspector-artifacts">
+    <text x="1016" y="666" fill="#42505f" font-size="12" font-weight="600">Artifacts</text>
+    <rect x="1073" y="654" width="19" height="17" rx="8.5" fill="#e9edf2"/>
+    <text x="1079" y="666" fill="#8894a0" font-size="10">3</text>
+    <path d="M1020 687H1030L1035 692V708H1020ZM1029 687V693H1035M1024 697H1031M1024 701H1031" stroke="#8b99a7" stroke-width="1.2" stroke-linejoin="round"/>
+    <text x="1045" y="694" fill="#536274" font-size="12">Release design notes</text>
+    <text x="1045" y="711" fill="#98a3af" font-size="10">Markdown - shared 8 min ago</text>
+    <path d="M1020 728H1030L1035 733V749H1020ZM1029 728V734H1035M1024 742L1028 738L1032 742" stroke="#8b99a7" stroke-width="1.2" stroke-linejoin="round"/>
+    <text x="1045" y="735" fill="#536274" font-size="12">Window studies</text>
+    <text x="1045" y="752" fill="#98a3af" font-size="10">SVG - shared 2 min ago</text>
+  </g>
+  <g id="inspector-routines">
+    <text x="1016" y="797" fill="#42505f" font-size="12" font-weight="600">Routines</text>
+    <path d="M1021 817L1025 821L1021 825" stroke="#8795a3" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="1038" y="825" fill="#536274" font-size="12">Morning release check</text>
+    <text x="1038" y="844" fill="#98a3af" font-size="10">Tomorrow at 9:00 AM</text>
+  </g>
+  <g id="geometry-annotations">
+    <path d="M32 894V909M280 894V909M1000 894V909M1312 894V909M32 902H1312" stroke="#bac5d0" stroke-width="1"/>
+    <rect x="111" y="894" width="90" height="18" fill="#ffffff"/>
+    <text x="122" y="907" fill="#7c8d9d" font-size="11">248 sidebar</text>
+    <rect x="558" y="894" width="164" height="18" fill="#ffffff"/>
+    <text x="574" y="907" fill="#7c8d9d" font-size="11">720 conversation</text>
+    <rect x="1099" y="894" width="114" height="18" fill="#ffffff"/>
+    <text x="1111" y="907" fill="#7c8d9d" font-size="11">312 inspector</text>
+    <text x="32" y="950" fill="#425364" font-size="16" font-weight="600">A working team. A quiet conversation.</text>
+    <text x="32" y="974" fill="#8b99a7" font-size="12">1280 x 840 pt window - native materials, system typography, exact agent identities</text>
+  </g>
+  <g id="design-callouts">
+    <text x="1344" y="68" fill="#435769" font-size="12" font-weight="600">NATIVE CHROME</text>
+    <text x="1344" y="89" fill="#8a99a7" font-size="11">
+      <tspan x="1344" dy="0">System toolbar,</tspan>
+      <tspan x="1344" dy="17">not a web header.</tspan>
+    </text>
+    <path d="M1320 92H1335" stroke="#bfcad5"/>
+    <text x="1344" y="244" fill="#a6792e" font-size="12" font-weight="600">ATTENTION</text>
+    <text x="1344" y="265" fill="#8a99a7" font-size="11">
+      <tspan x="1344" dy="0">A question remains</tspan>
+      <tspan x="1344" dy="17">until you reply.</tspan>
+      <tspan x="1344" dy="25">Reading is not</tspan>
+      <tspan x="1344" dy="17">acknowledgement.</tspan>
+    </text>
+    <text x="1344" y="480" fill="#4078b4" font-size="12" font-weight="600">A STABLE TIMELINE</text>
+    <text x="1344" y="501" fill="#8a99a7" font-size="11">
+      <tspan x="1344" dy="0">New stays where</tspan>
+      <tspan x="1344" dy="17">you arrived.</tspan>
+      <tspan x="1344" dy="25">History loads without</tspan>
+      <tspan x="1344" dy="17">moving your place.</tspan>
+    </text>
+    <text x="1344" y="758" fill="#435769" font-size="12" font-weight="600">ONE INPUT SURFACE</text>
+    <text x="1344" y="779" fill="#8a99a7" font-size="11">
+      <tspan x="1344" dy="0">Outputs above.</tspan>
+      <tspan x="1344" dy="17">Audience below.</tspan>
+      <tspan x="1344" dy="25">No nested glass</tspan>
+      <tspan x="1344" dy="17">behind the text.</tspan>
+    </text>
+  </g>
+</svg>

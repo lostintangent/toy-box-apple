@@ -1,0 +1,568 @@
+{
+  "channel": {
+    "id": "studio-demo",
+    "name": "Studio demo",
+    "purpose": "Build a welcoming workshop where the team's work is clear at a glance.",
+    "model": {
+      "provider": "codex",
+      "name": "gpt-5.5"
+    },
+    "tasks": [
+      {
+        "id": "t1",
+        "title": "Connect the team",
+        "status": "done",
+        "ownerId": "ada-engineer"
+      },
+      {
+        "id": "t2",
+        "title": "Build the workshop",
+        "status": "in_progress",
+        "ownerId": "pixel-designer",
+        "artifactId": "session:pixel-designer:Workshop plan.md",
+        "diff": {
+          "added": 1180,
+          "removed": 96
+        },
+        "children": [
+          {
+            "id": "t3",
+            "title": "Express the team's identities",
+            "status": "done",
+            "diff": {
+              "added": 342,
+              "removed": 18
+            }
+          },
+          {
+            "id": "t4",
+            "title": "Choose the library location",
+            "status": "blocked"
+          }
+        ]
+      },
+      {
+        "id": "t5",
+        "title": "Verify reconnect behavior",
+        "status": "in_progress",
+        "ownerId": "iris-systems",
+        "diff": {
+          "added": 0,
+          "removed": 0
+        }
+      },
+      {
+        "id": "t6",
+        "title": "Collect useful examples",
+        "status": "pending",
+        "ownerId": "finch-researcher",
+        "diff": {
+          "added": 12,
+          "removed": 0
+        }
+      }
+    ],
+    "previewUrl": "/demo-preview",
+    "latestSequence": 15,
+    "seenThrough": 9,
+    "completedSequence": null,
+    "requestSequence": 15,
+    "updatedAt": "2026-10-03T20:00:00.000Z"
+  },
+  "request": {
+    "id": "fixture-request",
+    "sequence": 15,
+    "timestamp": "2026-10-03T20:00:00.000Z",
+    "sender": {
+      "type": "agent",
+      "agentId": "studio-demo"
+    },
+    "content": "Where should the shared library sit: near the entrance or beside the team desks? Reply with your preference and any constraints.",
+    "request": true
+  },
+  "revision": 24,
+  "lead": {
+    "id": "studio-demo",
+    "name": "Lead",
+    "role": "Own the channel purpose and coordinate the work.",
+    "avatar": {
+      "mark": "M12 3l2.7 5.5 6.1.9-4.4 4.3 1 6.1-5.4-2.9-5.4 2.9 1-6.1-4.4-4.3 6.1-.9L12 3z",
+      "color": "#0891b2"
+    },
+    "status": {
+      "state": "waiting",
+      "text": "Waiting for Moss's review",
+      "wakeAt": "2026-10-03T20:20:00.000Z"
+    }
+  },
+  "members": [
+    {
+      "channelId": "studio-demo",
+      "id": "ada-engineer",
+      "name": "Ada",
+      "role": "Build the client connection and message flow.",
+      "avatar": {
+        "mark": "M5 5h14v14H5z M9 9h6v6H9z",
+        "color": "#de765f"
+      },
+      "status": {
+        "workingOn": 9,
+        "state": "working",
+        "text": "Checking message delivery"
+      }
+    },
+    {
+      "channelId": "studio-demo",
+      "id": "finch-researcher",
+      "name": "Finch",
+      "role": "Collect examples and investigate open questions.",
+      "avatar": {
+        "mark": "M4 17L12 4l8 13z M8 17v4 M16 17v4",
+        "color": "#d5a44e"
+      },
+      "status": {
+        "state": "waiting",
+        "text": "Waiting for the layout direction"
+      }
+    },
+    {
+      "channelId": "studio-demo",
+      "id": "iris-systems",
+      "name": "Iris",
+      "role": "Check reconnect behavior and public state boundaries.",
+      "avatar": {
+        "mark": "M12 3C3 3 3 21 12 21s9-18 0-18z M3 12h18",
+        "color": "#6fbaaa"
+      }
+    },
+    {
+      "channelId": "studio-demo",
+      "id": "juniper-integrator",
+      "name": "Juniper",
+      "role": "Connect the pieces into one coherent result.",
+      "avatar": {
+        "mark": "M3 8h8v8H3z M13 8h8v8h-8z M11 12h2",
+        "color": "#69885c"
+      }
+    },
+    {
+      "channelId": "studio-demo",
+      "id": "kit-writer",
+      "name": "Kit",
+      "role": "Make the handoffs and reference documents useful.",
+      "avatar": {
+        "mark": "M5 4h14v16H5z M8 8h8 M8 12h8 M8 16h5",
+        "color": "#b891cc"
+      }
+    },
+    {
+      "channelId": "studio-demo",
+      "id": "moss-reviewer",
+      "name": "Moss",
+      "role": "Review outcomes and verify the finished experience.",
+      "avatar": {
+        "mark": "M4 12l5 5L20 5",
+        "color": "#78a06b"
+      },
+      "status": {
+        "lookingAt": 9,
+        "state": "working",
+        "text": "Reviewing the workshop plan"
+      }
+    },
+    {
+      "channelId": "studio-demo",
+      "id": "nova-accessibility",
+      "name": "Nova",
+      "role": "Keep text and interaction clear for everyone.",
+      "avatar": {
+        "mark": "M12 3v18 M3 12h18 M5 5l14 14 M19 5L5 19",
+        "color": "#d0896c"
+      }
+    },
+    {
+      "channelId": "studio-demo",
+      "id": "pixel-designer",
+      "name": "Pixel",
+      "role": "Shape the workshop and its shared surfaces.",
+      "avatar": {
+        "mark": "M12 3l9 9-9 9-9-9z",
+        "color": "#9d85bf"
+      },
+      "status": {
+        "workingOn": 9,
+        "state": "working",
+        "text": "Arranging the shared workspace"
+      }
+    }
+  ],
+  "messages": [
+    {
+      "id": "00000000-0000-4000-8000-000000000001",
+      "sequence": 1,
+      "timestamp": "2026-10-03T20:00:00.000Z",
+      "sender": {
+        "type": "system"
+      },
+      "content": {
+        "type": "member_joined",
+        "member": {
+          "role": "Shape the workshop and its shared surfaces.",
+          "avatar": {
+            "mark": "M12 3l9 9-9 9-9-9z",
+            "color": "#9d85bf"
+          },
+          "channelId": "studio-demo",
+          "id": "pixel-designer",
+          "name": "Pixel"
+        }
+      }
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000002",
+      "sequence": 2,
+      "timestamp": "2026-10-03T20:00:00.000Z",
+      "sender": {
+        "type": "system"
+      },
+      "content": {
+        "type": "member_joined",
+        "member": {
+          "role": "Build the client connection and message flow.",
+          "avatar": {
+            "mark": "M5 5h14v14H5z M9 9h6v6H9z",
+            "color": "#de765f"
+          },
+          "channelId": "studio-demo",
+          "id": "ada-engineer",
+          "name": "Ada"
+        }
+      }
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000003",
+      "sequence": 3,
+      "timestamp": "2026-10-03T20:00:00.000Z",
+      "sender": {
+        "type": "system"
+      },
+      "content": {
+        "type": "member_joined",
+        "member": {
+          "role": "Keep text and interaction clear for everyone.",
+          "avatar": {
+            "mark": "M12 3v18 M3 12h18 M5 5l14 14 M19 5L5 19",
+            "color": "#d0896c"
+          },
+          "channelId": "studio-demo",
+          "id": "nova-accessibility",
+          "name": "Nova"
+        }
+      }
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000004",
+      "sequence": 4,
+      "timestamp": "2026-10-03T20:00:00.000Z",
+      "sender": {
+        "type": "system"
+      },
+      "content": {
+        "type": "member_joined",
+        "member": {
+          "role": "Review outcomes and verify the finished experience.",
+          "avatar": {
+            "mark": "M4 12l5 5L20 5",
+            "color": "#78a06b"
+          },
+          "channelId": "studio-demo",
+          "id": "moss-reviewer",
+          "name": "Moss"
+        }
+      }
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000005",
+      "sequence": 5,
+      "timestamp": "2026-10-03T20:00:00.000Z",
+      "sender": {
+        "type": "system"
+      },
+      "content": {
+        "type": "member_joined",
+        "member": {
+          "role": "Make the handoffs and reference documents useful.",
+          "avatar": {
+            "mark": "M5 4h14v16H5z M8 8h8 M8 12h8 M8 16h5",
+            "color": "#b891cc"
+          },
+          "channelId": "studio-demo",
+          "id": "kit-writer",
+          "name": "Kit"
+        }
+      }
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000006",
+      "sequence": 6,
+      "timestamp": "2026-10-03T20:00:00.000Z",
+      "sender": {
+        "type": "system"
+      },
+      "content": {
+        "type": "member_joined",
+        "member": {
+          "role": "Collect examples and investigate open questions.",
+          "avatar": {
+            "mark": "M4 17L12 4l8 13z M8 17v4 M16 17v4",
+            "color": "#d5a44e"
+          },
+          "channelId": "studio-demo",
+          "id": "finch-researcher",
+          "name": "Finch"
+        }
+      }
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000007",
+      "sequence": 7,
+      "timestamp": "2026-10-03T20:00:00.000Z",
+      "sender": {
+        "type": "system"
+      },
+      "content": {
+        "type": "member_joined",
+        "member": {
+          "role": "Connect the pieces into one coherent result.",
+          "avatar": {
+            "mark": "M3 8h8v8H3z M13 8h8v8h-8z M11 12h2",
+            "color": "#69885c"
+          },
+          "channelId": "studio-demo",
+          "id": "juniper-integrator",
+          "name": "Juniper"
+        }
+      }
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000008",
+      "sequence": 8,
+      "timestamp": "2026-10-03T20:00:00.000Z",
+      "sender": {
+        "type": "system"
+      },
+      "content": {
+        "type": "member_joined",
+        "member": {
+          "role": "Check reconnect behavior and public state boundaries.",
+          "avatar": {
+            "mark": "M12 3C3 3 3 21 12 21s9-18 0-18z M3 12h18",
+            "color": "#6fbaaa"
+          },
+          "channelId": "studio-demo",
+          "id": "iris-systems",
+          "name": "Iris"
+        }
+      }
+    },
+    {
+      "id": "fixture-assignment",
+      "sequence": 9,
+      "timestamp": "2026-10-03T20:00:00.000Z",
+      "sender": {
+        "type": "agent",
+        "agentId": "studio-demo"
+      },
+      "content": "@ada @pixel Connect the public transcript, then make the team's progress easy to follow."
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000009",
+      "sequence": 10,
+      "timestamp": "2026-10-03T20:00:00.000Z",
+      "sender": {
+        "type": "system"
+      },
+      "content": {
+        "type": "artifact_shared",
+        "actor": {
+          "type": "agent",
+          "agentId": "pixel-designer"
+        },
+        "artifact": {
+          "file": {
+            "kind": "session",
+            "sessionId": "pixel-designer",
+            "path": "Workshop plan.md"
+          },
+          "title": "Workshop plan",
+          "id": "session:pixel-designer:Workshop plan.md",
+          "url": "/api/serve/pixel-designer/Workshop%20plan.md"
+        }
+      }
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000010",
+      "sequence": 11,
+      "timestamp": "2026-10-03T20:00:00.000Z",
+      "sender": {
+        "type": "system"
+      },
+      "content": {
+        "type": "artifact_shared",
+        "actor": {
+          "type": "agent",
+          "agentId": "kit-writer"
+        },
+        "artifact": {
+          "file": {
+            "kind": "machine",
+            "path": "/demo/Interaction notes.md"
+          },
+          "title": "Interaction notes",
+          "id": "machine:/demo/Interaction notes.md",
+          "url": "/api/serve/machine/demo/Interaction%20notes.md"
+        }
+      }
+    },
+    {
+      "id": "fixture-progress",
+      "sequence": 12,
+      "timestamp": "2026-10-03T20:00:00.000Z",
+      "sender": {
+        "type": "agent",
+        "agentId": "ada-engineer"
+      },
+      "content": "Messages and reconnects now use the same public Channel state. @moss Please review the handoff.",
+      "reactions": [
+        {
+          "agentId": "iris-systems",
+          "reaction": "agree"
+        },
+        {
+          "agentId": "moss-reviewer",
+          "reaction": "done"
+        }
+      ],
+      "attachments": [
+        {
+          "name": "workshop preview.png",
+          "url": "/api/serve/machine/demo/workshop%20preview.png"
+        },
+        {
+          "mimeType": "image/png",
+          "base64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+        }
+      ]
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000012",
+      "sequence": 13,
+      "timestamp": "2026-10-03T20:00:00.000Z",
+      "sender": {
+        "type": "system"
+      },
+      "content": {
+        "type": "routine_scheduled",
+        "routine": {
+          "title": "Daily review",
+          "schedule": "0 9 * * 1-5",
+          "prompt": "Review the current work, follow up on blockers, and post only meaningful changes.",
+          "id": "00000000-0000-4000-8000-000000000011"
+        }
+      }
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000013",
+      "sequence": 14,
+      "timestamp": "2026-10-03T20:00:00.000Z",
+      "sender": {
+        "type": "system"
+      },
+      "content": {
+        "type": "preview_changed",
+        "actor": {
+          "type": "agent",
+          "agentId": "studio-demo"
+        },
+        "previewUrl": "/demo-preview"
+      }
+    },
+    {
+      "id": "fixture-request",
+      "sequence": 15,
+      "timestamp": "2026-10-03T20:00:00.000Z",
+      "sender": {
+        "type": "agent",
+        "agentId": "studio-demo"
+      },
+      "content": "Where should the shared library sit: near the entrance or beside the team desks? Reply with your preference and any constraints.",
+      "request": true
+    }
+  ],
+  "artifacts": [
+    {
+      "id": "machine:/demo/Interaction notes.md",
+      "file": {
+        "kind": "machine",
+        "path": "/demo/Interaction notes.md"
+      },
+      "title": "Interaction notes",
+      "sharedAt": "2026-10-03T20:00:00.000Z",
+      "url": "/api/serve/machine/demo/Interaction%20notes.md"
+    },
+    {
+      "id": "session:pixel-designer:Workshop plan.md",
+      "file": {
+        "kind": "session",
+        "sessionId": "pixel-designer",
+        "path": "Workshop plan.md"
+      },
+      "title": "Workshop plan",
+      "sharedAt": "2026-10-03T20:00:00.000Z",
+      "url": "/api/serve/pixel-designer/Workshop%20plan.md"
+    }
+  ],
+  "routines": [
+    {
+      "id": "00000000-0000-4000-8000-000000000011",
+      "title": "Daily review",
+      "schedule": "0 9 * * 1-5",
+      "prompt": "Review the current work, follow up on blockers, and post only meaningful changes."
+    }
+  ],
+  "presence": {
+    "studio-demo": {
+      "state": "waiting",
+      "text": "Waiting for Moss's review",
+      "wakeAt": "2026-10-03T20:20:00.000Z"
+    },
+    "ada-engineer": {
+      "state": "working",
+      "text": "Checking message delivery"
+    },
+    "finch-researcher": {
+      "state": "waiting",
+      "text": "Waiting for the layout direction"
+    },
+    "iris-systems": {
+      "state": "working"
+    },
+    "juniper-integrator": {
+      "state": "idle"
+    },
+    "kit-writer": {
+      "state": "idle"
+    },
+    "moss-reviewer": {
+      "state": "working",
+      "text": "Reviewing the workshop plan"
+    },
+    "nova-accessibility": {
+      "state": "idle"
+    },
+    "pixel-designer": {
+      "state": "working",
+      "text": "Arranging the shared workspace"
+    }
+  }
+}
