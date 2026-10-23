@@ -53,10 +53,10 @@ Reference sources (read-only):
   A window, sheet or intent holds its channel's store while it shows it. When the last one lets
   go, the store stays connected for 5 seconds, so switching back lands on a live store. Its first
   frame then has a working composer, and the transcript lands without waiting on a reconnect. On
-  the switch benchmark that's about 80 to 120 ms less main-thread time per warm switch. Only the two
-  most recently released stores linger, and a server change disconnects them at once. A lingering
-  store has no transcript, so it never marks read, and notifications come from the catalog, so it
-  posts none.
+  the switch benchmark that's about 100 ms less main-thread time per warm switch. Only the two most
+  recently released stores linger, and a server change disconnects them at once. A lingering store
+  has no transcript, so it never marks read, and notifications come from the catalog, so it posts
+  none.
   Views read the store's observed slices (`details`, `roster`, `agentStatuses`, `presence`,
   `messages`, `request`, `requestSequence`, `tasks`, `artifacts`, `artifactShares`, `routines`)
   rather than `state`, which changes on every event. An event then re-renders only the views that
