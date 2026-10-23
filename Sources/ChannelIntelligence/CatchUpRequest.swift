@@ -41,10 +41,7 @@ public struct CatchUpRequest: Sendable, Hashable {
 
         let describer = CatchUpDescriber(state: state)
         let pendingSequence = state.channel.requestSequence
-        let pending = pendingSequence.flatMap { sequence in
-            state.request?.sequence == sequence ? state.request
-                : state.messages.first { $0.sequence == sequence }
-        }
+        let pending = catchUpPendingRequest(in: state)
 
         var seen = Set<String>()
         var entries: [CatchUpEntry] = []

@@ -1467,6 +1467,75 @@ its links.
 | Menus | A right-click on selected text shows the system text menu (Copy, Look Up, Translate, Share). Everywhere else is unchanged |
 | Accessibility | Recognized text is exposed as the overlay provides it. The image keeps its label and description value |
 
+**Siri and Shortcuts.** Ask what needs you, open a channel or send a message by voice, from
+Spotlight or in a shortcut, without touching the window. Every answer is the team's own words or
+the transcript's summary, and asking never marks anything read.
+
+| Intent | Mode | Parameters | Result |
+| --- | --- | --- | --- |
+| Catch Me Up | Background | Channel, optional | A spoken answer, also returned as text |
+| Open Channel | Foreground | Channel | Opens it through the notification route: activate, request navigation, and open a window only when none shows a channel |
+| Send Message | Background | Channel, then Message (multiline) | "Sent to [channel]." after the system's Send confirmation |
+
+| Phrases (each ends "in [app name]") | Intent |
+| --- | --- |
+| "Catch me up", "What's new", "Catch me up on [channel]", "What's new in [channel]", "Summarize [channel]" | Catch Me Up |
+| "Open [channel]", "Show [channel]", "Open a channel" | Open Channel |
+| "Send a message", "Send a message to [channel]", "Message [channel]" | Send Message |
+
+The app name is "Toy Box Desktop" or its alternate, "Toy Box" (`INAlternativeAppNames`). The
+shortcut tile is navy, like the icon. Tile symbols are `text.line.3.summary`,
+`bubble.left.and.bubble.right` and `paperplane`.
+
+The Channel entity is identified by channel ID and displays the name, with `number` as its
+image and the sidebar's attention as its subtitle: "Needs your reply", "All tasks completed" or
+"Unread messages". It has Name, Unread Count (`latestSequence - seenThrough`, which counts channel
+events too), Needs Your Reply and Tasks Completed properties. Its query reads the catalog fresh,
+suggests channels in sidebar order and matches names ignoring case, accents and punctuation,
+exact names first, then prefixes, then substrings. The app refreshes the shortcuts' parameters
+whenever the set of channel names changes, so Siri learns them.
+
+Catch Me Up without a channel says "You're all caught up." when nothing needs you, catches up on
+the one channel that does, or gives an overview: "You have updates in 4 channels." and then one
+line for each of the first 3 in attention order (waiting, completed, unread, then most recently
+updated), such as "Studio demo is waiting for your reply.", "All tasks are completed in Docs." or
+"Design has 3 new messages.", then "There's 1 more channel with updates." A count comes from one
+history page and becomes "has new messages" when the page doesn't reach the boundary.
+
+For one channel, connect its shared store for the duration (live windows already have it), take
+the boundary from `seenThrough`, and answer in this order:
+
+| Case | Answer |
+| --- | --- |
+| Nothing unread or pending | "You're all caught up in Studio demo." |
+| The transcript's summary is eligible, on and ready within 15 seconds | "Here's a summary of 27 new messages in Studio demo." Then the needs-you line (or the request quoted as below), the changes, and "All tasks are completed." unless a change already cites the completion |
+| Otherwise, a pending request | "Lead needs your reply in Studio demo: “[request]”" |
+| Otherwise, up to 3 unread messages from agents totaling at most 600 characters | "There's 1 new message in Studio demo." (or "There's also…" after a request), then "Ada wrote: “…”", "Moss shared an image." or "Moss shared 2 images and wrote: “…”" |
+| Otherwise | "There are 12 new messages in Studio demo, from Iris, Finch, Moss and 2 others." "at least 12" when the loaded history doesn't reach the boundary |
+| Completed since the boundary | Adds "All tasks are completed." or, alone, "All tasks are completed in Studio demo." |
+
+Quotes are the message text with leading mentions dropped, Markdown flattened and inline
+mentions as names, cut at a word to 280 characters (a request keeps its start and end). The
+summary shares the transcript card's cache, so a channel summarized in either place is instant in
+the other. It respects "Summarize new messages" and the model's availability, and a slow or
+declined summary falls back to the quotes silently.
+
+Send Message trims the text and refuses an empty one before asking anything. It confirms with
+`requestConfirmation(actionName: .send)` and "Send “[text]” to [channel]?", then posts once
+through the channel's shared `ChannelStore` with a fresh caller-owned ID, so it joins the outbox
+and appears in an open window at once. It never retries. A rejection says "Your message to
+[channel] wasn't sent. It's waiting in the channel so you can send it again." An unconfirmed
+delivery says "Toy Box didn't confirm your message to [channel]. Open the channel to check it
+before sending again." Other errors: "Toy Box Desktop isn't connected to a server. Choose one in
+Settings.", "Toy Box isn't responding. Check that it's running, then try again." and "That
+channel isn't on your Toy Box server anymore."
+
+`script/run` generates `Contents/Resources/Metadata.appintents` by running Xcode's
+`appintentsmetadataprocessor` directly over the const values SwiftPM already emits, so it needs
+Xcode installed but never `xcodebuild`. Titles, phrases and parameter names must stay literals.
+The system only indexes a bundle outside `/tmp` that has launched once, and parameterized phrases
+need a team-signed build, so verify Siri with a Developer ID build in Applications.
+
 **Settings additions.** General gains "Show in menu bar" (above) and a group of two toggles, both
 on by default:
 
@@ -1483,9 +1552,9 @@ language (`unsupportedLanguage`), "Apple Intelligence doesn't support your Mac's
 with no button. The Settings window grows to fit General rather than scrolling.
 
 Owners: Shell owns notifications, the menu bar extra and Settings (t94, t95). Intelligence owns
-the model layer (t96). Transcript owns the catch-up card, descriptions in tiles and the viewer,
-and Live Text (t93, t97). Designer reviews each one in real-window captures, in light and dark,
-with VoiceOver and with Reduce Motion.
+the model layer (t96) and Siri and Shortcuts (t126). Transcript owns the catch-up card,
+descriptions in tiles and the viewer, and Live Text (t93, t97). Designer reviews each one in
+real-window captures, in light and dark, with VoiceOver and with Reduce Motion.
 
 ### App icon
 

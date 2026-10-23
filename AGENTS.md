@@ -17,7 +17,8 @@ view.
 ## Build and run
 
 - Build only with Command Line Tools. Never use `xcodebuild`, because the Xcode license is not
-  accepted on this machine.
+  accepted on this machine. `script/run` runs Xcode's `appintentsmetadataprocessor` directly for
+  Siri and Shortcuts, which needs Xcode installed but not its license.
 - Target macOS 27 or later on Apple Silicon with Swift tools 6.4 or later. `script/run` stamps the real SDK
   version before signing. Use its bundle for native visual checks, not SwiftPM's unstamped
   executable. `script/validate` rejects bundles whose recorded SDK is below macOS 27.

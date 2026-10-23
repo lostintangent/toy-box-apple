@@ -24,6 +24,7 @@ struct ToyBoxDesktopApp: App {
                 UserDefaults.standard.setVolatileDomain(arguments, forName: UserDefaults.argumentDomain)
             }
             let model = AppModel(launchOptions: options)
+            ChannelIntentsContext.register(model)
             _model = ViewState(wrappedValue: model)
         } catch {
             FileHandle.standardError.write(Data("Invalid launch arguments: \(error.localizedDescription)\n".utf8))

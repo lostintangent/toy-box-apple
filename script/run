@@ -30,6 +30,53 @@ MINIMUM_OS="$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$APP/C
 # SwiftPM's current link path records the deployment minimum as the SDK version.
 xcrun vtool -set-build-version macos "$MINIMUM_OS" "$SDK_VERSION" -replace \
     -output "$EXECUTABLE" "$EXECUTABLE"
+
+# Siri, Shortcuts and Spotlight find the app's intents in Metadata.appintents. Xcode's processor
+# builds it from the const values that SwiftPM's build system emits by default. It runs directly,
+# so it needs Xcode installed but never xcodebuild or the Xcode license.
+PROCESSOR="${APP_INTENTS_PROCESSOR:-$(xcrun --find appintentsmetadataprocessor 2>/dev/null || true)}"
+if [[ -z "$PROCESSOR" ]]; then
+    PROCESSOR="/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/appintentsmetadataprocessor"
+fi
+if [[ ! -x "$PROCESSOR" ]]; then
+    echo "Siri and Shortcuts need Xcode's appintentsmetadataprocessor. Install Xcode 27 or set APP_INTENTS_PROCESSOR." >&2
+    exit 1
+fi
+TOOLCHAIN="$(cd "$(dirname "$PROCESSOR")/../.." && pwd)"
+XCODE_BUILD="$(/usr/libexec/PlistBuddy -c 'Print :ProductBuildVersion' "$TOOLCHAIN/../../../version.plist" 2>/dev/null \
+    || xcrun --sdk "$SDK" --show-sdk-build-version)"
+INTENTS_DIR="$SCRATCH/appintents"
+BUILD_DIR=Debug
+if [[ "$CONFIG" == release ]]; then BUILD_DIR=Release; fi
+OBJECTS="$SCRATCH/out/Intermediates.noindex/ToyBoxDesktop.build/$BUILD_DIR/ToyBoxDesktop-p.build/Objects-normal/arm64"
+mkdir -p "$INTENTS_DIR"
+find "$ROOT/Sources/ToyBoxDesktop" -name '*.swift' | sort >"$INTENTS_DIR/sources.txt"
+# Debug builds write one file per source, so skip files left behind by deleted sources.
+: >"$INTENTS_DIR/const-values.txt"
+for values in "$OBJECTS"/*.swiftconstvalues; do
+    stem="$(basename "$values" .swiftconstvalues)"
+    if [[ "$stem" == ToyBoxDesktop-primary ]] || grep -q "/$stem\.swift$" "$INTENTS_DIR/sources.txt"; then
+        echo "$values" >>"$INTENTS_DIR/const-values.txt"
+    fi
+done
+[[ -s "$INTENTS_DIR/const-values.txt" ]] || { echo "The compiler wrote no const values to $OBJECTS." >&2; exit 1; }
+: >"$INTENTS_DIR/dependency-metadata.txt"
+rm -rf "$APP/Contents/Resources/Metadata.appintents"
+"$PROCESSOR" --toolchain-dir "$TOOLCHAIN" --module-name ToyBoxDesktop --sdk-root "$SDK" \
+    --xcode-version "$XCODE_BUILD" --platform-family macOS --deployment-target "$MINIMUM_OS" \
+    --bundle-identifier "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Contents/Info.plist")" \
+    --output "$APP/Contents/Resources" --target-triple "arm64-apple-macos$MINIMUM_OS" \
+    --binary-file "$EXECUTABLE" --dependency-file "$INTENTS_DIR/ToyBoxDesktop.d" \
+    --stringsdata-file "$INTENTS_DIR/ExtractedAppShortcutsMetadata.stringsdata" \
+    --source-file-list "$INTENTS_DIR/sources.txt" --swift-const-vals-list "$INTENTS_DIR/const-values.txt" \
+    --metadata-file-list "$INTENTS_DIR/dependency-metadata.txt" \
+    --static-metadata-file-list "$INTENTS_DIR/dependency-metadata.txt" \
+    --force --compile-time-extraction --deployment-aware-processing --no-app-shortcuts-localization \
+    >"$INTENTS_DIR/processor.log" 2>&1 || { cat "$INTENTS_DIR/processor.log" >&2; exit 1; }
+grep -i -E "warning|error" "$INTENTS_DIR/processor.log" >&2 || true
+[[ -s "$APP/Contents/Resources/Metadata.appintents/extract.actionsdata" ]] \
+    || { cat "$INTENTS_DIR/processor.log" >&2; echo "No App Intents metadata was written." >&2; exit 1; }
+
 codesign --force --sign - "$APP"
 echo "$APP"
 if [[ "${1:-}" != "--no-open" ]]; then

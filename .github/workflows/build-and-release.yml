@@ -35,6 +35,15 @@ jobs:
         env:
           SCRATCH_PATH: ${{ runner.temp }}/toy-box-tests
         run: ./script/test
+      - name: Bundle with Siri and Shortcuts metadata
+        env:
+          SCRATCH_PATH: ${{ runner.temp }}/toy-box-tests
+        run: |
+          app="$(./script/run --no-open | tail -n 1)"
+          actions="$app/Contents/Resources/Metadata.appintents/extract.actionsdata"
+          for intent in CatchMeUpIntent OpenChannelIntent SendMessageIntent; do
+            grep -q "\"$intent\"" "$actions"
+          done
       - name: Wait for crash reports
         if: failure()
         run: |

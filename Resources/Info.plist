@@ -6,6 +6,13 @@
     <string>Toy Box Desktop</string>
     <key>CFBundleDisplayName</key>
     <string>Toy Box Desktop</string>
+    <key>INAlternativeAppNames</key>
+    <array>
+        <dict>
+            <key>INAlternativeAppName</key>
+            <string>Toy Box</string>
+        </dict>
+    </array>
     <key>CFBundleIdentifier</key>
     <string>dev.toybox.channels.mac</string>
     <key>CFBundleExecutable</key>
