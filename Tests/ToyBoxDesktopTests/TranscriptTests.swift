@@ -1427,6 +1427,61 @@ struct ImageViewerLiveTextTests {
         #expect(viewer.isClosing)
     }
 
+    @Test(.readsTextInImages) func theSelectionHighlightCoversItsTextAndTheButtonStaysInTheImagesCorner() async throws {
+        let page = try #require(Self.screenshotImage())
+        let analysis = try await ImageAnalyzer().analyze(page.image, orientation: .up,
+                                                         configuration: ImageAnalyzer.Configuration([.text]))
+        let view = ImageViewerLiveTextView(frame: CGRect(x: 0, y: 0, width: 1000, height: 800))
+        view.wantsLayer = true
+        // The window stays deferred and never reaches WindowServer. An event from WindowServer that arrives
+        // while a test awaits stops the test runner's run loop and ends the process, and VisionKit draws and
+        // hit-tests without one.
+        let window = KeyWindow(contentRect: view.frame, styleMask: [.borderless], backing: .buffered, defer: true)
+        window.isReleasedWhenClosed = false
+        window.contentView = view
+        defer {
+            view.stop()
+            window.close()
+        }
+        let line = 4
+
+        // Fitted below a 52-point toolbar, the image sits 22 points below the canvas's center, and
+        // zoomed and panned it can sit anywhere.
+        let fitted = CGRect(x: 200, y: 218, width: 600, height: 408)
+        let zoomed = CGRect(x: -20, y: -150, width: 1200, height: 816)
+        for frame in [fitted, zoomed] {
+            view.present(analysis: analysis, in: frame, animated: false)
+            view.layoutSubtreeIfNeeded()
+            view.overlay.resetSelection()
+            try await Task.sleep(for: .milliseconds(300))
+            let unselected = Self.layerPixels(of: view)
+            view.overlay.selectedRanges = [try #require(view.overlay.text.range(of: page.lines[line]))]
+            #expect(view.overlay.selectedText == page.lines[line])
+            var highlight: CGRect?
+            try await Self.until {
+                highlight = Self.changedBounds(unselected, Self.layerPixels(of: view), width: 1000)
+                return highlight != nil
+            }
+            let drawn = try #require(highlight)
+            let text = page.bounds(of: line, in: frame)
+            let tolerance = max(3, text.height / 4)
+            #expect(abs(drawn.midY - text.midY) <= tolerance, "highlight \(drawn) over text \(text) in \(frame)")
+            #expect(abs(drawn.minX - text.minX) <= tolerance, "highlight \(drawn) over text \(text) in \(frame)")
+            #expect(abs(drawn.maxX - text.maxX) <= tolerance, "highlight \(drawn) over text \(text) in \(frame)")
+        }
+
+        // VisionKit's button sits 8 points inside the fitted image's bottom-trailing corner.
+        view.overlay.resetSelection()
+        view.present(analysis: analysis, in: fitted, animated: false)
+        view.layoutSubtreeIfNeeded()
+        let button = CGPoint(x: fitted.maxX - 21, y: fitted.maxY - 21)
+        try await Self.until { view.target(at: button).control }
+        for point in [CGPoint(x: fitted.maxX - 21, y: fitted.maxY - 45), CGPoint(x: fitted.maxX - 45, y: fitted.maxY - 21),
+                      CGPoint(x: fitted.maxX + 4, y: fitted.maxY - 21), CGPoint(x: fitted.maxX - 21, y: fitted.maxY + 4)] {
+            #expect(!view.target(at: point).control, "button at \(point)")
+        }
+    }
+
     @Test func onlyPointerEventsOnWhatVisionKitDrawsAreRoutedToIt() {
         typealias Target = ImageViewerLiveTextView.Target
         let text = Target(text: true)
@@ -1687,6 +1742,85 @@ struct ImageViewerLiveTextTests {
             CTLineDraw(CTLineCreateWithAttributedString(string), context)
         }
         return context.makeImage()
+    }
+
+    private struct ScreenshotPage {
+        var image: CGImage
+        var lines: [String]
+        /// Each line's glyph bounds in pixels from the image's top-left.
+        var glyphBounds: [CGRect]
+
+        /// A line's glyph bounds where the image is shown at `frame`.
+        func bounds(of line: Int, in frame: CGRect) -> CGRect {
+            let x = frame.width / CGFloat(image.width), y = frame.height / CGFloat(image.height)
+            let glyphs = glyphBounds[line]
+            return CGRect(x: frame.minX + glyphs.minX * x, y: frame.minY + glyphs.minY * y,
+                          width: glyphs.width * x, height: glyphs.height * y)
+        }
+    }
+
+    /// A 2x screenshot of 14-point text on 20-point lines, 1200 x 816 pixels.
+    private static func screenshotImage() -> ScreenshotPage? {
+        let lines = ["Launch week checklist", "Release notes ship Friday", "Quarterly roadmap review",
+                     "Design sync moves to Tuesday", "Reconnect fix lands tonight", "Beta testers get builds first",
+                     "Menu bar extra slips a release", "Sidebar polish wraps Thursday"]
+        let width = 1200, height = 816
+        guard let space = CGColorSpace(name: CGColorSpace.sRGB),
+              let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+                                      space: space, bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)
+        else { return nil }
+        context.setFillColor(CGColor(srgbRed: 1, green: 1, blue: 1, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        context.setFillColor(CGColor(srgbRed: 0, green: 0, blue: 0, alpha: 1))
+        let font = CTFontCreateWithName("Helvetica" as CFString, 28, nil)
+        var glyphBounds: [CGRect] = []
+        for (index, text) in lines.enumerated() {
+            let line = CTLineCreateWithAttributedString(NSAttributedString(string: text, attributes: [
+                .font: font,
+                NSAttributedString.Key(kCTForegroundColorFromContextAttributeName as String): true,
+            ]))
+            let baseline = CGFloat(60 + index * 40)
+            context.textPosition = CGPoint(x: 60, y: CGFloat(height) - baseline)
+            CTLineDraw(line, context)
+            // Glyph bounds run up from the baseline.
+            let glyphs = CTLineGetBoundsWithOptions(line, .useGlyphPathBounds)
+            glyphBounds.append(CGRect(x: 60 + glyphs.minX, y: baseline - glyphs.maxY,
+                                      width: glyphs.width, height: glyphs.height))
+        }
+        guard let image = context.makeImage() else { return nil }
+        return ScreenshotPage(image: image, lines: lines, glyphBounds: glyphBounds)
+    }
+
+    /// The view's layer tree rendered at one pixel per point, in rows from its top.
+    private static func layerPixels(of view: NSView) -> [UInt32] {
+        let width = Int(view.bounds.width), height = Int(view.bounds.height)
+        var pixels = [UInt32](repeating: 0, count: width * height)
+        pixels.withUnsafeMutableBytes { buffer in
+            guard let layer = view.layer, let space = CGColorSpace(name: CGColorSpace.sRGB),
+                  let context = CGContext(data: buffer.baseAddress, width: width, height: height, bitsPerComponent: 8,
+                                          bytesPerRow: width * 4, space: space,
+                                          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return }
+            if view.isFlipped {
+                context.translateBy(x: 0, y: CGFloat(height))
+                context.scaleBy(x: 1, y: -1)
+            }
+            layer.render(in: context)
+        }
+        return pixels
+    }
+
+    /// The bounds of every pixel that differs between two renders, in points from the top-left.
+    private static func changedBounds(_ before: [UInt32], _ after: [UInt32], width: Int) -> CGRect? {
+        var minX = Int.max, minY = Int.max, maxX = -1, maxY = -1
+        for pixel in 0..<min(before.count, after.count) where before[pixel] != after[pixel] {
+            let x = pixel % width, y = pixel / width
+            minX = min(minX, x)
+            maxX = max(maxX, x)
+            minY = min(minY, y)
+            maxY = max(maxY, y)
+        }
+        guard maxX >= 0 else { return nil }
+        return CGRect(x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1)
     }
 }
 

@@ -59,8 +59,8 @@ final class ImageViewerLiveTextView: NSView, ImageAnalysisOverlayViewDelegate {
 
     override init(frame: NSRect) {
         super.init(frame: frame)
-        overlay.frame = bounds
-        overlay.autoresizingMask = [.width, .height]
+        // A zoomed image, and the overlay over it, runs past the canvas.
+        clipsToBounds = true
         overlay.preferredInteractionTypes = [.textSelection, .dataDetectors]
         overlay.isHidden = true
         addSubview(overlay)
@@ -94,7 +94,7 @@ final class ImageViewerLiveTextView: NSView, ImageAnalysisOverlayViewDelegate {
 
     override func layout() {
         super.layout()
-        overlay.setContentsRectNeedsUpdate()
+        overlay.frame = imageFrame
     }
 
     func present(analysis: ImageAnalysis?, in frame: CGRect, animated: Bool) {
@@ -103,7 +103,7 @@ final class ImageViewerLiveTextView: NSView, ImageAnalysisOverlayViewDelegate {
         imageFrame = frame
         if replaced { overlay.analysis = analysis }
         overlay.isHidden = analysis == nil
-        if moved { overlay.setContentsRectNeedsUpdate() }
+        if moved { overlay.frame = frame }
         guard analysis != nil, animated, moved || replaced else { return }
         // The highlights and button can't follow a SwiftUI animation, so they wait it out.
         overlay.alphaValue = 0
@@ -155,8 +155,10 @@ final class ImageViewerLiveTextView: NSView, ImageAnalysisOverlayViewDelegate {
         guard !overlay.isHidden, overlay.alphaValue > 0, overlay.analysis != nil, bounds.contains(point) else {
             return Target()
         }
-        return Target(text: overlay.hasText(at: point),
-                      control: overlay.hasInteractiveItem(at: point) || overlay.hasSupplementaryInterface(at: point),
+        // VisionKit reads points from the overlay's top-left, although the overlay isn't flipped.
+        let local = CGPoint(x: point.x - imageFrame.minX, y: point.y - imageFrame.minY)
+        return Target(text: overlay.hasText(at: local),
+                      control: overlay.hasInteractiveItem(at: local) || overlay.hasSupplementaryInterface(at: local),
                       hasSelection: overlay.hasActiveTextSelection)
     }
 
@@ -231,17 +233,12 @@ final class ImageViewerLiveTextView: NSView, ImageAnalysisOverlayViewDelegate {
 
     // MARK: ImageAnalysisOverlayViewDelegate
 
+    /// The overlay covers exactly the image, so its contents fill it. VisionKit hit-tests any other
+    /// contents rect correctly but draws the selection off by the image's size times how far the
+    /// rect's center sits from the overlay's. For a fitted image below the toolbar, that's a line above
+    /// its text.
     func contentsRect(for overlayView: ImageAnalysisOverlayView) -> CGRect {
-        Self.contentsRect(of: imageFrame, in: bounds.size)
-    }
-
-    /// The image's frame in VisionKit's unit space, which runs past the unit square when zoomed.
-    nonisolated static func contentsRect(of frame: CGRect, in size: CGSize) -> CGRect {
-        guard size.width > 0, size.height > 0, frame.width > 0, frame.height > 0 else {
-            return CGRect(x: 0, y: 0, width: 1, height: 1)
-        }
-        return CGRect(x: frame.minX / size.width, y: frame.minY / size.height,
-                      width: frame.width / size.width, height: frame.height / size.height)
+        CGRect(x: 0, y: 0, width: 1, height: 1)
     }
 
     func overlayView(_ overlayView: ImageAnalysisOverlayView, shouldHandleKeyDownEvent event: NSEvent) -> Bool {
