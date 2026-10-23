@@ -20,6 +20,31 @@ struct ShellTests {
         #expect(!options.isSnapshot)
     }
 
+    @MainActor @Test(arguments: [
+        (false, false, false), (true, false, true),
+        (false, true, false), (true, true, false),
+    ])
+    func updaterStartsOnlyWithAReleaseFeedOutsideSnapshots(hasFeedURL: Bool, isSnapshot: Bool, starts: Bool) {
+        #expect(AppUpdates.shouldStart(hasFeedURL: hasFeedURL, isSnapshot: isSnapshot) == starts)
+    }
+
+    @MainActor @Test(arguments: [false, true])
+    func developmentAndSnapshotBundlesNeverCreateAnUpdater(_ isSnapshot: Bool) throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".bundle")
+        let contents = directory.appendingPathComponent("Contents")
+        try FileManager.default.createDirectory(at: contents, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var info = ["CFBundleIdentifier": "dev.toybox.tests.no-updates", "CFBundlePackageType": "BNDL"]
+        if isSnapshot { info["SUFeedURL"] = "https://example.test/appcast.xml" }
+        let data = try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0)
+        try data.write(to: contents.appendingPathComponent("Info.plist"))
+        let bundle = try #require(Bundle(url: directory))
+        #expect((bundle.object(forInfoDictionaryKey: "SUFeedURL") != nil) == isSnapshot)
+        let updates = AppUpdates(isSnapshot: isSnapshot, bundle: bundle)
+        #expect(!updates.isRunning)
+        #expect(!updates.canCheckForUpdates)
+    }
+
     @Test func snapshotParsesEveryRequestedSurface() throws {
         let options = try LaunchOptions.parse([
             "--server", "https://example.test/toy-box",

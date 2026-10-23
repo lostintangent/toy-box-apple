@@ -93,8 +93,20 @@ struct SettingsView: View {
                 footer("When Active shows the icon while agents are working or a channel is waiting for you.")
             }
             intelligenceSection
+            updatesSection
         }
         .formStyle(.grouped)
+    }
+
+    @ViewBuilder private var updatesSection: some View {
+        if model.updates.isRunning {
+            @Bindable var updates = model.updates
+            Section("Updates") {
+                Toggle("Automatically check for updates", isOn: $updates.automaticallyChecksForUpdates)
+                Toggle("Automatically download and install updates", isOn: $updates.automaticallyDownloadsUpdates)
+                    .disabled(!updates.automaticallyChecksForUpdates || !updates.allowsAutomaticUpdates)
+            }
+        }
     }
 
     /// The on-device features. When the model can't run here, the toggles keep their values and one

@@ -55,6 +55,10 @@ struct ChannelCommands: Commands {
     @Environment(\.openWindow) private var openWindow
 
     var body: some Commands {
+        CommandGroup(after: .appInfo) {
+            Button("Check for Updates…") { model.updates.checkForUpdates() }
+                .disabled(!model.updates.canCheckForUpdates)
+        }
         CommandGroup(replacing: .newItem) {
             Button("New Channel…") {
                 if let actions { actions.newChannel() }

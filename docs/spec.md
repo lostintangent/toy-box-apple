@@ -1329,12 +1329,19 @@ live connections, namespaces drafts, then refreshes the catalog. Notifications e
 and completions before asking system permission in response to an explicit enable action.
 Permission denial shows Open System Settings, never repeated permission prompts. General also
 holds Show in menu bar and the two on-device toggles specified under Mac features beyond the pane.
+Release builds also show Updates, with "Automatically check for updates" and "Automatically
+download and install updates" bound to Sparkle's own settings. Automatic installation is disabled
+while automatic checks are off or the updater disallows it. These controls are hidden without a
+running updater. Only a bundle containing `SUFeedURL` outside snapshot mode starts the standard
+Sparkle updater, so development, validation and test bundles cannot update themselves.
 
 ### Menu and keyboard model
 
 Use native About, Settings (`Cmd-,`), Services, Hide, Quit, Edit, Window and Help menus. Standard
 text-editing shortcuts retain their native meaning. Commands below disable when inapplicable.
 Focus Composer does not discard selection or any existing draft.
+Check for Updates… follows About in the app menu and uses Sparkle's standard window. It is
+disabled whenever the updater's `canCheckForUpdates` is false, including in bundles without a feed.
 
 | Menu | Command | Shortcut |
 | --- | --- | --- |
