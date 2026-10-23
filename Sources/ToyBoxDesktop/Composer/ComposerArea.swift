@@ -358,8 +358,7 @@ private struct ChannelComposer: View {
                 notices
                 ComposerHairline()
             }
-            // The tray's popovers belong to one channel's artifacts and tasks.
-            ComposerTray(store: store).id(ObjectIdentifier(store))
+            ComposerTray(store: store)
             if !draft.images.isEmpty { ComposerImageStrip(draft: draft) }
             ZStack(alignment: .topLeading) {
                 if draft.text.isEmpty && !dictation.hasWords {

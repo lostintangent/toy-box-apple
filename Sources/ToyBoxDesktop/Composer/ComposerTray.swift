@@ -3,26 +3,49 @@ import ChannelKit
 import SwiftUI
 
 /// Artifacts, tasks and the preview above the composer input, with its own hairline. It reads only
-/// those slices of the store, so the input doesn't redraw when they change.
+/// those slices of the store, so the input doesn't redraw when they change. A switch updates it in
+/// place, since rebuilding it cost about 9 ms of every warm switch.
 struct ComposerTray: View {
     let store: ChannelStore
     @Environment(ArtifactOpener.self) private var artifactOpener
     @Environment(AppModel.self) private var model
     @Environment(\.openURL) private var openURL
     @Environment(\.windowSnapshot) private var snapshot
-    @ViewState private var showArtifacts = false
-    @ViewState private var showTasks = false
+    /// The channel whose popover is open. A popover belongs to the channel it opened in, so the
+    /// next channel's first frame shows it closed, and a switch closes it for good.
+    @ViewState private var artifactsChannel: ObjectIdentifier?
+    @ViewState private var tasksChannel: ObjectIdentifier?
 
     private var artifacts: [ChannelArtifact] { Array(store.artifacts.reversed()) }
     private var progress: TaskProgress { channelTasksProgress(store.tasks) }
+    private var showArtifacts: Binding<Bool> { presented($artifactsChannel) }
+    private var showTasks: Binding<Bool> { presented($tasksChannel) }
+
+    private func presented(_ channel: Binding<ObjectIdentifier?>) -> Binding<Bool> {
+        let id = ObjectIdentifier(store)
+        return Binding {
+            channel.wrappedValue == id
+        } set: { shown in
+            if shown {
+                channel.wrappedValue = id
+            } else if channel.wrappedValue == id {
+                channel.wrappedValue = nil
+            }
+        }
+    }
 
     var body: some View {
         let preview = store.details?.resolvedPreview
-        if Self.isVisible(artifacts: store.artifacts, tasks: store.tasks, preview: preview) {
-            VStack(spacing: 0) {
+        VStack(spacing: 0) {
+            if Self.isVisible(artifacts: store.artifacts, tasks: store.tasks, preview: preview) {
                 row(preview: preview)
                 ComposerHairline()
             }
+        }
+        // Outside the row, so a switch to a channel with no tray still closes it.
+        .onChange(of: ObjectIdentifier(store)) {
+            artifactsChannel = nil
+            tasksChannel = nil
         }
     }
 
@@ -40,25 +63,25 @@ struct ComposerTray: View {
                 }
                 .layoutPriority(-1)
                 if artifacts.count > 1 {
-                    Button { showArtifacts.toggle() } label: {
+                    Button { showArtifacts.wrappedValue.toggle() } label: {
                         Text("+\(artifacts.count - 1)").frame(minWidth: 28, minHeight: 28)
                     }
                     .accessibilityLabel("Show all \(artifacts.count) artifacts")
-                    .popover(isPresented: $showArtifacts, arrowEdge: .top) { artifactList }
+                    .popover(isPresented: showArtifacts, arrowEdge: .top) { artifactList }
                 }
             }
             Spacer(minLength: 0)
             if !store.tasks.isEmpty {
-                Button { showTasks.toggle() } label: {
+                Button { showTasks.wrappedValue.toggle() } label: {
                     Label("Tasks \(progress.done)/\(progress.total)", systemImage: "checklist")
                         .lineLimit(1)
                         .frame(minHeight: 28)
                         .fixedSize(horizontal: true, vertical: false)
                 }
-                .popover(isPresented: $showTasks, arrowEdge: .top) {
+                .popover(isPresented: showTasks, arrowEdge: .top) {
                     ComposerTasksPopover(tasks: store.tasks, agents: store.roster,
                                          artifacts: store.artifacts) { artifact in
-                        showTasks = false
+                        showTasks.wrappedValue = false
                         artifactOpener.open(artifact)
                     }
                 }
@@ -80,14 +103,14 @@ struct ComposerTray: View {
                     snapshot?.failState("composer-tasks", message: "This channel has no tasks.")
                     return
                 }
-                showTasks = true
+                showTasks.wrappedValue = true
                 snapshot?.markStateReady("composer-tasks")
             case "composer-artifacts":
                 guard artifacts.count > 1 else {
                     snapshot?.failState("composer-artifacts", message: "This channel has no additional artifacts.")
                     return
                 }
-                showArtifacts = true
+                showArtifacts.wrappedValue = true
                 snapshot?.markStateReady("composer-artifacts")
             default: break
             }
@@ -119,7 +142,7 @@ struct ComposerTray: View {
                 VStack(alignment: .leading, spacing: 2) {
                     ForEach(artifacts) { artifact in
                         Button {
-                            showArtifacts = false
+                            showArtifacts.wrappedValue = false
                             artifactOpener.open(artifact)
                         } label: {
                             HStack(spacing: 8) {
