@@ -1502,9 +1502,10 @@ whenever the set of channel names changes, so Siri learns them.
 Catch Me Up without a channel says "You're all caught up." when nothing needs you, catches up on
 the one channel that does, or gives an overview: "You have updates in 4 channels." and then one
 line for each of the first 3 in attention order (waiting, completed, unread, then most recently
-updated), such as "Studio demo is waiting for your reply.", "All tasks are completed in Docs." or
-"Design has 3 new messages.", then "There's 1 more channel with updates." A count comes from one
-history page and becomes "has new messages" when the page doesn't reach the boundary.
+updated), such as "Studio demo is waiting for your reply.", "Docs finished all its tasks." or
+"Design has 3 new messages.", then "There's 1 more channel with updates." Every line starts with
+the channel's name, because listeners catch the first word. A count comes from one history page
+and becomes "has new messages" when the page doesn't reach the boundary.
 
 For one channel, connect its shared store for the duration (live windows already have it), take
 the boundary from `seenThrough`, and answer in this order:
@@ -1512,11 +1513,11 @@ the boundary from `seenThrough`, and answer in this order:
 | Case | Answer |
 | --- | --- |
 | Nothing unread or pending | "You're all caught up in Studio demo." |
-| The transcript's summary is eligible, on and ready within 15 seconds | "Here's a summary of 27 new messages in Studio demo." Then the needs-you line (or the request quoted as below), the changes, and "All tasks are completed." unless a change already cites the completion |
+| The transcript's summary is eligible, on and ready within 15 seconds | "Here's a summary of 27 new messages in Studio demo." Then the needs-you line (or the request quoted as below), the changes, and "All tasks are done." unless a change already cites the completion |
 | Otherwise, a pending request | "Lead needs your reply in Studio demo: “[request]”" |
 | Otherwise, up to 3 unread messages from agents totaling at most 600 characters | "There's 1 new message in Studio demo." (or "There's also…" after a request), then "Ada wrote: “…”", "Moss shared an image." or "Moss shared 2 images and wrote: “…”" |
 | Otherwise | "There are 12 new messages in Studio demo, from Iris, Finch, Moss and 2 others." "at least 12" when the loaded history doesn't reach the boundary |
-| Completed since the boundary | Adds "All tasks are completed." or, alone, "All tasks are completed in Studio demo." |
+| Completed since the boundary | Adds "All tasks are done." or, alone, "Studio demo finished all its tasks." |
 
 Quotes are the message text with leading mentions dropped, Markdown flattened and inline
 mentions as names, cut at a word to 280 characters (a request keeps its start and end). The
@@ -1529,10 +1530,11 @@ Send Message trims the text and refuses an empty one before asking anything. It 
 through the channel's shared `ChannelStore` with a fresh caller-owned ID, so it joins the outbox
 and appears in an open window at once. It never retries. A rejection says "Your message to
 [channel] wasn't sent. It's waiting in the channel so you can send it again." An unconfirmed
-delivery says "Toy Box didn't confirm your message to [channel]. Open the channel to check it
-before sending again." Other errors: "Toy Box Desktop isn't connected to a server. Choose one in
-Settings.", "Toy Box isn't responding. Check that it's running, then try again." and "That
-channel isn't on your Toy Box server anymore."
+delivery says "Your Toy Box server didn't confirm your message to [channel]. Open the channel to
+see if it arrived before you send it again." Other errors: "Toy Box Desktop isn't connected to a
+server. Choose one in Settings.", "Can't connect to your Toy Box server. Check that it's running,
+then try again." and "That channel isn't on your Toy Box server anymore." Errors about the server
+always say "your Toy Box server", since "Toy Box" alone now also names the app.
 
 `script/run` generates `Contents/Resources/Metadata.appintents` by running Xcode's
 `appintentsmetadataprocessor` directly over the const values SwiftPM already emits, so it needs

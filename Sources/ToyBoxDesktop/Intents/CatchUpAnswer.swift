@@ -48,7 +48,7 @@ enum CatchUpAnswer {
             case .waiting:
                 sentences.append("\(channel.name) is waiting for your reply.")
             case .finished:
-                sentences.append("All tasks are completed in \(channel.name).")
+                sentences.append("\(channel.name) finished all its tasks.")
             case .unread, nil:
                 switch newMessages[channel.id] {
                 case let count? where count > 0:
@@ -85,7 +85,7 @@ enum CatchUpAnswer {
             // The model may already have said so from the completion event itself.
             let said = summary.catchUp.changes.contains { $0.sources.contains(channel.completedSequence ?? -1) }
             if completed, !said {
-                sentences.append("All tasks are completed.")
+                sentences.append("All tasks are done.")
             }
             return sentences.joined(separator: " ")
         }
@@ -107,7 +107,7 @@ enum CatchUpAnswer {
             }
         }
         if completed {
-            sentences.append(sentences.isEmpty ? "All tasks are completed in \(name)." : "All tasks are completed.")
+            sentences.append(sentences.isEmpty ? "\(name) finished all its tasks." : "All tasks are done.")
         }
         if sentences.isEmpty {
             return unreadAfter == nil ? caughtUp(in: name) : "There are no new messages in \(name)."

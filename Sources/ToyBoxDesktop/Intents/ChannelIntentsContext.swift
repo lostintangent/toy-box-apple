@@ -230,13 +230,13 @@ enum ChannelIntentError: Error, Equatable, CustomLocalizedStringResourceConverti
     var localizedStringResource: LocalizedStringResource {
         switch self {
         case .noServer: "Toy Box Desktop isn't connected to a server. Choose one in Settings."
-        case .unreachable: "Toy Box isn't responding. Check that it's running, then try again."
+        case .unreachable: "Can't connect to your Toy Box server. Check that it's running, then try again."
         case .channelNotFound: "That channel isn't on your Toy Box server anymore."
         case .channelDeleted(let name): "\(name) was deleted, so your message wasn't sent."
         case .emptyMessage: "There's nothing to send."
         case .notSent(let name): "Your message to \(name) wasn't sent. Try again in a moment."
         case .waitingToSend(let name): "Your message to \(name) wasn't sent. It's waiting in the channel so you can send it again."
-        case .notConfirmed(let name): "Toy Box didn't confirm your message to \(name). Open the channel to check it before sending again."
+        case .notConfirmed(let name): "Your Toy Box server didn't confirm your message to \(name). Open the channel to see if it arrived before you send it again."
         }
     }
 }

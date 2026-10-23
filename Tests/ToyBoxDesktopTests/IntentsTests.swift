@@ -61,8 +61,8 @@ struct IntentsTests {
             channel("ops", "Ops", latest: 9, seen: 2),
         ])
         #expect(CatchUpAnswer.overview(needing, newMessages: ["design": 3]) == """
-            You have updates in 4 channels. Studio demo is waiting for your reply. All tasks are completed \
-            in Docs. Design has 3 new messages. There's 1 more channel with updates.
+            You have updates in 4 channels. Studio demo is waiting for your reply. Docs finished all its \
+            tasks. Design has 3 new messages. There's 1 more channel with updates.
             """)
         #expect(CatchUpAnswer.overview(Array(needing.suffix(2)), newMessages: ["design": 0]) == """
             You have updates in 2 channels. Design has updates. Ops has new messages.
@@ -114,7 +114,7 @@ struct IntentsTests {
                               changes: [.init(text: "Ada finished the handoff.", sources: [12])], through: 15)
         #expect(answer(state, summary: (summary, 6)) == """
             Here's a summary of 6 new messages in Studio demo. Lead asked you to choose where the library \
-            sits. Ada finished the handoff. All tasks are completed.
+            sits. Ada finished the handoff. All tasks are done.
             """)
 
         let noAsk = CatchUp(needsYou: nil, changes: [.init(text: "All tasks were completed.", sources: [14])], through: 15)
@@ -126,7 +126,12 @@ struct IntentsTests {
 
     @Test func quietChannels() {
         let done = state(channel("c", "Docs", latest: 10, seen: 9, completed: 10), [event(10)])
-        #expect(answer(done) == "All tasks are completed in Docs.")
+        #expect(answer(done) == "Docs finished all its tasks.")
+        let doneWithNote = state(channel("c", "Docs", latest: 11, seen: 9, completed: 10),
+                                 [event(10), message(11, from: "ada", "Merged.")])
+        #expect(answer(doneWithNote) == """
+            There's 1 new message in Docs. Ada wrote: \u{201C}Merged.\u{201D} All tasks are done.
+            """)
         let events = state(channel("c", "Docs", latest: 10, seen: 9), [event(10)])
         #expect(answer(events) == "There are no new messages in Docs.")
         let read = state(channel("c", "Docs", latest: 10, seen: 10), [message(10, from: "ada", "Done.")])
