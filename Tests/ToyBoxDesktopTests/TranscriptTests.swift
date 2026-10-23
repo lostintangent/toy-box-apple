@@ -233,6 +233,34 @@ struct TranscriptTests {
     }
 
     @MainActor
+    @Test(arguments: [TranscriptSurface.user, .agent])
+    func bubblesGainAVisibleEdgeOnlyUnderIncreasedContrast(surface: TranscriptSurface) async throws {
+        for name in [NSAppearance.Name.aqua, .darkAqua] {
+            for contrast in [ColorSchemeContrast.standard, .increased] {
+                let bubble = Color.clear.frame(width: 80, height: 40).transcriptBubble(surface)
+                    .frame(width: 120, height: 60).background(Color(nsColor: .textBackgroundColor))
+                    .environment(\._colorSchemeContrast, contrast)
+                let bitmap = try await renderedTranscriptBitmap(bubble, size: CGSize(width: 120, height: 60),
+                                                                appearance: NSAppearance(named: name))
+                let scale = Double(bitmap.pixelsWide) / 120
+                func sample(_ x: Double) throws -> (Double, Double, Double) {
+                    let color = try #require(bitmap.colorAt(x: Int(x * scale), y: Int(30 * scale))?
+                        .usingColorSpace(.sRGB))
+                    return (color.redComponent, color.greenComponent, color.blueComponent)
+                }
+                let canvas = try sample(5), edge = try sample(20.5), inside = try sample(60)
+                let a = luminance(edge), b = luminance(canvas)
+                if contrast == .increased {
+                    #expect((max(a, b) + 0.05) / (min(a, b) + 0.05) >= 3, "\(surface) in \(name.rawValue)")
+                } else {
+                    #expect(max(abs(edge.0 - inside.0), abs(edge.1 - inside.1), abs(edge.2 - inside.2)) < 0.02,
+                            "\(surface) in \(name.rawValue)")
+                }
+            }
+        }
+    }
+
+    @MainActor
     @Test func reactionChipsHaveAtLeastTwentyEightPointTargets() {
         let view = NSHostingView(rootView:
             TranscriptReactionChip(emoji: "\u{2705}", label: "Done", reactors: []))
@@ -1694,10 +1722,12 @@ func stackTestAgents(_ colors: [String]) -> [ChannelAgent] {
 }
 
 @MainActor
-func renderedTranscriptBitmap(_ content: some View, size: CGSize) async throws -> NSBitmapImageRep {
+func renderedTranscriptBitmap(_ content: some View, size: CGSize,
+                              appearance: NSAppearance? = nil) async throws -> NSBitmapImageRep {
     let view = NSHostingView(rootView: content.frame(width: size.width, height: size.height))
     let window = NSWindow(contentRect: NSRect(origin: .zero, size: size),
                           styleMask: [.borderless], backing: .buffered, defer: false)
+    window.appearance = appearance
     window.isReleasedWhenClosed = false
     window.backgroundColor = .clear
     window.isOpaque = false

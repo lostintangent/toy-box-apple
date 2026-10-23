@@ -138,8 +138,6 @@ struct TranscriptUserMessage: View {
     var isLive = true
     @Environment(\.channelTextScale) private var textScale
 
-    @Environment(\.colorScheme) private var colorScheme
-
     var body: some View {
         TranscriptUserLane(maxWidth: TranscriptUserLane.maximumWidth * textScale) {
             VStack(alignment: .trailing, spacing: 6) {
@@ -155,12 +153,7 @@ struct TranscriptUserMessage: View {
                         .environment(\.transcriptSurface, .user)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 10)
-                        .background {
-                            ZStack {
-                                ForEach(Array(TranscriptSurface.user.fills(isDark: colorScheme == .dark)
-                                    .enumerated()), id: \.offset) { RoundedRectangle(cornerRadius: 12).fill($0.element) }
-                            }
-                        }
+                        .transcriptBubble(.user)
                 }
                 if let attachments = message.attachments, !attachments.isEmpty {
                     TranscriptAttachments(attachments: attachments, api: api, alignment: .trailing,
@@ -189,8 +182,6 @@ private struct TranscriptAgentMessage: View {
     @Binding var expandedMessageIds: Set<String>
     var onCollapse: (String) -> Void
     @Environment(\.channelTextScale) private var textScale
-    @Environment(\.colorScheme) private var colorScheme
-    @Environment(\.colorSchemeContrast) private var contrast
     @ViewState private var naturalHeight: CGFloat = 0
     @ViewState private var isHovered = false
     @FocusState private var isFocused: Bool
@@ -242,19 +233,7 @@ private struct TranscriptAgentMessage: View {
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 10)
-                .background {
-                    ZStack {
-                        ForEach(Array(surface.fills(isDark: colorScheme == .dark).enumerated()), id: \.offset) {
-                            RoundedRectangle(cornerRadius: 12).fill($0.element)
-                        }
-                    }
-                }
-                .overlay {
-                    if contrast == .increased {
-                        RoundedRectangle(cornerRadius: 12)
-                            .strokeBorder(isPending ? Color.orange : Color.primary.opacity(0.5), lineWidth: 1)
-                    }
-                }
+                .transcriptBubble(surface)
                 .overlay {
                     if isHovered || isFocused {
                         HStack(spacing: 8) {
