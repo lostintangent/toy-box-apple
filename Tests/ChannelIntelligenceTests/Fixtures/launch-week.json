@@ -1,0 +1,414 @@
+{
+ "channel": {
+  "id": "launch-week",
+  "name": "Launch week",
+  "purpose": "Ship the workshop beta to testers this week.",
+  "model": {
+   "provider": "codex",
+   "name": "gpt-5.5"
+  },
+  "tasks": [],
+  "previewUrl": "/demo-preview",
+  "latestSequence": 17,
+  "seenThrough": 17,
+  "completedSequence": null,
+  "requestSequence": 24,
+  "updatedAt": "2026-10-22T21:13:14.022Z"
+ },
+ "request": {
+  "id": "lw-024",
+  "sequence": 24,
+  "timestamp": "2026-10-20T09:24:00.000Z",
+  "sender": {
+   "type": "agent",
+   "agentId": "studio-demo"
+  },
+  "content": "Should the beta go to all 40 testers on Friday, or to the 8 internal testers first and everyone else on Monday? Reply with your choice.",
+  "request": true
+ },
+ "revision": 29,
+ "lead": {
+  "id": "studio-demo",
+  "name": "Lead",
+  "role": "Own the channel purpose and coordinate the work.",
+  "avatar": {
+   "mark": "M12 3l2.7 5.5 6.1.9-4.4 4.3 1 6.1-5.4-2.9-5.4 2.9 1-6.1-4.4-4.3 6.1-.9L12 3z",
+   "color": "#0891b2"
+  },
+  "status": {
+   "state": "waiting",
+   "text": "Waiting for Moss's review",
+   "wakeAt": "2026-10-22T16:24:49.799Z"
+  }
+ },
+ "members": [
+  {
+   "channelId": "studio-demo",
+   "id": "ada-engineer",
+   "name": "Ada",
+   "role": "Build the client connection and message flow.",
+   "avatar": {
+    "mark": "M5 5h14v14H5z M9 9h6v6H9z",
+    "color": "#de765f"
+   },
+   "status": {
+    "workingOn": 9,
+    "state": "working",
+    "text": "Checking message delivery"
+   }
+  },
+  {
+   "channelId": "studio-demo",
+   "id": "finch-researcher",
+   "name": "Finch",
+   "role": "Collect examples and investigate open questions.",
+   "avatar": {
+    "mark": "M4 17L12 4l8 13z M8 17v4 M16 17v4",
+    "color": "#d5a44e"
+   },
+   "status": {
+    "state": "waiting",
+    "text": "Waiting for the layout direction"
+   }
+  },
+  {
+   "channelId": "studio-demo",
+   "id": "iris-systems",
+   "name": "Iris",
+   "role": "Check reconnect behavior and public state boundaries.",
+   "avatar": {
+    "mark": "M12 3C3 3 3 21 12 21s9-18 0-18z M3 12h18",
+    "color": "#6fbaaa"
+   }
+  },
+  {
+   "channelId": "studio-demo",
+   "id": "juniper-integrator",
+   "name": "Juniper",
+   "role": "Connect the pieces into one coherent result.",
+   "avatar": {
+    "mark": "M3 8h8v8H3z M13 8h8v8h-8z M11 12h2",
+    "color": "#69885c"
+   }
+  },
+  {
+   "channelId": "studio-demo",
+   "id": "kit-writer",
+   "name": "Kit",
+   "role": "Make the handoffs and reference documents useful.",
+   "avatar": {
+    "mark": "M5 4h14v16H5z M8 8h8 M8 12h8 M8 16h5",
+    "color": "#b891cc"
+   }
+  },
+  {
+   "channelId": "studio-demo",
+   "id": "moss-reviewer",
+   "name": "Moss",
+   "role": "Review outcomes and verify the finished experience.",
+   "avatar": {
+    "mark": "M4 12l5 5L20 5",
+    "color": "#78a06b"
+   },
+   "status": {
+    "lookingAt": 9,
+    "state": "working",
+    "text": "Reviewing the workshop plan"
+   }
+  },
+  {
+   "channelId": "studio-demo",
+   "id": "nova-accessibility",
+   "name": "Nova",
+   "role": "Keep text and interaction clear for everyone.",
+   "avatar": {
+    "mark": "M12 3v18 M3 12h18 M5 5l14 14 M19 5L5 19",
+    "color": "#d0896c"
+   }
+  },
+  {
+   "channelId": "studio-demo",
+   "id": "pixel-designer",
+   "name": "Pixel",
+   "role": "Shape the workshop and its shared surfaces.",
+   "avatar": {
+    "mark": "M12 3l9 9-9 9-9-9z",
+    "color": "#9d85bf"
+   },
+   "status": {
+    "workingOn": 9,
+    "state": "working",
+    "text": "Arranging the shared workspace"
+   }
+  }
+ ],
+ "messages": [
+  {
+   "id": "lw-001",
+   "sequence": 1,
+   "timestamp": "2026-10-20T09:01:00.000Z",
+   "sender": {
+    "type": "agent",
+    "agentId": "studio-demo"
+   },
+   "content": "@ada @moss Before the beta goes out, please make reconnects reliable and get a review on the read receipts."
+  },
+  {
+   "id": "lw-002",
+   "sequence": 2,
+   "timestamp": "2026-10-20T09:02:00.000Z",
+   "sender": {
+    "type": "user"
+   },
+   "content": "Thanks, I'll check back this afternoon."
+  },
+  {
+   "id": "lw-003",
+   "sequence": 3,
+   "timestamp": "2026-10-20T09:03:00.000Z",
+   "sender": {
+    "type": "agent",
+    "agentId": "ada-engineer"
+   },
+   "content": "On it."
+  },
+  {
+   "id": "lw-004",
+   "sequence": 4,
+   "timestamp": "2026-10-20T09:04:00.000Z",
+   "sender": {
+    "type": "agent",
+    "agentId": "ada-engineer"
+   },
+   "content": "Reconnects now back off exponentially and cap at 30 seconds between attempts. After a reconnect the client asks for everything after its last sequence, so nothing is lost or shown twice. I tested it by killing the server 20 times during a busy transcript, and every message arrived exactly once."
+  },
+  {
+   "id": "lw-005",
+   "sequence": 5,
+   "timestamp": "2026-10-20T09:05:00.000Z",
+   "sender": {
+    "type": "agent",
+    "agentId": "moss-reviewer"
+   },
+   "content": "@ada Looking at the read receipts now."
+  },
+  {
+   "id": "lw-006",
+   "sequence": 6,
+   "timestamp": "2026-10-20T09:06:00.000Z",
+   "sender": {
+    "type": "agent",
+    "agentId": "moss-reviewer"
+   },
+   "content": "@ada I found a real bug. With two tabs open, the older tab can send a lower read position after the newer one, so the unread count jumps back up. Steps: open the channel in two tabs, read to the end in the second, then scroll in the first. The badge shows 6 unread again."
+  },
+  {
+   "id": "lw-007",
+   "sequence": 7,
+   "timestamp": "2026-10-20T09:07:00.000Z",
+   "sender": {
+    "type": "agent",
+    "agentId": "ada-engineer"
+   },
+   "content": "@moss Good catch. Read positions now only move forward on the server and in the client, so an older tab can't lower them. I added a test with two clients racing."
+  },
+  {
+   "id": "lw-008",
+   "sequence": 8,
+   "timestamp": "2026-10-20T09:08:00.000Z",
+   "sender": {
+    "type": "agent",
+    "agentId": "moss-reviewer"
+   },
+   "content": "@ada Verified with two and three tabs. The badge stays at zero. Approved."
+  },
+  {
+   "id": "lw-009",
+   "sequence": 9,
+   "timestamp": "2026-10-20T09:09:00.000Z",
+   "sender": {
+    "type": "system"
+   },
+   "content": {
+    "type": "artifact_shared",
+    "actor": {
+     "type": "agent",
+     "agentId": "pixel-designer"
+    },
+    "artifact": {
+     "file": {
+      "kind": "session",
+      "sessionId": "pixel-designer",
+      "path": "Sidebar redesign.md"
+     },
+     "title": "Sidebar redesign",
+     "id": "session:pixel-designer:Sidebar redesign.md",
+     "url": "/api/serve/pixel-designer/Sidebar%20redesign.md"
+    }
+   }
+  },
+  {
+   "id": "lw-010",
+   "sequence": 10,
+   "timestamp": "2026-10-20T09:10:00.000Z",
+   "sender": {
+    "type": "agent",
+    "agentId": "pixel-designer"
+   },
+   "content": "The sidebar redesign is in the shared file. Channels are grouped into Waiting for You, Working and Recent, and an unread channel gets a small accent dot instead of a bold title. I attached the light and dark versions.",
+   "attachments": [
+    {
+     "name": "sidebar-light.png"
+    },
+    {
+     "name": "sidebar-dark.png"
+    }
+   ]
+  },
+  {
+   "id": "lw-011",
+   "sequence": 11,
+   "timestamp": "2026-10-20T09:11:00.000Z",
+   "sender": {
+    "type": "agent",
+    "agentId": "kit-writer"
+   },
+   "content": "Thanks Pixel, looks great."
+  },
+  {
+   "id": "lw-012",
+   "sequence": 12,
+   "timestamp": "2026-10-20T09:12:00.000Z",
+   "sender": {
+    "type": "agent",
+    "agentId": "iris-systems"
+   },
+   "content": "@kit Thanks!"
+  },
+  {
+   "id": "lw-013",
+   "sequence": 13,
+   "timestamp": "2026-10-20T09:13:00.000Z",
+   "sender": {
+    "type": "agent",
+    "agentId": "nova-access"
+   },
+   "content": "I audited the redesign with VoiceOver. Three problems: reaction chips have no labels, the accent dot isn't announced, and the Working group header is read twice. I filed all three for Pixel."
+  },
+  {
+   "id": "lw-014",
+   "sequence": 14,
+   "timestamp": "2026-10-20T09:14:00.000Z",
+   "sender": {
+    "type": "agent",
+    "agentId": "pixel-designer"
+   },
+   "content": "@nova Thanks. I'll fix the labels and the duplicate header today. For the dot, VoiceOver will say \"unread\" after the channel name."
+  },
+  {
+   "id": "lw-015",
+   "sequence": 15,
+   "timestamp": "2026-10-20T09:15:00.000Z",
+   "sender": {
+    "type": "agent",
+    "agentId": "kit-writer"
+   },
+   "content": "The Getting Started guide is rewritten for the beta. It now covers creating a channel, adding agents and answering requests, with one screenshot per step."
+  },
+  {
+   "id": "lw-016",
+   "sequence": 16,
+   "timestamp": "2026-10-20T09:16:00.000Z",
+   "sender": {
+    "type": "agent",
+    "agentId": "juniper-research"
+   },
+   "content": "From the five tester interviews: four people asked for a keyboard shortcut to jump to the next unread channel, and two were confused that closing the window doesn't quit the app."
+  },
+  {
+   "id": "lw-017",
+   "sequence": 17,
+   "timestamp": "2026-10-20T09:17:00.000Z",
+   "sender": {
+    "type": "agent",
+    "agentId": "finch-integration"
+   },
+   "content": "Integration build is green on main. All 245 tests pass, and the signed beta build installs cleanly on a fresh Mac."
+  },
+  {
+   "id": "lw-018",
+   "sequence": 18,
+   "timestamp": "2026-10-20T09:18:00.000Z",
+   "sender": {
+    "type": "agent",
+    "agentId": "iris-systems"
+   },
+   "content": "Status: still checking reconnect behavior."
+  },
+  {
+   "id": "lw-019",
+   "sequence": 19,
+   "timestamp": "2026-10-20T09:19:00.000Z",
+   "sender": {
+    "type": "agent",
+    "agentId": "iris-systems"
+   },
+   "content": "Status: still checking reconnect behavior."
+  },
+  {
+   "id": "lw-020",
+   "sequence": 20,
+   "timestamp": "2026-10-20T09:20:00.000Z",
+   "sender": {
+    "type": "agent",
+    "agentId": "iris-systems"
+   },
+   "content": "Status: still checking reconnect behavior."
+  },
+  {
+   "id": "lw-021",
+   "sequence": 21,
+   "timestamp": "2026-10-20T09:21:00.000Z",
+   "sender": {
+    "type": "agent",
+    "agentId": "iris-systems"
+   },
+   "content": "Reconnect checks are done. Public state stays consistent across 50 forced disconnects, and no private fields leak into the snapshot."
+  },
+  {
+   "id": "lw-022",
+   "sequence": 22,
+   "timestamp": "2026-10-20T09:22:00.000Z",
+   "sender": {
+    "type": "agent",
+    "agentId": "studio-demo"
+   },
+   "content": "Decision: we ship the beta on Friday. The menu bar extra moves to the next release, because the sidebar fixes matter more for first impressions."
+  },
+  {
+   "id": "lw-023",
+   "sequence": 23,
+   "timestamp": "2026-10-20T09:23:00.000Z",
+   "sender": {
+    "type": "system"
+   },
+   "content": {
+    "type": "tasks_completed"
+   }
+  },
+  {
+   "id": "lw-024",
+   "sequence": 24,
+   "timestamp": "2026-10-20T09:24:00.000Z",
+   "sender": {
+    "type": "agent",
+    "agentId": "studio-demo"
+   },
+   "content": "Should the beta go to all 40 testers on Friday, or to the 8 internal testers first and everyone else on Monday? Reply with your choice.",
+   "request": true
+  }
+ ],
+ "artifacts": [],
+ "routines": [],
+ "presence": {}
+}

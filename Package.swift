@@ -7,12 +7,14 @@ let package = Package(
     products: [
         .library(name: "ChannelKit", targets: ["ChannelKit"]),
         .library(name: "ChannelClient", targets: ["ChannelClient"]),
+        .library(name: "ChannelIntelligence", targets: ["ChannelIntelligence"]),
         .executable(name: "ToyBoxChannels", targets: ["ToyBoxChannels"]),
     ],
     targets: [
         .target(name: "ChannelKit"),
         .target(name: "ChannelClient", dependencies: ["ChannelKit"]),
-        .executableTarget(name: "ToyBoxChannels", dependencies: ["ChannelKit", "ChannelClient"]),
+        .target(name: "ChannelIntelligence", dependencies: ["ChannelKit"]),
+        .executableTarget(name: "ToyBoxChannels", dependencies: ["ChannelKit", "ChannelClient", "ChannelIntelligence"]),
         .testTarget(
             name: "ChannelKitTests",
             dependencies: ["ChannelKit"],
@@ -20,5 +22,10 @@ let package = Package(
         ),
         .testTarget(name: "ChannelClientTests", dependencies: ["ChannelClient"]),
         .testTarget(name: "ToyBoxChannelsTests", dependencies: ["ToyBoxChannels"]),
+        .testTarget(
+            name: "ChannelIntelligenceTests",
+            dependencies: ["ChannelIntelligence"],
+            resources: [.copy("Fixtures")]
+        ),
     ]
 )
