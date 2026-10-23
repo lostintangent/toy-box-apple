@@ -1,0 +1,573 @@
+import ChannelClient
+import ChannelKit
+import SwiftUI
+
+struct TranscriptRowContent: View {
+    let row: TranscriptRow
+    let state: ChannelState
+    let store: ChannelStore
+    let highlightedSequence: Int?
+    @Binding var expandedMessageIds: Set<String>
+    var onCollapse: (String) -> Void
+    @Environment(ChannelInteraction.self) private var interaction
+    @Environment(\.channelTextScale) private var textScale
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            if let divider = row.divider { TranscriptRule(divider: divider) }
+            switch row.content {
+            case .user(let message):
+                TranscriptUserMessage(message: message, state: state, api: store.api, isLive: store.phase.isLive)
+                    .transcriptMessageFrame(id: message.id, sequence: message.sequence,
+                                            historyStart: state.messages.first?.sequence ?? 0)
+                    .id(message.id)
+            case .agent(let agentId, let entries):
+                let agent = channelAgentIdentity(state.agents, id: agentId)
+                HStack(alignment: .top, spacing: 12) {
+                    AgentAvatarView(agent: agent, size: 32)
+                    VStack(alignment: .leading, spacing: 8) {
+                        ForEach(entries) { entry in
+                            TranscriptAgentMessage(entry: entry, agent: agent, state: state,
+                                                   api: store.api, interaction: interaction,
+                                                   isLive: store.phase.isLive,
+                                                   expandedMessageIds: $expandedMessageIds,
+                                                   onCollapse: onCollapse)
+                                .background(highlightedSequence == entry.message.sequence
+                                            ? Color.accentColor.opacity(0.09) : .clear,
+                                            in: RoundedRectangle(cornerRadius: 12))
+                                .transcriptMessageFrame(id: entry.message.id, sequence: entry.message.sequence,
+                                                        historyStart: state.messages.first?.sequence ?? 0)
+                                .id(entry.message.id)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            case .system(let messages):
+                TranscriptSystemMessages(messages: messages, state: state, api: store.api)
+                    .transcriptMessageFrame(id: messages.first?.system?.type == "artifact_shared"
+                                            ? "system-group-\(row.id)" : row.id,
+                                            sequence: messages.first?.system?.type == "artifact_shared"
+                                            ? 0 : messages.map(\.sequence).max() ?? 0,
+                                            historyStart: state.messages.first?.sequence ?? 0)
+                    .id(row.id)
+            }
+        }
+    }
+}
+
+private struct TranscriptRule: View {
+    let divider: TranscriptDivider
+    @Environment(\.channelTextScale) private var textScale
+
+    var body: some View {
+        VStack(spacing: 6) {
+            if let day = divider.day {
+                Text(transcriptDayLabel(day))
+                    .font(.system(size: 11 * textScale, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, minHeight: 16 * textScale)
+            }
+            if divider.unread {
+                HStack(spacing: 6) {
+                    Rectangle().fill(Color.blue.opacity(0.7)).frame(height: 1)
+                    Text("New")
+                        .font(.system(size: 11 * textScale, weight: .semibold))
+                        .foregroundStyle(.blue)
+                }
+                .frame(minHeight: 16 * textScale)
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(transcriptDividerAccessibilityLabel(divider))
+        .accessibilityAddTraits(divider.day == nil ? [] : .isHeader)
+    }
+}
+
+func transcriptDividerAccessibilityLabel(_ divider: TranscriptDivider, now: Date = .now) -> String {
+    [divider.day.map { transcriptDayLabel($0, now: now) }, divider.unread ? "New messages" : nil]
+        .compactMap { $0 }.joined(separator: ", ")
+}
+
+/// System rows that directly follow another system row without a divider, which stack 4 points
+/// apart as one group instead of taking the 20-point run spacing.
+func transcriptStackedSystemRowIDs(_ rows: [TranscriptRow]) -> Set<String> {
+    var stacked: Set<String> = []
+    for (previous, row) in zip(rows, rows.dropFirst()) where row.divider == nil {
+        if case .system = previous.content, case .system = row.content { stacked.insert(row.id) }
+    }
+    return stacked
+}
+
+struct TranscriptUserMessage: View {
+    let message: ChannelMessage
+    let state: ChannelState
+    let api: ChannelAPI
+    var deliveryLabel: String?
+    var isLive = true
+    @Environment(\.channelTextScale) private var textScale
+
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        TranscriptUserLane(maxWidth: TranscriptUserLane.maximumWidth * textScale) {
+            VStack(alignment: .trailing, spacing: 6) {
+                HStack(spacing: 8) {
+                    Text("You").fontWeight(.semibold)
+                    TranscriptTimestamp(timestamp: message.timestamp)
+                    if let deliveryLabel { Text(deliveryLabel).foregroundStyle(.secondary) }
+                }
+                .font(.system(size: 11 * textScale))
+                .accessibilityHidden(true)
+                if !message.text.isEmpty {
+                    TranscriptMarkdown(content: message.text, agents: state.agents, baseURL: api.baseURL)
+                        .environment(\.transcriptSurface, .user)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
+                        .background {
+                            ZStack {
+                                ForEach(Array(TranscriptSurface.user.fills(isDark: colorScheme == .dark)
+                                    .enumerated()), id: \.offset) { RoundedRectangle(cornerRadius: 12).fill($0.element) }
+                            }
+                        }
+                }
+                if let attachments = message.attachments, !attachments.isEmpty {
+                    TranscriptAttachments(attachments: attachments, api: api, alignment: .trailing,
+                                          source: ImageViewer.Source(message: message, state: state))
+                }
+                TranscriptReactions(message: message, state: state, isLive: isLive)
+            }
+        }
+        .contextMenu {
+            Button("Copy Message", systemImage: "doc.on.doc") { TranscriptClipboard.copy(message.text) }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(transcriptMessageAccessibilityLabel(
+            author: "You", timestamp: message.timestamp, delivery: deliveryLabel))
+        .accessibilityAction(named: "Copy Message") { TranscriptClipboard.copy(message.text) }
+    }
+}
+
+private struct TranscriptAgentMessage: View {
+    let entry: AgentRunEntry
+    let agent: ChannelAgent
+    let state: ChannelState
+    let api: ChannelAPI
+    let interaction: ChannelInteraction
+    let isLive: Bool
+    @Binding var expandedMessageIds: Set<String>
+    var onCollapse: (String) -> Void
+    @Environment(\.channelTextScale) private var textScale
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.colorSchemeContrast) private var contrast
+    @ViewState private var naturalHeight: CGFloat = 0
+    @ViewState private var isHovered = false
+    @FocusState private var isFocused: Bool
+
+    private var expanded: Bool { expandedMessageIds.contains(entry.id) }
+    private var isClamped: Bool { entry.collapsible && !expanded && naturalHeight > 160 }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if entry.showHeader { header.accessibilityHidden(true) }
+            if !entry.body.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    TranscriptMarkdown(content: entry.body, agents: state.agents, baseURL: api.baseURL)
+                        .environment(\.transcriptSurface, surface)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .onGeometryChange(for: CGFloat.self, of: \.size.height) { naturalHeight = $0 }
+                        .frame(height: isClamped ? 160 : nil, alignment: .top)
+                        .clipped()
+                        .mask(alignment: .bottom) {
+                            if isClamped {
+                                VStack(spacing: 0) {
+                                    Rectangle()
+                                    LinearGradient(colors: [.black, .clear], startPoint: .top, endPoint: .bottom)
+                                        .frame(height: 24)
+                                }
+                            } else { Rectangle() }
+                        }
+                    if entry.collapsible && naturalHeight > 160 {
+                        Button(expanded ? "Show Less" : "Show More") {
+                            if expanded {
+                                expandedMessageIds.remove(entry.id)
+                                onCollapse(entry.id)
+                            }
+                            else { expandedMessageIds.insert(entry.id) }
+                        }
+                            .buttonStyle(.borderless)
+                            .font(.system(size: 12 * textScale))
+                    }
+                    if isPending && agent.deleted != true {
+                        Button("Reply", systemImage: "arrowshape.turn.up.left") {
+                            interaction.reply(to: agent)
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .font(.system(size: 11 * textScale))
+                        .help("Reply to \(agent.name)")
+                        .padding(.top, 4)
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .background {
+                    ZStack {
+                        ForEach(Array(surface.fills(isDark: colorScheme == .dark).enumerated()), id: \.offset) {
+                            RoundedRectangle(cornerRadius: 12).fill($0.element)
+                        }
+                    }
+                }
+                .overlay {
+                    if contrast == .increased {
+                        RoundedRectangle(cornerRadius: 12)
+                            .strokeBorder(isPending ? Color.orange : Color.primary.opacity(0.5), lineWidth: 1)
+                    }
+                }
+                .overlay {
+                    if isHovered || isFocused {
+                        HStack(spacing: 8) {
+                            if agent.deleted != true {
+                                Button("Reply", systemImage: "arrowshape.turn.up.left") {
+                                    interaction.reply(to: agent)
+                                }
+                                .help("Reply to \(agent.name)")
+                            }
+                            Button("Copy Message", systemImage: "doc.on.doc") {
+                                TranscriptClipboard.copy(entry.message.text)
+                            }
+                            .help("Copy message")
+                        }
+                        .labelStyle(.iconOnly)
+                        .buttonStyle(.borderless)
+                        .padding(6)
+                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 7))
+                        .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(.separator, lineWidth: 0.5))
+                        .fixedSize()
+                        .modifier(TranscriptHoverActionsPlacement())
+                    }
+                }
+                .transcriptWidthCap(TranscriptWidthCap.agentSurface * textScale)
+            }
+            if let attachments = entry.message.attachments, !attachments.isEmpty {
+                TranscriptAttachments(attachments: attachments, api: api,
+                                      source: ImageViewer.Source(message: entry.message, state: state))
+            }
+            TranscriptReactions(message: entry.message, state: state, isLive: isLive)
+        }
+        .onHover { isHovered = $0 }
+        .focusable()
+        .focused($isFocused)
+        .focusEffectDisabled()
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(transcriptMessageAccessibilityLabel(
+            author: agent.name, timestamp: entry.message.timestamp,
+            addressee: entry.addressee, request: entry.request))
+        .accessibilityActions {
+            if agent.deleted != true {
+                Button("Reply") { interaction.reply(to: agent) }
+            }
+            Button("Copy Message") { TranscriptClipboard.copy(entry.message.text) }
+        }
+        .contextMenu {
+            if agent.deleted != true {
+                Button("Reply to \(agent.name)", systemImage: "arrowshape.turn.up.left") {
+                    interaction.reply(to: agent)
+                }
+                Button("Mention \(agent.name)", systemImage: "at") { interaction.reply(to: agent) }
+            }
+            Button("Copy Message", systemImage: "doc.on.doc") {
+                TranscriptClipboard.copy(entry.message.text)
+            }
+        }
+    }
+
+    private var header: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) { headerItems }
+            VStack(alignment: .leading, spacing: 4) { headerItems }
+        }
+        .font(.system(size: 11 * textScale))
+    }
+
+    @ViewBuilder
+    private var headerItems: some View {
+        if entry.startsRun {
+            if agent.deleted == true {
+                Text(agent.name).font(.system(size: 12 * textScale, weight: .semibold)).italic()
+            } else {
+                Text(agent.name).font(.system(size: 12 * textScale, weight: .semibold))
+            }
+        }
+
+        if let addressee = entry.addressee {
+            Label(addressee, systemImage: "arrow.right").foregroundStyle(.secondary)
+                .lineLimit(1).help("To \(addressee)")
+        }
+        TranscriptTimestamp(timestamp: entry.message.timestamp)
+        if let request = entry.request {
+            Label {
+                Text(request == .pending ? "Needs your reply" : "Replied")
+                    .fontWeight(request == .pending ? .medium : nil)
+                    .foregroundStyle(request == .pending ? Color.primary : .secondary)
+            } icon: {
+                Image(systemName: request == .pending ? "questionmark.bubble.fill" : "checkmark")
+                    .foregroundStyle(request == .pending ? Color.orange : .secondary)
+            }
+            .fixedSize()
+        }
+    }
+
+    private var isPending: Bool { entry.request == .pending }
+    private var surface: TranscriptSurface { isPending ? .pendingAgent : .agent }
+}
+
+/// Floats hover actions over a bubble's top trailing corner, but never past its leading edge, so
+/// they stay over the bubble that fits a short message instead of covering the avatar.
+private struct TranscriptHoverActionsPlacement: ViewModifier {
+    func body(content: Content) -> some View {
+        TranscriptHoverActionsLayout { content }
+    }
+}
+
+struct TranscriptHoverActionsLayout: Layout {
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        proposal.replacingUnspecifiedDimensions()
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        guard let actions = subviews.first else { return }
+        let size = actions.sizeThatFits(.unspecified)
+        let x = max(bounds.minX, bounds.maxX - 8 - size.width)
+        actions.place(at: CGPoint(x: x, y: bounds.minY - 12), proposal: ProposedViewSize(size))
+    }
+}
+
+/// Wraps content at a readable line without stretching it there, so a surface still hugs a short
+/// message and a wider lane adds air rather than longer lines.
+struct TranscriptWidthCap: Layout {
+    /// About 115 characters of body text at the default Text Size.
+    static let agentSurface: CGFloat = 760
+    var maxWidth: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        subviews.first?.sizeThatFits(capped(proposal)) ?? .zero
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        subviews.first?.place(at: bounds.origin, proposal: capped(proposal))
+    }
+
+    private func capped(_ proposal: ProposedViewSize) -> ProposedViewSize {
+        ProposedViewSize(width: min(proposal.width ?? maxWidth, maxWidth), height: proposal.height)
+    }
+}
+
+extension View {
+    func transcriptWidthCap(_ maxWidth: CGFloat) -> some View {
+        TranscriptWidthCap(maxWidth: maxWidth) { self }
+    }
+}
+
+/// Pins your messages to the trailing edge, hugging them up to 80% of the lane or `maxWidth`.
+struct TranscriptUserLane: Layout {
+    static let maximumWidth: CGFloat = 640
+    var maxWidth: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let width = proposal.width ?? 600
+        let size = subviews.first?.sizeThatFits(contentProposal(width)) ?? .zero
+        return CGSize(width: width, height: size.height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        guard let content = subviews.first else { return }
+        let proposal = contentProposal(bounds.width)
+        let size = content.sizeThatFits(proposal)
+        content.place(at: CGPoint(x: bounds.maxX - size.width, y: bounds.minY), proposal: proposal)
+    }
+
+    private func contentProposal(_ width: CGFloat) -> ProposedViewSize {
+        ProposedViewSize(width: min(width * 0.8, maxWidth), height: nil)
+    }
+}
+
+private struct TranscriptTimestamp: View {
+    let timestamp: String
+
+    var body: some View {
+        if let date = ChannelDates.date(timestamp) {
+            Text(date, format: .dateTime.hour().minute())
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
+                .help(date.formatted(date: .complete, time: .complete))
+        }
+    }
+}
+
+func transcriptMessageAccessibilityLabel(author: String, timestamp: String, addressee: String? = nil,
+                                         request: ChannelRequestState? = nil, delivery: String? = nil) -> String {
+    [author, ChannelDates.date(timestamp)?.formatted(date: .abbreviated, time: .shortened) ?? timestamp,
+     addressee.map { "To \($0)" },
+     request.map { $0 == .pending ? "Needs your reply" : "Replied" }, delivery]
+        .compactMap { $0 }
+        .joined(separator: ", ")
+}
+
+struct TranscriptReactions: View {
+    let message: ChannelMessage
+    let state: ChannelState
+    let isLive: Bool
+
+    private var groups: [(reaction: String, agents: [ChannelAgent])] {
+        let reactions = channelMessageReactions(message, agents: state.agents,
+                                                 presence: isLive ? state.presence : [:])
+        var order: [String] = []
+        var grouped: [String: [ChannelAgent]] = [:]
+        for entry in reactions {
+            if grouped[entry.reaction] == nil { order.append(entry.reaction) }
+            grouped[entry.reaction, default: []].append(channelAgentIdentity(state.agents, id: entry.agentId))
+        }
+        return order.map { ($0, grouped[$0] ?? []) }
+    }
+
+    var body: some View {
+        if !groups.isEmpty {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 4) { chips }
+                VStack(alignment: .leading, spacing: 4) { chips }
+            }
+        }
+    }
+
+    private var chips: some View {
+        ForEach(groups, id: \.reaction) { group in
+            let presentation = Self.presentation(group.reaction)
+            TranscriptReactionChip(emoji: presentation.emoji, label: presentation.label, reactors: group.agents)
+        }
+    }
+
+    private static func presentation(_ reaction: String) -> (emoji: String, label: String) {
+        switch reaction {
+        case "looking": ("\u{1f440}", "Looking")
+        case "working": ("\u{1f3c3}", "In progress")
+        case "done": ("\u{2705}", "Done")
+        case "agree": ("\u{1f44d}", "Agreed")
+        case "celebrate": ("\u{1f389}", "Celebrated")
+        case "love": ("\u{2764}\u{fe0f}", "Loved this")
+        case "laugh": ("\u{1f602}", "Laughed")
+        default: ("\u{2022}", reaction)
+        }
+    }
+}
+
+struct TranscriptReactionChip: View {
+    let emoji: String
+    let label: String
+    let reactors: [ChannelAgent]
+    @ViewState private var showsReactors = false
+
+    var body: some View {
+        Button {
+            showsReactors.toggle()
+        } label: {
+            HStack(spacing: 4) {
+                Text(emoji)
+                ForEach(reactors.prefix(3)) { agent in AgentAvatarView(agent: agent, size: 14) }
+                if reactors.count > 3 { Text("+\(reactors.count - 3)").monospacedDigit() }
+            }
+            .font(.system(size: 11))
+            .padding(.horizontal, 6)
+            .frame(height: 24)
+            .background(.quaternary.opacity(0.5), in: Capsule())
+            .overlay(Capsule().strokeBorder(.separator, lineWidth: 0.5))
+            .frame(minWidth: 28, minHeight: 28)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("\(label): \(reactors.map(\.name).joined(separator: ", "))")
+        .accessibilityLabel("\(label): \(reactors.map(\.name).joined(separator: ", "))")
+        .accessibilityAction(named: "Show reactors") { showsReactors = true }
+        .popover(isPresented: $showsReactors) {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("\(emoji) \(label)").font(.headline)
+                ForEach(reactors) { agent in
+                    HStack(spacing: 8) {
+                        AgentAvatarView(agent: agent, size: 20)
+                        Text(agent.name).textSelection(.enabled)
+                    }
+                }
+            }
+            .padding(14)
+            .frame(minWidth: 180, maxWidth: 280, alignment: .leading)
+        }
+    }
+}
+
+struct TranscriptWorkingRow: View {
+    let state: ChannelState
+    let isLive: Bool
+    @ViewState private var showsDetails = false
+    @Environment(\.channelTextScale) private var textScale
+
+    private var working: [ChannelAgent] {
+        isLive ? state.agents.filter { state.presence[$0.id]?.state == "working" } : []
+    }
+
+    var body: some View {
+        if !working.isEmpty {
+            Button {
+                showsDetails.toggle()
+            } label: {
+                ViewThatFits(in: .horizontal) {
+                    summary(avatarLimit: 3, compact: false)
+                    summary(avatarLimit: 1, compact: true)
+                }
+            }
+            .buttonStyle(.plain)
+            .glassEffect(.regular.interactive(), in: .capsule)
+            .help(working.map(\.name).joined(separator: ", "))
+            .accessibilityLabel(working.count == 1 ? "\(working[0].name) is working"
+                                 : "\(working.count) agents are working")
+            .accessibilityHint("Show current work details")
+            .popover(isPresented: $showsDetails, arrowEdge: .top) {
+                VStack(alignment: .leading, spacing: 14) {
+                    Text("Working Now").font(.headline)
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 14) {
+                            ForEach(working) { agent in
+                                HStack(alignment: .top, spacing: 10) {
+                                    AgentAvatarView(agent: agent, size: 24)
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        Text(agent.name).fontWeight(.medium)
+                                        Text(state.presence[agent.id]?.text ?? "Working")
+                                            .foregroundStyle(.secondary).textSelection(.enabled)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    .frame(maxHeight: 360)
+                }
+                .font(.system(size: 12 * textScale))
+                .padding(16)
+                .frame(width: 300, alignment: .leading)
+            }
+        }
+    }
+
+    private func summary(avatarLimit: Int, compact: Bool) -> some View {
+        HStack(spacing: 6) {
+            AgentAvatarStack(agents: working, size: 20, limit: avatarLimit, showsOverflow: false)
+                .accessibilityHidden(true)
+            Text(compact ? "\(working.count) working"
+                 : working.count == 1 ? "\(working[0].name) is working" : "\(working.count) agents are working")
+                .font(.system(size: 12 * textScale, weight: .medium))
+                .foregroundStyle(.primary)
+        }
+        .padding(4)
+        .padding(.trailing, 8)
+        .frame(minHeight: 28)
+        .contentShape(Capsule())
+        .fixedSize()
+    }
+}

@@ -58,6 +58,30 @@ public func channelTasksProgress(_ tasks: [ChannelTask]) -> TaskProgress {
     TaskProgress(done: tasks.filter { $0.status == "done" }.count, total: tasks.count)
 }
 
+public struct ChannelArtifactShare: Equatable, Sendable {
+    public let actor: ChannelMessageSender?
+    public let sharedAt: String
+    public let sequence: Int
+
+    public init(actor: ChannelMessageSender?, sharedAt: String, sequence: Int) {
+        self.actor = actor
+        self.sharedAt = sharedAt
+        self.sequence = sequence
+    }
+}
+
+public func channelArtifactShares(_ messages: [ChannelMessage]) -> [String: ChannelArtifactShare] {
+    var shares: [String: ChannelArtifactShare] = [:]
+    for message in messages {
+        guard message.isSystem, let system = message.system,
+              system.type == "artifact_shared", let artifact = system.artifact else { continue }
+        let id = artifact.file.id
+        if let existing = shares[id], existing.sequence >= message.sequence { continue }
+        shares[id] = .init(actor: system.actor, sharedAt: message.timestamp, sequence: message.sequence)
+    }
+    return shares
+}
+
 public func unassignChannelTasks(_ tasks: [ChannelTask], agentId: String) -> [ChannelTask] {
     tasks.map { task in
         var next = task
@@ -76,6 +100,27 @@ public func agentHandleFromName(_ name: String) -> String {
     let truncated = String(normalized.prefix(48)).trimmingCharacters(in: CharacterSet(charactersIn: "-"))
     if truncated == "everyone" { return "everyone-agent" }
     return truncated.isEmpty ? "teammate" : truncated
+}
+
+public func agentMatchesMentionQuery(_ agent: ChannelAgent, query: String) -> Bool {
+    let normalized = query.lowercased()
+    return normalized.isEmpty || [agentHandleFromName(agent.name), agent.name, agent.role ?? ""]
+        .contains { $0.lowercased().contains(normalized) }
+}
+
+public func channelMessageReactions(_ message: ChannelMessage, agents: [ChannelAgent],
+                                   presence: [String: ChannelAgentPresence]) -> [ChannelReaction] {
+    var reactions = message.reactions ?? []
+    for agent in agents {
+        guard presence[agent.id]?.state == "working", agent.status?.state == "working" else { continue }
+        if agent.status?.lookingAt == message.sequence {
+            reactions.append(.init(agentId: agent.id, reaction: "looking"))
+        }
+        if agent.status?.workingOn == message.sequence {
+            reactions.append(.init(agentId: agent.id, reaction: "working"))
+        }
+    }
+    return reactions
 }
 
 public struct AgentMentions: Equatable, Sendable {

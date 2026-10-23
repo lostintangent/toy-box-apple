@@ -26,6 +26,7 @@ final class MockTransport: Sendable {
     struct State {
         var requests: [URLRequest] = []
         var stops = 0
+        var pending: [ObjectIdentifier: MockURLProtocol] = [:]
     }
     let state = Mutex(State())
     let handler: Handler
@@ -35,6 +36,18 @@ final class MockTransport: Sendable {
 
     var requests: [URLRequest] { state.withLock { $0.requests } }
     var stops: Int { state.withLock { $0.stops } }
+    var pendingResponseCount: Int { state.withLock { $0.pending.count } }
+
+    @discardableResult
+    func finishPendingResponses() -> Int {
+        let pending = state.withLock { state in
+            let pending = Array(state.pending.values)
+            state.pending.removeAll()
+            return pending
+        }
+        for response in pending { response.client?.urlProtocolDidFinishLoading(response) }
+        return pending.count
+    }
 
     func response(for request: URLRequest) throws -> MockResponse {
         let count = state.withLock { state in
@@ -72,21 +85,48 @@ final class MockURLProtocol: URLProtocol, @unchecked Sendable {
                                            headerFields: ["Content-Type": value.contentType])!
             client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
             if !value.body.isEmpty { client?.urlProtocol(self, didLoad: value.body) }
-            if !value.keepOpen { client?.urlProtocolDidFinishLoading(self) }
+            if value.keepOpen {
+                transport.state.withLock { $0.pending[ObjectIdentifier(self)] = self }
+            } else {
+                client?.urlProtocolDidFinishLoading(self)
+            }
         } catch { client?.urlProtocol(self, didFailWithError: error) }
     }
 
     override func stopLoading() {
         if let host = request.url?.host, let transport = Self.registry.withLock({ $0[host] }) {
-            transport.state.withLock { $0.stops += 1 }
+            transport.state.withLock {
+                $0.stops += 1
+                $0.pending.removeValue(forKey: ObjectIdentifier(self))
+            }
         }
     }
 }
 
+func requestBody(_ request: URLRequest) throws -> Data {
+    if let data = request.httpBody { return data }
+    let stream = try #require(request.httpBodyStream)
+    stream.open()
+    defer { stream.close() }
+    var data = Data()
+    var buffer = [UInt8](repeating: 0, count: 4096)
+    while stream.hasBytesAvailable {
+        let length = stream.read(&buffer, maxLength: buffer.count)
+        guard length >= 0 else { throw ChannelAPIError.invalidResponse }
+        if length == 0 { break }
+        data.append(contentsOf: buffer.prefix(length))
+    }
+    return data
+}
+
+let testLeadProfile = ChannelLeadProfile(name: "Lead", role: "Test channel coordinator.",
+                                         avatar: .init(mark: "M4 12H20", color: "#123456"))
+
 func testState(revision: Int = 0, messages: [ChannelMessage] = []) -> ChannelState {
     let channel = Channel(id: "test", name: "Test", model: .init(provider: "test", name: "test"),
                           latestSequence: messages.last?.sequence ?? 0, updatedAt: "2026-10-01T00:00:00Z")
-    return .init(revision: revision, channel: channel, lead: .lead(id: "test"), messages: messages)
+    return .init(revision: revision, channel: channel,
+                 lead: .lead(id: "test", profile: testLeadProfile), messages: messages)
 }
 
 func testMessage(_ sequence: Int, id: String? = nil, text: String = "Progress") -> ChannelMessage {

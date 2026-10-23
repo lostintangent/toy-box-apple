@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 export DEVELOPER_DIR=/Library/Developer/CommandLineTools
 SDK="$(xcrun --sdk macosx --show-sdk-path)"
+SDK_VERSION="$(xcrun --sdk macosx --show-sdk-version)"
 CONFIG="${CONFIGURATION:-debug}"
 # Parallel builders each pass their own SCRATCH_PATH so SwiftPM builds never share a directory.
 SCRATCH="${SCRATCH_PATH:-$ROOT/.build}"
@@ -11,9 +12,14 @@ SCRATCH="${SCRATCH_PATH:-$ROOT/.build}"
 swift build --package-path "$ROOT" --scratch-path "$SCRATCH" --configuration "$CONFIG" --sdk "$SDK"
 BIN="$(swift build --package-path "$ROOT" --scratch-path "$SCRATCH" --configuration "$CONFIG" --sdk "$SDK" --show-bin-path)"
 APP="$SCRATCH/Toy Box Channels.app"
+EXECUTABLE="$APP/Contents/MacOS/ToyBoxChannels"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp "$BIN/ToyBoxChannels" "$APP/Contents/MacOS/ToyBoxChannels"
+cp "$BIN/ToyBoxChannels" "$EXECUTABLE"
 cp "$ROOT/Resources/Info.plist" "$APP/Contents/Info.plist"
+MINIMUM_OS="$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$APP/Contents/Info.plist")"
+# SwiftPM's current link path records the deployment minimum as the SDK version.
+xcrun vtool -set-build-version macos "$MINIMUM_OS" "$SDK_VERSION" -replace \
+    -output "$EXECUTABLE" "$EXECUTABLE"
 codesign --force --deep --sign - "$APP"
 echo "$APP"
 if [[ "${1:-}" != "--no-open" ]]; then

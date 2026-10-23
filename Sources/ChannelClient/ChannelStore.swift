@@ -16,6 +16,20 @@ public enum ChannelConnectionPhase: Equatable, Sendable {
     }
 }
 
+public struct ChannelManagementReconciliation: Sendable {
+    public let catalog: ChannelCatalog
+    public let channelId: String?
+    public let state: ChannelState?
+
+    public var channelWasDeleted: Bool { channelId != nil && state == nil }
+
+    public init(catalog: ChannelCatalog, channelId: String?, state: ChannelState?) {
+        self.catalog = catalog
+        self.channelId = channelId
+        self.state = state
+    }
+}
+
 @MainActor @Observable
 public final class ChannelStore {
     public let id: String
@@ -29,6 +43,9 @@ public final class ChannelStore {
     public private(set) var sendError: String?
     public private(set) var historyError: String?
     public private(set) var readError: String?
+    public private(set) var sendAttempts: [ChannelSendAttempt] = []
+    public private(set) var lastSendFailure: ChannelSendFailure?
+    public private(set) var attemptPersistenceError: String?
     public private(set) var optimisticMessageIds: Set<String> = []
 
     @ObservationIgnored private var observation: Task<Void, Never>?
@@ -39,11 +56,16 @@ public final class ChannelStore {
     @ObservationIgnored private var pendingRead = 0
     @ObservationIgnored private var acknowledgedRead = 0
     @ObservationIgnored private let reconnectPolicy: ReconnectPolicy
+    @ObservationIgnored private let sendJournal: ChannelSendJournal?
+    @ObservationIgnored private var attemptsRestored = false
+    @ObservationIgnored private var persistenceTask: Task<Void, any Error>?
 
-    public init(id: String, api: ChannelAPI, reconnectPolicy: ReconnectPolicy = .init()) {
+    public init(id: String, api: ChannelAPI, reconnectPolicy: ReconnectPolicy = .init(),
+                sendJournal: ChannelSendJournal? = .shared) {
         self.id = id
         self.api = api
         self.reconnectPolicy = reconnectPolicy
+        self.sendJournal = sendJournal
     }
 
     deinit { observation?.cancel() }
@@ -57,6 +79,8 @@ public final class ChannelStore {
         let policy = reconnectPolicy
         phase = .connecting
         observation = Task { [weak self] in
+            do { try await self?.restoreSendAttempts() }
+            catch { self?.attemptPersistenceError = error.localizedDescription }
             var attempt = 0
             while !Task.isCancelled && self?.generation == token {
                 do {
@@ -92,6 +116,22 @@ public final class ChannelStore {
         connect()
     }
 
+    fileprivate func reconcileManagementSnapshot(_ snapshot: ChannelState) throws -> ChannelState {
+        if let state, state.revision > snapshot.revision { return state }
+        let wasObserving = observation != nil
+        disconnect()
+        _ = try apply(.init(type: "snapshot", state: snapshot))
+        if wasObserving { connect() }
+        else { phase = .idle }
+        return snapshot
+    }
+
+    fileprivate func reconcileManagementDeletion() {
+        disconnect()
+        historyGeneration = UUID()
+        phase = .deleted
+    }
+
     public func captureUnreadBoundary() {
         if let state {
             unreadAfter = channelUnreadAfter(state.channel)
@@ -121,38 +161,206 @@ public final class ChannelStore {
     }
 
     @discardableResult
-    public func post(content: String, attachments: [ChannelAttachment] = []) async throws -> ChannelMessage {
-        guard phase.isLive, var current = state else { throw ChannelAPIError.disconnected }
+    public func post(id suppliedId: String? = nil, content: String,
+                     attachments: [ChannelAttachment] = []) async throws -> ChannelSendResult {
+        try await restoreSendAttempts()
+        guard phase.isLive, state != nil else { throw ChannelAPIError.disconnected }
         guard !isSending else { throw ChannelAPIError.invalidMessage("A message is already being sent.") }
         let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty || !attachments.isEmpty else {
             throw ChannelAPIError.invalidMessage("A message or attachment is required.")
         }
-        let id = UUID().uuidString
-        let optimistic = ChannelMessage(id: id, sequence: 0,
-                                        timestamp: Date.now.ISO8601Format(.init(includingFractionalSeconds: true)),
-                                        sender: .user, content: .text(trimmed),
-                                        attachments: attachments.isEmpty ? nil : attachments)
-        current = reduceChannelState(current, .init(type: "message", message: optimistic))
-        state = current
+        let id = suppliedId ?? UUID().uuidString
+        guard !id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, id.utf16.count <= 255 else {
+            throw ChannelAPIError.invalidMessage("A send attempt requires a valid message ID.")
+        }
+        if let existing = sendAttempts.first(where: { $0.id == id }) {
+            guard existing.content == trimmed, existing.attachments == attachments else {
+                throw ChannelAPIError.invalidMessage("The attempted message changed. Send it as a new message.")
+            }
+            if existing.phase == .confirmed { return .alreadyAccepted(id: id) }
+            return try await retrySend(id: id)
+        }
+        if let committed = state?.messages.first(where: { $0.id == id }) {
+            guard committed.sender == .user, committed.content == .text(trimmed),
+                  (committed.attachments ?? []) == attachments else {
+                throw ChannelAPIError.invalidMessage("The message ID already belongs to different content. Send it as a new message.")
+            }
+            return .committed(committed)
+        }
+        let attempt = ChannelSendAttempt(id: id, content: trimmed, attachments: attachments,
+                                         timestamp: Date.now.ISO8601Format(.init(includingFractionalSeconds: true)),
+                                         phase: .sending)
+        sendAttempts.append(attempt)
         optimisticMessageIds.insert(id)
+        return try await deliver(attempt)
+    }
+
+    @discardableResult
+    public func retrySend(id: String) async throws -> ChannelSendResult {
+        try await restoreSendAttempts()
+        guard phase.isLive else { throw ChannelAPIError.disconnected }
+        guard !isSending else { throw ChannelAPIError.invalidMessage("A message is already being sent.") }
+        guard let attempt = sendAttempts.first(where: { $0.id == id }), attempt.canRetry else {
+            throw ChannelAPIError.invalidMessage("This send attempt cannot be repeated.")
+        }
+        updateAttempt(id: id, phase: .sending, error: nil)
+        return try await deliver(attempt)
+    }
+
+    public func discardSendAttempt(id: String) async throws {
+        guard let attempt = sendAttempts.first(where: { $0.id == id }), attempt.phase != .sending else {
+            throw ChannelAPIError.invalidMessage("An in-flight send cannot be removed.")
+        }
+        let failure = lastSendFailure
+        sendAttempts.removeAll { $0.id == id }
+        optimisticMessageIds.remove(id)
+        do {
+            try await persistSendAttempts()
+            if failure?.messageId == id, lastSendFailure?.id == failure?.id { lastSendFailure = nil }
+        }
+        catch {
+            if !sendAttempts.contains(where: { $0.id == id }),
+               state?.messages.contains(where: { $0.id == id }) != true {
+                sendAttempts.append(attempt)
+                sendAttempts.sort { $0.timestamp < $1.timestamp }
+                optimisticMessageIds.insert(id)
+            }
+            throw error
+        }
+    }
+
+    private func deliver(_ attempt: ChannelSendAttempt) async throws -> ChannelSendResult {
         isSending = true
         sendError = nil
+        lastSendFailure = nil
         defer { isSending = false }
         do {
-            let message = try await api.post(channelId: self.id, id: id, content: trimmed, attachments: attachments)
+            try await persistSendAttempts()
+        } catch {
+            recordSendFailure(id: attempt.id, phase: .notSent, error: error.localizedDescription)
+            throw error
+        }
+        if let committed = state?.messages.first(where: { $0.id == attempt.id }) {
+            reconcileSend(id: attempt.id)
+            return .committed(committed)
+        }
+        guard phase.isLive else {
+            recordSendFailure(id: attempt.id, phase: .notSent, error: ChannelAPIError.disconnected.localizedDescription)
+            saveAttemptsInBackground()
+            throw ChannelAPIError.disconnected
+        }
+        do {
+            let message = try await api.post(channelId: id, id: attempt.id, content: attempt.content,
+                                             attachments: attempt.attachments)
             if var current = state, phase != .deleted {
-                current.messages.removeAll { $0.id == id }
+                current.messages.removeAll { $0.id == attempt.id }
                 current.messages = mergeChannelMessages(current.messages, incoming: [message])
                 state = current
             }
-            optimisticMessageIds.remove(id)
-            return message
+            reconcileSend(id: attempt.id)
+            return .committed(message)
+        } catch ChannelAPIError.duplicateMessage {
+            if let message = state?.messages.first(where: { $0.id == attempt.id }) {
+                reconcileSend(id: attempt.id)
+                return .committed(message)
+            }
+            updateAttempt(id: attempt.id, phase: .confirmed, error: nil)
+            saveAttemptsInBackground()
+            reconnect()
+            return .alreadyAccepted(id: attempt.id)
         } catch {
-            if optimisticMessageIds.remove(id) != nil { state?.messages.removeAll { $0.id == id } }
-            sendError = error.localizedDescription
+            if let message = state?.messages.first(where: { $0.id == attempt.id }) {
+                reconcileSend(id: attempt.id)
+                return .committed(message)
+            }
+            let definiteRejection: Bool
+            if case ChannelAPIError.http(let status, _) = error {
+                definiteRejection = (400..<500).contains(status) && status != 408
+            } else if case ChannelAPIError.invalidMessage = error { definiteRejection = true }
+            else { definiteRejection = false }
+            recordSendFailure(id: attempt.id, phase: definiteRejection ? .notSent : .deliveryNotConfirmed,
+                              error: error.localizedDescription)
+            saveAttemptsInBackground()
             throw error
         }
+    }
+
+    private func recordSendFailure(id: String, phase: ChannelSendPhase, error: String) {
+        updateAttempt(id: id, phase: phase, error: error)
+        sendError = error
+        lastSendFailure = .init(id: UUID().uuidString, messageId: id, phase: phase, error: error)
+    }
+
+    private func updateAttempt(id: String, phase: ChannelSendPhase, error: String?) {
+        guard let index = sendAttempts.firstIndex(where: { $0.id == id }) else { return }
+        sendAttempts[index].phase = phase
+        sendAttempts[index].error = error
+    }
+
+    private func reconcileSend(id: String) {
+        if lastSendFailure?.messageId == id { lastSendFailure = nil }
+        guard sendAttempts.contains(where: { $0.id == id }) else { return }
+        sendAttempts.removeAll { $0.id == id }
+        optimisticMessageIds.remove(id)
+        sendError = nil
+        saveAttemptsInBackground()
+    }
+
+    private func restoreSendAttempts() async throws {
+        guard !attemptsRestored else { return }
+        do {
+            let restored = try await sendJournal?.load(server: api.baseURL, channelId: id) ?? []
+            guard !attemptsRestored else { return }
+            sendAttempts = restored.map { attempt in
+                var next = attempt
+                if next.phase == .sending {
+                    next.phase = .deliveryNotConfirmed
+                    next.error = "The app closed before delivery was confirmed."
+                }
+                return next
+            }
+            optimisticMessageIds = Set(sendAttempts.map(\.id))
+            attemptsRestored = true
+            attemptPersistenceError = nil
+        } catch {
+            attemptPersistenceError = error.localizedDescription
+            throw error
+        }
+    }
+
+    private func persistSendAttempts() async throws {
+        do {
+            try await enqueuePersistence().value
+            attemptPersistenceError = nil
+        } catch {
+            attemptPersistenceError = error.localizedDescription
+            throw error
+        }
+    }
+
+    private func saveAttemptsInBackground() {
+        let save = enqueuePersistence()
+        Task { [weak self] in
+            do {
+                try await save.value
+                self?.attemptPersistenceError = nil
+            } catch { self?.attemptPersistenceError = error.localizedDescription }
+        }
+    }
+
+    private func enqueuePersistence() -> Task<Void, any Error> {
+        let attempts = sendAttempts
+        let journal = sendJournal
+        let server = api.baseURL
+        let channelId = id
+        let predecessor = persistenceTask
+        let task = Task<Void, any Error> {
+            if let predecessor { _ = await predecessor.result }
+            try await journal?.save(attempts, server: server, channelId: channelId)
+        }
+        persistenceTask = task
+        return task
     }
 
     public func markRead(through sequence: Int) async {
@@ -185,7 +393,10 @@ public final class ChannelStore {
             state = snapshot
             historyGeneration = UUID()
             acknowledgedRead = snapshot.channel.seenThrough
-            optimisticMessageIds.removeAll()
+            for attempt in sendAttempts where attempt.phase == .confirmed
+                || snapshot.messages.contains(where: { $0.id == attempt.id }) {
+                reconcileSend(id: attempt.id)
+            }
             hasOlderMessages = (snapshot.messages.first?.sequence ?? 1) > 1
             if !capturedUnread {
                 unreadAfter = channelUnreadAfter(snapshot.channel)
@@ -194,10 +405,13 @@ public final class ChannelStore {
         } else if let previous = state {
             state = reduceChannelState(previous, event)
             if let message = event.message, event.revision != nil {
-                optimisticMessageIds.remove(message.id)
+                reconcileSend(id: message.id)
             }
         } else { throw ChannelAPIError.invalidEvent("pre-snapshot \(event.type)") }
         if event.type == "snapshot" || event.type == "resumed" {
+            if event.type == "resumed" {
+                for attempt in sendAttempts where attempt.phase == .confirmed { reconcileSend(id: attempt.id) }
+            }
             phase = .live
         }
         return false
@@ -207,16 +421,28 @@ public final class ChannelStore {
 @MainActor @Observable
 public final class ChannelCatalogStore {
     public let api: ChannelAPI
-    public private(set) var channels: [Channel] = []
-    public private(set) var members: [ChannelMember] = []
+    public private(set) var state: ChannelCatalog?
+    public var channels: [Channel] { state?.channels ?? [] }
+    public var members: [ChannelMember] { state?.members ?? [] }
+    public private(set) var working: Set<String> = []
+    public private(set) var isActive = true
     public private(set) var isLoading = false
     public private(set) var error: String?
+    public private(set) var failure: (any Error)?
     public private(set) var lastRefreshedAt: Date?
     @ObservationIgnored private var polling: Task<Void, Never>?
+    @ObservationIgnored private var pollingDelay: Task<Void, Never>?
     @ObservationIgnored private var detailStores: [String: ChannelStore] = [:]
+    @ObservationIgnored private var activePollingInterval: TimeInterval = 5
+    @ObservationIgnored private var catalogGeneration = UUID()
+    @ObservationIgnored private var reconcilingManagement = false
+    public var pollingInterval: TimeInterval { isActive ? activePollingInterval : 15 }
 
     public init(api: ChannelAPI) { self.api = api }
-    deinit { polling?.cancel() }
+    deinit {
+        polling?.cancel()
+        pollingDelay?.cancel()
+    }
 
     public func channel(id: String) -> ChannelStore {
         if let existing = detailStores[id] { return existing }
@@ -227,30 +453,96 @@ public final class ChannelCatalogStore {
 
     public func refresh() async {
         guard !isLoading else { return }
+        let token = UUID()
+        catalogGeneration = token
         isLoading = true
-        defer { isLoading = false }
+        defer { if catalogGeneration == token { isLoading = false } }
         do {
             let catalog = try await api.catalog()
-            channels = catalog.channels
-            members = catalog.members
-            lastRefreshedAt = .now
-            error = nil
-        } catch { self.error = error.localizedDescription }
+            guard !Task.isCancelled, catalogGeneration == token else { return }
+            applyCatalog(catalog)
+        } catch {
+            guard !Task.isCancelled, !(error is CancellationError),
+                  (error as? URLError)?.code != .cancelled,
+                  catalogGeneration == token else { return }
+            self.error = error.localizedDescription
+            failure = error
+        }
     }
 
-    public func startPolling(interval: TimeInterval = 15) {
+    public func reconcileManagementWrite(channelId: String? = nil) async throws -> ChannelManagementReconciliation {
+        guard !reconcilingManagement else {
+            throw ChannelAPIError.invalidMessage("Another management change is being checked. Check again when it finishes.")
+        }
+        reconcilingManagement = true
+        catalogGeneration = UUID()
+        isLoading = true
+        defer {
+            reconcilingManagement = false
+            isLoading = false
+        }
+        do {
+            var catalog = try await api.catalog()
+            var snapshot: ChannelState?
+            if let channelId, catalog.channels.contains(where: { $0.id == channelId }) {
+                do { snapshot = try await api.snapshot(channelId: channelId) }
+                catch let failure as ChannelAPIError {
+                    guard case .http(status: 404, message: _) = failure else { throw failure }
+                    catalog = try await api.catalog()
+                    guard !catalog.channels.contains(where: { $0.id == channelId }) else { throw failure }
+                }
+            }
+            try Task.checkCancellation()
+            if let channelId, let store = detailStores[channelId] {
+                if let current = snapshot { snapshot = try store.reconcileManagementSnapshot(current) }
+                else { store.reconcileManagementDeletion() }
+            }
+            applyCatalog(catalog)
+            return .init(catalog: catalog, channelId: channelId, state: snapshot)
+        } catch {
+            self.error = error.localizedDescription
+            failure = error
+            throw error
+        }
+    }
+
+    private func applyCatalog(_ catalog: ChannelCatalog) {
+        state = catalog
+        working = Set(catalog.working)
+        lastRefreshedAt = .now
+        error = nil
+        failure = nil
+    }
+
+    public func startPolling(interval: TimeInterval = 5) {
         guard polling == nil else { return }
+        activePollingInterval = interval
         polling = Task { [weak self] in
             while !Task.isCancelled {
                 await self?.refresh()
-                do { try await Task.sleep(for: .seconds(interval)) }
-                catch { return }
+                guard !Task.isCancelled, let delay = self?.pollingInterval else { return }
+                let pause = Task {
+                    do { try await Task.sleep(for: .seconds(delay)) }
+                    catch { return }
+                }
+                self?.pollingDelay = pause
+                await pause.value
+                guard !Task.isCancelled else { return }
+                self?.pollingDelay = nil
             }
         }
+    }
+
+    public func setActive(_ active: Bool) {
+        guard active != isActive else { return }
+        isActive = active
+        pollingDelay?.cancel()
     }
 
     public func stopPolling() {
         polling?.cancel()
         polling = nil
+        pollingDelay?.cancel()
+        pollingDelay = nil
     }
 }

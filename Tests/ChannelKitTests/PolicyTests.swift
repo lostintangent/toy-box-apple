@@ -23,6 +23,17 @@ struct PolicyTests {
         #expect(splitAgentMentionText("Hello @Ada!").map(\.content) == ["Hello ", "@Ada", "!"])
     }
 
+    @Test func mentionCompletionIncludesEveryAgentForAnEmptyQuery() {
+        let engineer = ChannelAgent(id: "ada", name: "Ada Lovelace", role: "Swift engineer")
+        #expect(agentMatchesMentionQuery(lead, query: ""))
+        #expect(agentMatchesMentionQuery(ada, query: ""))
+        #expect(agentMatchesMentionQuery(engineer, query: ""))
+        #expect(agentMatchesMentionQuery(engineer, query: "LOVELACE"))
+        #expect(agentMatchesMentionQuery(engineer, query: "ada-lovelace"))
+        #expect(agentMatchesMentionQuery(engineer, query: "ENGINEER"))
+        #expect(!agentMatchesMentionQuery(engineer, query: "unknown"))
+    }
+
     @Test func canonicalAudience() {
         let members = [ada, finch]
         func ids(_ text: String, sender: ChannelMessageSender = .user,
@@ -78,5 +89,19 @@ struct PolicyTests {
         agent.status = .init(state: "working", text: "Settling")
         #expect(channelAgentPresence(agent, running: false) == .init(state: "idle"))
         #expect(channelAgentIdentity([ada], id: "removed").name == "Deleted agent")
+    }
+
+    @Test func activityReactionsRequireWorkingPresenceAndDurableTargets() {
+        var agent = ada
+        agent.status = .init(state: "working", text: "Reviewing", lookingAt: 12, workingOn: 12)
+        let message = ChannelMessage(id: "m12", sequence: 12, timestamp: "2026-10-01T00:00:00Z",
+                                     sender: .user, content: .text("Review this"),
+                                     reactions: [.init(agentId: "finch", reaction: "agree")])
+        let working = channelMessageReactions(message, agents: [agent], presence: ["ada": .init(state: "working")])
+        #expect(working.map(\.reaction) == ["agree", "looking", "working"])
+        #expect(channelMessageReactions(message, agents: [agent], presence: [:]).map(\.reaction) == ["agree"])
+        agent.status = .init(state: "waiting", text: "Waiting", lookingAt: 12)
+        #expect(channelMessageReactions(message, agents: [agent],
+                                       presence: ["ada": .init(state: "working")]).map(\.reaction) == ["agree"])
     }
 }

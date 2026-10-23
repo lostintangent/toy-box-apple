@@ -55,6 +55,7 @@ public struct ModelCatalog: Codable, Sendable {
     public var version: Int
     public var models: [ProviderModel]
     public var defaultModel: ModelConfiguration?
+    public var provider: String?
 }
 
 public struct CreateChannelInput: Encodable, Sendable {
@@ -175,6 +176,22 @@ public struct ChannelAPI: Sendable {
         let catalog: ModelCatalog = try await get(["api", "v1", "models"])
         try requireVersion(catalog.version)
         return catalog
+    }
+
+    public func memberModels(channelId: String, agentId: String) async throws -> ModelCatalog {
+        let catalog: ModelCatalog = try await get(channelPath(channelId) + ["members", agentId, "models"])
+        try requireVersion(catalog.version)
+        return catalog
+    }
+
+    func snapshot(channelId: String) async throws -> ChannelState {
+        for try await event in observe(channelId: channelId) {
+            guard event.type == "snapshot", let state = event.state, state.channel.id == channelId else {
+                throw ChannelAPIError.invalidEvent("snapshot")
+            }
+            return state
+        }
+        throw ChannelAPIError.streamEnded
     }
 
     public func history(channelId: String, before: Int) async throws -> ChannelHistoryPage {

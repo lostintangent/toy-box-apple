@@ -15,6 +15,42 @@ struct TransportTests {
         #expect(mock.requests.count == 1)
     }
 
+    @Test(arguments: [false, true], [false, true])
+    func postedImagesCarryTheServerMimeTypeAndBase64Shape(imageOnly: Bool, named: Bool) async throws {
+        let base64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+        let bytes = try #require(Data(base64Encoded: base64))
+        let id = "b184e865-58c1-4936-9295-3f382b9224a1"
+        let name = named ? "Fixture image.png" : nil
+        let content = imageOnly ? "  " : "  A small image  "
+        let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
+        let reference = ChannelAttachment(name: "Stored image.png", url: "/api/serve/test/Stored%20image.png")
+        let message = ChannelMessage(id: id, sequence: 1, timestamp: "2026-10-01T00:00:00Z",
+                                     sender: .user, content: .text(trimmed), attachments: [reference])
+        let receipt: JSONValue = .object([
+            "version": .number(1),
+            "message": try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(message))
+        ])
+        let mock = MockTransport { _, _ in try .json(receipt) }
+        let api = try mock.api()
+        let posted = try await api.post(
+            channelId: "test", id: id, content: content,
+            attachments: [.init(name: name, mimeType: "image/png", base64: bytes.base64EncodedString())]
+        )
+        #expect(mock.requests.count == 1)
+        let request = try #require(mock.requests.first)
+        #expect(request.httpMethod == "POST")
+        #expect(request.url?.path == "/api/v1/channels/test/messages")
+        #expect(request.value(forHTTPHeaderField: "Content-Type") == "application/json")
+        var image: [String: JSONValue] = ["mimeType": .string("image/png"), "base64": .string(base64)]
+        if let name { image["name"] = .string(name) }
+        let body = try JSONDecoder().decode(JSONValue.self, from: requestBody(request))
+        #expect(body == .object([
+            "id": .string(id), "content": .string(trimmed), "attachments": .array([.object(image)])
+        ]))
+        #expect(posted == message)
+        #expect(posted.attachments == [reference])
+    }
+
     @Test func managementMethodsAndNullablePatches() async throws {
         let channel = testState().channel
         let member = ChannelAgent(id: "member", name: "Ada", channelId: "test")
@@ -43,7 +79,7 @@ struct TransportTests {
     }
 
     @Test func unknownProtocolVersionFailsClearly() async throws {
-        let mock = MockTransport { _, _ in try .json(ChannelCatalog(version: 99)) }
+        let mock = MockTransport { _, _ in try .json(ChannelCatalog(lead: testLeadProfile, version: 99)) }
         let api = try mock.api()
         await #expect(throws: ChannelAPIError.unsupportedVersion(99)) { try await api.catalog() }
     }
@@ -58,7 +94,7 @@ struct TransportTests {
         }
     }
 
-    @Test func missingHeartbeatCancelsTheRequest() async throws {
+    @Test @MainActor func missingHeartbeatCancelsTheRequest() async throws {
         let mock = MockTransport { _, _ in
             MockResponse(contentType: "text/event-stream", keepOpen: true)
         }
@@ -66,7 +102,9 @@ struct TransportTests {
         await #expect(throws: ChannelAPIError.heartbeatTimeout) {
             for try await _ in api.observe(channelId: "test", heartbeatTimeout: 0.15) {}
         }
-        #expect(mock.stops == 1)
+        // URLSession queues stopLoading after the throwing byte iterator has terminated.
+        try await eventually { mock.stops == 1 }
+        #expect(mock.requests.count == 1)
     }
 
     @Test @MainActor func storeReconnectsFromAppliedRevisionZero() async throws {
@@ -76,7 +114,7 @@ struct TransportTests {
             return try .stream([.init(type: "resumed", presence: ["test": .init(state: "working")])])
         }
         let store = ChannelStore(id: "test", api: try mock.api(),
-                                 reconnectPolicy: .init(initialDelay: 0.01))
+                                 reconnectPolicy: .init(initialDelay: 0.01), sendJournal: nil)
         store.connect()
         defer { store.disconnect() }
         try await eventually { mock.requests.count == 2 && store.phase.isLive }
@@ -91,7 +129,7 @@ struct TransportTests {
         let mock = MockTransport { _, _ in
             try .stream([.init(type: "snapshot", state: initial), .init(type: "deleted", channelId: "test")])
         }
-        let store = ChannelStore(id: "test", api: try mock.api())
+        let store = ChannelStore(id: "test", api: try mock.api(), sendJournal: nil)
         store.connect()
         try await eventually { store.phase == .deleted }
         store.connect()
@@ -107,7 +145,7 @@ struct TransportTests {
                         keepOpen: count > 1)
         }
         let store = ChannelStore(id: "test", api: try mock.api(),
-                                 reconnectPolicy: .init(initialDelay: 0.01))
+                                 reconnectPolicy: .init(initialDelay: 0.01), sendJournal: nil)
         store.connect()
         defer { store.disconnect() }
         try await eventually { store.state?.revision == 100 && store.phase.isLive }
@@ -121,7 +159,7 @@ struct TransportTests {
             try .stream([.init(type: "snapshot", state: initial)], keepOpen: false)
         }
         let store = ChannelStore(id: "test", api: try mock.api(),
-                                 reconnectPolicy: .init(initialDelay: 5))
+                                 reconnectPolicy: .init(initialDelay: 5), sendJournal: nil)
         store.connect()
         defer { store.disconnect() }
         try await eventually { store.phase.message != nil }
@@ -133,8 +171,8 @@ struct TransportTests {
     @Test @MainActor func releasingStoreCancelsObservation() async throws {
         let initial = testState()
         let mock = MockTransport { _, _ in try .stream([.init(type: "snapshot", state: initial)]) }
-        var store: ChannelStore? = ChannelStore(id: "test", api: try mock.api())
-        weak var weakStore = store
+        var store: ChannelStore? = ChannelStore(id: "test", api: try mock.api(), sendJournal: nil)
+        weak let weakStore = store
         store?.connect()
         try await eventually { store?.phase.isLive == true }
         store = nil
@@ -151,7 +189,7 @@ struct TransportTests {
             }
             return try .stream([.init(type: "snapshot", state: initial)])
         }
-        let store = ChannelStore(id: "test", api: try mock.api())
+        let store = ChannelStore(id: "test", api: try mock.api(), sendJournal: nil)
         store.connect()
         defer { store.disconnect() }
         try await eventually { store.phase.isLive }
@@ -162,7 +200,7 @@ struct TransportTests {
         #expect(mock.requests.last?.url?.query == "before=100")
     }
 
-    @Test @MainActor func failedSendRemovesOnlyTheOptimisticMessage() async throws {
+    @Test @MainActor func serverFailurePreservesUncertainAttemptOutsideCanonicalState() async throws {
         let initial = testState(revision: 10, messages: [testMessage(1)])
         let mock = MockTransport { request, _ in
             if request.httpMethod == "POST" {
@@ -170,7 +208,7 @@ struct TransportTests {
             }
             return try .stream([.init(type: "snapshot", state: initial)])
         }
-        let store = ChannelStore(id: "test", api: try mock.api())
+        let store = ChannelStore(id: "test", api: try mock.api(), sendJournal: nil)
         store.connect()
         defer { store.disconnect() }
         try await eventually { store.phase.isLive }
@@ -178,7 +216,9 @@ struct TransportTests {
             try await store.post(content: "Hello")
         }
         #expect(store.state?.messages.map(\.id) == ["m1"])
-        #expect(store.optimisticMessageIds.isEmpty)
+        #expect(store.sendAttempts.count == 1)
+        #expect(store.sendAttempts.first?.phase == .deliveryNotConfirmed)
+        #expect(store.sendAttempts.first?.message.sequence == 0)
         #expect(store.sendError?.contains("Try later.") == true)
         #expect(mock.requests.filter { $0.httpMethod == "POST" }.count == 1)
     }
@@ -193,7 +233,7 @@ struct TransportTests {
             }
             return try .stream([.init(type: "snapshot", state: snapshot)])
         }
-        let store = ChannelStore(id: "test", api: try mock.api())
+        let store = ChannelStore(id: "test", api: try mock.api(), sendJournal: nil)
         store.connect()
         defer { store.disconnect() }
         try await eventually { store.phase.isLive }

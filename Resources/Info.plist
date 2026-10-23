@@ -17,9 +17,13 @@
     <key>CFBundleVersion</key>
     <string>1</string>
     <key>LSMinimumSystemVersion</key>
-    <string>15.0</string>
+    <string>26.0</string>
     <key>NSHighResolutionCapable</key>
     <true/>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Toy Box Channels uses the microphone only while you dictate a message.</string>
+    <key>NSSpeechRecognitionUsageDescription</key>
+    <string>Dictation is transcribed on this Mac.</string>
     <key>NSAppTransportSecurity</key>
     <dict>
         <key>NSAllowsLocalNetworking</key>

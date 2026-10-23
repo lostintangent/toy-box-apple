@@ -2,6 +2,13 @@ import Foundation
 import Testing
 @testable import ChannelKit
 
+extension ChannelAgent {
+    static func lead(id: String) -> ChannelAgent {
+        .lead(id: id, profile: .init(name: "Lead", role: "Test channel coordinator.",
+                                     avatar: .init(mark: "M4 12H20", color: "#123456")))
+    }
+}
+
 struct DomainTests {
     struct Trace: Decodable {
         var initial: ChannelState
@@ -20,7 +27,8 @@ struct DomainTests {
 
     @Test func canonicalSnapshot() throws {
         let state = try JSONDecoder().decode(ChannelState.self, from: fixture("channel-snapshot"))
-        #expect(state.lead.avatar == .lead)
+        #expect(state.lead.avatar?.color == "#0891b2")
+        #expect(state.lead.avatar?.ink == nil)
         #expect(state.members.map(\.name) == ["Ada", "Finch", "Iris", "Juniper", "Kit", "Moss", "Nova", "Pixel"])
         #expect(state.request?.id == "fixture-request")
         #expect(state.channel.requestSequence == state.request?.sequence)

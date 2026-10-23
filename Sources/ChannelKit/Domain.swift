@@ -3,16 +3,25 @@ import Foundation
 public struct AgentAvatar: Codable, Equatable, Sendable {
     public var mark: String
     public var color: String
+    public var ink: String?
 
-    public init(mark: String, color: String) {
+    public init(mark: String, color: String, ink: String? = nil) {
         self.mark = mark
         self.color = color
+        self.ink = ink
     }
+}
 
-    public static let lead = AgentAvatar(
-        mark: "M12 3l2.7 5.5 6.1.9-4.4 4.3 1 6.1-5.4-2.9-5.4 2.9 1-6.1-4.4-4.3 6.1-.9L12 3z",
-        color: "#0891b2"
-    )
+public struct ChannelLeadProfile: Codable, Equatable, Sendable {
+    public var name: String
+    public var role: String
+    public var avatar: AgentAvatar
+
+    public init(name: String, role: String, avatar: AgentAvatar) {
+        self.name = name
+        self.role = role
+        self.avatar = avatar
+    }
 }
 
 public struct ChannelAgentStatus: Codable, Equatable, Sendable {
@@ -57,9 +66,8 @@ public struct ChannelAgent: Codable, Equatable, Identifiable, Sendable {
         self.deleted = deleted
     }
 
-    public static func lead(id: String) -> ChannelAgent {
-        ChannelAgent(id: id, name: "Lead", role: "Own the channel purpose and coordinate the work.",
-                     avatar: .lead)
+    public static func lead(id: String, profile: ChannelLeadProfile) -> ChannelAgent {
+        ChannelAgent(id: id, name: profile.name, role: profile.role, avatar: profile.avatar)
     }
 }
 
@@ -417,11 +425,27 @@ public struct ChannelCatalog: Codable, Equatable, Sendable {
     public var version: Int
     public var channels: [Channel]
     public var members: [ChannelMember]
+    public var working: [String]
+    public var lead: ChannelLeadProfile
 
-    public init(version: Int = 1, channels: [Channel] = [], members: [ChannelMember] = []) {
+    public init(lead: ChannelLeadProfile, version: Int = 1, channels: [Channel] = [],
+                members: [ChannelMember] = [], working: [String] = []) {
         self.version = version
         self.channels = channels
         self.members = members
+        self.working = working
+        self.lead = lead
+    }
+
+    private enum CodingKeys: String, CodingKey { case version, channels, members, working, lead }
+
+    public init(from decoder: any Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(lead: try values.decode(ChannelLeadProfile.self, forKey: .lead),
+                  version: try values.decode(Int.self, forKey: .version),
+                  channels: try values.decode([Channel].self, forKey: .channels),
+                  members: try values.decode([ChannelMember].self, forKey: .members),
+                  working: try values.decodeIfPresent([String].self, forKey: .working) ?? [])
     }
 }
 

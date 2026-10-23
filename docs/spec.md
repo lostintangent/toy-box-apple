@@ -29,10 +29,11 @@ Reference sources (read-only):
 
 ## Architecture
 
-- Swift 6 and SwiftUI on macOS 15 or later, using AppKit only where SwiftUI falls short (text input,
-  for example). The project is a Swift package built with `swift build` from Command Line Tools,
-  so it needs no Xcode project or Xcode license. A script assembles and launches a signed-ad-hoc
-  `.app` bundle.
+- Swift 6 (package tools 6.2) and SwiftUI on macOS 26 or later, using AppKit only where SwiftUI
+  falls short (text input, for example). The project is a Swift package built with `swift build`
+  from Command Line Tools, so it needs no Xcode project or Xcode license. A script assembles and
+  launches a signed-ad-hoc `.app` bundle, stamping the binary with the installed SDK version so
+  macOS draws it with Liquid Glass rather than in compatibility mode.
 - **Targets:** `ChannelKit` is the pure domain: Codable wire types, the reducer, transcript rows,
   audience, tasks, presence and the SVG avatar path parser. `ChannelClient` handles transport:
   HTTP, SSE, the observer and the catalog. `ToyBoxChannels` is the app. Tests live in
@@ -51,37 +52,52 @@ Reference sources (read-only):
 
 | Request | Use |
 | --- | --- |
-| `GET /api/v1/channels` | Catalog `{version, channels, members, working}` for the sidebar. `working` lists running agent IDs (added for this app) |
+| `GET /api/v1/channels` | Catalog `{version, channels, members, lead, working}` for the sidebar. `lead` is the profile every channel's lead shares, under the channel's ID, and is always present. `working` lists running agent IDs (added for this app) |
 | `GET /api/v1/channels/:id` (SSE) | `snapshot`, then live events. With `after`/`Last-Event-ID`: replay, then `resumed` with full presence. `presence` is sparse and merges. `deleted` is terminal |
 | `GET /api/v1/channels/:id/messages?before=N` | Older page of up to 100 messages `{version, revision, messages}` |
 | `POST /api/v1/channels/:id/messages` | `{id, content, attachments?}` with a client UUID. 201 returns the message. 409 means a duplicate. Never auto-retry |
 | `POST /api/v1/channels/:id/read` | `{sequence}` monotonic read, which acknowledges completion but never a request |
 
+The model catalog is owned by Toy Box's Providers feature (`src/features/providers/AGENTS.md`),
+not Channels:
+
+| Request | Use |
+| --- | --- |
+| `GET /api/v1/models` | `{version, models, defaultModel}` for model pickers. Its URL, fields, version, status and cache headers are unchanged by the move to Providers, so no decoder migration is needed. A server process started before the move can still return 404 here until it restarts. Treat that as "models unavailable", never as a reason to invent a model |
+
 Management routes (added to Toy Box for this app, documented in its Channels `AGENTS.md`):
 
 | Request | Use |
 | --- | --- |
-| `GET /api/v1/models` | `{version, models, defaultModel}` for model pickers |
 | `POST /api/v1/channels` | Create `{name, purpose?, directory?, model}`. 201 `{version, channel}` |
 | `PATCH /api/v1/channels/:id` | Edit `{name?, purpose? (null clears), model?}`. Returns `{version, channel}` |
 | `DELETE /api/v1/channels/:id` | Delete the channel (204). The stream then sends `deleted` |
 | `POST /api/v1/channels/:id/members` | Create a member `{name, role?, model?}`. 201 `{version, member}` |
-| `PATCH /api/v1/channels/:id/members/:agentId` | Edit `{name?, role?, model? (null inherits)}`. Returns `{version, member}` |
+| `PATCH /api/v1/channels/:id/members/:agentId` | Edit `{name?, role?, model?}`. Returns `{version, member}`. `model: null` clears the explicit override and is always allowed, even when the workspace default uses another provider. It never changes an established session's provider or history: a compatible default is followed, otherwise the existing provider's model is retained. After clearing, the returned member and its event omit `model`. Only an explicit model from another provider returns 422 |
+| `GET /api/v1/channels/:id/members/:agentId/models` | `{version, provider, models, defaultModel}` for the Edit Member picker: models limited to the member's provider (session, else configured, else unrestricted when null). `defaultModel: null` means no compatible workspace default exists. It describes a model choice, not permission, so clearing the override stays available even when `models` is empty |
 | `DELETE /api/v1/channels/:id/members/:agentId` | Remove a member (204) |
 | `POST /api/v1/channels/:id/routines/:routineId/run` | Run a routine now (204) |
 | `DELETE /api/v1/channels/:id/routines/:routineId` | Delete a routine (204) |
 
 Errors return `{error}`. A malformed body is 400, a missing channel, member or routine is 404,
-and a domain rejection such as a taken mention is 422 with a user-facing message.
+and a domain rejection such as a taken mention is 422 with a user-facing message. An unexpected
+management failure is 500 with a generic `{error}`, and details stay in server logs. A 500 can
+follow a committed change, including a deletion, so the client never retries a write on 500,
+automatically or through an unchanged resubmission. It treats the outcome as uncertain and
+reconciles from the authoritative catalog or channel detail before offering another write.
 
 Attachments are `{name, url}` or inline `{mimeType, base64}`. Avatars are SVG path data in a
-24×24 viewBox plus a hex color. The lead's avatar is intrinsic.
+24×24 viewBox plus a hex color, and may carry an optional `ink` for the mark that only Toy Box's
+own profiles set. The server serves the lead's profile in snapshots and the catalog, and the app
+keeps no copy of it.
 
 ## Parity checklist
 
 ### Sidebar (channel list)
 
 - [ ] Channels from the catalog, ordered like the browser and showing the lead and member avatars
+- [ ] Each row shows last activity (`updatedAt`) and the working directory as a folder, with a way
+      to open it, like the browser's location badge and Browse action
 - [ ] Attention, in priority order: waiting for your reply (always shown, even when the channel is
       open), then all tasks completed (unread), then unread messages. Completion and unread are
       suppressed while the channel is open
@@ -138,7 +154,7 @@ Attachments are `{name, url}` or inline `{mimeType, base64}`. Avatars are SVG pa
       Toy Box or the default app
 - [ ] Tasks: a nested tree with status, owner avatar and diff totals rolled up from descendants
       (pending tasks hide counts). Each task's own artifact action opens it. Section headings show
-      count badges
+      counts
 - [ ] Routines by title with their schedule, expanding to show the prompt
 
 ### Management (via the management routes above)
@@ -179,6 +195,207 @@ navigation, presentation, keyboard access, local draft storage and offline editi
 New divider, agent coordination, tray and expanded inspector. Its example content is illustrative,
 not a second specification or a proposed change to any live channel.
 
+### Whole-window composition correction
+
+The visual review was reopened on 2026-10-22. Functional and accessibility corrections do not
+constitute final visual acceptance. Review the actual user-facing build as a whole, not only an
+isolated fixture render. The governing composition is one native channel title, one quiet
+inspector, legible tonal messages, and one floating glass composer carrying the activity line.
+The Liquid Glass composition below supersedes every earlier dock, toolbar-band and inspector
+header rule.
+
+The conversation lane spans the full detail column with 24-point horizontal insets, as in
+Messages. Its width W is the conversation width minus 48, with no maximum. Agent messages pin to
+the leading edge. The 32-point avatar and 12-point gap form a 44-point identity gutter, and each
+agent surface hugs its content up to min(W − 44, 760). Your messages pin to the trailing edge
+and hug their content up to min(0.8 × W, 640). Both caps multiply by the View > Text Size scale.
+The caps hold a line near 115 characters, so a wider window adds air between the two sides
+rather than longer lines. The floating activity row and composer span the whole lane, W. The
+composer's leading edge sits on the avatars' leading edge. At the default 720-point conversation
+width, W is 672, agent surfaces reach 628 and your messages 538. Do not let modifier order
+produce a composer wider than the lane.
+
+Normal agent surfaces use a visible neutral tonal fill, not an almost invisible outline on the
+same color as the conversation. Derive the fill from primary ink over the opaque conversation
+background: approximately 4.5% in light appearance and 7% in dark. Preserve normal primary text,
+agent-colored avatars and the muted accent treatment for the user's own messages. A pending
+question takes a warm orange wash, its explicit label and a Reply button, never an outline.
+Increase Contrast adds a meaningful boundary rather than making all agent messages saturated
+identity-colored cards.
+
+The working summary is live application status, not historical transcript content. It floats
+as a glass capsule directly above the composer, even when reading older history. Show at most
+three 20-point avatars and the count or name. Details open in a native popover on explicit
+activation. Hide working presence when observation is stale. Place Jump to Latest at the
+trailing edge of the same floating row when needed. Neither control may become a synthetic
+message or read target.
+
+The context tray belongs inside the composer as a 28-point header, separated from text entry by
+one internal hairline. Its controls share a baseline, rather than giving Tasks an extra
+underlined progress track. Task rows in the tray popover and the inspector share one layout with
+no disclosure gutter. Sibling status icons align on one x with their section heading, each
+nesting level adds 22 points so a child's status sits under its parent's title, and a parent's
+chevron trails its title inline (see Tasks in the Overview section).
+
+The inspector has no title row of its own. The window toolbar never repeats the purpose. The
+full purpose and agent roles belong in their inspector and detail presentations, not the title
+bar or idle Team rows.
+
+The shared `ConversationRail` modifier lays out the scrollable transcript, the floating activity
+row and the composer on one lane. Hosted geometry regressions cover 420, 720, 760, 1000 and
+1400-point conversation widths at the default text size. They yield composer widths of 372, 672,
+712, 952 and 1352, agent surface maxima of 328, 628, 668, 760 and 760, and your-message maxima of
+298, 538, 570, 640 and 640 (rounded). The
+scroll-end anchor includes the intentional 16-point trailing clearance rather than adding a full
+run gap. Consecutive system events retain their own 8-point breathing room without an additional
+20-point conversation-run gap. Older-history loads preserve the anchored message with 0.0-point
+displacement at 1280 x 840 and 760 x 560 in both appearances.
+
+### Liquid Glass composition
+
+Builds before 2026-10-22 were linked with an SDK stamp of 15.0, so macOS 27 drew them in
+compatibility mode without Liquid Glass. That, plus the opaque unified toolbar band added during
+the visual pass, is why the app read as dated. The app now targets macOS 26 and later, links
+against the installed SDK, and `script/validate` fails when the bundle's SDK stamp is below 26.
+There is no fallback appearance for older systems and no availability branching in views.
+
+**Layers.** Content is one opaque layer made of the sidebar list, the conversation and the
+inspector. Liquid Glass is reserved for the navigation layer above it: toolbar controls, the
+sidebar material, the composer, the activity row, Jump to Latest and transient notices. Never
+put glass on messages, inspector sections or list rows, and never place glass on glass. Controls
+inside a glass surface are plain or borderless, except Send. Let the system draw every standard
+glass element. Custom `glassEffect` appears only on the surfaces this section names.
+
+**Toolbar.** Use the system's default window toolbar style. Remove the explicit
+`.windowToolbarStyle(.unified)`, and set no `toolbarBackground`, `toolbarBackgroundVisibility`
+or column title plate anywhere. Never draw our own rule or band under the toolbar. The
+conversation and the inspector scroll beneath the toolbar, and a top scroll-edge effect
+separates content from the controls. The conversation keeps the system's automatic top edge. On
+macOS 27 that draws the unified toolbar's crisp 1-point divider, even at rest, and on macOS 26 a
+soft blur while content is beneath. Never force a top style on the conversation.
+
+The inspector is the one exception. Its automatic top edge renders exactly like the soft style,
+which macOS 27 no longer draws at the top, so its rows scroll straight into the glass controls and the toolbar's
+divider stops at the inspector's leading edge. Give the inspector's `ScrollView`
+`.scrollEdgeEffectStyle(.hard, for: .top)`. On macOS 27 that continues the same divider at the
+same height across the inspector, so the toolbar reads as one unified band, and it keeps a
+dense column of 11-point status text from running under the controls on either system.
+
+The detail toolbar shows the channel name in the system title position. Its trailing items form
+two `.primaryAction` groups. Message View and Channel Actions share one glass group, then
+`ToolbarSpacer(.fixed, placement: .primaryAction)`, then Overview (`sidebar.trailing`) alone.
+When the inspector is open, the Overview button sits over the inspector column, as in Xcode and
+Pages. The only custom toolbar tint is the active
+Message View filter symbol.
+
+**Sidebar.** The `NavigationSplitView` sidebar runs the full window height with the traffic
+lights over its top, and the system decides its shape. On macOS 27 it runs flush to the window's
+leading, top and bottom edges with no margin, as Finder and Mail do. On macOS 26 the system
+floats it as an inset glass panel. Do not set a sidebar or list background, and never imitate
+either shape by hand. Inactive windows render the sidebar and inspector materials as flat fills,
+which is expected. Replace the hand-built search capsule with
+`.searchable(text:placement: .sidebar, prompt: "Search Channels")`, and drive Edit > Find
+Channel (Command-Option-F) through `.searchFocused`. Filtering semantics are unchanged.
+
+**Inspector.** The Overview inspector runs the full window height, with toolbar items floating
+over its top and its content scrolling under them. Attach `.inspector` where it produces that
+full-height column, not a column that starts below the toolbar. Remove the 40-point title row,
+its close button and its divider. The Overview toolbar button, Option-Command-0 and View > Hide
+Overview close it. Give the inspector container the accessibility label "Overview". Content
+starts 12 points below the top safe area, with 16-point horizontal insets and 16 points at the
+end. Use the system inspector background, with no custom fill. In narrow windows the sheet keeps
+a visible "Overview" title in a 16-point inset header and a Done button that is the default
+action. Escape also closes it. The sheet has no X control.
+
+**Conversation surface.** Keep `textBackgroundColor` as the opaque conversation background, and
+let it extend beneath the toolbar and the composer, never clipped at a safe-area edge. The
+transcript `ScrollView` respects the top and bottom safe areas, so its first row rests below the
+toolbar and its last row rests 16 points above the floating controls. Rows scroll beneath both.
+Use `.scrollEdgeEffectStyle(.soft, for: .bottom)` on the transcript, because the composer floats
+inside the content rather than in the toolbar. Leave the top edge on the system default. On
+macOS 27 the soft edge is a fade that ramps across the whole bottom bar, from nothing at the
+activity row's top to about 75 percent under the composer. Rows in the 8-point slot between the
+activity row and the composer stay legible and only lightly faded. That is the system effect
+working, not a gap. Never patch it with a mask, a fill or `.hard`, which draws its divider flush
+against the capsules.
+
+Glass covers part of the scroll view, so visibility excludes it. Read marking, first-unread
+landing, Reveal, follow-at-bottom (within 48 points of the end) and paging anchors all measure
+against the unobscured viewport between the toolbar and the floating controls. A message hidden
+under the composer or toolbar is not visible and must not be marked read.
+
+**Floating composer.** Shell attaches the composer with `safeAreaBar(edge: .bottom, spacing: 0)`
+instead of `safeAreaInset`, including in the offline placeholder state. The bar has no
+background. The composer is one glass surface.
+
+| Property | Value |
+| --- | --- |
+| Width | The full `ConversationRail` lane, W. Its leading edge sits on the avatars' leading edge, with no gutter pad |
+| Bottom inset | 16 points from the window's bottom edge |
+| Shape | Rounded rectangle, radius 18, continuous corners, so a single 36-point row would read as a capsule |
+| Material | `.glassEffect(.regular, in: .rect(cornerRadius: 18))`, not interactive |
+| Edge | No custom stroke. Increase Contrast adds a 1-point `primary` stroke at 50% on the same shape |
+| Drop target | 2-point accent stroke on the same shape while an image drag is over the composer |
+| Focus | No ring around the composer. Like Messages and Notes, the primary text view shows focus with its caret |
+| Text | Transparent NSTextView and scroll view. 14-point body, inset 12, one 20-point line minimum, three lines before scrolling |
+| Tray | 28-point header at the top, then a 1-point `separatorColor` hairline inset 12 on both sides |
+| Controls | 28-point row, 8-point horizontal and bottom padding, 8 points between controls |
+| Send | The one filled control, a 28-point accent circle with a white `arrow.up`. Disabled uses a `quaternary` fill and a secondary symbol |
+| Dictate | Borderless `mic` 8 points before Send, styled like Attach Image. Listening tints a 28-point circle with accent at 15% under an accent `waveform`, never a second solid fill. States are under Composer and tray |
+| Height | About 80 points without the tray and about 109 with it, growing with text and thumbnails |
+
+Composer errors, the connection explanation and the 12,000-character limit render inside the
+glass surface as a caption notice row at its top, with 12-point horizontal and 8-point top
+padding, separated from the tray by the same hairline. They never float as loose text over
+messages. The system glass becomes opaque under Reduce Transparency. Do not substitute a custom
+fill.
+
+**Activity row.** The transcript adds its own `safeAreaBar(edge: .bottom, spacing: 0)` to its
+scroll view for the floating controls, so they stack directly above the composer bar. The row is
+present only while live agents are working or the reader is away from the end. Otherwise it
+reserves no space.
+
+| Property | Value |
+| --- | --- |
+| Position | 8 points above the composer, on the same rail, with leading and trailing edges matching the composer |
+| Working capsule | Leading. Height 28, `.glassEffect(.regular.interactive(), in: .capsule)`. At most three 20-point avatars, inset 4 so they sit concentric with the capsule, 6 points to the label and 12 trailing padding |
+| Label | "Ada is working" or "3 agents are working", 12-point medium in the primary label color. Activation opens the existing Working Now popover anchored to the capsule |
+| Jump to Latest | Trailing. The same capsule and glass, with `arrow.down` and "Jump to Latest" in 12-point medium and 12-point horizontal padding |
+| Notices | Reveal, send-action and read-position errors stack 8 points above the row in a glass rounded rectangle, radius 14, with primary caption text, 12 horizontal and 8 vertical padding, and borderless Retry or Dismiss |
+| Motion | Appears and leaves with opacity and a 4-point rise over 0.2 seconds, ease-out. Reduce Motion uses opacity only |
+
+When the row appears or leaves, a reader at the end stays at the end, and a reader elsewhere
+keeps their anchor. Do not wrap the composer and the row in a shared `GlassEffectContainer` with
+spacing of 8 or more, because that fuses them into one shape.
+
+**Stale banner.** Replace the full-width `.bar` strip with a top `safeAreaBar` holding one glass
+capsule, centered on the rail 8 points below the toolbar. It is 32 high with 14-point horizontal
+padding and holds `wifi.exclamationmark`, "Reconnecting. Messages may be out of date" in
+caption, and a borderless Retry. The full error stays in its help text.
+
+**Real-window acceptance.** App snapshots capture the composited window and its sheets with
+ScreenCaptureKit, so they show glass and content beneath a `safeAreaBar` as drawn. Without Screen
+Recording they warn and fall back to `cacheDisplay`, which leaves both blank, and those captures
+cannot judge this section. Judge this section only in a real window on the stamped build,
+captured with ScreenCaptureKit or Computer Use, in light and dark, active and inactive, with the
+inspector open and closed, scrolled to the top and mid-history, and with Reduce Transparency
+and Increase Contrast. Confirm that the sidebar follows the running system's shape, that the
+only rule under the toolbar is the system's own edge, that no inspector row runs under the
+toolbar controls, that message text beneath the composer
+never competes with typed text, and that the activity capsule and composer read as two related
+pieces of glass.
+
+| Surface | macOS 27 (primary) | macOS 26 |
+| --- | --- | --- |
+| Sidebar | Flush and full height, no margin | Inset floating glass panel |
+| Conversation top edge (automatic) | Crisp 1-point divider, also at rest | Soft blur while content is beneath |
+| Inspector top edge (explicit `.hard`) | The same divider, continuous with the conversation's | Hard edge while content is beneath |
+| Bottom edge above the composer | Our explicit `.soft` fade, ramping across the activity row and composer | Same |
+| Glass controls, composer, capsules | System Liquid Glass | Same |
+
+Both rows come from the same code. Never branch on the OS version to imitate one look on the
+other.
+
 ### Window and navigation
 
 All dimensions are logical points, not pixels.
@@ -186,24 +403,43 @@ All dimensions are logical points, not pixels.
 | Surface | Default | Limits and behavior |
 | --- | --- | --- |
 | Main window | 1280 x 840 | Minimum 760 x 560. Restore size, selected channel, sidebar, filter and inspector per window |
-| Sidebar | 248 wide | Resizable 220...320. Standard source-list selection and full-height material |
-| Conversation | Remaining width | At least 420. Transcript and composer share one centered lane, max 760 wide, 24 horizontal inset |
-| Inspector | 312 wide | Resizable 280...400. Do not squeeze conversation below 420 |
-| Toolbar | System height, approximately 52...60 | Unified native toolbar, traffic lights and normal window dragging |
-| Narrow window | Below 1000 wide | Inspector opens as a native sheet, preferred width 360, rather than stealing transcript width |
+| Sidebar | 248 wide | Resizable 220...320. Full window height, system floating glass panel and source-list selection |
+| Conversation | Remaining width | At least 420. One full-width lane inside 24-point side insets. Agent surfaces cap at 760 and yours at 80% of the lane up to 640, both scaled by Text Size. The floating composer spans the lane |
+| Inspector | 312 wide | Resizable 280...400. Full window height with no title row. Do not squeeze conversation below 420 |
+| Toolbar | System height | System default style, transparent, glass controls, traffic lights and normal window dragging. No band or rule beneath it |
+| Narrow window | Below 1000 wide, or wherever a wider sidebar or inspector leaves the conversation under 420 | Inspector opens as a native sheet, preferred width 360, rather than stealing transcript width |
 
 Use `NavigationSplitView` for sidebar and conversation, and a trailing `.inspector` when there is
 room. The inspector is initially visible at the default width. Remember its desired visibility
-when temporarily adapting to a narrow window. Do not automatically hide a user-opened sidebar.
-With the sidebar hidden, the transcript stays centered rather than stretching its bubbles.
+when temporarily adapting to a narrow window. Only the toolbar, the menu or a divider drag change
+that choice. Resizing, tiling and AppKit's own collapses never do. The column steps aside 20
+points before the split view's minimum, so a live resize never stalls against it. An abrupt
+resize below that width, such as tiling, removes the column without animation, because AppKit
+can't lay out a split view narrower than its minimum. Do not automatically hide a user-opened
+sidebar.
+With the sidebar hidden, the lane and composer widen with the window. Messages keep their
+readable caps and stay pinned to their edges.
 
 The sidebar toolbar holds the sidebar toggle, title "Channels" and New Channel (`plus`).
-The detail toolbar shows the channel name, without a decorative hash prefix, and a one-line
-secondary purpose subtitle where the system supports it. Trailing controls are the working
-summary, Message View (`line.3.horizontal.decrease`), Channel Actions (`ellipsis`), and Overview
+The detail toolbar shows only the channel name, without a decorative hash prefix or purpose
+subtitle. The name is a title menu, the pattern Pages, Keynote and Numbers use for a document
+title, so channels stay one click away with the sidebar collapsed. `toolbarTitleMenu` only draws
+for document-based windows, so the title is a native toolbar `Menu` in the navigation slot,
+styled as the system title: 15 semibold, dimmed in inactive windows, and a chevron that fades in
+on hover. Keep `.navigationTitle` for Mission Control and the Window menu. The title text sits
+where the system title did, 20 points from the detail column's leading edge with the sidebar
+visible, and at the system title's spacing after the leading toolbar items with it collapsed. It
+lists
+every channel in sidebar order with the current one checked, then a divider, New Channel… and
+Edit Channel…. Choosing a channel behaves like selecting it in the sidebar. Items mirror the
+sidebar's attention state with the system menu-item badge (Input Needed, Unread or Done). If the
+title menu can't carry badges, omit them rather than appending text to channel names. Shell
+verifies the hover chevron and menu in the real glass toolbar.
+Trailing controls are Message View (`line.3.horizontal.decrease`),
+Channel Actions (`ellipsis`), and Overview
 (`sidebar.trailing`). Put Open in Toy Box in Channel Actions and the menu bar, not another
-permanent toolbar button. Standard toolbar overflow handles constrained widths. Hide the purpose
-subtitle before truncating the title, then reduce the activity summary to its count.
+permanent toolbar button. Standard toolbar overflow handles constrained widths. Keep working
+status in the floating activity row, not duplicated beside the window title.
 
 Opening a channel selects it in the current window. Command-click or Open in New Window creates a
 separate window for that channel. Windows share the same channel store and draft. Only a key,
@@ -219,22 +455,29 @@ drop shadows. Use an 8-point spacing rhythm, with 4-point adjustments inside com
 | Token | Native treatment |
 | --- | --- |
 | Conversation background | `textBackgroundColor`, opaque in both appearances |
-| Agent message surface | `controlBackgroundColor`, subtle `separatorColor` hairline |
+| Agent message surface | Neutral tonal fill over the conversation, approximately 4.5% primary ink in light and 7% in dark. A pending request swaps it for a warm orange wash. Borders only under Increase Contrast |
 | Navigation and inspector | System sidebar and inspector materials, no manual blur stacking |
 | Floating controls and popovers | Native toolbar, popover and control materials |
 | Text | `labelColor`, `secondaryLabelColor`, `tertiaryLabelColor` by hierarchy |
 | Selection and focus | System accent, source-list selection and focus ring. Respect user accent |
-| Toy Box identity | Intrinsic lead star and its exact `#0891b2` avatar fill. Do not recolor it to the accent |
+| Toy Box identity | The lead's avatar exactly as the server supplies it, a navy `#1E3A8A` circle with a gold `#FACC15` outline star, drawn as that color's `.gradient` like every avatar. Channel icons keep Toy Box's channel cyan `#0891b2`, which no longer belongs to the lead. Recolor neither to the accent |
 | Unread | Semantic system blue, 1-point New rule. Blue does not mean working |
-| Requests | Semantic system orange/amber with a question symbol and text |
-| Completion and additions | Semantic system green plus checkmark or explicit `+` sign |
+| Requests | Orange wash on the pending bubble, orange `questionmark.bubble.fill`, primary label text and a Reply button. Never an outline |
+| Completion and additions | The shared completion green (`#196C2E` light, `#70D58A` dark) plus a knocked-out checkmark or explicit `+` sign. Never a white glyph on system green |
 | Error, blocked and removals | Semantic system red plus symbol, label or explicit `-` sign |
 
-On macOS 27, let the system render its current Liquid Glass toolbar and navigation controls.
-Custom glass is limited to the small floating Jump to Latest control, and only if the build SDK
-provides the appropriate availability-gated API. macOS 15 uses native material equivalents.
-No visual behavior depends on glass support. Reduce Transparency makes material backgrounds
-opaque. Increase Contrast strengthens separators and control outlines, not saturation alone.
+Let the system render its Liquid Glass toolbar, sidebar and navigation controls, as described
+in the Liquid Glass composition section. Do not give the detail column a separate rectangular
+title-bar plate that steps against the sidebar, and do not draw a band or rule under the
+toolbar. The active and inactive window must each read as one window. Custom glass is limited
+to the floating composer, the activity row, Jump to Latest, transient notices and the stale
+banner. Reduce Transparency makes glass and material backgrounds opaque. Increase Contrast strengthens separators and control outlines, not saturation alone.
+Small status, action and diff-count text must reach 4.5:1 against its actual background in both
+appearances. Green additions and red removals need contrast-safe adaptive text colors, not raw
+system green/red that can fail on a light inspector or popover background.
+Raw system orange is not a safe foreground for small text on white. Use a contrast-safe adaptive
+amber text token, or primary text with an orange symbol, for Input Needed, request labels, waiting
+details and unmatched-audience warnings. Non-text status symbols need at least 3:1.
 
 | Content | Size and weight | Layout |
 | --- | --- | --- |
@@ -242,8 +485,10 @@ opaque. Increase Contrast strengthens separators and control outlines, not satur
 | Sidebar detail and timestamps | 11, regular | Secondary, tabular digits for time/counts |
 | Message body and composer | 14, regular | Approximately 20 line height. Never compress line height to fit |
 | Message author | 12, semibold | Timestamp and addressee 11, regular |
-| Inspector section heading | 12, semibold | Count badge 11, regular, no forced uppercase |
+| Day divider and system rows | 11, semibold / 11, regular | Centered, secondary, values in primary medium |
+| Inspector section heading | 13, bold (Headline) | Count follows in 13 regular secondary. No capsule, no forced uppercase |
 | Inspector body | 13, regular | Approximately 18 line height |
+| Inspector status and detail lines | 11, regular | Secondary, tabular digits for counts and countdowns |
 | Inline code and diff counts | System monospaced, 12 / 11 | Code blocks scroll horizontally |
 
 Honor the system accessibility text size where available and a native View > Text Size control
@@ -253,33 +498,133 @@ accessible full value or an expansion action.
 
 ### Sidebar
 
-Place a native channel search field directly below the toolbar, inset 12. It filters the local
+Use the system sidebar search field from `.searchable(placement: .sidebar)`. It filters the local
 catalog by channel name, purpose or directory without making a network search request. Preserve
 the selected channel while filtering. The list remains one "Channels" group in server order.
 Do not reorder it for presence or attention. Refresh preserves scroll and selection.
 
-Each row is at least 64 high, with 8 horizontal and 7 vertical content padding, an 8-point corner
-radius supplied by native selection, and an 8-point gap between a 28-point cyan-tinted `number`
-tile and the text. The first line holds name and trailing attention. The second line holds the
-directory's last component or relative updated time, plus a lead-first avatar stack at the right.
-Avatars are 16, overlap by 4, show at most three, then `+N`. No directory means time occupies the
-detail slot, never an empty label. Full path and timestamp are available as help and accessibility
-values. Selected and inactive-window rows use standard source-list appearance.
+Rows follow the Mail and Messages list pattern: who or what on the left, when on the right, and
+detail beneath. Each row is at least 52 high (scaled with text size), with 8 horizontal and 8
+vertical content padding and native source-list selection. A 30-point channel icon sits 10 points
+before the text and is centered on it: a circle filled with `Color(#0891b2).gradient` (Toy Box's
+channel cyan through SwiftUI's standard gradient, a constant of its own and never read from the
+lead's avatar) and a 14-point semibold white `number`. A round icon
+matches the avatars and status glyphs and replaces the tinted rounded tile, a web convention.
 
-Attention occupies a reserved 18-point trailing slot so titles do not jump:
+The first line is the name (13 semibold, primary, one line, tail truncation), then at least 6
+points, then the last-activity time (11 regular, secondary, tabular, never truncated), aligned on
+the first baseline. The second line is 18 high and 3 points below. It leads with the folder token
+and ends with the working-agent stack, 6 points, and then attention. Only working agents appear in
+the stack, in existing team order. Avatars are 16 and overlap by 4 with the shared 1.5-point
+knockout (see the stack paragraph under Transcript). They show at most three, then `+N` in 9-point
+medium, secondary and tabular, with 7 points of leading padding. Draw no presence rings, outlines
+or separate spinner. An idle or stale channel has no activity stack.
+
+**Faces yield to the folder.** On line 2 the folder name identifies the channel, while the stack
+only summarizes it. When space runs short, the stack gives up faces before the folder gives up
+letters. Build line 2 as `HStack(spacing: 0)`: the detail, a spacer, the stack, then attention
+with 6 points of leading padding. After a folder token the spacer's minimum is 6, so with the
+token's own 6-point trailing padding the name always keeps 12 points before the stack. After
+purpose text the minimum is 12. Both kinds of row wrap line 2 in `ViewThatFits(in: .horizontal)`.
+A folder row offers, in order:
+1. The full stack, with the token at `.fixedSize()`.
+2. Each smaller face count down to one, the token still fixed. Offer a count only while its `+N`
+   stands for at least two agents, because `+1` is wider than the face it replaces. Two working
+   agents therefore have only the full stack, and three go from three faces straight to one face
+   and `+2`.
+3. The smallest of those stacks with the token free to middle-truncate, as the last resort.
+
+`AgentAvatarStack` takes a `limit` (default 3) for this. At the default 248-point width,
+"toy-box-mac" with five agents working and unread reads in full beside one face and `+4`. A folder
+name of about 11 characters stays whole beside any stack and attention, about 15 without
+attention, and wider sidebars restore faces. Only longer names or the 220-point minimum still
+truncate.
+
+Purpose rows yield the same way, with the same face counts, but only to keep a readable stem,
+because prose truncates anyway and a face carries more than a few letters. Each purpose candidate
+measures the text as `.frame(minWidth: 0, idealWidth: 60, maxWidth: .infinity, alignment:
+.leading)` with `.layoutPriority(1)`, so a candidate fits only when about ten characters of
+purpose remain. The last resort is again the smallest stack with the text free to tail-truncate.
+Nothing changes at 248 or wider. At 220, "Build…" becomes "Build a wel…" beside one face and
+`+3`, and a short purpose like "Write docs" stays whole.
+
+Help and VoiceOver always name every working agent, however many faces show.
+
+**Last-activity time** is the catalog's `updatedAt`, which the server bumps for every appended
+message and for user edits, but not for task revisions alone. Format it as Mail and Messages do,
+with no relative wording: today shows the time (`date.formatted(date: .omitted, time:
+.shortened)`, "9:04 AM"), the previous day shows "Yesterday", 2 through 6 days ago show the
+weekday ("Tuesday"), and anything older (including 7 days ago, which shares today's weekday name) shows a short numeric date (`.dateTime.month(.defaultDigits)
+.day().year(.twoDigits)`, "10/14/26"). A future timestamp from clock skew counts as today. Refresh
+on a 60-second timeline so labels roll over at midnight. Help and accessibility say "Last activity
+today at 9:04 AM".
+
+**Folder token.** When the channel has a directory, line 2 leads with a 10-point medium `folder`
+symbol, 4 points, then the last path component (11 regular, secondary, middle truncation). The
+token has 6 points of horizontal padding, is outset 6 points to the left so its glyph aligns with
+the name, and is 18 high with no resting fill. Whether it's a button depends on whether the
+directory is on this Mac. The directory is a path on the server, so it is openable only when both
+of these hold:
+- The server URL's host is this Mac: `localhost`, a `*.localhost` name, `127.0.0.1`, `::1`, or one
+  of the names in `Host.current().names`.
+- `FileManager.fileExists(atPath:isDirectory:)` finds a directory there.
+
+Check this when the catalog loads or refreshes and when the app becomes active, and cache it per
+server and path. Never stat on every render. The three folder states are:
+
+| State | Token | Click and hover | Help |
+| --- | --- | --- | --- |
+| Openable | `folder` and name, secondary | Hover shows a capsule fill of primary at 8% light or 12% dark, plus 5% while pressed. Click opens the folder in a Finder window with `NSWorkspace.selectFile(nil, inFileViewerRootedAtPath:)`, never `NSWorkspace.open`, so a directory that is a package such as an app bundle never launches. It never selects the row | "Open toy-box in Finder", then the full path with `~` abbreviation |
+| Server is another machine | `folder` and name, secondary | Static: no hover fill and no action | "On [host]: [full path]. Folders open only when the server runs on this Mac." |
+| Missing on this Mac | `questionmark.folder` and name, secondary | Static | "This folder no longer exists: [full path]" |
+
+Every token uses secondary ink, so the folder name stays readable in every state, including on
+the accent selection. The glyph, its help and the lack of a hover capsule mark a folder as
+unavailable. Don't dim the missing token: 30% or tertiary ink measures under 2:1 at rest and
+about 1.6:1 on the accent.
+
+With no directory, line 2 leads with the purpose's first line (11 regular, secondary, tail
+truncation). With neither, line 2 holds only its trailing indicators, and the row keeps its height.
+
+**Selection.** Selected rows use the native source-list highlight. In the key window it is the
+accent fill (`backgroundProminence == .increased`), and every custom color must yield to it. The
+icon becomes a 22% white disc with a white `number`. The request bubble, completion check and
+unread dot become white. The hover capsule becomes 20% white. Text uses `.primary` and
+`.secondary` so it whitens on its own. Working avatars keep their own colors. Never draw cyan,
+orange or green on the accent fill. In an inactive window, or when the list isn't focused, the
+highlight is gray and every row color returns. Search, filtering and keyboard selection never
+change these metrics.
+
+Attention sits at the trailing end of line 2, in a 16-point slot shown only when there is
+attention. The name and time line never moves:
 
 | Priority | Indicator | Help and accessibility |
 | --- | --- | --- |
-| Pending request | Orange `questionmark.bubble.fill` | "Waiting for your response". Remains visible while open |
-| Unread completion | Green `checkmark.circle.fill` | "All tasks completed". Suppressed for an open channel |
-| Ordinary unread | Blue 6-point dot | "Unread messages". Suppressed for an open channel |
-| Working, without attention | Small activity ring beside avatar stack | Names of agents working. Not an unread badge |
+| Pending request | Orange `questionmark.bubble.fill`, 13 point | "Waiting for your response". Remains visible while open |
+| Unread completion | Semibold `checkmark.circle.fill` in the shared completion green, check knocked out | "All tasks completed". Suppressed for an open channel |
+| Ordinary unread | Blue 7-point dot | "Unread messages". Suppressed for an open channel |
+| Working, without attention | Working-agent avatar stack, no extra spinner | Names of agents working. Not an unread badge |
 
-The avatar stack exists independently of attention, so a working team and pending question can
-coexist. Closed channels use catalog activity only if the protocol actually supplies it. Never
-invent presence or keep stale work animations after losing observation. Context menu: Open in
-New Window, Open in Toy Box, Edit Channel, Reveal Working Directory when applicable, then Delete
-Channel. Delete is separated and destructive, never triggered by the unmodified Delete key.
+The working-avatar stack exists independently of attention, so a working team and pending question
+can coexist. Keep the full-team names in row help/accessibility even though idle members are no
+longer pictured in the activity stack. Closed channels use catalog activity only if the protocol actually supplies it. Never
+invent presence or keep stale work animations after losing observation.
+
+The row stays one accessibility element. Its value reads in this order: last activity, folder (with
+"not on this Mac" or "missing" when it applies), attention, working agents, then team. When the
+folder is openable, the row adds an Open Folder in Finder action.
+
+Context menu, in groups:
+1. Open in New Window, Open in Toy Box.
+2. Open Folder in Finder, Open Folder With, Copy Folder Path.
+   - The first two appear only when the folder is openable. Open Folder With lists
+     `NSWorkspace.urlsForApplications(toOpen:)` for the folder, with the default app first and
+     then the rest alphabetically, each with its 16-point icon.
+   - Copy Folder Path appears whenever the channel has a directory, including remote and missing
+     folders, and copies the full server path.
+   - Omit the whole group when there's no directory.
+3. Edit Channel….
+4. Delete Channel…, separated and destructive, never triggered by the unmodified Delete key.
 
 **Catalog activity:** the catalog now includes `working`, the IDs of leads and members whose
 sessions are running. This is the same fact the browser reads from workspace session state and
@@ -287,24 +632,118 @@ the stream uses for presence. Sidebar rows for closed channels use it, while an 
 its live presence. Activity can lag by one catalog refresh. It must clear when observation is lost
 rather than keep animating.
 
+**Connection footer.** The bottom of the sidebar names the server this window talks to, as the
+wireframe's `sidebar-connection` group draws it. Attach it with `.safeAreaBar(edge: .bottom)` on
+the sidebar list so rows scroll beneath it under the system scroll edge effect. Give it no
+background, divider or material of its own. The status line is a 7-point dot (the unread dot's
+size), 6 points, then the server's host and port in 11 regular, secondary, one line, middle
+truncation. Omit the port when it is the scheme's default. The line is 22 high with 6 points of
+top padding. The dot's leading edge aligns with the channel icons, 24 points from the sidebar's
+leading edge, and its center sits 24 points above the sidebar's bottom edge, so it clears the
+corner as evenly as the rows clear the side.
+
+| Catalog state | Dot | Above the status line |
+| --- | --- | --- |
+| First load | `.secondary`, then a spinner after 300 ms | Nothing. The placeholder rows already show loading |
+| Last refresh succeeded | `.green` | Nothing |
+| Refresh failing, rows kept | `.orange` | The existing error block: "Channels may be out of date", the readable failure, then Retry and Settings |
+| Never loaded, invalid URL or authorization failure | `.red` | The same block, headed "Can't connect to Toy Box" |
+
+The error block moves into the same bar, 10 points above the status line and on the same 24-point
+leading edge, so a problem and the server it concerns read as one footer. The status line never
+repeats the block's words. Differentiate Without Color holds because every state other than
+connected shows either the loading placeholders or the block's heading directly above the dot.
+
+The footer is the sidebar's only progress indicator. When the first load or a refresh the user
+asked for (Retry, or View > Refresh) takes longer than 300 ms, the dot's slot shows a native
+indeterminate spinner,
+`ProgressView().controlSize(.mini)`, which is 10 points. Center it on the dot's center and don't
+clip it, so it overhangs the 7-point slot by 1.5 points on each side and the host text never moves.
+When the attempt resolves, it crossfades back to the resulting dot. Background polling never shows
+the spinner. Never overlay a spinner or "Loading Channels" on the list. The static placeholder rows
+show the shape and the footer shows the activity.
+
+In an inactive window the system draws a hairline above the bar, just as it does under the
+toolbar. Keep it, because the soft edge in the active window comes from the same system effect.
+Never fake that line, and never hide the scroll edge effect to remove it.
+
+The status line is a borderless button that opens Settings, where the server URL lives. Hover and
+press use the folder token's capsule (primary at 8% light or 12% dark, plus 5% while pressed),
+outset 6 points so the dot never moves. Help reads "Connected to http://localhost:3100", or
+"Connecting to", "Reconnecting to" or "Can't connect to", then "Change the server in Settings."
+VoiceOver reads one button labeled "Server" with the value "localhost:3100, connected" (or
+connecting, reconnecting, can't connect). Dot colors crossfade over 0.2 seconds, instantly with
+Reduce Motion. Never pulse the dot. The footer reflects the catalog connection only. An open
+channel's own stream keeps its inline "Reconnecting" banner in the detail column.
+
 ### Transcript
 
 Use the canonical row projection unchanged. Avatar column is 32, gap is 12, and body begins 44
 points into the lane. Runs have 20 points between them, 8 between entries in a run and 4 between
 header and body. A header only repeats when `showHeader` says it does. Agent bubbles have 12-point
-corners, 12 horizontal and 10 vertical padding, and no tail. They fit their content up to the lane
-width. The user's message aligns trailing, max 80% of the lane, with a low-intensity accent-tinted
+corners, 12 horizontal and 10 vertical padding, and no tail. They fit their content up to
+min(lane − 44, 760). The user's message pins trailing, up to min(80% of the lane, 640), both caps
+scaled by Text Size (see the lane rules in Whole-window composition), with a low-intensity accent-tinted
 surface and normal label text. Do not use white body text on a saturated brand color.
 
-Agent avatars are circular, with the exact supplied background and path. Draw the 24-unit path
-at 64% of the avatar, stroke 2.25 units, round caps and joins. Choose black or white path ink by
-measured contrast. A missing profile uses the name's initial on a subtle cyan field. A removed
-agent uses `person.crop.circle.badge.xmark`, neutral fill and the name "Deleted agent" everywhere,
-including reactions and task owners. Historical text stays intact. The lead keeps its star.
+Agent avatars are circular, with the supplied color and path. Fill the circle with the supplied
+color as SwiftUI's `Color.gradient`, the same soft top-light gradient as the sidebar's channel
+icon, so every avatar reads as slightly raised. This is one change in the shared
+`AgentAvatarView`, so an agent looks identical in the team list, transcript, composer, reactions,
+task owners and sidebar stacks, at every size. Add no shadow, rim or highlight: a shadow muddies
+light mode, disappears in dark and smears overlapping stacks. With Increase Contrast, fill flat
+with the exact supplied color. Draw the 24-unit path at 64% of the avatar, stroke 2.25 units at
+every size, round caps and joins. Don't thicken the stroke at small sizes: today's denser marks,
+with parallel lines 2 to 3 units apart, fill in at 2.75 units. Path ink is the avatar's optional
+`ink` when it is a valid `#RRGGBB` that keeps at least 3:1 against the base color. Otherwise choose
+black or white by measured contrast against the supplied base color, as the pane does, never
+against the rendered gradient. The lighter top costs a white mark about a third of its contrast,
+and even a color at the black and white crossover keeps 3:1 for the mark. A missing profile uses
+the name's initial on a subtle cyan field. A removed agent uses `person.crop.circle.badge.xmark`,
+neutral fill and the name "Deleted agent" everywhere, including reactions and task owners. Both
+stay flat. Historical text stays intact.
+
+**The lead's avatar** is navy `#1E3A8A` with the same outline star drawn in gold `#FACC15`, Toy
+Box's own yellow, through `ink`. That is 6.8:1 on the base color and about 3.9:1 on the gradient's
+lighter top, and it reads as the one in charge at 14 points. It also stops the lead from matching
+the channel icon's cyan. Increase Contrast flattens the navy and keeps the gold. The server is the
+single source of this art. Every channel snapshot already carries the lead's `avatar`, so Toy Box
+adds the optional `ink` to the avatar shape and sets it only on its lead profile. `update_member`
+never accepts it, so members keep black or white ink. A client without `ink` support draws the
+star white on navy, a safe fallback. The Mac keeps no lead art of its own. The
+`/api/v1/channels` catalog always carries one `lead: { name, role, avatar }` profile beside its
+members, and each channel's lead is that profile under the channel's ID. The sidebar's working
+stack draws it before a channel opens, so the browser and the Mac never show two different leads.
+The Mac requires it and has no fallback. Never substitute a built-in star.
+
+**Overlapping stacks** (the sidebar's 16-point working stack and the activity row's 20-point
+working capsule) put the first agent in front, overlap each avatar 4 points onto the next, and cut
+a 1.5-point gap around the avatar in front at every size. The gap is a true knockout, so the
+sidebar glass, the accent selection or the capsule's glass shows through. Never stroke a guessed
+background color, which reads as a ring on translucent materials and selection. Mask every avatar
+after the first with an even-odd shape, the avatar's rectangle plus a circle of radius
+`size / 2 + 1.5` centered `size - 4` points to its left:
+
+```swift
+var path = Path(rect)
+let r = size / 2 + 1.5
+path.addEllipse(in: CGRect(x: rect.midX - (size - 4) - r, y: rect.midY - r, width: r * 2, height: r * 2))
+// avatar.mask { StackKnockout(...).fill(style: FillStyle(eoFill: true)) }
+```
+
+Keep the gap under Increase Contrast and Reduce Transparency. The shared `AgentAvatarStack` owns
+it, with `size`, `limit` and `showsOverflow`. The working capsule adopts it with `showsOverflow:
+false` and hides it from accessibility, because its label already names the agents. Reaction chips
+space their 14-point avatars 4 points apart and need no knockout.
 
 The addressee follows the author with a muted right arrow. Known leading mentions are omitted
-only according to the canonical helper. In-body mentions are selectable text with a small tinted
-background and accessible agent name. Unknown mentions remain literal, not a false agent chip.
+only according to the canonical helper. In-body mentions are selectable, semibold text in the
+agent's identity ink, with no background, and keep the accessible agent name. Derive the ink from
+the avatar color. Mix it toward black in light appearance and white in dark, in 5% steps, until
+it reaches 4.5:1 against the composited surface it sits on: the agent fill, the user's
+accent-tinted bubble or the pending orange wash. Under Increase Contrast the target is 7:1.
+Everyone and Lead follow the same rule with the accent and the lead's color. Weight carries the
+cue for color-blind readers. Unknown mentions remain literal, not a false agent chip.
 Links have normal native link affordances. Render headings, emphasis, lists, blockquotes, fenced
 code, inline code and tables, with selectable text. Code blocks offer Copy Code, and tables may
 scroll horizontally. Never execute HTML, scripts or embedded remote content from Markdown.
@@ -314,16 +753,39 @@ Only coordination entries marked collapsible truncate, at 160 points of body tex
 user and all flagged requests always remain expanded. User-initiated expansion is preserved while
 rows update. The copy action copies the original full message, including its leading mentions.
 
-Pending requests have a 1.5-point orange outline and a header label "Needs your reply" with
-`questionmark.bubble`. A later committed user message changes that historical label to a checkmark
-and "Replied". Neither reading nor an optimistic send clears a request. Do not pulse the outline.
+A pending request asks the user for something, so it offers an action rather than an alarm.
+Never outline it. The bubble keeps its normal shape and padding, but trades the neutral fill
+for a warm wash. In light, use `Color.orange` at 10%. In dark, keep the 7% neutral fill and layer
+orange at 10% over it, so the bubble reads warm gray rather than brown. The header adds an orange
+`questionmark.bubble.fill` and "Needs your reply" in primary text at medium weight. Inside the
+bubble, 10 points below the body, a small untinted bordered Reply button
+(`.controlSize(.small)`, `arrowshape.turn.up.left`) performs the same Reply as the hover action,
+like the actionable bubbles in Messages. A later committed user message removes the wash and the
+button, and the historical header shows a secondary `checkmark` and "Replied". Neither reading
+nor an optimistic send clears a request. Requests never pulse. Increase Contrast adds a 1-point
+orange border to pending bubbles only. VoiceOver reads "Needs your reply" with the message and
+exposes Reply as an action.
 Reply and Copy Message appear on hover or keyboard focus and in the context menu. Reply prepends
 the agent's mention once, preserves the draft and focuses the composer. Deleted agents cannot
-be replied to. Keep message selection, link selection and context menus usable independently.
+be replied to. Your own messages expose Copy Message as an accessibility action, as well as in
+their context menu. Keep message selection, link selection and context menus usable independently.
 
-System rows align their 14-point symbol in the avatar column and use 12-point secondary text.
-They have a minimum 28-point hit area and 8 points of surrounding vertical space. Matching
-membership events and same-agent artifact shares merge only where the canonical projection does.
+System rows are channel events, not speech, so they sit in the neutral center of the
+conversation, as in Messages, rather than in the avatar column that belongs to agents. Each row
+is one centered, multiline `Text`: the event's inline SF Symbol, two spaces, then the sentence,
+in 11 regular secondary. Center on the full lane, including the identity gutter, with a 480-point
+maximum text width and centered wrapping. Consecutive system rows stack 4 points apart as one
+group, with normal 20-point run spacing around the group. Rows are at least 18 high, and each
+link keeps a 28-point hit target. Help shows the full local date and time and any full values.
+Matching membership events and same-agent artifact shares merge only where the canonical
+projection does. Keep a sentence on one line when it fits, and never force a two-line card.
+Keep event phrases regular and secondary, with names, routine titles and other values in
+primary ink at medium weight. The weight change replaces a separating colon. Artifact titles
+and preview URLs use native semantic link ink (`NSColor.linkColor`), a pointing-hand cursor and an underline on hover.
+Do not use a fixed accent constant that misses the 4.5:1 text floor in either appearance.
+Sentence joiners remain secondary. Preserve selection, full-value help and text scaling.
+The inline symbol is decorative. The accessible label is the sentence alone, never beginning
+with the object replacement character (U+FFFC) or the two spaces that follow the symbol.
 
 | Event | SF Symbol | Presentation |
 | --- | --- | --- |
@@ -336,17 +798,25 @@ membership events and same-agent artifact shares merge only where the canonical 
 | Routine scheduled / edited / deleted | `calendar.badge.clock` | Title, with full schedule and prompt in help/details |
 | Unknown future kind | `info.circle` | "Channel updated", timestamp and available textual description |
 
-Day rules use 11-point secondary labels ("Today", "Yesterday", localized full date). The unread
-rule is blue with "New" at the trailing edge. If day and unread coincide, combine them into one
-rule. Capture the unread boundary only after snapshot or replay completes, and never move it as
-the user reads. This boundary is not an extra synthetic message.
+Day dividers are centered labels with no rule, as in Messages: 11 semibold secondary, centered on
+the full lane, 16 high, with the header trait. Labels are "Today", "Yesterday", the weekday
+within the past six days, "Saturday, October 18" this year and "Saturday, October 18, 2025"
+otherwise, from localized date templates. Day dividers are not sticky. The New divider keeps
+Toy Box's blue: a 1-point system blue rule at 70% across the full lane, and "New" in 11
+semibold blue 6 points after its trailing end. When a day change and the unread boundary
+coincide, the day label sits 6 points above the New rule as one divider, read as "Today, New
+messages". Capture the unread boundary only after snapshot or replay completes, and never move it as
+the user reads. This boundary is not an extra synthetic message. Reference renders of day labels,
+the New divider, system rows and both request states: `docs/transcript-events.png`.
 
 Land on the first unread row, otherwise the end. Follow incoming messages only while within
 48 points of the end, or immediately after the user's own successful post. If scrolled away, a
-small material Jump to Latest button appears 12 points above the tray. It does not obscure a
-message. Preserve the visible top message and its offset while prepending history. At the top,
-show a small loading row, "Beginning of conversation", or "Couldn't load older messages" with
-Retry. A filtered view must continue paging even when a page contains no visible rows.
+small glass Jump to Latest capsule appears in the floating activity row above the composer.
+It shares that row with the working summary when present. Preserve the visible top message and its offset while prepending history. At the top,
+show Load Older Messages when more history is available, a small loading row while fetching, or
+"Couldn't load older messages" with Retry on failure. Once all history is loaded, show no
+"Beginning of conversation" label and reserve no empty header space. A filtered view must
+continue paging even when a page contains no visible rows.
 
 The Message View menu is a native radio-choice menu: All Messages and Your Messages. A non-default
 filter gives its toolbar button an active tint and label/help. It does not change the composer
@@ -354,33 +824,67 @@ audience or channel-wide read policy. Read only committed visible sequences in t
 Opening an inspector, reading a preview popover or watching a background window does not mark
 unseen messages read.
 
-Attachments appear below their own message, with 8-point spacing and corners. Image thumbnails
-fit within 240 x 160, never crop away essential content, and open native Quick Look on click or
-Space when focused. Videos have a poster, duration when known, and an explicit Play action.
+Attachments appear below their own message, with 8-point spacing and corners. Images form an
+inline horizontal filmstrip, scrolling horizontally when needed rather than stacking into a
+column. Do not show permanent image filenames, captions or a strip title. Keep the filename in
+each thumbnail's accessible View action and hover help. A tile without a filename is labeled
+by position, "Image 2 of 2", never a bare "Image". Align a fitting strip with the
+message's leading or trailing edge, retaining attachment order when it scrolls. Image thumbnails fit within
+240 x 160, never crop away essential content, and open the image viewer on click, Return or Space when
+focused. Their context menu keeps Quick Look and Open in Browser. Each image tile draws a 1-point inner hairline over its clipped 8-point corners, primary
+at 10% in light and 14% in dark, so screenshots with white or black margins keep an edge. Light
+appearance adds a soft shadow (black 10%, radius 3, y 1). Dark adds none. Increase Contrast
+raises the hairline to 40%. While an image loads, show a neutral tile at its final size
+(quaternary fill at 30%, the same corners and hairline). Add a small spinner after 300 ms and
+never show the filename. Read inline images' pixel size from the image header before decoding,
+so the first layout is final. Remote images without a known size use 120 x 90 and resize once.
+Videos have a poster, duration when known, and an explicit Play action.
 Other files show document icon, name and Open. Resolve resources against the server base URL.
 An unavailable file keeps its name and an explicit retryable error, not a blank thumbnail.
 Opening remote URLs must not assume a matching local filesystem path.
+
+**Image viewer.** Images open in place, as in Photos, never in another app or a floating Quick
+Look panel. The viewer pages through the clicked message's images in attachment order and
+doesn't cross into other messages. Videos and files keep their own actions.
+
+| Part | Specification |
+| --- | --- |
+| Presentation | Replaces the detail column (conversation and inspector) until closed. The sidebar stays. The canvas is `underPageBackgroundColor`, full bleed under the glass toolbar. The toolbar band settles at exactly the canvas color, with no change after the fade ends. The canvas stops at the sidebar, whose glass keeps its tint while viewing. Transcript scroll, draft and inspector state are untouched underneath |
+| Image | Fits the canvas with 24-point side margins, 16 below the toolbar and 16 above the capsule. Never upscale past the image's point size, so a 2x screenshot shows at native size. 6-point continuous corners, the tile's 1-point hairline (10% light, 14% dark, 40% Increase Contrast) and, in light only, a shadow of black 12%, radius 12, y 4 |
+| Toolbar | Back (`chevron.backward`, help "Back to Conversation") leads. Title is the sender, subtitle "Today at 5:23 PM · 2 of 4" (one image omits the position). Trailing: Share (`square.and.arrow.up`) and More (`ellipsis`: Copy Image, Open in Preview). Message View, Channel Actions and Overview hide while viewing |
+| Capsule | Only with two or more images. Centered 16 above the bottom edge, `.glassEffect(.regular.interactive(), in: .capsule)`, 8 padding. Previous and next (`chevron.backward` and `chevron.forward`, 13 semibold, 28 x 28) flank 32-point thumbnails (aspect fill, 6-point corners, hairline, 6 apart, 70% opacity). The current thumbnail is opaque with a 2-point accent ring 2 points outside it. Arrows go tertiary and disabled at the ends, with no wrap. Past nine thumbnails the strip scrolls, keeping the current one in view |
+| Keys and gestures | Left and Right, the capsule, a thumbnail click or a two-finger swipe change images. Escape, Space or Back close. Double-click toggles fit and actual size at the clicked point. Pinch and `Cmd-=`, `Cmd--`, `Cmd-0` zoom only while viewing, overriding Text Size. Scroll or drag pans a zoomed image, and changing images resets zoom. `Cmd-C` copies the image, and dragging it out exports the file |
+| Motion | Opening zooms the image from its thumbnail's frame to its fitted frame (spring, response 0.35, damping 0.9) while the canvas fades in over 0.2 seconds. Closing reverses into the current image's thumbnail, scrolling the strip to it first. Paging slides 40 points with a crossfade in the direction of travel. The tile steps aside only while the zooming image covers it, so the strip never shows a hole. Without a thumbnail frame (a tile less than half visible on close), the image fades and scales from 94%, and the tile stays in place under the canvas until the viewer is gone. Reduce Motion uses 0.2-second crossfades throughout, with no scale, and the tile never steps aside |
+| Loading and errors | Show the cached thumbnail at the final fitted frame immediately and swap in the full image when decoded. A spinner appears only after 300 ms. Failure shows "Couldn't Load Image" and Retry, centered on the canvas |
+| Accessibility | Modal. Focus moves to the image, labeled "Image 2 of 4 from Lead, [filename]", with Next, Previous, Copy, Share and Close actions. Closing returns focus to the current image's thumbnail. The stage's `.isModal` trait alone removes the conversation and inspector from the tree. Never put `.accessibilityHidden(false)` on them: on macOS 27 an explicit false re-exposes their hidden descendants and moves the bottom bars ahead of the transcript |
+| Lifecycle | One viewer per window. Switching channels, a deleted message or a lost channel closes it without animation. Not restored on relaunch |
+
+Transcript owns the viewer and its transition. Shell routes the viewing toolbar and the zoom
+and close commands.
 
 Reactions are display-only in this client, matching the user pane. Use the existing emoji for
 done, agree, celebrate, love and laugh. Also show the projected looking/working reactions while
 the agent's live presence and matching status target permit them. Group by reaction, then show up
 to three 14-point reactor avatars and `+N`. Chips are 24 high with a subtle border. Hover, keyboard
 focus or activation reveals every reactor name. Do not make a reaction chip look like an enabled
-"add reaction" button. The working row after the last message has 20-point avatars, "Name is
-working" or "N agents are working", and expanded status text on activation. Waiting belongs in
-the inspector, not this row.
+"add reaction" button. The working summary floats as a glass capsule above the composer, outside
+the scrollable history. It has 20-point avatars, "Name is working" or "N agents are working", and status details on
+activation. Waiting belongs in the inspector, not this row.
 
 ### Composer and tray
 
-Dock a solid composer region using the conversation's bottom safe-area inset. It has a hairline
-top separator, 12 top and 16 bottom padding. Keep the shared 24-point lane insets. Do not float a
-second glass panel behind the whole composer.
+The composer floats over the conversation in a bottom `safeAreaBar`, as one glass surface
+spanning the full conversation lane from the avatars' leading edge, 16 points above the window's bottom
+edge. Messages scroll beneath it. Do not add a full-width background, separator or second glass
+panel behind it. The Floating composer table in the Liquid Glass composition section is
+authoritative for its shape, material, edge, focus and internal metrics.
 
-The composer is a single rounded rectangle, radius 12, with a separator-colored border and native
-focus ring. Text is inset 12, starts at one 20-point line and grows through three lines before
+The composer and context tray form a single glass rounded rectangle, radius 18. Text is inset 12, starts at one 20-point line and grows through three lines before
 scrolling internally. The controls row is 28 high, with 8 points between controls. Baseline height
-is approximately 80, max approximately 120 before attachment thumbnails. Attach Image
-(`photo.badge.plus`, 28-point hit target) is leading, then audience, then Input Needed. Send is a
+is approximately 80, or 109 with the tray, and grows to three text lines before attachment
+thumbnails. Attach Image
+(`photo.badge.plus`, 28-point hit target) is leading, then audience, then Input Needed. Dictate
+(`mic`) is trailing, 8 points before Send. Send is a
 28-point circular `arrow.up` trailing button using system accent. Empty content is sendable only
 when at least one valid attachment exists.
 
@@ -388,6 +892,53 @@ Return sends. Shift-Return inserts a newline. Command-Return also sends. Do not 
 marked-text composition or while a completion menu is consuming Return. Escape dismisses
 completion or a popover without destroying text. Standard selection, undo, spelling, dictation,
 writing-direction and accessibility behavior must work through native text input.
+
+**Dictation.** System Dictation already works in the composer because it is a real `NSTextView`.
+The Dictation key and Edit > Start Dictation… stream words in at the caret with the system's own
+indicator. Keep that path intact and never remove the menu item. The composer also has its own
+Dictate button, because a button must say honestly whether it is listening, and there is no public
+API that starts system Dictation. The button uses macOS 26's on-device `SpeechAnalyzer` with a
+`DictationTranscriber` on the `progressiveLongDictation` preset, which gives punctuation and live
+tentative results. Audio never leaves the Mac.
+
+| State | Dictate button | Composer |
+| --- | --- | --- |
+| Ready | `mic` with the same borderless style, 12-point symbol, secondary ink and 28-point frame as Attach Image. Help and label "Dictate" | Unchanged |
+| Unsupported | Hidden when `DictationTranscriber.supportedLocale(equivalentTo:)` finds no match for the user's language | Unchanged |
+| No microphone | Disabled `mic`. Help "Connect a microphone to dictate" | Unchanged |
+| First use | A 22-point determinate ring around a 10-point `mic`, 2-point accent stroke over a `primary` 12% track, showing the language asset download. Clicking cancels | Notice row: "Downloading English dictation. This happens once." in the composer's caption notice style |
+| Listening | `waveform` at 13 points semibold in accent ink on a 28-point circle of accent at 15%. Its `variableValue` follows the smoothed input level, about 12 updates a second. Help and label "Stop Dictation". Reduce Motion holds a static full `waveform` | An empty draft's placeholder reads "Listening…". Tentative words draw in secondary ink at the insertion point and settle to primary ink as they finalize |
+| Access off | `mic.slash` in secondary ink. Clicking opens a popover from the button | Unchanged |
+| Failed | Returns to Ready | Notice row names the cause, such as "Dictation stopped because the microphone became unavailable." Every finalized word stays |
+
+Send stays the only filled control. Listening uses a tint, never a second solid accent circle, and
+never red, which reads as recording or error.
+
+- **Start.** Click Dictate. Focus moves to the composer, and words replace the selection at the
+  caret. The first click, never launch, raises the system microphone prompt, plus speech
+  recognition if the framework requires it. There is no separate menu command or shortcut, because
+  Edit > Start Dictation… and the Dictation key already own those.
+- **Stop.** Stop on any of these, keeping every word: click the button again, press Escape, type
+  any character, switch channels, the window resigns key, or 30 seconds pass with no new words.
+  Stopping finalizes the pending tentative words before returning to Ready.
+- **Send while listening.** Return, Command-Return or Send stop dictation, wait for the final
+  result and then send the finalized draft. Never post tentative words.
+- **Text.** One dictation session is one undo group. Only finalized words enter the persisted
+  draft. The audience preview updates from dictated text exactly as it does from typed text, but
+  dictation never invents mentions. Pass the channel's agent names, "Lead" and "Everyone" as
+  `AnalysisContext.contextualStrings` so names come out spelled correctly. Dictation keeps working
+  offline once the language asset is installed, like the rest of offline editing.
+- **Access off popover.** 280 wide with 14-point padding. A 15-point secondary `mic.slash` sits
+  before the 13-point semibold title "Microphone Access Is Off". The 12-point secondary body reads
+  "Allow Toy Box Channels to use the microphone in Privacy & Security settings. The Dictation key
+  still works." It has one trailing button, "Open System Settings", which opens Privacy & Security >
+  Microphone. If speech recognition is the missing permission, the title and body say "Speech
+  Recognition" instead.
+- **Accessibility.** VoiceOver announces "Listening" on start and "Dictation stopped" on stop. The
+  live level is never announced. Full Keyboard Access reaches the button in control order.
+- **Bundle.** `Info.plist` carries `NSMicrophoneUsageDescription`, "Toy Box Channels uses the
+  microphone only while you dictate a message.", and `NSSpeechRecognitionUsageDescription`,
+  "Dictation is transcribed on this Mac."
 
 Mentions remain plain `@handle` text. The completion popover anchors to the caret, opens above the
 composer when needed, is 300 wide and at most 320 high, and scrolls its own list. Order: Everyone,
@@ -400,7 +951,8 @@ disable duplicate acceptance, preserve typed text on failure and show the error 
 
 The audience pill reads "To Lead", the canonical audience label, or "No one will be notified" in
 amber. At narrow widths, show avatars plus a count and preserve the full names in help and
-accessibility. This is a preview of delivery, not a manually selected recipient control.
+accessibility. This is a preview of delivery, not a manually selected recipient control, so it
+is exposed as static text ("To Ada, Pixel"), never as an unknown element or a button.
 A pending request causes an unmentioned response to reach the lead, and an explicitly addressed
 response still acknowledges the request and reaches the lead according to the canonical policy.
 
@@ -430,9 +982,11 @@ Again, never an automatic retry. Keep the original UUID when verifying or explic
 that attempted send so a 409 cannot deliver it twice. Do not clear a newer draft when an older
 send eventually succeeds.
 
-The tray sits 8 points above the composer, one compact 28-point row. Lead with the newest shared
-artifact as a document pill, then `+N` for remaining artifacts. Trailing controls are Tasks with
-direct-root `done/total` and a 3-point progress track, and Preview when set. Zero-content controls
+The tray is a compact 28-point header inside the floating composer. Lead with the newest shared
+artifact as a borderless document action, then `+N` for remaining artifacts. Trailing controls are
+Tasks with direct-root `done/total`, and Preview when set. Tasks speaks as the label "Tasks" with
+the value "1 of 4 done", never the visible slash. Keep every action on the same baseline,
+without a separate progress underline. Zero-content controls
 are absent. When space is insufficient, collapse artifact names before hiding Tasks or Preview,
 and use a native overflow menu rather than a horizontally scrolling toolbar. Artifacts and Tasks
 open anchored native popovers, preferred 360 wide, max 420 high. Task rows are the same projection
@@ -441,69 +995,204 @@ opens that channel in Toy Box, with an explicit label, never a fictitious local 
 
 ### Overview inspector and readers
 
-Title the inspector "Overview" in its native top region with a close control. Use 16-point content
-insets, 24 points between sections, 8 between heading and content, and no nested card containers.
-Order: purpose/directory/preview, Team, Tasks, Artifacts, Routines. Count badges are compact and
-neutral. Empty sections show one quiet explanatory sentence and never disappear unexpectedly.
+The Overview is an inspector in the Keynote and Xcode sense: a quiet, dense column of facts about
+the selected channel, with each action sitting next to the fact it acts on. It is not a
+dashboard and does not copy the pane's layout. People follow macOS 26 Messages' Details sidebar,
+and structure follows Xcode's inspectors. Reference renders: `docs/overview-inspector.png`.
 
-Purpose is 13-point text, three lines initially, with Show More. Missing purpose reads "No purpose
-set" with Edit Channel. Directory is a middle-truncated path row with `folder` and a full-path help
-value. Reveal in Finder is offered only when the configured server is local and the path exists
-on this Mac. Otherwise offer Copy Path and Open in Toy Box. Never claim a remote path was opened.
-Preview uses its typed URL or screen presentation, consistent with the tray.
+The inspector has no title row or close button. It runs the full window height, its content
+starts 12 points below the toolbar's safe area and scrolls beneath the toolbar, and its
+container is labeled "Overview" for accessibility. Only the narrow-window sheet shows a visible
+"Overview" title, with a Done button. Do not set a nested navigation title. Use a `ScrollView`
+with a zero-spacing `VStack` and 16-point horizontal insets. Order: About (untitled), Team,
+Tasks, Artifacts, Routines. Separate sections with a native `Divider()` across the content
+width, with 2 points of vertical padding. No cards, count capsules, section fills or uppercase.
 
-Team is lead-first, then alphabetical members. Rows are at least 48 high, avatar 28, gap 10.
-Name is 13 medium, the second line is status text while active or role while idle. A 1.5-point
-working ring or dashed waiting ring sits 3 points outside the avatar. Working includes a text
-label, not just motion. Waiting includes "Waiting for [reason]" and, if scheduled, "Checks again
-in 8 min". Update the countdown at minute boundaries, show the absolute local time in help, and
-use "Check due" after it passes rather than inventing a new wake. Idle is not Waiting. Opening a
-member's details shows the full role and status in a native popover/sheet, never private session
-contents. Member menu offers Reply, Edit Member and Remove Member. Lead offers Reply only,
-because its identity is intrinsic. Add Agent is a subdued plus row at the end.
+**Section headers.** Headline style (13 bold), then the count 6 points later in 13 regular
+secondary with tabular digits: "Team 9", "Tasks 1/4", "Artifacts 2", "Routines 1". The
+header row is 28 high, sits 8 points below the divider above it, and has 4 points to its first
+row. A section ends 12 points above the next divider. Headers collapse, as in the Finder
+sidebar: a trailing 10-point semibold `chevron.down` (expanded) or `chevron.right` (collapsed)
+in secondary appears on hover or keyboard focus and stays visible while collapsed. Clicking the
+header toggles it with the 180 ms disclosure animation, or instantly under Reduce Motion.
+Persist collapsed sections per window scene, not per channel. The header is a button with the
+header trait, labeled "Team, 9" with the value "Expanded" or "Collapsed". Tasks shows its
+recursive diff total at the trailing edge, before the chevron. Empty sections stay, with one
+12-point secondary sentence: "No tasks yet", "Nothing shared yet" or "No routines".
 
-Task status is read-only: pending empty circle, in-progress partial ring, blocked
-`exclamationmark.circle`, done `checkmark.circle.fill`. Never render these as user-toggleable
-checkboxes. Indent children 16 points. The disclosure is independently clickable and keyboard
-operable. Titles wrap. Done titles use secondary text, not strikethrough, and owner colors and
-diff counts retain their normal contrast. Owner avatars are 16. A parent badge is direct-child
-`done/total`, and the section/tray count uses direct roots, exactly as the pane. Completion
-attention still requires every descendant done. Aggregate reported diffs recursively without
-double counting. Pending rows omit counts. Measured zero is distinct from absent, and compact
-numbers have exact accessible values. A task's artifact action opens only that task's artifact,
-does not toggle disclosure and stays visible when collapsed. Missing referenced artifacts keep a
-disabled document icon with "Artifact unavailable".
+**About.** The purpose is 13 regular primary, about 18-point line height, at most 4 lines, then
+an inline "More" link that expands in place ("Less" collapses it). A missing purpose reads "Add
+a purpose…" in secondary and opens Edit Channel. Below it, 10 points down, come compact property
+rows, each 22 high: an 18-point secondary SF Symbol column, a 6-point gap and a 12-point value.
 
-Artifacts are document rows, at least 40 high, with title, file kind and shared time. The inspector
-retains canonical order, while the tray is explicitly newest-first. Markdown opens a native
-reader sheet/window with a selectable body, title, path, Open in Toy Box and Share/Copy Link.
-Other supported types use Quick Look or the default application. Show actual fetching and error
-states, and do not open a blank success-shaped reader. Reader content is loaded from the server
-resource URL, not by assuming the server file exists locally.
+- Folder: `folder` and the path, middle-truncated and selectable. Abbreviate it with `~` only when
+  the server runs on this Mac, because a remote home isn't this Mac's home. When the folder is
+  openable (the same rule and cached check as the sidebar's folder token), help shows the full
+  path and a trailing tertiary
+  `arrow.forward.circle.fill` (Xcode's reveal arrow, 4 points after the path) shows it in
+  Finder. Remote and missing folders use `folder` or `questionmark.folder` in the same ink, with
+  no arrow, and reuse the sidebar token's help strings as both help and VoiceOver hint, so the
+  missing arrow is always explained. The context menu offers Show in Finder (when openable), Copy
+  Path and Open in Toy Box. Never claim a remote path was opened. Omit the row when the channel
+  has no directory.
+- Preview: `play.rectangle` and the typed URL's host and path in link ink, opening the default
+  browser. A screen preview reads "Window preview" and opens the channel in Toy Box. Omit the
+  row when there is no preview.
 
-Routines have a 32-point title row and a second schedule line. Disclosure reveals the literal
-prompt, cron expression and next local occurrence. An invalid/unavailable next-run calculation
-shows the cron expression and "Next run unavailable", not a guessed date. Run Routine is an
-explicit menu action, disables while pending and reports "Run requested" on success, never a
-synthetic transcript post. Delete Routine has a native confirmation. The user does not create or
-edit routines here, matching the pane.
+**Team.** The lead first, then members alphabetically. Never reorder by presence, because stable
+positions are what make the list scannable. Rows are at least 38 high with 4 points of vertical
+padding: a 24-point avatar, a 10-point gap, then the name in 13 regular primary over a one-line
+11-point status, 1 point apart. Status truncates at the tail with the full text in help.
+
+| Presence | Status line | Trailing |
+| --- | --- | --- |
+| Working | Presence text, or "Working", in primary at 85%, after a 9-point heavy `ellipsis` in the agent's color, 4 points before the text. This is Messages' typing cue | Nothing |
+| Waiting | The reason in secondary, such as "Waiting for Moss's review" | With a wake time, "8 min" in 11 secondary tabular digits, updated at minute boundaries, help "Checks again at 9:32 AM". "Due" once it passes |
+| Idle | "Idle" in secondary | Nothing |
+
+The working ellipsis animates with `.symbolEffect(.variableColor.iterative)` only while the
+window is key, and is static under Reduce Motion. There are no rings around Team avatars. The
+row is one button that opens the member's About popover (name, full role, status and model)
+anchored to the avatar, never private session contents. On hover or keyboard focus, a
+borderless 14-point `ellipsis.circle` menu in secondary, with a 28 x 28 target, replaces the
+trailing countdown. It offers Reply to [Name], About [Name], Edit Member… and Remove Member….
+The lead offers Reply and About only, because its identity is intrinsic. The context menu has
+the same items. Add Agent… ends the list in a 36-point row: a 24-point dashed tertiary circle
+with an 11-point `plus`, and the label in 13 regular secondary. It opens Add Member.
+
+**Tasks.** Status is read-only, in a 16 x 16 cell at 14 points: pending `circle` in secondary,
+in progress `circle.lefthalf.filled` in secondary, blocked `exclamationmark.circle.fill` white
+on system red, done `checkmark.circle.fill` in monochrome rendering filled with the shared
+completion green (`ChannelTaskColors.changes(in:).added`, `#196C2E` light and `#70D58A` dark),
+so the check is knocked out to the inspector behind it. That is the same mark and palette as
+the sidebar's finished marker and the transcript's "All tasks completed" row. The two filled
+glyphs use semibold weight so the check and bang hold up at 14 points. Never paint a white
+check on system green, which measures about 2:1. The knockout measures 5.8:1 light and 8.3:1
+dark against the inspector and keeps done calmer than blocked in dark. The outline glyphs stay
+regular weight. Never render toggleable checkboxes. Root
+status icons sit on the 16-point content rail, aligned with the section heading, with the title
+6 points after. Nothing hangs in the leading margin. Each nesting level indents 22 points, so a
+child's status icon sits directly under its parent's title, as in Reminders.
+
+A parent's disclosure trails its title inline, as macOS sidebar section headers and the pane do.
+Build the first line as one wrapping `Text`: the title, then two spaces and the progress count
+for an open parent (11 regular, monospaced digits, secondary, "3/4"), then one space and the
+chevron as a text image (`chevron.right` collapsed, `chevron.down` expanded, 9 bold, secondary).
+The chevron ends the title's last line and wraps with it, never orphaned on a line of its own
+when the title fits. The whole parent row is the click target, so the chevron needs no
+separate hit area. Done parents drop the count, because their children are all done. Pending
+parents omit it too. Leaf rows have neither.
+
+A parent's disclosure derives from its status, exactly as the pane's checklist: a done parent
+starts collapsed and every other parent starts expanded, so finished work folds down to its
+title, chevron and diff while open work stays visible. When a parent's status changes, its
+disclosure re-derives from the new status. A parent that becomes done collapses with the
+0.18-second ease-in-out disclosure animation (instant under Reduce Motion), and a reopened
+parent expands. A user's toggle holds until that parent's next status change. The same rule
+applies in the Composer's Tasks popover, which shares these rows.
+
+Rows have 5 points of vertical padding. The first line is the title (13 regular, wrapping, done
+titles in secondary, never struck through) with the owner's 16-point avatar at the trailing
+edge, centered on the first line and at least 8 points from the title. A second line, 3 points
+below and aligned with the title, appears only when there is a diff or artifact, with 10 points
+between items: the diff ("+1.5K −114", 11 medium tabular,
+in the adaptive green and red tokens) and the task's artifact as an 11-point link ("Workshop
+plan" after `doc.text`, 3 points apart) that opens only that artifact and never toggles
+disclosure. Measured zero ("+0 −0") is distinct from absent. The header count is done over
+total for direct roots, exactly as the pane, written "9/12" like the composer's Tasks button
+rather than "9 of 12". Visible counts use the compact slash form, and spoken values keep "of".
+Completion attention
+still requires every descendant to be done. Aggregate diffs recursively without double
+counting, and keep exact accessible values: "Build the workshop, in progress, 1 of 2 subtasks
+done, 1,522 additions, 114 deletions, owner Pixel", with Open Artifact and Expand or Collapse
+actions. A parent row is a button whose value is "Expanded" or "Collapsed" and whose press
+toggles it, so VoiceOver reads "Build the workshop, …, collapsed, button". A leaf row is static
+text. Neither may surface as an unknown element, matching the routine rows. A missing referenced artifact keeps a disabled link labeled "Artifact unavailable".
+
+**Artifacts.** Rows are at least 40 high: the file's real Finder icon at 28 points
+(`NSWorkspace.shared.icon(for:)` with the UTType from its extension), a 10-point gap, the title
+in 13 regular on one line, and an 11-point secondary line, "Kit · 3 hr. ago", with the full date
+in help. Format the time with `RelativeDateTimeFormatter`, `.named` and `.short` ("3 hr. ago",
+"yesterday"). The sharer is the actor of the latest matching `artifact_shared` event. Until Core
+projects it, show the localized type ("Markdown") instead. Keep canonical order. The tray is
+explicitly newest-first. Clicking opens the artifact, and Space on a focused row shows Quick
+Look. The context menu offers Open, Quick Look, Show in Transcript (reveals the share event) and
+Copy Link. Markdown opens a native reader sheet or window with a selectable body, title, path,
+Open in Toy Box and Share or Copy Link. Other supported types use Quick Look or the default
+application. Show actual fetching and error states, and never open a blank success-shaped
+reader. Load reader content from the server resource URL, never by assuming the file is local.
+
+**Routines.** Rows share the artifact geometry: a 28-point icon cell with a 15-point secondary
+`calendar.badge.clock`, the title in 13 regular, and the schedule in words in 11 secondary:
+"Weekdays at 9:00 AM", "Every day at 9:00 AM", "Mondays at 9:00 AM" or "Every hour". Anything
+else shows the literal cron expression. Core provides this summary next to its cron parser. The
+disclosure trails the title inline, as for task parents: one wrapping `Text` with the title, a
+non-breaking space and the 9-point bold secondary `chevron.right` or `chevron.down` text image,
+so "Daily review ›" never orphans its chevron. Nothing hangs in the leading inset, and the whole
+row toggles it. Expanded content is indented 38
+points to the title: the prompt in 12 regular primary, selectable, then an 11-point grid with
+trailing-aligned secondary labels, "Next run" ("Tomorrow at 9:00 AM") and "Schedule" (the cron
+expression in monospaced type and the time zone). An invalid or unavailable calculation shows
+"Next run unavailable", not a guessed date. A hover or focus `ellipsis.circle` menu and the
+context menu offer Run Now and Delete Routine…. Run disables while pending and shows "Run
+requested" in place of the schedule line for 4 seconds, never as a synthetic transcript post.
+Delete has a native confirmation that names the routine. The user does not create or edit
+routines here, matching the pane.
 
 ### Management and Settings
 
-All management uses the approved v1 endpoints, not browser RPC or filesystem writes. New/Edit
-Channel is a native sheet, preferred 520 wide, with 20-point insets and native form spacing.
-Fields: name (required, server's 100-character limit), purpose (optional, multiline, server's
+All management uses the approved v1 endpoints, not browser RPC or filesystem writes. Fields:
+channel name (required, server's 100-character limit), purpose (optional, multiline, server's
 12,000-character limit), lead model, and working directory. Directory is selectable only on
-creation, read-only on edit. Offer inherited/default model explicitly when allowed. Restrict
-model choices to the current provider where required, with help that changes apply on the next
-execution. Never invent a model when the catalog is unavailable. Use real validation messages,
-Cancel and the default Create Channel/Save button. Command-Return submits a valid sheet, Escape
-cancels. A failed mutation leaves all fields and the sheet intact.
+creation, read-only on edit. For a member, always offer clearing the model override, even when
+there is no compatible workspace default or the catalog has no choices. Never describe the
+workspace default's provider as forbidding it. Restrict explicit model choices to the current
+provider where required. Never invent a model when the catalog is unavailable. Cancel and the
+default button sit trailing. Command-Return submits a valid sheet, Escape cancels. A failed mutation
+leaves all fields and the sheet intact. After a 500, say the change may have been applied, block
+resubmitting against the old baseline, and refresh from the server. Then either show the
+reconciled state or offer a reviewed retry.
 
-Add Agent starts with a name and clearly says the agent starts onboarding immediately. Edit
-Member is 520 wide with identity, name, multiline role and optional model. Names affect mentions,
-so show that help. Preserve server validation for unique handles and role requirements. The lead
-cannot be edited through this sheet. Deletion confirmations name the exact target and consequence:
+New Channel, Edit Channel, Add Agent and Edit Member share one sheet language:
+
+- **Size.** 480 wide. The sheet fits its content, with no empty band above the buttons and no
+  inner scroll view until it reaches the window's height. Initial focus is Name.
+- **Header.** 20-point insets. A 40-point identity mark, 12 points, then a 15-point semibold title
+  over one 12-point secondary line. No divider follows the header. Channel sheets use the
+  sidebar's cyan `#` mark at 40 points (19-point semibold glyph). Edit Member uses the member's
+  own avatar at 40 points. Add Agent uses a 40-point dashed circle with a plus, matching Team's Add
+  Agent row.
+- **Body.** One `.formStyle(.grouped)` form. Section 1 is identity: Name as a native text field
+  with the prompt "Required", then Purpose or Role. That label sits above a `TextField(axis:
+  .vertical)` with its label hidden, so its text shares the label's leading edge and Name's field
+  chrome. Purpose reserves 3 lines and grows to 6. Role reserves 5 and grows to 10. Past that the
+  field scrolls. Return submits, Option-Return inserts a line break. Never use a bordered
+  `TextEditor`. Section 2 is the model: Lead model or Model, Reasoning and Context only when the
+  chosen model offers them, then Working directory on channel sheets. Help lives in section
+  footers (11-point secondary), never as loose rows between fields.
+- **Validation.** Never show a message for an empty required field. The default button stays
+  disabled and the prompt already says Required. A real violation, such as a length limit, a
+  taken name or an emptied existing role, replaces its section's footer with a red
+  `exclamationmark.circle.fill` and a secondary sentence. It's also the field's accessibility
+  hint. Connection, server and recovery notices sit above the buttons.
+- **Models.** While loading, the model row's value is a small spinner. When the catalog fails, the
+  value is secondary "Couldn't Load" with a small Retry button, and the section footer gives the
+  reason. Don't stack a warning, a message and a Reload button under the picker. A member's
+  first choice reads "Workspace Default (Model Name)" when the default is known.
+- **Progress.** Busy titles use the ellipsis character: "Creating…" and "Saving…".
+
+Copy:
+
+| Sheet | Subtitle | Section footers | Buttons |
+| --- | --- | --- | --- |
+| New Channel | The lead starts right away and adds specialists as needed. | Purpose prompt: "What should this team work toward? The lead reads this first." Directory prompt "Optional", footer: "A folder on the server. Leave it empty for a discussion-only channel." | Cancel, Create Channel |
+| Edit Channel | Name and purpose changes appear in the conversation. | Directory is a read-only row, middle-truncated and selectable. Footer: "Only the lead can change the directory. Model changes apply the next time the lead works." | Cancel, Save |
+| Add Agent | Joins {channel} and starts onboarding right away. | Identity: "Mentioned as @handle. Names are unique in this channel." (live). Role prompt: "What this agent owns and how it works, including any persona." | Cancel, Add Agent |
+| Edit Member | Member of {channel} | Identity as Add Agent. Model: "Model changes apply the next time {name} works. Its history is kept." | Remove from Channel… (leading, destructive), Cancel, Save |
+
+Names affect mentions, so the identity footer always shows the resulting handle. Preserve server
+validation for unique handles and role requirements. The lead cannot be edited through the member
+sheet. Deletion confirmations name the exact target and consequence:
 deleting a channel removes its agents and private sessions, removing a member retains public
 messages and reactions as Deleted agent, and deleting a routine stops future scheduled runs.
 Cancel is the safe default. There is no fake Undo for irreversible server deletion.
@@ -526,7 +1215,8 @@ Focus Composer does not discard selection or any existing draft.
 | File | New Channel | `Cmd-N` |
 | File | Open Channel in New Window | `Cmd-Shift-N` |
 | File | Open in Toy Box | `Cmd-Shift-O` |
-| Edit | Find Channel | `Cmd-Option-F` |
+| File | Open Folder in Finder (selected channel, only when its folder is openable) | `Cmd-Option-R` |
+| Edit | Find Channel (reveals a hidden sidebar, then focuses its search) | `Cmd-Option-F` |
 | View | Show/Hide Sidebar | `Ctrl-Cmd-S` |
 | View | Show/Hide Overview | `Cmd-Option-0` |
 | View | All Messages / Your Messages | `Cmd-1` / `Cmd-2` |
@@ -537,7 +1227,8 @@ Focus Composer does not discard selection or any existing draft.
 | Channel | Focus Composer | `Cmd-L` |
 | Channel | Jump to Latest / Input Needed | `Cmd-J` / `Cmd-Shift-J` |
 
-Space previews a focused attachment, Return opens a focused artifact, and Right/Left expand or
+Space opens a focused image in the image viewer and previews other attachments with Quick Look,
+Return opens a focused artifact, and Right/Left expand or
 collapse a focused task or routine. Sidebar arrows select without stealing first responder to the
 composer. Switching channels by click may focus the composer after connection, but keyboard
 navigation keeps list focus until explicitly moving into the conversation.
@@ -546,8 +1237,8 @@ navigation keeps list focus until explicitly moving into the conversation.
 
 | State | Presentation and available actions |
 | --- | --- |
-| First catalog load | Three static placeholder rows, no fabricated channel names. Show native progress only if loading exceeds 300 ms |
-| No channels | Source-list empty state: "Your channels live here", New Channel button, server shown in secondary text |
+| First catalog load | Three static placeholder rows, no fabricated channel names. After 300 ms the connection footer's dot becomes a mini spinner (see Sidebar). Nothing overlays the list |
+| No channels | Source-list empty state: "Your channels live here" and New Channel. The connection footer already names the server, so the empty state doesn't repeat it |
 | Search has no matches | "No channels match [query]", Clear Search. Do not show the no-channels creation state |
 | Nothing selected | Centered `bubble.left.and.bubble.right` symbol, "Choose a channel", concise navigation hint |
 | First channel snapshot | Static message placeholders and "Connecting". Composer shell remains present, Send unavailable |
@@ -555,7 +1246,7 @@ navigation keeps list focus until explicitly moving into the conversation.
 | Filter has no messages | "No messages for you yet", Show All Messages. Keep paging older history until exhausted |
 | Reconnecting with cached state | Keep transcript and scroll intact. A 32-point inline banner below toolbar says "Reconnecting. Messages may be out of date" with Retry. Disable delivery, not editing |
 | Disconnected without any state | `wifi.exclamationmark`, "Can't connect to Toy Box", server host, readable failure, Retry and Settings |
-| Catalog refresh fails | Keep existing rows, mark them stale and show one sidebar footer error. Never replace them with "No channels" |
+| Catalog refresh fails | Keep existing rows, mark them stale and show the error block above the connection footer's orange status line (see Sidebar). Never replace them with "No channels" |
 | Failed send | Inline error above composer and explicit status on optimistic row, preserved text/attachments, no automatic retry |
 | Channel deleted | Stop observation, dismiss its inspector, show "This channel was deleted". Back to Channels and Copy Draft if nonempty. Never silently discard a draft or redirect to another channel |
 | Invalid URL or authorization failure | Show the actual category and server, Settings/Retry as appropriate. No fabricated successful connection |
@@ -570,9 +1261,9 @@ has already loaded. Retry is user-initiated and does not resend messages or repl
 
 Use native selection and inspector transitions. Custom hover/focus fades last 120 ms, disclosure
 and tray changes approximately 180 ms. Scrolling to a user-requested target may animate for
-180...240 ms, but initial landing and history anchoring must be immediate. A working ring rotates
-slowly, about 2 seconds per revolution. Reduce Motion replaces it with a static segmented ring
-and "Working". Requests never animate. No looping shimmering skeletons or large empty-state art.
+180...240 ms, but initial landing and history anchoring must be immediate. The Team's working
+ellipsis uses `.symbolEffect(.variableColor.iterative)` only in the key window. Reduce Motion
+keeps it static beside its text. Requests never animate. No looping shimmering skeletons or large empty-state art.
 
 Every icon-only control has a localized label and help. Minimum compact control hit target is
 28 x 28. Keyboard focus is visible without hover. Expose one semantic message group with author,
@@ -590,6 +1281,76 @@ channel, but never hide its request marker. Activating a notification opens the 
 for a request, reveals its message. Respect system notification permission and Focus.
 
 ### Implementation review gates
+
+Native polish is a release criterion, not a cosmetic phase after functional completion. A
+successful build and nominal SwiftUI controls do not establish first-party quality. Prefer the
+real AppKit/SwiftUI behavior over a custom imitation, and preserve it through all app states.
+
+| Native quality gate | Required result |
+| --- | --- |
+| Window chrome and scroll edges | Real window on the stamped build only. No band or rule of our own under the toolbar, only the system's top scroll edge, continuous across the conversation and the inspector. Toolbar title, glass controls, the floating composer and the activity row remain legible while any message, reaction or attachment scrolls underneath. Hidden content is never read. Active and inactive windows both look intentional |
+| Geometry and resizing | 760 x 560 is a working layout, not an error case. Initial launch, resize, inspector adaptation, full screen and return from full screen preserve selection, draft and reading position |
+| Control fit and rhythm | Shared lane edges align. Symbols use native optical sizing. Toolbar menus have one affordance each, no duplicate chevrons. No clipped text, one-pixel seams, arbitrary spacer gaps or misleading enabled controls |
+| First responder and keyboard | Native focus rings, Escape, Tab order, menus, context menus and text undo behave correctly. Reconnects, background updates and popovers never steal the user's caret or keyboard focus |
+| Pointer and popover behavior | Hover controls do not move content or disappear while moving into them. Popovers anchor to their triggering control/caret, stay inside the visible screen and dismiss predictably without losing selection |
+| Text and information density | Short content never shows an unnecessary Show More. Timestamps do not tick every second. Full values remain available without turning every row into a multi-line card. Messages and artifact prose are genuinely selectable |
+| Platform appearance | Light, dark, inactive selection, user accent, increased contrast, reduced transparency and reduced motion retain the same hierarchy and meaning. Custom rendering is justified only when native controls cannot meet the behavior |
+| Evidence and closure | Recheck the actual corrected build, not just the intended code change. A screenshot closes only the visual state it shows. Missing interaction or accessibility evidence remains explicitly open |
+
+#### Accessibility audit evidence, 2026-10-22
+
+The initial audit covers source semantics, actual light/dark renders at both window sizes, the
+compact sheet's upper and lower sections, and a real accessibility-tree read of demo window
+25059. That tree exposes channel activation, image filenames, section headings and exact
+task/diff values. An earlier window read was unavailable, and the first attempted Tab action
+failed in the tool with "no perception baseline for this pid" before reaching the app.
+Spoken VoiceOver output, actual Tab traversal and OS-level accessibility preference changes
+have not been independently verified by Designer.
+
+| Finding | Owner | Verification and remaining work |
+| --- | --- | --- |
+| Mention ink | Transcript | Reopened 2026-10-22 because mentions didn't stand out. Semibold identity ink, clamped per surface to 4.5:1 (7:1 with Increase Contrast), with no background, supersedes primary ink on a 10% tint. Keep the seven-color, five-surface contrast regression with the new targets. Original light `@moss` was 2.69:1 |
+| Message identity and grouping | Transcript | Closed for the inspected states. Lead's rebuilt-window AX pass confirms author, time, addressee and request labels on per-message groups. The filename-bearing Quick Look button remains reachable and opens its panel |
+| Compact targets | Transcript, Overview, Composer | Source bounds are now at least 28 x 28 for reaction chips, task disclosures, task artifact actions and attachment Remove. Native hosting verifies reaction sizing. Corrected transcript/Overview renders retain the intended glyph scale and layout |
+| Reaction action semantics | Transcript | Native activation verified by Lead after replacing the gesture-backed chip with a plain native Button. The rebuilt dark studio-demo window opens the reactors popover anchored to the chip and shows the reaction and reactor name. Spoken VoiceOver feedback remains unverified |
+| Mention selection feedback | Composer | Source exposes the selected completion and announces a newly active keyboard choice without moving the insertion point. Actual screen-reader selection feedback remains unverified |
+| Native composer keys after the visual pass | Composer | Owner exercised mention opening, Down/Tab acceptance, caret placement, Undo and Escape in the normal scene at 1280 x 840 light and 760 x 560 dark. This does not verify spoken selection feedback or every keyboard-only focus path |
+| System-link text contrast | Transcript | Closed for rendered ink. Native semantic link color measures 5.25:1 on white and 5.89:1 on the dark transcript after ICC conversion. A permanent owner regression also covers Aqua, Dark Aqua and both Increased Contrast appearances |
+| Error and status contrast | Overview, Transcript, Composer, Shell | Closed. Corrected PNGs, converted through their embedded ICC profiles to sRGB, show management error text at 14.94:1 and completed-task symbols at 6.51:1 light / 8.12:1 dark. Settings/composer errors use the same primary-text/red-symbol pattern. Overview, transcript and sidebar use the same Shared completion palette |
+| Transient announcements | Transcript, Composer, Core | Closed in source/tests. Request baseline, deduplication and background/snapshot suppression checks pass. Every failed explicit send, including a retry with the same delivery UUID and phase, now emits a fresh store-owned failure ID. Composer consumes that ID directly and deduplicates across windows. Journal restoration is quiet, and confirmation/discard clear resolved failures |
+| Menu names | Overview, Shell | Lead activated Channel Actions and the title-bearing member/routine menus in the rebuilt window. A native Settings read confirms "Enable Notifications", "Requests for your response" and "Completed tasks", with the two subordinate toggles dimmed while notifications are off. Spoken VoiceOver traversal remains unverified |
+| Missing-profile avatar | Shell | Closed. The fallback initial uses primary ink on its cyan field. Rendered regressions pass the 4.5:1 floor for missing and invalid-mark profiles in both appearances. Supplied marks retain contrasting black/white ink |
+
+Designer independently passed the selected regressions using `script/test` with the filters
+`'TranscriptTests|ManagementTests'`, `'ComposerTests|ShellTests'` and
+`'SendAttemptTests|ComposerTests'`.
+This verifies the implemented source/test remedies above, not spoken VoiceOver output or
+every runtime focus path. The last run explicitly includes repeated same-UUID 422/503 failures,
+quiet restoration, resolved-event clearing and cross-window announcement deduplication.
+
+Designer approved the corrected wide-dark task hierarchy, compact-light expanded routine,
+compact-dark Edit Channel and light New Channel with the real catalog. The task title retains
+its full line, the routine details fit, and Purpose no longer touches the model row in those
+renders. The real-history paging validator checks the same message after fresh-page layout
+and settling, with a 2-point displacement limit. Transcript reports all four prepends passing at
+1280 x 840 light, 760 x 760 dark and the actual 760 x 560 minimum in dark. The minimum run reports
+0.0-point displacement on every page, and Designer reviewed its correctly sized render.
+Lead subsequently verified native reaction activation, the pinned Working Now popover and
+routine expansion in the rebuilt dark studio-demo window. Expanded routine details end at the
+inspector's bottom edge. Lead also verified first-unread landing below New and native Jump to
+Latest, which hides at the end and returns after scrolling away. Incoming-message auto-follow
+and final light/dark acceptance of the user-facing build remain open. These owner/Lead interaction checks are distinct from Designer's
+static approvals and do not prove spoken VoiceOver output.
+
+Already reviewed: request/waiting text and adaptive diff counts meet their corrected visual
+treatments, the non-default filter is distinguishable without color, task progress and diff
+values expose exact semantics, and image actions include filenames. The Overview working ring
+read Reduce Motion, pausing its timeline and removing rotation. Its replacement, the Team's
+typing ellipsis, must be rechecked under Reduce Motion. Sidebar activity no longer
+animates or uses a spinner. There
+are no explicit animated transcript scrolls. These source checks do not substitute for a
+spoken screen-reader or runtime preference-switching check. Owner fixes and remaining runtime
+evidence are tracked by channel tasks t21 and t26.
 
 Before calling the UI complete, inspect the running app in light and dark at 1280 x 840 and the
 760 x 560 minimum. Exercise a long purpose/name, no members, many members, removed agent, nested

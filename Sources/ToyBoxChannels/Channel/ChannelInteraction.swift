@@ -13,6 +13,9 @@ final class ChannelInteraction {
     /// The composer consumes these. `token` changes on every request so repeats still fire.
     private(set) var replyRequest: (agent: ChannelAgent, token: UUID)?
     private(set) var composerFocusRequest = UUID()
+    var hasDraft = false
+    var copyDraft: (() -> Void)?
+    private(set) var editSendAttemptRequest: (id: String, token: UUID)?
 
     /// The transcript consumes this to scroll to, page toward and briefly highlight a message.
     private(set) var revealRequest: (sequence: Int, token: UUID)?
@@ -24,6 +27,7 @@ final class ChannelInteraction {
     }
 
     func focusComposer() { composerFocusRequest = UUID() }
+    func editSendAttempt(id: String) { editSendAttemptRequest = (id, UUID()) }
     func reveal(sequence: Int) { revealRequest = (sequence, UUID()) }
     func jumpToLatest() { jumpToLatestRequest = UUID() }
 }

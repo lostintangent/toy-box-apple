@@ -1,0 +1,13 @@
+#!/bin/bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export DEVELOPER_DIR=/Library/Developer/CommandLineTools
+SCRATCH="${SCRATCH_PATH:-$ROOT/.build}"
+PLUGINS="$DEVELOPER_DIR/usr/lib/swift/host/plugins/testing"
+ARGS=()
+if [[ -d "$PLUGINS" ]]; then
+    ARGS=(-Xswiftc -plugin-path -Xswiftc "$PLUGINS")
+fi
+
+swift test --package-path "$ROOT" --scratch-path "$SCRATCH" "${ARGS[@]}" "$@"

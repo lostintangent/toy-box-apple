@@ -126,7 +126,12 @@ public func transcriptDayLabel(_ date: Date, now: Date = .now,
                                        to: calendar.startOfDay(for: now)).day
     if days == 0 { return "Today" }
     if days == 1 { return "Yesterday" }
-    var format = Date.FormatStyle().weekday(.wide).month(.wide).day()
+    var format = Date.FormatStyle()
+    format.calendar = calendar
+    format.timeZone = calendar.timeZone
+    if let locale = calendar.locale { format.locale = locale }
+    if let days, (2...6).contains(days) { return date.formatted(format.weekday(.wide)) }
+    format = format.weekday(.wide).month(.wide).day()
     if calendar.component(.year, from: date) != calendar.component(.year, from: now) {
         format = format.year()
     }
