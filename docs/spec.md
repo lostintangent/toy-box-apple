@@ -92,12 +92,13 @@ the password without echoing or logging it, and accepts piped stdin with or with
 newline. Never pass the password as a script argument. The command optionally accepts `OWNER/REPO`
 as the final argument and configures the local
 `toy-box-channels-notary` keychain profile plus GitHub's `MACOS_SIGNING_CERTIFICATE`,
-`MACOS_SIGNING_PASSWORD` and `MACOS_SIGNING_IDENTITY` secrets. Setup exports only the pinned
+`MACOS_SIGNING_PASSWORD` and `NOTARY_APP_PASSWORD` secrets. Setup exports only the pinned
 certificate's identity into a temporary encrypted file, then removes it on exit.
 
-Setup also sets `NOTARY_APPLE_ID`, `NOTARY_TEAM_ID` and `NOTARY_APP_PASSWORD`. CI requires all three
-and stores them in a temporary keychain profile for notarization. Missing or rejected credentials
-fail the release explicitly.
+The workflow pins the public signing certificate SHA-1 (`69A492FDF7DDFC679B93DB465E0D5E94F22DAC6A`),
+Apple ID (`joncart@outlook.com`) and Team ID (`RHFNBL7EG4`) directly, not as secrets. Keep those values
+in sync with the setup arguments when rotating identities. CI stores the notarization login in a
+temporary keychain profile. Missing or rejected credentials fail the release explicitly.
 
 Agents never run setup with real credentials or read signing keys and passwords. The credential-free
 regression suite, `python3 script/test-release-secrets.py`, replaces every credential, signing and

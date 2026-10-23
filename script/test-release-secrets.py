@@ -110,7 +110,7 @@ class ReleaseSecretsTests(unittest.TestCase):
         return self.run_bash([str(ROOT / "script/setup-release-secrets"), *arguments],
                              password, extra)
 
-    def test_setup_stores_profile_and_all_six_secrets(self):
+    def test_setup_stores_profile_and_only_three_secrets(self):
         result = self.setup([*self.arguments, "example/explicit-repo"], APPLE_PASSWORD + "\n")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("Release secrets configured for example/explicit-repo", result.stdout)
@@ -120,11 +120,11 @@ class ReleaseSecretsTests(unittest.TestCase):
                           "--password", APPLE_PASSWORD])
         secrets = {call["args"][2]: call["input"] for call in self.calls("gh")
                    if call["args"][:2] == ["secret", "set"]}
-        self.assertEqual(len(secrets), 6)
-        self.assertEqual(secrets["MACOS_SIGNING_IDENTITY"], IDENTITY)
+        self.assertEqual(set(secrets), {"MACOS_SIGNING_CERTIFICATE", "MACOS_SIGNING_PASSWORD",
+                                       "NOTARY_APP_PASSWORD"})
         self.assertEqual(secrets["MACOS_SIGNING_PASSWORD"], "fake-generated-password")
         self.assertEqual(base64.b64decode(secrets["MACOS_SIGNING_CERTIFICATE"]), b"fake encrypted identity")
-        self.assertEqual({name: secrets[name] for name in APPLE}, APPLE)
+        self.assertEqual(secrets["NOTARY_APP_PASSWORD"], APPLE_PASSWORD)
         for call in self.calls("gh"):
             if call["args"][:2] == ["secret", "set"]:
                 self.assertEqual(call["args"][3:], ["--repo", "example/explicit-repo"])
@@ -181,6 +181,15 @@ class ReleaseSecretsTests(unittest.TestCase):
                           "--keychain", str(self.directory / "toy-box-release.keychain-db"),
                           "--apple-id", APPLE["NOTARY_APPLE_ID"], "--team-id", APPLE["NOTARY_TEAM_ID"],
                           "--password", APPLE_PASSWORD])
+
+    def test_workflow_pins_public_identifiers_instead_of_reading_secrets(self):
+        source = (ROOT / ".github/workflows/build-and-release.yml").read_text()
+        for name, value in {"SIGNING_IDENTITY": "69A492FDF7DDFC679B93DB465E0D5E94F22DAC6A",
+                            "NOTARY_APPLE_ID": "joncart@outlook.com",
+                            "NOTARY_TEAM_ID": "RHFNBL7EG4"}.items():
+            self.assertIn(f"      {name}: {value}\n", source)
+        for name in ("MACOS_SIGNING_IDENTITY", "NOTARY_APPLE_ID", "NOTARY_TEAM_ID"):
+            self.assertNotIn(f"secrets.{name}", source)
 
     def test_workflow_rejects_missing_credentials_before_keychain_access(self):
         for missing in (*APPLE, *SIGNING):

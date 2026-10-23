@@ -82,6 +82,9 @@ jobs:
       RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
       BUILD_NUMBER: ${{ github.run_number }}.${{ github.run_attempt }}
       NOTARY_PROFILE: toy-box-release-ci
+      SIGNING_IDENTITY: 69A492FDF7DDFC679B93DB465E0D5E94F22DAC6A
+      NOTARY_APPLE_ID: joncart@outlook.com
+      NOTARY_TEAM_ID: RHFNBL7EG4
     steps:
       - name: Select and check the runner toolchain
         run: |
@@ -99,8 +102,6 @@ jobs:
         env:
           CERTIFICATE: ${{ secrets.MACOS_SIGNING_CERTIFICATE }}
           CERTIFICATE_PASSWORD: ${{ secrets.MACOS_SIGNING_PASSWORD }}
-          NOTARY_APPLE_ID: ${{ secrets.NOTARY_APPLE_ID }}
-          NOTARY_TEAM_ID: ${{ secrets.NOTARY_TEAM_ID }}
           NOTARY_APP_PASSWORD: ${{ secrets.NOTARY_APP_PASSWORD }}
         run: |
           set +x
@@ -141,7 +142,6 @@ jobs:
             --apple-id "$NOTARY_APPLE_ID" --team-id "$NOTARY_TEAM_ID" --password "$NOTARY_APP_PASSWORD"
       - name: Build, sign and notarize
         env:
-          SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
           SCRATCH_PATH: ${{ runner.temp }}/toy-box-release
         run: ./script/release "$RELEASE_TAG"
       - name: Remove the temporary keychain and signing material

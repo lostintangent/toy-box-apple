@@ -120,8 +120,10 @@ view.
 - One-time setup, by the certificate owner only:
   `./script/setup-release-secrets SHA1 APPLE_ID TEAM_ID`, using an Apple ID app-specific password
   entered at the silent prompt or piped on stdin, never as a script argument. This configures the
-  local `toy-box-channels-notary` profile, GitHub signing secrets and `NOTARY_APPLE_ID`,
-  `NOTARY_TEAM_ID` and `NOTARY_APP_PASSWORD`. Agents never run setup with real credentials, create
+  local `toy-box-channels-notary` profile and three GitHub secrets: `MACOS_SIGNING_CERTIFICATE`,
+  `MACOS_SIGNING_PASSWORD` and `NOTARY_APP_PASSWORD`. The workflow pins the public certificate SHA-1,
+  Apple ID and Team ID directly. Keep them in sync with the setup arguments when rotating identities.
+  Agents never run setup with real credentials, create
   secrets or read keys and passwords. `python3 script/test-release-secrets.py` uses fake commands only.
 - Locally: `SIGNING_IDENTITY=SHA1 BUILD_NUMBER=N NOTARY_PROFILE=toy-box-channels-notary
   ./script/release vX.Y.Z`. Without `NOTARY_PROFILE` the zip is named `SIGNED-UNNOTARIZED` and
