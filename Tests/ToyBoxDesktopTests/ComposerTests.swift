@@ -343,6 +343,74 @@ struct ComposerTests {
         #expect(draft.text == input.string)
     }
 
+    @Test func tabLeavesTheComposerLikeATextareaUnlessItAcceptsAMention() async throws {
+        let draft = ComposerDraft()
+        let host = NSHostingView(rootView: VStack {
+            TextField("Before", text: .constant(""))
+            ComposerInputTestHost(draft: draft)
+            TextField("After", text: .constant(""))
+        })
+        host.frame = NSRect(x: 0, y: 0, width: 400, height: 220)
+        let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        // The mention popover only shows from a window on screen.
+        window.orderFrontRegardless()
+        defer { window.close() }
+        host.layoutSubtreeIfNeeded()
+        try await Task.sleep(for: .milliseconds(50))
+        let input = try #require(composerInput(in: host))
+        func press(_ keyCode: UInt16, _ characters: String, _ modifiers: NSEvent.ModifierFlags = []) async throws {
+            input.keyDown(with: try #require(NSEvent.keyEvent(
+                with: .keyDown, location: .zero, modifierFlags: modifiers, timestamp: 0,
+                windowNumber: window.windowNumber, context: nil, characters: characters,
+                charactersIgnoringModifiers: characters, isARepeat: false, keyCode: keyCode
+            )))
+            try await Task.sleep(for: .milliseconds(30))
+        }
+        func type(_ text: String) async throws {
+            #expect(window.makeFirstResponder(input))
+            input.string = ""
+            input.insertText(text, replacementRange: input.selectedRange())
+            try await Task.sleep(for: .milliseconds(30))
+        }
+        var focusedField: String? {
+            let responder: AnyObject? = (window.firstResponder as? NSText)?.delegate ?? window.firstResponder
+            return (responder as? NSTextField)?.placeholderString
+        }
+
+        try await type("Hello")
+        try await press(48, "\t")
+        #expect(focusedField == "After")
+        try await type("Hello")
+        try await press(48, "\u{19}", .shift)
+        #expect(focusedField == "Before")
+        #expect(draft.text == "Hello")
+        try await type("Hello")
+        try await press(48, "\t", .option)
+        #expect(window.firstResponder === input)
+        #expect(draft.text == "Hello\t")
+
+        // With the mention list open, Tab accepts like Return. Shift still moves back, as in the pane,
+        // and Option-Tab is still a literal tab.
+        try await type("@")
+        try await press(125, "\u{f701}")
+        try await press(48, "\t")
+        #expect(window.firstResponder === input)
+        #expect(draft.text == "@lead ")
+        try await type("@")
+        try await press(48, "\u{19}", .shift)
+        #expect(focusedField == "Before")
+        #expect(draft.text == "@")
+        try await type("@")
+        try await press(48, "\t", .option)
+        #expect(window.firstResponder === input)
+        #expect(draft.text == "@\t")
+        try await type("@")
+        try await press(36, "\r", .shift)
+        #expect(draft.text == "@\n")
+    }
+
     @Test func modelSynchronizationDoesNotOverwriteAnInProgressNativeEdit() {
         let draft = ComposerDraft()
         draft.text = "Seed"

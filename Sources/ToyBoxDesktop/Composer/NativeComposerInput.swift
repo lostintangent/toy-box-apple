@@ -317,6 +317,10 @@ struct NativeComposerInput: NSViewRepresentable {
                     moveSelection(by: -1)
                     return true
                 case 36, 76, 48:
+                    // Like the pane, Shift passes through to a new line or the previous key view, and
+                    // Option-Tab stays a literal tab.
+                    guard !modifiers.contains(.shift), event.keyCode != 48 || !modifiers.contains(.option)
+                    else { break }
                     if let item = completion.items[safe: completion.selected] { accept(item) }
                     return true
                 case 53:
@@ -633,6 +637,16 @@ extension NativeComposerInput.Coordinator: DictationTextTarget {
     override func keyDown(with event: NSEvent) {
         if coordinator?.handle(event) == true { return }
         super.keyDown(with: event)
+    }
+
+    // Tab and Shift-Tab leave the composer like a browser textarea. Option-Tab is bound to
+    // insertTabIgnoringFieldEditor:, so it still inserts a tab.
+    override func insertTab(_ sender: Any?) {
+        window?.selectNextKeyView(self)
+    }
+
+    override func insertBacktab(_ sender: Any?) {
+        window?.selectPreviousKeyView(self)
     }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
