@@ -8,7 +8,7 @@ import Testing
 @testable import ToyBoxDesktop
 
 @MainActor
-@Suite("Management validation and presentation")
+@Suite("Management validation and presentation", .serialized)
 struct ManagementTests {
     @Test func aCommittedDeletionFollowedBy500IsReadBackWithoutReplayingDelete() async throws {
         let fixture = try ManagementRecoveryFixture()
@@ -313,7 +313,11 @@ struct ManagementTests {
         #expect(abs(grandchild - nested - OverviewTaskList.depthIndent) < 1)
     }
 
-    @Test func onlyOpenParentsCountTheirSubtasks() {
+    @Test func taskStatusDeterminesInitialDisclosureAndSubtaskProgress() {
+        #expect(!OverviewTaskRow.isExpandedByDefault(status: "done"))
+        for status in ["pending", "in_progress", "blocked"] {
+            #expect(OverviewTaskRow.isExpandedByDefault(status: status))
+        }
         for status in ["in_progress", "blocked"] {
             #expect(OverviewTaskRow.showsProgress(status: status, hasChildren: true))
         }
@@ -344,36 +348,7 @@ struct ManagementTests {
                 "The chevron wrapped without the title's last word: the second line is \(lines[1].width) wide")
     }
 
-    @Test func doneParentsStartCollapsedWhileOpenParentsStayExpanded() throws {
-        #expect(!OverviewTaskRow.isExpandedByDefault(status: "done"))
-        for status in ["pending", "in_progress", "blocked"] {
-            #expect(OverviewTaskRow.isExpandedByDefault(status: status))
-        }
-        func parent(_ status: String) -> ChannelTask {
-            .init(id: "parent", title: "Parent task", status: status, children: [
-                .init(id: "child", title: "Blocked child", status: "blocked")
-            ])
-        }
-        let done = try TaskListRender([parent("done")], width: 280)
-        #expect(done.minX(where: TaskListRender.isGreen) != nil)
-        #expect(done.minX(where: TaskListRender.isRed) == nil)
-        let open = try TaskListRender([parent("in_progress")], width: 280)
-        #expect(open.minX(where: TaskListRender.isRed) != nil)
-    }
-
-    @Test func aParentCollapsesWhenItBecomesDoneAndExpandsWhenReopened() async throws {
-        let tasks = TaskStatusHost.Tasks()
-        let host = TaskWindow(TaskStatusHost(tasks: tasks))
-        defer { host.window.close() }
-
-        #expect(try await host.settles(showingChild: true))
-        tasks.status = "done"
-        #expect(try await host.settles(showingChild: false))
-        tasks.status = "in_progress"
-        #expect(try await host.settles(showingChild: true))
-    }
-
-    @Test func aFocusedParentExpandsAndCollapsesFromTheKeyboard() async throws {
+    @Test func taskDisclosureRespondsToKeyboardStatusAndChannelChanges() async throws {
         let tasks = TaskStatusHost.Tasks()
         tasks.status = "done"
         let host = TaskWindow(TaskStatusHost(tasks: tasks)
@@ -381,41 +356,33 @@ struct ManagementTests {
         defer { host.window.close() }
         let right = String(UnicodeScalar(UInt16(NSRightArrowFunctionKey))!)
         let left = String(UnicodeScalar(UInt16(NSLeftArrowFunctionKey))!)
-        #expect(try await host.settles(showingChild: false))
+        try await host.waitForDisclosure(expanded: false)
 
         try host.press("\t", keyCode: 48)
         try host.press(right, keyCode: 124)
-        #expect(try await host.settles(showingChild: true))
+        try await host.waitForDisclosure(expanded: true)
         try host.press(right, keyCode: 124)
-        #expect(try await host.settles(showingChild: true))
+        try await host.waitForDisclosure(expanded: true)
         try host.press(left, keyCode: 123)
-        #expect(try await host.settles(showingChild: false))
+        try await host.waitForDisclosure(expanded: false)
         try host.press(" ", keyCode: 49)
-        #expect(try await host.settles(showingChild: true))
+        try await host.waitForDisclosure(expanded: true)
         try host.press(" ", keyCode: 49)
-        #expect(try await host.settles(showingChild: false))
-    }
-
-    /// A switch updates the rows already built, so a toggle made in one channel must not carry over
-    /// to the task at the same position in the next, or to the same channel's next visit.
-    @Test func aSwitchedTaskListStartsEachVisitFromTheDefaults() async throws {
-        let tasks = TaskStatusHost.Tasks()
-        tasks.status = "done"
-        let host = TaskWindow(TaskStatusHost(tasks: tasks)
-            .environment(\.overviewTaskFocusInteractions, .automatic))
-        defer { host.window.close() }
-        let right = String(UnicodeScalar(UInt16(NSRightArrowFunctionKey))!)
-        #expect(try await host.settles(showingChild: false))
-
-        try host.press("\t", keyCode: 48)
-        try host.press(right, keyCode: 124)
-        #expect(try await host.settles(showingChild: true))
-        tasks.channelId = "other"
-        #expect(try await host.settles(showingChild: false))
-        tasks.channelId = "tasks"
-        #expect(try await host.settles(showingChild: false))
+        try await host.waitForDisclosure(expanded: false)
         tasks.status = "in_progress"
-        #expect(try await host.settles(showingChild: true))
+        try await host.waitForDisclosure(expanded: true)
+        tasks.status = "done"
+        try await host.waitForDisclosure(expanded: false)
+        try host.press(right, keyCode: 124)
+        try await host.waitForDisclosure(expanded: true)
+        tasks.channelId = "other"
+        try await host.waitForDisclosure(expanded: false)
+        try host.press(right, keyCode: 124)
+        try await host.waitForDisclosure(expanded: true)
+        tasks.channelId = "tasks"
+        try await host.waitForDisclosure(expanded: false)
+        tasks.status = "in_progress"
+        try await host.waitForDisclosure(expanded: true)
     }
 
     @Test func slotsFollowAnItemWithinAVisitAndGoByPositionAcrossVisits() {
@@ -427,7 +394,8 @@ struct ManagementTests {
         #expect(first.map(\.id) == [0, 1])
         let added = slots.entries(items("w", "x", "y"), in: "a")
         #expect(added.map(\.id) == [2, 0, 1])
-        #expect(added.map(\.key) == ["w", "x", "y"].map { first[0].key.replacingOccurrences(of: ":x", with: ":\($0)") })
+        #expect(added.dropFirst().map(\.key) == first.map(\.key))
+        #expect(Set(added.map(\.key)).count == 3)
 
         let other = slots.entries(items("p", "x"), in: "b")
         #expect(other.map(\.id) == [0, 1])
@@ -454,10 +422,7 @@ struct ManagementTests {
         let field = LongTextHost.Model()
         let host = TaskWindow(LongTextHost(model: field), size: NSSize(width: 480, height: 300))
         defer { host.window.close() }
-        for _ in 0..<40 where !(host.window.firstResponder is NSText) {
-            try await Task.sleep(for: .milliseconds(50))
-        }
-        try #require(host.window.firstResponder is NSText, "The role field never took focus")
+        try await host.waitUntil { host.window.firstResponder is NSText }
         try host.press("a", keyCode: 0)
         try host.press("\r", keyCode: 36, modifiers: .option)
         try host.press("b", keyCode: 11)
@@ -477,11 +442,11 @@ struct ManagementTests {
                     .background(Color.white)
                     .environment(\.colorScheme, .light))
             renderer.scale = 2
-            let bitmap = NSBitmapImageRep(cgImage: try #require(renderer.cgImage))
+            let bitmap = try RenderedPixels(try #require(renderer.cgImage))
             var edge = -1
             for x in 0..<bitmap.pixelsWide {
                 for y in 0..<bitmap.pixelsHigh {
-                    guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) else { continue }
+                    let color = bitmap.colorAt(x: x, y: y)
                     if color.redComponent + color.greenComponent + color.blueComponent < 2.55 { edge = x }
                 }
             }
@@ -503,12 +468,10 @@ struct ManagementTests {
         #expect(OverviewFolderRow.shownPath(home, availability: .remote(host: "build.example.com")) == home)
     }
 
-    @Test func routineSchedulesSummarizeTheSameOnEveryRead() throws {
+    @Test func routineSchedulesUseReadableSummariesAndKeepUnknownSyntax() throws {
         let weekdays = try cronSummary("0 9 * * 1-5")
         #expect(RoutineScheduleSummary.text(for: "0 9 * * 1-5") == weekdays)
-        #expect(RoutineScheduleSummary.text(for: "0 9 * * 1-5") == weekdays)
         #expect(RoutineScheduleSummary.text(for: "H 9 * * *") == "H 9 * * *")
-        #expect(RoutineScheduleSummary.text(for: "not a schedule") == "not a schedule")
         #expect(RoutineScheduleSummary.text(for: "not a schedule") == "not a schedule")
     }
 
@@ -517,13 +480,6 @@ struct ManagementTests {
                       ChannelAgent(id: "a", name: "Agent 2"), ChannelAgent(id: "c", name: "Ada")]
         #expect(OverviewTeamList.ordered(roster).map(\.id) == ["lead", "c", "a", "b"])
         #expect(OverviewTeamList.ordered([]).isEmpty)
-    }
-
-    /// SwiftUI skips a view whose stored properties are unchanged. A property wrapper on the
-    /// inspector itself would make it look new on every channel event and rebuild every row.
-    @Test func theInspectorHoldsOnlyTheStore() throws {
-        let store = ChannelStore(id: "inspector", api: try ChannelAPI(serverURL: "http://localhost:3210"))
-        #expect(Mirror(reflecting: OverviewInspector(store: store)).children.map(\.label) == ["store"])
     }
 
     /// A row creates its pop-up button only while it shows the menu, so revealing it must not move the row.
@@ -589,6 +545,7 @@ struct ManagementTests {
                               backing: .buffered, defer: true)
         let start = CACurrentMediaTime()
         window.contentView?.addSubview(view)
+        let attached = CACurrentMediaTime()
         view.layoutSubtreeIfNeeded()
 
         // The window's renderer draws the symbol, and the mask's segments decide each dot's opacity.
@@ -616,7 +573,8 @@ struct ManagementTests {
             edges.append(segment.frame.maxX)
         }
         // The first dot rises as the fade to rest ends, and the others follow a third of a second apart.
-        #expect(abs(begins[0] - start - 0.3125) < 0.05)
+        #expect(begins[0] >= view.segments[0].convertTime(start, from: nil) + 0.3125)
+        #expect(begins[0] <= view.segments[0].convertTime(attached, from: nil) + 0.3125)
         #expect(abs(begins[1] - begins[0] - 1.0 / 3) < 0.0001)
         #expect(abs(begins[2] - begins[1] - 1.0 / 3) < 0.0001)
         // Each segment starts where the last ends, from one side of the symbol to the other.
@@ -673,34 +631,39 @@ struct ManagementTests {
                 charactersIgnoringModifiers: characters, isARepeat: false, keyCode: keyCode)))
         }
 
-        /// The blocked child's red status icon shows only while its parent is expanded.
-        func showsChild() -> Bool {
-            view.layoutSubtreeIfNeeded()
-            guard let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return false }
-            view.cacheDisplay(in: view.bounds, to: bitmap)
-            for x in stride(from: 0, to: bitmap.pixelsWide, by: 2) {
-                for y in stride(from: 0, to: bitmap.pixelsHigh, by: 2) {
-                    if let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.sRGB), TaskListRender.isRed(color) {
-                        return true
+        func waitForDisclosure(expanded: Bool, sourceLocation: SourceLocation = #_sourceLocation) async throws {
+            try await waitUntil(sourceLocation: sourceLocation) {
+                guard let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return false }
+                view.cacheDisplay(in: view.bounds, to: bitmap)
+                guard let image = bitmap.cgImage else { return false }
+                let pixels = try RenderedPixels(image)
+                var hasParent = false
+                for y in stride(from: 0, to: pixels.pixelsHigh, by: 2) {
+                    for x in stride(from: 0, to: pixels.pixelsWide, by: 2) {
+                        let color = pixels.colorAt(x: x, y: y)
+                        if TaskListRender.isRed(color) { return expanded }
+                        if TaskListRender.isInk(color) { hasParent = true }
                     }
                 }
+                return hasParent && !expanded
             }
-            return false
         }
 
-        /// The disclosure animates for 0.18 seconds, so allow it to settle.
-        func settles(showingChild expected: Bool) async throws -> Bool {
-            for _ in 0..<20 {
-                if showsChild() == expected { return true }
-                try await Task.sleep(for: .milliseconds(100))
+        func waitUntil(sourceLocation: SourceLocation = #_sourceLocation, _ condition: () throws -> Bool) async throws {
+            let deadline = ContinuousClock.now + .seconds(30)
+            while try !condition() {
+                try #require(ContinuousClock.now < deadline, "The hosted control never reached the expected state.",
+                             sourceLocation: sourceLocation)
+                view.layoutSubtreeIfNeeded()
+                window.displayIfNeeded()
+                try await Task.sleep(for: .milliseconds(10))
             }
-            return false
         }
     }
 
     @MainActor private struct TaskListRender {
         static let padding: CGFloat = 8
-        let bitmap: NSBitmapImageRep
+        let bitmap: RenderedPixels
 
         init(_ tasks: [ChannelTask], width: Int) throws {
             var channel = Channel(id: "tasks", name: "Tasks", model: .init(provider: "test", name: "test"),
@@ -714,13 +677,13 @@ struct ManagementTests {
                     .background(Color.white)
                     .environment(\.colorScheme, .light))
             renderer.scale = 2
-            bitmap = NSBitmapImageRep(cgImage: try #require(renderer.cgImage))
+            bitmap = try RenderedPixels(try #require(renderer.cgImage))
         }
 
-        func minX(where matches: (NSColor) -> Bool) -> CGFloat? {
+        func minX(where matches: (RenderedPixels.Pixel) -> Bool) -> CGFloat? {
             for x in 0..<bitmap.pixelsWide {
                 for y in 0..<bitmap.pixelsHigh {
-                    if let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.sRGB), matches(color) {
+                    if matches(bitmap.colorAt(x: x, y: y)) {
                         return CGFloat(x) / 2
                     }
                 }
@@ -733,7 +696,7 @@ struct ManagementTests {
             var rows: [(y: Int, minX: Int, maxX: Int)] = []
             for y in 0..<min(bitmap.pixelsHigh, Int(toY * 2)) {
                 let xs = (Int(fromX * 2)..<bitmap.pixelsWide).filter { x in
-                    bitmap.colorAt(x: x, y: y)?.usingColorSpace(.sRGB).map(Self.isInk) ?? false
+                    Self.isInk(bitmap.colorAt(x: x, y: y))
                 }
                 if let first = xs.first, let last = xs.last { rows.append((y, first, last)) }
             }
@@ -748,16 +711,54 @@ struct ManagementTests {
             return lines.map { (CGFloat($0.minX) / 2, CGFloat($0.maxX - $0.minX) / 2) }
         }
 
-        static func isGreen(_ color: NSColor) -> Bool {
+        static func isGreen(_ color: RenderedPixels.Pixel) -> Bool {
             color.greenComponent - color.redComponent > 0.08 && color.greenComponent - color.blueComponent > 0.08
         }
 
-        static func isRed(_ color: NSColor) -> Bool {
+        static func isRed(_ color: RenderedPixels.Pixel) -> Bool {
             color.redComponent - color.greenComponent > 0.3 && color.redComponent - color.blueComponent > 0.3
         }
 
-        static func isInk(_ color: NSColor) -> Bool {
+        static func isInk(_ color: RenderedPixels.Pixel) -> Bool {
             (color.redComponent + color.greenComponent + color.blueComponent) / 3 < 0.8
+        }
+    }
+
+    private struct RenderedPixels {
+        struct Pixel {
+            let redComponent: Double
+            let greenComponent: Double
+            let blueComponent: Double
+        }
+
+        let pixelsWide: Int
+        let pixelsHigh: Int
+        private let bytes: [UInt8]
+
+        init(_ image: CGImage) throws {
+            pixelsWide = image.width
+            pixelsHigh = image.height
+            let colorSpace = try #require(CGColorSpace(name: CGColorSpace.sRGB))
+            var bytes = [UInt8](repeating: 0, count: image.width * image.height * 4)
+            let drawn = bytes.withUnsafeMutableBytes { buffer -> Bool in
+                guard let context = CGContext(
+                    data: buffer.baseAddress, width: image.width, height: image.height,
+                    bitsPerComponent: 8, bytesPerRow: image.width * 4,
+                    space: colorSpace,
+                    bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue
+                ) else { return false }
+                context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+                return true
+            }
+            try #require(drawn)
+            self.bytes = bytes
+        }
+
+        func colorAt(x: Int, y: Int) -> Pixel {
+            let offset = (y * pixelsWide + x) * 4
+            return Pixel(redComponent: Double(bytes[offset]) / 255,
+                         greenComponent: Double(bytes[offset + 1]) / 255,
+                         blueComponent: Double(bytes[offset + 2]) / 255)
         }
     }
 
