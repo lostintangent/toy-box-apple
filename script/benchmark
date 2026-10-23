@@ -30,6 +30,19 @@ for argument in "$@"; do
     esac
 done
 if [[ ${#SCENARIOS[@]} -eq 0 ]]; then SCENARIOS=(launch switch messages paging); fi
+
+# One benchmark runs at a time on this Mac, because two would measure each other's CPU and share the
+# app's defaults. This script's own descriptor holds the lock, so it's released however the script
+# ends. Long-lived children close the descriptor so they can't keep holding it.
+exec 9>>/tmp/toy-box-benchmark.lock
+lock() {
+    python3 -c 'import fcntl, sys; fcntl.flock(9, fcntl.LOCK_EX | (fcntl.LOCK_NB if sys.argv[1] == "try" else 0))' "$1" 2>/dev/null
+}
+if ! lock try; then
+    echo "Waiting for another benchmark to finish"
+    lock wait
+fi
+
 if curl -s -o /dev/null --max-time 1 "$SERVER"; then
     echo "Port $PORT is already in use. Set TOY_BOX_PERF_PORT to a free port." >&2
     exit 1
@@ -56,7 +69,7 @@ trap cleanup EXIT
 trap 'exit 130' INT TERM
 
 echo "Building a release bundle in $BUILD"
-if ! CONFIGURATION=release SCRATCH_PATH="$BUILD" "$ROOT/script/run" --no-open >"$LOGS/build.log" 2>&1; then
+if ! CONFIGURATION=release SCRATCH_PATH="$BUILD" "$ROOT/script/run" --no-open >"$LOGS/build.log" 2>&1 9>&-; then
     grep -E 'error:' "$LOGS/build.log" >&2 || tail -n 40 "$LOGS/build.log" >&2
     exit 1
 fi
@@ -78,7 +91,7 @@ for scenario in "${SCENARIOS[@]}"; do
     # Every scenario starts from the same window layout and settings.
     defaults delete "$ID" >/dev/null 2>&1 || true
     defaults write "$ID" summarizeNewMessages -bool "$SUMMARIES"
-    TOY_BOX_PERF_PORT="$PORT" bun "$ROOT/script/perf-demo.mjs" "$REFERENCE" >"$LOGS/fixture.log" 2>&1 &
+    TOY_BOX_PERF_PORT="$PORT" bun "$ROOT/script/perf-demo.mjs" "$REFERENCE" >"$LOGS/fixture.log" 2>&1 9>&- &
     FIXTURE=$!
     for _ in {1..100}; do
         if curl -sf -o /dev/null --max-time 1 "$SERVER/api/v1/channels"; then break; fi
@@ -97,7 +110,7 @@ for scenario in "${SCENARIOS[@]}"; do
     : >"$err"
     # open -W doesn't pass on the app's exit status, so the results come from its output.
     open -n -g -W --stdout "$out" --stderr "$err" "$APP" --args --server "$SERVER" --channel "$channel" \
-        --benchmark "$scenario" -ApplePersistenceIgnoreState YES
+        --benchmark "$scenario" -ApplePersistenceIgnoreState YES 9>&-
     stop_fixture
 
     grep -E '^(Benchmark |  )' "$out" | grep -v '^Benchmark failed' || true

@@ -45,6 +45,7 @@ view.
   runs each scenario against a fresh `script/perf-demo.mjs` fixture on 3292 (`TOY_BOX_PERF_PORT`),
   prints each result beside its budget and exits 1 when one is over. Leave its window uncovered.
   Catch-up summaries stay off so the card can't land mid-measurement. `--summaries` leaves them on.
+  Only one benchmark runs at a time on this Mac. Others wait for it, so never poll for one yourself.
 - `node script/generate-cron-fixtures.mjs ../toy-box` regenerates the cron fixtures from the
   reference without touching it.
 - Quit the instances you launch when you are done.
