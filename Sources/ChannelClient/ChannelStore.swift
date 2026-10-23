@@ -30,11 +30,62 @@ public struct ChannelManagementReconciliation: Sendable {
     }
 }
 
+/// A channel's descriptive fields, without the counters and timestamps that every message moves.
+public struct ChannelDetails: Equatable, Sendable {
+    public var id: String
+    public var name: String
+    public var purpose: String?
+    public var directory: String?
+    public var model: ModelConfiguration
+    public var preview: ChannelPreview?
+    public var previewUrl: String?
+
+    public init(_ channel: Channel) {
+        id = channel.id
+        name = channel.name
+        purpose = channel.purpose
+        directory = channel.directory
+        model = channel.model
+        preview = channel.preview
+        previewUrl = channel.previewUrl
+    }
+
+    public var resolvedPreview: ChannelPreview? {
+        preview ?? previewUrl.map { ChannelPreview(kind: "url", url: $0) }
+    }
+}
+
 @MainActor @Observable
 public final class ChannelStore {
     public let id: String
     public let api: ChannelAPI
-    public private(set) var state: ChannelState?
+    /// The whole channel. Reading it re-evaluates a view on every event, so views read the narrow
+    /// slices below instead, and keep `state` for one-off reads in actions and tasks.
+    public private(set) var state: ChannelState? {
+        didSet { if let state { syncSlices(state) } }
+    }
+
+    // Narrow projections of `state`, so an event invalidates only the views that read what it
+    // changed. A new message moves `messages` and nothing else.
+    public private(set) var details: ChannelDetails?
+    /// The lead, then members, as identities. `status` is always nil here, so a status event doesn't
+    /// invalidate views that only draw names and avatars. Reported statuses are in `agentStatuses`.
+    public private(set) var roster: [ChannelAgent] = []
+    /// Each agent's reported status by agent ID, as `ChannelState`'s agents carry it.
+    public private(set) var agentStatuses: [String: ChannelAgentStatus] = [:]
+    public private(set) var presence: [String: ChannelAgentPresence] = [:]
+    public private(set) var messages: [ChannelMessage] = []
+    public private(set) var request: ChannelMessage?
+    public private(set) var requestSequence: Int?
+    public private(set) var tasks: [ChannelTask] = []
+    public private(set) var artifacts: [ChannelArtifact] = []
+    /// Who shared each artifact and when, by file ID, from the loaded messages.
+    public private(set) var artifactShares: [String: ChannelArtifactShare] = [:]
+    public private(set) var routines: [ChannelRoutine] = []
+
+    /// Whether a snapshot has arrived, without observing anything that changes after it.
+    public var isLoaded: Bool { details != nil }
+
     public private(set) var phase: ChannelConnectionPhase = .idle
     public private(set) var unreadAfter: Int?
     public private(set) var isLoadingOlder = false
@@ -383,7 +434,7 @@ public final class ChannelStore {
         }
     }
 
-    private func apply(_ event: ChannelObservationEvent) throws -> Bool {
+    func apply(_ event: ChannelObservationEvent) throws -> Bool {
         if event.type == "deleted" {
             phase = .deleted
             observation = nil
@@ -415,6 +466,29 @@ public final class ChannelStore {
             phase = .live
         }
         return false
+    }
+
+    /// Observation skips assignments of an equal value, so each slice notifies only when it changes.
+    private func syncSlices(_ state: ChannelState) {
+        details = ChannelDetails(state.channel)
+        roster = state.agents.map { agent in
+            var identity = agent
+            identity.status = nil
+            return identity
+        }
+        var statuses: [String: ChannelAgentStatus] = [:]
+        for agent in state.agents { statuses[agent.id] = agent.status }
+        agentStatuses = statuses
+        presence = state.presence
+        if messages != state.messages {
+            messages = state.messages
+            artifactShares = channelArtifactShares(state.messages)
+        }
+        request = state.request
+        requestSequence = state.channel.requestSequence
+        tasks = state.channel.tasks
+        artifacts = state.artifacts
+        routines = state.routines
     }
 }
 

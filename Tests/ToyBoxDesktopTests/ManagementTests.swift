@@ -458,6 +458,20 @@ struct ManagementTests {
         #expect(RoutineScheduleSummary.text(for: "not a schedule") == "not a schedule")
     }
 
+    @Test func theTeamKeepsTheLeadFirstAndSortsMembersLikeFinder() {
+        let roster = [ChannelAgent(id: "lead", name: "Zed"), ChannelAgent(id: "b", name: "agent 10"),
+                      ChannelAgent(id: "a", name: "Agent 2"), ChannelAgent(id: "c", name: "Ada")]
+        #expect(OverviewTeamList.ordered(roster).map(\.id) == ["lead", "c", "a", "b"])
+        #expect(OverviewTeamList.ordered([]).isEmpty)
+    }
+
+    /// SwiftUI skips a view whose stored properties are unchanged. A property wrapper on the
+    /// inspector itself would make it look new on every channel event and rebuild every row.
+    @Test func theInspectorHoldsOnlyTheStore() throws {
+        let store = ChannelStore(id: "inspector", api: try ChannelAPI(serverURL: "http://localhost:3210"))
+        #expect(Mirror(reflecting: OverviewInspector(store: store)).children.map(\.label) == ["store"])
+    }
+
     /// A sheet's long text field, counting the submissions its Return key makes.
     struct LongTextHost: View {
         @Observable final class Model {

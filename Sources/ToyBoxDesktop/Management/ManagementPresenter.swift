@@ -166,8 +166,8 @@ private struct ManagementSheet: View {
             if let api = app.api {
                 if flow == .newChannel {
                     ChannelEditor(channel: nil, store: nil, api: api, presenter: presenter)
-                } else if let store, let state = store.state {
-                    flowContent(state: state, store: store, api: api)
+                } else if let store, let details = store.details {
+                    flowContent(details: details, store: store, api: api)
                 } else {
                     VStack(spacing: 16) {
                         if let store, case .deleted = store.phase {
@@ -208,23 +208,23 @@ private struct ManagementSheet: View {
     }
 
     @ViewBuilder
-    private func flowContent(state: ChannelState, store: ChannelStore, api: ChannelAPI) -> some View {
+    private func flowContent(details: ChannelDetails, store: ChannelStore, api: ChannelAPI) -> some View {
         switch flow {
         case .newChannel: EmptyView()
         case .editChannel:
-            ChannelEditor(channel: state.channel, store: store, api: api, presenter: presenter)
+            ChannelEditor(channel: details, store: store, api: api, presenter: presenter)
         case .addMember(_, let name):
-            MemberEditor(channel: state.channel, member: nil, initialName: name, store: store,
+            MemberEditor(channel: details, member: nil, initialName: name, store: store,
                          api: api, presenter: presenter)
         case .editMember(_, let agentId):
-            if let member = state.members.first(where: { $0.id == agentId }) {
-                MemberEditor(channel: state.channel, member: member, initialName: member.name,
+            if let member = store.roster.dropFirst().first(where: { $0.id == agentId }) {
+                MemberEditor(channel: details, member: member, initialName: member.name,
                              store: store, api: api, presenter: presenter)
             } else {
                 unavailable("This member is no longer in the channel.")
             }
         case .deleteChannel, .removeMember, .deleteRoutine:
-            ManagementConfirmation(flow: flow, state: state, store: store,
+            ManagementConfirmation(flow: flow, channel: details, store: store,
                                    api: api, presenter: presenter)
         }
     }

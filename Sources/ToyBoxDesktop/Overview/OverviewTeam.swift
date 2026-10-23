@@ -5,25 +5,29 @@ import SwiftUI
 /// The lead, then members alphabetically. Positions never follow presence, so the list stays scannable.
 struct OverviewTeamList: View {
     @Environment(ManagementPresenter.self) private var management
-    let state: ChannelState
     let store: ChannelStore
 
-    static func ordered(_ state: ChannelState) -> [ChannelAgent] {
-        [state.lead] + state.members.sorted {
+    /// `roster` starts with the lead.
+    static func ordered(_ roster: [ChannelAgent]) -> [ChannelAgent] {
+        guard let lead = roster.first else { return [] }
+        return [lead] + roster.dropFirst().sorted {
             let order = $0.name.localizedStandardCompare($1.name)
             return order == .orderedSame ? $0.id < $1.id : order == .orderedAscending
         }
     }
 
     var body: some View {
+        let roster = store.roster
+        let presence = store.presence
+        let isLive = store.phase.isLive
         VStack(alignment: .leading, spacing: 0) {
-            ForEach(Self.ordered(state)) { agent in
-                let isLead = agent.id == state.lead.id
-                OverviewAgentRow(agent: agent, presence: state.presence[agent.id], isLead: isLead,
-                                 model: isLead ? agent.model ?? state.channel.model : agent.model,
-                                 channelId: store.id, isLive: store.phase.isLive)
+            ForEach(Self.ordered(roster)) { agent in
+                let isLead = agent.id == roster.first?.id
+                OverviewAgentRow(agent: agent, presence: presence[agent.id], isLead: isLead,
+                                 model: isLead ? agent.model ?? store.details?.model : agent.model,
+                                 channelId: store.id, isLive: isLive)
             }
-            OverviewAddAgentRow(isLive: store.phase.isLive) {
+            OverviewAddAgentRow(isLive: isLive) {
                 management.present(.addMember(channelId: store.id, name: ""))
             }
         }

@@ -4,7 +4,19 @@ import ChannelKit
 import SwiftUI
 
 /// The channel's property inspector: About, then collapsible Team, Tasks, Artifacts and Routines.
+///
+/// The channel's detail view re-renders on every event. This view holds nothing but the store, so
+/// SwiftUI sees it unchanged and skips it. Property wrappers would make it look new each time,
+/// which would rebuild every section and row for each message.
 struct OverviewInspector: View {
+    let store: ChannelStore
+
+    var body: some View {
+        OverviewInspectorContent(store: store)
+    }
+}
+
+private struct OverviewInspectorContent: View {
     @Environment(ArtifactOpener.self) private var artifacts
     @Environment(\.channelTextScale) private var textScale
     @Environment(\.windowSnapshot) private var snapshot
@@ -19,7 +31,9 @@ struct OverviewInspector: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if let state = store.state, store.phase != .deleted {
+            // Only `details` and `phase` are read here. Each section reads its own slices, so a new
+            // message, a status or a task update re-evaluates just the section that shows it.
+            if let details = store.details, store.phase != .deleted {
                 ScrollViewReader { proxy in
                     ScrollView {
                         VStack(alignment: .leading, spacing: 0) {
@@ -31,45 +45,17 @@ struct OverviewInspector: View {
                                     .fixedSize(horizontal: false, vertical: true)
                                     .padding(.bottom, 10)
                             }
-                            OverviewAbout(channel: state.channel, store: store)
+                            OverviewAbout(details: details, store: store)
                                 .padding(.bottom, 12)
-                            OverviewSection(id: .team, count: "\(state.agents.count)", collapsed: collapsed) {
-                                OverviewTeamList(state: state, store: store)
-                            }
-                            tasks(state)
+                            OverviewTeamSection(store: store, collapsed: collapsed)
+                            OverviewTasksSection(store: store, collapsed: collapsed, onArtifactOpen: artifacts.open)
                                 .id("overview-tasks")
-                            OverviewSection(id: .artifacts, count: "\(state.artifacts.count)",
-                                            collapsed: collapsed) {
-                                if state.artifacts.isEmpty {
-                                    OverviewEmptyText("Nothing shared yet")
-                                } else {
-                                    let shares = channelArtifactShares(state.messages)
-                                    VStack(alignment: .leading, spacing: 0) {
-                                        ForEach(state.artifacts) { artifact in
-                                            OverviewArtifactRow(artifact: artifact,
-                                                                share: shares[artifact.file.id],
-                                                                agents: state.agents, api: store.api,
-                                                                open: { artifacts.open(artifact) })
-                                        }
-                                    }
-                                }
-                            }
-                            .id("overview-artifacts")
-                            OverviewSection(id: .routines, count: "\(state.routines.count)", collapsed: collapsed) {
-                                if state.routines.isEmpty {
-                                    OverviewEmptyText("No routines")
-                                } else {
-                                    VStack(alignment: .leading, spacing: 0) {
-                                        ForEach(state.routines) { routine in
-                                            OverviewRoutineRow(routine: routine, store: store) {
-                                                DispatchQueue.main.async {
-                                                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
-                                                        proxy.scrollTo("overview-routine-details-\(routine.id)",
-                                                                       anchor: .bottom)
-                                                    }
-                                                }
-                                            }
-                                        }
+                            OverviewArtifactsSection(store: store, collapsed: collapsed)
+                                .id("overview-artifacts")
+                            OverviewRoutinesSection(store: store, collapsed: collapsed) { routine in
+                                DispatchQueue.main.async {
+                                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
+                                        proxy.scrollTo("overview-routine-details-\(routine.id)", anchor: .bottom)
                                     }
                                 }
                             }
@@ -111,17 +97,82 @@ struct OverviewInspector: View {
     private static let snapshotSections: [String: OverviewSectionID] = [
         "overview-tasks": .tasks, "overview-artifacts": .artifacts, "overview-routines": .routines,
     ]
+}
 
-    private func tasks(_ state: ChannelState) -> some View {
-        let progress = channelTasksProgress(state.channel.tasks)
-        let diff = channelTasksDiff(state.channel.tasks)
+private struct OverviewTeamSection: View {
+    let store: ChannelStore
+    @Binding var collapsed: Set<OverviewSectionID>
+
+    var body: some View {
+        OverviewSection(id: .team, count: "\(store.roster.count)", collapsed: $collapsed) {
+            OverviewTeamList(store: store)
+        }
+    }
+}
+
+private struct OverviewTasksSection: View {
+    let store: ChannelStore
+    @Binding var collapsed: Set<OverviewSectionID>
+    let onArtifactOpen: (ChannelArtifact) -> Void
+
+    var body: some View {
+        let tasks = store.tasks
+        let progress = channelTasksProgress(tasks)
+        let diff = channelTasksDiff(tasks)
         let spoken = ["\(progress.done) of \(progress.total) done", diff.map(OverviewTaskDiff.spoken)]
             .compactMap { $0 }.joined(separator: ", ")
-        return OverviewSection(id: .tasks, count: "\(progress.done)/\(progress.total)",
-                               accessibilityCount: spoken, collapsed: collapsed) {
+        OverviewSection(id: .tasks, count: "\(progress.done)/\(progress.total)",
+                        accessibilityCount: spoken, collapsed: $collapsed) {
             if let diff { OverviewTaskDiff(diff: diff).accessibilityHidden(true) }
         } content: {
-            OverviewTaskList(state: state, onArtifactOpen: artifacts.open)
+            OverviewTaskList(tasks: tasks, agents: store.roster, artifacts: store.artifacts,
+                             onArtifactOpen: onArtifactOpen)
+        }
+    }
+}
+
+private struct OverviewArtifactsSection: View {
+    @Environment(ArtifactOpener.self) private var opener
+    let store: ChannelStore
+    @Binding var collapsed: Set<OverviewSectionID>
+
+    var body: some View {
+        let artifacts = store.artifacts
+        OverviewSection(id: .artifacts, count: "\(artifacts.count)", collapsed: $collapsed) {
+            if artifacts.isEmpty {
+                OverviewEmptyText("Nothing shared yet")
+            } else {
+                let shares = store.artifactShares
+                let agents = store.roster
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(artifacts) { artifact in
+                        OverviewArtifactRow(artifact: artifact, share: shares[artifact.file.id],
+                                            agents: agents, api: store.api,
+                                            open: { opener.open(artifact) })
+                    }
+                }
+            }
+        }
+    }
+}
+
+private struct OverviewRoutinesSection: View {
+    let store: ChannelStore
+    @Binding var collapsed: Set<OverviewSectionID>
+    let revealDetails: (ChannelRoutine) -> Void
+
+    var body: some View {
+        let routines = store.routines
+        OverviewSection(id: .routines, count: "\(routines.count)", collapsed: $collapsed) {
+            if routines.isEmpty {
+                OverviewEmptyText("No routines")
+            } else {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(routines) { routine in
+                        OverviewRoutineRow(routine: routine, store: store) { revealDetails(routine) }
+                    }
+                }
+            }
         }
     }
 }
@@ -131,12 +182,12 @@ private struct OverviewAbout: View {
     @Environment(AppModel.self) private var app
     @Environment(ManagementPresenter.self) private var management
     @Environment(\.channelTextScale) private var textScale
-    let channel: Channel
+    let details: ChannelDetails
     let store: ChannelStore
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if let purpose = channel.purpose, !purpose.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            if let purpose = details.purpose, !purpose.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 OverviewPurpose(purpose: purpose)
             } else {
                 Button("Add a purpose…") { management.present(.editChannel(channelId: store.id)) }
@@ -146,10 +197,10 @@ private struct OverviewAbout: View {
                     .disabled(!store.phase.isLive)
                     .help(store.phase.isLive ? "Edit Channel" : "Reconnect to edit the channel")
             }
-            let preview = channel.resolvedPreview
-            if channel.directory != nil || preview != nil {
+            let preview = details.resolvedPreview
+            if details.directory != nil || preview != nil {
                 VStack(alignment: .leading, spacing: 0) {
-                    if let directory = channel.directory, !directory.isEmpty {
+                    if let directory = details.directory, !directory.isEmpty {
                         OverviewFolderRow(
                             directory: directory,
                             availability: app.folderAvailability(path: directory, server: store.api.baseURL),

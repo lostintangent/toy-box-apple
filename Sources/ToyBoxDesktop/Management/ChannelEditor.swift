@@ -4,7 +4,7 @@ import SwiftUI
 
 struct ChannelEditor: View {
     @Environment(AppModel.self) private var app
-    @ViewState private var channel: Channel?
+    @ViewState private var channel: ChannelDetails?
     let store: ChannelStore?
     let api: ChannelAPI
     let presenter: ManagementPresenter
@@ -16,7 +16,7 @@ struct ChannelEditor: View {
     @ViewState private var recovery = ManagementWriteRecovery()
     @FocusState private var nameFocused: Bool
 
-    init(channel: Channel?, store: ChannelStore?, api: ChannelAPI, presenter: ManagementPresenter) {
+    init(channel: ChannelDetails?, store: ChannelStore?, api: ChannelAPI, presenter: ManagementPresenter) {
         _channel = ViewState(initialValue: channel)
         self.store = store
         self.api = api
@@ -178,7 +178,7 @@ struct ChannelEditor: View {
 
     private func useCurrentServerValues() {
         guard let current = recovery.result?.state?.channel else { return }
-        channel = current
+        channel = ChannelDetails(current)
         name = current.name
         purpose = current.purpose ?? ""
         directory = current.directory ?? ""

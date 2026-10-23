@@ -21,17 +21,33 @@ struct OverviewTaskList: View {
     /// One nesting level, so a child's status icon sits under its parent's title, as in Reminders.
     static let depthIndent: CGFloat = OverviewTaskRow.statusSize + OverviewTaskRow.titleGap
 
-    let state: ChannelState
+    let tasks: [ChannelTask]
+    /// Identities for task owners. The store's `roster` is enough, so status updates don't redraw tasks.
+    let agents: [ChannelAgent]
+    let artifacts: [ChannelArtifact]
     let onArtifactOpen: (ChannelArtifact) -> Void
+
+    init(tasks: [ChannelTask], agents: [ChannelAgent], artifacts: [ChannelArtifact],
+         onArtifactOpen: @escaping (ChannelArtifact) -> Void) {
+        self.tasks = tasks
+        self.agents = agents
+        self.artifacts = artifacts
+        self.onArtifactOpen = onArtifactOpen
+    }
+
+    init(state: ChannelState, onArtifactOpen: @escaping (ChannelArtifact) -> Void) {
+        self.init(tasks: state.channel.tasks, agents: state.agents, artifacts: state.artifacts,
+                  onArtifactOpen: onArtifactOpen)
+    }
 
     var body: some View {
         Group {
-            if state.channel.tasks.isEmpty {
+            if tasks.isEmpty {
                 OverviewEmptyText("No tasks yet")
             } else {
                 VStack(alignment: .leading, spacing: 0) {
-                    ForEach(state.channel.tasks) { task in
-                        OverviewTaskRow(task: task, agents: state.agents, artifacts: state.artifacts,
+                    ForEach(tasks) { task in
+                        OverviewTaskRow(task: task, agents: agents, artifacts: artifacts,
                                         onArtifactOpen: onArtifactOpen)
                     }
                 }

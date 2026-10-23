@@ -5,7 +5,7 @@ import SwiftUI
 struct ManagementConfirmation: View {
     @Environment(AppModel.self) private var app
     let flow: ManagementFlow
-    let state: ChannelState
+    let channel: ChannelDetails
     let store: ChannelStore
     let api: ChannelAPI
     let presenter: ManagementPresenter
@@ -14,15 +14,15 @@ struct ManagementConfirmation: View {
 
     private var member: ChannelMember? {
         guard case .removeMember(_, let id) = flow else { return nil }
-        return state.members.first { $0.id == id }
+        return store.roster.dropFirst().first { $0.id == id }
     }
     private var routine: ChannelRoutine? {
         guard case .deleteRoutine(_, let id) = flow else { return nil }
-        return state.routines.first { $0.id == id }
+        return store.routines.first { $0.id == id }
     }
     private var title: String {
         switch flow {
-        case .deleteChannel: "Delete \(state.channel.name)?"
+        case .deleteChannel: "Delete \(channel.name)?"
         case .removeMember: "Remove \(member?.name ?? "member")?"
         case .deleteRoutine: "Delete \(routine?.title ?? "routine")?"
         default: "Unavailable Action"
@@ -33,9 +33,9 @@ struct ManagementConfirmation: View {
         case .deleteChannel:
             "This permanently deletes the channel, its public conversation and artifact index, all its agents and their private sessions. Files in the working directory are not deleted. This cannot be undone."
         case .removeMember:
-            "This removes the member from \(state.channel.name) and deletes its private session. Public messages and reactions remain attributed to Deleted agent. This cannot be undone."
+            "This removes the member from \(channel.name) and deletes its private session. Public messages and reactions remain attributed to Deleted agent. This cannot be undone."
         case .deleteRoutine:
-            "This stops future scheduled runs of this routine in \(state.channel.name). It does not stop work that has already started. This cannot be undone."
+            "This stops future scheduled runs of this routine in \(channel.name). It does not stop work that has already started. This cannot be undone."
         default: "This action is not available."
         }
     }
@@ -49,11 +49,13 @@ struct ManagementConfirmation: View {
     }
     private var exists: Bool {
         if store.phase == .deleted || recovery.result?.channelWasDeleted == true { return false }
-        let current = recovery.result?.state ?? store.state ?? state
+        let current = recovery.result?.state
         switch flow {
         case .deleteChannel: return true
-        case .removeMember(_, let id): return current.members.contains { $0.id == id }
-        case .deleteRoutine(_, let id): return current.routines.contains { $0.id == id }
+        case .removeMember(_, let id):
+            return current.map { $0.members.contains { $0.id == id } } ?? (member != nil)
+        case .deleteRoutine(_, let id):
+            return current.map { $0.routines.contains { $0.id == id } } ?? (routine != nil)
         default: return false
         }
     }

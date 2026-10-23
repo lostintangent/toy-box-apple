@@ -42,6 +42,11 @@ Reference sources (read-only):
   phase, unread boundary and paging. The catalog store owns the channel list and refreshes it on
   launch, on app activation, on demand, and on a timer: about 5 seconds while the app is active, and
   about 15 seconds in the background so requests still reach the Dock badge and notifications.
+  Views read the store's observed slices (`details`, `roster`, `agentStatuses`, `presence`,
+  `messages`, `request`, `requestSequence`, `tasks`, `artifacts`, `artifactShares`, `routines`)
+  rather than `state`, which changes on every event. An event then re-renders only the views that
+  show what it changed. `roster` leaves out each agent's status, which `agentStatuses` carries, so
+  status updates don't re-render identity.
 - **Wire rules:**
   - Decode leniently, so unknown system message kinds and fields degrade to a generic row instead
     of failing the stream.
