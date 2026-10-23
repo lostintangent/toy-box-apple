@@ -2112,18 +2112,24 @@ struct TranscriptCatchUpTests {
         let ready = CatchUp(needsYou: nil, changes: (11...13).map {
             .init(text: "Lead moved update \($0) along, with enough detail to wrap the line.", sources: [$0])
         }, through: 14)
-        let service = StubChannelIntelligence(results: [.ready(ready)], delay: .seconds(1.5))
+        // The summary waits for the test, so a slow machine can't grow the card before the landing ends.
+        let service = StubChannelIntelligence(results: [.ready(ready)], holdsCatchUp: true)
         // The unread messages fit below the divider, so the landing ends at the bottom, where following
         // would push the card's top up as it grows.
         let messages = (1...14).map { catchUpTestMessage($0, repeats: $0 > 9 ? 3 : 1) }
         let harness = try await TranscriptHarness(messages: messages, seenThrough: 9, height: 1100,
                                                   intelligence: service)
-        defer { harness.close() }
+        defer {
+            service.releaseCatchUp()
+            harness.close()
+        }
         let clip = harness.scrollView.contentView
+        try await harness.waitUntil { service.catchUpCount == 1 && abs(harness.bottomGap) < 2 }
+        try await harness.settle(for: .milliseconds(300))
         let landed = clip.bounds.minY
-        #expect(service.catchUpCount == 1)
         #expect(abs(harness.bottomGap) < 2, "The landing ended \(harness.bottomGap) points from the bottom")
 
+        service.releaseCatchUp()
         try await harness.waitUntil { harness.bottomGap > 40 }
         try await harness.settle(for: .milliseconds(500))
         #expect(abs(clip.bounds.minY - landed) < 1, "Moved from \(landed) to \(clip.bounds.minY)")
@@ -2140,13 +2146,25 @@ private final class StubChannelIntelligence: ChannelIntelligenceService {
     private let descriptions: [String: String]
     private let delay: Duration
     private let calls = Mutex((catchUp: 0, altText: 0))
+    private let hold: Mutex<(isHeld: Bool, waiting: [CheckedContinuation<Void, Never>])>
 
+    /// `holdsCatchUp` keeps every catch-up answer waiting until `releaseCatchUp()`.
     init(availability: IntelligenceAvailability = .available, results: [CatchUpResult] = [],
-         delay: Duration = .zero, descriptions: [String: String] = [:]) {
+         delay: Duration = .zero, holdsCatchUp: Bool = false, descriptions: [String: String] = [:]) {
         self.availability = availability
         self.results = Mutex(results)
         self.delay = delay
+        hold = Mutex((holdsCatchUp, []))
         self.descriptions = descriptions
+    }
+
+    func releaseCatchUp() {
+        let waiting = hold.withLock { hold in
+            hold.isHeld = false
+            defer { hold.waiting = [] }
+            return hold.waiting
+        }
+        for continuation in waiting { continuation.resume() }
     }
 
     var catchUpCount: Int { calls.withLock { $0.catchUp } }
@@ -2155,6 +2173,13 @@ private final class StubChannelIntelligence: ChannelIntelligenceService {
     /// Answers with each result in turn, then keeps answering with the last.
     func catchUp(_ request: CatchUpRequest) async -> CatchUpResult {
         calls.withLock { $0.catchUp += 1 }
+        await withCheckedContinuation { continuation in
+            let isHeld = hold.withLock { hold in
+                if hold.isHeld { hold.waiting.append(continuation) }
+                return hold.isHeld
+            }
+            if !isHeld { continuation.resume() }
+        }
         if delay > .zero { try? await Task.sleep(for: delay) }
         return results.withLock { $0.count > 1 ? $0.removeFirst() : $0.first ?? .declined }
     }
@@ -2281,9 +2306,9 @@ private final class TranscriptHarness {
         }
     }
 
-    func waitUntil(_ condition: () -> Bool) async throws {
+    func waitUntil(sourceLocation: SourceLocation = #_sourceLocation, _ condition: () -> Bool) async throws {
         for _ in 0..<150 where !condition() { try await settle(for: .milliseconds(20)) }
-        try #require(condition())
+        try #require(condition(), sourceLocation: sourceLocation)
     }
 
     /// Runs display cycles as an awake screen would. While the display sleeps, AppKit skips them and
