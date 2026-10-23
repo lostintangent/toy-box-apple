@@ -50,10 +50,12 @@ struct ChannelDetailView: View {
 
     var body: some View {
         conversation
+            .settledLayout()
             .modifier(DetailMinimumWidth())
             .background(Color(nsColor: .textBackgroundColor))
             .inspector(isPresented: wideInspector) {
                 OverviewInspector(store: store)
+                    .settledLayout()
                     .inspectorColumnWidth(min: 280, ideal: 312, max: 400)
             }
             // The toolbar draws its own backdrop over any container that keeps it in its top safe

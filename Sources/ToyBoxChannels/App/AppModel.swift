@@ -14,6 +14,7 @@ enum AppConfiguration {
 final class AppModel {
     let launchOptions: LaunchOptions
     let snapshot: WindowSnapshot?
+    let resizeBenchmark: ResizeBenchmark?
     private(set) var serverURL: String
     private(set) var catalog: ChannelCatalogStore?
     private(set) var configurationError: String?
@@ -28,12 +29,16 @@ final class AppModel {
     @ObservationIgnored private var connections: [ObjectIdentifier: (store: ChannelStore, count: Int)] = [:]
     @ObservationIgnored private var windows: [UUID: String] = [:]
     @ObservationIgnored private var keyWindowID: UUID?
+    @ObservationIgnored private var dockBadgeLabel: String?
     @ObservationIgnored private var catalogGeneration = UUID()
     @ObservationIgnored private var applicationObservers: [NSObjectProtocol] = []
 
     init(launchOptions: LaunchOptions = .init()) {
         self.launchOptions = launchOptions
         snapshot = launchOptions.isSnapshot ? WindowSnapshot(options: launchOptions) : nil
+        resizeBenchmark = launchOptions.resizeBenchmark.flatMap { axis in
+            launchOptions.channelID.map { ResizeBenchmark(axis: axis, channelID: $0) }
+        }
         serverURL = launchOptions.serverURL ?? ProcessInfo.processInfo.environment["TOY_BOX_SERVER_URL"]
             ?? UserDefaults.standard.string(forKey: AppConfiguration.serverURLKey)
             ?? AppConfiguration.defaultServerURL
@@ -105,28 +110,37 @@ final class AppModel {
         }
     }
 
+    /// Records a window's channel and whether it's key. Every sidebar row reads the open
+    /// channels, so a window that reports without a change updates nothing.
     func updateWindow(_ id: UUID, channelID: String?, isKey: Bool) {
+        let key = isKey ? id : keyWindowID == id ? nil : keyWindowID
+        guard windows[id] != channelID || key != keyWindowID else { return }
         windows[id] = channelID
-        if isKey { keyWindowID = id }
-        else if keyWindowID == id { keyWindowID = nil }
-        openChannelIDs = Set(windows.values)
-        activeChannelID = keyWindowID.flatMap { windows[$0] }
-        catalogDidChange()
+        keyWindowID = key
+        windowsDidChange()
     }
 
     func removeWindow(_ id: UUID) {
-        windows.removeValue(forKey: id)
+        guard windows.removeValue(forKey: id) != nil || keyWindowID == id else { return }
         if keyWindowID == id { keyWindowID = nil }
-        openChannelIDs = Set(windows.values)
-        activeChannelID = keyWindowID.flatMap { windows[$0] }
+        windowsDidChange()
+    }
+
+    private func windowsDidChange() {
+        let open = Set(windows.values)
+        if open != openChannelIDs { openChannelIDs = open }
+        let active = keyWindowID.flatMap { windows[$0] }
+        if active != activeChannelID { activeChannelID = active }
         catalogDidChange()
     }
 
     func catalogDidChange() {
         guard let catalog, !launchOptions.isSnapshot else { return }
-        NSApplication.shared.dockTile.badgeLabel = Self.dockBadge(
-            channels: catalog.channels, openChannelIDs: openChannelIDs
-        )
+        let badge = Self.dockBadge(channels: catalog.channels, openChannelIDs: openChannelIDs)
+        if badge != dockBadgeLabel {
+            dockBadgeLabel = badge
+            NSApplication.shared.dockTile.badgeLabel = badge
+        }
         if catalog.lastRefreshedAt != nil {
             notifications.update(channels: catalog.channels, activeChannelID: activeChannelID,
                                  serverURL: serverURL)

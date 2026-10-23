@@ -49,10 +49,34 @@ struct ShellTests {
         ["--snapshot", "/tmp/test.jpg"],
         ["--state", "inspector"],
         ["--channel", "one", "--channel", "two"],
-        ["--unknown", "value"]
+        ["--unknown", "value"],
+        ["--benchmark-resize", "width"],
+        ["--channel", "studio-demo", "--benchmark-resize", "height"],
+        ["--channel", "studio-demo", "--benchmark-resize", "width", "--snapshot", "/tmp/test.png"]
     ])
     func malformedArgumentsFailExplicitly(_ arguments: [String]) {
         #expect(throws: LaunchArgumentError.self) { try LaunchOptions.parse(arguments) }
+    }
+
+    @Test func resizeBenchmarkNamesItsAxisAndChannel() throws {
+        let width = try LaunchOptions.parse(["--channel", "studio-demo", "--benchmark-resize", "width"])
+        #expect(width.resizeBenchmark == .width)
+        #expect(!width.isSnapshot)
+        let both = try LaunchOptions.parse(["--channel", "studio-demo", "--benchmark-resize", "both"])
+        #expect(both.resizeBenchmark == .both)
+        #expect(try LaunchOptions.parse(["--channel", "studio-demo"]).resizeBenchmark == nil)
+    }
+
+    /// A round drags out to the widest size and back, one size per display frame.
+    @MainActor @Test func resizeBenchmarkRoundsReturnToTheirStart() {
+        let width = ResizeBenchmark.sizes(axis: .width)
+        #expect(width.count == ResizeBenchmark.stepsPerRound)
+        #expect(width.first == CGSize(width: 1040, height: 700))
+        #expect(width.allSatisfy { $0.height == 700 })
+        #expect(width.map(\.width).max() == CGFloat(1040 + 60 * 8))
+        let both = ResizeBenchmark.sizes(axis: .both)
+        #expect(both.map(\.height).max() == CGFloat(700 + 60 * 4))
+        #expect(both.last == CGSize(width: 1048, height: 704))
     }
 
     @Test func appKitLaunchPreferencesDoNotBecomeAppArguments() throws {
@@ -775,5 +799,88 @@ struct InspectorPlacementTests {
         placement.update(sidebar: nil, inspector: 312)
         #expect(placement.widthNeeded == 1000)
         #expect(placement.isNarrow(windowWidth: 990))
+    }
+
+    /// A resize reports every frame, and views read only whether Overview is a sheet.
+    @Test func theWindowIsNarrowOnlyOnceItReportsAWidthBelowTheColumns() {
+        let placement = placement(Clock())
+        #expect(placement.isWindowNarrow == nil)
+        placement.update(windowWidth: 1100)
+        #expect(placement.isWindowNarrow == false)
+        placement.update(windowWidth: 999)
+        #expect(placement.isWindowNarrow == true)
+        placement.update(windowWidth: 1100)
+        #expect(placement.isWindowNarrow == false)
+        placement.update(sidebar: 320, inspector: nil)
+        #expect(placement.isWindowNarrow == true)
+    }
+}
+
+@MainActor
+@Suite("Settled layout")
+struct SettledLayoutTests {
+    @Test(arguments: [
+        (ProposedViewSize(width: 600, height: 400), true),
+        (ProposedViewSize(width: 172, height: 560), true),
+        (ProposedViewSize(width: 700, height: 52), false),
+        (ProposedViewSize(width: 0, height: 0), false),
+        (ProposedViewSize(width: 60, height: 560), false),
+        (ProposedViewSize(width: nil, height: 560), false),
+        (ProposedViewSize(width: 600, height: nil), false),
+        (ProposedViewSize(width: .infinity, height: 560), false),
+    ])
+    func onlySizesAWindowCanShowCount(proposal: ProposedViewSize, shown: Bool) {
+        #expect(SettledLayout.isShown(proposal) == shown)
+    }
+
+    /// AppKit's split views size their columns at sizes no window shows during each frame of a
+    /// resize. The content stays laid out at the last shown size until the next one arrives.
+    @Test func temporarySizesLeaveTheContentWhereItWas() {
+        let log = SettledLayoutLog()
+        let host = NSHostingView(rootView: RecordingLayout(log: log) { Color.clear }.settledLayout())
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
+        container.addSubview(host)
+        let window = NSWindow(contentRect: container.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = container
+        defer { window.close() }
+        func layout(_ size: CGSize) {
+            log.measured = []
+            log.placed = []
+            host.frame = NSRect(origin: .zero, size: size)
+            host.layoutSubtreeIfNeeded()
+        }
+
+        layout(CGSize(width: 600, height: 400))
+        #expect(log.placed.last == CGSize(width: 600, height: 400))
+
+        for transient in [CGSize(width: 452, height: 52), CGSize(width: 0, height: 0), CGSize(width: 948, height: 104)] {
+            layout(transient)
+            #expect(log.measured.allSatisfy { SettledLayout.isShown(ProposedViewSize($0)) })
+            #expect(log.placed.allSatisfy { $0 == CGSize(width: 600, height: 400) })
+        }
+
+        layout(CGSize(width: 700, height: 420))
+        #expect(log.placed.last == CGSize(width: 700, height: 420))
+    }
+}
+
+@MainActor private final class SettledLayoutLog {
+    var measured: [CGSize] = []
+    var placed: [CGSize] = []
+}
+
+private struct RecordingLayout: Layout {
+    let log: SettledLayoutLog
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let size = proposal.replacingUnspecifiedDimensions()
+        MainActor.assumeIsolated { log.measured.append(size) }
+        return size
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        MainActor.assumeIsolated { log.placed.append(bounds.size) }
+        for subview in subviews { subview.place(at: bounds.origin, proposal: ProposedViewSize(bounds.size)) }
     }
 }

@@ -8,6 +8,7 @@ struct LaunchOptions: Equatable, Sendable {
     var height = 840
     var snapshotURL: URL?
     var snapshotState: String?
+    var resizeBenchmark: ResizeBenchmark.Axis?
 
     var isSnapshot: Bool { snapshotURL != nil }
 
@@ -21,7 +22,8 @@ struct LaunchOptions: Equatable, Sendable {
                 index += 2
                 continue
             }
-            guard ["--server", "--channel", "--appearance", "--size", "--snapshot", "--state"].contains(flag) else {
+            guard ["--server", "--channel", "--appearance", "--size", "--snapshot", "--state",
+                   "--benchmark-resize"].contains(flag) else {
                 throw LaunchArgumentError("Unknown argument: \(flag)")
             }
             guard seen.insert(flag).inserted else { throw LaunchArgumentError("Repeated argument: \(flag)") }
@@ -55,6 +57,11 @@ struct LaunchOptions: Equatable, Sendable {
             case "--state":
                 guard !value.isEmpty else { throw LaunchArgumentError("--state must not be empty") }
                 options.snapshotState = value
+            case "--benchmark-resize":
+                guard let axis = ResizeBenchmark.Axis(rawValue: value) else {
+                    throw LaunchArgumentError("--benchmark-resize must be width or both")
+                }
+                options.resizeBenchmark = axis
             default: break
             }
             index += 2
@@ -64,6 +71,9 @@ struct LaunchOptions: Equatable, Sendable {
         }
         if options.snapshotState != nil, !options.isSnapshot {
             throw LaunchArgumentError("--state requires --snapshot")
+        }
+        if options.resizeBenchmark != nil, options.isSnapshot || options.channelID == nil {
+            throw LaunchArgumentError("--benchmark-resize requires --channel and can't take a snapshot")
         }
         return options
     }

@@ -3,7 +3,8 @@ import SwiftUI
 
 struct WindowObserver: NSViewRepresentable {
     var onAttach: (NSWindow) -> Void
-    var onChange: (Bool, CGSize) -> Void
+    /// Reports whether the window is key, its size, and whether a live resize is still under way.
+    var onChange: (_ isKey: Bool, _ size: CGSize, _ isLiveResizing: Bool) -> Void
     /// Reports the sidebar's width, zero when it's hidden, and the inspector's width while it's
     /// fully open. Either is nil when that split view didn't change.
     var onColumns: (CGFloat?, CGFloat?) -> Void = { _, _ in }
@@ -25,7 +26,7 @@ struct WindowObserver: NSViewRepresentable {
 
     @MainActor
     final class ObserverView: NSView {
-        var onChange: ((Bool, CGSize) -> Void)?
+        var onChange: ((Bool, CGSize, Bool) -> Void)?
         var onColumns: ((CGFloat?, CGFloat?) -> Void)?
         var onAttach: ((NSWindow) -> Void)?
         private var tokens: [NSObjectProtocol] = []
@@ -54,10 +55,11 @@ struct WindowObserver: NSViewRepresentable {
             onAttach?(window)
             for name in [NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification,
                          NSWindow.didResizeNotification, NSWindow.didMiniaturizeNotification,
-                         NSWindow.didDeminiaturizeNotification] {
+                         NSWindow.didDeminiaturizeNotification, NSWindow.didEndLiveResizeNotification] {
                 tokens.append(NotificationCenter.default.addObserver(forName: name, object: window, queue: .main) {
-                    [weak self] _ in
-                    MainActor.assumeIsolated { self?.report() }
+                    [weak self] note in
+                    let ended = note.name == NSWindow.didEndLiveResizeNotification
+                    MainActor.assumeIsolated { self?.report(endingLiveResize: ended) }
                 })
             }
             tokens.append(NotificationCenter.default.addObserver(
@@ -72,9 +74,10 @@ struct WindowObserver: NSViewRepresentable {
             DispatchQueue.main.async { [weak self] in self?.report() }
         }
 
-        private func report() {
+        private func report(endingLiveResize: Bool = false) {
             guard let window else { return }
-            onChange?(window.isKeyWindow && !window.isMiniaturized, window.frame.size)
+            onChange?(window.isKeyWindow && !window.isMiniaturized, window.frame.size,
+                      window.inLiveResize && !endingLiveResize)
         }
 
         /// Split views resize during layout, so the columns report once layout finishes. Changing

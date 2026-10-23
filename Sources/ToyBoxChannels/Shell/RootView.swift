@@ -19,27 +19,32 @@ struct RootView: View {
     @ViewState private var searchFocusRequest = UUID()
     @ViewState private var windowID = UUID()
     @ViewState private var isKeyWindow = false
-    @ViewState private var windowSize: CGSize?
+    /// The height the narrow Overview sheet sizes to. A live resize updates it only while the
+    /// sheet is open, and otherwise once the resize ends.
+    @ViewState private var windowHeight: CGFloat?
     @ViewState private var placement = InspectorPlacement()
     @ViewState private var isOverviewSheetPresented = false
 
     static let sidebarIdealWidth: CGFloat = 248
 
-    private var windowWidth: CGFloat { windowSize?.width ?? CGFloat(model.launchOptions.width) }
-    private var isNarrow: Bool { placement.isNarrow(windowWidth: windowWidth) }
+    /// The window passes its launch width until it reports its frame.
+    private var isNarrow: Bool {
+        placement.isWindowNarrow ?? placement.isNarrow(windowWidth: CGFloat(model.launchOptions.width))
+    }
     /// Overview is the inspector column in wide windows and a sheet in narrow ones.
     private var isOverviewVisible: Bool { isNarrow ? isOverviewSheetPresented : interaction.isInspectorPresented }
 
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
             ChannelSidebar(selection: $selectedId, searchFocusRequest: searchFocusRequest)
+                .settledLayout()
                 .navigationSplitViewColumnWidth(min: 220, ideal: Self.sidebarIdealWidth, max: 320)
         } detail: {
             if let catalog = model.catalog, let selectedId {
                 ChannelDetailView(store: catalog.channel(id: selectedId),
                                   placement: placement,
                                   isNarrow: isNarrow,
-                                  windowHeight: windowSize?.height ?? CGFloat(model.launchOptions.height),
+                                  windowHeight: windowHeight ?? CGFloat(model.launchOptions.height),
                                   isOverviewSheetPresented: $isOverviewSheetPresented,
                                   onBack: { self.selectedId = nil },
                                   onSelect: { self.selectedId = $0 })
@@ -60,18 +65,25 @@ struct RootView: View {
         .background(WindowObserver(onAttach: { window in
             placement.window = window
             model.snapshot?.attach(window: window, model: model)
-        }, onChange: { isKey, size in
-            isKeyWindow = isKey
+            model.resizeBenchmark?.attach(window: window, model: model)
+        }, onChange: { isKey, size, isLiveResizing in
+            // A resize reports every frame, so this changes state only when something the views
+            // read changes. Anything more rebuilds the window on each frame.
+            if isKey != isKeyWindow {
+                isKeyWindow = isKey
+                model.updateWindow(windowID, channelID: selectedId, isKey: isKey)
+            }
             // Tiling, zooming or a display change can set the window narrower than the open column
             // needs. AppKit can't lay out a split view below its minimum, and with a widened
             // inspector it loops until it throws. Stepping aside without animation keeps the column
             // out of that layout pass.
             var transaction = Transaction()
-            transaction.disablesAnimations = placement.window?.inLiveResize != true
-                && size.width < placement.widthNeeded
-            withTransaction(transaction) { windowSize = size }
-            placement.update(windowWidth: size.width)
-            model.updateWindow(windowID, channelID: selectedId, isKey: isKey)
+            transaction.disablesAnimations = !isLiveResizing && size.width < placement.widthNeeded
+            withTransaction(transaction) { placement.update(windowWidth: size.width) }
+            let isResizing = isLiveResizing || model.resizeBenchmark?.isResizing == true
+            if size.height != windowHeight, isOverviewSheetPresented || !isResizing {
+                windowHeight = size.height
+            }
         }, onColumns: { sidebar, inspector in
             placement.update(sidebar: sidebar, inspector: inspector)
         }))

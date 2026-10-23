@@ -27,6 +27,9 @@ final class InspectorPlacement {
     private(set) var isSetAside = false
     /// Changes when the column must be presented again after AppKit collapsed it on its own.
     private(set) var revision = 0
+    /// Whether the window shows Overview as a sheet, nil until it reports its width. It changes
+    /// only when the answer flips, so a resizing window doesn't update its views every frame.
+    private(set) var isWindowNarrow: Bool?
 
     @ObservationIgnored private(set) var sidebarWidth: CGFloat = RootView.sidebarIdealWidth
     @ObservationIgnored private(set) var inspectorWidth: CGFloat = InspectorPlacement.inspectorIdealWidth
@@ -57,9 +60,10 @@ final class InspectorPlacement {
 
     func update(windowWidth width: CGFloat) {
         guard width != windowWidth else { return }
-        if let windowWidth, width > windowWidth { isSetAside = false }
+        if let windowWidth, width > windowWidth, isSetAside { isSetAside = false }
         windowWidth = width
         movedAt = now()
+        refreshNarrow()
     }
 
     /// Takes the sidebar's width, zero when it's hidden, and the inspector's width while it's
@@ -70,12 +74,13 @@ final class InspectorPlacement {
             inspectorWidth = inspector
         }
         if let sidebar, sidebar != sidebarWidth {
-            if sidebar < sidebarWidth { isSetAside = false }
+            if sidebar < sidebarWidth, isSetAside { isSetAside = false }
             sidebarWidth = sidebar
             movedAt = now()
         }
         let needed = Self.widthNeeded(sidebar: sidebarWidth, inspector: inspectorWidth)
         if needed != widthNeeded { widthNeeded = needed }
+        refreshNarrow()
     }
 
     /// Records that the column's presentation changed, so AppKit's echo isn't mistaken for a
@@ -95,10 +100,17 @@ final class InspectorPlacement {
         guard !value else { return nil }
         if now().timeIntervalSince(restoredAt) < 1 {
             isSetAside = true
+            refreshNarrow()
         } else {
             restoredAt = now()
             revision &+= 1
         }
         return nil
+    }
+
+    private func refreshNarrow() {
+        guard let windowWidth else { return }
+        let narrow = isNarrow(windowWidth: windowWidth)
+        if narrow != isWindowNarrow { isWindowNarrow = narrow }
     }
 }
