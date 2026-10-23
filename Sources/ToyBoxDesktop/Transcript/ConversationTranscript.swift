@@ -105,7 +105,6 @@ struct ConversationTranscript: View {
                 }
                 // Owned here rather than by the card, which the lazy stack drops when it scrolls away.
                 .task(id: catchUp?.generation) { await catchUp?.run(using: intelligence) }
-                .onChange(of: reduceMotion) { catchUp?.reducesMotion = reduceMotion }
                 .onChange(of: pendingJump) { catchUp?.isJumping = pendingJump != nil }
         }
     }
@@ -674,7 +673,6 @@ struct ConversationTranscript: View {
                   availability: intelligence.availability,
                   isOn: TranscriptIntelligenceSettings.isOn(TranscriptIntelligenceSettings.summarizesNewMessages))
         else { return }
-        made.reducesMotion = reduceMotion
         made.isJumping = pendingJump != nil
         made.scroll = { [window] delta in window.scroll(by: delta) }
         catchUp = made

@@ -38,7 +38,6 @@ final class TranscriptCatchUp {
     /// Until the reader scrolls, uses the keyboard or reveals anything, the transcript doesn't follow
     /// its bottom, so the card's top stays where it landed.
     var isPinned = true
-    var reducesMotion = false
     /// While the transcript is jumping, the jump owns the scroll position and repeats until it lands.
     @ObservationIgnored var isJumping = false
     /// The top of the card and New divider in the viewport, measured by the divider row.
@@ -157,24 +156,18 @@ final class TranscriptCatchUp {
         if old.minY < -0.5, abs(growth) > 0.5, !isJumping { scroll?(growth) }
     }
 
+    /// The card never animates its height, because each frame of that lays out the whole transcript.
+    /// It takes its new height in one pass and only its lines fade, so Reduce Motion needs no variant.
     private func show(_ summary: Summary) {
-        let isCrossfade = if case .updating = phase { true } else { false }
-        change(isCrossfade ? .easeOut(duration: 0.2) : .spring(response: 0.35, dampingFraction: 0.9)) {
-            phase = .ready(summary)
-        }
+        phase = .ready(summary)
     }
 
+    /// Fades the card, then removes it in one layout pass.
     private func collapse() async {
         guard phase != .collapsed, !isFading else { return }
-        withAnimation(.easeOut(duration: reducesMotion ? 0.2 : 0.15)) { isFading = true }
-        try? await Task.sleep(for: .milliseconds(reducesMotion ? 200 : 150))
-        change(.easeInOut(duration: 0.2)) { phase = .collapsed }
-    }
-
-    /// Animates a height change in view. Above the viewport, and under Reduce Motion, the layout
-    /// changes at once and only the contents crossfade.
-    private func change(_ animation: Animation, _ body: () -> Void) {
-        withAnimation(reducesMotion || (top ?? 0) < -0.5 ? nil : animation, body)
+        withAnimation(.easeOut(duration: 0.15)) { isFading = true }
+        try? await Task.sleep(for: .milliseconds(150))
+        phase = .collapsed
     }
 
     private static func remember(_ summary: Summary, for key: CatchUpRequest.Key) {
@@ -213,9 +206,10 @@ struct TranscriptCatchUpCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
-            if let summary = catchUp.summary {
-                // Overlapping, so an update's crossfade never stacks the old and new summaries.
-                ZStack(alignment: .topLeading) {
+            // Always present, so its lines are what's inserted and fade in while the card takes its
+            // new height in one pass. Overlapping, so an update's crossfade never stacks old and new.
+            ZStack(alignment: .topLeading) {
+                if let summary = catchUp.summary {
                     content(summary)
                         .id(summary)
                         .transition(.opacity.animation(.easeOut(duration: 0.2)))
