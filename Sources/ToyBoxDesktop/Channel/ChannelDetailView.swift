@@ -47,7 +47,7 @@ struct ChannelDetailView: View {
                        })
     }
     private var narrowInspector: Binding<Bool> {
-        Binding(get: { isNarrow && isOverviewSheetPresented && store.state != nil && store.phase != .deleted },
+        Binding(get: { isNarrow && isOverviewSheetPresented && store.isLoaded && store.phase != .deleted },
                 set: { isOverviewSheetPresented = $0 })
     }
 
@@ -96,8 +96,8 @@ struct ChannelDetailView: View {
             }
             // The transcript's scroll view takes over the composer once the channel loads, and the
             // replacement may not be in the window yet, so the request repeats until focus lands.
-            .task(id: ComposerFocus(channel: ObjectIdentifier(store), isRequested: focusesComposer && store.state != nil)) {
-                guard focusesComposer, store.state != nil else { return }
+            .task(id: ComposerFocus(channel: ObjectIdentifier(store), isRequested: focusesComposer && store.isLoaded)) {
+                guard focusesComposer, store.isLoaded else { return }
                 for _ in 0..<20 {
                     interaction.focusComposer()
                     try? await Task.sleep(for: .milliseconds(50))
@@ -134,7 +134,7 @@ struct ChannelDetailView: View {
                     Button("Copy Draft") { interaction.copyDraft?() }
                 }
             }
-        } else if store.state == nil, case .stale(let error, _) = store.phase {
+        } else if !store.isLoaded, case .stale(let error, _) = store.phase {
             ContentUnavailableView {
                 Label("Can't connect to Toy Box", systemImage: "wifi.exclamationmark")
             } description: {
@@ -190,7 +190,7 @@ struct ChannelDetailView: View {
         .onExitCommand { isOverviewSheetPresented = false }
     }
 
-    private var title: String { store.state?.channel.name ?? catalogChannel?.name ?? "Channel" }
+    private var title: String { store.details?.name ?? catalogChannel?.name ?? "Channel" }
 
     /// The title menu keeps every channel one click away with the sidebar collapsed, in sidebar
     /// order and with the sidebar's attention as system menu-item badges.
@@ -274,7 +274,7 @@ struct ChannelDetailView: View {
             .help(interaction.messageView == .all ? "Message View: All Messages" : "Message View: Your Messages")
             .accessibilityLabel("Message View")
             .accessibilityValue(interaction.messageView == .all ? "All Messages" : "Your Messages")
-            .disabled(store.state == nil)
+            .disabled(!store.isLoaded)
             Menu {
                 Button("Open in Toy Box", systemImage: "arrow.up.forward.app") { model.openInToyBox(channelID: store.id) }
                 Button("Edit Channel…", systemImage: "pencil") { management.present(.editChannel(channelId: store.id)) }

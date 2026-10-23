@@ -183,7 +183,7 @@ struct RootView: View {
         let store = selectedId.flatMap { model.catalog?.channel(id: $0) }
         return WindowCommandActions(
             hasChannel: selectedId != nil && store?.phase != .deleted,
-            hasRequest: store?.phase.isLive == true && store?.state?.channel.requestSequence != nil,
+            hasRequest: store?.phase.isLive == true && store?.requestSequence != nil,
             sidebarVisible: columnVisibility != .detailOnly, inspectorVisible: isOverviewVisible,
             messageView: interaction.messageView,
             imageZoom: imageZoom,
@@ -201,7 +201,7 @@ struct RootView: View {
             focusComposer: { interaction.focusComposer() },
             jumpToLatest: { interaction.jumpToLatest() },
             revealRequest: {
-                if let sequence = store?.state?.channel.requestSequence { interaction.reveal(sequence: sequence) }
+                if let sequence = store?.requestSequence { interaction.reveal(sequence: sequence) }
             }
         )
     }
@@ -215,9 +215,10 @@ struct RootView: View {
     }
 
     private func openableFolder(store: ChannelStore?) -> String? {
-        guard store?.phase != .deleted, let api = model.api,
-              let channel = store?.state?.channel ?? model.catalog?.channels.first(where: { $0.id == selectedId }),
-              let path = channel.directory, !path.isEmpty,
+        let directory = if let details = store?.details { details.directory } else {
+            model.catalog?.channels.first(where: { $0.id == selectedId })?.directory
+        }
+        guard store?.phase != .deleted, let api = model.api, let path = directory, !path.isEmpty,
               model.folderAvailability(path: path, server: api.baseURL) == .openable else { return nil }
         return path
     }

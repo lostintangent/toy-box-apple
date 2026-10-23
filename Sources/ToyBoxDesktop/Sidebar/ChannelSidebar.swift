@@ -105,12 +105,14 @@ struct ChannelSidebar: View {
         let isOpen = model.openChannelIDs.contains(channel.id)
         let store = isOpen ? model.catalog?.channel(id: channel.id) : nil
         let current = model.sidebarChannel(channel)
-        let agents = store?.state?.agents ?? ([ChannelAgent.lead(id: channel.id, profile: lead)]
-            + (model.catalog?.members.filter { $0.channelId == channel.id } ?? []))
+        let agents = if let store, store.isLoaded { store.roster } else {
+            [ChannelAgent.lead(id: channel.id, profile: lead)]
+                + (model.catalog?.members.filter { $0.channelId == channel.id } ?? [])
+        }
         let working: [ChannelAgent]
         if let store {
             working = store.phase.isLive
-                ? agents.filter { store.state?.presence[$0.id]?.state == "working" } : []
+                ? agents.filter { store.presence[$0.id]?.state == "working" } : []
         } else {
             working = model.catalog?.error == nil
                 ? agents.filter { model.catalog?.working.contains($0.id) == true } : []

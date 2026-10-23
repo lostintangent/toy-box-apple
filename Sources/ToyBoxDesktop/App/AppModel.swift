@@ -155,10 +155,21 @@ final class AppModel {
         }
     }
 
-    /// A channel as the sidebar shows it: an open channel's live state, otherwise its catalog entry.
+    /// A channel as the sidebar shows it: an open channel's live details and request over its catalog
+    /// entry. It reads only those slices, so the store's other events leave the sidebar and the title
+    /// menu alone. Activity times follow the catalog, and an open channel shows only its request.
     func sidebarChannel(_ channel: Channel) -> Channel {
-        guard openChannelIDs.contains(channel.id) else { return channel }
-        return catalog?.channel(id: channel.id).state?.channel ?? channel
+        guard openChannelIDs.contains(channel.id), let store = catalog?.channel(id: channel.id),
+              let details = store.details else { return channel }
+        var live = channel
+        live.name = details.name
+        live.purpose = details.purpose
+        live.directory = details.directory
+        live.model = details.model
+        live.preview = details.preview
+        live.previewUrl = details.previewUrl
+        live.requestSequence = store.requestSequence
+        return live
     }
 
     /// The attention the sidebar shows for a channel. The title menu mirrors it.
