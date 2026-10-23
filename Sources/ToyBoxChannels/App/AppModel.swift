@@ -7,7 +7,7 @@ import Observation
 enum AppConfiguration {
     static let serverURLKey = "serverURL"
     static let defaultServerURL = ProcessInfo.processInfo.environment["TOY_BOX_SERVER_URL"]
-        ?? "http://localhost:3100"
+        ?? "http://localhost:3000"
 }
 
 @MainActor @Observable
