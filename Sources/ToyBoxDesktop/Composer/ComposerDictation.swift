@@ -537,12 +537,21 @@ final class ComposerDictation {
         Task { await refresh() }
     }
 
-    /// Commits any session and stops tracking, such as when switching channels.
+    /// Commits any session and stops tracking, such as when the composer goes away.
     func deactivate() {
         observers.forEach(NotificationCenter.default.removeObserver)
         observers.removeAll()
         commitNow()
         if phase != .idle { cancelPreparation() }
+    }
+
+    /// Commits any session to the draft it was spoken into and drops what described that draft,
+    /// such as when the window switches channels. Device and access tracking carry on.
+    func leaveDraft() {
+        commitNow()
+        if phase != .idle { cancelPreparation() }
+        notice = nil
+        showsAccessExplanation = false
     }
 
     func refresh() async {

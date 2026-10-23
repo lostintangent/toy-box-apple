@@ -36,6 +36,9 @@ struct ComposerFailureAnnouncements {
 
 struct NativeComposerInput: NSViewRepresentable {
     @Binding var text: String
+    /// The draft being edited. When it changes, such as on a channel switch, the same text view
+    /// takes the new draft's text with a fresh caret and undo history.
+    var document: ObjectIdentifier? = nil
     @Binding var height: CGFloat
     @Binding var focused: Bool
     @Binding var dragging: Bool
@@ -96,11 +99,18 @@ struct NativeComposerInput: NSViewRepresentable {
 
     func updateNSView(_ scroll: NSScrollView, context: Context) {
         let coordinator = context.coordinator
+        // The outgoing draft keeps what was in flight for it, so leave before adopting the new parent.
+        let isNewDocument = coordinator.document != document
+        if isNewDocument { coordinator.leaveDocument() }
         coordinator.parent = self
         if let dictation, dictation.target !== coordinator { dictation.target = coordinator }
         guard let input = scroll.documentView as? ComposerTextView else { return }
         configure(input)
-        coordinator.synchronizeModelText(text)
+        if isNewDocument {
+            coordinator.enterDocument(document, text: text)
+        } else {
+            coordinator.synchronizeModelText(text)
+        }
         if coordinator.lastFocusRequest != focusRequest {
             coordinator.lastFocusRequest = focusRequest
             DispatchQueue.main.async { [weak input] in
@@ -160,6 +170,9 @@ struct NativeComposerInput: NSViewRepresentable {
         var lastFocusRequest: UUID
         var snapshotState: String?
         var isCompletionVisible: Bool { popover?.isShown == true }
+        private(set) var document: ObjectIdentifier?
+        /// The composer's own undo stack, so Undo never reaches into a draft from another channel.
+        let history = UndoManager()
         private var completion = MentionMenuModel()
         private var popover: NSPopover?
         private var mentionRange: NSRange?
@@ -188,12 +201,56 @@ struct NativeComposerInput: NSViewRepresentable {
             self.parent = parent
             lastFocusRequest = parent.focusRequest
             lastModelText = parent.text
+            document = parent.document
             super.init()
             completion.onAccept = { [weak self] in self?.accept($0) }
             completion.onEdit = { [weak self] agent in
                 self?.dismissCompletion()
                 self?.parent.onEdit(agent)
             }
+        }
+
+        func undoManager(for view: NSTextView) -> UndoManager? { history }
+
+        /// Settles the outgoing draft while `parent` still writes to it. Composed and dictated
+        /// words land there, and the mention menu closes.
+        func leaveDocument() {
+            if let input, input.hasMarkedText() {
+                input.unmarkText()
+                input.inputContext?.discardMarkedText()
+            }
+            parent.dictation?.leaveDraft()
+            if let input, input.string != lastModelText {
+                lastModelText = input.string
+                parent.text = input.string
+            }
+            dismissCompletion()
+            suppressedContext = nil
+            completion.creatingID = nil
+            completion.error = nil
+        }
+
+        /// Shows another draft the way a new text view would, with nothing to undo and the caret
+        /// at its end, scrolled into view.
+        func enterDocument(_ document: ObjectIdentifier?, text: String) {
+            self.document = document
+            lastModelText = text
+            guard let input else { return }
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: input.font ?? NSFont.systemFont(ofSize: parent.fontSize),
+                .foregroundColor: NSColor.textColor,
+                .paragraphStyle: input.defaultParagraphStyle ?? NSParagraphStyle.default
+            ]
+            isApplyingModelText = true
+            input.textStorage?.setAttributedString(NSAttributedString(string: text, attributes: attributes))
+            isApplyingModelText = false
+            input.setSelectedRange(NSRange(location: text.utf16.count, length: 0))
+            input.typingAttributes = attributes
+            history.removeAllActions()
+            input.scroll(.zero)
+            measure()
+            input.scrollRangeToVisible(input.selectedRange())
+            NSAccessibility.post(element: input, notification: .valueChanged)
         }
 
         func synchronizeModelText(_ text: String) {
@@ -395,12 +452,16 @@ struct NativeComposerInput: NSViewRepresentable {
                 guard parent.canManage else { return }
                 let originalText = input.string
                 let originalSelection = input.selectedRange()
+                let origin = parent
+                let document = document
                 completion.creatingID = item.id
                 completion.error = nil
                 Task { [weak self] in
                     guard let self else { return }
                     do {
-                        let member = try await parent.onCreate(item.name)
+                        let member = try await origin.onCreate(item.name)
+                        // The member joined the channel it was created for. Its draft has gone.
+                        guard self.document == document else { return }
                         completion.creatingID = nil
                         if let input = self.input, input.string == originalText,
                            input.selectedRange() == originalSelection, !input.hasMarkedText() {
@@ -414,6 +475,10 @@ struct NativeComposerInput: NSViewRepresentable {
                             )
                         }
                     } catch {
+                        guard self.document == document else {
+                            origin.onError(error.localizedDescription)
+                            return
+                        }
                         completion.creatingID = nil
                         completion.error = error.localizedDescription
                         if popover?.isShown != true { parent.onError(error.localizedDescription) }

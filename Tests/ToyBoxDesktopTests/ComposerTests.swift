@@ -1,4 +1,5 @@
 import AppKit
+import ChannelClient
 import ChannelKit
 import Foundation
 import Speech
@@ -712,6 +713,94 @@ struct ComposerTests {
         #expect(draft.text == "Replaced elsewhere")
     }
 
+    @Test func switchingDraftsKeepsTheTextViewAndLeavesEachDraftItsOwnWordsAndUndo() async throws {
+        let first = ComposerDraft()
+        let second = ComposerDraft()
+        let secondText = "One\nTwo\nThree\nFour\nSecond channel draft"
+        second.text = secondText
+        let recognizer = ManualDictationRecognizer()
+        let dictation = ComposerDictation(system: .manual(recognizer))
+        let shown = ShownDraft(first)
+        let host = NSHostingView(rootView: ComposerSwitchTestHost(shown: shown, dictation: dictation))
+        host.frame = NSRect(x: 0, y: 0, width: 400, height: 140)
+        let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: true)
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        defer { window.close() }
+        host.layoutSubtreeIfNeeded()
+        try await Task.sleep(for: .milliseconds(50))
+        let input = try #require(composerInput(in: host))
+        let clip = try #require(input.enclosingScrollView?.contentView)
+        #expect(window.makeFirstResponder(input))
+        await dictation.refresh()
+
+        input.insertText("Typed here", replacementRange: input.selectedRange())
+        #expect(first.text == "Typed here")
+        dictation.toggle()
+        try await waitUntil("dictation listens") { dictation.phase == .listening }
+        recognizer.send("and spoken", isFinal: false)
+        #expect(input.string == "Typed here and spoken")
+
+        shown.draft = second
+        try await waitUntil("the switch commits dictation") { !dictation.isSessionActive }
+        #expect(composerInput(in: host) === input, "The switch keeps the text view")
+        #expect(first.text == "Typed here and spoken", "Spoken words stay with the draft they were spoken into")
+        #expect(second.text == secondText)
+        #expect(input.string == secondText)
+        #expect(color(of: input, at: 0) == .textColor)
+        #expect(input.selectedRange() == NSRange(location: secondText.utf16.count, length: 0), "The caret starts at the end")
+        #expect(input.undoManager?.canUndo == false, "Undo never reaches into another draft")
+        try await waitForUpdate(of: host, "the composer grows to three lines") { clip.frame.height > 80 }
+        #expect(abs(clip.bounds.maxY - input.frame.maxY) < 1, "The caret's last line is in view")
+
+        input.insertText("!", replacementRange: input.selectedRange())
+        #expect(second.text == secondText + "!")
+        #expect(first.text == "Typed here and spoken")
+
+        shown.draft = first
+        try await waitForUpdate(of: host, "the first draft returns") { input.string == first.text }
+        #expect(composerInput(in: host) === input)
+        #expect(input.selectedRange() == NSRange(location: 21, length: 0))
+        #expect(input.undoManager?.canUndo == false)
+        try await waitForUpdate(of: host, "the composer shrinks to one line") { clip.frame.height < 50 }
+        #expect(clip.bounds.minY == 0, "A one-line draft isn't left scrolled")
+        #expect(second.text == secondText + "!")
+    }
+
+    /// Every switch reconnects the channel it shows, so a quick connect mustn't flash the reason Send is off.
+    @Test func aBriefConnectDoesNotFlashWhySendIsOff() async {
+        let grace = ConnectGrace()
+        grace.duration = .milliseconds(100)
+        let first = ComposerDraft()
+        let second = ComposerDraft()
+        let shown = ObjectIdentifier(first)
+        #expect(grace.explains(.stale(message: "Offline", retryAt: .now), for: shown))
+        #expect(grace.explains(.deleted, for: shown))
+        #expect(!grace.explains(.live, for: shown))
+        #expect(!grace.explains(.idle, for: shown), "A switch shows the channel before it connects")
+        #expect(!grace.explains(.connecting, for: shown), "A connect starts without the explanation")
+
+        let finished = Task { await grace.watch(.connecting, for: shown) }
+        finished.cancel()
+        await finished.value
+        #expect(!grace.explains(.connecting, for: shown), "A connect that finishes in time never explains")
+
+        let started = ContinuousClock.now
+        await grace.watch(.connecting, for: shown)
+        #expect(ContinuousClock.now - started >= .milliseconds(100))
+        #expect(grace.explains(.connecting, for: shown), "A slow connect explains")
+        #expect(!grace.explains(.connecting, for: ObjectIdentifier(second)),
+                "Another channel's slow connect doesn't carry over")
+
+        await grace.watch(.live, for: shown)
+        #expect(!grace.explains(.connecting, for: shown), "The next connect starts quiet again")
+        await grace.watch(.idle, for: shown)
+        #expect(grace.explains(.idle, for: shown), "A channel that never starts connecting explains")
+        await grace.watch(.connecting, for: shown)
+        grace.reset()
+        #expect(!grace.explains(.connecting, for: shown), "A switch starts quiet before its first frame")
+    }
+
     @Test func sendingWaitsForFinalWordsAndKeepsUnconfirmedWordsUnsent() async throws {
         let draft = ComposerDraft()
         let recognizer = ManualDictationRecognizer()
@@ -1003,14 +1092,23 @@ struct ComposerTests {
 
         var body: some View {
             NativeComposerInput(
-                text: $draft.text, height: $height, focused: $focused, dragging: $dragging,
-                fontSize: 14, focusRequest: focusRequest, agents: [.lead(id: "lead")], canManage: false,
-                onSend: {}, onFiles: { _ in }, onImage: { _ in }, onError: { _ in },
+                text: $draft.text, document: ObjectIdentifier(draft), height: $height, focused: $focused,
+                dragging: $dragging, fontSize: 14, focusRequest: focusRequest, agents: [.lead(id: "lead")],
+                canManage: false, onSend: {}, onFiles: { _ in }, onImage: { _ in }, onError: { _ in },
                 onCreate: { .init(id: "created", name: $0) }, onEdit: { _ in }, dictation: dictation
             )
             .frame(height: height)
         }
     }
+
+    /// Like a window switching channels, one composer that the shown draft passes through.
+    private struct ComposerSwitchTestHost: View {
+        let shown: ShownDraft
+        let dictation: ComposerDictation
+
+        var body: some View { ComposerInputTestHost(draft: shown.draft, dictation: dictation) }
+    }
+
 
     private func hostComposer(draft: ComposerDraft, dictation: ComposerDictation) async throws
         -> (window: NSWindow, input: ComposerTextView) {
@@ -1045,6 +1143,18 @@ struct ComposerTests {
             } onCancel: {
                 change.fire()
             }
+        }
+    }
+
+    /// Waits for SwiftUI to update a hosted AppKit view, for checks on state that isn't observable.
+    private func waitForUpdate(of host: NSView, _ description: String, until condition: () -> Bool) async throws {
+        while !condition() {
+            guard !Task.isCancelled else {
+                Issue.record("Gave up waiting until \(description)")
+                throw CancellationError()
+            }
+            try await Task.sleep(for: .milliseconds(10))
+            host.layoutSubtreeIfNeeded()
         }
     }
 
@@ -1092,6 +1202,12 @@ struct ComposerTests {
         do { try FileManager.default.removeItem(at: url) }
         catch { Issue.record("Composer test cleanup failed: \(error.localizedDescription)") }
     }
+}
+
+/// The draft a test window shows, which changes like the selected channel.
+@MainActor @Observable private final class ShownDraft {
+    var draft: ComposerDraft
+    init(_ draft: ComposerDraft) { self.draft = draft }
 }
 
 private extension DictationSystem {

@@ -1009,7 +1009,9 @@ readable explicitly require reattachment, and must not appear ready to send.
 
 Editing remains available while offline, an intentional native improvement. Send and management
 mutations are unavailable until live state is established. Explain the reason next to the input
-rather than using disabled controls alone. A stale snapshot must never determine a new send's
+rather than using disabled controls alone. Every channel switch reconnects, so a connect that goes
+live within a second shows no explanation and the composer doesn't jump. A slower connect, a stale
+connection or a deleted channel explains it. A stale snapshot must never determine a new send's
 audience without reconnection.
 
 Submitting creates one optimistic row with "Sending". A committed echo replaces it by UUID.

@@ -9,10 +9,11 @@ struct ComposerArea: View {
     @Environment(\.windowSnapshot) private var snapshot
     @ViewState private var snapshotDraft = ComposerDraft()
 
+    /// One composer serves the window. A switch hands it the next channel's draft, so its text view
+    /// is kept rather than rebuilt.
     var body: some View {
         ChannelComposer(store: store, draft: snapshot == nil
                         ? .shared(serverURL: store.api.baseURL, channelID: store.id) : snapshotDraft)
-            .id("\(store.api.baseURL.absoluteString):\(store.id)")
     }
 }
 
@@ -102,12 +103,29 @@ private struct ChannelComposer: View {
     @ViewState private var focusRequest = UUID()
     @ViewState private var requestPreview = false
     @ViewState private var requestHoverTask: Task<Void, Never>?
-    @ViewState private var isSubmitting = false
+    /// A send in flight and a failure the store didn't record stay with the draft they came from,
+    /// so a switch doesn't hold back or misreport the next channel's Send.
+    @ViewState private var submitting: ObjectIdentifier?
+    @ViewState private var unrecordedFailure: (draft: ObjectIdentifier, message: String)?
     @ViewState private var pendingEdit: ChannelSendAttempt?
     @ViewState private var showAppendConfirmation = false
-    @ViewState private var submissionError: String?
     @ViewState private var dictation = ComposerDictation()
     @ViewState private var sendsAfterDictation = false
+    @ViewState private var connectGrace = ConnectGrace()
+
+    /// The draft's identity. There's one draft per server and channel.
+    private var draftID: ObjectIdentifier { ObjectIdentifier(draft) }
+
+    private var explainsConnection: Bool { connectGrace.explains(store.phase, for: draftID) }
+
+    private struct ConnectionWait: Equatable {
+        let draft: ObjectIdentifier
+        let isConnecting: Bool
+    }
+    private var isSubmitting: Bool { submitting == draftID }
+    private var submissionError: String? {
+        unrecordedFailure.flatMap { $0.draft == draftID ? $0.message : nil }
+    }
 
     private var canSend: Bool {
         store.phase.isLive && !store.isSending && !isSubmitting && (draft.hasContent || dictation.hasWords)
@@ -143,7 +161,7 @@ private struct ChannelComposer: View {
     private var isOverLimit: Bool { draft.text.utf16.count > 12_000 }
     private var hasNotices: Bool {
         draft.error != nil || store.attemptPersistenceError != nil || submissionError != nil
-            || !store.phase.isLive || isOverLimit || dictation.notice != nil
+            || explainsConnection || isOverLimit || dictation.notice != nil
     }
 
     var body: some View {
@@ -198,10 +216,23 @@ private struct ChannelComposer: View {
             Text("Your newer draft will not be replaced. Appending preserves both messages. Sending edited text creates a new message, and an earlier unconfirmed send may already have arrived.")
         }
         .onAppear {
-            registerDraft()
-            reconcileDraft()
-            dictation.draftRevision = { [draft] in draft.revision }
+            adoptDraft()
             dictation.activate()
+        }
+        // The text view swaps its own text, selection and undo, and commits dictation to the draft
+        // it was spoken into. Transient UI that belonged to the last channel's draft closes.
+        .onChange(of: draftID) {
+            requestHoverTask?.cancel()
+            requestPreview = false
+            showPicker = false
+            isDragging = false
+            pendingEdit = nil
+            showAppendConfirmation = false
+            connectGrace.reset()
+            adoptDraft()
+        }
+        .task(id: ConnectionWait(draft: draftID, isConnecting: ConnectGrace.isConnecting(store.phase))) {
+            await connectGrace.watch(store.phase, for: draftID)
         }
         .onChange(of: draft.revision) { _, revision in
             registerDraft()
@@ -304,7 +335,7 @@ private struct ChannelComposer: View {
             if let error = submissionError {
                 composerError(error)
             }
-            if !store.phase.isLive {
+            if explainsConnection {
                 connectionExplanation
             }
             if isOverLimit {
@@ -323,7 +354,8 @@ private struct ChannelComposer: View {
                 notices
                 ComposerHairline()
             }
-            ComposerTray(store: store)
+            // The tray's popovers belong to one channel's artifacts and tasks.
+            ComposerTray(store: store).id(ObjectIdentifier(store))
             if !draft.images.isEmpty { ComposerImageStrip(draft: draft) }
             ZStack(alignment: .topLeading) {
                 if draft.text.isEmpty && !dictation.hasWords {
@@ -335,8 +367,8 @@ private struct ChannelComposer: View {
                         .allowsHitTesting(false)
                         .accessibilityHidden(true)
                 }
-                NativeComposerInput(text: $draft.text, height: $inputHeight, focused: $isFocused,
-                                    dragging: $isDragging, fontSize: 14 * textScale,
+                NativeComposerInput(text: $draft.text, document: draftID, height: $inputHeight,
+                                    focused: $isFocused, dragging: $isDragging, fontSize: 14 * textScale,
                                     focusRequest: focusRequest,
                                     agents: store.roster, canManage: store.phase.isLive,
                                     onSend: send, onFiles: draft.attachFiles, onImage: draft.append,
@@ -540,8 +572,9 @@ private struct ChannelComposer: View {
         let revision = draft.revision
         let id = draft.sendAttemptID ?? UUID().uuidString
         draft.associateSend(id: id)
-        submissionError = nil
-        isSubmitting = true
+        let draftID = draftID
+        if unrecordedFailure?.draft == draftID { unrecordedFailure = nil }
+        submitting = draftID
         interaction.jumpToLatest()
         Task {
             do {
@@ -551,10 +584,10 @@ private struct ChannelComposer: View {
             } catch {
                 // A failed attempt shows its error in the transcript beside Edit and Send Again.
                 if store.sendAttempts.first(where: { $0.id == id })?.error == nil {
-                    submissionError = error.localizedDescription
+                    unrecordedFailure = (draftID, error.localizedDescription)
                 }
             }
-            isSubmitting = false
+            if submitting == draftID { submitting = nil }
         }
     }
 
@@ -567,8 +600,15 @@ private struct ChannelComposer: View {
         guard draft.sendAttemptID != nil else { return }
         if sentMessageArrived || associatedAttempt?.phase == .confirmed {
             draft.clear(ifUnchanged: draft.revision)
-            submissionError = nil
+            if unrecordedFailure?.draft == draftID { unrecordedFailure = nil }
         }
+    }
+
+    /// Points the window's interaction and dictation at the draft being composed.
+    private func adoptDraft() {
+        registerDraft()
+        reconcileDraft()
+        dictation.draftRevision = { [draft] in draft.revision }
     }
 
     private func registerDraft() {

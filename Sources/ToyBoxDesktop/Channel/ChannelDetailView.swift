@@ -155,15 +155,19 @@ struct ChannelDetailView: View {
             }
             .safeAreaBar(edge: .bottom, spacing: 0) { ComposerArea(store: store) }
         } else {
-            // The transcript's scroll position, paging and read state belong to one channel.
-            ConversationTranscript(store: store)
-                .id(ObjectIdentifier(store))
-                .safeAreaBar(edge: .top, spacing: 0) {
-                    if case .stale(let error, _) = store.phase {
-                        staleBanner(error)
-                    }
+            // The transcript's scroll position, paging and read state belong to one channel. Its bars
+            // sit outside that identity, since a bar is rebuilt with the view it's attached to, so
+            // the composer keeps its text view across a switch.
+            ZStack {
+                ConversationTranscript(store: store)
+                    .id(ObjectIdentifier(store))
+            }
+            .safeAreaBar(edge: .top, spacing: 0) {
+                if case .stale(let error, _) = store.phase {
+                    staleBanner(error)
                 }
-                .safeAreaBar(edge: .bottom, spacing: 0) { ComposerArea(store: store) }
+            }
+            .safeAreaBar(edge: .bottom, spacing: 0) { ComposerArea(store: store) }
         }
     }
 
