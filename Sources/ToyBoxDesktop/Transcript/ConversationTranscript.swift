@@ -33,6 +33,7 @@ struct ConversationTranscript: View {
     @ViewState private var requestAnnouncements = TranscriptRequestAnnouncements()
     @ViewState private var catchUp: TranscriptCatchUp?
     @ViewState private var rowBuilder = TranscriptRowBuilder()
+    @ViewState private var pointer = TranscriptPointer()
 
     private var rows: [TranscriptRow] {
         guard let lead = store.roster.first else { return [] }
@@ -165,6 +166,7 @@ struct ConversationTranscript: View {
     private func scrollViewport(proxy: ScrollViewProxy) -> some View {
         ScrollView {
             conversationRows(proxy: proxy)
+                .environment(\.transcriptPointer, pointer)
                 .background(TranscriptWindowProbe(observer: window).frame(width: 0, height: 0),
                             alignment: .topLeading)
                 .padding(.top, 20)
@@ -187,7 +189,7 @@ struct ConversationTranscript: View {
                                     isJumping: pendingJump != nil)
             geometry.viewport = new
             publishVisibleSequence()
-            TranscriptPointer.contentDidMove()
+            pointer.contentDidMove()
             if isAtBottom != update.isAtBottom { isAtBottom = update.isAtBottom }
             let jump = pendingJump
             if update.landsJump { pendingJump = nil }

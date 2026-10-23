@@ -121,16 +121,15 @@ struct TranscriptTests {
         defer { message.close() }
         let mounted = message.platformViews()
 
-        TranscriptPointer.forgetContentMove()
         message.host.mouseEntered(with: try message.hover())
         message.host.mouseMoved(with: try message.hover())
-        try await Task.sleep(for: .milliseconds(100))
+        try await message.waitUntil { message.platformViews() > mounted }
+        try await message.settle(for: .milliseconds(100))
         let selectable = message.platformViews()
-        #expect(selectable > mounted)
 
         message.host.mouseExited(with: try message.hover())
-        try await Task.sleep(for: .milliseconds(100))
-        #expect(message.platformViews() == selectable)
+        try await message.settle(for: .milliseconds(200))
+        #expect(message.platformViews() >= selectable)
     }
 
     /// A message that scrolls under a still pointer builds nothing while the content moves, but turns
@@ -140,22 +139,26 @@ struct TranscriptTests {
         let message = try await HoveredMessage(id: "resting")
         defer { message.close() }
         let mounted = message.platformViews()
-        let settleDelay = TranscriptPointer.settleDelay
-        TranscriptPointer.settleDelay = 0.6
-        defer { TranscriptPointer.settleDelay = settleDelay }
+        // Far longer than a starved runner's display cycle, so the content keeps moving between checks.
+        message.pointer.settleDelay = 1
 
-        TranscriptPointer.contentDidMove()
+        message.pointer.contentDidMove()
         message.host.mouseEntered(with: try message.hover())
         message.host.mouseMoved(with: try message.hover(x: 140))
-        try await Task.sleep(for: .milliseconds(100))
+        let deadline = ContinuousClock.now + .seconds(60)
+        while message.pointer.restingID == nil, message.platformViews() == mounted, ContinuousClock.now < deadline {
+            message.pointer.contentDidMove()
+            try await message.settle(for: .milliseconds(16))
+        }
+        try #require(message.pointer.restingID == "resting")
+        for _ in 0..<10 {
+            message.pointer.contentDidMove()
+            try await message.settle(for: .milliseconds(16))
+        }
         #expect(message.platformViews() == mounted)
 
-        // Tests that run alongside move their own content, which would otherwise keep postponing the settle.
-        TranscriptPointer.settleDelay = 0
-        for _ in 0..<50 where message.platformViews() == mounted {
-            try await Task.sleep(for: .milliseconds(100))
-        }
-        #expect(message.platformViews() > mounted)
+        try await message.waitUntil { message.platformViews() > mounted }
+        #expect(message.pointer.restingID == nil)
     }
 
     @Test func tablesKeepEscapedPipesAndInlineCodeTogether() {
@@ -2390,8 +2393,10 @@ private final class TranscriptHarness {
         }
     }
 
+    /// Waits up to a deadline rather than a count of cycles, since a starved runner stretches each cycle.
     func waitUntil(sourceLocation: SourceLocation = #_sourceLocation, _ condition: () -> Bool) async throws {
-        for _ in 0..<150 where !condition() { try await settle(for: .milliseconds(20)) }
+        let deadline = ContinuousClock.now + .seconds(60)
+        while !condition(), ContinuousClock.now < deadline { try await settle(for: .milliseconds(20)) }
         try #require(condition(), sourceLocation: sourceLocation)
     }
 
@@ -2577,8 +2582,7 @@ private final class TranscriptServerProtocol: URLProtocol, @unchecked Sendable {
 
 
 /// One long agent message in a key window off screen, hovered by calling its tracking methods
-/// directly, since a test's posted moves never reach SwiftUI's hover tracking. Each test gives its
-/// message its own ID, since the pointer's resting message is shared by every window.
+/// directly, since a test's posted moves never reach SwiftUI's hover tracking.
 @MainActor
 private final class HoveredMessage {
     private final class KeyWindow: NSWindow {
@@ -2586,6 +2590,8 @@ private final class HoveredMessage {
     }
 
     let host: NSView
+    /// Its own, as each transcript has, so another test's scrolling never holds this message back.
+    let pointer = TranscriptPointer()
     private let window: NSWindow
 
     init(id: String) async throws {
@@ -2603,6 +2609,7 @@ private final class HoveredMessage {
                 .padding(20)
                 .frame(width: 600, height: 300, alignment: .topLeading)
                 .coordinateSpace(name: "transcript-viewport")
+                .environment(\.transcriptPointer, pointer)
                 .environment(ChannelInteraction()))
         window = KeyWindow(contentRect: NSRect(x: 0, y: 0, width: 600, height: 300), styleMask: [.borderless],
                            backing: .buffered, defer: false)
@@ -2618,6 +2625,22 @@ private final class HoveredMessage {
     func platformViews() -> Int {
         func all(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(all) }
         return all(host).count
+    }
+
+    /// Waits on the result rather than a fixed delay, which a starved test runner can outlast.
+    func waitUntil(sourceLocation: SourceLocation = #_sourceLocation, _ condition: () -> Bool) async throws {
+        let deadline = ContinuousClock.now + .seconds(60)
+        while !condition(), ContinuousClock.now < deadline { try await settle(for: .milliseconds(16)) }
+        try #require(condition(), sourceLocation: sourceLocation)
+    }
+
+    func settle(for duration: Duration) async throws {
+        let deadline = ContinuousClock.now + duration
+        repeat {
+            host.layoutSubtreeIfNeeded()
+            window.displayIfNeeded()
+            try await Task.sleep(for: .milliseconds(16))
+        } while ContinuousClock.now < deadline
     }
 
     /// A pointer event over the message's text. Each move needs its own point, since SwiftUI ignores

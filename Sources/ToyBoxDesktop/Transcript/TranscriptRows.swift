@@ -183,6 +183,7 @@ struct TranscriptUserMessage: View {
     var deliveryLabel: String?
     var statusReactions: [ChannelReaction] = []
     @Environment(\.channelTextScale) private var textScale
+    @Environment(\.transcriptPointer) private var pointer
     @ViewState private var selectsText = false
 
     var body: some View {
@@ -214,14 +215,14 @@ struct TranscriptUserMessage: View {
             guard !selectsText else { return }
             switch phase {
             case .active:
-                if TranscriptPointer.hasMovedSinceContentMoved {
-                    selectsText = true
-                } else {
+                if let pointer, !pointer.hasMovedSinceContentMoved {
                     let selects = $selectsText
-                    TranscriptPointer.rest(on: message.id) { selects.wrappedValue = true }
+                    pointer.rest(on: message.id) { selects.wrappedValue = true }
+                } else {
+                    selectsText = true
                 }
             case .ended:
-                TranscriptPointer.leave(message.id)
+                pointer?.leave(message.id)
             }
         }
         .contextMenu {
@@ -244,6 +245,7 @@ private struct TranscriptAgentMessage: View {
     let expanded: Bool
     var onSetExpanded: (String, Bool) -> Void
     @Environment(\.channelTextScale) private var textScale
+    @Environment(\.transcriptPointer) private var pointer
     /// Whether a collapsible message runs past the clamp. Others never measure, so a new message
     /// lays out once instead of again when its height arrives.
     @ViewState private var overflows = false
@@ -314,15 +316,15 @@ private struct TranscriptAgentMessage: View {
             switch phase {
             case .active:
                 guard !isHovered else { break }
-                if TranscriptPointer.hasMovedSinceContentMoved {
+                if pointer?.hasMovedSinceContentMoved ?? true {
                     isHovered = true
                     if !selectsText { selectsText = true }
                 } else if !selectsText {
                     let selects = $selectsText
-                    TranscriptPointer.rest(on: entry.message.id) { selects.wrappedValue = true }
+                    pointer?.rest(on: entry.message.id) { selects.wrappedValue = true }
                 }
             case .ended:
-                TranscriptPointer.leave(entry.message.id)
+                pointer?.leave(entry.message.id)
                 if isHovered { isHovered = false }
             }
         }
@@ -432,56 +434,69 @@ private struct TranscriptHoverActions: View {
     }
 }
 
-/// Where the pointer was when transcript content last moved. Like AppKit's tracking areas, a row
+/// Where the pointer was when a transcript's content last moved. Like AppKit's tracking areas, a row
 /// that slides under a still pointer, as when the transcript follows a new message, waits for the
 /// pointer to move before it shows its actions, so arrivals don't re-render the row beneath it.
 /// Its text turns selectable once the content holds still, so a drag that starts right after a
-/// scroll, without moving the pointer, still selects.
+/// scroll, without moving the pointer, still selects. Each transcript keeps its own, so scrolling
+/// one window never holds back another's.
 @MainActor
-enum TranscriptPointer {
+final class TranscriptPointer {
     /// How long content holds still before a message it carried under a still pointer counts as reached.
-    static var settleDelay: TimeInterval = 0.15
-    private static var locationWhenContentMoved: CGPoint?
-    private static var contentMovedAt: TimeInterval = 0
-    private static var resting: (id: String, reached: () -> Void)?
-    private static var settlePending = false
+    var settleDelay: TimeInterval = 0.15
+    private var locationWhenContentMoved: CGPoint?
+    private var contentMovedAt: TimeInterval = 0
+    private var resting: (id: String, reached: () -> Void)?
+    private var settlePending = false
 
-    static func contentDidMove() {
+    func contentDidMove() {
         locationWhenContentMoved = NSEvent.mouseLocation
         contentMovedAt = ProcessInfo.processInfo.systemUptime
     }
 
-    static var hasMovedSinceContentMoved: Bool { NSEvent.mouseLocation != locationWhenContentMoved }
+    var hasMovedSinceContentMoved: Bool { NSEvent.mouseLocation != locationWhenContentMoved }
 
-    /// Counts the next hover as the pointer's own. Tests need it because their events never move the pointer.
-    static func forgetContentMove() { locationWhenContentMoved = nil }
+    /// The message the content carried under a still pointer, until the content holds still.
+    var restingID: String? { resting?.id }
 
     /// Notes the message the content carried under a still pointer, which hears `reached` once the
     /// content holds still unless the pointer leaves it first.
-    static func rest(on id: String, reached: @escaping () -> Void) {
+    func rest(on id: String, reached: @escaping () -> Void) {
         resting = (id, reached)
         if !settlePending { scheduleSettle(after: settleDelay) }
     }
 
-    static func leave(_ id: String) {
+    func leave(_ id: String) {
         if resting?.id == id { resting = nil }
     }
 
     /// The main queue also runs while a scroll tracks events, unlike a default-mode timer.
-    private static func scheduleSettle(after delay: TimeInterval) {
+    private func scheduleSettle(after delay: TimeInterval) {
         settlePending = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-            MainActor.assumeIsolated { settle() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            MainActor.assumeIsolated { self?.settle() }
         }
     }
 
-    private static func settle() {
+    private func settle() {
         settlePending = false
         let still = ProcessInfo.processInfo.systemUptime - contentMovedAt
         if still < settleDelay { return scheduleSettle(after: settleDelay - still) }
         let arrival = resting
         resting = nil
         arrival?.reached()
+    }
+}
+
+private struct TranscriptPointerKey: EnvironmentKey {
+    static let defaultValue: TranscriptPointer? = nil
+}
+
+extension EnvironmentValues {
+    /// The pointer of the transcript a row scrolls in. A row outside one counts every hover as the pointer's own.
+    var transcriptPointer: TranscriptPointer? {
+        get { self[TranscriptPointerKey.self] }
+        set { self[TranscriptPointerKey.self] = newValue }
     }
 }
 
