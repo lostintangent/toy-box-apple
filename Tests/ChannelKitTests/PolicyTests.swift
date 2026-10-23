@@ -12,6 +12,10 @@ struct PolicyTests {
         #expect(agentHandleFromName("Everyone") == "everyone-agent")
         #expect(agentHandleFromName("!!!") == "teammate")
         #expect(agentHandleFromName(String(repeating: "x", count: 60)).count == 48)
+        #expect(agentHandleFromName("--Ada  Lovelace__2--") == "ada-lovelace-2")
+        #expect(agentHandleFromName("ÅNGSTRÖM ﬁx") == "angstrom-fix")
+        #expect(agentHandleFromName("日本 Team") == "team")
+        #expect(agentHandleFromName(String(repeating: "x", count: 47) + " y") == String(repeating: "x", count: 47))
         let mentions = extractAgentMentionHandles("dev@example.com and @ADA, (@finch) @ada @everyone")
         #expect(mentions.handles == ["ada", "finch"])
         #expect(mentions.mentionAll)
@@ -103,5 +107,22 @@ struct PolicyTests {
         agent.status = .init(state: "waiting", text: "Waiting", lookingAt: 12)
         #expect(channelMessageReactions(message, agents: [agent],
                                        presence: ["ada": .init(state: "working")]).map(\.reaction) == ["agree"])
+    }
+
+    @Test func statusReactionsGroupBySequenceInAgentOrder() {
+        var ada = ada
+        var finch = finch
+        ada.status = .init(state: "working", text: "Reviewing", lookingAt: 12, workingOn: 14)
+        finch.status = .init(state: "working", text: "Building", lookingAt: 14, workingOn: 14)
+        let presence: [String: ChannelAgentPresence] = ["ada": .init(state: "working"), "finch": .init(state: "working")]
+        let reactions = channelStatusReactions(agents: [ada, finch], presence: presence)
+        #expect(reactions[12]?.map(\.agentId) == ["ada"])
+        #expect(reactions[14]?.map { "\($0.agentId) \($0.reaction)" } == ["ada working", "finch looking", "finch working"])
+        #expect(channelStatusReactions(agents: [ada, finch], presence: [:]).isEmpty)
+        let message = ChannelMessage(id: "m14", sequence: 14, timestamp: "2026-10-22T17:23:00.000Z",
+                                     sender: .user, content: .text("Ship it"),
+                                     reactions: [.init(agentId: "lead", reaction: "done")])
+        #expect(channelMessageReactions(message, status: reactions)
+                == channelMessageReactions(message, agents: [ada, finch], presence: presence))
     }
 }

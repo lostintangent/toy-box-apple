@@ -31,12 +31,13 @@ struct ConversationTranscript: View {
     @ViewState private var pendingJump: TranscriptJump?
     @ViewState private var requestAnnouncements = TranscriptRequestAnnouncements()
     @ViewState private var catchUp: TranscriptCatchUp?
+    @ViewState private var rowBuilder = TranscriptRowBuilder()
 
     private var rows: [TranscriptRow] {
         guard let state = store.state else { return [] }
-        return transcriptRows(state.messages, lead: state.lead, members: state.members,
-                              unreadAfter: capturedArrivalBoundary ? arrivalUnreadAfter : store.unreadAfter,
-                              view: interaction.messageView)
+        return rowBuilder.rows(state.messages, lead: state.lead, members: state.members,
+                               unreadAfter: capturedArrivalBoundary ? arrivalUnreadAfter : store.unreadAfter,
+                               view: interaction.messageView)
     }
 
     private var visibleReadSequence: Int? {
@@ -167,6 +168,7 @@ struct ConversationTranscript: View {
                 .modifier(ConversationRail())
         }
         .scrollEdgeEffectStyle(.soft, for: .bottom)
+        .scrollEdgeEffectStyle(.hard, for: .top)
         .coordinateSpace(name: "transcript-viewport")
         .defaultScrollAnchor(.bottom, for: .initialOffset)
         .scrollPosition(id: $scrollPosition, anchor: .top)
@@ -216,6 +218,10 @@ struct ConversationTranscript: View {
     private func conversationRows(state: ChannelState, proxy: ScrollViewProxy) -> some View {
         let rows = rows
         let stacked = transcriptStackedSystemRowIDs(rows)
+        let context = TranscriptRowContext(state: state, api: store.api)
+        let statusReactions = channelStatusReactions(agents: state.agents,
+                                                     presence: store.phase.isLive ? state.presence : [:])
+        let catchUp = interaction.messageView == .all ? catchUp : nil
         return LazyVStack(alignment: .leading, spacing: 0) {
             historyHeader
             if rows.isEmpty {
@@ -229,15 +235,21 @@ struct ConversationTranscript: View {
                     .padding(.vertical, 40)
             }
             ForEach(rows) { row in
-                TranscriptRowContent(row: row, state: state, store: store,
-                                     highlightedSequence: highlightedSequence, catchUp: catchUp,
-                                     expandedMessageIds: $expandedMessageIds,
-                                     onCollapse: { id in
+                TranscriptRowContent(row: row, context: context, statusReactions: statusReactions,
+                                     highlightedSequence: highlightedSequence, catchUp: catchUp, store: store,
+                                     expandedMessageIds: expandedMessageIds,
+                                     onSetExpanded: { id, expands in
+                                         if expands {
+                                             expandedMessageIds.insert(id)
+                                             return
+                                         }
+                                         expandedMessageIds.remove(id)
                                          Task { @MainActor in
                                              await Task.yield()
                                              jump(to: id, anchor: .top, using: proxy)
                                          }
                                      })
+                    .equatable()
                     .padding(.top, stacked.contains(row.id) ? 4 : 20)
             }
             ForEach(store.sendAttempts) { attempt in
@@ -252,8 +264,11 @@ struct ConversationTranscript: View {
 
     private func sendAttempt(_ attempt: ChannelSendAttempt, state: ChannelState) -> some View {
         VStack(alignment: .trailing, spacing: 6) {
-            TranscriptUserMessage(message: attempt.message, state: state, api: store.api,
-                                  deliveryLabel: attempt.phase.label, isLive: store.phase.isLive)
+            TranscriptUserMessage(message: attempt.message, agents: state.agents, api: store.api,
+                                  deliveryLabel: attempt.phase.label,
+                                  statusReactions: channelStatusReactions(
+                                      agents: state.agents, presence: store.phase.isLive ? state.presence : [:]
+                                  )[attempt.message.sequence] ?? [])
                 .opacity(attempt.phase == .sending ? 0.65 : 1)
             if let error = attempt.error {
                 Text(error).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
@@ -466,7 +481,7 @@ struct ConversationTranscript: View {
         }
         await reveal(sequence: message.sequence, using: proxy)
         let images = (message.attachments ?? []).filter(transcriptAttachmentIsImage)
-        viewer.open(images: images, at: min(1, images.count - 1), source: ImageViewer.Source(message: message, state: state),
+        viewer.open(images: images, at: min(1, images.count - 1), source: ImageViewer.Source(message: message, agents: state.agents),
                     api: store.api)
         let loaded = await waitForSnapshotLayout {
             viewer.items[viewer.index]?.image != nil || viewer.items[viewer.index]?.failure != nil

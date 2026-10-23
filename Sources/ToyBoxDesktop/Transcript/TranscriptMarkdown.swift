@@ -266,6 +266,21 @@ struct TranscriptRGB: Equatable {
     }
 }
 
+// Hoisted so rendering a row doesn't compile its patterns again for every line or message.
+nonisolated(unsafe) private let inlineMentionPattern = /(?:^|[^a-zA-Z0-9-])@([a-zA-Z0-9][a-zA-Z0-9-]*)/
+nonisolated(unsafe) private let headingPattern = /^(#{1,6})\s+(.+?)\s*#*\s*$/
+nonisolated(unsafe) private let listItemPattern = /^(\s*)([-+*]|\d+[.)])\s+(.+)$/
+private let setextUnderlinePattern = try! NSRegularExpression(pattern: #"^(?:=+|-+)\s*$"#)
+private let thematicBreakPattern = try! NSRegularExpression(
+    pattern: #"^(?:\*\s*){3,}$|^(?:-\s*){3,}$|^(?:_\s*){3,}$"#)
+private let tableRuleCellPattern = try! NSRegularExpression(pattern: #"^:?-{3,}:?$"#)
+
+private extension NSRegularExpression {
+    func matches(_ text: String) -> Bool {
+        firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) != nil
+    }
+}
+
 func transcriptInlineMarkdown(_ text: String, agents: [ChannelAgent], textScale: CGFloat = 1,
                               fontSize: CGFloat = 14, mentions: TranscriptMentionInk = .init()) -> AttributedString {
     var result = (try? AttributedString(markdown: text, options: .init(
@@ -277,9 +292,9 @@ func transcriptInlineMarkdown(_ text: String, agents: [ChannelAgent], textScale:
         }
     }
     let plain = String(result.characters)
+    guard plain.contains("@") else { return result }
     let handles = Set(["everyone"] + agents.map { agentHandleFromName($0.name) })
-    let pattern = /(?:^|[^a-zA-Z0-9-])@([a-zA-Z0-9][a-zA-Z0-9-]*)/
-    for match in plain.matches(of: pattern) where handles.contains(match.1.lowercased()) {
+    for match in plain.matches(of: inlineMentionPattern) where handles.contains(match.1.lowercased()) {
         let start = plain.index(before: match.1.startIndex)
         guard let lower = AttributedString.Index(start, within: result),
               let upper = AttributedString.Index(match.1.endIndex, within: result),
@@ -353,15 +368,13 @@ struct MarkdownBlock: Identifiable, Equatable {
                 }
                 append(.table(rows))
                 continue
-            } else if !paragraph.isEmpty,
-                      trimmed.range(of: #"^(?:=+|-+)\s*$"#, options: .regularExpression) != nil {
+            } else if !paragraph.isEmpty, setextUnderlinePattern.matches(trimmed) {
                 append(.heading(trimmed.hasPrefix("=") ? 1 : 2, paragraph.joined(separator: "\n")))
                 paragraph.removeAll()
-            } else if let heading = trimmed.firstMatch(of: /^(#{1,6})\s+(.+?)\s*#*\s*$/) {
+            } else if let heading = trimmed.firstMatch(of: headingPattern) {
                 flush()
                 append(.heading(heading.1.count, String(heading.2)))
-            } else if trimmed.range(of: #"^(?:\*\s*){3,}$|^(?:-\s*){3,}$|^(?:_\s*){3,}$"#,
-                                    options: .regularExpression) != nil {
+            } else if thematicBreakPattern.matches(trimmed) {
                 flush()
                 append(.rule)
             } else if trimmed.hasPrefix(">") {
@@ -374,7 +387,7 @@ struct MarkdownBlock: Identifiable, Equatable {
                         .trimmingCharacters(in: .whitespaces))
                 }
                 append(.quote(quote.joined(separator: "\n")))
-            } else if let item = line.firstMatch(of: /^(\s*)([-+*]|\d+[.)])\s+(.+)$/) {
+            } else if let item = line.firstMatch(of: listItemPattern) {
                 flush()
                 let marker = String(item.2)
                 let body = String(item.3)
@@ -394,9 +407,7 @@ struct MarkdownBlock: Identifiable, Equatable {
 
     private static func isTableRule(_ line: String) -> Bool {
         let cells = tableCells(line)
-        return !cells.isEmpty && cells.allSatisfy {
-            $0.range(of: #"^:?-{3,}:?$"#, options: .regularExpression) != nil
-        }
+        return !cells.isEmpty && cells.allSatisfy { tableRuleCellPattern.matches($0) }
 
     }
 

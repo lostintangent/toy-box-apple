@@ -6,7 +6,9 @@ import SwiftUI
 /// sentence led by its inline symbol, with values in primary ink and links in native link ink.
 struct TranscriptSystemMessages: View {
     let messages: [ChannelMessage]
-    let state: ChannelState
+    let channelID: String
+    let historyStart: Int
+    let agents: [ChannelAgent]
     let api: ChannelAPI
     @Environment(AppModel.self) private var app
     @Environment(ArtifactOpener.self) private var artifactOpener
@@ -56,7 +58,7 @@ struct TranscriptSystemMessages: View {
                         sentence("Preview link unavailable").help(preview.url ?? "Missing URL")
                     }
                 } else if preview.kind == "screen" {
-                    if let url = app.channelURL(channelID: state.channel.id) {
+                    if let url = app.channelURL(channelID: channelID) {
                         valueLine("Preview updated") {
                             Link(destination: url) { TranscriptSystemLinkLabel(title: "Open screen in Toy Box") }
                                 .transcriptSystemLink()
@@ -69,7 +71,7 @@ struct TranscriptSystemMessages: View {
             } else { sentence("Preview cleared") }
         case "artifact_shared":
             TranscriptArtifactShares(icon: icon, actorName: actorName, messages: messages,
-                                     historyStart: state.messages.first?.sequence ?? 0,
+                                     historyStart: historyStart,
                                      onOpen: artifactOpener.open)
         case "routine_scheduled", "routine_edited", "routine_deleted":
             event(routineLabel, value: first?.routine?.title ?? "Routine").lineLimit(3)
@@ -143,7 +145,7 @@ struct TranscriptSystemMessages: View {
 
     private var actorName: String {
         first?.actor?.type == "user" ? "You"
-            : channelAgentIdentity(state.agents, id: first?.actor?.agentId ?? "").name
+            : channelAgentIdentity(agents, id: first?.actor?.agentId ?? "").name
     }
 
     private var routineLabel: String {

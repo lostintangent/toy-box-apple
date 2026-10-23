@@ -82,6 +82,68 @@ struct TranscriptTests {
         #expect(rows.map { $0.messages.count } == [2, 1, 2, 1, 1])
     }
 
+    @Test func rowBuilderMatchesAFreshBuildAcrossUpdates() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = .gmt
+        let finch = ChannelAgent(id: "finch", name: "Finch")
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let gaps: [TimeInterval] = [60, 120, 900, 30, 9000]
+        var elapsed: TimeInterval = 0
+        // Runs, addressed coordination, requests, your replies, system groups and day changes.
+        let history: [ChannelMessage] = (1...72).map { sequence in
+            elapsed += gaps[sequence % gaps.count]
+            let timestamp = formatter.string(from: Date(timeIntervalSince1970: 1_790_000_000 + elapsed))
+            var value = ChannelMessage(id: "m\(sequence)", sequence: sequence, timestamp: timestamp,
+                                       sender: .agent("lead"), content: .text("Progress \(sequence)"))
+            switch sequence % 6 {
+            case 0: value.sender = .user
+            case 3: value.sender = .agent("ada")
+            case 4:
+                value.sender = .system
+                value.content = .system(.init(type: sequence % 12 == 4 ? "member_joined" : "artifact_shared",
+                                              actor: .agent("ada")))
+            case 5:
+                value.sender = .agent("ada")
+                value.content = .text(sequence % 4 == 1 ? "@Lead @Finch: Review \(sequence)" : "@Lead: Done")
+            default:
+                if sequence % 4 == 2 { value.content = .text("@Ada: Build \(sequence)") }
+            }
+            if value.sender.type == "agent" && sequence % 11 == 0 { value.request = true }
+            return value
+        }
+        let builder = TranscriptRowBuilder()
+        func expectFresh(_ messages: [ChannelMessage], members: [ChannelAgent] = [ada, finch],
+                         unreadAfter: Int? = nil, view: TranscriptView = .all,
+                         sourceLocation: SourceLocation = #_sourceLocation) {
+            let built = builder.rows(messages, lead: lead, members: members, unreadAfter: unreadAfter,
+                                     view: view, calendar: calendar)
+            let fresh = transcriptRows(messages, lead: lead, members: members, unreadAfter: unreadAfter,
+                                       view: view, calendar: calendar)
+            #expect(built == fresh, sourceLocation: sourceLocation)
+        }
+
+        for count in 1...history.count { expectFresh(Array(history.prefix(count)), unreadAfter: 30) }
+        for count in 1...history.count { expectFresh(Array(history.prefix(count)), view: .yours) }
+        for start in stride(from: 60, through: 0, by: -12) { expectFresh(Array(history[start...]), unreadAfter: 66) }
+        expectFresh(history, unreadAfter: 5)
+        expectFresh(history, unreadAfter: nil)
+
+        var edited = history
+        edited[40].content = .text("@Finch: Rewritten")
+        edited[41].reactions = [.init(agentId: "finch", reaction: "agree")]
+        expectFresh(edited)
+        expectFresh(edited + [message(73, sender: .agent("ada"), text: "Ship it?", day: 30, request: true)])
+        expectFresh(edited + [message(73, sender: .agent("ada"), text: "Ship it?", day: 30, request: true),
+                              message(74, sender: .user, text: "Yes", minute: 1, day: 30)])
+        expectFresh(Array(edited.dropFirst(3).dropLast(2)))
+
+        let renamed = ChannelAgent(id: "ada", name: "Ada Byron")
+        expectFresh(history, members: [renamed, finch])
+        expectFresh(history, members: [renamed])
+        expectFresh(history, members: [renamed], view: .yours)
+    }
+
     @Test func pagingKeepsCurrentMessageValues() {
         let current = message(2, text: "Current")
         let older = [message(1), message(2, text: "Stale")]

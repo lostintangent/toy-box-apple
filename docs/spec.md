@@ -277,16 +277,12 @@ glass element. Custom `glassEffect` appears only on the surfaces this section na
 `.windowToolbarStyle(.unified)`, and set no `toolbarBackground`, `toolbarBackgroundVisibility`
 or column title plate anywhere. Never draw our own rule or band under the toolbar. The
 conversation and the inspector scroll beneath the toolbar, and a top scroll-edge effect
-separates content from the controls. The conversation keeps the system's automatic top edge,
-which draws the unified toolbar's crisp 1-point divider, even at rest. Never force a top style on
-the conversation.
-
-The inspector is the one exception. Its automatic top edge resolves to the soft style, which the
-system doesn't draw at the top, so its rows scroll straight into the glass controls and the
-toolbar's divider stops at the inspector's leading edge. Give the inspector's `ScrollView`
-`.scrollEdgeEffectStyle(.hard, for: .top)`. That continues the same divider at the same height
-across the inspector, so the toolbar reads as one unified band, and it keeps a dense column of
-11-point status text from running under the controls.
+separates content from the controls. Give both the conversation's and the inspector's
+`ScrollView` `.scrollEdgeEffectStyle(.hard, for: .top)`. On macOS 27 the automatic top edge
+resolves to the soft style, which the system doesn't draw at the top of a key window, so messages
+and the inspector's dense 11-point status text ran crisp under the title and the glass controls.
+The hard edge draws the toolbar's 1-point divider at the same height across both columns, even at
+rest, so the toolbar reads as one unified band and rows blur as they pass beneath it.
 
 The detail toolbar shows the channel name in the system title position. Its trailing items form
 two `.primaryAction` groups. Message View and Channel Actions share one glass group, then
@@ -318,7 +314,7 @@ let it extend beneath the toolbar and the composer, never clipped at a safe-area
 transcript `ScrollView` respects the top and bottom safe areas, so its first row rests below the
 toolbar and its last row rests 16 points above the floating controls. Rows scroll beneath both.
 Use `.scrollEdgeEffectStyle(.soft, for: .bottom)` on the transcript, because the composer floats
-inside the content rather than in the toolbar. Leave the top edge on the system default. The
+inside the content rather than in the toolbar. The top edge is `.hard`, as Toolbar describes. The
 soft edge is a fade that ramps across the whole bottom bar, from nothing at the
 activity row's top to about 75 percent under the composer. Rows in the 8-point slot between the
 activity row and the composer stay legible and only lightly faded. That is the system effect
@@ -394,7 +390,7 @@ pieces of glass.
 | Surface | Expected |
 | --- | --- |
 | Sidebar | Flush and full height, no margin |
-| Conversation top edge (automatic) | Crisp 1-point divider, also at rest |
+| Conversation top edge (explicit `.hard`) | Crisp 1-point divider, also at rest, in key and inactive windows |
 | Inspector top edge (explicit `.hard`) | The same divider, continuous with the conversation's |
 | Bottom edge above the composer | Our explicit `.soft` fade, ramping across the activity row and composer |
 | Glass controls, composer, capsules | System Liquid Glass |
@@ -833,6 +829,12 @@ show Load Older Messages when more history is available, a small loading row whi
 "Couldn't load older messages" with Retry on failure. Once all history is loaded, show no
 "Beginning of conversation" label and reserve no empty header space. A filtered view must
 continue paging even when a page contains no visible rows.
+
+Long histories must stay as fast as short ones. Build rows incrementally: derive each message's
+audience, display text and reactions once, and when messages only append, rebuild from the last
+row rather than from the start. Give each row only the values it renders and compare rows, so a new
+message, status or reaction re-renders only the rows it changed. Compile Markdown and mention
+patterns once, not once per row.
 
 The Message View menu is a native radio-choice menu: All Messages and Your Messages. A non-default
 filter gives its toolbar button an active tint and label/help. It does not change the composer

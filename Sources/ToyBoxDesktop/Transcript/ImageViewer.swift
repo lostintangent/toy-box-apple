@@ -24,10 +24,10 @@ final class ImageViewer {
             self.timestamp = timestamp
         }
 
-        init(message: ChannelMessage, state: ChannelState) {
+        init(message: ChannelMessage, agents: [ChannelAgent]) {
             let sender = switch message.sender.type {
             case "user": "You"
-            case "agent": state.agents.first { $0.id == message.sender.agentId }?.name ?? "Agent"
+            case "agent": agents.first { $0.id == message.sender.agentId }?.name ?? "Agent"
             default: "Toy Box"
             }
             self.init(messageID: message.id, sender: sender, timestamp: message.timestamp)

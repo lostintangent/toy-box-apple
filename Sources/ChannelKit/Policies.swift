@@ -95,9 +95,19 @@ public func agentHandleFromName(_ name: String) -> String {
     let decomposed = name.decomposedStringWithCompatibilityMapping.unicodeScalars
         .filter { !CharacterSet.nonBaseCharacters.contains($0) }
     let lowered = String(String.UnicodeScalarView(decomposed)).lowercased()
-    let normalized = lowered.replacingOccurrences(of: "[^a-z0-9]+", with: "-", options: .regularExpression)
-        .trimmingCharacters(in: CharacterSet(charactersIn: "-"))
-    let truncated = String(normalized.prefix(48)).trimmingCharacters(in: CharacterSet(charactersIn: "-"))
+    // Each run of anything but a-z and 0-9 becomes one hyphen, and none lead or trail.
+    var normalized = String.UnicodeScalarView()
+    var separates = false
+    for scalar in lowered.unicodeScalars {
+        guard ("a"..."z").contains(scalar) || ("0"..."9").contains(scalar) else {
+            separates = !normalized.isEmpty
+            continue
+        }
+        if separates { normalized.append("-") }
+        separates = false
+        normalized.append(scalar)
+    }
+    let truncated = String(String(normalized).prefix(48)).trimmingCharacters(in: CharacterSet(charactersIn: "-"))
     if truncated == "everyone" { return "everyone-agent" }
     return truncated.isEmpty ? "teammate" : truncated
 }
@@ -110,14 +120,26 @@ public func agentMatchesMentionQuery(_ agent: ChannelAgent, query: String) -> Bo
 
 public func channelMessageReactions(_ message: ChannelMessage, agents: [ChannelAgent],
                                    presence: [String: ChannelAgentPresence]) -> [ChannelReaction] {
-    var reactions = message.reactions ?? []
+    channelMessageReactions(message, status: channelStatusReactions(agents: agents, presence: presence))
+}
+
+/// A message's reactions, then the looking and working ones from `channelStatusReactions`.
+public func channelMessageReactions(_ message: ChannelMessage,
+                                   status: [Int: [ChannelReaction]]) -> [ChannelReaction] {
+    (message.reactions ?? []) + (status[message.sequence] ?? [])
+}
+
+/// The looking and working reactions that working agents' statuses put on messages, by sequence.
+public func channelStatusReactions(agents: [ChannelAgent],
+                                   presence: [String: ChannelAgentPresence]) -> [Int: [ChannelReaction]] {
+    var reactions: [Int: [ChannelReaction]] = [:]
     for agent in agents {
         guard presence[agent.id]?.state == "working", agent.status?.state == "working" else { continue }
-        if agent.status?.lookingAt == message.sequence {
-            reactions.append(.init(agentId: agent.id, reaction: "looking"))
+        if let sequence = agent.status?.lookingAt {
+            reactions[sequence, default: []].append(.init(agentId: agent.id, reaction: "looking"))
         }
-        if agent.status?.workingOn == message.sequence {
-            reactions.append(.init(agentId: agent.id, reaction: "working"))
+        if let sequence = agent.status?.workingOn {
+            reactions[sequence, default: []].append(.init(agentId: agent.id, reaction: "working"))
         }
     }
     return reactions
@@ -128,11 +150,18 @@ public struct AgentMentions: Equatable, Sendable {
     public var mentionAll: Bool
 }
 
+// Compiled once. A regex literal inside a function builds its program again on every call. A
+// Regex is immutable apart from compiling its program, which it publishes atomically on first use.
+nonisolated(unsafe) private let agentMentionPattern = /(?:^|[^a-zA-Z0-9-])@([a-zA-Z0-9][a-zA-Z0-9-]*)/
+nonisolated(unsafe) private let leadingMentionPattern = /^\s*@([a-zA-Z0-9][a-zA-Z0-9-]*)(?=[\s,:]|$)[\s,:]*/
+
+private func mayMention(_ content: String) -> Bool { content.utf8.contains(UInt8(ascii: "@")) }
+
 public func extractAgentMentionHandles(_ content: String) -> AgentMentions {
-    let regex = /(?:^|[^a-zA-Z0-9-])@([a-zA-Z0-9][a-zA-Z0-9-]*)/
     var handles: [String] = []
     var mentionAll = false
-    for match in content.matches(of: regex) {
+    guard mayMention(content) else { return AgentMentions(handles: handles, mentionAll: mentionAll) }
+    for match in content.matches(of: agentMentionPattern) {
         let handle = match.1.lowercased()
         if handle == "everyone" { mentionAll = true }
         else if !handles.contains(handle) { handles.append(handle) }
@@ -143,13 +172,22 @@ public func extractAgentMentionHandles(_ content: String) -> AgentMentions {
 public func resolveChannelAudience(content: String, sender: ChannelMessageSender,
                                    lead: ChannelAgent, members: [ChannelAgent],
                                    acknowledgedRequest: Bool = false) -> [ChannelAgent] {
-    let mentions = extractAgentMentionHandles(content)
+    let agents = [lead] + members
+    return resolveChannelAudience(extractAgentMentionHandles(content), sender: sender, lead: lead, agents: agents,
+                                  handles: agents.map { agentHandleFromName($0.name) },
+                                  acknowledgedRequest: acknowledgedRequest)
+}
+
+/// `resolveChannelAudience` with each agent's handle already derived, in `agents` order.
+func resolveChannelAudience(_ mentions: AgentMentions, sender: ChannelMessageSender, lead: ChannelAgent,
+                            agents: [ChannelAgent], handles: [String],
+                            acknowledgedRequest: Bool = false) -> [ChannelAgent] {
     let senderId = sender.type == "agent" ? sender.agentId : nil
     if !mentions.mentionAll && mentions.handles.isEmpty { return senderId == lead.id ? [] : [lead] }
-    return ([lead] + members).filter {
-        $0.id != senderId && (mentions.mentionAll || mentions.handles.contains(agentHandleFromName($0.name))
-                             || (acknowledgedRequest && $0.id == lead.id))
-    }
+    return zip(agents, handles).filter { agent, handle in
+        agent.id != senderId && (mentions.mentionAll || mentions.handles.contains(handle)
+                                 || (acknowledgedRequest && agent.id == lead.id))
+    }.map(\.0)
 }
 
 public func channelAudienceLabel(_ audience: [ChannelAgent], reachableCount: Int) -> String {
@@ -158,10 +196,15 @@ public func channelAudienceLabel(_ audience: [ChannelAgent], reachableCount: Int
 }
 
 public func withoutLeadingMentions(_ content: String, agents: [ChannelAgent]) -> String {
-    let handles = Set(["everyone"] + agents.map { agentHandleFromName($0.name) })
-    let leading = /^\s*@([a-zA-Z0-9][a-zA-Z0-9-]*)(?=[\s,:]|$)[\s,:]*/
+    withoutLeadingMentions(content, handles: Set(["everyone"] + agents.map { agentHandleFromName($0.name) }))
+}
+
+/// `withoutLeadingMentions` with the known handles, including "everyone", already derived.
+func withoutLeadingMentions(_ content: String, handles: Set<String>) -> String {
+    guard mayMention(content) else { return content }
     var body = content
-    while let match = body.firstMatch(of: leading) {
+    // The pattern is anchored, so only a match at the start counts.
+    while let match = body.prefixMatch(of: leadingMentionPattern) {
         guard handles.contains(match.1.lowercased()) else { return content }
         body.removeSubrange(match.range)
     }
@@ -174,10 +217,10 @@ public struct AgentMentionSegment: Equatable, Sendable {
 }
 
 public func splitAgentMentionText(_ content: String) -> [AgentMentionSegment] {
-    let regex = /(?:^|[^a-zA-Z0-9-])@([a-zA-Z0-9][a-zA-Z0-9-]*)/
+    guard mayMention(content) else { return [.init(content: content)] }
     var segments: [AgentMentionSegment] = []
     var cursor = content.startIndex
-    for match in content.matches(of: regex) {
+    for match in content.matches(of: agentMentionPattern) {
         let start = content.index(before: match.1.startIndex)
         if cursor < start { segments.append(.init(content: String(content[cursor..<start]))) }
         segments.append(.init(content: String(content[start..<match.range.upperBound]),

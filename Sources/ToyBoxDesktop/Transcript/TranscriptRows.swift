@@ -2,57 +2,114 @@ import ChannelClient
 import ChannelKit
 import SwiftUI
 
-struct TranscriptRowContent: View {
+/// What every row draws from the channel. It leaves out the statuses, presence and messages that
+/// change on nearly every update, so a row redraws only when something it shows does.
+struct TranscriptRowContext: Equatable {
+    var agents: [ChannelAgent]
+    var channelID: String
+    var historyStart: Int
+    var api: ChannelAPI
+
+    init(state: ChannelState, api: ChannelAPI) {
+        agents = state.agents.map { agent in
+            var identity = agent
+            identity.status = nil
+            return identity
+        }
+        channelID = state.channel.id
+        historyStart = state.messages.first?.sequence ?? 0
+        self.api = api
+    }
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.agents == rhs.agents && lhs.channelID == rhs.channelID && lhs.historyStart == rhs.historyStart
+            && lhs.api.baseURL == rhs.api.baseURL
+    }
+}
+
+/// One transcript row. It compares only what it renders, so the rows a new message doesn't touch
+/// skip their bodies, and its actions are ignored since they only call back into the transcript.
+struct TranscriptRowContent: View, @MainActor Equatable {
     let row: TranscriptRow
-    let state: ChannelState
-    let store: ChannelStore
-    let highlightedSequence: Int?
+    let context: TranscriptRowContext
+    /// The looking and working reactions on this row's messages, by sequence.
+    var statusReactions: [Int: [ChannelReaction]] = [:]
+    /// The highlighted sequence, when it's one of this row's messages.
+    var highlightedSequence: Int?
+    /// The catch-up summary, for the row under the New divider that shows it.
     var catchUp: TranscriptCatchUp?
-    @Binding var expandedMessageIds: Set<String>
-    var onCollapse: (String) -> Void
+    let store: ChannelStore
+    /// This row's expanded messages.
+    var expandedMessageIds: Set<String> = []
+    var onSetExpanded: (String, Bool) -> Void = { _, _ in }
     @Environment(ChannelInteraction.self) private var interaction
-    @Environment(\.channelTextScale) private var textScale
+
+    init(row: TranscriptRow, context: TranscriptRowContext, statusReactions: [Int: [ChannelReaction]],
+         highlightedSequence: Int?, catchUp: TranscriptCatchUp?, store: ChannelStore,
+         expandedMessageIds: Set<String>, onSetExpanded: @escaping (String, Bool) -> Void) {
+        let messages = row.messages
+        self.row = row
+        self.context = context
+        self.statusReactions = statusReactions.isEmpty ? [:] : messages.reduce(into: [:]) { reactions, message in
+            reactions[message.sequence] = statusReactions[message.sequence]
+        }
+        self.highlightedSequence = messages.contains { $0.sequence == highlightedSequence } ? highlightedSequence : nil
+        self.catchUp = row.divider?.unread == true ? catchUp : nil
+        self.store = store
+        self.expandedMessageIds = expandedMessageIds.isEmpty ? [] : expandedMessageIds.filter { id in
+            messages.contains { $0.id == id }
+        }
+        self.onSetExpanded = onSetExpanded
+    }
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.row == rhs.row && lhs.context == rhs.context && lhs.statusReactions == rhs.statusReactions
+            && lhs.highlightedSequence == rhs.highlightedSequence && lhs.catchUp === rhs.catchUp
+            && lhs.store === rhs.store && lhs.expandedMessageIds == rhs.expandedMessageIds
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             if let divider = row.divider {
-                TranscriptDividerStack(divider: divider, state: state, server: store.api.baseURL,
-                                       catchUp: divider.unread && interaction.messageView == .all ? catchUp : nil)
+                TranscriptDividerStack(divider: divider, catchUp: catchUp, store: store)
             }
             switch row.content {
             case .user(let message):
-                TranscriptUserMessage(message: message, state: state, api: store.api, isLive: store.phase.isLive)
+                TranscriptUserMessage(message: message, agents: context.agents, api: context.api,
+                                      statusReactions: statusReactions[message.sequence] ?? [])
                     .transcriptMessageFrame(id: message.id, sequence: message.sequence,
-                                            historyStart: state.messages.first?.sequence ?? 0)
+                                            historyStart: context.historyStart)
                     .id(message.id)
             case .agent(let agentId, let entries):
-                let agent = channelAgentIdentity(state.agents, id: agentId)
+                let agent = channelAgentIdentity(context.agents, id: agentId)
                 HStack(alignment: .top, spacing: 12) {
                     AgentAvatarView(agent: agent, size: 32)
                     VStack(alignment: .leading, spacing: 8) {
                         ForEach(entries) { entry in
-                            TranscriptAgentMessage(entry: entry, agent: agent, state: state,
-                                                   api: store.api, interaction: interaction,
-                                                   isLive: store.phase.isLive,
-                                                   expandedMessageIds: $expandedMessageIds,
-                                                   onCollapse: onCollapse)
+                            TranscriptAgentMessage(entry: entry, agent: agent, agents: context.agents,
+                                                   api: context.api, interaction: interaction,
+                                                   statusReactions: statusReactions[entry.message.sequence] ?? [],
+                                                   expanded: expandedMessageIds.contains(entry.id),
+                                                   onSetExpanded: onSetExpanded)
                                 .background(highlightedSequence == entry.message.sequence
                                             ? Color.accentColor.opacity(0.09) : .clear,
                                             in: RoundedRectangle(cornerRadius: 12))
                                 .transcriptMessageFrame(id: entry.message.id, sequence: entry.message.sequence,
-                                                        historyStart: state.messages.first?.sequence ?? 0)
+                                                        historyStart: context.historyStart)
                                 .id(entry.message.id)
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
             case .system(let messages):
-                TranscriptSystemMessages(messages: messages, state: state, api: store.api)
+                TranscriptSystemMessages(messages: messages, channelID: context.channelID,
+                                         historyStart: context.historyStart, agents: context.agents,
+                                         api: context.api)
                     .transcriptMessageFrame(id: messages.first?.system?.type == "artifact_shared"
                                             ? "system-group-\(row.id)" : row.id,
                                             sequence: messages.first?.system?.type == "artifact_shared"
                                             ? 0 : messages.map(\.sequence).max() ?? 0,
-                                            historyStart: state.messages.first?.sequence ?? 0)
+                                            historyStart: context.historyStart)
                     .id(row.id)
             }
         }
@@ -62,16 +119,16 @@ struct TranscriptRowContent: View {
 /// A divider, with the catch-up summary above the New divider for the landing that has one.
 private struct TranscriptDividerStack: View {
     let divider: TranscriptDivider
-    let state: ChannelState
-    let server: URL
     let catchUp: TranscriptCatchUp?
+    let store: ChannelStore
     @AppStorage(TranscriptIntelligenceSettings.summarizesNewMessages) private var summarizes = true
     @AccessibilityFocusState private var focusesDivider: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if let catchUp, summarizes, catchUp.phase != .collapsed {
-                TranscriptCatchUpCard(catchUp: catchUp, state: state, server: server) {
+            // Only the card reads the whole channel, so only this row follows its every update.
+            if let catchUp, summarizes, catchUp.phase != .collapsed, let state = store.state {
+                TranscriptCatchUpCard(catchUp: catchUp, state: state, server: store.api.baseURL) {
                     catchUp.dismiss()
                     focusesDivider = true
                 }
@@ -132,10 +189,10 @@ func transcriptStackedSystemRowIDs(_ rows: [TranscriptRow]) -> Set<String> {
 
 struct TranscriptUserMessage: View {
     let message: ChannelMessage
-    let state: ChannelState
+    let agents: [ChannelAgent]
     let api: ChannelAPI
     var deliveryLabel: String?
-    var isLive = true
+    var statusReactions: [ChannelReaction] = []
     @Environment(\.channelTextScale) private var textScale
 
     var body: some View {
@@ -149,7 +206,7 @@ struct TranscriptUserMessage: View {
                 .font(.system(size: 11 * textScale))
                 .accessibilityHidden(true)
                 if !message.text.isEmpty {
-                    TranscriptMarkdown(content: message.text, agents: state.agents, baseURL: api.baseURL)
+                    TranscriptMarkdown(content: message.text, agents: agents, baseURL: api.baseURL)
                         .environment(\.transcriptSurface, .user)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 10)
@@ -157,9 +214,9 @@ struct TranscriptUserMessage: View {
                 }
                 if let attachments = message.attachments, !attachments.isEmpty {
                     TranscriptAttachments(attachments: attachments, api: api, alignment: .trailing,
-                                          source: ImageViewer.Source(message: message, state: state))
+                                          source: ImageViewer.Source(message: message, agents: agents))
                 }
-                TranscriptReactions(message: message, state: state, isLive: isLive)
+                TranscriptReactions(message: message, agents: agents, statusReactions: statusReactions)
             }
         }
         .contextMenu {
@@ -175,18 +232,17 @@ struct TranscriptUserMessage: View {
 private struct TranscriptAgentMessage: View {
     let entry: AgentRunEntry
     let agent: ChannelAgent
-    let state: ChannelState
+    let agents: [ChannelAgent]
     let api: ChannelAPI
     let interaction: ChannelInteraction
-    let isLive: Bool
-    @Binding var expandedMessageIds: Set<String>
-    var onCollapse: (String) -> Void
+    let statusReactions: [ChannelReaction]
+    let expanded: Bool
+    var onSetExpanded: (String, Bool) -> Void
     @Environment(\.channelTextScale) private var textScale
     @ViewState private var naturalHeight: CGFloat = 0
     @ViewState private var isHovered = false
     @FocusState private var isFocused: Bool
 
-    private var expanded: Bool { expandedMessageIds.contains(entry.id) }
     private var isClamped: Bool { entry.collapsible && !expanded && naturalHeight > 160 }
 
     var body: some View {
@@ -194,7 +250,7 @@ private struct TranscriptAgentMessage: View {
             if entry.showHeader { header.accessibilityHidden(true) }
             if !entry.body.isEmpty {
                 VStack(alignment: .leading, spacing: 6) {
-                    TranscriptMarkdown(content: entry.body, agents: state.agents, baseURL: api.baseURL)
+                    TranscriptMarkdown(content: entry.body, agents: agents, baseURL: api.baseURL)
                         .environment(\.transcriptSurface, surface)
                         .fixedSize(horizontal: false, vertical: true)
                         .onGeometryChange(for: CGFloat.self, of: \.size.height) { naturalHeight = $0 }
@@ -210,13 +266,7 @@ private struct TranscriptAgentMessage: View {
                             } else { Rectangle() }
                         }
                     if entry.collapsible && naturalHeight > 160 {
-                        Button(expanded ? "Show Less" : "Show More") {
-                            if expanded {
-                                expandedMessageIds.remove(entry.id)
-                                onCollapse(entry.id)
-                            }
-                            else { expandedMessageIds.insert(entry.id) }
-                        }
+                        Button(expanded ? "Show Less" : "Show More") { onSetExpanded(entry.id, !expanded) }
                             .buttonStyle(.borderless)
                             .font(.system(size: 12 * textScale))
                     }
@@ -261,9 +311,9 @@ private struct TranscriptAgentMessage: View {
             }
             if let attachments = entry.message.attachments, !attachments.isEmpty {
                 TranscriptAttachments(attachments: attachments, api: api,
-                                      source: ImageViewer.Source(message: entry.message, state: state))
+                                      source: ImageViewer.Source(message: entry.message, agents: agents))
             }
-            TranscriptReactions(message: entry.message, state: state, isLive: isLive)
+            TranscriptReactions(message: entry.message, agents: agents, statusReactions: statusReactions)
         }
         .onHover { isHovered = $0 }
         .focusable()
@@ -426,17 +476,17 @@ func transcriptMessageAccessibilityLabel(author: String, timestamp: String, addr
 
 struct TranscriptReactions: View {
     let message: ChannelMessage
-    let state: ChannelState
-    let isLive: Bool
+    let agents: [ChannelAgent]
+    /// The looking and working reactions that agents' statuses put on this message.
+    var statusReactions: [ChannelReaction] = []
 
     private var groups: [(reaction: String, agents: [ChannelAgent])] {
-        let reactions = channelMessageReactions(message, agents: state.agents,
-                                                 presence: isLive ? state.presence : [:])
+        let reactions = channelMessageReactions(message, status: [message.sequence: statusReactions])
         var order: [String] = []
         var grouped: [String: [ChannelAgent]] = [:]
         for entry in reactions {
             if grouped[entry.reaction] == nil { order.append(entry.reaction) }
-            grouped[entry.reaction, default: []].append(channelAgentIdentity(state.agents, id: entry.agentId))
+            grouped[entry.reaction, default: []].append(channelAgentIdentity(agents, id: entry.agentId))
         }
         return order.map { ($0, grouped[$0] ?? []) }
     }

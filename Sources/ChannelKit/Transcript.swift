@@ -48,68 +48,180 @@ public func transcriptRows(_ messages: [ChannelMessage], lead: ChannelAgent,
                            members: [ChannelAgent], unreadAfter: Int? = nil,
                            view: TranscriptView = .all,
                            calendar: Calendar = .current) -> [TranscriptRow] {
-    let latestUserSequence = messages.filter { $0.sender.type == "user" }.map(\.sequence).max() ?? 0
+    TranscriptRowBuilder().rows(messages, lead: lead, members: members, unreadAfter: unreadAfter,
+                                view: view, calendar: calendar)
+}
 
-    func entry(_ message: ChannelMessage, previous: AgentRunEntry? = nil) -> AgentRunEntry {
-        let audience = resolveChannelAudience(content: message.text, sender: message.sender,
-                                              lead: lead, members: members)
-        let addressee = audience.isEmpty ? nil : channelAudienceLabel(audience, reachableCount: members.count)
-        let request: ChannelRequestState? = message.request == true
-            ? (message.sequence > latestUserSequence ? .pending : .acknowledged) : nil
-        return AgentRunEntry(message: message,
-                             body: withoutLeadingMentions(message.text, agents: [lead] + members),
-                             startsRun: previous == nil, addressee: addressee, request: request,
-                             showHeader: previous == nil || addressee != previous?.addressee || request != nil,
-                             collapsible: addressee != nil && message.request != true)
+/// Builds the same rows as `transcriptRows`, keeping each message's derived values between builds.
+/// When messages were only appended, it keeps every row but the last and resumes there, because a
+/// new message can only extend the last run or group.
+public final class TranscriptRowBuilder {
+    private struct Roster: Equatable {
+        var ids: [String]
+        var names: [String]
     }
 
-    var rows: [TranscriptRow] = []
-    var previous: ChannelMessage?
-    for message in messages {
-        let runEntry = message.sender.type == "agent" ? entry(message) : nil
-        if view == .yours && (message.isSystem || runEntry?.collapsible == true) { continue }
-        let date = ChannelDates.date(message.timestamp)
-        let previousDate = previous.flatMap { ChannelDates.date($0.timestamp) }
-        let differentDay: Bool
-        if let date, let previousDate { differentDay = !calendar.isDate(date, inSameDayAs: previousDate) }
-        else { differentDay = false }
-        let startsDay = previous == nil || differentDay
-        let unread = previous.map { prior in
-            unreadAfter.map { prior.sequence <= $0 && message.sequence > $0 } ?? false
-        } ?? false
-        let divider: TranscriptDivider? = startsDay || unread
-            ? .init(day: startsDay ? date : nil, unread: unread) : nil
-        var extended = false
-        if divider == nil, let index = rows.indices.last {
-            switch rows[index].content {
-            case .system(var systemMessages) where message.isSystem:
-                if let group = systemMessageGroup(message), group == systemMessageGroup(systemMessages[0]) {
-                    systemMessages.append(message)
-                    rows[index].content = .system(systemMessages)
-                    extended = true
+    private struct Settings: Equatable {
+        var unreadAfter: Int?
+        var view: TranscriptView
+        var latestUserSequence: Int
+    }
+
+    private struct Derived {
+        var timestamp: String
+        var date: Date?
+        var day: Date?
+        var agent: AgentDerived?
+    }
+
+    private struct AgentDerived {
+        var text: String
+        var sender: ChannelMessageSender
+        var addressee: String?
+        var body: String
+    }
+
+    /// The loop's state just before the message that started the last row.
+    private struct Checkpoint {
+        var rowCount: Int
+        var index: Int
+        var previous: ChannelMessage?
+    }
+
+    private var roster: Roster?
+    private var calendar: Calendar?
+    private var handles: [String] = []
+    private var handleSet: Set<String> = []
+    private var derived: [String: Derived] = [:]
+    private var settings: Settings?
+    private var messages: [ChannelMessage] = []
+    private var built: [TranscriptRow] = []
+    private var checkpoint: Checkpoint?
+
+    public init() {}
+
+    public func rows(_ messages: [ChannelMessage], lead: ChannelAgent, members: [ChannelAgent],
+                     unreadAfter: Int? = nil, view: TranscriptView = .all,
+                     calendar: Calendar = .current) -> [TranscriptRow] {
+        let agents = [lead] + members
+        let roster = Roster(ids: agents.map(\.id), names: agents.map(\.name))
+        if roster != self.roster || calendar != self.calendar {
+            self.roster = roster
+            self.calendar = calendar
+            handles = agents.map { agentHandleFromName($0.name) }
+            handleSet = Set(["everyone"] + handles)
+            derived = [:]
+            self.settings = nil
+        }
+        let settings = Settings(unreadAfter: unreadAfter, view: view,
+                                latestUserSequence: messages.lazy.filter { $0.sender.type == "user" }
+                                    .map(\.sequence).max() ?? 0)
+        // Arrays that share storage compare in constant time, which repeated reads in one update hit.
+        if settings == self.settings && messages == self.messages { return built }
+        let appendsOnly = settings == self.settings && messages.count > self.messages.count
+            && messages.prefix(self.messages.count).elementsEqual(self.messages)
+
+        var rows: [TranscriptRow] = []
+        var start = 0
+        var previous: ChannelMessage?
+        if appendsOnly, let checkpoint {
+            rows = Array(built.prefix(checkpoint.rowCount))
+            start = checkpoint.index
+            previous = checkpoint.previous
+        } else {
+            // Keep only what the current messages use, so a long session doesn't accumulate.
+            let ids = Set(messages.map(\.id))
+            derived = derived.filter { ids.contains($0.key) }
+            checkpoint = nil
+        }
+        assemble(messages, from: start, into: &rows, previous: &previous, lead: lead, agents: agents,
+                 settings: settings, calendar: calendar)
+        self.settings = settings
+        self.messages = messages
+        built = rows
+        return rows
+    }
+
+    private func assemble(_ messages: [ChannelMessage], from start: Int, into rows: inout [TranscriptRow],
+                          previous: inout ChannelMessage?, lead: ChannelAgent, agents: [ChannelAgent],
+                          settings: Settings, calendar: Calendar) {
+        func entry(_ message: ChannelMessage, _ info: AgentDerived, previous: AgentRunEntry? = nil) -> AgentRunEntry {
+            let request: ChannelRequestState? = message.request == true
+                ? (message.sequence > settings.latestUserSequence ? .pending : .acknowledged) : nil
+            return AgentRunEntry(message: message, body: info.body, startsRun: previous == nil,
+                                 addressee: info.addressee, request: request,
+                                 showHeader: previous == nil || info.addressee != previous?.addressee || request != nil,
+                                 collapsible: info.addressee != nil && message.request != true)
+        }
+
+        for index in messages.indices.dropFirst(start) {
+            let message = messages[index]
+            let info = derive(message, lead: lead, agents: agents, calendar: calendar)
+            let runEntry = info.agent.map { entry(message, $0) }
+            if settings.view == .yours && (message.isSystem || runEntry?.collapsible == true) { continue }
+            let previousInfo = previous.flatMap { derived[$0.id] }
+            let differentDay: Bool
+            if let day = info.day, let previousDay = previousInfo?.day { differentDay = day != previousDay }
+            else { differentDay = false }
+            let startsDay = previous == nil || differentDay
+            let unread = previous.map { prior in
+                settings.unreadAfter.map { prior.sequence <= $0 && message.sequence > $0 } ?? false
+            } ?? false
+            let divider: TranscriptDivider? = startsDay || unread
+                ? .init(day: startsDay ? info.date : nil, unread: unread) : nil
+            var extended = false
+            if divider == nil, let index = rows.indices.last {
+                switch rows[index].content {
+                case .system(var systemMessages) where message.isSystem:
+                    if let group = systemMessageGroup(message), group == systemMessageGroup(systemMessages[0]) {
+                        systemMessages.append(message)
+                        rows[index].content = .system(systemMessages)
+                        extended = true
+                    }
+                case .agent(let agentId, var entries) where message.sender.type == "agent":
+                    if agentId == message.sender.agentId, let last = entries.last, let agentInfo = info.agent,
+                       let lastDate = derived[last.id]?.date, let date = info.date,
+                       date.timeIntervalSince(lastDate) <= 600 {
+                        entries.append(entry(message, agentInfo, previous: last))
+                        rows[index].content = .agent(agentId: agentId, entries: entries)
+                        extended = true
+                    }
+                default: break
                 }
-            case .agent(let agentId, var entries) where message.sender.type == "agent":
-                if agentId == message.sender.agentId, let last = entries.last,
-                   let lastDate = ChannelDates.date(last.message.timestamp), let date,
-                   date.timeIntervalSince(lastDate) <= 600 {
-                    entries.append(entry(message, previous: last))
-                    rows[index].content = .agent(agentId: agentId, entries: entries)
-                    extended = true
-                }
-            default: break
             }
+            if !extended {
+                checkpoint = Checkpoint(rowCount: rows.count, index: index, previous: previous)
+                let content: TranscriptRow.Content
+                if message.isSystem { content = .system([message]) }
+                else if let runEntry {
+                    content = .agent(agentId: message.sender.agentId ?? "", entries: [runEntry])
+                } else { content = .user(message) }
+                rows.append(.init(id: message.id, content: content, divider: divider))
+            }
+            previous = message
         }
-        if !extended {
-            let content: TranscriptRow.Content
-            if message.isSystem { content = .system([message]) }
-            else if let runEntry {
-                content = .agent(agentId: message.sender.agentId ?? "", entries: [runEntry])
-            } else { content = .user(message) }
-            rows.append(.init(id: message.id, content: content, divider: divider))
-        }
-        previous = message
     }
-    return rows
+
+    private func derive(_ message: ChannelMessage, lead: ChannelAgent, agents: [ChannelAgent],
+                        calendar: Calendar) -> Derived {
+        let isAgent = message.sender.type == "agent"
+        if let cached = derived[message.id], cached.timestamp == message.timestamp,
+           !isAgent || (cached.agent?.text == message.text && cached.agent?.sender == message.sender) {
+            return cached
+        }
+        let date = ChannelDates.date(message.timestamp)
+        var info = Derived(timestamp: message.timestamp, date: date, day: date.map { calendar.startOfDay(for: $0) })
+        if isAgent {
+            let audience = resolveChannelAudience(extractAgentMentionHandles(message.text), sender: message.sender,
+                                                  lead: lead, agents: agents, handles: handles)
+            info.agent = AgentDerived(
+                text: message.text, sender: message.sender,
+                addressee: audience.isEmpty ? nil : channelAudienceLabel(audience, reachableCount: agents.count - 1),
+                body: withoutLeadingMentions(message.text, handles: handleSet))
+        }
+        derived[message.id] = info
+        return info
+    }
 }
 
 public func pendingRequestRow(_ rows: [TranscriptRow], sequence: Int?) -> Int? {
