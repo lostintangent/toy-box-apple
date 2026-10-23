@@ -500,7 +500,7 @@ anyway, Channel Actions overflows first, then Message View, and the title and Ov
 working status in the floating activity row, not duplicated beside the window title.
 
 Opening a channel selects it in the current window. Command-click or Open in New Window creates a
-separate window for that channel. Windows share the same channel store and draft. Only a key,
+separate window for that channel and leaves the current window's channel and selection unchanged. Windows share the same channel store and draft. Only a key,
 visible conversation actively acknowledges reading. Restoring a window must not send a message or
 silently mark its unseen content as read.
 

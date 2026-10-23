@@ -35,8 +35,34 @@ struct ChannelSidebar: View {
         return initialLoading || model.requestedRefresh.isRunning(for: catalog)
     }
 
+    /// The list's own selection, which follows `selection` except during a Command-click.
+    @ViewState private var listSelection: String?
+
+    init(selection: Binding<String?>, searchFocusRequest: UUID) {
+        _selection = selection
+        self.searchFocusRequest = searchFocusRequest
+        _listSelection = ViewState(initialValue: selection.wrappedValue)
+    }
+
+    /// A Command-click opens its row in a new window. The list's own Command-click selects that
+    /// row, or clears the current one, so the list is put back on this window's channel.
+    private var listSelectionBinding: Binding<String?> {
+        Binding(get: { listSelection }, set: { id in
+            listSelection = id
+            guard Self.isCommandClick else { selection = id; return }
+            if let clicked = id ?? selection { openWindow(value: ChannelWindowValue(channelID: clicked)) }
+            Task { @MainActor in listSelection = selection }
+        })
+    }
+
+    /// Reads the click's own modifiers too, which a click posted to the app also carries.
+    private static var isCommandClick: Bool {
+        guard let event = NSApp.currentEvent, [.leftMouseDown, .leftMouseUp].contains(event.type) else { return false }
+        return event.modifierFlags.contains(.command) || NSEvent.modifierFlags.contains(.command)
+    }
+
     var body: some View {
-        List(selection: $selection) {
+        List(selection: listSelectionBinding) {
             if initialLoading {
                 ForEach(0..<3) { _ in SidebarPlaceholder().listRowInsets(EdgeInsets()).listRowSeparator(.hidden) }
             } else if model.catalog?.state != nil {
@@ -71,6 +97,7 @@ struct ChannelSidebar: View {
                     .disabled(model.api == nil)
             }
         }
+        .onChange(of: selection) { _, id in listSelection = id }
         .onChange(of: searchFocusRequest) { _, _ in searchFocused = true }
         .task(id: model.snapshot?.requestedState) { await prepareRetrySnapshot() }
     }
@@ -109,13 +136,7 @@ struct ChannelSidebar: View {
             attention: model.sidebarAttention(channel),
             folder: folderAvailability(current),
             openFolder: { if let path = current.directory { model.folders.open(path) } },
-            onTap: {
-                if NSEvent.modifierFlags.contains(.command) {
-                    openWindow(value: ChannelWindowValue(channelID: channel.id))
-                } else {
-                    selection = channel.id
-                }
-            }
+            onTap: { if !NSEvent.modifierFlags.contains(.command) { selection = channel.id } }
         )
     }
 
