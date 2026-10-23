@@ -183,6 +183,7 @@ struct TranscriptUserMessage: View {
     var deliveryLabel: String?
     var statusReactions: [ChannelReaction] = []
     @Environment(\.channelTextScale) private var textScale
+    @ViewState private var selectsText = false
 
     var body: some View {
         TranscriptUserLane(maxWidth: TranscriptUserLane.maximumWidth * textScale) {
@@ -195,7 +196,8 @@ struct TranscriptUserMessage: View {
                 .font(.system(size: 11 * textScale))
                 .accessibilityHidden(true)
                 if !message.text.isEmpty {
-                    TranscriptMarkdown(content: message.text, agents: agents, baseURL: api.baseURL)
+                    TranscriptMarkdown(content: message.text, agents: agents, baseURL: api.baseURL,
+                                       selectable: selectsText)
                         .environment(\.transcriptSurface, .user)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 10)
@@ -207,6 +209,9 @@ struct TranscriptUserMessage: View {
                 }
                 TranscriptReactions(message: message, agents: agents, statusReactions: statusReactions)
             }
+        }
+        .onContinuousHover { phase in
+            if case .active = phase, !selectsText, TranscriptPointer.hasMovedSinceContentMoved { selectsText = true }
         }
         .contextMenu {
             Button("Copy Message", systemImage: "doc.on.doc") { TranscriptClipboard.copy(message.text) }
@@ -232,6 +237,8 @@ private struct TranscriptAgentMessage: View {
     /// lays out once instead of again when its height arrives.
     @ViewState private var overflows = false
     @ViewState private var isHovered = false
+    /// Stays on once the pointer has reached the message, so a selection outlasts the pointer leaving.
+    @ViewState private var selectsText = false
     @FocusState private var isFocused: Bool
 
     private static let clampHeight: CGFloat = 160
@@ -295,7 +302,10 @@ private struct TranscriptAgentMessage: View {
         .onContinuousHover { phase in
             switch phase {
             case .active:
-                if !isHovered && TranscriptPointer.hasMovedSinceContentMoved { isHovered = true }
+                if !isHovered && TranscriptPointer.hasMovedSinceContentMoved {
+                    isHovered = true
+                    if !selectsText { selectsText = true }
+                }
             case .ended:
                 if isHovered { isHovered = false }
             }
@@ -327,7 +337,7 @@ private struct TranscriptAgentMessage: View {
     }
 
     private var markdown: some View {
-        TranscriptMarkdown(content: entry.body, agents: agents, baseURL: api.baseURL)
+        TranscriptMarkdown(content: entry.body, agents: agents, baseURL: api.baseURL, selectable: selectsText)
             .environment(\.transcriptSurface, surface)
             .fixedSize(horizontal: false, vertical: true)
     }
@@ -416,6 +426,9 @@ enum TranscriptPointer {
     static func contentDidMove() { locationWhenContentMoved = NSEvent.mouseLocation }
 
     static var hasMovedSinceContentMoved: Bool { NSEvent.mouseLocation != locationWhenContentMoved }
+
+    /// Counts the next hover as the pointer's own. Tests need it because their events never move the pointer.
+    static func forgetContentMove() { locationWhenContentMoved = nil }
 }
 
 /// Floats hover actions over a bubble's top trailing corner, but never past its leading edge, so

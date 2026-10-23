@@ -93,6 +93,88 @@ struct TranscriptTests {
         #expect(wide.contains { $0 is NSScrollView })
     }
 
+    /// Rows turn selection on when the pointer first reaches them, so it must not move or redraw any ink.
+    @MainActor
+    @Test func turningSelectionOnDrawsTheSameMarkdown() async throws {
+        let markdown = "## Pass 4\n\nA paragraph with **bold**, `code` and a [link](https://example.com).\n\n"
+            + "- One\n- Two that runs long enough to wrap onto a second line in a narrow lane\n\n"
+            + "> A quote\n\n```swift\nlet total = messages.count\n```\n\n| A | B |\n| --- | --- |\n| 1 | 2 |"
+        func pixels(selectable: Bool) async throws -> Data {
+            let bitmap = try await renderedTranscriptBitmap(
+                TranscriptMarkdown(content: markdown, selectable: selectable), size: CGSize(width: 320, height: 560),
+                appearance: NSAppearance(named: .aqua))
+            return Data(bytes: try #require(bitmap.bitmapData), count: bitmap.bytesPerRow * bitmap.pixelsHigh)
+        }
+        let plain = try await pixels(selectable: false)
+        let selectable = try await pixels(selectable: true)
+        // The two text renderers round the edge of inline code's faint tint half a point apart. Any glyph
+        // or line that moved would differ by far more.
+        #expect(selectable.count == plain.count)
+        #expect(zip(plain, selectable).allSatisfy { abs(Int($0) - Int($1)) <= 16 })
+    }
+
+    /// Each selectable `Text` adds a platform view, most of what a long message costs to scroll in, so a
+    /// message builds them only once the pointer reaches it, never as it slides under a still pointer.
+    @MainActor
+    @Test func messagesBuildSelectableTextOnlyOnceThePointerArrives() async throws {
+        let lead = ChannelAgent.lead(id: "lead")
+        let store = ChannelStore(id: "selection", api: try ChannelAPI(serverURL: "https://selection.invalid"),
+                                 sendJournal: nil)
+        let message = ChannelMessage(id: "m1", sequence: 1, timestamp: "2026-10-22T10:00:00Z", sender: .agent("lead"),
+                                     content: .text(String(repeating: "A paragraph long enough to wrap. ", count: 6)
+                                         + "\n\nA second paragraph."))
+        let row = try #require(transcriptRows([message], lead: lead, members: []).last)
+        let context = TranscriptRowContext(agents: [lead], channelID: "selection", historyStart: 1, api: store.api)
+        let host = NSHostingView(rootView:
+            TranscriptRowContent(row: row, context: context, statusReactions: [:], highlightedSequence: nil,
+                                 catchUp: nil, store: store, expandedMessageIds: [], onSetExpanded: { _, _ in })
+                .padding(20)
+                .frame(width: 600, height: 300, alignment: .topLeading)
+                .coordinateSpace(name: "transcript-viewport")
+                .environment(ChannelInteraction()))
+        final class KeyWindow: NSWindow {
+            override var canBecomeKey: Bool { true }
+        }
+        let window = KeyWindow(contentRect: NSRect(x: 0, y: 0, width: 600, height: 300), styleMask: [.borderless],
+                               backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        window.setFrameOrigin(NSPoint(x: -6000, y: -6000))
+        window.orderFrontRegardless()
+        window.makeKey()
+        defer { window.close() }
+        host.layoutSubtreeIfNeeded()
+        try await Task.sleep(for: .milliseconds(100))
+        func platformViews() -> Int {
+            func all(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(all) }
+            return all(host).count
+        }
+        func hover(x: CGFloat = 120) throws -> NSEvent {
+            try #require(NSEvent.mouseEvent(
+                with: .mouseMoved, location: CGPoint(x: x, y: 300 - 92), modifierFlags: [],
+                timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber, context: nil,
+                eventNumber: 0, clickCount: 0, pressure: 0))
+        }
+        let mounted = platformViews()
+
+        TranscriptPointer.contentDidMove()
+        host.mouseEntered(with: try hover())
+        host.mouseMoved(with: try hover())
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(platformViews() == mounted)
+
+        TranscriptPointer.forgetContentMove()
+        host.mouseMoved(with: try hover(x: 140))
+        try await Task.sleep(for: .milliseconds(100))
+        let selectable = platformViews()
+        #expect(selectable > mounted)
+
+        // A selection outlasts the pointer leaving.
+        host.mouseExited(with: try hover(x: 140))
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(platformViews() == selectable)
+    }
+
     @Test func tablesKeepEscapedPipesAndInlineCodeTogether() {
         let source = """
         | Name | Value |

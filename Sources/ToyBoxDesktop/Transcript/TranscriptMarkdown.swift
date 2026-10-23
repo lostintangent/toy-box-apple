@@ -6,6 +6,10 @@ struct TranscriptMarkdown: View {
     let content: String
     var agents: [ChannelAgent] = []
     var baseURL: URL?
+    /// Each selectable `Text` mounts its own platform text view, which is most of what a long
+    /// message costs to scroll into view, so transcript rows turn this on when the pointer first
+    /// reaches them.
+    var selectable = true
     @Environment(\.channelTextScale) private var textScale
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.colorSchemeContrast) private var contrast
@@ -27,7 +31,7 @@ struct TranscriptMarkdown: View {
         }
         .font(.system(size: 14 * textScale))
         .lineSpacing(3 * textScale)
-        .textSelection(.enabled)
+        .modifier(TranscriptTextSelection(enabled: selectable))
         .environment(\.openURL, OpenURLAction { url in
             let resolved = url.scheme == nil ? url.absoluteURL(relativeTo: baseURL) : url
             guard let resolved, ["http", "https", "mailto"].contains(resolved.scheme?.lowercased() ?? "") else {
@@ -124,6 +128,14 @@ struct TranscriptMarkdown: View {
         transcriptInlineMarkdown(text, agents: agents, textScale: textScale, fontSize: size,
                                  mentions: .init(surface: surface, isDark: colorScheme == .dark,
                                                  isContrastIncreased: contrast == .increased))
+    }
+}
+
+private struct TranscriptTextSelection: ViewModifier {
+    let enabled: Bool
+
+    func body(content: Content) -> some View {
+        if enabled { content.textSelection(.enabled) } else { content }
     }
 }
 
