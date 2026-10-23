@@ -155,6 +155,14 @@ class ReleaseSecretsTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertNotIn("--password", result.stderr)
 
+    def test_piped_password_needs_no_trailing_newline(self):
+        result = self.setup([IDENTITY, "--apple-id", APPLE["NOTARY_APPLE_ID"],
+                             APPLE["NOTARY_TEAM_ID"]], APPLE_PASSWORD)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        secrets = {call["args"][2]: call["input"] for call in self.calls("gh")
+                   if call["args"][:2] == ["secret", "set"]}
+        self.assertEqual(secrets["NOTARY_APP_PASSWORD"], APPLE_PASSWORD)
+
     def test_setup_resolves_default_repository(self):
         result = self.setup([IDENTITY, str(self.key), API["NOTARY_KEY_ID"], API["NOTARY_ISSUER_ID"]])
         self.assertEqual(result.returncode, 0, result.stderr)
