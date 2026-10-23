@@ -1,8 +1,14 @@
 import ChannelKit
 import Foundation
+import Synchronization
 
 /// The unread messages a catch-up may draw on, selected without the model. Build it once, when the
 /// transcript captures its arrival boundary, so later messages never change its key.
+///
+/// Building one only counts. Describing the messages for the model costs about a millisecond each,
+/// so it waits for the first read of `entries`, `request` or `participants`, which generation makes
+/// off the main thread. A landing whose summary is cached never pays for it. Copies share one
+/// selection, and two requests with the same key are the same request, as the summary cache treats them.
 public struct CatchUpRequest: Sendable, Hashable {
     public struct Key: Sendable, Hashable {
         public let server: String
@@ -20,15 +26,18 @@ public struct CatchUpRequest: Sendable, Hashable {
     /// Unread messages from agents, for "Summary of 42 new messages". Your own messages and channel
     /// events don't count.
     public let unreadFromOthers: Int
+    private let selection: CatchUpSelection
+
     /// Unread messages from others, oldest first, without the pending request or repeated text.
-    let entries: [CatchUpEntry]
+    var entries: [CatchUpEntry] { selection.lines.entries }
     /// The pending request, condensed into `needsYou`.
-    let request: CatchUpEntry?
+    var request: CatchUpEntry? { selection.lines.request }
     /// Lowercased names of everyone in the channel, for grounding checks.
-    let participants: Set<String>
+    var participants: Set<String> { selection.lines.participants }
 
     /// Nil when there's nothing worth summarizing: no unread boundary, or fewer than `minimumUnread`
-    /// unread agent messages, or agent text shorter than `minimumCharacters` in total.
+    /// unread agent messages, or agent text shorter than `minimumCharacters` in total. Agent text that
+    /// long always leaves lines to summarize, and if it somehow didn't, generation would decline.
     public init?(server: URL, state: ChannelState, unreadAfter: Int?,
                  minimumUnread: Int = CatchUpRequest.defaultMinimumUnread,
                  minimumCharacters: Int = CatchUpRequest.defaultMinimumCharacters) {
@@ -37,40 +46,76 @@ public struct CatchUpRequest: Sendable, Hashable {
         let fromAgents = unread.filter { !$0.isSystem && $0.sender.type == "agent" }
         guard fromAgents.count >= max(1, minimumUnread),
               fromAgents.reduce(0, { $0 + $1.text.count }) >= minimumCharacters else { return nil }
-        let fromOthers = unread.filter { $0.sender.type != "user" }
 
-        let describer = CatchUpDescriber(state: state)
         let pendingSequence = state.channel.requestSequence
+        let candidates = unread.filter { $0.sender.type != "user" && $0.sequence != pendingSequence }
         let pending = catchUpPendingRequest(in: state)
-
-        var seen = Set<String>()
-        var entries: [CatchUpEntry] = []
-        for message in fromOthers.reversed() where message.sequence != pendingSequence {
-            guard let entry = describer.entry(message) else { continue }
-            guard seen.insert(catchUpFingerprint(entry.text)).inserted else { continue }
-            entries.append(entry)
-            if entries.count == CatchUpEntry.maximumCandidates { break }
-        }
-        entries.reverse()
-
-        let request = pending.flatMap { describer.entry($0, limit: CatchUpEntry.maximumRequestCharacters) }
-        guard !entries.isEmpty || request != nil else { return nil }
-
+        let describer = CatchUpDescriber(agents: state.agents, leadId: state.lead.id)
         let through = max(state.messages.last?.sequence ?? unreadAfter, unreadAfter)
         key = Key(server: intelligenceServerKey(server), channelId: state.channel.id,
                   unreadAfter: unreadAfter, through: through)
         unreadFromOthers = fromAgents.count
-        self.entries = entries
-        self.request = request
-        participants = Set(state.agents.map { $0.name.lowercased() } + ["you"])
+        selection = CatchUpSelection {
+            CatchUpSelection.Lines(candidates: candidates, pending: pending, describer: describer)
+        }
     }
 
     init(key: Key, entries: [CatchUpEntry], request: CatchUpEntry?, participants: Set<String>) {
         self.key = key
         unreadFromOthers = entries.filter { $0.speaker != nil }.count
-        self.entries = entries
-        self.request = request
-        self.participants = participants
+        let lines = CatchUpSelection.Lines(entries: entries, request: request, participants: participants)
+        selection = CatchUpSelection { lines }
+    }
+
+    public static func == (lhs: CatchUpRequest, rhs: CatchUpRequest) -> Bool {
+        lhs.key == rhs.key
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(key)
+    }
+}
+
+/// A request's lines for the model, described by whichever reader comes first.
+final class CatchUpSelection: Sendable {
+    struct Lines: Sendable {
+        let entries: [CatchUpEntry]
+        let request: CatchUpEntry?
+        let participants: Set<String>
+    }
+
+    private let select: @Sendable () -> Lines
+    private let selected = Mutex<Lines?>(nil)
+
+    init(_ select: @escaping @Sendable () -> Lines) {
+        self.select = select
+    }
+
+    var lines: Lines {
+        selected.withLock { selected in
+            if let selected { return selected }
+            let lines = select()
+            selected = lines
+            return lines
+        }
+    }
+}
+
+extension CatchUpSelection.Lines {
+    /// Newest first, so a long absence keeps its latest `maximumCandidates` lines, and repeated text
+    /// keeps only its latest copy.
+    init(candidates: [ChannelMessage], pending: ChannelMessage?, describer: CatchUpDescriber) {
+        var seen = Set<String>()
+        var entries: [CatchUpEntry] = []
+        for message in candidates.reversed() {
+            guard let entry = describer.entry(message) else { continue }
+            guard seen.insert(catchUpFingerprint(entry.text)).inserted else { continue }
+            entries.append(entry)
+            if entries.count == CatchUpEntry.maximumCandidates { break }
+        }
+        self.init(entries: entries.reversed(),
+                  request: pending.flatMap { describer.entry($0, limit: CatchUpEntry.maximumRequestCharacters) },
+                  participants: Set(describer.agents.map { $0.name.lowercased() } + ["you"]))
     }
 }
 
@@ -132,15 +177,25 @@ struct CatchUpEntry: Sendable, Hashable {
     }
 }
 
-struct CatchUpDescriber {
-    let state: ChannelState
+struct CatchUpDescriber: Sendable {
+    let agents: [ChannelAgent]
+    let leadId: String
+
+    init(agents: [ChannelAgent], leadId: String) {
+        self.agents = agents
+        self.leadId = leadId
+    }
+
+    init(state: ChannelState) {
+        self.init(agents: state.agents, leadId: state.lead.id)
+    }
 
     func name(_ sender: ChannelMessageSender?) -> String {
         guard let sender else { return "Someone" }
         switch sender.type {
         case "user": return "You"
         case "agent":
-            return channelAgentIdentity(state.agents, id: sender.agentId ?? "").name
+            return channelAgentIdentity(agents, id: sender.agentId ?? "").name
         default: return "Toy Box"
         }
     }
@@ -149,7 +204,6 @@ struct CatchUpDescriber {
         if let system = message.system { return event(message.sequence, system) }
         guard message.sender.type == "agent" else { return nil }
 
-        let agents = state.agents
         let mentions = extractAgentMentionHandles(message.text)
         let addressees = mentions.mentionAll ? ["everyone"]
             : mentions.handles.compactMap { handle in
@@ -160,7 +214,7 @@ struct CatchUpDescriber {
         if images > 0 { text += images == 1 ? " (attached an image)" : " (attached \(images) images)" }
         guard !text.isEmpty else { return nil }
 
-        let fromLead = message.sender.agentId == state.lead.id
+        let fromLead = message.sender.agentId == leadId
         var priority = 2
         if fromLead { priority += 1 }
         if addressees.isEmpty { priority += 1 }

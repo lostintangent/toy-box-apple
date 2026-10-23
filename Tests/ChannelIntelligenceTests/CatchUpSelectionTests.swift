@@ -48,6 +48,21 @@ struct CatchUpSelectionTests {
         #expect(request.unreadFromOthers == 2)
     }
 
+    /// The transcript builds a request on every landing, so describing waits for generation, and
+    /// readers racing on any thread see one selection.
+    @Test func selectsOnceOnFirstReadAndComparesByKey() async throws {
+        let state = try T.fixture("history-demo")
+        let request = try #require(CatchUpRequest(server: T.server, state: state, unreadAfter: 450))
+        let reads = await withTaskGroup(of: [CatchUpEntry].self) { group in
+            for _ in 0..<8 { group.addTask { request.entries } }
+            return await group.reduce(into: []) { $0.append($1) }
+        }
+        #expect(reads.count == 8)
+        #expect(reads.allSatisfy { !$0.isEmpty && $0 == reads[0] })
+        #expect(request == CatchUpRequest(server: T.server, state: state, unreadAfter: 450))
+        #expect(request != CatchUpRequest(server: T.server, state: state, unreadAfter: 449))
+    }
+
     @Test func repeatedTextCollapsesToItsLatestCopy() throws {
         let state = try T.fixture("history-demo")
         let request = try #require(CatchUpRequest(server: T.server, state: state, unreadAfter: 450))
