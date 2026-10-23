@@ -1177,3 +1177,27 @@ struct MenuBarExtraTests {
             == "Apple Intelligence doesn't support your Mac's language yet.")
     }
 }
+
+@Suite("Launch channel")
+final class LaunchChannelTests {
+    private let suite = "launch-channel-\(UUID().uuidString)"
+    private var defaults: UserDefaults { UserDefaults(suiteName: suite)! }
+
+    deinit { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+
+    @Test func eachServerRemembersItsOwnChannel() {
+        let memory = LaunchChannel(defaults: defaults)
+        #expect(memory.channelID(serverURL: "http://a.test/") == nil)
+        memory.remember("studio", serverURL: "http://a.test/")
+        memory.remember("launch", serverURL: "http://b.test/")
+        memory.remember("docs", serverURL: "http://a.test/")
+        #expect(memory.channelID(serverURL: "http://a.test/") == "docs")
+        #expect(memory.channelID(serverURL: "http://b.test/") == "launch")
+        #expect(memory.channelID(serverURL: "http://c.test/") == nil)
+    }
+
+    @Test func theMemoryLivesInDefaultsNotTheValue() {
+        LaunchChannel(defaults: defaults).remember("docs", serverURL: "http://a.test/")
+        #expect(LaunchChannel(defaults: defaults).channelID(serverURL: "http://a.test/") == "docs")
+    }
+}

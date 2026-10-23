@@ -46,6 +46,10 @@ Reference sources (read-only):
   at once, and connecting starts the stream and the outbox read together. Events are read off the
   main actor and queued for it as each one decodes, after the restored outbox, so a snapshot that
   arrives while the first window is being built applies in the main thread's next turn.
+  The first window connects its channel only once it appears. Connecting earlier gains nothing,
+  because that snapshot already arrives while the window is built, and a channel loaded before the
+  window holds the window back until its whole transcript renders, about 470 ms later on the launch
+  benchmark.
   Views read the store's observed slices (`details`, `roster`, `agentStatuses`, `presence`,
   `messages`, `request`, `requestSequence`, `tasks`, `artifacts`, `artifactShares`, `routines`)
   rather than `state`, which changes on every event. An event then re-renders only the views that
@@ -418,7 +422,7 @@ All dimensions are logical points, not pixels.
 
 | Surface | Default | Limits and behavior |
 | --- | --- | --- |
-| Main window | 1280 x 840 | Minimum 760 x 560. Restore size, selected channel, sidebar, filter and inspector per window |
+| Main window | 1280 x 840 | Minimum 760 x 560. Restore size, selected channel, sidebar, filter and inspector per window. When quitting closed the windows, the first new window at launch opens on the channel you were last in on that server. Later new windows open without one |
 | Sidebar | 248 wide | Resizable 220...320. Full window height, system floating glass panel and source-list selection |
 | Conversation | Remaining width | At least 420. One full-width lane inside 24-point side insets. Agent surfaces cap at 760 and yours at 80% of the lane up to 640, both scaled by Text Size. The floating composer spans the lane |
 | Inspector | 312 wide | Resizable 280...400. Full window height with no title row. Do not squeeze conversation below 420 |

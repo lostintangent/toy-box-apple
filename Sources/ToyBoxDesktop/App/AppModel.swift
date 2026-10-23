@@ -34,6 +34,8 @@ final class AppModel {
     @ObservationIgnored private var menuBarLookups: [String: Int] = [:]
     @ObservationIgnored private var unhideObserver: NSObjectProtocol?
     @ObservationIgnored private var connections: [ObjectIdentifier: (store: ChannelStore, count: Int)] = [:]
+    @ObservationIgnored private let launchChannel = LaunchChannel()
+    @ObservationIgnored private var launchChannelID: String?
     @ObservationIgnored private var windows: [UUID: String] = [:]
     @ObservationIgnored private var keyWindowID: UUID?
     @ObservationIgnored private var dockBadgeLabel: String?
@@ -53,6 +55,7 @@ final class AppModel {
             ?? UserDefaults.standard.string(forKey: AppConfiguration.serverURLKey)
             ?? AppConfiguration.defaultServerURL
         configure(serverURL: serverURL, persist: false)
+        if !launchOptions.isSnapshot { launchChannelID = launchChannel.channelID(serverURL: self.serverURL) }
         notifications.onActivate = { [weak self] activation in
             guard let self, self.serverURL == activation.serverURL else { return }
             self.activate(channelID: activation.channelID, sequence: activation.sequence,
@@ -149,8 +152,22 @@ final class AppModel {
         let open = Set(windows.values)
         if open != openChannelIDs { openChannelIDs = open }
         let active = keyWindowID.flatMap { windows[$0] }
-        if active != activeChannelID { activeChannelID = active }
+        if active != activeChannelID {
+            activeChannelID = active
+            if let active, !launchOptions.isSnapshot { launchChannel.remember(active, serverURL: serverURL) }
+        }
         catalogDidChange()
+    }
+
+    // MARK: Launch
+
+    /// The channel you were last in on this server, for the first window to appear. Only that
+    /// window takes it, so File > New Window still opens without a channel. Launch doesn't connect
+    /// it early: the snapshot already arrives while the window is built, and a channel that's
+    /// loaded first holds the window back until its whole transcript renders.
+    func takeLaunchChannelID() -> String? {
+        defer { launchChannelID = nil }
+        return launchChannelID
     }
 
     func catalogDidChange() {

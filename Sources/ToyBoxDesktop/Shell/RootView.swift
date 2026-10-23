@@ -101,8 +101,10 @@ struct RootView: View {
             await model.notifications.refreshAuthorization()
         }
         .onAppear {
+            let launchChannelID = model.takeLaunchChannelID()
             if selectedId == nil {
-                selectedId = model.launchOptions.isSnapshot ? initialChannelID : restoredSelectedId ?? initialChannelID
+                selectedId = model.launchOptions.isSnapshot ? initialChannelID
+                    : restoredSelectedId ?? initialChannelID ?? launchChannelID
             }
             columnVisibility = model.launchOptions.isSnapshot || sidebarVisible ? .all : .detailOnly
         }
