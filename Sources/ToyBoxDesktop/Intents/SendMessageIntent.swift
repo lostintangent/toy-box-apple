@@ -31,10 +31,7 @@ struct SendMessageIntent: AppIntent {
 
     func perform() async throws -> some IntentResult & ProvidesDialog {
         let name = try await context.send(message, to: channel.id) { prompt in
-            try await requestConfirmation(
-                actionName: .send,
-                dialog: "Send \u{201C}\(prompt.message)\u{201D} to \(prompt.channel)?"
-            )
+            try await requestConfirmation(actionName: .send, dialog: "\(prompt.question)")
         }
         return .result(dialog: "Sent to \(name).")
     }

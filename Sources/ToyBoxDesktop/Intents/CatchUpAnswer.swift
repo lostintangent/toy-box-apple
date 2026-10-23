@@ -5,7 +5,24 @@ import Foundation
 /// What Siri says for Catch Me Up. Pure, so every sentence is tested. Quotes are the senders' own
 /// words, and model lines appear only as the summary the transcript shows.
 enum CatchUpAnswer {
+    /// What Catch Me Up returns: everything Siri reads when there's no card, the line it says
+    /// beside the card, and the card itself when there's something to show.
+    struct Answer: Equatable {
+        /// Also the Shortcuts value.
+        let spoken: String
+        let headline: String
+        let card: CatchUpCard?
+
+        init(spoken: String, headline: String? = nil, card: CatchUpCard? = nil) {
+            self.spoken = spoken
+            self.headline = headline ?? spoken
+            self.card = card
+        }
+    }
+
     static let overviewLimit = 3
+    /// The overview card lists this many channels.
+    static let overviewRowLimit = 5
     static let allCaughtUp = "You're all caught up."
     /// Up to this many short messages are read out, the way Siri reads new texts.
     static let quotedMessageLimit = 3
@@ -71,7 +88,7 @@ enum CatchUpAnswer {
     static func channel(_ channel: Channel, unreadAfter: Int?, digest: CatchUpDigest,
                         summary: (catchUp: CatchUp, count: Int)?) -> String {
         let name = channel.name
-        let completed = unreadAfter.map { (channel.completedSequence ?? 0) > $0 } ?? false
+        let completed = isCompleted(channel, unreadAfter: unreadAfter)
         var sentences: [String] = []
 
         if let summary {
@@ -82,9 +99,7 @@ enum CatchUpAnswer {
                 sentences.append(asks(request, in: nil))
             }
             sentences += summary.catchUp.changes.map(\.text)
-            // The model may already have said so from the completion event itself.
-            let said = summary.catchUp.changes.contains { $0.sources.contains(channel.completedSequence ?? -1) }
-            if completed, !said {
+            if completed, !mentionsCompletion(summary.catchUp, in: channel) {
                 sentences.append("All tasks are done.")
             }
             return sentences.joined(separator: " ")
@@ -113,6 +128,135 @@ enum CatchUpAnswer {
             return unreadAfter == nil ? caughtUp(in: name) : "There are no new messages in \(name)."
         }
         return sentences.joined(separator: " ")
+    }
+
+    // MARK: Cards
+
+    /// The overview, with a row for each of the first few channels that need you.
+    static func overviewAnswer(_ needing: [Channel], newMessages: [String: Int]) -> Answer {
+        let spoken = overview(needing, newMessages: newMessages)
+        guard !needing.isEmpty else { return Answer(spoken: spoken) }
+        let rows = needing.prefix(overviewRowLimit).map { channel in
+            CatchUpCard.Row(channelID: channel.id, name: channel.name, attention: channelStatus(channel)?.rawValue,
+                            detail: detail(channel, newMessages: newMessages[channel.id]))
+        }
+        let more = needing.count - rows.count
+        let channels = needing.count == 1 ? "1 channel" : "\(needing.count) channels"
+        let card = CatchUpCard(channelID: nil, title: "Updates in \(channels)", rows: rows,
+                               footnote: more > 0 ? "Plus \(more == 1 ? "1 more channel" : "\(more) more channels")" : nil)
+        return Answer(spoken: spoken, headline: needing.count > 1 ? "You have updates in \(channels)." : spoken, card: card)
+    }
+
+    /// One channel's answer, with a card unless there's nothing new to show. The card's lines are
+    /// the spoken answer's: the model's when it summarized, otherwise the request and the newest
+    /// few messages in their authors' own words.
+    static func channelAnswer(_ state: ChannelState, unreadAfter: Int?, digest: CatchUpDigest,
+                              summary: (catchUp: CatchUp, count: Int)?) -> Answer {
+        let info = state.channel
+        let spoken = channel(info, unreadAfter: unreadAfter, digest: digest, summary: summary)
+        let completed = isCompleted(info, unreadAfter: unreadAfter)
+        let request = digest.request
+        let unread = digest.unread
+        guard summary != nil || request != nil || !unread.isEmpty || completed else { return Answer(spoken: spoken) }
+
+        let completion = CatchUpCard.Line(slot: .event("tasks_completed"), text: "All tasks completed")
+        var lines: [CatchUpCard.Line] = []
+        let subtitle: String?
+        let headline: String
+        var footnote: String?
+        var asked = request?.sequence
+
+        if let summary {
+            subtitle = "Summary of \(messages(summary.count))"
+            headline = "Here's a summary of \(messages(summary.count)) in \(info.name)."
+            if let needsYou = summary.catchUp.needsYou, let source = needsYou.sources.first {
+                asked = asked ?? source
+                lines.append(.init(slot: .request, text: needsYou.text))
+            } else if let request {
+                lines.append(line(request, slot: .request))
+            }
+            lines += summary.catchUp.changes.map { .init(slot: slot(for: $0.sources.first, in: state), text: $0.text) }
+            if completed, !mentionsCompletion(summary.catchUp, in: info) { lines.append(completion) }
+            footnote = "Summarized on this Mac"
+        } else {
+            if let request { lines.append(line(request, slot: .request)) }
+            let shown = unread.suffix(quotedMessageLimit)
+            lines += shown.map { line($0, slot: slot(for: $0.sequence, in: state)) }
+            if completed, !lines.isEmpty { lines.append(completion) }
+            let earlier = unread.count - shown.count
+            if !digest.isComplete {
+                footnote = earlier > 0 ? "Plus at least \(earlier) earlier messages" : "Plus earlier messages"
+            } else if earlier > 0 {
+                footnote = earlier == 1 ? "Plus 1 earlier message" : "Plus \(earlier) earlier messages"
+            }
+            let count = unread.isEmpty ? nil : digest.isComplete ? messages(unread.count) : "at least \(messages(unread.count))"
+            if let request {
+                headline = "\(request.speaker) needs your reply in \(info.name)."
+            } else if let count {
+                headline = "\(unread.count == 1 && digest.isComplete ? "There's" : "There are") \(count) in \(info.name)."
+            } else {
+                headline = "\(info.name) finished all its tasks."
+            }
+            subtitle = count.map(capitalized) ?? (request != nil ? nil : "All tasks completed")
+        }
+
+        let reply = asked.map { CatchUpCard.Reply(recipient: recipient(of: $0, in: state), request: $0) }
+        let card = CatchUpCard(channelID: info.id, title: info.name, subtitle: subtitle, isSummary: summary != nil,
+                               lines: lines, footnote: footnote, reply: reply)
+        return Answer(spoken: spoken, headline: headline, card: card)
+    }
+
+    private static func detail(_ channel: Channel, newMessages: Int?) -> String {
+        switch channelStatus(channel) {
+        case .waiting: "Waiting for your reply"
+        case .finished: "Finished all its tasks"
+        case .unread, nil:
+            switch newMessages {
+            case let count? where count > 0: messages(count)
+            case 0: "Updates"
+            default: "New messages"
+            }
+        }
+    }
+
+    private static func line(_ message: CatchUpDigest.Message, slot: CatchUpCard.Line.Slot) -> CatchUpCard.Line {
+        guard !message.text.isEmpty else {
+            return .init(slot: slot, text: "\(message.speaker) shared \(images(message.images)).")
+        }
+        return .init(slot: slot, speaker: message.speaker, text: message.text)
+    }
+
+    /// What leads a line, as the transcript's card draws it: the first source's sender, or that
+    /// event's own symbol.
+    static func slot(for sequence: Int?, in state: ChannelState) -> CatchUpCard.Line.Slot {
+        let source = state.messages.first { $0.sequence == sequence }
+        if let agentId = source?.sender.agentId {
+            let agent = channelAgentIdentity(state.agents, id: agentId)
+            return .agent(ChannelAgent(id: agent.id, name: agent.name, avatar: agent.avatar, deleted: agent.deleted))
+        }
+        if let event = source?.system { return .event(event.type) }
+        return .info
+    }
+
+    /// Who a reply mentions: the agent who asked, unless they've left.
+    private static func recipient(of sequence: Int, in state: ChannelState) -> String? {
+        let asking = state.request?.sequence == sequence ? state.request : state.messages.first { $0.sequence == sequence }
+        guard let agentId = asking?.sender.agentId else { return nil }
+        let agent = channelAgentIdentity(state.agents, id: agentId)
+        return agent.deleted == true ? nil : agent.name
+    }
+
+    private static func isCompleted(_ channel: Channel, unreadAfter: Int?) -> Bool {
+        unreadAfter.map { (channel.completedSequence ?? 0) > $0 } ?? false
+    }
+
+    /// The model may already have said so from the completion event itself.
+    private static func mentionsCompletion(_ catchUp: CatchUp, in channel: Channel) -> Bool {
+        catchUp.changes.contains { $0.sources.contains(channel.completedSequence ?? -1) }
+    }
+
+    private static func capitalized(_ phrase: String) -> String {
+        phrase.prefix(1).uppercased() + phrase.dropFirst()
     }
 
     // MARK: Phrasing

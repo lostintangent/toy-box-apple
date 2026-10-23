@@ -34,7 +34,23 @@ final class ChannelIntentsContext {
     struct SendConfirmation: Equatable, Sendable {
         let channel: String
         let message: String
+        /// The agent a reply mentions.
+        let recipient: String?
+
+        init(channel: String, message: String, recipient: String? = nil) {
+            self.channel = channel
+            self.message = message
+            self.recipient = recipient
+        }
+
+        var question: String {
+            let place = recipient.map { "\($0) in \(channel)" } ?? channel
+            return "Send \u{201C}\(message)\u{201D} to \(place)?"
+        }
     }
+
+    /// Requests answered from a card while the app runs, by channel.
+    private var replies: [String: Set<Int>] = [:]
 
     init(host: Host,
          intelligence: @autoclosure @escaping @MainActor () -> any ChannelIntelligenceService = LiveChannelIntelligence.shared,
@@ -73,7 +89,7 @@ final class ChannelIntentsContext {
     // MARK: Catch Me Up
 
     /// One channel's catch-up, or a line for each channel that needs you when none is named.
-    func catchUp(channelID: String?) async throws -> String {
+    func catchUp(channelID: String?) async throws -> CatchUpAnswer.Answer {
         let channels = try await catalog().channels
         if let channelID {
             guard let channel = channels.first(where: { $0.id == channelID }) else {
@@ -84,14 +100,14 @@ final class ChannelIntentsContext {
         let needing = CatchUpAnswer.needingAttention(channels)
         if needing.count == 1 { return try await catchUp(needing[0]) }
         var counts: [String: Int] = [:]
-        for channel in needing.prefix(CatchUpAnswer.overviewLimit) where channelStatus(channel) == .unread {
+        for channel in needing.prefix(CatchUpAnswer.overviewRowLimit) where channelStatus(channel) == .unread {
             counts[channel.id] = try? await newMessageCount(channel)
         }
-        return CatchUpAnswer.overview(needing, newMessages: counts)
+        return CatchUpAnswer.overviewAnswer(needing, newMessages: counts)
     }
 
-    private func catchUp(_ channel: Channel) async throws -> String {
-        guard channelStatus(channel) != nil else { return CatchUpAnswer.caughtUp(in: channel.name) }
+    private func catchUp(_ channel: Channel) async throws -> CatchUpAnswer.Answer {
+        guard channelStatus(channel) != nil else { return .init(spoken: CatchUpAnswer.caughtUp(in: channel.name)) }
         let state = try await connected(channel.id) { $0.state }
         guard let state else { throw ChannelIntentError.unreachable }
         let unreadAfter = channelUnreadAfter(state.channel)
@@ -102,7 +118,7 @@ final class ChannelIntentsContext {
            let catchUp = await summarize(request) {
             summary = (catchUp, request.unreadFromOthers)
         }
-        return CatchUpAnswer.channel(state.channel, unreadAfter: unreadAfter, digest: digest, summary: summary)
+        return CatchUpAnswer.channelAnswer(state, unreadAfter: unreadAfter, digest: digest, summary: summary)
     }
 
     /// The model's catch-up, shared with the transcript's card through the service's cache.
@@ -132,17 +148,19 @@ final class ChannelIntentsContext {
     // MARK: Send Message
 
     /// Confirms, then makes one attempt through the channel's outbox under a caller-owned ID. A
-    /// failed attempt waits in the channel for Send Again. Returns the channel's name.
-    func send(_ text: String, id: String = UUID().uuidString, to channelID: String,
+    /// failed attempt waits in the channel for Send Again. A reply mentions its recipient first, as
+    /// the composer's Reply does. Returns the channel's name.
+    func send(_ text: String, id: String = UUID().uuidString, to channelID: String, recipient: String? = nil,
               confirm: @Sendable (SendConfirmation) async throws -> Void) async throws -> String {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { throw ChannelIntentError.emptyMessage }
         let channel = try await channel(channelID)
-        let prompt = SendConfirmation(channel: channel.name, message: trimmed)
+        let prompt = SendConfirmation(channel: channel.name, message: trimmed, recipient: recipient)
         if let confirmationOverride { try await confirmationOverride(prompt) } else { try await confirm(prompt) }
+        let content = recipient.map { "@\(agentHandleFromName($0)) \(trimmed)" } ?? trimmed
         return try await connected(channelID) { store in
             do {
-                try await store.post(id: id, content: trimmed)
+                try await store.post(id: id, content: content)
                 return channel.name
             } catch {
                 if store.phase == .deleted { throw ChannelIntentError.channelDeleted(channel.name) }
@@ -153,6 +171,25 @@ final class ChannelIntentsContext {
                 }
             }
         }
+    }
+
+    /// Sends a card's reply, then remembers the request it answers so the card shows it as Replied.
+    @discardableResult
+    func reply(_ text: String, id: String = UUID().uuidString, to channelID: String, recipient: String?,
+               request: Int?, confirm: @Sendable (SendConfirmation) async throws -> Void) async throws -> String {
+        let name = try await send(text, id: id, to: channelID, recipient: recipient, confirm: confirm)
+        if let request { replies[channelID, default: []].insert(request) }
+        return name
+    }
+
+    /// The card with its request marked Replied once you've answered it, here or in a window that
+    /// has the channel open. It never connects a channel.
+    func withReplies(_ card: CatchUpCard) -> CatchUpCard {
+        guard let channelID = card.channelID, let request = card.reply?.request else { return card }
+        var card = card
+        card.isReplied = replies[channelID]?.contains(request) == true
+            || host.store(channelID)?.state.map { TranscriptCatchUp.isReplied(request, in: $0.messages) } == true
+        return card
     }
 
     // MARK: Connections

@@ -41,7 +41,7 @@ jobs:
         run: |
           app="$(./script/run --no-open | tail -n 1)"
           actions="$app/Contents/Resources/Metadata.appintents/extract.actionsdata"
-          for intent in CatchMeUpIntent OpenChannelIntent SendMessageIntent; do
+          for intent in CatchMeUpIntent OpenChannelIntent SendMessageIntent CatchUpSnippetIntent ReplyIntent; do
             grep -q "\"$intent\"" "$actions"
           done
       - name: Wait for crash reports

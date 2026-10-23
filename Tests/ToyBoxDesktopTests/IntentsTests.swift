@@ -138,6 +138,133 @@ struct IntentsTests {
         #expect(answer(read, unreadAfter: nil) == "You're all caught up in Docs.")
     }
 
+    // MARK: Catch Me Up cards
+
+    @Test func cardShowsTheRequestAndNewMessagesInTheirOwnWords() throws {
+        let asking = state(channel("studio-demo", "Studio demo", latest: 15, seen: 9, request: 15), [
+            message(9, from: "ada", "Earlier, already read."),
+            event(11),
+            message(12, from: "ada", "@moss Please review the **handoff**."),
+            message(15, from: "lead", "Where should the shared library sit?", request: true),
+        ])
+        let answer = answerWithCard(asking)
+        #expect(answer.headline == "Lead needs your reply in Studio demo.")
+        let card = try #require(answer.card)
+        #expect(card.channelID == "studio-demo" && card.title == "Studio demo" && card.subtitle == "1 new message")
+        #expect(card.caption == "Waiting for your reply \u{00B7} 1 new message")
+        #expect(!card.isSummary && card.footnote == nil && !card.isReplied)
+        #expect(card.lines.map(\.speaker) == ["Lead", "Ada"])
+        #expect(card.lines.map(\.text) == ["Where should the shared library sit?", "Please review the handoff."])
+        #expect(card.lines[0].slot == .request)
+        guard case .agent(let ada) = card.lines[1].slot else { Issue.record("Ada's line has no avatar"); return }
+        #expect(ada.id == "ada" && ada.name == "Ada" && ada.role == nil)
+        #expect(card.reply == .init(recipient: "Lead", request: 15))
+
+        var replied = card
+        replied.isReplied = true
+        #expect(replied.caption == "Replied \u{00B7} 1 new message")
+        let askOnly = try #require(answerWithCard(state(channel("c", "Docs", latest: 15, seen: 14, request: 15), [
+            message(15, from: "lead", "Ship it?", request: true),
+        ])).card)
+        #expect(askOnly.subtitle == nil && askOnly.caption == "Waiting for your reply")
+    }
+
+    @Test func cardShowsTheNewestFewOfManyMessages() throws {
+        let senders = ["ada", "moss", "finch", "iris", "ada", "moss", "finch", "iris", "kit", "moss", "finch", "iris"]
+        let messages = senders.enumerated().map { message(30 + $0.offset, from: $0.element, "Update \($0.offset).") }
+        let many = state(channel("c", "Design", latest: 41, seen: 20), messages)
+
+        let partial = answerWithCard(many, unreadAfter: 20)
+        #expect(partial.headline == "There are at least 12 new messages in Design.")
+        let card = try #require(partial.card)
+        #expect(card.caption == "At least 12 new messages" && card.footnote == "Plus at least 9 earlier messages")
+        #expect(card.lines.map(\.text) == ["Update 9.", "Update 10.", "Update 11."])
+        #expect(card.lines.map(\.speaker) == ["Moss", "Finch", "Iris"] && card.reply == nil)
+
+        let complete = answerWithCard(many, unreadAfter: 29)
+        #expect(complete.headline == "There are 12 new messages in Design.")
+        #expect(complete.card?.subtitle == "12 new messages" && complete.card?.footnote == "Plus 9 earlier messages")
+
+        let one = answerWithCard(state(channel("c", "Design", latest: 4, seen: 3), [message(4, from: "moss", "", images: 2)]))
+        #expect(one.headline == "There's 1 new message in Design.")
+        #expect(one.card?.lines.map(\.text) == ["Moss shared 2 images."] && one.card?.lines.first?.speaker == nil)
+    }
+
+    @Test func cardShowsTheModelsSummaryWhenReady() throws {
+        let state = state(channel("studio-demo", "Studio demo", latest: 15, seen: 9, completed: 14, request: 15), [
+            message(12, from: "ada", "Handoff is in."),
+            message(15, from: "lead", "Where should the shared library sit?", request: true),
+        ])
+        let summary = CatchUp(needsYou: .init(text: "Lead asked you to choose where the library sits.", sources: [15]),
+                              changes: [.init(text: "Ada finished the handoff.", sources: [12]),
+                                        .init(text: "The plan changed.", sources: [3])], through: 15)
+        let answer = answerWithCard(state, summary: (summary, 6))
+        #expect(answer.headline == "Here's a summary of 6 new messages in Studio demo.")
+        let card = try #require(answer.card)
+        #expect(card.isSummary && card.caption == "Summary of 6 new messages")
+        #expect(card.footnote == "Summarized on this Mac" && card.reply == .init(recipient: "Lead", request: 15))
+        #expect(card.lines.map(\.text) == ["Lead asked you to choose where the library sits.", "Ada finished the handoff.",
+                                            "The plan changed.", "All tasks completed"])
+        #expect(card.lines.allSatisfy { $0.speaker == nil })
+        #expect(card.lines[0].slot == .request && card.lines[2].slot == .info)
+        #expect(card.lines[3].slot == .event("tasks_completed"))
+    }
+
+    @Test func quietChannelsHaveNoCard() {
+        let events = state(channel("c", "Docs", latest: 10, seen: 9), [event(10)])
+        #expect(answerWithCard(events).card == nil)
+        let read = state(channel("c", "Docs", latest: 10, seen: 10), [message(10, from: "ada", "Done.")])
+        #expect(answerWithCard(read, unreadAfter: nil).card == nil)
+
+        let done = answerWithCard(state(channel("c", "Docs", latest: 10, seen: 9, completed: 10), [event(10)]))
+        #expect(done.headline == "Docs finished all its tasks.")
+        #expect(done.card?.caption == "All tasks completed" && done.card?.lines == [])
+        #expect(CatchUpAnswer.overviewAnswer([], newMessages: [:]) == .init(spoken: "You're all caught up."))
+    }
+
+    @Test func overviewCardListsChannelsWithTheSidebarsIndicators() throws {
+        let needing = CatchUpAnswer.needingAttention([
+            channel("ask", "Studio demo", latest: 15, seen: 9, request: 15),
+            channel("done", "Docs", latest: 6, seen: 2, completed: 6),
+            channel("design", "Design", latest: 9, seen: 2, updatedAt: "2026-03-01T00:00:00.000Z"),
+            channel("ops", "Ops", latest: 9, seen: 2, updatedAt: "2026-02-01T00:00:00.000Z"),
+            channel("notes", "Notes", latest: 9, seen: 2, updatedAt: "2026-01-20T00:00:00.000Z"),
+            channel("misc", "Misc", latest: 9, seen: 2),
+            channel("old", "Old", latest: 9, seen: 2, updatedAt: "2025-01-01T00:00:00.000Z"),
+        ])
+        let answer = CatchUpAnswer.overviewAnswer(needing, newMessages: ["design": 3, "ops": 0])
+        #expect(answer.spoken.hasPrefix("You have updates in 7 channels. Studio demo is waiting for your reply."))
+        #expect(answer.headline == "You have updates in 7 channels.")
+        let card = try #require(answer.card)
+        #expect(card.channelID == nil && card.title == "Updates in 7 channels" && card.reply == nil)
+        #expect(card.rows.map(\.name) == ["Studio demo", "Docs", "Design", "Ops", "Notes"])
+        #expect(card.rows.map(\.attention) == ["waiting", "finished", "unread", "unread", "unread"])
+        #expect(card.rows.map(\.detail) == ["Waiting for your reply", "Finished all its tasks", "3 new messages",
+                                             "Updates", "New messages"])
+        #expect(card.footnote == "Plus 2 more channels")
+    }
+
+    @Test func cardSurvivesTheTripThroughItsSnippetIntent() throws {
+        let state = state(channel("studio-demo", "Studio demo", latest: 15, seen: 9, request: 15), [
+            message(12, from: "ada", "Handoff is in."),
+            message(15, from: "lead", "Where should the shared library sit?", request: true),
+        ])
+        let card = try #require(answerWithCard(state).card)
+        #expect(CatchUpCard(encoded: CatchUpSnippetIntent(card: card).card) == card)
+        #expect(CatchUpCard(encoded: "not a card") == nil)
+
+        let context = TestHost(api: nil).context
+        #expect(!context.withReplies(card).isReplied)
+    }
+
+    @Test func aReplyConfirmsWithItsRecipientAndMentionsThem() {
+        let prompt = ChannelIntentsContext.SendConfirmation(channel: "Studio demo", message: "Next to the app.",
+                                                            recipient: "Lead")
+        #expect(prompt.question == "Send \u{201C}Next to the app.\u{201D} to Lead in Studio demo?")
+        #expect(ChannelIntentsContext.SendConfirmation(channel: "Docs", message: "Hi").question
+            == "Send \u{201C}Hi\u{201D} to Docs?")
+    }
+
     @Test func namesAreListedTheWaySiriSpeaksThem() {
         #expect(CatchUpAnswer.list(["Ada"]) == "Ada")
         #expect(CatchUpAnswer.list(["Ada", "Moss"]) == "Ada and Moss")
@@ -157,6 +284,15 @@ struct IntentsTests {
         await #expect(throws: ChannelIntentError.noServer) { try await query.suggestedEntities() }
     }
 
+    @Test func aReplyWithoutAServerIsNeverConfirmed() async throws {
+        let host = TestHost(api: nil)
+        var intent = ReplyIntent(channel: ChannelEntity(id: "c", name: "Docs"), recipient: "Lead", request: 4,
+                                 message: "Sounds good")
+        intent.context = host.context
+        await #expect(throws: ChannelIntentError.noServer) { try await intent.perform() }
+        #expect(host.confirmations.isEmpty && host.acquired.isEmpty)
+    }
+
     @Test func anEmptyMessageIsNeverConfirmedOrSent() async throws {
         let host = TestHost(api: nil)
         var intent = SendMessageIntent(channel: ChannelEntity(channel("c", "Docs")), message: " \n ")
@@ -169,6 +305,15 @@ struct IntentsTests {
 
     private func subtitle(_ entity: ChannelEntity) -> String? {
         entity.displayRepresentation.subtitle.map { String(localized: $0) }
+    }
+
+    private func answerWithCard(_ state: ChannelState, unreadAfter: Int? = nil,
+                                summary: (catchUp: CatchUp, count: Int)? = nil) -> CatchUpAnswer.Answer {
+        let boundary = unreadAfter ?? channelUnreadAfter(state.channel)
+        let answer = CatchUpAnswer.channelAnswer(state, unreadAfter: boundary,
+                                                 digest: CatchUpDigest(state: state, unreadAfter: boundary), summary: summary)
+        #expect(answer.spoken == self.answer(state, unreadAfter: unreadAfter, summary: summary))
+        return answer
     }
 
     private func answer(_ state: ChannelState, unreadAfter: Int? = nil,
@@ -242,6 +387,40 @@ extension IntentsTests {
             default: #expect(value.hasPrefix("You have updates in \(needing.count) channels."))
             }
             #expect(RequestRecorder.requests.allSatisfy { $0.hasPrefix("GET ") })
+        }
+
+        /// Runs before any other test posts, which would answer the demo's request.
+        @Test(.enabled(if: demoURL != nil))
+        func cardReplyMentionsWhoAskedAndTurnsTheCardToReplied() async throws {
+            let host = try TestHost.demo()
+            let api = try #require(host.api)
+            let channel = try #require(try await api.catalog().channels.first { $0.id == "studio-demo" })
+            let context = host.context
+            let answer = try await context.catchUp(channelID: "studio-demo")
+            let card = try #require(answer.card)
+            let reply = card.reply
+            let recipient = reply?.recipient
+            print("Catch Me Up card (studio-demo, \(card.encoded.utf8.count) bytes, reply to \(recipient ?? "nobody")): \(answer.headline)")
+            #expect(!context.withReplies(card).isReplied)
+
+            let text = "Siri reply fixture \(UUID().uuidString.prefix(8))"
+            RequestRecorder.reset()
+            var intent = ReplyIntent(channel: ChannelEntity(channel), recipient: recipient, request: reply?.request,
+                                     message: text)
+            intent.context = context
+            _ = try await intent.perform()
+
+            #expect(host.confirmations == [.init(channel: "Studio demo", message: text, recipient: recipient)])
+            #expect(RequestRecorder.requests.filter { $0.hasPrefix("POST ") } == ["POST /api/v1/channels/studio-demo/messages"])
+            var snapshot = api.observe(channelId: "studio-demo").makeAsyncIterator()
+            let state = try #require(try await snapshot.next()?.state)
+            let posted = state.messages.filter { $0.text.hasSuffix(text) }
+            #expect(posted.map(\.text) == [recipient.map { "@\(agentHandleFromName($0)) \(text)" } ?? text])
+            #expect(posted.first?.sender == .user)
+            if reply != nil {
+                #expect(context.withReplies(card).isReplied)
+                #expect(state.channel.requestSequence == nil)
+            }
         }
 
         @Test(.enabled(if: demoURL != nil))

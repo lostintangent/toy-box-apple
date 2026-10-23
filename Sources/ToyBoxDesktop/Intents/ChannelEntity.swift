@@ -25,10 +25,16 @@ struct ChannelEntity: AppEntity, Identifiable {
     let attention: ChannelAttention?
 
     init(_ channel: Channel) {
-        id = channel.id
-        attention = channelStatus(channel)
-        name = channel.name
-        unreadCount = max(0, channel.latestSequence - channel.seenThrough)
+        self.init(id: channel.id, name: channel.name, attention: channelStatus(channel),
+                  unreadCount: max(0, channel.latestSequence - channel.seenThrough))
+    }
+
+    /// A channel as a card remembers it, for its buttons.
+    init(id: String, name: String, attention: ChannelAttention? = nil, unreadCount: Int = 0) {
+        self.id = id
+        self.attention = attention
+        self.name = name
+        self.unreadCount = unreadCount
         needsReply = attention == .waiting
         tasksCompleted = attention == .finished
     }

@@ -1543,7 +1543,7 @@ the transcript's summary, and asking never marks anything read.
 
 | Intent | Mode | Parameters | Result |
 | --- | --- | --- | --- |
-| Catch Me Up | Background | Channel, optional | A spoken answer, also returned as text |
+| Catch Me Up | Background | Channel, optional | A card with a spoken headline, or the whole answer spoken when there's no card or no screen. The whole answer is also returned as text |
 | Open Channel | Foreground | Channel | Opens it through the notification route: activate, request navigation, and open a window only when none shows a channel |
 | Send Message | Background | Channel, then Message (multiline) | "Sent to [channel]." after the system's Send confirmation |
 
@@ -1599,6 +1599,35 @@ summary shares the transcript card's cache, so a channel summarized in either pl
 the other. It respects "Summarize new messages" and the model's availability, and a slow or
 declined summary falls back to the quotes silently.
 
+**Catch Me Up card.** Catch Me Up returns `IntentDialog(full:supporting:)`: Siri says the
+headline beside the card and the whole answer only where it can't show one. Headlines are "Here's
+a summary of 27 new messages in Studio demo.", "Lead needs your reply in Studio demo.", "There
+are 3 new messages in Design." ("There's 1 new message…", "at least" as above), "Docs finished
+all its tasks." and "You have updates in 4 channels." When nothing is new there's no card, just
+the sentence.
+
+| Part | One channel |
+| --- | --- |
+| Header | The channel's name, 15 pt semibold, over a 12 pt secondary caption: `text.line.3.summary` with "Summary of 27 new messages", or "Waiting for your reply" (then "Replied") with " · 1 new message" when there are others, "3 new messages" or "All tasks completed" |
+| Lines | The spoken answer's, in 13 pt up to 3 lines each beside the transcript card's 16-point slots. With a summary, its needs-you line and changes, exactly as the transcript card leads them. Otherwise the request, then the newest 3 messages as "**Ada:** …" beside the author's avatar, or "Moss shared 2 images." for images alone. A completion adds "All tasks completed" with its event symbol, unless the summary cites it |
+| Footnote | 11 pt tertiary: "Summarized on this Mac", or "Plus 9 earlier messages" ("Plus at least 9…" when the loaded history doesn't reach the boundary) |
+| Buttons | Large capsule buttons of equal width. "Reply to Lead" (`arrowshape.turn.up.left`) is prominent while the request waits, and plain "Reply" otherwise. "Open" (`arrow.up.forward.app`) runs Open Channel |
+
+The overview card is "Updates in 4 channels" over a row for each of the first 5 channels: the
+sidebar's indicator, the name in 13 pt medium, then the status in 12 pt secondary ("Waiting for
+your reply", "Finished all its tasks", "3 new messages", "Updates" or "New messages") and a
+chevron. Each row runs Open Channel. "Plus 2 more channels" follows when there are more.
+
+The card is a hidden `SnippetIntent` that carries its content as JSON, so the system can redraw
+it after a relaunch without the server or the model. Its `perform` only reads. It shows the
+request as Replied once the app has sent a reply to it, or once a window's live store has a
+message from you after it, and never connects a channel. The view is plain SwiftUI with
+`AgentAvatarView`, because the system archives it, and its buttons are `Button(intent:)`, because
+closures don't run in a snippet. Reply is a hidden background `ReplyIntent`. It asks "What do you
+want to say to Lead?", confirms "Send “[text]” to Lead in Studio demo?", then sends "@lead [text]"
+through Send Message's path, mentioning the asker as the transcript's Reply does, or no one if
+they've left. It returns no dialog, so the card redraws as Replied.
+
 Send Message trims the text and refuses an empty one before asking anything. It confirms with
 `requestConfirmation(actionName: .send)` and "Send “[text]” to [channel]?", then posts once
 through the channel's shared `ChannelStore` with a fresh caller-owned ID, so it joins the outbox
@@ -1610,7 +1639,7 @@ server. Choose one in Settings.", "Can't connect to your Toy Box server. Check t
 then try again." and "That channel isn't on your Toy Box server anymore." Errors about the server
 always say "your Toy Box server", since "Toy Box" alone now also names the app.
 
-When Catch Me Up or Send Message launches the app, the system starts it hidden with activation
+When Catch Me Up, Send Message or the card's Reply launches the app, the system starts it hidden with activation
 prohibited. That launch presents no window and runs as an accessory app outside the Dock, so the
 system quits it once the intent finishes. Windows restored from the last session stay hidden, and
 no extra window opens. Activation or a shown window, from a reopen, Open Channel, the menu bar
