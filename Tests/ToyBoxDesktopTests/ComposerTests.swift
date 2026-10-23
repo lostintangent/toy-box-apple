@@ -478,12 +478,11 @@ struct ComposerTests {
     }
 
     @Test func trayVisibilityTracksArtifactsTasksAndPreview() {
-        var channel = Channel(id: "tray", name: "Tray", model: .init(provider: "test", name: "test"),
-                              latestSequence: 1, seenThrough: 1, updatedAt: "2026-10-22T08:00:00Z")
-        let empty = ChannelState(revision: 1, channel: channel, lead: .lead(id: channel.id))
-        #expect(!ComposerTray.isVisible(for: empty))
-        channel.tasks = [.init(id: "task", title: "Task")]
-        #expect(ComposerTray.isVisible(for: ChannelState(revision: 2, channel: channel, lead: .lead(id: channel.id))))
+        let artifact = ChannelArtifact(file: .init(kind: "machine", path: "/tmp/plan.md"), title: "Plan")
+        #expect(!ComposerTray.isVisible(artifacts: [], tasks: [], preview: nil))
+        #expect(ComposerTray.isVisible(artifacts: [artifact], tasks: [], preview: nil))
+        #expect(ComposerTray.isVisible(artifacts: [], tasks: [.init(id: "task", title: "Task")], preview: nil))
+        #expect(ComposerTray.isVisible(artifacts: [], tasks: [], preview: .init(kind: "screen", screenId: "main")))
     }
 
     @Test func trayTaskPopoverAlignsStatusIconsWithItsHeadingAndTrailsDisclosures() async throws {
@@ -494,11 +493,10 @@ struct ComposerTests {
                 .init(id: "child", title: "Child task", status: "done")
             ])
         ]
-        let state = ChannelState(revision: 1, channel: channel, lead: .lead(id: channel.id))
         let size = NSSize(width: ComposerTasksPopover.width, height: 240)
         // A popover inherits the tray button's environment, so host it under the tray's label styling.
         let view = NSHostingView(rootView:
-            ComposerTasksPopover(state: state, onArtifactOpen: { _ in })
+            ComposerTasksPopover(tasks: channel.tasks, agents: [], artifacts: [], onArtifactOpen: { _ in })
                 .frame(width: size.width, height: size.height, alignment: .top)
                 .background(Color.white)
                 .font(.system(size: 12))

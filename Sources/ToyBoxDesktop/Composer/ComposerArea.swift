@@ -75,6 +75,17 @@ struct ComposerImageStrip: View {
     }
 }
 
+/// Separates the composer's notices and tray from the input.
+struct ComposerHairline: View {
+    var body: some View {
+        Rectangle()
+            .fill(Color(nsColor: .separatorColor))
+            .frame(height: 1)
+            .padding(.horizontal, 12)
+            .accessibilityHidden(true)
+    }
+}
+
 private struct ChannelComposer: View {
     let store: ChannelStore
     @Bindable var draft: ComposerDraft
@@ -115,8 +126,15 @@ private struct ChannelComposer: View {
         }
     }
 
+    /// Whether the message this draft sent has arrived. It reads `messages` only while a send is
+    /// pending, so other messages don't re-render the composer.
+    private var sentMessageArrived: Bool {
+        guard let id = draft.sendAttemptID else { return false }
+        return store.messages.reversed().contains { $0.id == id }
+    }
+
     private var placeholder: String {
-        if store.state?.channel.requestSequence != nil {
+        if store.requestSequence != nil {
             return "Reply to Lead, or @mention an agent"
         }
         return "Message the team, or @mention an agent"
@@ -189,7 +207,7 @@ private struct ChannelComposer: View {
             registerDraft()
             dictation.draftChanged(to: revision)
         }
-        .onChange(of: store.state?.revision) { _, _ in reconcileDraft() }
+        .onChange(of: sentMessageArrived) { _, _ in reconcileDraft() }
         .onChange(of: associatedAttempt?.phase) { _, _ in reconcileDraft() }
         .onChange(of: associatedAttempt?.id) { old, new in
             if old == nil, new != nil, isSubmitting { interaction.jumpToLatest() }
@@ -263,7 +281,7 @@ private struct ChannelComposer: View {
     }
 
     private var dictationContext: [String] {
-        (store.state?.agents ?? []).filter { $0.deleted != true }.map(\.name) + ["Lead", "Everyone"]
+        store.roster.filter { $0.deleted != true }.map(\.name) + ["Lead", "Everyone"]
     }
 
     private var notices: some View {
@@ -298,25 +316,14 @@ private struct ChannelComposer: View {
         .padding(.vertical, 8)
     }
 
-    private var hairline: some View {
-        Rectangle()
-            .fill(Color(nsColor: .separatorColor))
-            .frame(height: 1)
-            .padding(.horizontal, 12)
-            .accessibilityHidden(true)
-    }
-
     private var input: some View {
         let shape = RoundedRectangle(cornerRadius: 18, style: .continuous)
         return VStack(spacing: 0) {
             if hasNotices {
                 notices
-                hairline
+                ComposerHairline()
             }
-            if let state = store.state, ComposerTray.isVisible(for: state) {
-                ComposerTray(state: state, api: store.api)
-                hairline
-            }
+            ComposerTray(store: store)
             if !draft.images.isEmpty { ComposerImageStrip(draft: draft) }
             ZStack(alignment: .topLeading) {
                 if draft.text.isEmpty && !dictation.hasWords {
@@ -331,7 +338,7 @@ private struct ChannelComposer: View {
                 NativeComposerInput(text: $draft.text, height: $inputHeight, focused: $isFocused,
                                     dragging: $isDragging, fontSize: 14 * textScale,
                                     focusRequest: focusRequest,
-                                    agents: store.state?.agents ?? [], canManage: store.phase.isLive,
+                                    agents: store.roster, canManage: store.phase.isLive,
                                     onSend: send, onFiles: draft.attachFiles, onImage: draft.append,
                                     onError: { draft.error = $0 },
                                     onCreate: { name in
@@ -345,8 +352,8 @@ private struct ChannelComposer: View {
             }
             HStack(spacing: 8) {
                 AttachImagesButton { showPicker = true }
-                if let state = store.state { audience(state) }
-                if let request = store.state?.request { inputNeeded(request) }
+                if let lead = store.roster.first { audience(lead: lead, members: Array(store.roster.dropFirst())) }
+                if let request = store.request { inputNeeded(request) }
                 Spacer(minLength: 0)
                 if draft.isLoadingImages {
                     ProgressView().controlSize(.small).help("Reading images")
@@ -389,13 +396,12 @@ private struct ChannelComposer: View {
         }
     }
 
-    private func audience(_ state: ChannelState) -> some View {
-        let recipients = resolveChannelAudience(content: draft.text, sender: .user, lead: state.lead,
-                                                members: state.members,
-                                                acknowledgedRequest: state.channel.requestSequence != nil)
+    private func audience(lead: ChannelAgent, members: [ChannelAgent]) -> some View {
+        let recipients = resolveChannelAudience(content: draft.text, sender: .user, lead: lead, members: members,
+                                                acknowledgedRequest: store.requestSequence != nil)
         let names = recipients.map(\.name).joined(separator: ", ")
         let label = recipients.isEmpty ? "No one will be notified"
-            : "To \(channelAudienceLabel(recipients, reachableCount: state.agents.count))"
+            : "To \(channelAudienceLabel(recipients, reachableCount: members.count + 1))"
         return ViewThatFits(in: .horizontal) {
             HStack(spacing: 4) {
                 if recipients.isEmpty {
@@ -444,7 +450,7 @@ private struct ChannelComposer: View {
             VStack(alignment: .leading, spacing: 12) {
                 Text("Input Needed").font(.headline)
                 ScrollView {
-                    TranscriptMarkdown(content: request.text, agents: store.state?.agents ?? [],
+                    TranscriptMarkdown(content: request.text, agents: store.roster,
                                        baseURL: store.api.baseURL)
                 }
                     .frame(maxHeight: 180)
@@ -558,8 +564,8 @@ private struct ChannelComposer: View {
     }
 
     private func reconcileDraft() {
-        guard let id = draft.sendAttemptID else { return }
-        if store.state?.messages.contains(where: { $0.id == id }) == true || associatedAttempt?.phase == .confirmed {
+        guard draft.sendAttemptID != nil else { return }
+        if sentMessageArrived || associatedAttempt?.phase == .confirmed {
             draft.clear(ifUnchanged: draft.revision)
             submissionError = nil
         }
