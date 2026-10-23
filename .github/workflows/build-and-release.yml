@@ -68,6 +68,8 @@ jobs:
           persist-credentials: false
       - name: Lint workflows
         run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+      - name: Test release credential setup with fake commands
+        run: python3 script/test-release-secrets.py
 
   release:
     needs: [test, lint]
@@ -91,21 +93,30 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           persist-credentials: false
-      - name: Import the signing identity and notarization key
+      - name: Import the signing identity and notarization credentials
         env:
           CERTIFICATE: ${{ secrets.MACOS_SIGNING_CERTIFICATE }}
           CERTIFICATE_PASSWORD: ${{ secrets.MACOS_SIGNING_PASSWORD }}
           NOTARY_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
           NOTARY_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
           NOTARY_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          NOTARY_APPLE_ID: ${{ secrets.NOTARY_APPLE_ID }}
+          NOTARY_TEAM_ID: ${{ secrets.NOTARY_TEAM_ID }}
+          NOTARY_APP_PASSWORD: ${{ secrets.NOTARY_APP_PASSWORD }}
         run: |
+          set +x
           set -euo pipefail
           umask 077
           : "${CERTIFICATE:?Missing MACOS_SIGNING_CERTIFICATE}"
           : "${CERTIFICATE_PASSWORD:?Missing MACOS_SIGNING_PASSWORD}"
-          : "${NOTARY_KEY:?Missing APP_STORE_CONNECT_PRIVATE_KEY}"
-          : "${NOTARY_KEY_ID:?Missing APP_STORE_CONNECT_KEY_ID}"
-          : "${NOTARY_ISSUER_ID:?Missing APP_STORE_CONNECT_ISSUER_ID}"
+          if [[ -n "$NOTARY_KEY" && -n "$NOTARY_KEY_ID" && -n "$NOTARY_ISSUER_ID" ]]; then
+            notary_auth=key
+          elif [[ -n "$NOTARY_APPLE_ID" && -n "$NOTARY_TEAM_ID" && -n "$NOTARY_APP_PASSWORD" ]]; then
+            notary_auth=apple-id
+          else
+            echo "Missing notarization credentials. Set APP_STORE_CONNECT_PRIVATE_KEY, APP_STORE_CONNECT_KEY_ID and APP_STORE_CONNECT_ISSUER_ID, or NOTARY_APPLE_ID, NOTARY_TEAM_ID and NOTARY_APP_PASSWORD." >&2
+            exit 1
+          fi
           export SIGNING_KEYCHAIN="$RUNNER_TEMP/toy-box-release.keychain-db"
           export NOTARY_KEYCHAIN="$SIGNING_KEYCHAIN"
           printf 'SIGNING_KEYCHAIN=%s\nNOTARY_KEYCHAIN=%s\n' "$SIGNING_KEYCHAIN" "$NOTARY_KEYCHAIN" >> "$GITHUB_ENV"
@@ -117,7 +128,6 @@ jobs:
           printf '7afc9d01a62f03a2de9637936d4afe68090d2de18d03f29c88cfb0b1ba63587f  %s\n' \
             "$RUNNER_TEMP/toy-box-signing/DeveloperIDCA.cer" | shasum -a 256 -c -
           printf '%s' "$CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/toy-box-signing/identity.p12"
-          printf '%s' "$NOTARY_KEY" > "$RUNNER_TEMP/toy-box-signing/AuthKey.p8"
           password="$(openssl rand -base64 48)"
           echo "::add-mask::$password"
           security create-keychain -p "$password" "$SIGNING_KEYCHAIN"
@@ -133,8 +143,14 @@ jobs:
           security import "$RUNNER_TEMP/toy-box-signing/identity.p12" \
             -k "$SIGNING_KEYCHAIN" -P "$CERTIFICATE_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$password" "$SIGNING_KEYCHAIN" >/dev/null
-          xcrun notarytool store-credentials "$NOTARY_PROFILE" --keychain "$NOTARY_KEYCHAIN" \
-            --key "$RUNNER_TEMP/toy-box-signing/AuthKey.p8" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER_ID"
+          if [[ "$notary_auth" == key ]]; then
+            printf '%s' "$NOTARY_KEY" > "$RUNNER_TEMP/toy-box-signing/AuthKey.p8"
+            xcrun notarytool store-credentials "$NOTARY_PROFILE" --keychain "$NOTARY_KEYCHAIN" \
+              --key "$RUNNER_TEMP/toy-box-signing/AuthKey.p8" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER_ID"
+          else
+            xcrun notarytool store-credentials "$NOTARY_PROFILE" --keychain "$NOTARY_KEYCHAIN" \
+              --apple-id "$NOTARY_APPLE_ID" --team-id "$NOTARY_TEAM_ID" --password "$NOTARY_APP_PASSWORD"
+          fi
       - name: Build, sign and notarize
         env:
           SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}

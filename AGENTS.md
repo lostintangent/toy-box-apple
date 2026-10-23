@@ -119,7 +119,13 @@ view.
   `main` is a dry run that keeps the zip as an artifact.
 - One-time setup, by the certificate owner only:
   `./script/setup-release-secrets SHA1 AuthKey.p8 KEY_ID ISSUER_ID`, using a Team API key with
-  Developer access. Agents never run it, create secrets or read keys and passwords.
+  Developer access, or `./script/setup-release-secrets SHA1 --apple-id EMAIL TEAM_ID`, using an
+  Apple ID app-specific password entered at the silent prompt, never as a script argument.
+  Both configure the local `toy-box-channels-notary` profile and GitHub signing secrets.
+  CI prefers a complete API key secret set, otherwise it uses `NOTARY_APPLE_ID`, `NOTARY_TEAM_ID`
+  and `NOTARY_APP_PASSWORD`. Remove the three `APP_STORE_CONNECT_*` secrets to switch an existing
+  API key configuration to Apple ID. Agents never run setup with real credentials, create secrets
+  or read keys and passwords. `python3 script/test-release-secrets.py` uses fake commands only.
 - Locally: `SIGNING_IDENTITY=SHA1 BUILD_NUMBER=N NOTARY_PROFILE=toy-box-channels-notary
   ./script/release vX.Y.Z`. Without `NOTARY_PROFILE` the zip is named `SIGNED-UNNOTARIZED` and
   is never published.

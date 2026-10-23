@@ -74,6 +74,41 @@ Reference sources (read-only):
   - Resource URLs (artifacts, attachments) resolve against the configured server base URL, which may
     include a path prefix.
 
+## Releases
+
+Releases are Developer ID signed, notarized and stapled, then published with their SHA-256 checksum
+by `.github/workflows/build-and-release.yml` on an approved `vX.Y.Z` tag. A manual run on `main`
+performs the same signing and notarization but keeps the archive as an artifact, without publishing.
+Local builds use Command Line Tools. CI uses its selected Xcode 27 toolchain on the `xcode-27` runner.
+
+Only the certificate owner runs the one-time setup, choosing either authentication method:
+
+```sh
+./script/setup-release-secrets SHA1 /path/AuthKey.p8 KEY_ID ISSUER_ID
+./script/setup-release-secrets SHA1 --apple-id EMAIL TEAM_ID
+```
+
+The first uses an App Store Connect Team API key with Developer access. The second uses an Apple ID
+and an app-specific password from account.apple.com, with no App Store Connect setup. Its silent
+prompt reads the password without echoing or logging it. Never pass it as a script argument. Both
+commands optionally accept `OWNER/REPO` as the final argument and configure the local
+`toy-box-channels-notary` keychain profile plus GitHub's `MACOS_SIGNING_CERTIFICATE`,
+`MACOS_SIGNING_PASSWORD` and `MACOS_SIGNING_IDENTITY` secrets. Setup exports only the pinned
+certificate's identity into a temporary encrypted file, then removes it on exit.
+
+API key setup also sets `APP_STORE_CONNECT_PRIVATE_KEY`, `APP_STORE_CONNECT_KEY_ID` and
+`APP_STORE_CONNECT_ISSUER_ID`. Apple ID setup instead sets `NOTARY_APPLE_ID`, `NOTARY_TEAM_ID` and
+`NOTARY_APP_PASSWORD`. CI prefers the complete API key set, otherwise the complete Apple ID set.
+It fails explicitly if neither is complete, and never retries rejected credentials with the other
+method. To switch an existing API key configuration to Apple ID, remove the three
+`APP_STORE_CONNECT_*` secrets after running Apple ID setup.
+
+Agents never run setup with real credentials or read signing keys and passwords. The credential-free
+regression suite, `python3 script/test-release-secrets.py`, replaces every credential, signing and
+network command with a fake and runs in CI. For a local release, set `SIGNING_IDENTITY=SHA1`,
+`BUILD_NUMBER=N` and `NOTARY_PROFILE=toy-box-channels-notary` when invoking `script/release vX.Y.Z`.
+Without a notary profile, the archive is named `SIGNED-UNNOTARIZED` and is never published.
+
 ## Protocol (v1)
 
 | Request | Use |
