@@ -117,7 +117,7 @@ struct TranscriptTests {
     /// message builds them only once the pointer reaches it, and keeps them so a selection outlasts it.
     @MainActor
     @Test func messagesBuildSelectableTextOnceThePointerArrives() async throws {
-        let message = try await HoveredMessage()
+        let message = try await HoveredMessage(id: "arriving")
         defer { message.close() }
         let mounted = message.platformViews()
 
@@ -137,7 +137,7 @@ struct TranscriptTests {
     /// selectable once it holds still, so a drag that starts without moving the pointer still selects.
     @MainActor
     @Test func messagesUnderAStillPointerTurnSelectableOnceScrollingSettles() async throws {
-        let message = try await HoveredMessage()
+        let message = try await HoveredMessage(id: "resting")
         defer { message.close() }
         let mounted = message.platformViews()
         let settleDelay = TranscriptPointer.settleDelay
@@ -150,7 +150,9 @@ struct TranscriptTests {
         try await Task.sleep(for: .milliseconds(100))
         #expect(message.platformViews() == mounted)
 
-        for _ in 0..<40 where message.platformViews() == mounted {
+        // Tests that run alongside move their own content, which would otherwise keep postponing the settle.
+        TranscriptPointer.settleDelay = 0
+        for _ in 0..<50 where message.platformViews() == mounted {
             try await Task.sleep(for: .milliseconds(100))
         }
         #expect(message.platformViews() > mounted)
@@ -2556,7 +2558,8 @@ private final class TranscriptServerProtocol: URLProtocol, @unchecked Sendable {
 
 
 /// One long agent message in a key window off screen, hovered by calling its tracking methods
-/// directly, since a test's posted moves never reach SwiftUI's hover tracking.
+/// directly, since a test's posted moves never reach SwiftUI's hover tracking. Each test gives its
+/// message its own ID, since the pointer's resting message is shared by every window.
 @MainActor
 private final class HoveredMessage {
     private final class KeyWindow: NSWindow {
@@ -2566,11 +2569,11 @@ private final class HoveredMessage {
     let host: NSView
     private let window: NSWindow
 
-    init() async throws {
+    init(id: String) async throws {
         let lead = ChannelAgent.lead(id: "lead")
         let store = ChannelStore(id: "selection", api: try ChannelAPI(serverURL: "https://selection.invalid"),
                                  sendJournal: nil)
-        let message = ChannelMessage(id: "m1", sequence: 1, timestamp: "2026-10-22T10:00:00Z", sender: .agent("lead"),
+        let message = ChannelMessage(id: id, sequence: 1, timestamp: "2026-10-22T10:00:00Z", sender: .agent("lead"),
                                      content: .text(String(repeating: "A paragraph long enough to wrap. ", count: 6)
                                          + "\n\nA second paragraph."))
         let row = try #require(transcriptRows([message], lead: lead, members: []).last)

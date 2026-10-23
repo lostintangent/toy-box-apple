@@ -444,7 +444,7 @@ enum TranscriptPointer {
     private static var locationWhenContentMoved: CGPoint?
     private static var contentMovedAt: TimeInterval = 0
     private static var resting: (id: String, reached: () -> Void)?
-    private static var settleTimer: Timer?
+    private static var settlePending = false
 
     static func contentDidMove() {
         locationWhenContentMoved = NSEvent.mouseLocation
@@ -460,23 +460,23 @@ enum TranscriptPointer {
     /// content holds still unless the pointer leaves it first.
     static func rest(on id: String, reached: @escaping () -> Void) {
         resting = (id, reached)
-        if settleTimer == nil { scheduleSettle(after: settleDelay) }
+        if !settlePending { scheduleSettle(after: settleDelay) }
     }
 
     static func leave(_ id: String) {
         if resting?.id == id { resting = nil }
     }
 
+    /// The main queue also runs while a scroll tracks events, unlike a default-mode timer.
     private static func scheduleSettle(after delay: TimeInterval) {
-        let timer = Timer(timeInterval: delay, repeats: false) { _ in
+        settlePending = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
             MainActor.assumeIsolated { settle() }
         }
-        RunLoop.main.add(timer, forMode: .common)
-        settleTimer = timer
     }
 
     private static func settle() {
-        settleTimer = nil
+        settlePending = false
         let still = ProcessInfo.processInfo.systemUptime - contentMovedAt
         if still < settleDelay { return scheduleSettle(after: settleDelay - still) }
         let arrival = resting
