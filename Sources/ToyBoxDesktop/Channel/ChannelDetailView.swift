@@ -30,6 +30,9 @@ struct ChannelDetailView: View {
     /// changes the person's choice. The placement turns AppKit's own collapses into a new
     /// revision, which presents the column again.
     @ViewState private var column = ColumnPresentation()
+    /// Switching channels keeps this view, its toolbar and its inspector column, and only moves
+    /// the connection and the per-channel content to the new store.
+    @ViewState private var connection = ChannelConnection()
     private var wideInspector: Binding<Bool> {
         let column = column
         let placement = placement
@@ -58,6 +61,7 @@ struct ChannelDetailView: View {
             .background(Color(nsColor: .textBackgroundColor))
             .inspector(isPresented: wideInspector) {
                 OverviewInspector(store: store)
+                    .id(ObjectIdentifier(store))
                     .settledLayout()
                     .inspectorColumnWidth(min: 280, ideal: 312, max: 400)
             }
@@ -80,9 +84,9 @@ struct ChannelDetailView: View {
                 interaction.isInspectorPresented = model.launchOptions.isSnapshot
                     ? model.launchOptions.width >= 1000 : inspectorVisible
                 interaction.messageView = model.launchOptions.isSnapshot ? .all : TranscriptView(rawValue: messageView) ?? .all
-                model.acquire(store)
             }
-            .onDisappear { model.release(store) }
+            .task(id: ObjectIdentifier(store)) { connection.hold(store, in: model) }
+            .onDisappear { connection.drop(in: model) }
             .onChange(of: interaction.isInspectorPresented) { _, value in
                 if !model.launchOptions.isSnapshot { inspectorVisible = value }
             }
@@ -92,7 +96,7 @@ struct ChannelDetailView: View {
             }
             // The transcript's scroll view takes over the composer once the channel loads, and the
             // replacement may not be in the window yet, so the request repeats until focus lands.
-            .task(id: focusesComposer && store.state != nil) {
+            .task(id: ComposerFocus(channel: ObjectIdentifier(store), isRequested: focusesComposer && store.state != nil)) {
                 guard focusesComposer, store.state != nil else { return }
                 for _ in 0..<20 {
                     interaction.focusComposer()
@@ -102,8 +106,9 @@ struct ChannelDetailView: View {
                 }
                 onComposerFocused()
             }
-            .onChange(of: store.phase) { _, phase in
-                if phase == .deleted {
+            // Only a channel deleted while it's open sets Overview aside, not a switch to one.
+            .onChange(of: ChannelDeletion(channel: ObjectIdentifier(store), isDeleted: store.phase == .deleted)) { old, new in
+                if new.isDeleted, old.channel == new.channel {
                     interaction.isInspectorPresented = false
                     isOverviewSheetPresented = false
                 }
@@ -140,7 +145,9 @@ struct ChannelDetailView: View {
             }
             .safeAreaBar(edge: .bottom, spacing: 0) { ComposerArea(store: store) }
         } else {
+            // The transcript's scroll position, paging and read state belong to one channel.
             ConversationTranscript(store: store)
+                .id(ObjectIdentifier(store))
                 .safeAreaBar(edge: .top, spacing: 0) {
                     if case .stale(let error, _) = store.phase {
                         staleBanner(error)
@@ -178,6 +185,7 @@ struct ChannelDetailView: View {
             .padding(.horizontal, 16)
             .padding(.top, 16)
             OverviewInspector(store: store)
+                .id(ObjectIdentifier(store))
         }
         .onExitCommand { isOverviewSheetPresented = false }
     }
@@ -313,4 +321,31 @@ struct ConversationRail: ViewModifier {
 private final class ColumnPresentation {
     var isPresented = false
     var revision = 0
+}
+
+/// The one channel a detail keeps connected, which moves with the selection.
+@MainActor private final class ChannelConnection {
+    private var store: ChannelStore?
+
+    func hold(_ store: ChannelStore, in model: AppModel) {
+        guard store !== self.store else { return }
+        model.acquire(store)
+        if let held = self.store { model.release(held) }
+        self.store = store
+    }
+
+    func drop(in model: AppModel) {
+        if let store { model.release(store) }
+        store = nil
+    }
+}
+
+private struct ComposerFocus: Equatable {
+    let channel: ObjectIdentifier
+    let isRequested: Bool
+}
+
+private struct ChannelDeletion: Equatable {
+    let channel: ObjectIdentifier
+    let isDeleted: Bool
 }

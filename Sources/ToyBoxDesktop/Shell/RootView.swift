@@ -53,7 +53,9 @@ struct RootView: View {
                                   onBack: { self.selectedId = nil },
                                   onSelect: { self.selectedId = $0 },
                                   onComposerFocused: { composerFocusChannelID = nil })
-                    .id("\(model.serverURL):\(selectedId)")
+                    // A switch keeps the detail and its toolbar, which hand per-channel state to
+                    // the new store. Only another server starts over.
+                    .id(model.serverURL)
             } else {
                 ContentUnavailableView("Choose a Channel", systemImage: "bubble.left.and.bubble.right",
                                        description: Text("Your teams and their shared work appear here."))
