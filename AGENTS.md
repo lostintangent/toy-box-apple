@@ -33,8 +33,7 @@ view.
   catalog lead profile without modifying the reference. The live server
   on port 3100 hosts real channels: read it freely, but never post or mutate there without the
   lead's approval of a specific scratch channel.
-  Leave its current process running. Its cached route configuration can return 404 for the
-  Providers-owned `/api/v1/models` until a user-approved restart. Do not add a compatibility shim.
+  Leave its current process running.
 - `bun script/history-demo.mjs` imports that reference factory read-only and serves `history-demo`
   on 3211 with 480 messages, canonical 100-message older pages and isolated read receipts. Use it
   for paging and key-window read checks without disturbing the shared 3210 screenshot baseline.
