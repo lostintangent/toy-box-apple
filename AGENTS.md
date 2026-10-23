@@ -41,6 +41,9 @@ view.
 - Integration tests are opt-in: `TOY_BOX_DEMO_URL=http://127.0.0.1:3210 ./script/test`, and
   `TOY_BOX_HISTORY_DEMO_URL=http://127.0.0.1:3211 ./script/test --filter HistoryFixtureTests`
   against a freshly started history demo.
+- `TOY_BOX_REAL_DICTATION_TESTS=1 ./script/test --filter ComposerTests/theRealTranscriberHearsARecordingThroughTheAudioSourceProtocol`
+  opts into the real transcriber check. It needs the on-device English dictation model and uses
+  synthesized audio, not microphone access. The normal suite never queries speech-model assets.
 - `SCRATCH_PATH=/tmp/tbm-<you> ./script/benchmark [--summaries] [launch|switch|messages|paging|key|idle ...]` is the
   performance regression benchmark. It builds a release bundle as `dev.toybox.desktop.benchmark`,
   runs each scenario against a fresh `script/perf-demo.mjs` fixture on 3292 (`TOY_BOX_PERF_PORT`),
@@ -115,6 +118,8 @@ view.
 
 ## Releases
 
+- Workflow actions stay pinned to full commit hashes with readable version comments. Dependabot
+  checks them weekly. The Release checks job validates workflows and credential-free release tools.
 - Push a `vX.Y.Z` tag, only with the user's approval. Actions tests the tag, then signs,
   notarizes, staples and publishes the zip, its checksum and a signed `appcast.xml`. Running the
   workflow by hand on `main` is a dry run that keeps all three as artifacts.

@@ -61,14 +61,15 @@ jobs:
           ls -l ~/Library/Logs/DiagnosticReports || true
       - name: Upload crash reports
         if: failure()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: crash-reports-${{ github.run_id }}-${{ github.run_attempt }}
           path: ~/Library/Logs/DiagnosticReports/*.ips
           if-no-files-found: ignore
           retention-days: 7
 
-  lint:
+  release-checks:
+    name: Release checks
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -83,7 +84,7 @@ jobs:
         run: python3 script/test-sparkle.py
 
   release:
-    needs: [test, lint]
+    needs: [test, release-checks]
     if: (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
     runs-on: xcode-27
     timeout-minutes: 45
@@ -204,7 +205,7 @@ jobs:
           if [[ -d "$RUNNER_TEMP/toy-box-signing" ]]; then rmdir "$RUNNER_TEMP/toy-box-signing" || status=$?; fi
           exit "$status"
       - name: Upload the signed archive
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
@@ -222,7 +223,7 @@ jobs:
       contents: write
     steps:
       - name: Download the signed archive
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: release-${{ github.run_id }}-${{ github.run_attempt }}
           path: dist
