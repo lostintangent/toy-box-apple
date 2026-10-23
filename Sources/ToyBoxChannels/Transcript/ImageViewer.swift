@@ -4,6 +4,7 @@ import ChannelKit
 import ImageIO
 import SwiftUI
 import UniformTypeIdentifiers
+import VisionKit
 
 /// The window's in-place image viewer. A transcript tile opens it on its message's images, the
 /// canvas presents it over the detail column, and Shell routes the viewing toolbar and the zoom
@@ -58,6 +59,9 @@ final class ImageViewer {
     struct Item {
         var file: URL?
         var image: NSImage?
+        var bitmap: CGImage?
+        /// The image's Live Text, analyzed once it's presented and kept for the session.
+        var analysis: ImageAnalysis?
         /// The oriented pixel size, known from the image header before the full decode lands.
         var pixelSize: CGSize?
         var failure: String?
@@ -106,6 +110,24 @@ final class ImageViewer {
     @ObservationIgnored weak var anchorView: NSView?
     @ObservationIgnored private var canvases = 0
     @ObservationIgnored private var loads: [Int: Task<Void, Never>] = [:]
+    /// The Live Text view over the presented image, which holds its text selection.
+    @ObservationIgnored weak var liveTextView: ImageAnalysisOverlayView?
+    @ObservationIgnored private var analysisTask: Task<Void, Never>?
+    @ObservationIgnored private lazy var analyzer = ImageAnalyzer()
+    /// The window's recent analyses by attachment digest, most recent last.
+    @ObservationIgnored private var analyses: [(key: String, analysis: ImageAnalysis)] = []
+    /// Live Text waits for the opening motion, which it couldn't follow.
+    private(set) var hasSettledOpening = false
+    /// Asks the stage to take keyboard focus back after Live Text handled a click.
+    private(set) var keyFocusRequest = 0
+    /// Whether the press under way began on Live Text. It's Live Text's to select with, so the
+    /// stage's zoom, pan and export drag, which see every press, let it be.
+    var isPressingLiveText = false
+    /// Lets a paged-to image settle before its analysis starts, so paging through images analyzes
+    /// none of the ones passed on the way.
+    static let analysisDelay: Duration = .milliseconds(300)
+    static let rememberedAnalyses = 8
+    static var readsText: Bool { ImageAnalyzer.isSupported }
 
     init() {}
 
@@ -145,11 +167,13 @@ final class ImageViewer {
               thumbnails: ImageViewerThumbnailFrames? = nil) {
         guard images.indices.contains(index) else { return }
         cancelLoads()
+        cancelAnalysis()
         let names = images.indices.map { transcriptImageName(images[$0], index: $0, count: images.count) }
         session = Session(source: source, images: images, names: names, api: api, thumbnails: thumbnails,
                           openedFrom: thumbnails?.frames[index])
         self.index = index
         isClosing = false
+        hasSettledOpening = false
         closingFrame = nil
         zoom = nil
         pan = .zero
@@ -169,18 +193,29 @@ final class ImageViewer {
     /// Pages to another image of the message, resetting zoom. There is no wrap at the ends.
     func show(_ newIndex: Int) {
         guard let session, !isClosing, newIndex != index, session.images.indices.contains(newIndex) else { return }
+        liveTextView?.resetSelection()
         withAnimation(reducesMotion ? .easeInOut(duration: 0.2) : .smooth(duration: 0.3)) {
             index = newIndex
             zoom = nil
             pan = .zero
         }
         loadAround(newIndex)
+        analyzeCurrent()
+    }
+
+    /// The stage reports the end of the opening motion, after which the image is analyzed.
+    func openingDidSettle() {
+        guard session != nil, !isClosing, !hasSettledOpening else { return }
+        hasSettledOpening = true
+        analyzeCurrent(after: .zero)
     }
 
     /// Closes the viewer. With a mounted canvas the image zooms back into its thumbnail first.
     /// Switching channels, a deleted message or a lost channel closes without animation.
     func close(animated: Bool = true) {
         guard let session else { return }
+        cancelAnalysis()
+        liveTextView?.resetSelection()
         if animated && canvases > 0 {
             closingFrame = layout.flatMap(closingTileFrame(in:))
             isClosing = true
@@ -194,6 +229,7 @@ final class ImageViewer {
         guard let session, session.id == id else { return }
         focusReturn = FocusReturn(messageID: session.source.messageID, index: index)
         cancelLoads()
+        cancelAnalysis()
         self.session = nil
         items = [:]
         zoom = nil
@@ -396,6 +432,85 @@ final class ImageViewer {
         pasteboard.writeObjects([image])
     }
 
+    /// What Copy puts on the pasteboard: the selected Live Text, or else the image.
+    var copiedItems: [NSItemProvider] {
+        if let text = selectedLiveText { return [NSItemProvider(object: text as NSString)] }
+        guard let image = items[index]?.image else { return [] }
+        return [NSItemProvider(object: image)]
+    }
+
+    // MARK: Live Text
+
+    /// The presented image's analysis, once it has text or a code to interact with.
+    var liveText: ImageAnalysis? {
+        guard session != nil, !isClosing, hasSettledOpening, let analysis = items[index]?.analysis,
+              analysis.hasResults(for: [.text, .machineReadableCode]) else { return nil }
+        return analysis
+    }
+
+    var selectedLiveText: String? {
+        guard let view = liveTextView, view.hasActiveTextSelection, !view.selectedText.isEmpty else { return nil }
+        return view.selectedText
+    }
+
+    /// Clears a Live Text selection, and reports whether there was one.
+    @discardableResult
+    func clearLiveTextSelection() -> Bool {
+        guard let view = liveTextView, view.hasActiveTextSelection else { return false }
+        view.resetSelection()
+        return true
+    }
+
+    /// Escape lets go of a text selection before it closes the viewer.
+    func escape() {
+        if !clearLiveTextSelection() { close() }
+    }
+
+    func reclaimKeyFocus() { keyFocusRequest += 1 }
+
+    /// Analyzes the presented image for Live Text once it has decoded and settled. Paging or
+    /// closing cancels it, and the window remembers its last few results.
+    func analyzeCurrent(after delay: Duration = analysisDelay) {
+        cancelAnalysis()
+        guard let session, !isClosing, hasSettledOpening, Self.readsText,
+              let item = items[index], item.analysis == nil, let bitmap = item.bitmap else { return }
+        let position = index
+        let key = TranscriptAttachmentCache.destination(for: session.images[position], api: session.api)?
+            .deletingPathExtension().lastPathComponent
+        if let key, let remembered = analyses.firstIndex(where: { $0.key == key }) {
+            let entry = analyses.remove(at: remembered)
+            analyses.append(entry)
+            items[position]?.analysis = entry.analysis
+            return
+        }
+        let id = session.id
+        let analyzer = analyzer
+        analysisTask = Task { [weak self] in
+            if delay > .zero { try? await Task.sleep(for: delay) }
+            guard !Task.isCancelled else { return }
+            let configuration = ImageAnalyzer.Configuration([.text, .machineReadableCode])
+            let analysis = try? await analyzer.analyze(bitmap, orientation: .up, configuration: configuration)
+            guard let self, !Task.isCancelled, let analysis, self.session?.id == id, self.index == position,
+                  !self.isClosing else { return }
+            self.analysisTask = nil
+            self.items[position]?.analysis = analysis
+            if let key { self.remember(analysis, for: key) }
+        }
+    }
+
+    private func remember(_ analysis: ImageAnalysis, for key: String) {
+        analyses.removeAll { $0.key == key }
+        analyses.append((key, analysis))
+        if analyses.count > Self.rememberedAnalyses { analyses.removeFirst(analyses.count - Self.rememberedAnalyses) }
+    }
+
+    var rememberedAnalysisCount: Int { analyses.count }
+
+    private func cancelAnalysis() {
+        analysisTask?.cancel()
+        analysisTask = nil
+    }
+
     func openInPreview() {
         guard let url = shareURL else { return }
         let workspace = NSWorkspace.shared
@@ -445,10 +560,12 @@ final class ImageViewer {
                 var item = self.items[position] ?? Item()
                 item.file = file
                 item.image = NSImage(cgImage: image, size: .zero)
+                item.bitmap = image
                 item.pixelSize = item.pixelSize ?? CGSize(width: image.width, height: image.height)
                 item.export = Self.export(file, named: name, replacing: reload)
                 item.failure = nil
                 self.items[position] = item
+                if position == self.index { self.analyzeCurrent() }
             case .failure(let error):
                 guard !(error is CancellationError) else { return }
                 self.items[position, default: Item()].failure = error.localizedDescription
@@ -578,7 +695,11 @@ private struct ImageViewerStage: View {
         .clipped()
         .onAppear {
             viewer.reducesMotion = reduceMotion
-            withAnimation(revealAnimation) { isRevealed = true }
+            withAnimation(revealAnimation, completionCriteria: .logicallyComplete) {
+                isRevealed = true
+            } completion: {
+                viewer.openingDidSettle()
+            }
             withAnimation(.easeOut(duration: 0.2)) { showsBackdrop = true }
             isFocused = true
             isImageFocused = true
@@ -594,6 +715,8 @@ private struct ImageViewerStage: View {
             ForEach(session.images.indices, id: \.self) { position in
                 page(position, layout: layout)
             }
+            ImageViewerLiveText(viewer: viewer, analysis: viewer.liveText,
+                                imageFrame: viewer.frame(at: viewer.index, in: layout), showsButton: !viewer.isZoomed)
             status(layout: layout)
             if session.images.count > 1 {
                 ImageViewerCapsule(viewer: viewer, session: session, hairline: hairline)
@@ -614,24 +737,25 @@ private struct ImageViewerStage: View {
             .onEnded { _ in magnification = nil })
         .simultaneousGesture(DragGesture(minimumDistance: 2)
             .onChanged { value in
+                guard !viewer.isPressingLiveText else { return }
                 if panStart == nil { panStart = viewer.pan }
                 guard let panStart else { return }
                 viewer.setPan(CGSize(width: panStart.width + value.translation.width,
                                      height: panStart.height + value.translation.height))
             }
             .onEnded { _ in panStart = nil }, isEnabled: viewer.isZoomed)
-        .onTapGesture(count: 2, coordinateSpace: .local) { viewer.toggleZoom(at: $0) }
+        .onTapGesture(count: 2, coordinateSpace: .local) { point in
+            if !viewer.isPressingLiveText { viewer.toggleZoom(at: point) }
+        }
         .focusable()
         .focusEffectDisabled()
         .focused($isFocused)
         .onKeyPress(.leftArrow) { viewer.showPrevious(); return .handled }
         .onKeyPress(.rightArrow) { viewer.showNext(); return .handled }
         .onKeyPress(.space) { viewer.close(); return .handled }
-        .onExitCommand { viewer.close() }
-        .onCopyCommand {
-            guard let image = viewer.items[viewer.index]?.image else { return [] }
-            return [NSItemProvider(object: image)]
-        }
+        .onExitCommand { viewer.escape() }
+        .onCopyCommand { viewer.copiedItems }
+        .onChange(of: viewer.keyFocusRequest) { isFocused = true }
         .accessibilityElement(children: .contain)
         .accessibilityAddTraits(.isModal)
     }
@@ -651,8 +775,8 @@ private struct ImageViewerStage: View {
             .clipShape(shape)
             .overlay(shape.strokeBorder(hairline, lineWidth: 1))
             .overlay {
-                if isCurrent && !viewer.isZoomed, let url = viewer.items[position]?.export,
-                   let image = viewer.items[position]?.image {
+                if isCurrent && !viewer.isZoomed && !viewer.isPressingLiveText,
+                   let url = viewer.items[position]?.export, let image = viewer.items[position]?.image {
                     Color.clear
                         .contentShape(Rectangle())
                         .onDrag { NSItemProvider(contentsOf: url) ?? NSItemProvider() } preview: {
@@ -675,7 +799,7 @@ private struct ImageViewerStage: View {
             .accessibilityAction(named: "Copy") { viewer.copyImage() }
             .accessibilityAction(named: "Share") { viewer.share() }
             .accessibilityAction(named: "Close") { viewer.close() }
-            .accessibilityAction(.escape) { viewer.close() }
+            .accessibilityAction(.escape) { viewer.escape() }
             .accessibilityFocused($isImageFocused)
             // Hiding comes last. Applied before the element, the hidden page gains a new outer
             // element with the current image's label.

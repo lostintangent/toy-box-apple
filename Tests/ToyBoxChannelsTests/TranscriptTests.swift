@@ -7,6 +7,7 @@ import SwiftUI
 import Synchronization
 import Testing
 import UniformTypeIdentifiers
+import VisionKit
 @testable import ToyBoxChannels
 
 @Suite("Transcript rendering and visibility")
@@ -624,6 +625,10 @@ struct TranscriptTests {
             bitmapDataPlanes: nil, pixelsWide: 120, pixelsHigh: 80, bitsPerSample: 8,
             samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
             colorSpaceName: .deviceRGB, bytesPerRow: 480, bitsPerPixel: 32))
+        // Every test process shares the attachment cache folder, so a payload of this run's own keeps
+        // another run's cleanup from deleting the file while it decodes here.
+        bitmap.setColor(NSColor(red: .random(in: 0...1), green: .random(in: 0...1), blue: .random(in: 0...1), alpha: 1),
+                        atX: 0, y: 0)
         let data = try #require(bitmap.representation(using: .png, properties: [:]))
         let attachments = ["A long image filename.png", "Another image.png"].map {
             ChannelAttachment(name: $0, mimeType: "image/png", base64: data.base64EncodedString())
@@ -1226,6 +1231,283 @@ struct ImageViewerTests {
                                              bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue))
         context.setFillColor(CGColor(srgbRed: 0.2, green: 0.4, blue: 0.6, alpha: 1))
         context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        let image = try #require(context.makeImage())
+        let data = NSMutableData()
+        let destination = try #require(CGImageDestinationCreateWithData(data, UTType.png.identifier as CFString, 1, nil))
+        CGImageDestinationAddImage(destination, image, nil)
+        #expect(CGImageDestinationFinalize(destination))
+        return (data as Data).base64EncodedString()
+    }
+}
+
+@MainActor
+@Suite("Image viewer Live Text", .serialized, .enabled(if: ImageAnalyzer.isSupported))
+struct ImageViewerLiveTextTests {
+    @Test func onlyTheSettledCurrentImageIsAnalyzedAndTheWindowRemembersIt() async throws {
+        let viewer = try Self.openViewer([Self.textPNG("Release notes ship Friday"),
+                                          Self.textPNG("Quarterly roadmap review"), Self.textPNG(nil)])
+        defer { viewer.close(animated: false) }
+        // The current image and its neighbor load.
+        try await Self.until { viewer.items[0]?.bitmap != nil && viewer.items[1]?.bitmap != nil }
+        try await Task.sleep(for: .milliseconds(500))
+        // Nothing is analyzed during the opening motion.
+        #expect(viewer.items[0]?.analysis == nil && viewer.liveText == nil)
+        viewer.openingDidSettle()
+        try await Self.until { viewer.liveText != nil }
+        #expect(viewer.liveText?.transcript.contains("Release") == true)
+        // An image paged past before it settles is never analyzed.
+        viewer.show(1)
+        viewer.show(0)
+        try await Task.sleep(for: ImageViewer.analysisDelay * 3)
+        #expect(viewer.items[1]?.analysis == nil)
+        viewer.show(1)
+        try await Self.until { viewer.liveText != nil }
+        #expect(viewer.liveText?.transcript.contains("roadmap") == true)
+        // An image without text has an analysis but no Live Text.
+        viewer.show(2)
+        try await Self.until { viewer.items[2]?.analysis != nil }
+        #expect(viewer.liveText == nil)
+        #expect(viewer.rememberedAnalysisCount == 3)
+        // Reopening uses the window's analyses without waiting.
+        let images = try #require(viewer.session?.images)
+        viewer.close(animated: false)
+        viewer.open(images: images, at: 1, source: Self.source, api: try Self.api())
+        try await Self.until { viewer.items[1]?.bitmap != nil }
+        viewer.openingDidSettle()
+        #expect(viewer.liveText?.transcript.contains("roadmap") == true)
+        #expect(viewer.items[0]?.analysis == nil)
+    }
+
+    @Test func pressesOnTextReachLiveTextAndEverythingElseReachesTheViewer() async throws {
+        let viewer = try Self.openViewer([Self.textPNG("Release notes ship Friday")])
+        let window = Self.host(viewer)
+        defer {
+            viewer.close(animated: false)
+            window.close()
+        }
+        try await Self.until { viewer.liveText != nil }
+        try await Task.sleep(for: .milliseconds(600))
+        let content = try #require(window.contentView)
+        let view = try #require(Self.find(ImageViewerLiveTextView.self, in: content))
+        func point(_ x: CGFloat, _ y: CGFloat) throws -> CGPoint {
+            let image = viewer.frame(at: 0, in: try #require(viewer.layout))
+            let point = CGPoint(x: image.minX + image.width * x, y: image.minY + image.height * y)
+            return view.convert(point, to: nil)
+        }
+        func isOverLiveText(_ point: CGPoint) -> Bool { view.isOverLiveText(view.convert(point, from: nil)) }
+        // The text runs along the top of the image, so this also proves the overlay isn't flipped.
+        let word = try point(0.15, 0.26)
+        let blank = try point(0.15, 0.74)
+        #expect(isOverLiveText(word))
+        #expect(!isOverLiveText(blank))
+        #expect(!view.overlay.isSupplementaryInterfaceHidden)
+
+        // Double-clicking a word selects it rather than zooming.
+        Self.click(window, at: word, count: 2)
+        try await Self.until { viewer.selectedLiveText != nil }
+        #expect(viewer.selectedLiveText == "Release")
+        #expect(!viewer.isZoomed)
+        // The viewer takes the keyboard back and the selection stays, so Copy copies the text.
+        try await Self.until { !((window.firstResponder as? NSView)?.isDescendant(of: view.overlay) ?? false) }
+        #expect(!viewer.isPressingLiveText)
+        #expect(viewer.selectedLiveText == "Release")
+        #expect(viewer.copiedItems.first?.canLoadObject(ofClass: NSString.self) == true)
+        // Escape lets go of the selection first, then closes.
+        viewer.escape()
+        #expect(viewer.selectedLiveText == nil && viewer.session != nil && !viewer.isClosing)
+        #expect(viewer.copiedItems.first?.canLoadObject(ofClass: NSImage.self) == true)
+
+        // Dragging across words selects them.
+        Self.drag(window, from: word, to: try point(0.36, 0.26), clicks: 2)
+        try await Self.until { viewer.selectedLiveText?.contains("notes") == true }
+        #expect(viewer.selectedLiveText?.contains("Release") == true)
+        #expect(!viewer.isZoomed && viewer.session != nil)
+        viewer.escape()
+
+        // Double-clicking elsewhere zooms, which hides the button but keeps the text selectable.
+        Self.click(window, at: blank, count: 2)
+        try await Self.until { viewer.isZoomed }
+        try await Task.sleep(for: ImageViewerLiveTextView.settleDelay + .milliseconds(300))
+        #expect(view.overlay.isSupplementaryInterfaceHidden)
+        let zoomedWord = try point(0.15, 0.26)
+        #expect(isOverLiveText(zoomedWord))
+        Self.click(window, at: zoomedWord, count: 2)
+        try await Self.until { viewer.selectedLiveText != nil }
+        #expect(viewer.isZoomed)
+        // A click away from the text lets go of the selection.
+        Self.click(window, at: try point(0.15, 0.74), count: 1)
+        try await Self.until { viewer.selectedLiveText == nil }
+
+        // While zoomed, a drag on text selects instead of panning.
+        let pan = viewer.pan
+        let start = try point(0.1, 0.26)
+        #expect(isOverLiveText(start))
+        Self.drag(window, from: start, to: CGPoint(x: start.x + 120, y: start.y), clicks: 2)
+        try await Self.until { viewer.selectedLiveText != nil }
+        #expect(viewer.pan == pan && viewer.isZoomed)
+        viewer.escape()
+        #expect(viewer.selectedLiveText == nil && !viewer.isClosing)
+        viewer.escape()
+        #expect(viewer.isClosing)
+    }
+
+    @Test func onlyPointerEventsOnWhatVisionKitDrawsAreRoutedToIt() {
+        typealias Target = ImageViewerLiveTextView.Target
+        let text = Target(text: true)
+        let selected = Target(text: true, hasSelection: true)
+        let control = Target(control: true)
+        for type: NSEvent.EventType in [.leftMouseDown, .mouseMoved, .cursorUpdate] {
+            #expect(ImageViewerLiveTextView.routes(type, to: text))
+            #expect(ImageViewerLiveTextView.routes(type, to: control))
+            #expect(!ImageViewerLiveTextView.routes(type, to: Target(hasSelection: true)))
+        }
+        // The text menu only opens on a selection. Everywhere else a right-click is unchanged.
+        #expect(!ImageViewerLiveTextView.routes(.rightMouseDown, to: text))
+        #expect(ImageViewerLiveTextView.routes(.rightMouseDown, to: selected))
+        #expect(!ImageViewerLiveTextView.routes(.rightMouseDown, to: Target(control: true, hasSelection: true)))
+        // Scrolling, pinching and swiping always reach the viewer.
+        for type: NSEvent.EventType in [.scrollWheel, .magnify, .smartMagnify, .swipe, .gesture, .keyDown] {
+            #expect(!ImageViewerLiveTextView.routes(type, to: selected))
+        }
+        #expect(!ImageViewerLiveTextView.routes(nil, to: selected))
+    }
+
+    @Test func theTextMenuDropsVisionKitsImageItems() {
+        let menu = NSMenu()
+        func item(_ title: String, _ tag: Int) {
+            let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+            item.tag = tag
+            menu.addItem(item)
+        }
+        item("Copy Image", ImageAnalysisOverlayView.MenuTag.copyImage)
+        menu.addItem(.separator())
+        item("Copy", 0)
+        item("Look Up", 0)
+        item("Translate", 0)
+        menu.addItem(.separator())
+        item("Share Image", ImageAnalysisOverlayView.MenuTag.shareImage)
+        item("Look Up Item", ImageAnalysisOverlayView.MenuTag.lookupItem)
+        ImageViewerLiveTextView.removeImageItems(from: menu)
+        #expect(menu.items.map(\.title) == ["Copy", "Look Up", "Translate"])
+    }
+
+    // MARK: Helpers
+
+    private static let source = ImageViewer.Source(messageID: "m1", sender: "Lead", timestamp: "2026-10-22T17:23:00Z")
+
+    private static func api() throws -> ChannelAPI { try ChannelAPI(serverURL: "http://localhost:3210") }
+
+    private static func openViewer(_ images: [String]) throws -> ImageViewer {
+        let viewer = ImageViewer()
+        viewer.reducesMotion = true
+        viewer.open(images: images.map { ChannelAttachment(mimeType: "image/png", base64: $0) }, at: 0,
+                    source: source, api: try api())
+        viewer.layout = ImageViewer.Layout(size: CGSize(width: 1000, height: 800), topInset: 52)
+        return viewer
+    }
+
+    private final class KeyWindow: NSWindow {
+        override var canBecomeKey: Bool { true }
+    }
+
+    /// A canvas in a real window, off screen, so VisionKit and the event path behave as in the app.
+    private static func host(_ viewer: ImageViewer) -> NSWindow {
+        let window = KeyWindow(contentRect: NSRect(x: 0, y: 0, width: 1000, height: 800), styleMask: [.borderless],
+                               backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = NSHostingView(rootView: ImageViewerCanvas().environment(viewer)
+            .frame(width: 1000, height: 800))
+        window.setFrameOrigin(NSPoint(x: -6000, y: -6000))
+        window.orderFrontRegardless()
+        window.makeKey()
+        return window
+    }
+
+    private static func click(_ window: NSWindow, at point: CGPoint, count: Int) {
+        send((1...count).flatMap { clicks in
+            [(NSEvent.EventType.leftMouseDown, point, clicks), (.leftMouseUp, point, clicks)]
+        }, to: window)
+    }
+
+    /// The test app can't become active, so AppKit holds back a lone press as the click that would bring
+    /// the window forward, and only lets it through once another press follows. A double-click drag gets
+    /// both through, and is also how Mac text is dragged a word at a time.
+    private static func drag(_ window: NSWindow, from start: CGPoint, to end: CGPoint, clicks: Int = 1) {
+        let moves = (1...8).map { step in
+            let progress = CGFloat(step) / 8
+            let point = CGPoint(x: start.x + (end.x - start.x) * progress, y: start.y + (end.y - start.y) * progress)
+            return (NSEvent.EventType.leftMouseDragged, point, clicks)
+        }
+        let presses = (1..<clicks).flatMap { count in
+            [(NSEvent.EventType.leftMouseDown, start, count), (.leftMouseUp, start, count)]
+        }
+        send(presses + [(.leftMouseDown, start, clicks)] + moves + [(.leftMouseUp, end, clicks)], to: window)
+    }
+
+    /// Posts mouse events stamped a frame apart to the app's queue and dispatches them, so hit-testing sees
+    /// the current event and local monitors and gesture recognizers run, as they do for a real press.
+    private static func send(_ events: [(type: NSEvent.EventType, point: CGPoint, clicks: Int)], to window: NSWindow) {
+        let start = ProcessInfo.processInfo.systemUptime
+        let events = events.enumerated().compactMap { index, event in
+            NSEvent.mouseEvent(with: event.type, location: event.point, modifierFlags: [],
+                               timestamp: start + Double(index) / 60, windowNumber: window.windowNumber,
+                               context: nil, eventNumber: 0, clickCount: event.clicks,
+                               pressure: event.type == .leftMouseUp ? 0 : 1)
+        }
+        // Posting an event stops whichever run of the main run loop is current, to wake anything waiting
+        // for events, and AppKit posts more while it handles a click. Under Swift's async main the current
+        // run is the test runner's own, and stopping it ends the process, so all of this happens in a nested run.
+        CFRunLoopPerformBlock(CFRunLoopGetMain(), CFRunLoopMode.defaultMode.rawValue) {
+            let app = NSApplication.shared
+            for event in events { app.postEvent(event, atStart: false) }
+            while let event = app.nextEvent(matching: .any, until: Date(timeIntervalSinceNow: 0.1), inMode: .default,
+                                            dequeue: true) {
+                app.sendEvent(event)
+            }
+        }
+        CFRunLoopRunInMode(.defaultMode, 0, true)
+    }
+
+    private static func find<V: NSView>(_ type: V.Type, in view: NSView) -> V? {
+        if let match = view as? V { return match }
+        for subview in view.subviews {
+            if let match = find(type, in: subview) { return match }
+        }
+        return nil
+    }
+
+    private struct Timeout: Error {}
+
+    /// Loads and analyses share the machine with every other suite in a full run, so waits are generous.
+    private static func until(_ timeout: Duration = .seconds(30), sourceLocation: SourceLocation = #_sourceLocation,
+                              _ condition: () -> Bool) async throws {
+        let deadline = ContinuousClock.now + timeout
+        while !condition() {
+            guard ContinuousClock.now < deadline else {
+                Issue.record("Timed out", sourceLocation: sourceLocation)
+                throw Timeout()
+            }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+    }
+
+    /// A 1200 x 600 white image with one line of black text along its top, or blank.
+    private static func textPNG(_ text: String?) throws -> String {
+        let context = try #require(CGContext(data: nil, width: 1200, height: 600, bitsPerComponent: 8,
+                                             bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                             bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue))
+        context.setFillColor(CGColor(srgbRed: 1, green: 1, blue: 1, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: 1200, height: 600))
+        if let text {
+            context.setFillColor(CGColor(srgbRed: 0, green: 0, blue: 0, alpha: 1))
+            let font = CTFontCreateWithName("Helvetica" as CFString, 64, nil)
+            let string = NSAttributedString(string: text, attributes: [
+                .font: font,
+                NSAttributedString.Key(kCTForegroundColorFromContextAttributeName as String): true,
+            ])
+            context.textPosition = CGPoint(x: 60, y: 420)
+            CTLineDraw(CTLineCreateWithAttributedString(string), context)
+        }
         let image = try #require(context.makeImage())
         let data = NSMutableData()
         let destination = try #require(CGImageDestinationCreateWithData(data, UTType.png.identifier as CFString, 1, nil))

@@ -443,6 +443,12 @@ struct ConversationTranscript: View {
         }
         do { try await Task.sleep(for: .milliseconds(600)) }
         catch { return }
+        // Live Text joins once the image has settled, so the capture shows what a reader sees.
+        if loaded && ImageViewer.readsText {
+            _ = await waitForSnapshotLayout { viewer.items[viewer.index]?.analysis != nil }
+            do { try await Task.sleep(for: ImageViewerLiveTextView.settleDelay + .milliseconds(400)) }
+            catch { return }
+        }
         if !loaded { snapshot.failState(name, message: "The viewer's image did not load.") }
         else if let failure = viewer.items[viewer.index]?.failure { snapshot.failState(name, message: failure) }
         else { snapshot.markStateReady(name) }
