@@ -56,6 +56,7 @@ struct RootView: View {
                     // A switch keeps the detail and its toolbar, which hand per-channel state to
                     // the new store. Only another server starts over.
                     .id(model.serverURL)
+                    .channelActivity(selectedId)
             } else {
                 ContentUnavailableView("Choose a Channel", systemImage: "bubble.left.and.bubble.right",
                                        description: Text("Your teams and their shared work appear here."))
