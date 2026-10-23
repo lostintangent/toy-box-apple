@@ -16,6 +16,9 @@ struct ChannelDetailView: View {
     /// Selects a channel in this window, as the sidebar does.
     var onSelect: (String) -> Void
     var onComposerFocused: () -> Void = {}
+    /// The AppKit split (`TOY_BOX_SPLIT=appkit`) hosts Overview in its own column and owns the
+    /// window's toolbar, so the detail leaves both to it.
+    var hostsChrome = true
     @Environment(AppModel.self) private var model
     @Environment(ChannelInteraction.self) private var interaction
     @Environment(ManagementPresenter.self) private var management
@@ -59,12 +62,7 @@ struct ChannelDetailView: View {
             .settledLayout()
             .modifier(DetailMinimumWidth())
             .background(Color(nsColor: .textBackgroundColor))
-            .inspector(isPresented: wideInspector) {
-                OverviewInspector(store: store)
-                    .id(ObjectIdentifier(store))
-                    .settledLayout()
-                    .inspectorColumnWidth(min: 280, ideal: 312, max: 400)
-            }
+            .modifier(OverviewColumn(isEnabled: hostsChrome, isPresented: wideInspector, store: store))
             // The toolbar draws its own backdrop over any container that keeps it in its top safe
             // area, so the canvas reaches under the glass toolbar only when its mount ignores it.
             // The open viewer is modal, which takes the conversation and Overview out of the
@@ -76,10 +74,8 @@ struct ChannelDetailView: View {
             }
             // The viewer shows the sender and position as the system title and subtitle, as
             // Photos does. Otherwise the title menu stands in for the title.
-            .navigationTitle(viewing?.sender ?? title)
-            .navigationSubtitle(viewing?.subtitle ?? "")
-            .toolbar(removing: viewing == nil ? .title : nil)
-            .toolbar { toolbar }
+            .modifier(DetailToolbar(isEnabled: hostsChrome, title: viewing?.sender ?? title,
+                                    subtitle: viewing?.subtitle ?? "", removesTitle: viewing == nil) { toolbar })
             .task {
                 interaction.isInspectorPresented = model.launchOptions.isSnapshot
                     ? model.launchOptions.width >= 1000 : inspectorVisible
@@ -190,25 +186,13 @@ struct ChannelDetailView: View {
         .onExitCommand { isOverviewSheetPresented = false }
     }
 
-    private var title: String { store.details?.name ?? catalogChannel?.name ?? "Channel" }
+    private var title: String { Self.title(of: store, in: model) }
 
-    /// The title menu keeps every channel one click away with the sidebar collapsed, in sidebar
-    /// order and with the sidebar's attention as system menu-item badges.
-    @ViewBuilder private var titleMenu: some View {
-        Picker("Channel", selection: Binding(get: { store.id }, set: { if $0 != store.id { onSelect($0) } })) {
-            ForEach(model.catalog?.channels ?? []) { channel in
-                Text(model.sidebarChannel(channel).name)
-                    .badge(Self.badge(model.sidebarAttention(channel)))
-                    .tag(channel.id)
-            }
-        }
-        .pickerStyle(.inline)
-        .labelsHidden()
-        Divider()
-        Button("New Channel…") { management.present(.newChannel) }
-        Button("Edit Channel…") { management.present(.editChannel(channelId: store.id)) }
-            .disabled(!store.phase.isLive)
+    static func title(of store: ChannelStore, in model: AppModel) -> String {
+        store.details?.name ?? model.catalog?.channels.first { $0.id == store.id }?.name ?? "Channel"
     }
+
+    private var titleMenu: some View { ChannelTitleMenuItems(store: store, onSelect: onSelect) }
 
     static func badge(_ attention: ChannelAttention?) -> Text? {
         switch attention {
@@ -302,7 +286,72 @@ struct ChannelDetailView: View {
         }
     }
 
-    private var catalogChannel: Channel? { model.catalog?.channels.first { $0.id == store.id } }
+}
+
+/// The title menu keeps every channel one click away with the sidebar collapsed, in sidebar order
+/// and with the sidebar's attention as system menu-item badges.
+struct ChannelTitleMenuItems: View {
+    let store: ChannelStore
+    var onSelect: (String) -> Void
+    @Environment(AppModel.self) private var model
+    @Environment(ManagementPresenter.self) private var management
+
+    var body: some View {
+        Picker("Channel", selection: Binding(get: { store.id }, set: { if $0 != store.id { onSelect($0) } })) {
+            ForEach(model.catalog?.channels ?? []) { channel in
+                Text(model.sidebarChannel(channel).name)
+                    .badge(ChannelDetailView.badge(model.sidebarAttention(channel)))
+                    .tag(channel.id)
+            }
+        }
+        .pickerStyle(.inline)
+        .labelsHidden()
+        Divider()
+        Button("New Channel…") { management.present(.newChannel) }
+        Button("Edit Channel…") { management.present(.editChannel(channelId: store.id)) }
+            .disabled(!store.phase.isLive)
+    }
+}
+
+/// Overview's inspector column, unless the window's split view hosts it.
+private struct OverviewColumn: ViewModifier {
+    let isEnabled: Bool
+    @Binding var isPresented: Bool
+    let store: ChannelStore
+
+    func body(content: Content) -> some View {
+        if isEnabled {
+            content.inspector(isPresented: $isPresented) {
+                OverviewInspector(store: store)
+                    .id(ObjectIdentifier(store))
+                    .settledLayout()
+                    .inspectorColumnWidth(min: 280, ideal: 312, max: 400)
+            }
+        } else {
+            content
+        }
+    }
+}
+
+/// The detail's title and toolbar, unless the window's split view owns the toolbar.
+private struct DetailToolbar<Items: ToolbarContent>: ViewModifier {
+    let isEnabled: Bool
+    let title: String
+    let subtitle: String
+    let removesTitle: Bool
+    @ToolbarContentBuilder var items: () -> Items
+
+    func body(content: Content) -> some View {
+        if isEnabled {
+            content
+                .navigationTitle(title)
+                .navigationSubtitle(subtitle)
+                .toolbar(removing: removesTitle ? .title : nil)
+                .toolbar { items() }
+        } else {
+            content
+        }
+    }
 }
 
 /// The one lane the transcript, the floating activity row and the composer share: the whole

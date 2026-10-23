@@ -8,6 +8,7 @@ struct RootView: View {
     var initialChannelID: String?
     @Environment(AppModel.self) private var model
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.channelTextScale) private var textScale
     @SceneStorage("selectedChannelId") private var restoredSelectedId: String?
     @ViewState private var selectedId: String?
     @SceneStorage("sidebarVisible") private var sidebarVisible = true
@@ -38,30 +39,7 @@ struct RootView: View {
     private var isOverviewVisible: Bool { isNarrow ? isOverviewSheetPresented : interaction.isInspectorPresented }
 
     var body: some View {
-        NavigationSplitView(columnVisibility: $columnVisibility) {
-            ChannelSidebar(selection: $selectedId, searchFocusRequest: searchFocusRequest)
-                .settledLayout()
-                .navigationSplitViewColumnWidth(min: 220, ideal: Self.sidebarIdealWidth, max: 320)
-        } detail: {
-            if let catalog = model.catalog, let selectedId {
-                ChannelDetailView(store: catalog.channel(id: selectedId),
-                                  placement: placement,
-                                  isNarrow: isNarrow,
-                                  windowHeight: windowHeight ?? CGFloat(model.launchOptions.height),
-                                  isOverviewSheetPresented: $isOverviewSheetPresented,
-                                  focusesComposer: composerFocusChannelID == selectedId,
-                                  onBack: { self.selectedId = nil },
-                                  onSelect: { self.selectedId = $0 },
-                                  onComposerFocused: { composerFocusChannelID = nil })
-                    // A switch keeps the detail and its toolbar, which hand per-channel state to
-                    // the new store. Only another server starts over.
-                    .id(model.serverURL)
-            } else {
-                ContentUnavailableView("Choose a Channel", systemImage: "bubble.left.and.bubble.right",
-                                       description: Text("Your teams and their shared work appear here."))
-                    .modifier(DetailMinimumWidth())
-            }
-        }
+        splitView
         .environment(management)
         .environment(artifactOpener)
         .environment(interaction)
@@ -137,6 +115,69 @@ struct RootView: View {
             }
         }
         .onChange(of: model.snapshot?.requestedState) { _, state in prepareSnapshotState(state) }
+    }
+
+    @ViewBuilder private var splitView: some View {
+        if ShellSplit.isAppKit {
+            appKitSplit
+        } else {
+            navigationSplit
+        }
+    }
+
+    private var appKitSplit: some View {
+        let store = selectedId.flatMap { model.catalog?.channel(id: $0) }
+        return AppKitSplitShell(
+            environment: SplitShellEnvironment(model: model, management: management, artifactOpener: artifactOpener,
+                                               interaction: interaction, imageViewer: imageViewer, placement: placement),
+            selectedId: selectedId,
+            isNarrow: isNarrow,
+            windowHeight: windowHeight ?? CGFloat(model.launchOptions.height),
+            isOverviewSheetPresented: isOverviewSheetPresented,
+            focusesComposer: composerFocusChannelID != nil && composerFocusChannelID == selectedId,
+            searchFocusRequest: searchFocusRequest,
+            textScale: textScale,
+            sidebarVisible: columnVisibility != .detailOnly,
+            overviewColumnVisible: !isNarrow && interaction.isInspectorPresented && store != nil
+                && store?.phase != .deleted,
+            actions: SplitShellActions(
+                select: { selectedId = $0 },
+                setOverviewSheet: { isOverviewSheetPresented = $0 },
+                composerFocused: { composerFocusChannelID = nil },
+                toggleOverview: { setOverviewVisible(!isOverviewVisible) },
+                sidebarCollapsed: { columnVisibility = $0 ? .detailOnly : .all },
+                overviewClosed: { interaction.isInspectorPresented = false }
+            )
+        )
+        .ignoresSafeArea()
+        .navigationTitle(store.map { ChannelDetailView.title(of: $0, in: model) } ?? "Channels")
+    }
+
+    private var navigationSplit: some View {
+        NavigationSplitView(columnVisibility: $columnVisibility) {
+            ChannelSidebar(selection: $selectedId, searchFocusRequest: searchFocusRequest)
+                .settledLayout()
+                .navigationSplitViewColumnWidth(min: 220, ideal: Self.sidebarIdealWidth, max: 320)
+        } detail: {
+            if let catalog = model.catalog, let selectedId {
+                ChannelDetailView(store: catalog.channel(id: selectedId),
+                                  placement: placement,
+                                  isNarrow: isNarrow,
+                                  windowHeight: windowHeight ?? CGFloat(model.launchOptions.height),
+                                  isOverviewSheetPresented: $isOverviewSheetPresented,
+                                  focusesComposer: composerFocusChannelID == selectedId,
+                                  onBack: { self.selectedId = nil },
+                                  onSelect: { self.selectedId = $0 },
+                                  onComposerFocused: { composerFocusChannelID = nil })
+                    // A switch keeps the detail and its toolbar, which hand per-channel state to
+                    // the new store. Only another server starts over.
+                    .id(model.serverURL)
+            } else {
+                ContentUnavailableView("Choose a Channel", systemImage: "bubble.left.and.bubble.right",
+                                       description: Text("Your teams and their shared work appear here."))
+                    .modifier(DetailMinimumWidth())
+            }
+        }
     }
 
     private func prepareSnapshotState(_ state: String?) {

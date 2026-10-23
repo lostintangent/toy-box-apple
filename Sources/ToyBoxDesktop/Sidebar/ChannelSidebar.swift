@@ -9,6 +9,9 @@ struct ChannelSidebar: View {
     @Environment(\.openSettings) private var openSettings
     @Binding var selection: String?
     var searchFocusRequest: UUID
+    /// The AppKit split (`TOY_BOX_SPLIT=appkit`) owns the toolbar, so the column shows its own
+    /// search field and leaves New Channel to that toolbar.
+    var searchesInColumn = false
     @ViewState private var query = ""
     @FocusState private var searchFocused: Bool
 
@@ -61,14 +64,15 @@ struct ChannelSidebar: View {
                 openSettings: { openSettings() }
             )
         }
-        .navigationTitle("Channels")
-        .searchable(text: $query, placement: .sidebar, prompt: "Search Channels")
-        .searchFocused($searchFocused)
+        .modifier(SidebarChrome(inColumn: searchesInColumn, query: $query, focused: $searchFocused,
+                                focusRequest: searchFocusRequest))
         .toolbar {
-            ToolbarItem {
-                Button("New Channel", systemImage: "plus") { management.present(.newChannel) }
-                    .help("New Channel (Command-N)")
-                    .disabled(model.api == nil)
+            if !searchesInColumn {
+                ToolbarItem {
+                    Button("New Channel", systemImage: "plus") { management.present(.newChannel) }
+                        .help("New Channel (Command-N)")
+                        .disabled(model.api == nil)
+                }
             }
         }
         .onChange(of: searchFocusRequest) { _, _ in searchFocused = true }
@@ -192,5 +196,68 @@ private struct SidebarPlaceholder: View {
         .padding(.horizontal, 8).padding(.vertical, 8)
         .frame(minHeight: 52)
         .accessibilityHidden(true)
+    }
+}
+
+/// The sidebar's title and search, which `NavigationSplitView` places in the window's toolbar. In
+/// its own column, the sidebar searches in a field above its rows and leaves the title to the window.
+private struct SidebarChrome: ViewModifier {
+    let inColumn: Bool
+    @Binding var query: String
+    var focused: FocusState<Bool>.Binding
+    let focusRequest: UUID
+
+    func body(content: Content) -> some View {
+        if inColumn {
+            content.safeAreaBar(edge: .top, spacing: 0) {
+                SidebarSearchField(text: $query, focusRequest: focusRequest)
+                    .controlSize(.large)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 9)
+            }
+        } else {
+            content
+                .navigationTitle("Channels")
+                .searchable(text: $query, placement: .sidebar, prompt: "Search Channels")
+                .searchFocused(focused)
+        }
+    }
+}
+
+/// AppKit's search field, as SwiftUI's sidebar search draws it.
+private struct SidebarSearchField: NSViewRepresentable {
+    @Binding var text: String
+    let focusRequest: UUID
+
+    func makeNSView(context: Context) -> NSSearchField {
+        let field = NSSearchField()
+        field.placeholderString = "Search Channels"
+        field.sendsSearchStringImmediately = true
+        field.delegate = context.coordinator
+        context.coordinator.focusRequest = focusRequest
+        return field
+    }
+
+    func updateNSView(_ field: NSSearchField, context: Context) {
+        context.coordinator.text = $text
+        if field.stringValue != text { field.stringValue = text }
+        if context.coordinator.focusRequest != focusRequest {
+            context.coordinator.focusRequest = focusRequest
+            field.window?.makeFirstResponder(field)
+        }
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator(text: $text) }
+
+    final class Coordinator: NSObject, NSSearchFieldDelegate {
+        var text: Binding<String>
+        var focusRequest: UUID?
+
+        init(text: Binding<String>) { self.text = text }
+
+        func controlTextDidChange(_ notification: Notification) {
+            guard let field = notification.object as? NSSearchField else { return }
+            text.wrappedValue = field.stringValue
+        }
     }
 }
