@@ -1465,25 +1465,23 @@ with VoiceOver and with Reduce Motion.
 
 ### App icon
 
-The icon is the Toy Box robot with a gold chat bubble behind it. It means you, chatting with your
-toy robots. The robot is a toy, not a chat bubble, so its head has no tail and the gold bubble is
-the only chat shape. It carries the brand's navy and robot face, the channel cyan in the eyes and
-the lead's gold, and it never shows text or a hash mark.
+The icon is the Toy Box robot's head as a speech bubble, alone and centered. It means your agents,
+talking. It carries the brand's navy and robot face, the channel cyan in the eyes and a gold
+antenna for one warm accent, and it never shows text or a hash mark.
 
 | Part | Specification (1024 pt Icon Composer canvas) |
 | --- | --- |
 | Source | `Resources/AppIcon.icon`, an Icon Composer document with one 1024 x 1024 SVG per layer. It's the only artwork. Edit it in Icon Composer or as text |
 | Background | Vertical linear gradient `#1C4090` to `#071937`. The dark specialization is `#122656` to `#040B1A` |
-| Head group (middle) | Rounded head x 157...771, y 401...857, corner radius 180, with no tail. Antenna stem 38 x 117 at x 445, y 310. Fill `#F3EFE6`, `#E6E2DA` in dark. Glass on, translucency 0.3, neutral shadow 0.5 |
-| Face group (front) | Visor 474 x 268 at x 227, y 495, radius 134, `#0A1530`, not glass. Eyes 60 x 106 capsules at x 347 and 521, y 558. Smile is a radius-63.6 arc from x 419.5 to 508.5 at y 702 with a 25 pt round stroke. Eyes and smile are `#67E8F9`. Antenna ball radius 49 at 464, 295 in `#38BDF8`, glass |
-| Reply group (back) | Bubble x 554...894, y 180...490, radius 120, with its tail to x 860, y 562 at the lower right. The head covers only its lower-left corner. `#FACC15`, glass, translucency 0.1 so its lower half stays gold over the navy instead of turning olive, layer-color shadow 0.5 |
+| Head group (back) | Speech bubble body x 193...831, y 305.2...778.2, corner radius 187, with its tail to x 261.2, y 879.4 at the lower left. The body is centered on x 512, and the whole robot, antenna to tail, on y 512. Antenna stem 39.6 x 121 at x 492.2, y 210.6. Fill `#F3EFE6`, `#E6E2DA` in dark. Glass on, translucency 0.3, neutral shadow 0.5 |
+| Face group (front) | Visor 492.8 x 277.2 at x 265.6, y 402, radius 138.6, `#0A1530`, not glass. Eyes 61.6 x 110 capsules at x 391 and 571.4, y 468. Smile is a radius-66 arc from x 465.8 to 558.2 at y 617.6 with a 26.4 pt round stroke. Eyes and smile are `#67E8F9`. Antenna ball radius 50.6 at 512, 195.2 in gold `#FACC15`, glass |
 | Shipped artwork | `Resources/AppIcon.icns`, committed. `script/icon` renders the Default appearance with Icon Composer's `ictool` and places it on Apple's grid: an 824 pt body inset 100 pt, with a black 22% shadow offset 10 pt down and blurred 34 pt. That matches Apple's own `.icns` files within a pixel. Output is byte-identical across runs |
 | Builds | Local and GitHub bundles copy the same `.icns` and set `CFBundleIconFile`. No build renders the icon, so neither needs Icon Composer or `actool`. macOS 27 shows it at the system size with no gray plate |
 | Not shipped yet | The source also defines Dark, Clear and Tinted appearances. They apply only to a compiled `Assets.car`, which needs `actool`. Adding one later must ship in both local and GitHub builds, never in only one |
 
 Change the artwork only in the `.icon`, then run `script/icon` and commit both files together.
 Check 16 and 32 px on light and dark before accepting a change. The 16 px icon must still read as a
-navy tile with a white robot head and a gold corner.
+navy tile with a white speech-bubble head.
 
 ### Implementation review gates
 

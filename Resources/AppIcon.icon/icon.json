@@ -52,15 +52,6 @@
       "shadow" : { "kind" : "neutral", "opacity" : 0.5 },
       "translucency" : { "enabled" : true, "value" : 0.3 },
       "specular" : true
-    },
-    {
-      "name" : "Reply",
-      "layers" : [
-        { "name" : "Reply", "image-name" : "reply.svg", "glass" : true }
-      ],
-      "shadow" : { "kind" : "layer-color", "opacity" : 0.5 },
-      "translucency" : { "enabled" : true, "value" : 0.1 },
-      "specular" : true
     }
   ],
   "supported-platforms" : {
