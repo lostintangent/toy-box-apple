@@ -42,7 +42,7 @@ view.
   `TOY_BOX_HISTORY_DEMO_URL=http://127.0.0.1:3211 ./script/test --filter HistoryFixtureTests`
   against a freshly started history demo.
 - `SCRATCH_PATH=/tmp/tbm-<you> ./script/benchmark [--summaries] [launch|switch|messages|paging|key|idle ...]` is the
-  performance regression benchmark. It builds a release bundle as `dev.toybox.channels.mac.benchmark`,
+  performance regression benchmark. It builds a release bundle as `dev.toybox.desktop.benchmark`,
   runs each scenario against a fresh `script/perf-demo.mjs` fixture on 3292 (`TOY_BOX_PERF_PORT`),
   prints each result beside its budget and exits 1 when one is over. The spec's Performance budgets
   section defines the budgets and how busy time, saturated spans and frame gaps differ. Leave its
@@ -69,7 +69,7 @@ view.
   With the real 27+ SDK stamp, they also misrender Liquid Glass and sidebar selection. Use
   them for layout evidence only. Verify materials, selection and scroll-edge effects in a real window.
 - Computer Use approves apps by bundle ID. A path is refused. The user's copy is
-  `dev.toybox.channels.mac`. Agents test as `dev.toybox.channels.mac.test` ("Toy Box Desktop
+  `dev.toybox.desktop`. Agents test as `dev.toybox.desktop.test` ("Toy Box Desktop
   Test" in `.build/agents`), which `script/validate` builds and launches. Instances that share a
   bundle ID can be read but not clicked, so the separate ID is what lets you interact while the
   user's app is open. Until the user approves the test ID, `script/validate` falls back to the
@@ -127,11 +127,18 @@ view.
   Agents never run setup with real credentials, create
   secrets or read keys and passwords. `python3 script/test-release-secrets.py` uses fake commands only.
 - Update signing setup, by the user only: `./script/setup-update-secrets [OWNER/REPO]`. It reuses
-  or creates the `dev.toybox.channels.mac` Sparkle Keychain account, uploads `SPARKLE_ED_PRIVATE_KEY`
+  or creates the `dev.toybox.desktop` Sparkle Keychain account, uploads `SPARKLE_ED_PRIVATE_KEY`
   as a secret and `SPARKLE_ED_PUBLIC_KEY` as a public repository variable, then deletes its temporary
   export. Back up that Keychain key. Do not replace it casually, since existing installs trust it.
   Agents never run this setup or read the real key. `python3 script/test-sparkle.py` uses fake commands.
   Its opt-in macOS `NativeAppcastTests` uses a throwaway CryptoKit key file, never a Keychain item.
+- Before v0.1.1, the user-approved identity rename replaces the unshipped update key. Run
+  `./script/setup-update-secrets` again for `dev.toybox.desktop`. Only after it succeeds, the user
+  deletes the obsolete key with
+  `security delete-generic-password -s https://sparkle-project.org -a dev.toybox.channels.mac`.
+  Agents never run this deletion or access either real key. The old 0.1.0 app has no updater, so
+  this one-time rotation breaks no shipped update chain. Re-approve `dev.toybox.desktop.test` for
+  Computer Use. Notification and microphone permissions are separate for the renamed app.
 - Locally: `SPARKLE_ED_PUBLIC_KEY=... SIGNING_IDENTITY=SHA1 BUILD_NUMBER=N NOTARY_PROFILE=toy-box-channels-notary
   ./script/release vX.Y.Z`. Without `NOTARY_PROFILE` the zip is named `SIGNED-UNNOTARIZED` and
   is never published. `PREVIOUS_APPCAST=path` enforces an increasing build number locally. CI always

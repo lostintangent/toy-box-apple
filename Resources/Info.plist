@@ -14,7 +14,7 @@
         </dict>
     </array>
     <key>CFBundleIdentifier</key>
-    <string>dev.toybox.channels.mac</string>
+    <string>dev.toybox.desktop</string>
     <key>CFBundleExecutable</key>
     <string>ToyBoxDesktop</string>
     <key>CFBundlePackageType</key>

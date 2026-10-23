@@ -184,7 +184,7 @@ class UpdateSecretsTests(FakeCommandTests):
         self.assertEqual(result.returncode, 0, result.stderr)
         keys = self.calls("generate_keys")
         self.assertEqual(len(keys), 3)
-        self.assertTrue(all(call["args"][:2] == ["--account", "dev.toybox.channels.mac"]
+        self.assertTrue(all(call["args"][:2] == ["--account", "dev.toybox.desktop"]
                             for call in keys))
         gh = self.calls("gh")
         secret = next(call for call in gh if call["args"][:2] == ["secret", "set"])
@@ -281,6 +281,18 @@ class AppcastTests(FakeCommandTests):
                                         env={**environment, **extra}, cwd=ROOT,
                                         capture_output=True, text=True, timeout=15)
                 self.assertEqual(result.returncode == 0, succeeds, result.stderr)
+
+
+class IdentityTests(unittest.TestCase):
+    def test_bundles_and_update_key_use_the_desktop_identity(self):
+        info = plistlib.loads((ROOT / "Resources/Info.plist").read_bytes())
+        identity = info["CFBundleIdentifier"]
+        self.assertEqual(identity, "dev.toybox.desktop")
+        validate = (ROOT / "script/validate").read_text()
+        self.assertIn(f'TEST_ID="{identity}.test"', validate)
+        self.assertIn(f'LAUNCH_ID="{identity}"', validate)
+        self.assertIn(f'ID="{identity}.benchmark"', (ROOT / "script/benchmark").read_text())
+        self.assertIn(f"ACCOUNT={identity}\n", (ROOT / "script/setup-update-secrets").read_text())
 
 
 class UpdateVersionTests(unittest.TestCase):

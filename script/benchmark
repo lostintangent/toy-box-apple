@@ -19,7 +19,7 @@ REFERENCE="${TOY_BOX_REFERENCE:-$ROOT/../toy-box-Minecraft}"
 PORT="${TOY_BOX_PERF_PORT:-3292}"
 SERVER="http://127.0.0.1:$PORT"
 NAME="Toy Box Desktop Benchmark"
-ID="dev.toybox.channels.mac.benchmark"
+ID="dev.toybox.desktop.benchmark"
 APP="$BUILD/$NAME.app"
 
 SUMMARIES=NO

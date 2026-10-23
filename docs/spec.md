@@ -82,6 +82,10 @@ A manual run on `main` performs the same signing, notarization and appcast gener
 as artifacts, without publishing.
 Local builds use Command Line Tools. CI uses its selected Xcode 27 toolchain on the `xcode-27` runner.
 
+The app's bundle identity is `dev.toybox.desktop`. Agent validation uses `dev.toybox.desktop.test`,
+and the benchmark uses `dev.toybox.desktop.benchmark`, keeping their preferences and permissions
+isolated from the user's app.
+
 Only the certificate owner runs the one-time setup:
 
 ```sh
@@ -128,11 +132,25 @@ bundles enable automatic checking without Sparkle's permission prompt, but leave
 installation off by default. Both choices remain user-configurable through Sparkle.
 
 The user runs `./script/setup-update-secrets [OWNER/REPO]` once. Sparkle generates or reuses the
-app-specific `dev.toybox.channels.mac` Keychain account, without touching its global default key.
+app-specific `dev.toybox.desktop` Keychain account, without touching its global default key.
 Setup uploads the exported key as `SPARKLE_ED_PRIVATE_KEY`, configures `SPARKLE_ED_PUBLIC_KEY` as a
 public repository variable, and removes the temporary export. Keep a secure backup of the Keychain
 key. Existing installs trust its public half, so losing or casually rotating it breaks the update
 chain. Agents never run this setup with real credentials or read that key.
+
+Before v0.1.1, the user approved renaming the old `dev.toybox.channels.mac` identity and its
+unshipped Sparkle key. Rerun `./script/setup-update-secrets` to provision the new account and replace
+the repository's update signing configuration. Only after setup succeeds, the user removes the
+obsolete Keychain item with this exact command:
+
+```sh
+security delete-generic-password -s https://sparkle-project.org -a dev.toybox.channels.mac
+```
+
+Agents never execute this deletion or access the real keys. This rotation is safe only because
+0.1.0 shipped without Sparkle and no published app trusts the obsolete key. The Developer ID
+certificate and Apple ID app-specific password are unchanged. The renamed app needs new macOS
+notification and microphone grants, and Computer Use needs approval for `dev.toybox.desktop.test`.
 
 After notarization and stapling, `script/generate-appcast` uses Sparkle's checksum-pinned tools to
 sign the finished archive and the whole feed with Ed25519. The archive signature, length, URL,

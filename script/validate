@@ -13,7 +13,7 @@ DIR="$ROOT/.build/validation"
 APP="$DIR/Toy Box Desktop.app"
 TEST_DIR="$ROOT/.build/agents"
 TEST_NAME="Toy Box Desktop Test"
-TEST_ID="dev.toybox.channels.mac.test"
+TEST_ID="dev.toybox.desktop.test"
 TEST_APP="$TEST_DIR/$TEST_NAME.app"
 
 CONFIGURATION=release SCRATCH_PATH="$SCRATCH" "$ROOT/script/run" --no-open >/dev/null
@@ -64,7 +64,7 @@ LAUNCH_APP="$TEST_APP"
 LAUNCH_ID="$TEST_ID"
 if ! grep -q "\"$TEST_ID\"" "$HOME/.copilot/computer-use/approvals.json" 2>/dev/null; then
     LAUNCH_APP="$APP"
-    LAUNCH_ID="dev.toybox.channels.mac"
+    LAUNCH_ID="dev.toybox.desktop"
     echo "$TEST_ID isn't approved for Computer Use yet, so this launches the shared bundle." >&2
 fi
 LAUNCH_BIN="$LAUNCH_APP/Contents/MacOS/ToyBoxDesktop"
