@@ -25,7 +25,8 @@ view.
 - Use your own scratch path so parallel builds never share `.build`:
   - `DEVELOPER_DIR=/Library/Developer/CommandLineTools swift build --scratch-path /tmp/tbm-<you>`
   - `SCRATCH_PATH=/tmp/tbm-<you> ./script/test` runs the suite with the Command Line Tools
-    Testing macro plugin path, which a bare `swift test` can't find.
+    Testing macro plugin path, which a bare `swift test` can't find. It also fails when a test
+    run stops before printing its summary, which a bare `swift test` can report as success.
   - `SCRATCH_PATH=/tmp/tbm-<you> ./script/run` builds, bundles and opens a new app instance.
 - Point the app at a server with `TOY_BOX_SERVER_URL` or Settings. Use our Minecraft demo wrapper
   (`bun script/demo.mjs` in this repository, port 3210) for write tests. It serves the required
