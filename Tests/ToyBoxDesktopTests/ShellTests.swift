@@ -53,7 +53,11 @@ struct ShellTests {
         ["--benchmark-resize", "width"],
         ["--channel", "studio-demo", "--benchmark-resize", "height"],
         ["--channel", "studio-demo", "--benchmark-resize", "drag"],
-        ["--channel", "studio-demo", "--benchmark-resize", "width", "--snapshot", "/tmp/test.png"]
+        ["--channel", "studio-demo", "--benchmark-resize", "width", "--snapshot", "/tmp/test.png"],
+        ["--benchmark", "messages"],
+        ["--channel", "history-demo", "--benchmark", "scroll"],
+        ["--channel", "history-demo", "--benchmark", "paging", "--snapshot", "/tmp/test.png"],
+        ["--channel", "history-demo", "--benchmark", "paging", "--benchmark-resize", "width"]
     ])
     func malformedArgumentsFailExplicitly(_ arguments: [String]) {
         #expect(throws: LaunchArgumentError.self) { try LaunchOptions.parse(arguments) }
@@ -72,6 +76,17 @@ struct ShellTests {
         #expect(try LaunchOptions.parse(["--channel", "studio-demo", "--benchmark-resize", "drag-both"])
             .resizeBenchmark?.axis == .both)
         #expect(try LaunchOptions.parse(["--channel", "studio-demo"]).resizeBenchmark == nil)
+    }
+
+    @Test func benchmarkNamesItsScenarioAndChannel() throws {
+        for scenario in PerformanceBenchmark.Scenario.allCases {
+            let options = try LaunchOptions.parse(["--channel", "history-demo", "--benchmark", scenario.rawValue])
+            #expect(options.benchmark == scenario)
+            #expect(options.channelID == "history-demo")
+            #expect(!options.isSnapshot)
+        }
+        #expect(try LaunchOptions.parse(["--channel", "studio-demo", "--benchmark", "switch"]).benchmark == .switching)
+        #expect(try LaunchOptions.parse(["--channel", "studio-demo"]).benchmark == nil)
     }
 
     /// A round drags out to the widest size and back, one size per display frame.

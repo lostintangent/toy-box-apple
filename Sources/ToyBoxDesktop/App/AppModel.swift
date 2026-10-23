@@ -15,6 +15,7 @@ final class AppModel {
     let launchOptions: LaunchOptions
     let snapshot: WindowSnapshot?
     let resizeBenchmark: ResizeBenchmark?
+    let performanceBenchmark: PerformanceBenchmark?
     private(set) var serverURL: String
     private(set) var catalog: ChannelCatalogStore?
     private(set) var configurationError: String?
@@ -38,6 +39,9 @@ final class AppModel {
         snapshot = launchOptions.isSnapshot ? WindowSnapshot(options: launchOptions) : nil
         resizeBenchmark = launchOptions.resizeBenchmark.flatMap { mode in
             launchOptions.channelID.map { ResizeBenchmark(mode: mode, channelID: $0) }
+        }
+        performanceBenchmark = launchOptions.benchmark.flatMap { scenario in
+            launchOptions.channelID.map { PerformanceBenchmark(scenario: scenario, channelID: $0) }
         }
         serverURL = launchOptions.serverURL ?? ProcessInfo.processInfo.environment["TOY_BOX_SERVER_URL"]
             ?? UserDefaults.standard.string(forKey: AppConfiguration.serverURLKey)

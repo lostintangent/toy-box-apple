@@ -73,6 +73,7 @@ struct RootView: View {
             placement.window = window
             model.snapshot?.attach(window: window, model: model)
             model.resizeBenchmark?.attach(window: window, model: model)
+            model.performanceBenchmark?.attach(window: window, model: model) { selectedId = $0 }
         }, onChange: { isKey, size, isLiveResizing in
             // A resize reports every frame, so this changes state only when something the views
             // read changes. Anything more rebuilds the window on each frame.
