@@ -1,23 +1,37 @@
 import AppKit
 import QuartzCore
 
-/// `--benchmark-resize width|both` drags the first window through three rounds of 120 sizes, one
-/// size per display frame as a live resize does, then prints how long the main thread stayed busy
-/// after each step and exits.
+/// `--benchmark-resize width|both|drag-width|drag-both` resizes the first window through three
+/// rounds of 120 sizes, one size per display frame as a live resize does, then prints how long the
+/// main thread stayed busy after each step and exits.
 ///
-/// A step's busy time runs from its `setFrame` until the main run loop is about to sleep again,
-/// so it covers the synchronous layout and display and the SwiftUI updates the resize schedules.
-/// A step that outlasts the display's frame delays the next one, which the frame interval shows.
+/// `width` and `both` set the window's frame directly. The `drag-` modes instead press the window's
+/// bottom-right corner and drag it with mouse events, so AppKit runs its own live resize, the way a
+/// person resizing the window does.
+///
+/// A step's busy time runs from its `setFrame` or drag event until the main run loop is about to
+/// sleep again after the window resized, so it covers the synchronous layout and display and the
+/// SwiftUI updates the resize schedules. A step that outlasts the display's frame delays the next
+/// one, which the frame interval shows.
 @MainActor
 final class ResizeBenchmark: NSObject {
     enum Axis: String, Sendable { case width, both }
 
+    enum Mode: String, Sendable {
+        case width, both
+        case dragWidth = "drag-width", dragBoth = "drag-both"
+
+        var axis: Axis { self == .width || self == .dragWidth ? .width : .both }
+        var drags: Bool { self == .dragWidth || self == .dragBoth }
+    }
+
     static let stepsPerRound = 120
     static let rounds = 3
 
-    let axis: Axis
+    let mode: Mode
     let channelID: String
-    /// Live resizes defer what only matters once the size settles, and so does the benchmark.
+    /// Live resizes defer what only matters once the size settles, and so do the benchmark's direct
+    /// frame changes.
     private(set) var isResizing = false
     private weak var window: NSWindow?
     private var task: Task<Void, Never>?
@@ -32,10 +46,16 @@ final class ResizeBenchmark: NSObject {
     private var busy: [Double] = []
     private var setFrame: [Double] = []
     private var intervals: [Double] = []
+    /// Where the drag holds the window, from its bottom-right corner.
+    private var grip: CGVector?
+    private var liveResizeSteps = 0
+    /// The run loop can sleep before AppKit's resize loop takes a drag event, so a step's busy time
+    /// ends only once the window has resized.
+    private var hasResized = false
     private var finished: CheckedContinuation<Void, Never>?
 
-    init(axis: Axis, channelID: String) {
-        self.axis = axis
+    init(mode: Mode, channelID: String) {
+        self.mode = mode
         self.channelID = channelID
     }
 
@@ -62,13 +82,21 @@ final class ResizeBenchmark: NSObject {
                 FileHandle.standardError.write(Data("Resize benchmark failed: \(channelID) didn't load\n".utf8))
                 exit(EXIT_FAILURE)
             }
-            sizes = Array(repeating: Self.sizes(axis: axis), count: Self.rounds).flatMap(\.self)
+            sizes = Array(repeating: Self.sizes(axis: mode.axis), count: Self.rounds).flatMap(\.self)
             window.setFrame(frame(for: sizes[0]), display: true)
             // Images, avatars and the inspector settle before the first measured step.
             try? await Task.sleep(for: .seconds(3))
             await run()
             print(report())
             fflush(stdout)
+            // The first step presses the corner and the last releases it, so every step between
+            // them runs in AppKit's live resize unless something, such as the pointer moving, ended
+            // the drag early.
+            if mode.drags, liveResizeSteps < sizes.count - 2 {
+                FileHandle.standardError.write(Data(
+                    "Resize benchmark failed: the drag ended after \(liveResizeSteps) steps. Leave the pointer still and run it again.\n".utf8))
+                exit(EXIT_FAILURE)
+            }
             exit(EXIT_SUCCESS)
         }
     }
@@ -80,21 +108,26 @@ final class ResizeBenchmark: NSObject {
 
     private func run() async {
         guard let view = window?.contentView else { return }
-        isResizing = true
+        isResizing = !mode.drags
         let observer = CFRunLoopObserverCreateWithHandler(nil, CFRunLoopActivity.beforeWaiting.rawValue, true,
                                                           CFIndex.max) { [weak self] _, _ in
             MainActor.assumeIsolated {
-                guard let self, self.stepStart != nil, self.idleAt == nil else { return }
+                guard let self, self.stepStart != nil, self.idleAt == nil, self.hasResized else { return }
                 self.idleAt = CACurrentMediaTime()
             }
         }
         idleObserver = observer
         CFRunLoopAddObserver(CFRunLoopGetMain(), observer, .commonModes)
+        let resized = NotificationCenter.default.addObserver(forName: NSWindow.didResizeNotification,
+                                                             object: window, queue: nil) { [weak self] _ in
+            MainActor.assumeIsolated { self?.hasResized = true }
+        }
         let link = view.displayLink(target: self, selector: #selector(tick(_:)))
         link.add(to: .main, forMode: .common)
         self.link = link
         await withCheckedContinuation { finished = $0 }
         link.invalidate()
+        NotificationCenter.default.removeObserver(resized)
         if let observer { CFRunLoopRemoveObserver(CFRunLoopGetMain(), observer, .commonModes) }
         isResizing = false
     }
@@ -115,9 +148,36 @@ final class ResizeBenchmark: NSObject {
         }
         stepStart = now
         idleAt = nil
-        window.setFrame(frame(for: sizes[next]), display: true)
-        setFrame.append((CACurrentMediaTime() - now) * 1000)
+        hasResized = false
+        if mode.drags {
+            if window.inLiveResize { liveResizeSteps += 1 }
+            drag(to: sizes[next], in: window, releasing: next == sizes.count - 1)
+        } else {
+            window.setFrame(frame(for: sizes[next]), display: true)
+            setFrame.append((CACurrentMediaTime() - now) * 1000)
+        }
         next += 1
+    }
+
+    /// Presses the window's bottom-right corner on the first step, then moves it so the window
+    /// reaches `size`. AppKit's resize loop takes the events from the queue on its next pass.
+    private func drag(to size: CGSize, in window: NSWindow, releasing: Bool) {
+        func post(_ type: NSEvent.EventType, at point: NSPoint) {
+            let location = NSPoint(x: point.x - window.frame.minX, y: point.y - window.frame.minY)
+            guard let event = NSEvent.mouseEvent(with: type, location: location, modifierFlags: [],
+                                                 timestamp: ProcessInfo.processInfo.systemUptime,
+                                                 windowNumber: window.windowNumber, context: nil, eventNumber: 0,
+                                                 clickCount: 1, pressure: type == .leftMouseUp ? 0 : 1) else { return }
+            NSApp.postEvent(event, atStart: false)
+        }
+        if grip == nil {
+            let grip = CGVector(dx: 2, dy: 2)
+            self.grip = grip
+            post(.leftMouseDown, at: NSPoint(x: window.frame.maxX - grip.dx, y: window.frame.minY + grip.dy))
+        }
+        guard let grip else { return }
+        let target = NSPoint(x: window.frame.minX + size.width - grip.dx, y: window.frame.maxY - size.height + grip.dy)
+        post(releasing ? .leftMouseUp : .leftMouseDragged, at: target)
     }
 
     private func report() -> String {
@@ -130,10 +190,12 @@ final class ResizeBenchmark: NSObject {
         }
         let budget = frameDuration * 1000
         let late = intervals.filter { $0 > budget * 1.5 }.count
+        let input = mode.drags ? "live resize on \(liveResizeSteps) of \(busy.count) steps, ended at "
+            + "\(Int(window?.frame.width ?? 0)) x \(Int(window?.frame.height ?? 0))" : line("setFrame", setFrame)
         return """
-        Resize benchmark: \(axis.rawValue), \(busy.count) steps, \(format(budget)) ms frames
+        Resize benchmark: \(mode.rawValue), \(busy.count) steps, \(format(budget)) ms frames
         \(line("busy", busy))
-        \(line("setFrame", setFrame))
+        \(input)
         \(line("frame interval", intervals)), \(late) of \(intervals.count) late
         """
     }

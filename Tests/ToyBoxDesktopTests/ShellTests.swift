@@ -52,18 +52,25 @@ struct ShellTests {
         ["--unknown", "value"],
         ["--benchmark-resize", "width"],
         ["--channel", "studio-demo", "--benchmark-resize", "height"],
+        ["--channel", "studio-demo", "--benchmark-resize", "drag"],
         ["--channel", "studio-demo", "--benchmark-resize", "width", "--snapshot", "/tmp/test.png"]
     ])
     func malformedArgumentsFailExplicitly(_ arguments: [String]) {
         #expect(throws: LaunchArgumentError.self) { try LaunchOptions.parse(arguments) }
     }
 
-    @Test func resizeBenchmarkNamesItsAxisAndChannel() throws {
+    @Test func resizeBenchmarkNamesItsModeAndChannel() throws {
         let width = try LaunchOptions.parse(["--channel", "studio-demo", "--benchmark-resize", "width"])
         #expect(width.resizeBenchmark == .width)
+        #expect(width.resizeBenchmark?.drags == false)
         #expect(!width.isSnapshot)
         let both = try LaunchOptions.parse(["--channel", "studio-demo", "--benchmark-resize", "both"])
-        #expect(both.resizeBenchmark == .both)
+        #expect(both.resizeBenchmark?.axis == .both)
+        let drag = try LaunchOptions.parse(["--channel", "studio-demo", "--benchmark-resize", "drag-width"])
+        #expect(drag.resizeBenchmark?.axis == .width)
+        #expect(drag.resizeBenchmark?.drags == true)
+        #expect(try LaunchOptions.parse(["--channel", "studio-demo", "--benchmark-resize", "drag-both"])
+            .resizeBenchmark?.axis == .both)
         #expect(try LaunchOptions.parse(["--channel", "studio-demo"]).resizeBenchmark == nil)
     }
 

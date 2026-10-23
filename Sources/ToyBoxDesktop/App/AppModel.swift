@@ -36,8 +36,8 @@ final class AppModel {
     init(launchOptions: LaunchOptions = .init()) {
         self.launchOptions = launchOptions
         snapshot = launchOptions.isSnapshot ? WindowSnapshot(options: launchOptions) : nil
-        resizeBenchmark = launchOptions.resizeBenchmark.flatMap { axis in
-            launchOptions.channelID.map { ResizeBenchmark(axis: axis, channelID: $0) }
+        resizeBenchmark = launchOptions.resizeBenchmark.flatMap { mode in
+            launchOptions.channelID.map { ResizeBenchmark(mode: mode, channelID: $0) }
         }
         serverURL = launchOptions.serverURL ?? ProcessInfo.processInfo.environment["TOY_BOX_SERVER_URL"]
             ?? UserDefaults.standard.string(forKey: AppConfiguration.serverURLKey)

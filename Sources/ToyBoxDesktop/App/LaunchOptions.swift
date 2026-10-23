@@ -8,7 +8,7 @@ struct LaunchOptions: Equatable, Sendable {
     var height = 840
     var snapshotURL: URL?
     var snapshotState: String?
-    var resizeBenchmark: ResizeBenchmark.Axis?
+    var resizeBenchmark: ResizeBenchmark.Mode?
 
     var isSnapshot: Bool { snapshotURL != nil }
 
@@ -58,10 +58,10 @@ struct LaunchOptions: Equatable, Sendable {
                 guard !value.isEmpty else { throw LaunchArgumentError("--state must not be empty") }
                 options.snapshotState = value
             case "--benchmark-resize":
-                guard let axis = ResizeBenchmark.Axis(rawValue: value) else {
-                    throw LaunchArgumentError("--benchmark-resize must be width or both")
+                guard let mode = ResizeBenchmark.Mode(rawValue: value) else {
+                    throw LaunchArgumentError("--benchmark-resize must be width, both, drag-width or drag-both")
                 }
-                options.resizeBenchmark = axis
+                options.resizeBenchmark = mode
             default: break
             }
             index += 2
