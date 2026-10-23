@@ -1,9 +1,9 @@
-# Toy Box Channels for Mac: spec
+# Toy Box Desktop: spec
 
-A native macOS client for Toy Box Channels. It gives the user the full Channel pane experience
-(transcript, composer, overview) in an app that feels first-party on macOS. Toy Box keeps owning
-Channels, agents, sessions and durable work. This app is a presentation and input surface over the
-same public Channel protocol that the Minecraft client uses.
+Toy Box Desktop is a native macOS client for Toy Box Channels. It gives the user the full Channel
+pane experience (transcript, composer, overview) in an app that feels first-party on macOS. Toy Box
+keeps owning Channels, agents, sessions and durable work. This app is a presentation and input
+surface over the same public Channel protocol that the Minecraft client uses.
 
 Reference sources (read-only):
 
@@ -806,7 +806,8 @@ messages". Capture the unread boundary only after snapshot or replay completes, 
 the user reads. This boundary is not an extra synthetic message. Reference renders of day labels,
 the New divider, system rows and both request states: `docs/transcript-events.png`.
 
-Land on the first unread row, otherwise the end. Follow incoming messages only while within
+Land on the first unread row, otherwise the end. When a catch-up summary is eligible, land on its
+card instead (see Mac features beyond the pane). Follow incoming messages only while within
 48 points of the end, or immediately after the user's own successful post. If scrolled away, a
 small glass Jump to Latest capsule appears in the floating activity row above the composer.
 It shares that row with the working summary when present. Preserve the visible top message and its offset while prepending history. At the top,
@@ -850,7 +851,7 @@ doesn't cross into other messages. Videos and files keep their own actions.
 | Image | Fits the canvas with 24-point side margins, 16 below the toolbar and 16 above the capsule. Never upscale past the image's point size, so a 2x screenshot shows at native size. 6-point continuous corners, the tile's 1-point hairline (10% light, 14% dark, 40% Increase Contrast) and, in light only, a shadow of black 12%, radius 12, y 4 |
 | Toolbar | Back (`chevron.backward`, help "Back to Conversation") leads. Title is the sender, subtitle "Today at 5:23 PM · 2 of 4" (one image omits the position). Trailing: Share (`square.and.arrow.up`) and More (`ellipsis`: Copy Image, Open in Preview). Message View, Channel Actions and Overview hide while viewing |
 | Capsule | Only with two or more images. Centered 16 above the bottom edge, `.glassEffect(.regular.interactive(), in: .capsule)`, 8 padding. Previous and next (`chevron.backward` and `chevron.forward`, 13 semibold, 28 x 28) flank 32-point thumbnails (aspect fill, 6-point corners, hairline, 6 apart, 70% opacity). The current thumbnail is opaque with a 2-point accent ring 2 points outside it. Arrows go tertiary and disabled at the ends, with no wrap. Past nine thumbnails the strip scrolls, keeping the current one in view |
-| Keys and gestures | Left and Right, the capsule, a thumbnail click or a two-finger swipe change images. Escape, Space or Back close. Double-click toggles fit and actual size at the clicked point. Pinch and `Cmd-=`, `Cmd--`, `Cmd-0` zoom only while viewing, overriding Text Size. Scroll or drag pans a zoomed image, and changing images resets zoom. `Cmd-C` copies the image, and dragging it out exports the file |
+| Keys and gestures | Left and Right, the capsule, a thumbnail click or a two-finger swipe change images. Escape, Space or Back close. Double-click toggles fit and actual size at the clicked point, except on Live Text. Pinch and `Cmd-=`, `Cmd--`, `Cmd-0` zoom only while viewing, overriding Text Size. Scroll or drag pans a zoomed image, and changing images resets zoom. `Cmd-C` copies selected Live Text, otherwise the image, and dragging it out exports the file. Live Text rules are under Mac features beyond the pane |
 | Motion | Opening zooms the image from its thumbnail's frame to its fitted frame (spring, response 0.35, damping 0.9) while the canvas fades in over 0.2 seconds. Closing reverses into the current image's thumbnail, scrolling the strip to it first. Paging slides 40 points with a crossfade in the direction of travel. The tile steps aside only while the zooming image covers it, so the strip never shows a hole. Without a thumbnail frame (a tile less than half visible on close), the image fades and scales from 94%, and the tile stays in place under the canvas until the viewer is gone. Reduce Motion uses 0.2-second crossfades throughout, with no scale, and the tile never steps aside |
 | Loading and errors | Show the cached thumbnail at the final fitted frame immediately and swap in the full image when decoded. A spinner appears only after 300 ms. Failure shows "Couldn't Load Image" and Retry, centered on the canvas |
 | Accessibility | Modal. Focus moves to the image, labeled "Image 2 of 4 from Lead, [filename]", with Next, Previous, Copy, Share and Close actions. Closing returns focus to the current image's thumbnail. The stage's `.isModal` trait alone removes the conversation and inspector from the tree. Never put `.accessibilityHidden(false)` on them: on macOS 27 an explicit false re-exposes their hidden descendants and moves the bottom bars ahead of the transcript |
@@ -927,13 +928,13 @@ never red, which reads as recording or error.
   offline once the language asset is installed, like the rest of offline editing.
 - **Access off popover.** 280 wide with 14-point padding. A 15-point secondary `mic.slash` sits
   before the 13-point semibold title "Microphone Access Is Off". The 12-point secondary body reads
-  "Allow Toy Box Channels to use the microphone in Privacy & Security settings. The Dictation key
+  "Allow Toy Box Desktop to use the microphone in Privacy & Security settings. The Dictation key
   still works." It has one trailing button, "Open System Settings", which opens Privacy & Security >
   Microphone. If speech recognition is the missing permission, the title and body say "Speech
   Recognition" instead.
 - **Accessibility.** VoiceOver announces "Listening" on start and "Dictation stopped" on stop. The
   live level is never announced. Full Keyboard Access reaches the button in control order.
-- **Bundle.** `Info.plist` carries `NSMicrophoneUsageDescription`, "Toy Box Channels uses the
+- **Bundle.** `Info.plist` carries `NSMicrophoneUsageDescription`, "Toy Box Desktop uses the
   microphone only while you dictate a message.", and `NSSpeechRecognitionUsageDescription`,
   "Dictation is transcribed on this Mac."
 
@@ -1199,7 +1200,8 @@ URL, Test Connection, status, and the selected appearance (System by default). V
 preserve path prefixes and display actionable failures. Changing servers prompts before replacing
 live connections, namespaces drafts, then refreshes the catalog. Notifications explains requests
 and completions before asking system permission in response to an explicit enable action.
-Permission denial shows Open System Settings, never repeated permission prompts.
+Permission denial shows Open System Settings, never repeated permission prompts. General also
+holds Show in menu bar and the two on-device toggles specified under Mac features beyond the pane.
 
 ### Menu and keyboard model
 
@@ -1275,7 +1277,191 @@ The Dock badge counts channels needing attention once each, not message volume. 
 categories are pending requests and unread completions, deduplicated by channel and milestone
 sequence. Ordinary chatter does not notify by default. Suppress notifications for the active key
 channel, but never hide its request marker. Activating a notification opens the right channel and,
-for a request, reveals its message. Respect system notification permission and Focus.
+for a request, reveals its message. Respect system notification permission and Focus. Content,
+quick reply and withdrawal are under Mac features beyond the pane.
+
+### Mac features beyond the pane (M8)
+
+These features exist only on the Mac. Each one stays quiet until it has something true to say,
+and disappears rather than degrading when the Mac can't support it. On-device work never sends
+message text or images off the Mac.
+
+**Notifications.** A notification says what is being asked, and you can answer it without
+opening the window.
+
+| Part | Request | Completion |
+| --- | --- | --- |
+| Title | Channel name | Channel name |
+| Subtitle | "[Agent] needs your reply", using the requester's current name | None |
+| Body | The request's plain text (see below) | One top-level task: "Completed “[title]”". Otherwise "All [n] tasks completed" |
+| Hidden previews placeholder | "Waiting for your reply" | "Tasks completed" |
+| Category and actions | `request`, with Reply | `completion`, with no actions |
+| Sound | Default | Default |
+| Thread | `[server]:[channel ID]`, so Notification Center groups each channel | Same |
+| Activation | Opens the channel and reveals the request | Opens the channel at its normal landing |
+
+The request body is the message as a reader sees it, flattened to plain text. Drop the leading
+mentions the transcript omits. Links become their text, code keeps its contents, list items keep
+a "• " prefix, and paragraphs keep one line break. Cut at a word boundary to 400 characters with
+"…" and let the system clamp the display. A request with only attachments says "Sent an image",
+"Sent 3 images" or "Sent a file". Get the text from an open channel's state, otherwise from
+`history(channelId:before: requestSequence + 1)`. Wait at most 3 seconds for it. On failure or
+timeout, deliver anyway with the body "Your team is waiting for your reply." and no subtitle.
+Never delay the notification more than those 3 seconds, and never deliver a second one when the
+text arrives late. Agent avatars as the notification image need Communication Notifications and
+are out of scope.
+
+Reply is a `UNTextInputNotificationAction`: title "Reply", button "Send", placeholder "Reply". It
+posts in the background without activating the app or opening a window. The posted text is
+addressed exactly like the in-app Reply: prepend the requester's `@handle ` unless the reply
+already starts with an @mention. Use a fresh message ID, and retry once after 2 seconds with the
+same ID only for a transport failure. On success, mark the channel read through the reply's own
+sequence, as replying from a Messages notification does, and show nothing else. Empty or
+whitespace-only replies post nothing.
+
+When a reply can't be sent, never lose it. Save the text as that channel's draft for the
+notification's server, appending after a blank line when a draft exists, and deliver one
+notification: title the channel name, body "Your reply wasn't sent. It's saved as a draft."
+Activating it opens the channel with the composer focused. A deleted channel says "Your reply
+wasn't sent because [channel] was deleted." A notification from a server other than the current
+one never posts to the current server. It takes the same failure path, with its draft saved
+under its own server.
+
+Notifications withdraw themselves. Remove a channel's delivered request notification as soon as
+its `requestSequence` changes or clears, wherever it was answered. Remove a completion once
+`seenThrough` reaches its sequence. Remove all of a channel's delivered notifications when it
+becomes active in a key window. While the app is active, present requests from other channels as
+banners with sound and send completions to Notification Center only, since the sidebar already
+shows them. The active key channel still never notifies. Keep the existing per-milestone
+deduplication and the two Settings toggles.
+
+**Menu bar extra.** One template symbol tells you, from any app, whether your team is working or
+waiting for you. It never animates, because a team can work for hours, and it never uses color.
+
+| State | Symbol | Accessibility value |
+| --- | --- | --- |
+| A channel is waiting for you | `questionmark.bubble.fill` | "1 channel waiting for you" (plus the working count when nonzero) |
+| Agents working, nothing waiting | `ellipsis.bubble` | "3 agents working" |
+| Nothing active (Always only) | `bubble` | "No agents working" |
+| Catalog unreachable | `bubble` | "Not connected" |
+
+The label is "Toy Box Desktop". Waiting outranks working. The symbol swaps with
+`.contentTransition(.symbolEffect(.replace))` where the status item supports it, and instantly
+under Reduce Motion. Show no count, because the Dock badge already counts.
+
+General settings adds "Show in menu bar" as a pop-up with Always, When Active and Never. When
+Active is the default, with the footer "When Active shows the icon while agents are working or a
+channel is waiting for you." In When Active, the item appears as soon as anything is active,
+stays 10 seconds after the last activity ends so short gaps between agent turns don't shift the
+menu bar, and never leaves while its menu is open.
+
+Use `MenuBarExtra` with `.menuBarExtraStyle(.menu)`, a real menu with native keyboard and
+VoiceOver behavior, not a popover window.
+
+| Menu part | Specification |
+| --- | --- |
+| Waiting for You | Section header. One item per channel with a pending request, newest request first. Title: channel name. Subtitle: "[Agent]: [request text]" cut to 60 characters with "…", or "Needs your reply" until the text is known. Image: the requester's 16-point avatar, otherwise none |
+| Working | Section header. Channels with working agents and no pending request, most recently updated first. Subtitle: "Shell is working", "Shell and Transcript are working" or "Shell, Transcript and 2 others are working". Image: the first working agent's 16-point avatar, lead first |
+| Overflow | At most 6 channel items per section, then "[n] More Channels…", which opens the main window |
+| Empty | One disabled item, "No agents are working". When the catalog is unreachable, "Can't connect to [host]" instead |
+| Footer | Separator, "Open Toy Box Desktop", then "Settings…". No Quit, because this is a regular Dock app |
+| Activation | A channel item activates the app, brings the main window forward (opening one if needed) and selects the channel. A waiting item also reveals the request, through the same route as notification activation |
+
+Waiting comes from the same attention as the sidebar. Working must come from the one function
+the sidebar row uses (live presence for an open channel, otherwise the catalog's `working`), so
+the menu bar, the sidebar and the Dock can never disagree. Render avatars with `AgentAvatarView`
+into images. Don't refresh the catalog when the menu opens, so items never move under the
+pointer. Its normal cadence (5 seconds active, 15 inactive) is the latency.
+
+**Catch-up summary.** When you return to a busy channel, a short on-device summary sits above the
+New divider. Each line points at the messages it came from.
+
+A channel is eligible only when all of these hold: the service's `availability` is `.available`,
+"Summarize new messages" is on, Message View is All Messages, the summary for this boundary hasn't
+been dismissed, and the unread span (after the boundary the New divider captured) holds at least
+4 messages from others whose text together runs to at least 1,500 characters. The character
+floor means "more than about one screen". Four quick "On it" replies are faster to read than a
+4-second wait, and they would still pass a count alone. System rows and your own messages never
+count. Both numbers are parameters.
+
+| Part | Specification |
+| --- | --- |
+| Placement | Scroll content, not a message or glass. Directly above the New divider, and above a coinciding day label, with 12 points to the divider and the conversation-run gap (20) above it |
+| Width and shape | Leading edge on the avatars' leading edge, trailing edge at min(lane, 804), the widest agent bubble's trailing edge. 12-point continuous corners. Fill primary at 3% in light and 5% in dark, with a 1-point inner hairline at 10% light, 14% dark and 40% under Increase Contrast. Padding 12 horizontal and 10 vertical |
+| Header | 18 high. `text.line.3.summary` in 12-point medium secondary, 6 points, then "Summary of 42 new messages" in 12-point semibold secondary, counting messages from others. Trailing Dismiss: `xmark`, 10-point semibold tertiary, 28 x 28 hit area, help "Dismiss Summary" |
+| Lines | 8 points below the header, 2 apart, each 3 points of vertical padding. A 16-point leading slot, 8 points, then 13-point primary text, wrapping up to 3 lines and then truncating, with the full line in help. The slot holds the 16-point avatar of the sender of the line's first source. Text scales with Text Size |
+| Needs you | The first line, only while a request is pending. The slot holds an orange 13-point `questionmark.bubble.fill`, and the text is medium weight. Once the transcript shows the request as Replied, the symbol becomes a secondary `checkmark` and the text turns secondary, in place, so the card never changes height. A later landing drops it |
+| Line action | Each line is a button. Hover fills primary at 5% in a 6-point rounded rectangle extending 6 points past the text horizontally and 3 vertically. Click, Return or Space reveals the first source through the existing Reveal. Help "Show Message" |
+| Footer | 8 points below the lines. "Summarized on this Mac" in 11-point tertiary. Its help: "Made on this Mac from the messages below. Summaries can be wrong." |
+
+| State | Behavior |
+| --- | --- |
+| Loading | The card shows only its header, reading "Summarizing 42 new messages", with a mini spinner 6 points before Dismiss after 300 ms. About 40 points high. There are no placeholder lines or shimmer |
+| Ready | Lines fade in over 0.2 seconds while the card grows with a spring (response 0.35, damping 0.9). A cached result is ready on the first frame |
+| Nothing new, declined, unavailable, or no result after 15 seconds | The card fades over 0.15 seconds, then collapses over 0.2. Failures stay silent, because the messages are right below |
+| Stale | When at least 4 messages from others arrive after the result's `through`, the footer reads "Summarized on this Mac · 6 newer messages", with a borderless 11-point medium accent "Update". Update dims the lines to 50%, shows the header spinner, and crossfades in the new result. Nothing regenerates on its own |
+| Dismissed | Fades and collapses as above, and focus moves to the New divider. It doesn't return for this channel and boundary during this app session |
+| Unavailable from the start | No card and no reserved space |
+
+Landing and motion. When a channel is eligible, land with the card's top where the New divider
+would otherwise land. Until the reader scrolls, uses the keyboard in the transcript or reveals
+anything, the card's top stays pinned, and its growth or collapse moves the rows below it. This
+keeps the change in the place the "Summarizing" header promised. After that, height changes keep
+the first visible row still, as paging does. Reduce Motion replaces the spring and collapse with
+an instant layout change and a 0.2-second crossfade.
+
+The card is one accessibility container labeled with its header text, ordered before the New
+divider. Lines are buttons labeled with their text, and the needs-you line reads "Needs your
+reply: [text]" or "Replied: [text]". Arrival is never announced. The card lives only for this
+landing. Leaving the channel and returning recaptures the boundary. Intelligence owns selection,
+grounding and caching, and Transcript owns the card and landing.
+
+**Image descriptions.** Generated descriptions are for VoiceOver. Sighted readers already see the
+image, so descriptions never appear as captions, help, copied text or exports.
+
+Generate only while VoiceOver is running (observe `NSWorkspace.shared.isVoiceOverEnabled`), when
+"Describe images for VoiceOver" is on and the service is available. Request inline image tiles as
+they appear, and the viewer's current image first. Don't request images in the composer tray,
+artifact readers, videos or files. A tile keeps its label, "View [name]" or "View Image 2 of 2",
+and the viewer keeps "Image 2 of 4 from Lead, [filename]". The description goes in the
+accessibility value as "Generated description: [text]", replacing the empty value once the tile
+has loaded. Nothing is spoken while it generates, and a missing result leaves the value empty.
+Descriptions are one or two plain sentences, at most 160 characters, never starting with "Image
+of" or "Picture of". Text quoted from the image must match on-device text recognition of it,
+or the description is dropped.
+
+**Live Text in the viewer.** Text in a screenshot is real text: select it, copy it and follow
+its links.
+
+| Part | Specification |
+| --- | --- |
+| Analysis | `ImageAnalyzer` with `.text` and `.machineReadableCode`, starting once the full image has decoded and the opening motion has ended. Cancel it on paging or closing, and keep the last 8 analyses by attachment digest per window. There is no progress UI |
+| Overlay | `ImageAnalysisOverlayView` exactly over the displayed image, tracking its fitted and zoomed frame. `preferredInteractionTypes` is `[.textSelection, .dataDetectors]`. No Visual Look Up or subject lifting, which would badge screenshots and fight drag export |
+| Live Text button | The system's supplementary button, only when text is found, inside the image's bottom-trailing corner, so it never meets the capsule. Hidden while zoomed, when selection still works. It takes its appearance from the image beneath it, not the window: set the overlay to light when the image's bottom-trailing 64-point square averages above 0.5 relative luminance, and dark otherwise. Measure once per decoded image. Otherwise a dark window's glass turns gray over a white screenshot and the glyph drops to about 1.9:1. The text menu keeps the window's appearance |
+| Pointer and gestures | The system I-beam over text. A drag that starts on text selects text at any zoom. Elsewhere a drag pans when zoomed and exports the file at fit. Double-click on text selects a word and triple-click a line. Double-click elsewhere toggles zoom. Scrolling always pans and swiping pages. Data detectors underline on hover and open on click |
+| Keys | `Cmd-C` copies the selected text when there is a selection, otherwise the image, and Edit > Copy keeps the title "Copy". More > Copy Image always copies the image. Escape clears a selection first, and a second Escape closes. Left, Right and paging clear the selection |
+| Menus | A right-click on selected text shows the system text menu (Copy, Look Up, Translate, Share). Everywhere else is unchanged |
+| Accessibility | Recognized text is exposed as the overlay provides it. The image keeps its label and description value |
+
+**Settings additions.** General gains "Show in menu bar" (above) and a group of two toggles, both
+on by default:
+
+| Toggle | Footer |
+| --- | --- |
+| Summarize new messages | "When you return to a busy channel, a summary appears above the new messages. Made on this Mac." |
+| Describe images for VoiceOver | "While VoiceOver is running, images get descriptions made on this Mac." |
+
+When the service isn't available, both toggles are disabled and keep their values, and one
+footer replaces theirs. It reads "This Mac doesn't support Apple Intelligence.", "Turn on Apple
+Intelligence in System Settings to use these." with an Open System Settings button, "Apple
+Intelligence is getting ready. Try again later.", or, when the model doesn't support the Mac's
+language (`unsupportedLanguage`), "Apple Intelligence doesn't support your Mac's language yet."
+with no button. The Settings window grows to fit General rather than scrolling.
+
+Owners: Shell owns notifications, the menu bar extra and Settings (t94, t95). Intelligence owns
+the model layer (t96). Transcript owns the catch-up card, descriptions in tiles and the viewer,
+and Live Text (t93, t97). Designer reviews each one in real-window captures, in light and dark,
+with VoiceOver and with Reduce Motion.
 
 ### App icon
 

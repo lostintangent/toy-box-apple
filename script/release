@@ -34,7 +34,7 @@ if [[ -z "${NOTARY_PROFILE:-}" ]]; then
     echo "WARNING: NOTARY_PROFILE is unset. This is SIGNED ONLY. Gatekeeper will block downloaded copies." >&2
 fi
 mkdir -p "$OUTPUT"
-ARCHIVE="$OUTPUT/ToyBoxChannels-$VERSION-arm64$SUFFIX.zip"
+ARCHIVE="$OUTPUT/ToyBoxDesktop-$VERSION-arm64$SUFFIX.zip"
 [[ ! -e "$ARCHIVE" && ! -e "$ARCHIVE.sha256" ]] || { echo "Release output already exists: $ARCHIVE" >&2; exit 1; }
 CONFIGURATION=release SCRATCH_PATH="$SCRATCH" "$ROOT/script/run" --no-open
 PLIST="$APP/Contents/Info.plist"

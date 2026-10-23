@@ -1,7 +1,18 @@
-# Toy Box Channels for Mac
+# Toy Box Desktop
 
-Native SwiftUI client for Toy Box Channels. [docs/spec.md](docs/spec.md) is the source of truth
-for parity, protocol and design. Read its Design section before changing any view.
+Toy Box Desktop is a native SwiftUI client for Toy Box Channels. [docs/spec.md](docs/spec.md) is
+the source of truth for parity, protocol and design. Read its Design section before changing any
+view.
+
+## Tech stack
+
+- SwiftUI, with AppKit where SwiftUI falls short. Swift 6.4 and SwiftPM, with no Xcode project.
+  macOS 27 on Apple Silicon only.
+- `ChannelKit` is the domain: Codable models, the reducer, transcript grouping, attention, tasks
+  and cron. `ChannelClient` is transport: HTTP commands, SSE, reconnect and observable stores.
+  `ChannelIntelligence` is on-device Foundation Models. `ToyBoxChannels` is the app.
+- It talks to the same `/api/v1` HTTP and SSE routes as the Minecraft client. The conformance
+  fixtures are copied unchanged from that client.
 
 ## Build and run
 
@@ -25,6 +36,11 @@ for parity, protocol and design. Read its Design section before changing any vie
 - `bun script/history-demo.mjs` imports that reference factory read-only and serves `history-demo`
   on 3211 with 480 messages, canonical 100-message older pages and isolated read receipts. Use it
   for paging and key-window read checks without disturbing the shared 3210 screenshot baseline.
+- Integration tests are opt-in: `TOY_BOX_DEMO_URL=http://127.0.0.1:3210 ./script/test`, and
+  `TOY_BOX_HISTORY_DEMO_URL=http://127.0.0.1:3211 ./script/test --filter HistoryFixtureTests`
+  against a freshly started history demo.
+- `node script/generate-cron-fixtures.mjs ../toy-box` regenerates the cron fixtures from the
+  reference without touching it.
 - Quit the instances you launch when you are done.
 - Attach channel images from your own session `files/` folder, never `/tmp`. Toy Box serves
   attachments from their original paths, so a cleaned scratch folder breaks earlier posts.
@@ -74,26 +90,35 @@ for parity, protocol and design. Read its Design section before changing any vie
   domain or store change instead of working around it in a view.
 - `TranscriptView` is ChannelKit's message filter enum, so SwiftUI views use other names.
 
+## Client rules
+
+- Management writes are never retried. A 422 is a rejection, but a 500 may have committed, so
+  call `reconcileManagementWrite(channelId:)` before offering another attempt.
+- A send makes one attempt with a caller-owned UUID, kept in a per-channel outbox until confirmed.
+  Send Again reuses that UUID, so the server can't deliver it twice.
+- Reading never answers a request. Reconnects resume from the last applied revision.
+- The catalog's `lead` profile is required. Treat a missing one as a protocol error, and never
+  substitute client art.
+
 ## Releases
 
-- `script/release vX.Y.Z` reuses `script/run` in release configuration and builds arm64 only.
-  Set a pinned `SIGNING_IDENTITY` SHA-1 and a monotonically increasing `BUILD_NUMBER`.
-  It uses hardened runtime, a secure timestamp and only the audio-input entitlement.
-  Do not use `codesign --deep` for distribution or export all identities from a keychain.
-- Local release builds use Command Line Tools. GitHub Actions uses the explicitly selected
-  Xcode 27 on `xcode-27`; `DEVELOPER_DIR` is honored by both build and test scripts.
-- Set `NOTARY_PROFILE=toy-box-channels-notary` for notarization, stapling and Gatekeeper
-  validation. Without it, output is conspicuously `SIGNED-UNNOTARIZED` and not for publishing.
-- The certificate owner runs `script/setup-release-secrets`; agents must not run it or inspect
-  private keys/passwords. It exports only the specified certificate identity, stores local
-  notary credentials and uploads repo secrets. Never create or set those secrets on their behalf.
-- Push a `vX.Y.Z` tag only with release approval. The workflow tests before signing, cleans its
-  temporary keychain, and publishes the zip/checksum through a separate write-scoped job.
-  `workflow_dispatch` on `main` builds the same notarized artifact without creating a release.
+- Push a `vX.Y.Z` tag, only with the user's approval. Actions tests the tag, then signs,
+  notarizes, staples and publishes the zip and its checksum. Running the workflow by hand on
+  `main` is a dry run that keeps the zip as an artifact.
+- One-time setup, by the certificate owner only:
+  `./script/setup-release-secrets SHA1 AuthKey.p8 KEY_ID ISSUER_ID`, using a Team API key with
+  Developer access. Agents never run it, create secrets or read keys and passwords.
+- Locally: `SIGNING_IDENTITY=SHA1 BUILD_NUMBER=N NOTARY_PROFILE=toy-box-channels-notary
+  ./script/release vX.Y.Z`. Without `NOTARY_PROFILE` the zip is named `SIGNED-UNNOTARIZED` and
+  is never published.
+- Hardened runtime, a secure timestamp and only the audio-input entitlement. Never `--deep`.
+  Local builds use Command Line Tools, and CI uses the runner's selected Xcode 27 on `xcode-27`.
+- The Developer ID certificate and its G1 intermediate expire February 1, 2027. Before then, move
+  to a G2 certificate, rerun the setup, and update the workflow's intermediate URL and SHA-256.
 - The app icon's only source is `Resources/AppIcon.icon` (Designer). After changing it, run
-  `script/icon` to regenerate `Resources/AppIcon.icns` and commit both. Builds never render it.
-- Keep `Resources/AppIcon.icns` consistent across local and GitHub bundles. Never alter the
-  user's installed validation bundle or microphone permission state to test a release.
+  `script/icon` and commit both it and `Resources/AppIcon.icns`.
+- Never alter the user's installed validation bundle or microphone permission state to test a
+  release.
 
 ## Source ownership
 
@@ -104,6 +129,7 @@ for parity, protocol and design. Read its Design section before changing any vie
 | `Sources/ToyBoxChannels/Transcript`, `Tests/ToyBoxChannelsTests/TranscriptTests.swift` | Transcript |
 | `Sources/ToyBoxChannels/Composer` (composer and tray), `Tests/ToyBoxChannelsTests/ComposerTests.swift` | Composer |
 | `Sources/ToyBoxChannels/Overview`, `Management` | Overview |
+| `Sources/ChannelIntelligence/`, `Tests/ChannelIntelligenceTests/` | Intelligence |
 
 UI engineers may add one `Tests/ToyBoxChannelsTests/<Surface>Tests.swift` file for their own surface.
 

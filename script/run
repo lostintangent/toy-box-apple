@@ -7,7 +7,7 @@ SDK="${SDKROOT:-$(xcrun --sdk macosx --show-sdk-path)}"
 SDK_VERSION="$(xcrun --sdk "$SDK" --show-sdk-version)"
 SDK_MAJOR="${SDK_VERSION%%.*}"
 if [[ ! "$SDK_MAJOR" =~ ^[0-9]+$ ]] || [[ "$SDK_MAJOR" -lt 27 ]]; then
-    echo "Toy Box Channels requires macOS SDK 27 or later." >&2
+    echo "Toy Box Desktop requires macOS SDK 27 or later." >&2
     exit 1
 fi
 CONFIG="${CONFIGURATION:-debug}"
