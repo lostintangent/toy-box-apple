@@ -1499,6 +1499,14 @@ suggests channels in sidebar order and matches names ignoring case, accents and 
 exact names first, then prefixes, then substrings. The app refreshes the shortcuts' parameters
 whenever the set of channel names changes, so Siri learns them.
 
+A window that shows a channel makes it the window's user activity (`dev.toybox.channels.channel`)
+with `appEntityIdentifier` set to its Channel entity, through `userActivity(_:element:_:)` so the
+activity follows a switch. AppKit makes the main window's activity current, so Siri and Apple
+Intelligence take "this channel" to mean the one in front, and with no channel shown there's no
+activity. Handoff stays off, since no other device can open the channel. The activity carries only
+the identifier. The entity isn't `Transferable`, so Siri learns what a channel says only from
+Catch Me Up's answer.
+
 Catch Me Up without a channel says "You're all caught up." when nothing needs you, catches up on
 the one channel that does, or gives an overview: "You have updates in 4 channels." and then one
 line for each of the first 3 in attention order (waiting, completed, unread, then most recently
