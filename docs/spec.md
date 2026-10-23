@@ -899,7 +899,8 @@ when at least one valid attachment exists.
 
 Return sends. Shift-Return inserts a newline. Command-Return also sends. Do not submit an IME
 marked-text composition or while a completion menu is consuming Return. Escape dismisses
-completion or a popover without destroying text. Standard selection, undo, spelling, dictation,
+completion or a popover without destroying text. Tab and Shift-Tab leave the composer for the
+next and previous key views, like a browser text area, and Option-Tab inserts a tab. Standard selection, undo, spelling, dictation,
 writing-direction and accessibility behavior must work through native text input.
 
 **Dictation.** System Dictation already works in the composer because it is a real `NSTextView`.
@@ -953,7 +954,8 @@ Mentions remain plain `@handle` text. The completion popover anchors to the care
 composer when needed, is 300 wide and at most 320 high, and scrolls its own list. Order: Everyone,
 Lead, alphabetically matching members, then Create [Name] where canonical matching permits it.
 Rows are at least 44 high with 24-point avatars, name and one-line role. Up/Down select, Return or
-Tab accept, Escape cancels. Accepting inserts one trailing space and restores the caret. A
+Tab without Shift accept, Escape cancels. Shift-Tab and Shift-Return pass through to the
+composer, and Option-Tab still inserts a tab. Accepting inserts one trailing space and restores the caret. A
 member's secondary Edit action opens a sheet without accepting the mention. A Create action
 explicitly says it creates and starts a new agent. During creation show progress on that row,
 disable duplicate acceptance, preserve typed text on failure and show the error in the popover.
