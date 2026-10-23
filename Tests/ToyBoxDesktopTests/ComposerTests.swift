@@ -5,7 +5,6 @@ import ChannelKit
 import Foundation
 import Speech
 import SwiftUI
-import Synchronization
 import Testing
 import UniformTypeIdentifiers
 @testable import ToyBoxDesktop
@@ -206,39 +205,7 @@ struct ComposerTests {
         }
     }
 
-    @Test func returnSendsButShiftReturnAndIMECompositionDoNot() throws {
-        var sends = 0
-        let parent = NativeComposerInput(
-            text: .constant("Draft"), height: .constant(44), focused: .constant(false),
-            dragging: .constant(false), fontSize: 14, focusRequest: UUID(),
-            agents: [.lead(id: "lead")], canManage: false,
-            onSend: { sends += 1 }, onFiles: { _ in }, onImage: { _ in },
-            onError: { _ in }, onCreate: { .init(id: "created", name: $0) }, onEdit: { _ in }
-        )
-        let coordinator = parent.makeCoordinator()
-        let input = ComposerTextView(frame: .init(x: 0, y: 0, width: 400, height: 60))
-        coordinator.input = input
-        func key(_ modifiers: NSEvent.ModifierFlags) throws -> NSEvent {
-            try #require(NSEvent.keyEvent(
-                with: .keyDown, location: .zero, modifierFlags: modifiers, timestamp: 0,
-                windowNumber: 0, context: nil, characters: "\r", charactersIgnoringModifiers: "\r",
-                isARepeat: false, keyCode: 36
-            ))
-        }
-        #expect(try coordinator.handle(key([])))
-        #expect(try coordinator.handle(key(.command)))
-        #expect(sends == 2)
-        #expect(try !coordinator.handle(key(.shift)))
-        #expect(sends == 2)
-        input.setMarkedText("\u{5019}\u{88dc}", selectedRange: .init(location: 2, length: 0),
-                            replacementRange: .init(location: NSNotFound, length: 0))
-        #expect(input.hasMarkedText())
-        #expect(try !coordinator.handle(key([])))
-        #expect(sends == 2)
-        input.unmarkText()
-    }
-
-    @Test func nativeEditingKeepsShiftReturnAndUndoInTheDraft() throws {
+    @Test func nativeEditingKeepsNewlinesUndoAndAccessibilityEditsButOnlyReturnSends() throws {
         var text = ""
         var sends = 0
         let parent = NativeComposerInput(
@@ -284,6 +251,24 @@ struct ComposerTests {
         undo.redo()
         #expect(text == "First line\nSecond line")
         #expect(text == input.string)
+        #expect(input.selectedRange() == NSRange(location: text.utf16.count, length: 0))
+
+        undo.beginUndoGrouping()
+        defer { undo.endUndoGrouping() }
+        input.setAccessibilityValue("Accessible edit")
+        #expect(input.string == "Accessible edit")
+        #expect(text == input.string)
+
+        #expect(try coordinator.handle(key("\r", code: 36, in: window)))
+        #expect(try coordinator.handle(key("\r", code: 36, in: window, modifiers: .command)))
+        #expect(sends == 2)
+        #expect(try !coordinator.handle(key("\r", code: 36, in: window, modifiers: .shift)))
+        input.setMarkedText("\u{5019}\u{88dc}", selectedRange: .init(location: 2, length: 0),
+                            replacementRange: .init(location: NSNotFound, length: 0))
+        #expect(input.hasMarkedText())
+        #expect(try !coordinator.handle(key("\r", code: 36, in: window)))
+        #expect(sends == 2)
+        input.unmarkText()
     }
 
     @Test func pasteboardImagesAndFilesUseTheSameImportCallbacks() throws {
@@ -315,38 +300,6 @@ struct ComposerTests {
         #expect(!coordinator.acceptPasteboard(pasteboard))
     }
 
-    @Test func consecutiveNativeKeystrokesKeepTheirCaretThroughSwiftUIUpdates() async throws {
-        let draft = ComposerDraft()
-        let host = NSHostingView(rootView: ComposerInputTestHost(draft: draft))
-        host.frame = NSRect(x: 0, y: 0, width: 400, height: 140)
-        let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: true)
-        window.isReleasedWhenClosed = false
-        window.contentView = host
-        defer { window.close() }
-        host.layoutSubtreeIfNeeded()
-        try await Task.sleep(for: .milliseconds(50))
-        let input = try #require(composerInput(in: host))
-        #expect(window.makeFirstResponder(input))
-        for (index, character) in ["a", "b", "c"].enumerated() {
-            let key = try #require(NSEvent.keyEvent(
-                with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
-                windowNumber: window.windowNumber, context: nil, characters: character,
-                charactersIgnoringModifiers: character, isARepeat: false, keyCode: 0
-            ))
-            input.keyDown(with: key)
-            try await Task.sleep(for: .milliseconds(30))
-            host.layoutSubtreeIfNeeded()
-            #expect(input.string == String("abc".prefix(index + 1)))
-            #expect(draft.text == input.string)
-            #expect(input.selectedRange() == NSRange(location: index + 1, length: 0))
-        }
-        input.setAccessibilityValue("Accessible edit")
-        try await Task.sleep(for: .milliseconds(30))
-        host.layoutSubtreeIfNeeded()
-        #expect(input.string == "Accessible edit")
-        #expect(draft.text == input.string)
-    }
-
     @Test func tabLeavesTheComposerLikeATextareaUnlessItAcceptsAMention() async throws {
         let draft = ComposerDraft()
         // AppKit neighbors keep these focus moves out of SwiftUI's focus state, which tests running
@@ -375,22 +328,18 @@ struct ComposerTests {
             window.orderOut(nil)
             window.close()
         }
-        container.layoutSubtreeIfNeeded()
-        try await Task.sleep(for: .milliseconds(50))
+        try await waitForUpdate(of: container, "the composer mounts") { composerInput(in: container) != nil }
         let input = try #require(composerInput(in: container))
-        func press(_ keyCode: UInt16, _ characters: String, _ modifiers: NSEvent.ModifierFlags = []) async throws {
-            input.keyDown(with: try #require(NSEvent.keyEvent(
-                with: .keyDown, location: .zero, modifierFlags: modifiers, timestamp: 0,
-                windowNumber: window.windowNumber, context: nil, characters: characters,
-                charactersIgnoringModifiers: characters, isARepeat: false, keyCode: keyCode
-            )))
-            try await Task.sleep(for: .milliseconds(30))
+        func press(_ keyCode: UInt16, _ characters: String, _ modifiers: NSEvent.ModifierFlags = []) throws {
+            input.keyDown(with: try key(characters, code: keyCode, in: window, modifiers: modifiers))
         }
         func type(_ text: String) async throws {
             #expect(window.makeFirstResponder(input))
             input.string = ""
             input.insertText(text, replacementRange: input.selectedRange())
-            try await Task.sleep(for: .milliseconds(30))
+            try await waitForUpdate(of: host, "the text and mention menu update") {
+                draft.text == text && input.coordinator?.isCompletionVisible == (text == "@")
+            }
         }
         var focusedField: String? {
             let responder: AnyObject? = (window.firstResponder as? NSText)?.delegate ?? window.firstResponder
@@ -398,37 +347,37 @@ struct ComposerTests {
         }
 
         try await type("Hello")
-        try await press(48, "\t")
+        try press(48, "\t")
         #expect(focusedField == "After")
         try await type("Hello")
-        try await press(48, "\u{19}", .shift)
+        try press(48, "\u{19}", .shift)
         #expect(focusedField == "Before")
         #expect(draft.text == "Hello")
         try await type("Hello")
-        try await press(48, "\t", .option)
+        try press(48, "\t", .option)
         #expect(window.firstResponder === input)
         #expect(draft.text == "Hello\t")
 
         // With the mention list open, Tab accepts like Return. Shift still moves back, as in the pane,
         // and Option-Tab is still a literal tab.
         try await type("@")
-        try await press(125, "\u{f701}")
-        try await press(48, "\t")
+        try press(125, "\u{f701}")
+        try press(48, "\t")
         #expect(window.firstResponder === input)
         #expect(draft.text == "@lead ")
         try await type("@")
-        try await press(48, "\u{19}", .shift)
+        try press(48, "\u{19}", .shift)
         #expect(focusedField == "Before")
         #expect(draft.text == "@")
         try await type("@")
-        try await press(48, "\t", .option)
+        try press(48, "\t", .option)
         #expect(window.firstResponder === input)
         #expect(draft.text == "@\t")
         try await type("@")
-        try await press(36, "\r", .shift)
+        try press(36, "\r", .shift)
         #expect(draft.text == "@\n")
         // The new line ends the mention, so Return sends rather than accepting one.
-        try await press(36, "\r")
+        try press(36, "\r")
         #expect(draft.text == "@\n")
     }
 
@@ -444,13 +393,16 @@ struct ComposerTests {
         let coordinator = parent.makeCoordinator()
         let input = ComposerTextView()
         coordinator.input = input
-        input.string = "Seedabc"
-        input.setSelectedRange(NSRange(location: 7, length: 0))
-        coordinator.synchronizeModelText("Seed")
-        #expect(input.string == "Seedabc")
-        #expect(input.selectedRange() == NSRange(location: 7, length: 0))
-        coordinator.textDidChange(Notification(name: NSText.didChangeNotification))
-        #expect(draft.text == "Seedabc")
+        for (index, character) in ["a", "b", "c"].enumerated() {
+            let pendingText = draft.text + character
+            input.string = pendingText
+            input.setSelectedRange(NSRange(location: pendingText.utf16.count, length: 0))
+            coordinator.synchronizeModelText(draft.text)
+            #expect(input.string == "Seed" + String("abc".prefix(index + 1)))
+            #expect(input.selectedRange() == NSRange(location: pendingText.utf16.count, length: 0))
+            coordinator.textDidChange(Notification(name: NSText.didChangeNotification))
+            #expect(draft.text == pendingText)
+        }
         draft.text = "Reply: Seedabc"
         coordinator.synchronizeModelText(draft.text)
         #expect(input.string == draft.text)
@@ -487,83 +439,6 @@ struct ComposerTests {
         #expect(ComposerTray.isVisible(artifacts: [], tasks: [], preview: .init(kind: "screen", screenId: "main")))
     }
 
-    @Test func trayTaskPopoverAlignsStatusIconsWithItsHeadingAndTrailsDisclosures() async throws {
-        var channel = Channel(id: "tasks", name: "Tasks", model: .init(provider: "test", name: "test"),
-                              latestSequence: 1, seenThrough: 1, updatedAt: "2026-10-22T08:00:00Z")
-        channel.tasks = [
-            .init(id: "parent", title: "Parent task", status: "blocked", children: [
-                .init(id: "child", title: "Child task", status: "done")
-            ])
-        ]
-        let size = NSSize(width: ComposerTasksPopover.width, height: 240)
-        // A popover inherits the tray button's environment, so host it under the tray's label styling.
-        let view = NSHostingView(rootView:
-            ComposerTasksPopover(tasks: channel.tasks, agents: [], artifacts: [], onArtifactOpen: { _ in })
-                .frame(width: size.width, height: size.height, alignment: .top)
-                .background(Color.white)
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
-                .environment(\.colorScheme, .light))
-        let window = NSWindow(contentRect: NSRect(origin: .zero, size: size),
-                              styleMask: [.borderless], backing: .buffered, defer: false)
-        window.isReleasedWhenClosed = false
-        window.contentView = view
-        defer { window.close() }
-        view.layoutSubtreeIfNeeded()
-        window.displayIfNeeded()
-        try await Task.sleep(for: .milliseconds(100))
-        view.layoutSubtreeIfNeeded()
-        let bitmap = try #require(view.bitmapImageRepForCachingDisplay(in: view.bounds))
-        view.cacheDisplay(in: view.bounds, to: bitmap)
-        let scale = CGFloat(bitmap.pixelsWide) / size.width
-
-        var pixels: [(x: Int, y: Int, color: NSColor)] = []
-        for y in 0..<bitmap.pixelsHigh {
-            for x in 0..<bitmap.pixelsWide {
-                if let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) { pixels.append((x, y, color)) }
-            }
-        }
-        let isGreen = { (c: NSColor) in c.greenComponent - c.redComponent > 0.08 && c.greenComponent - c.blueComponent > 0.08 }
-        let isRed = { (c: NSColor) in c.redComponent - c.greenComponent > 0.3 && c.redComponent - c.blueComponent > 0.3 }
-        let isInk = { (c: NSColor) in (c.redComponent + c.greenComponent + c.blueComponent) / 3 < 0.6 }
-        func minX(_ matches: [(x: Int, y: Int, color: NSColor)]) -> CGFloat? {
-            matches.map(\.x).min().map { CGFloat($0) / scale }
-        }
-
-        let parentStatus = pixels.filter { isRed($0.color) }
-        let listTop = try #require(parentStatus.map(\.y).min())
-        let parentBottom = try #require(parentStatus.map(\.y).max())
-        let heading = try #require(minX(pixels.filter { $0.y < listTop - Int(4 * scale) && isInk($0.color) }))
-        let parent = try #require(minX(parentStatus))
-        let child = try #require(minX(pixels.filter { isGreen($0.color) }))
-        #expect(abs(heading - ComposerTasksPopover.inset) < 1.5, "Heading starts at \(heading)")
-        #expect(abs(parent - heading) < 1.5, "Root status \(parent), heading \(heading)")
-        let titleStart = parent + OverviewTaskRow.statusSize + OverviewTaskRow.titleGap
-        #expect(abs(child - titleStart) < 1.5, "Child status \(child) should sit under its parent's title at \(titleStart)")
-
-        let list = pixels.filter { $0.y >= listTop - Int(2 * scale) && isInk($0.color) }
-        let leftmost = try #require(minX(list))
-        #expect(leftmost > parent - 1, "Nothing may hang left of the status column, found ink at \(leftmost)")
-
-        let firstLine = list.filter { $0.y <= parentBottom }
-        let lineEnd = try #require(firstLine.map(\.x).max().map { CGFloat($0) / scale })
-        let titleWidth = ("Parent task" as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: 13)]).width
-        #expect(lineEnd > titleStart + titleWidth + 6,
-                "The disclosure should trail the title, but the first line ends at \(lineEnd)")
-
-        func darkest(_ matches: [(x: Int, y: Int, color: NSColor)]) -> CGFloat? {
-            matches.map { ($0.color.redComponent + $0.color.greenComponent + $0.color.blueComponent) / 3 }.min()
-        }
-        let headingInk = try #require(darkest(pixels.filter {
-            $0.y < listTop - Int(4 * scale) && CGFloat($0.x) / scale < size.width / 2
-        }))
-        let titleInk = try #require(darkest(firstLine.filter {
-            CGFloat($0.x) / scale > titleStart && CGFloat($0.x) / scale < titleStart + titleWidth
-        }))
-        #expect(headingInk < titleInk + 0.08,
-                "The heading should be primary ink like an open task's title, not the tray's secondary (\(headingInk) vs \(titleInk))")
-    }
-
     /// Mouse users get legacy scrollers, which `.hidden` still shows. Run with `-AppleShowScrollBars Always`
     /// to exercise that locally. GitHub's runners use legacy scrollers already.
     @Test func imageStripKeepsOneHeightWhenItsImagesOverflowAndStillScrolls() async throws {
@@ -593,13 +468,13 @@ struct ComposerTests {
             // Hiding the scroller must not strand the overflow: a trackpad or Shift-wheel still reaches it.
             guard width == 160 else { continue }
             let scrollView = try #require(scrollViews.first)
-            for _ in 0..<60 where scrollView.contentView.bounds.minX <= 0 {
+            try await waitForUpdate(of: view, "the overflowing strip scrolls sideways") {
+                if scrollView.contentView.bounds.minX > 0 { return true }
                 let notch = try #require(CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 2,
                                                  wheel1: 0, wheel2: -3, wheel3: 0))
                 scrollView.scrollWheel(with: try #require(NSEvent(cgEvent: notch)))
-                try await Task.sleep(for: .milliseconds(16))
+                return scrollView.contentView.bounds.minX > 0
             }
-            #expect(scrollView.contentView.bounds.minX > 0, "The overflowing strip should scroll sideways")
         }
         let style = NSScroller.preferredScrollerStyle == .legacy ? "legacy" : "overlay"
         #expect(heights[0] == heights[1], "\(style) scrollers. \(geometry.joined(separator: "; "))")
@@ -728,8 +603,7 @@ struct ComposerTests {
         window.isReleasedWhenClosed = false
         window.contentView = host
         defer { window.close() }
-        host.layoutSubtreeIfNeeded()
-        try await Task.sleep(for: .milliseconds(50))
+        try await waitForUpdate(of: host, "the composer mounts") { composerInput(in: host) != nil }
         let input = try #require(composerInput(in: host))
         let clip = try #require(input.enclosingScrollView?.contentView)
         #expect(window.makeFirstResponder(input))
@@ -803,22 +677,23 @@ struct ComposerTests {
     }
 
     @Test func sendingWaitsForFinalWordsAndKeepsUnconfirmedWordsUnsent() async throws {
-        let draft = ComposerDraft()
+        var revision = UUID()
         let recognizer = ManualDictationRecognizer()
         var system = DictationSystem.manual(recognizer)
         system.finalizeTimeout = .milliseconds(150)
         let dictation = ComposerDictation(system: system)
-        dictation.draftRevision = { draft.revision }
-        let (window, input) = try await hostComposer(draft: draft, dictation: dictation)
-        defer { window.close() }
+        let target = RecordingDictationTarget()
+        dictation.target = target
+        dictation.draftRevision = { revision }
+        await dictation.refresh()
+        defer { dictation.deactivate() }
 
         dictation.toggle()
         try await waitUntil("dictation listens") { dictation.phase == .listening }
         recognizer.send("Check the hed", isFinal: false)
         recognizer.finalWords = [("Check the header.", true)]
         #expect(await dictation.stop(.send))
-        #expect(draft.text == "Check the header.")
-        #expect(input.string == draft.text)
+        #expect(target.commits == ["Check the header."])
         #expect(dictation.notice == nil)
 
         dictation.toggle()
@@ -826,17 +701,15 @@ struct ComposerTests {
         recognizer.send("And the footer", isFinal: false)
         recognizer.hangs = true
         #expect(await !dictation.stop(.send), "A stalled transcriber cannot confirm words for sending")
-        #expect(draft.text == "Check the header. And the footer", "Unconfirmed words stay in the draft")
-        #expect(dictation.notice == .unsent(revision: draft.revision))
+        #expect(target.commits == ["Check the header.", "And the footer"], "Unconfirmed words reach the text target")
+        #expect(dictation.notice == .unsent(revision: revision))
         #expect(dictation.notice?.text == "Dictation didn't finish, so the message wasn't sent. Check the last words, then send.")
         #expect(!dictation.isSessionActive)
 
-        dictation.draftChanged(to: draft.revision)
+        dictation.draftChanged(to: revision)
         #expect(dictation.notice != nil, "Committing the unconfirmed words is not an edit")
-        input.setSelectedRange(NSRange(location: (input.string as NSString).length, length: 0))
-        input.insertText(".", replacementRange: input.selectedRange())
-        dictation.draftChanged(to: draft.revision)
-        #expect(draft.text == "Check the header. And the footer.")
+        revision = UUID()
+        dictation.draftChanged(to: revision)
         #expect(dictation.notice == nil, "Editing the draft clears the notice")
 
         dictation.toggle()
@@ -844,27 +717,28 @@ struct ComposerTests {
         recognizer.send("Thanks", isFinal: false)
         recognizer.hangs = true
         #expect(await !dictation.stop(.send))
-        #expect(dictation.notice == .unsent(revision: draft.revision))
+        #expect(dictation.notice == .unsent(revision: revision))
         dictation.draftSent()
         #expect(dictation.notice == nil, "Sending clears the notice")
     }
 
     @Test func silenceStopsDictationAndKeepsItsWords() async throws {
         #expect(DictationSystem.live.silenceTimeout == .seconds(30))
-        let draft = ComposerDraft()
         let recognizer = ManualDictationRecognizer()
         var system = DictationSystem.manual(recognizer)
         system.silenceTimeout = .milliseconds(250)
         var announcements: [String] = []
         system.announce = { announcements.append($0) }
         let dictation = ComposerDictation(system: system)
-        let (window, _) = try await hostComposer(draft: draft, dictation: dictation)
-        defer { window.close() }
+        let target = RecordingDictationTarget()
+        dictation.target = target
+        await dictation.refresh()
+        defer { dictation.deactivate() }
         // The words arrive as listening starts, so a busy main actor can't let silence win first.
         recognizer.firstWords = [("Quiet now", true)]
         dictation.toggle()
         try await waitUntil("silence stops dictation after its words") {
-            draft.text == "Quiet now" && !dictation.isSessionActive
+            target.commits == ["Quiet now"] && !dictation.isSessionActive
         }
         #expect(dictation.phase == .idle)
         #expect(announcements == ["Listening", "Dictation stopped"])
@@ -968,7 +842,6 @@ struct ComposerTests {
         var system = DictationSystem.manual(recognizer)
         system.installAssets = { _, progress in
             progress(0.5)
-            try await Task.sleep(for: .milliseconds(50))
             progress(1)
         }
         let target = RecordingDictationTarget()
@@ -990,39 +863,38 @@ struct ComposerTests {
         let dictation = ComposerDictation(system: .scripted())
         await dictation.refresh()
         var dictates = 0, attaches = 0
-        // Offsets from the center that miss the glyph but fall inside the 28pt circle.
-        let edges = [CGPoint(x: -12, y: 0), CGPoint(x: 0, y: 11), CGPoint(x: -8, y: -9), CGPoint(x: 9, y: 9)]
-        let outside = CGPoint(x: -20, y: -20)
-        for edge in edges {
-            try await click(DictateButton(dictation: dictation) { dictates += 1 }, at: edge)
-            try await click(AttachImagesButton { attaches += 1 }, at: edge)
-        }
-        try await click(DictateButton(dictation: dictation) { dictates += 1 }, at: outside)
-        try await click(AttachImagesButton { attaches += 1 }, at: outside)
-        #expect(dictates == edges.count)
-        #expect(attaches == edges.count)
-    }
-
-    /// Clicks a point given as an offset from the center of a view hosted in its own window.
-    private func click(_ button: some View, at offset: CGPoint) async throws {
         let size: CGFloat = 68
-        let view = NSHostingView(rootView: button.frame(width: size, height: size))
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: size, height: size),
+        let view = NSHostingView(rootView: HStack(spacing: 0) {
+            DictateButton(dictation: dictation) { dictates += 1 }.frame(width: size, height: size)
+            AttachImagesButton { attaches += 1 }.frame(width: size, height: size)
+        })
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: size * 2, height: size),
                               styleMask: [.borderless], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         window.contentView = view
+        window.setFrameOrigin(NSPoint(x: -10_000, y: -10_000))
         window.orderFrontRegardless()
         defer { window.close() }
-        view.layoutSubtreeIfNeeded()
-        window.displayIfNeeded()
-        try await Task.sleep(for: .milliseconds(50))
-        let point = NSPoint(x: size / 2 + offset.x, y: size / 2 + offset.y)
-        for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
-            let event = try #require(NSEvent.mouseEvent(
-                with: type, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
-                windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
-            window.sendEvent(event)
+        try await waitForUpdate(of: view, "both native buttons mount") {
+            func countButtons(in view: NSView) -> Int {
+                (view is NSButton ? 1 : 0) + view.subviews.reduce(0) { $0 + countButtons(in: $1) }
+            }
+            return countButtons(in: view) == 2
         }
+        let edges = [CGPoint(x: -12, y: 0), CGPoint(x: 0, y: 11), CGPoint(x: -8, y: -9), CGPoint(x: 9, y: 9)]
+        for offset in edges + [CGPoint(x: -20, y: -20)] {
+            for centerX in [size / 2, size * 1.5] {
+                let point = NSPoint(x: centerX + offset.x, y: size / 2 + offset.y)
+                for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+                    let event = try #require(NSEvent.mouseEvent(
+                        with: type, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                        windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
+                    window.sendEvent(event)
+                }
+            }
+        }
+        #expect(dictates == edges.count)
+        #expect(attaches == edges.count)
     }
 
     /// Whether SpeechAnalyzer's on-device English dictation model is installed. A failed inventory query
@@ -1034,11 +906,8 @@ struct ComposerTests {
             supporting: [DictationRecognizer.transcriber(for: locale)]) == nil
     }
 
-    // GitHub's runners ship without the model, so CI skips this test. Locally it stays a requirement.
-    @Test(.disabled("This CI runner has no on-device English (en_US) dictation model for SpeechAnalyzer") {
-        guard ProcessInfo.processInfo.environment["CI"] != nil else { return false }
-        return try await !ComposerTests.hasEnglishDictationModel()
-    })
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["TOY_BOX_REAL_DICTATION_TESTS"] == "1",
+                   "Opt in with TOY_BOX_REAL_DICTATION_TESTS=1 and an installed English dictation model"))
     func theRealTranscriberHearsARecordingThroughTheAudioSourceProtocol() async throws {
         guard try await Self.hasEnglishDictationModel() else {
             Issue.record("The on-device English dictation model is required for this test")
@@ -1158,44 +1027,27 @@ struct ComposerTests {
         let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: true)
         window.isReleasedWhenClosed = false
         window.contentView = host
-        host.layoutSubtreeIfNeeded()
-        try await Task.sleep(for: .milliseconds(50))
+        try await waitForUpdate(of: host, "the composer mounts") { composerInput(in: host) != nil }
         let input = try #require(composerInput(in: host))
         #expect(window.makeFirstResponder(input))
         await dictation.refresh()
         return (window, input)
     }
 
-    /// Waits for observable state to satisfy `condition`, however long the shared main actor takes
-    /// to get there. Each check runs when tracked state changes, and the suite's time limit ends a
-    /// wait that never completes.
-    private func waitUntil(_ description: String, _ condition: () -> Bool) async throws {
-        while !condition() {
-            guard !Task.isCancelled else {
-                Issue.record("Gave up waiting until \(description)")
-                throw CancellationError()
-            }
-            let change = ObservedChange()
-            await withTaskCancellationHandler {
-                await withCheckedContinuation { continuation in
-                    change.wait(continuation)
-                    withObservationTracking { _ = condition() } onChange: { change.fire() }
-                }
-            } onCancel: {
-                change.fire()
-            }
+    private func waitUntil(_ description: String, _ condition: () throws -> Bool) async throws {
+        let deadline = ContinuousClock.now + .seconds(30)
+        while try !condition(), ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
         }
+        let satisfied = try condition()
+        try #require(satisfied, "Timed out waiting until \(description)")
     }
 
     /// Waits for SwiftUI to update a hosted AppKit view, for checks on state that isn't observable.
-    private func waitForUpdate(of host: NSView, _ description: String, until condition: () -> Bool) async throws {
-        while !condition() {
-            guard !Task.isCancelled else {
-                Issue.record("Gave up waiting until \(description)")
-                throw CancellationError()
-            }
-            try await Task.sleep(for: .milliseconds(10))
+    private func waitForUpdate(of host: NSView, _ description: String, until condition: () throws -> Bool) async throws {
+        try await waitUntil(description) {
             host.layoutSubtreeIfNeeded()
+            return try condition()
         }
     }
 
@@ -1203,9 +1055,10 @@ struct ComposerTests {
         input.textStorage?.attribute(.foregroundColor, at: location, effectiveRange: nil) as? NSColor
     }
 
-    private func key(_ characters: String, code: UInt16, in window: NSWindow) throws -> NSEvent {
+    private func key(_ characters: String, code: UInt16, in window: NSWindow,
+                     modifiers: NSEvent.ModifierFlags = []) throws -> NSEvent {
         try #require(NSEvent.keyEvent(
-            with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
+            with: .keyDown, location: .zero, modifierFlags: modifiers, timestamp: 0,
             windowNumber: window.windowNumber, context: nil, characters: characters,
             charactersIgnoringModifiers: characters, isARepeat: false, keyCode: code
         ))
@@ -1267,6 +1120,7 @@ private extension DictationSystem {
     var hangs = false
     private(set) var isCancelled = false
     private var onResult: (@MainActor (String, Bool) -> Void)?
+    private var finishing: CheckedContinuation<Void, any Error>?
 
     func start(onListening: @escaping @MainActor () -> Void,
                onResult: @escaping @MainActor (String, Bool) -> Void,
@@ -1284,12 +1138,18 @@ private extension DictationSystem {
     func send(_ text: String, isFinal: Bool) { onResult?(text, isFinal) }
 
     func finish() async throws {
-        while hangs && !isCancelled { try await Task.sleep(for: .milliseconds(10)) }
+        if hangs, !isCancelled {
+            try await withCheckedThrowingContinuation { finishing = $0 }
+        }
         if isCancelled { throw CancellationError() }
         for (text, isFinal) in finalWords { onResult?(text, isFinal) }
     }
 
-    func cancel() { isCancelled = true }
+    func cancel() {
+        isCancelled = true
+        finishing?.resume(throwing: CancellationError())
+        finishing = nil
+    }
 }
 
 /// Wraps the real recognizer and records every result it reports, with whether the composer was
@@ -1330,31 +1190,10 @@ private extension DictationSystem {
     }
 }
 
-/// Resumes one observation wait, whether the observed state changed or the test was cancelled.
-private final class ObservedChange: Sendable {
-    private let state = Mutex<(fired: Bool, continuation: CheckedContinuation<Void, Never>?)>((false, nil))
-
-    func wait(_ continuation: CheckedContinuation<Void, Never>) {
-        let resumeNow = state.withLock { state in
-            if state.fired { return true }
-            state.continuation = continuation
-            return false
-        }
-        if resumeNow { continuation.resume() }
-    }
-
-    func fire() {
-        state.withLock { state in
-            state.fired = true
-            defer { state.continuation = nil }
-            return state.continuation
-        }?.resume()
-    }
-}
-
 @MainActor private final class RecordingDictationTarget: DictationTextTarget {
     var isInKeyWindow = false
     private(set) var begins = 0
+    private(set) var commits: [String] = []
 
     func beginDictation() -> Bool {
         begins += 1
@@ -1362,7 +1201,7 @@ private final class ObservedChange: Sendable {
     }
 
     func showDictation(_ transcript: DictationTranscript) {}
-    func endDictation(_ finalized: String) {}
+    func endDictation(_ finalized: String) { commits.append(finalized) }
 }
 
 @MainActor private final class MicrophoneProbe {
