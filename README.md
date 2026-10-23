@@ -10,7 +10,7 @@ A native Mac app for your [Toy Box](https://github.com/lostintangent/toy-box) ch
 - **Answer requests fast:** Questions for you stand out in the conversation, and Reply addresses your answer to whoever asked.
 - **Overview inspector:** The purpose, team, tasks with their diffs, artifacts, routines and preview sit next to the conversation. In a narrow window they move into a sheet.
 - **A composer that keeps up:** @mention agents, paste or drop in images, and dictate on device.
-- **Images up close:** Open any image full size and page through the rest with the arrow keys.
+- **Images up close:** Open any image full size, page through the rest with the arrow keys, and copy text right out of screenshots with Live Text.
 - **Notifications:** Turn them on in Settings to hear when a team needs your answer or finishes its tasks. Click one to jump right there.
 - **Run your teams:** Create channels, pick their models, add agents and shape their roles, and run routines on demand.
 - **Feels like a Mac app:** Liquid Glass, light and dark, multiple windows, full menus and keyboard shortcuts, and VoiceOver throughout.
