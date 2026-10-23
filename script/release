@@ -13,7 +13,7 @@ BUILD="${BUILD_NUMBER:?Set BUILD_NUMBER to a monotonically increasing build numb
 [[ -s "$ROOT/Resources/AppIcon.icns" ]] || { echo "The release app icon is missing. Run script/icon." >&2; exit 1; }
 SCRATCH="${SCRATCH_PATH:-$ROOT/.build/distribution}"
 OUTPUT="${OUTPUT_DIR:-$ROOT/dist}"
-APP="$SCRATCH/Toy Box Channels.app"
+APP="$SCRATCH/Toy Box Desktop.app"
 SIGN_ARGS=(--force --options runtime --timestamp --entitlements "$ROOT/Resources/Release.entitlements" --sign "$IDENTITY")
 IDENTITY_ARGS=(-v -p codesigning)
 if [[ -n "${SIGNING_KEYCHAIN:-}" ]]; then
@@ -39,7 +39,7 @@ ARCHIVE="$OUTPUT/ToyBoxDesktop-$VERSION-arm64$SUFFIX.zip"
 CONFIGURATION=release SCRATCH_PATH="$SCRATCH" "$ROOT/script/run" --no-open
 PLIST="$APP/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" -c "Set :CFBundleVersion $BUILD" "$PLIST"
-if [[ "$(xcrun lipo -archs "$APP/Contents/MacOS/ToyBoxChannels")" != arm64 ]]; then
+if [[ "$(xcrun lipo -archs "$APP/Contents/MacOS/ToyBoxDesktop")" != arm64 ]]; then
     echo "Release executable must contain only arm64." >&2
     exit 1
 fi

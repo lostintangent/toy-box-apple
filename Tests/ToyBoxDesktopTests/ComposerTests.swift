@@ -6,7 +6,7 @@ import SwiftUI
 import Synchronization
 import Testing
 import UniformTypeIdentifiers
-@testable import ToyBoxChannels
+@testable import ToyBoxDesktop
 
 @MainActor @Suite(.timeLimit(.minutes(1)))
 struct ComposerTests {

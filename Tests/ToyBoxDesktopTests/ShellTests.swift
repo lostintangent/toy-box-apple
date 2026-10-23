@@ -4,7 +4,7 @@ import ChannelClient
 import SwiftUI
 import Synchronization
 import Testing
-@testable import ToyBoxChannels
+@testable import ToyBoxDesktop
 
 @Suite("Shell launch configuration")
 struct ShellTests {

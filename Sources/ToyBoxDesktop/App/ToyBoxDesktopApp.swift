@@ -5,7 +5,7 @@ import SwiftUI
 typealias ViewState<Value> = SwiftUI.State<Value>
 
 @main
-struct ToyBoxChannelsApp: App {
+struct ToyBoxDesktopApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @ViewState private var model: AppModel
     @ViewState private var didCheckStartupWindow = false

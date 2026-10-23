@@ -10,7 +10,7 @@ view.
   macOS 27 on Apple Silicon only.
 - `ChannelKit` is the domain: Codable models, the reducer, transcript grouping, attention, tasks
   and cron. `ChannelClient` is transport: HTTP commands, SSE, reconnect and observable stores.
-  `ChannelIntelligence` is on-device Foundation Models. `ToyBoxChannels` is the app.
+  `ChannelIntelligence` is on-device Foundation Models. `ToyBoxDesktop` is the app.
 - It talks to the same `/api/v1` HTTP and SSE routes as the Minecraft client. The conformance
   fixtures are copied unchanged from that client.
 
@@ -57,13 +57,13 @@ view.
   With the real 27+ SDK stamp, they also misrender Liquid Glass and sidebar selection. Use
   them for layout evidence only. Verify materials, selection and scroll-edge effects in a real window.
 - Computer Use approves apps by bundle ID. A path is refused. The user's copy is
-  `dev.toybox.channels.mac`. Agents test as `dev.toybox.channels.mac.test` ("Toy Box Channels
+  `dev.toybox.channels.mac`. Agents test as `dev.toybox.channels.mac.test` ("Toy Box Desktop
   Test" in `.build/agents`), which `script/validate` builds and launches. Instances that share a
   bundle ID can be read but not clicked, so the separate ID is what lets you interact while the
   user's app is open. Until the user approves the test ID, `script/validate` falls back to the
   shared bundle and says so.
 - Launch your own build in the background against the demo:
-  `open -n -g "/tmp/tbm-<you>/Toy Box Channels.app" --args --server http://127.0.0.1:3210 -ApplePersistenceIgnoreState YES`.
+  `open -n -g "/tmp/tbm-<you>/Toy Box Desktop.app" --args --server http://127.0.0.1:3210 -ApplePersistenceIgnoreState YES`.
   `-g` keeps it from taking the user's focus. A `--server` or `TOY_BOX_SERVER_URL` launch is
   session-only and never replaces the server the user saved in Settings.
   `-ApplePersistenceIgnoreState YES` keeps test instances from restoring or overwriting the
@@ -125,13 +125,13 @@ view.
 | Path | Owner |
 | --- | --- |
 | `Sources/ChannelKit/`, `Sources/ChannelClient/`, `Tests/` (except below), `script/`, `Package.swift` | Core |
-| `Sources/ToyBoxChannels/App`, `Shell`, `Sidebar`, `Settings`, `Shared`, `Channel/ChannelDetailView.swift` | Shell |
-| `Sources/ToyBoxChannels/Transcript`, `Tests/ToyBoxChannelsTests/TranscriptTests.swift` | Transcript |
-| `Sources/ToyBoxChannels/Composer` (composer and tray), `Tests/ToyBoxChannelsTests/ComposerTests.swift` | Composer |
-| `Sources/ToyBoxChannels/Overview`, `Management` | Overview |
+| `Sources/ToyBoxDesktop/App`, `Shell`, `Sidebar`, `Settings`, `Shared`, `Channel/ChannelDetailView.swift` | Shell |
+| `Sources/ToyBoxDesktop/Transcript`, `Tests/ToyBoxDesktopTests/TranscriptTests.swift` | Transcript |
+| `Sources/ToyBoxDesktop/Composer` (composer and tray), `Tests/ToyBoxDesktopTests/ComposerTests.swift` | Composer |
+| `Sources/ToyBoxDesktop/Overview`, `Management` | Overview |
 | `Sources/ChannelIntelligence/`, `Tests/ChannelIntelligenceTests/` | Intelligence |
 
-UI engineers may add one `Tests/ToyBoxChannelsTests/<Surface>Tests.swift` file for their own surface.
+UI engineers may add one `Tests/ToyBoxDesktopTests/<Surface>Tests.swift` file for their own surface.
 
 Edit only files you own. Ask the owner for anything else in the channel.
 

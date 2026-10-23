@@ -17,10 +17,10 @@ SCRATCH="${SCRATCH_PATH:-$ROOT/.build}"
 ARGS=(--package-path "$ROOT" --scratch-path "$SCRATCH" --configuration "$CONFIG" --sdk "$SDK" --arch arm64)
 xcrun swift build "${ARGS[@]}"
 BIN="$(xcrun swift build "${ARGS[@]}" --show-bin-path)"
-APP="$SCRATCH/Toy Box Channels.app"
-EXECUTABLE="$APP/Contents/MacOS/ToyBoxChannels"
+APP="$SCRATCH/Toy Box Desktop.app"
+EXECUTABLE="$APP/Contents/MacOS/ToyBoxDesktop"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp "$BIN/ToyBoxChannels" "$EXECUTABLE"
+cp "$BIN/ToyBoxDesktop" "$EXECUTABLE"
 cp "$ROOT/Resources/Info.plist" "$APP/Contents/Info.plist"
 if [[ -f "$ROOT/Resources/AppIcon.icns" ]]; then
     cp "$ROOT/Resources/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"

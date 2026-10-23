@@ -8,7 +8,7 @@ import Synchronization
 import Testing
 import UniformTypeIdentifiers
 import VisionKit
-@testable import ToyBoxChannels
+@testable import ToyBoxDesktop
 
 @Suite("Transcript rendering and visibility")
 struct TranscriptTests {

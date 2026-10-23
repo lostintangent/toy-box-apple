@@ -72,7 +72,7 @@ final class ComposerDraft {
         let key = storageKey(serverURL: serverURL, channelID: channelID)
         if let draft = drafts[key] { return draft }
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        let fileURL = support.appendingPathComponent("ToyBoxChannels/Drafts", isDirectory: true)
+        let fileURL = support.appendingPathComponent("ToyBoxDesktop/Drafts", isDirectory: true)
             .appendingPathComponent("\(key).json")
         let draft = ComposerDraft(fileURL: fileURL)
         drafts[key] = draft

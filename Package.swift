@@ -2,26 +2,26 @@
 import PackageDescription
 
 let package = Package(
-    name: "ToyBoxChannels",
+    name: "ToyBoxDesktop",
     platforms: [.macOS(.v27)],
     products: [
         .library(name: "ChannelKit", targets: ["ChannelKit"]),
         .library(name: "ChannelClient", targets: ["ChannelClient"]),
         .library(name: "ChannelIntelligence", targets: ["ChannelIntelligence"]),
-        .executable(name: "ToyBoxChannels", targets: ["ToyBoxChannels"]),
+        .executable(name: "ToyBoxDesktop", targets: ["ToyBoxDesktop"]),
     ],
     targets: [
         .target(name: "ChannelKit"),
         .target(name: "ChannelClient", dependencies: ["ChannelKit"]),
         .target(name: "ChannelIntelligence", dependencies: ["ChannelKit"]),
-        .executableTarget(name: "ToyBoxChannels", dependencies: ["ChannelKit", "ChannelClient", "ChannelIntelligence"]),
+        .executableTarget(name: "ToyBoxDesktop", dependencies: ["ChannelKit", "ChannelClient", "ChannelIntelligence"]),
         .testTarget(
             name: "ChannelKitTests",
             dependencies: ["ChannelKit"],
             resources: [.copy("Fixtures")]
         ),
         .testTarget(name: "ChannelClientTests", dependencies: ["ChannelClient"]),
-        .testTarget(name: "ToyBoxChannelsTests", dependencies: ["ToyBoxChannels"]),
+        .testTarget(name: "ToyBoxDesktopTests", dependencies: ["ToyBoxDesktop"]),
         .testTarget(
             name: "ChannelIntelligenceTests",
             dependencies: ["ChannelIntelligence"],

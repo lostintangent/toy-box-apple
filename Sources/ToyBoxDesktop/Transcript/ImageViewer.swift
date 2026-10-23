@@ -620,7 +620,7 @@ final class ImageViewer {
         }
         let manager = FileManager.default
         let directory = manager.temporaryDirectory
-            .appendingPathComponent("ToyBoxChannels-Exports", isDirectory: true)
+            .appendingPathComponent("ToyBoxDesktop-Exports", isDirectory: true)
             .appendingPathComponent(file.deletingPathExtension().lastPathComponent, isDirectory: true)
         let destination = directory.appendingPathComponent(filename)
         if replacing { try? manager.removeItem(at: destination) }

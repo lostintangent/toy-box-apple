@@ -10,15 +10,15 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SCRATCH="${SCRATCH_PATH:?Set SCRATCH_PATH=/tmp/tbm-<you>}"
 SERVER="${SERVER_URL:-http://127.0.0.1:3210}"
 DIR="$ROOT/.build/validation"
-APP="$DIR/Toy Box Channels.app"
+APP="$DIR/Toy Box Desktop.app"
 TEST_DIR="$ROOT/.build/agents"
-TEST_NAME="Toy Box Channels Test"
+TEST_NAME="Toy Box Desktop Test"
 TEST_ID="dev.toybox.channels.mac.test"
 TEST_APP="$TEST_DIR/$TEST_NAME.app"
 
 SCRATCH_PATH="$SCRATCH" "$ROOT/script/run" --no-open >/dev/null
 
-BUILD_VERSION="$(xcrun vtool -show-build "$SCRATCH/Toy Box Channels.app/Contents/MacOS/ToyBoxChannels")"
+BUILD_VERSION="$(xcrun vtool -show-build "$SCRATCH/Toy Box Desktop.app/Contents/MacOS/ToyBoxDesktop")"
 if ! awk '
     $1 == "sdk" {
         found = 1
@@ -44,12 +44,12 @@ install_bundle() { # <staged app> <destination app>
 
 mkdir -p "$DIR" "$TEST_DIR"
 STAGE="$(mktemp -d "$DIR/.stage.XXXXXX")"
-ditto "$SCRATCH/Toy Box Channels.app" "$STAGE/Toy Box Channels.app"
-install_bundle "$STAGE/Toy Box Channels.app" "$APP"
+ditto "$SCRATCH/Toy Box Desktop.app" "$STAGE/Toy Box Desktop.app"
+install_bundle "$STAGE/Toy Box Desktop.app" "$APP"
 rm -rf "$STAGE"
 
 TEST_STAGE="$(mktemp -d "$TEST_DIR/.stage.XXXXXX")"
-ditto "$SCRATCH/Toy Box Channels.app" "$TEST_STAGE/$TEST_NAME.app"
+ditto "$SCRATCH/Toy Box Desktop.app" "$TEST_STAGE/$TEST_NAME.app"
 /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $TEST_ID" -c "Set :CFBundleName $TEST_NAME" \
     -c "Set :CFBundleDisplayName $TEST_NAME" "$TEST_STAGE/$TEST_NAME.app/Contents/Info.plist"
 codesign --force --deep --sign - "$TEST_STAGE/$TEST_NAME.app" 2>/dev/null
@@ -67,7 +67,7 @@ if ! grep -q "\"$TEST_ID\"" "$HOME/.copilot/computer-use/approvals.json" 2>/dev/
     LAUNCH_ID="dev.toybox.channels.mac"
     echo "$TEST_ID isn't approved for Computer Use yet, so this launches the shared bundle." >&2
 fi
-LAUNCH_BIN="$LAUNCH_APP/Contents/MacOS/ToyBoxChannels"
+LAUNCH_BIN="$LAUNCH_APP/Contents/MacOS/ToyBoxDesktop"
 
 before="$(pgrep -f "^$LAUNCH_BIN" || true)"
 # Test instances must never restore or overwrite saved window state.

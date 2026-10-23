@@ -27,4 +27,4 @@ fi
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SCRATCH="${SCRATCH_PATH:-$ROOT/.build}"
 SCRATCH_PATH="$SCRATCH" "$ROOT/script/run" --no-open >&2
-exec "$SCRATCH/Toy Box Channels.app/Contents/MacOS/ToyBoxChannels" "$@"
+exec "$SCRATCH/Toy Box Desktop.app/Contents/MacOS/ToyBoxDesktop" "$@"

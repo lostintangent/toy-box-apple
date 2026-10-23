@@ -182,7 +182,7 @@ enum ArtifactDownload {
         try validate(response)
         try Task.checkCancellation()
         let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("ToyBoxChannels-Artifacts", isDirectory: true)
+            .appendingPathComponent("ToyBoxDesktop-Artifacts", isDirectory: true)
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let basename = (artifact.file.path as NSString).lastPathComponent

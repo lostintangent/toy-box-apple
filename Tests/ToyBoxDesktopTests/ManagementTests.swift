@@ -5,7 +5,7 @@ import Foundation
 import SwiftUI
 import Synchronization
 import Testing
-@testable import ToyBoxChannels
+@testable import ToyBoxDesktop
 
 @MainActor
 @Suite("Management validation and presentation")

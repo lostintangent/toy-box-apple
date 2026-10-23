@@ -36,7 +36,7 @@ Reference sources (read-only):
   macOS draws it with Liquid Glass rather than in compatibility mode.
 - **Targets:** `ChannelKit` is the pure domain: Codable wire types, the reducer, transcript rows,
   audience, tasks, presence and the SVG avatar path parser. `ChannelClient` handles transport:
-  HTTP, SSE, the observer and the catalog. `ToyBoxChannels` is the app. Tests live in
+  HTTP, SSE, the observer and the catalog. `ToyBoxDesktop` is the app. Tests live in
   `ChannelKitTests` and `ChannelClientTests`.
 - **State:** each open channel has one `@Observable` store, which owns its `ChannelState`, connection
   phase, unread boundary and paging. The catalog store owns the channel list and refreshes it on

@@ -9,7 +9,7 @@
     <key>CFBundleIdentifier</key>
     <string>dev.toybox.channels.mac</string>
     <key>CFBundleExecutable</key>
-    <string>ToyBoxChannels</string>
+    <string>ToyBoxDesktop</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>

@@ -360,7 +360,7 @@ actor TranscriptAttachmentCache {
     }
 
     private static let directory = FileManager.default.temporaryDirectory
-        .appendingPathComponent("ToyBoxChannels-Attachments", isDirectory: true)
+        .appendingPathComponent("ToyBoxDesktop-Attachments", isDirectory: true)
 
     /// Where an attachment's content is cached, named by the digest of its identity.
     static func destination(for attachment: ChannelAttachment, api: ChannelAPI) -> URL? {
