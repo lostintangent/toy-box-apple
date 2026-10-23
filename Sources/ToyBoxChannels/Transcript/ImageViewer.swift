@@ -62,6 +62,8 @@ final class ImageViewer {
         var bitmap: CGImage?
         /// The image's Live Text, analyzed once it's presented and kept for the session.
         var analysis: ImageAnalysis?
+        /// How light the image is under the Live Text button.
+        var cornerTone: ImageViewerCornerTone?
         /// The oriented pixel size, known from the image header before the full decode lands.
         var pixelSize: CGSize?
         var failure: String?
@@ -544,23 +546,28 @@ final class ImageViewer {
         let name = session.names[position]
         let api = session.api
         let id = session.id
+        let pixelsPerPoint = max(1, layout?.displayScale ?? 2)
         loads[position] = Task { [weak self] in
-            let result: Result<(URL, CGImage), any Error>
+            let result: Result<(URL, CGImage, ImageViewerCornerTone?), any Error>
             do {
                 let file = try await TranscriptAttachmentCache.shared.file(for: attachment, api: api, reload: reload)
-                let image = try await Task.detached(priority: .userInitiated) { try ImageViewer.decode(file) }.value
-                result = .success((file, image))
+                let (image, tone) = try await Task.detached(priority: .userInitiated) {
+                    let image = try ImageViewer.decode(file)
+                    return (image, ImageViewerCornerTone(image, pixelsPerPoint: pixelsPerPoint))
+                }.value
+                result = .success((file, image, tone))
             } catch {
                 result = .failure(error)
             }
             guard let self, self.session?.id == id else { return }
             self.loads[position] = nil
             switch result {
-            case .success(let (file, image)):
+            case .success(let (file, image, tone)):
                 var item = self.items[position] ?? Item()
                 item.file = file
                 item.image = NSImage(cgImage: image, size: .zero)
                 item.bitmap = image
+                item.cornerTone = tone
                 item.pixelSize = item.pixelSize ?? CGSize(width: image.width, height: image.height)
                 item.export = Self.export(file, named: name, replacing: reload)
                 item.failure = nil
@@ -716,6 +723,7 @@ private struct ImageViewerStage: View {
                 page(position, layout: layout)
             }
             ImageViewerLiveText(viewer: viewer, analysis: viewer.liveText,
+                                cornerTone: viewer.items[viewer.index]?.cornerTone,
                                 imageFrame: viewer.frame(at: viewer.index, in: layout), showsButton: !viewer.isZoomed)
             status(layout: layout)
             if session.images.count > 1 {

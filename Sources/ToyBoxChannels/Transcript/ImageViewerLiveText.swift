@@ -7,6 +7,7 @@ import VisionKit
 struct ImageViewerLiveText: NSViewRepresentable {
     let viewer: ImageViewer
     let analysis: ImageAnalysis?
+    var cornerTone: ImageViewerCornerTone?
     /// The presented image's frame in the canvas.
     let imageFrame: CGRect
     /// The button hides while zoomed, when selection still works.
@@ -28,6 +29,7 @@ struct ImageViewerLiveText: NSViewRepresentable {
 
     private func update(_ view: ImageViewerLiveTextView, context: Context) {
         let animated = context.transaction.animation != nil && !context.transaction.disablesAnimations
+        view.cornerTone = cornerTone
         view.present(analysis: analysis, in: imageFrame, animated: animated)
         if view.overlay.isSupplementaryInterfaceHidden == showsButton {
             view.overlay.setSupplementaryInterfaceHidden(!showsButton, animated: !animated)
@@ -43,6 +45,10 @@ final class ImageViewerLiveTextView: NSView, ImageAnalysisOverlayViewDelegate {
     weak var viewer: ImageViewer?
     private(set) lazy var overlay = ImageAnalysisOverlayView(self)
     private(set) var imageFrame: CGRect = .zero
+    /// The button's glass takes its appearance from the image beneath it rather than the window.
+    var cornerTone: ImageViewerCornerTone? {
+        didSet { if cornerTone != oldValue { matchAppearance() } }
+    }
     private var monitor: Any?
     private var menuObserver: (any NSObjectProtocol)?
     private var settle: Task<Void, Never>?
@@ -64,6 +70,27 @@ final class ImageViewerLiveTextView: NSView, ImageAnalysisOverlayViewDelegate {
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     override var isFlipped: Bool { true }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        matchAppearance()
+    }
+
+    /// A dark window's glass turns gray over a white screenshot and its glyph fades to about 1.9:1,
+    /// so the overlay follows the image. This view keeps the window's appearance.
+    private func matchAppearance() {
+        let name = Self.overlayAppearance(for: cornerTone, in: effectiveAppearance)
+        if overlay.appearance?.name != name { overlay.appearance = name.flatMap(NSAppearance.init(named:)) }
+    }
+
+    /// Increase Contrast still applies, since the system adds it to either appearance.
+    nonisolated static func overlayAppearance(for tone: ImageViewerCornerTone?,
+                                              in window: NSAppearance) -> NSAppearance.Name? {
+        guard let tone else { return nil }
+        // Where the image is transparent, the canvas shows through.
+        let canvas: Double = window.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? 0 : 1
+        return tone.isLight(over: canvas) ? .aqua : .darkAqua
+    }
 
     override func layout() {
         super.layout()
@@ -225,6 +252,7 @@ final class ImageViewerLiveTextView: NSView, ImageAnalysisOverlayViewDelegate {
     func overlayView(_ overlayView: ImageAnalysisOverlayView, updatedMenuFor menu: NSMenu, for event: NSEvent,
                      at point: CGPoint) -> NSMenu {
         Self.removeImageItems(from: menu)
+        menu.appearance = effectiveAppearance
         return menu
     }
 
@@ -238,5 +266,62 @@ final class ImageViewerLiveTextView: NSView, ImageAnalysisOverlayViewDelegate {
         for item in menu.items where imageMenuTags.contains(item.tag) { menu.removeItem(item) }
         while let first = menu.items.first, first.isSeparatorItem { menu.removeItem(first) }
         while let last = menu.items.last, last.isSeparatorItem { menu.removeItem(last) }
+    }
+}
+
+/// How light an image is in its bottom-trailing 64-point square, where VisionKit draws the Live Text
+/// button. Measured once per decoded image.
+struct ImageViewerCornerTone: Equatable, Sendable {
+    /// The average relative luminance of the square's opaque content.
+    var luminance: Double
+    /// How much of the square is opaque, from 0 to 1.
+    var coverage: Double
+
+    static let side: CGFloat = 64
+
+    init(luminance: Double, coverage: Double) {
+        self.luminance = luminance
+        self.coverage = coverage
+    }
+
+    nonisolated init?(_ image: CGImage, pixelsPerPoint: CGFloat) {
+        let side = Int((Self.side * max(1, pixelsPerPoint)).rounded())
+        let width = min(image.width, side), height = min(image.height, side)
+        // CGImage crops from the top-left, so the bottom-trailing square starts here.
+        guard width > 0, height > 0,
+              let corner = image.cropping(to: CGRect(x: image.width - width, y: image.height - height,
+                                                     width: width, height: height)),
+              let space = CGColorSpace(name: CGColorSpace.sRGB) else { return nil }
+        let samples = 16
+        var pixels = [UInt8](repeating: 0, count: samples * samples * 4)
+        let drawn = pixels.withUnsafeMutableBytes { buffer -> Bool in
+            guard let context = CGContext(data: buffer.baseAddress, width: samples, height: samples,
+                                          bitsPerComponent: 8, bytesPerRow: samples * 4, space: space,
+                                          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return false }
+            context.interpolationQuality = .high
+            context.draw(corner, in: CGRect(x: 0, y: 0, width: samples, height: samples))
+            return true
+        }
+        guard drawn else { return nil }
+        func linear(_ value: Double) -> Double {
+            value <= 0.04045 ? value / 12.92 : pow((value + 0.055) / 1.055, 2.4)
+        }
+        var lightness = 0.0, opacity = 0.0
+        for offset in stride(from: 0, to: pixels.count, by: 4) {
+            let alpha = Double(pixels[offset + 3]) / 255
+            guard alpha > 0 else { continue }
+            let red = linear(Double(pixels[offset]) / 255 / alpha)
+            let green = linear(Double(pixels[offset + 1]) / 255 / alpha)
+            let blue = linear(Double(pixels[offset + 2]) / 255 / alpha)
+            lightness += (0.2126 * red + 0.7152 * green + 0.0722 * blue) * alpha
+            opacity += alpha
+        }
+        let count = Double(samples * samples)
+        self.init(luminance: opacity > 0 ? lightness / opacity : 0, coverage: opacity / count)
+    }
+
+    /// Whether the square reads as light, with `background` showing through where it's transparent.
+    func isLight(over background: Double) -> Bool {
+        luminance * coverage + background * (1 - coverage) > 0.5
     }
 }

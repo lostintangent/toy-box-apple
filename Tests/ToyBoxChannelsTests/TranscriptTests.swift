@@ -1372,6 +1372,82 @@ struct ImageViewerLiveTextTests {
         #expect(!ImageViewerLiveTextView.routes(nil, to: selected))
     }
 
+    @Test func theButtonMatchesTheImageCornerBeneathIt() throws {
+        let white = CGColor(srgbRed: 1, green: 1, blue: 1, alpha: 1)
+        let black = CGColor(srgbRed: 0, green: 0, blue: 0, alpha: 1)
+        /// A 600 x 400 image in `fill`, with its bottom-trailing or top-trailing 128-pixel square in `corner`.
+        func image(_ fill: CGColor, corner: CGColor? = nil, top: Bool = false) throws -> CGImage {
+            let context = try #require(CGContext(data: nil, width: 600, height: 400, bitsPerComponent: 8,
+                                                 bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                                 bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+            context.setFillColor(fill)
+            context.fill(CGRect(x: 0, y: 0, width: 600, height: 400))
+            if let corner {
+                context.setFillColor(corner)
+                // Core Graphics draws from the bottom-left.
+                context.fill(CGRect(x: 472, y: top ? 272 : 0, width: 128, height: 128))
+            }
+            return try #require(context.makeImage())
+        }
+        func tone(_ image: CGImage) throws -> ImageViewerCornerTone {
+            try #require(ImageViewerCornerTone(image, pixelsPerPoint: 2))
+        }
+        // Only the 64-point square under the button counts, at the display's scale.
+        #expect(try tone(image(white)).isLight(over: 0))
+        #expect(try !tone(image(white, corner: black)).isLight(over: 1))
+        #expect(try tone(image(black, corner: white)).isLight(over: 0))
+        #expect(try !tone(image(black, corner: white, top: true)).isLight(over: 1))
+        #expect(try tone(image(white)).luminance > 0.99)
+        // Where the image is transparent, the canvas behind it decides.
+        let clear = try tone(image(CGColor(srgbRed: 1, green: 1, blue: 1, alpha: 0)))
+        #expect(clear.coverage == 0)
+        #expect(clear.isLight(over: 1) && !clear.isLight(over: 0))
+        // Mid gray sits below the threshold, since relative luminance is linear.
+        #expect(try !tone(image(CGColor(srgbRed: 0.5, green: 0.5, blue: 0.5, alpha: 1))).isLight(over: 1))
+
+        let dark = try #require(NSAppearance(named: .darkAqua))
+        let light = try #require(NSAppearance(named: .aqua))
+        let paper = ImageViewerCornerTone(luminance: 1, coverage: 1)
+        let night = ImageViewerCornerTone(luminance: 0.02, coverage: 1)
+        let cutout = ImageViewerCornerTone(luminance: 1, coverage: 0)
+        #expect(ImageViewerLiveTextView.overlayAppearance(for: paper, in: dark) == .aqua)
+        #expect(ImageViewerLiveTextView.overlayAppearance(for: night, in: light) == .darkAqua)
+        #expect(ImageViewerLiveTextView.overlayAppearance(for: cutout, in: dark) == .darkAqua)
+        #expect(ImageViewerLiveTextView.overlayAppearance(for: cutout, in: light) == .aqua)
+        #expect(ImageViewerLiveTextView.overlayAppearance(for: nil, in: dark) == nil)
+    }
+
+    @Test func aWhiteScreenshotInADarkWindowGetsALightButtonAndAWindowMenu() async throws {
+        // The viewer measures each image once, as it decodes.
+        let viewer = try Self.openViewer([Self.textPNG("Release notes ship Friday")])
+        defer { viewer.close(animated: false) }
+        try await Self.until { viewer.items[0]?.cornerTone != nil }
+        let tone = try #require(viewer.items[0]?.cornerTone)
+        #expect(tone.isLight(over: 0))
+
+        let view = ImageViewerLiveTextView()
+        view.appearance = NSAppearance(named: .darkAqua)
+        view.cornerTone = tone
+        #expect(view.overlay.appearance?.name == .aqua)
+        #expect(view.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua)
+        // The text menu belongs to the window, not the image.
+        let event = try #require(NSEvent.mouseEvent(with: .rightMouseDown, location: .zero, modifierFlags: [],
+                                                    timestamp: 0, windowNumber: 0, context: nil, eventNumber: 0,
+                                                    clickCount: 1, pressure: 1))
+        let menu = view.overlayView(view.overlay, updatedMenuFor: NSMenu(), for: event, at: .zero)
+        #expect(menu.appearance?.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua)
+        // The window changing doesn't change what's under the button, unless the canvas shows through.
+        view.appearance = NSAppearance(named: .aqua)
+        #expect(view.overlay.appearance?.name == .aqua)
+        view.cornerTone = ImageViewerCornerTone(luminance: 1, coverage: 0)
+        #expect(view.overlay.appearance?.name == .aqua)
+        view.appearance = NSAppearance(named: .darkAqua)
+        #expect(view.overlay.appearance?.name == .darkAqua)
+        // Until an image is measured, the overlay follows the window.
+        view.cornerTone = nil
+        #expect(view.overlay.appearance == nil)
+    }
+
     @Test func theTextMenuDropsVisionKitsImageItems() {
         let menu = NSMenu()
         func item(_ title: String, _ tag: Int) {
