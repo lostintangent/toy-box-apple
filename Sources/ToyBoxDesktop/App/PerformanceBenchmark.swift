@@ -10,17 +10,22 @@ import QuartzCore
 /// messages that `messages` measures.
 ///
 /// Busy time adds up the main run loop's passes, each from waking until it's about to sleep again,
-/// so it covers events, SwiftUI updates, layout and display, but not waiting on the network. A hitch
-/// is the longest single pass.
+/// so it covers events, SwiftUI updates, layout and display, but not waiting on the network. The
+/// longest saturated span is the longest single pass. When work arrives faster than it finishes,
+/// main stays awake through many frames, so a long span isn't always a stall. The longest frame gap
+/// shows a stall. It's the longest stretch with no chance to draw, from the run loop waking or
+/// exiting until it next exits or sleeps, which is where Core Animation commits.
 ///
 /// - `launch`: when the channel's first frame appears after the process starts. No budget.
 /// - `switch`: selects another catalog channel and back, four times each way. The first visit to the
-///   other channel is cold, and the rest are warm. A warm switch's hitch is the longest pass from the
-///   selection until the window settles. It also counts the warm switches to a channel that was still
-///   connected, then measures idle while the channel it left lingers and again once it disconnects.
+///   other channel is cold, and the rest are warm. A warm switch's budget is on its longest
+///   saturated span from the selection until the window settles, because a switch that lands over
+///   several frames feels as slow as one long frame. It also counts the warm switches to a channel
+///   that was still connected, then measures idle while the channel it left lingers and again once
+///   it disconnects.
 /// - `messages`: streams messages one at a time, for what each costs, then 50 of them 20 ms apart,
-///   for the longest hitch. It measures both at the first page of history and again with every older
-///   page loaded.
+///   for the longest frame gap. It measures both at the first page of history and again with every
+///   older page loaded.
 /// - `paging`: scrolls the transcript to its top until every older page has loaded, and times each
 ///   from the scroll that crosses the transcript's paging edge until the page settles.
 /// - `idle`: a minute of wakeups and busy time once the channel settles. No budget.
@@ -34,7 +39,7 @@ final class PerformanceBenchmark {
     /// The performance pass's budgets, in milliseconds, at both 100 and 500 messages loaded.
     enum Budget {
         static let message = 16.0
-        static let burstHitch = 100.0
+        static let burstFrameGap = 100.0
         static let olderPage = 250.0
         static let warmSwitch = 150.0
     }
@@ -166,8 +171,9 @@ final class PerformanceBenchmark {
         info("First content", "\(since(channel.frame)) after the process started. The window opened at "
              + "\(since(moments.window)) and appeared at \(since(appeared)), the catalog arrived at \(since(catalog)) "
              + "and the channel at \(since(channel.applied))")
-        info("Settled", "\(since(settled)), after \(format(Self.mainThreadCPU() * 1000)) of main-thread CPU and a "
-             + "\(format(meter.longest * 1000)) longest hitch after the window opened")
+        info("Settled", "\(since(settled)), after \(format(Self.mainThreadCPU() * 1000)) of main-thread CPU, with a "
+             + "\(format(meter.longestGap * 1000)) longest frame gap and \(format(meter.longestSpan * 1000)) longest "
+             + "saturated span after the window opened")
     }
 
     private func switching() async {
@@ -178,7 +184,7 @@ final class PerformanceBenchmark {
         guard let meter else { return }
         _ = await settled()
         header()
-        var warm: [(frame: Double, hitch: Double, busy: Double, live: Double, wasLive: Bool)] = []
+        var warm: [(frame: Double, span: Double, gap: Double, busy: Double, live: Double, wasLive: Bool)] = []
         var lastSelection = ContinuousClock.now
         for round in 0..<8 {
             let target = round.isMultiple(of: 2) ? other : channelID
@@ -195,20 +201,22 @@ final class PerformanceBenchmark {
             // The main thread can't apply a connection's first event before the first frame ends.
             let live = wasLive ? start : CACurrentMediaTime()
             _ = await settled()
-            let result = (frame: (frame - start) * 1000, hitch: meter.longest * 1000, busy: meter.busy * 1000,
-                          live: (live - start) * 1000, wasLive: wasLive)
+            let result = (frame: (frame - start) * 1000, span: meter.longestSpan * 1000, gap: meter.longestGap * 1000,
+                          busy: meter.busy * 1000, live: (live - start) * 1000, wasLive: wasLive)
             if isWarm {
                 warm.append(result)
             } else {
                 info("Cold switch to \(target)", "first frame \(format(result.frame)), \(format(result.busy)) busy "
-                     + "until it loaded and settled, \(format(result.hitch)) longest hitch")
+                     + "until it loaded and settled, \(format(result.span)) longest saturated span, "
+                     + "\(format(result.gap)) longest frame gap")
             }
         }
-        let hitches = warm.map(\.hitch).sorted()
-        check("Warm switch", "\(format(median(hitches))) median longest hitch, \(format(hitches.last ?? 0)) worst, "
+        let spans = warm.map(\.span).sorted()
+        check("Warm switch", "\(format(median(spans))) median longest saturated span, \(format(spans.last ?? 0)) worst, "
+              + "\(format(median(warm.map(\.gap).sorted()))) median longest frame gap, "
               + "\(format(median(warm.map(\.frame).sorted()))) median first frame, "
               + "\(format(median(warm.map(\.busy).sorted()))) median busy, over \(warm.count) switches",
-              value: median(hitches), budget: Budget.warmSwitch)
+              value: median(spans), budget: Budget.warmSwitch)
         info("Warm switch connection", "\(warm.filter(\.wasLive).count) of \(warm.count) still connected when "
              + "selected, \(format(median(warm.map(\.live).sorted()))) median until live")
         await afterSwitching(since: lastSelection, channels: [channelID, other])
@@ -286,8 +294,9 @@ final class PerformanceBenchmark {
         await arrival(of: last, in: store, timeout: 120)
         _ = await settled()
         check("\(Self.burstCount) messages \(Self.burstInterval) ms apart at \(before) loaded",
-              "\(format(meter.longest * 1000)) longest hitch, \(format(meter.busy * 1000)) busy",
-              value: meter.longest * 1000, budget: Budget.burstHitch)
+              "\(format(meter.longestGap * 1000)) longest frame gap, \(format(meter.longestSpan * 1000)) longest "
+              + "saturated span, \(format(meter.busy * 1000)) busy",
+              value: meter.longestGap * 1000, budget: Budget.burstFrameGap)
     }
 
     /// Scrolls the transcript's own scroll view to its top, so the view's paging runs as it does
@@ -315,7 +324,8 @@ final class PerformanceBenchmark {
             _ = await settled(quiet: 1)
             page += 1
             check("Older page \(page), \(loaded) to \(store.messages.count) loaded",
-                  "\(format(meter.busy * 1000)) busy, \(format(meter.longest * 1000)) longest hitch",
+                  "\(format(meter.busy * 1000)) busy, \(format(meter.longestGap * 1000)) longest frame gap, "
+                  + "\(format(meter.longestSpan * 1000)) longest saturated span",
                   value: meter.busy * 1000, budget: Budget.olderPage)
         }
         guard page > 0 else {
@@ -335,7 +345,8 @@ final class PerformanceBenchmark {
         let seconds = CACurrentMediaTime() - start
         info("Idle for \(Int(seconds.rounded())) s", String(format: "%.1f wakeups and %.2f ms busy a second, ",
                                                            Double(meter.passes) / seconds, meter.busy * 1000 / seconds)
-             + "\(format(meter.longest * 1000)) longest pass")
+             + "\(format(meter.longestGap * 1000)) longest frame gap, \(format(meter.longestSpan * 1000)) longest "
+             + "saturated span")
     }
 
     // MARK: Waiting
@@ -552,35 +563,51 @@ private final class Signal {
     }
 }
 
-/// Times each pass of the main run loop, from waking until it's about to sleep again.
+/// Times each pass of the main run loop, from waking until it's about to sleep again, and each frame
+/// gap, from waking or exiting until the next exit or sleep.
 @MainActor
 private final class MainRunLoopMeter {
     private(set) var busy: Double = 0
     private(set) var passes = 0
-    private(set) var longest: Double = 0
+    /// The longest pass. Main can stay awake through many frames when work keeps arriving.
+    private(set) var longestSpan: Double = 0
+    /// The longest stretch without a chance to draw. Core Animation commits as the run loop exits
+    /// and before it sleeps, and AppKit dispatches each event between an exit and the next entry.
+    private(set) var longestGap: Double = 0
     /// When the last pass over a millisecond ended.
     private(set) var lastWorkEnded = CACurrentMediaTime()
     /// The meter starts partway through a pass, which counts from then.
     private var wokeAt: CFTimeInterval? = CACurrentMediaTime()
+    private var gapStart: CFTimeInterval? = CACurrentMediaTime()
     private var callbacks: [(CFTimeInterval) -> Void] = []
 
     init() {
         let wake = CFRunLoopObserverCreateWithHandler(nil, CFRunLoopActivity.afterWaiting.rawValue, true, .min) {
             [weak self] _, _ in
-            MainActor.assumeIsolated { self?.wokeAt = CACurrentMediaTime() }
+            MainActor.assumeIsolated {
+                let now = CACurrentMediaTime()
+                self?.wokeAt = now
+                self?.gapStart = now
+            }
         }
         // The highest order runs after AppKit and SwiftUI have committed the pass's drawing.
         let sleep = CFRunLoopObserverCreateWithHandler(nil, CFRunLoopActivity.beforeWaiting.rawValue, true, .max) {
             [weak self] _, _ in
             MainActor.assumeIsolated { self?.passEnded() }
         }
-        for observer in [wake, sleep] { CFRunLoopAddObserver(CFRunLoopGetMain(), observer, .commonModes) }
+        // Also after Core Animation's commit, so a gap includes the commit that ends it.
+        let exit = CFRunLoopObserverCreateWithHandler(nil, CFRunLoopActivity.exit.rawValue, true, .max) {
+            [weak self] _, _ in
+            MainActor.assumeIsolated { self?.gapEnded(startingAnother: true) }
+        }
+        for observer in [wake, sleep, exit] { CFRunLoopAddObserver(CFRunLoopGetMain(), observer, .commonModes) }
     }
 
     func reset() {
         busy = 0
         passes = 0
-        longest = 0
+        longestSpan = 0
+        longestGap = 0
     }
 
     func afterPass(_ callback: @escaping (CFTimeInterval) -> Void) { callbacks.append(callback) }
@@ -590,13 +617,20 @@ private final class MainRunLoopMeter {
         await withCheckedContinuation { continuation in afterPass { continuation.resume(returning: $0) } }
     }
 
+    private func gapEnded(startingAnother: Bool) {
+        let now = CACurrentMediaTime()
+        if let gapStart { longestGap = max(longestGap, now - gapStart) }
+        gapStart = startingAnother ? now : nil
+    }
+
     private func passEnded() {
+        gapEnded(startingAnother: false)
         let now = CACurrentMediaTime()
         if let wokeAt {
             let duration = now - wokeAt
             busy += duration
             passes += 1
-            longest = max(longest, duration)
+            longestSpan = max(longestSpan, duration)
             if duration > 0.001 { lastWorkEnded = now }
         }
         wokeAt = nil

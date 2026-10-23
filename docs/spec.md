@@ -199,6 +199,27 @@ keeps no copy of it.
   completions in channels that aren't currently focused
 - Multiple windows, state restoration, and accent color and vibrancy that respect system settings
 
+## Performance budgets
+
+`script/benchmark` checks these on a release build against `script/perf-demo.mjs`, with 100
+messages loaded and again with every older page loaded. It times the main run loop three ways:
+
+- **Busy**: every pass from waking until the loop is about to sleep, added up.
+- **Longest saturated span**: the longest of those passes. When work arrives faster than it
+  finishes, main stays awake through many frames, so a long span isn't always a stall.
+- **Longest frame gap**: the longest stretch with no chance to draw, from the loop waking or
+  exiting until it next exits or sleeps, which is where Core Animation commits. This is what shows
+  a stall.
+
+| Scenario | Budget |
+| --- | --- |
+| Each live message | 16 ms median busy |
+| 50 messages 20 ms apart | 100 ms longest frame gap. The saturated span and busy time are reported beside it |
+| Each older page | 250 ms busy |
+| Warm switch | 150 ms median longest saturated span. A switch that lands over several frames feels as slow as one long frame, so it isn't budgeted on frame gaps |
+
+Launch and idle report the same figures with no budget.
+
 ## Design
 
 ### Direction and reference
