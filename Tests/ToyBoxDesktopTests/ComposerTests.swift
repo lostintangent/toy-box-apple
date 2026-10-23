@@ -349,16 +349,21 @@ struct ComposerTests {
         let draft = ComposerDraft()
         // AppKit neighbors keep these focus moves out of SwiftUI's focus state, which tests running
         // alongside this one rely on to focus their own fields.
-        let before = NSTextField(string: "")
+        let before = NSTextField(frame: NSRect(x: 0, y: 190, width: 400, height: 22))
         before.placeholderString = "Before"
-        let after = NSTextField(string: "")
+        let after = NSTextField(frame: NSRect(x: 0, y: 8, width: 400, height: 22))
         after.placeholderString = "After"
-        let stack = NSStackView(views: [before, NSHostingView(rootView: ComposerInputTestHost(draft: draft)), after])
-        stack.orientation = .vertical
-        stack.frame = NSRect(x: 0, y: 0, width: 400, height: 220)
-        let window = NSWindow(contentRect: stack.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        // Fixed frames, with no sizing constraints from the host. In an autolayout container, each
+        // move of the host invalidated its safe area, and CI's display cycle looped on that until
+        // AppKit threw.
+        let host = NSHostingView(rootView: ComposerInputTestHost(draft: draft))
+        host.sizingOptions = []
+        host.frame = NSRect(x: 0, y: 40, width: 400, height: 140)
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 400, height: 220))
+        [before, host, after].forEach(container.addSubview)
+        let window = NSWindow(contentRect: container.frame, styleMask: [.borderless], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
-        window.contentView = stack
+        window.contentView = container
         // The mention popover only shows from an ordered-in window, so keep it out of sight.
         window.setFrameOrigin(NSPoint(x: -10_000, y: -10_000))
         window.orderFrontRegardless()
@@ -368,9 +373,9 @@ struct ComposerTests {
             window.orderOut(nil)
             window.close()
         }
-        stack.layoutSubtreeIfNeeded()
+        container.layoutSubtreeIfNeeded()
         try await Task.sleep(for: .milliseconds(50))
-        let input = try #require(composerInput(in: stack))
+        let input = try #require(composerInput(in: container))
         func press(_ keyCode: UInt16, _ characters: String, _ modifiers: NSEvent.ModifierFlags = []) async throws {
             input.keyDown(with: try #require(NSEvent.keyEvent(
                 with: .keyDown, location: .zero, modifierFlags: modifiers, timestamp: 0,
