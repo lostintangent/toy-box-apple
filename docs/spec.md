@@ -393,6 +393,17 @@ pieces of glass.
 | Bottom edge above the composer | Our explicit `.soft` fade, ramping across the activity row and composer |
 | Glass controls, composer, capsules | System Liquid Glass |
 
+**Liquid Glass slider.** macOS 27's Liquid Glass setting in Appearance runs from Clear to
+Tinted and is stored as the global default `NSGlassTintAmount`, 0 to 1. Every glass surface
+here is system glass, so it follows the slider exactly as the toolbar buttons and search field
+do. Never read the value or compensate for it with fills, strokes or opacity. At Clear, content
+beneath the composer may show as soft color but never as readable text, and every label inside
+the glass stays legible. At Tinted, the glass turns nearly opaque. To check both ends without
+touching the user's setting, launch a test build with `-NSGlassTintAmount 0` or
+`-NSGlassTintAmount 1`, which overrides it for that process only. The hover Reply and Copy
+capsule keeps `.regularMaterial` and doesn't follow the slider, because it belongs to its
+message in the content layer.
+
 ### Window and navigation
 
 All dimensions are logical points, not pixels.
