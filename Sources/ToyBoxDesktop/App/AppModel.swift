@@ -33,7 +33,7 @@ final class AppModel {
     @ObservationIgnored var openMainWindow: (() -> Void)?
     @ObservationIgnored private var menuBarLookups: [String: Int] = [:]
     @ObservationIgnored private var unhideObserver: NSObjectProtocol?
-    @ObservationIgnored private var connections: [ObjectIdentifier: (store: ChannelStore, count: Int)] = [:]
+    @ObservationIgnored let connections = ChannelConnections<ChannelStore>()
     @ObservationIgnored private let launchChannel = LaunchChannel()
     @ObservationIgnored private var launchChannelID: String?
     @ObservationIgnored private var windows: [UUID: String] = [:]
@@ -91,8 +91,7 @@ final class AppModel {
         do {
             let api = try ChannelAPI(serverURL: serverURL)
             catalog?.stopPolling()
-            for connection in connections.values { connection.store.disconnect() }
-            connections.removeAll()
+            connections.disconnectAll()
             self.serverURL = api.baseURL.absoluteString
             if persist, !launchOptions.isSnapshot {
                 UserDefaults.standard.set(self.serverURL, forKey: AppConfiguration.serverURLKey)
@@ -111,26 +110,11 @@ final class AppModel {
         }
     }
 
-    func acquire(_ store: ChannelStore) {
-        let key = ObjectIdentifier(store)
-        let count = connections[key]?.count ?? 0
-        connections[key] = (store, count + 1)
-        if count == 0 {
-            store.captureUnreadBoundary()
-            store.connect()
-        }
-    }
+    /// Connects a store for a window, sheet or intent that shows it. Pair each with a release.
+    func acquire(_ store: ChannelStore) { connections.acquire(store) }
 
-    func release(_ store: ChannelStore) {
-        let key = ObjectIdentifier(store)
-        guard let connection = connections[key] else { return }
-        if connection.count == 1 {
-            store.disconnect()
-            connections.removeValue(forKey: key)
-        } else {
-            connections[key] = (store, connection.count - 1)
-        }
-    }
+    /// The last release keeps the store connected for a few seconds, so switching back is live at once.
+    func release(_ store: ChannelStore) { connections.release(store) }
 
     /// Records a window's channel and whether it's key. Every sidebar row reads the open
     /// channels, so a window that reports without a change updates nothing.
@@ -350,7 +334,7 @@ final class AppModel {
     /// A request's message, from an open channel's live state, otherwise from its history.
     private func resolveRequest(channel: Channel, sequence: Int) async -> ChannelNotifications.ResolvedRequest? {
         if let known = menuBarRequests[channel.id], known.message.sequence == sequence { return known }
-        if let state = connections.values.first(where: { $0.store.id == channel.id })?.store.state,
+        if let state = connections.stores.first(where: { $0.id == channel.id })?.state,
            let message = state.request?.sequence == sequence ? state.request
                : state.messages.first(where: { $0.sequence == sequence }) {
             return .init(message: message, agents: state.agents)

@@ -1268,3 +1268,109 @@ struct ChannelTitleFitTests {
         #expect(changes.withLock { $0 } == 0)
     }
 }
+
+@Suite("Channel connections")
+@MainActor
+struct ChannelConnectionsTests {
+    @MainActor final class FakeChannel: ConnectableChannel {
+        var events: [String] = []
+        var isConnected = false
+        func captureUnreadBoundary() { events.append("boundary") }
+        func connect() {
+            events.append("connect")
+            isConnected = true
+        }
+        func disconnect() {
+            events.append("disconnect")
+            isConnected = false
+        }
+    }
+
+    @Test func lastReleaseLingersAndReacquiringKeepsTheConnection() {
+        let connections = ChannelConnections<FakeChannel>(linger: .seconds(60))
+        let a = FakeChannel()
+        connections.acquire(a)
+        connections.release(a)
+        #expect(a.isConnected)
+        #expect(connections.lingeringCount == 1)
+
+        connections.acquire(a)
+        #expect(a.events == ["boundary", "connect", "boundary", "connect"])
+        #expect(a.isConnected)
+        #expect(connections.lingeringCount == 0)
+        #expect(connections.stores.count == 1)
+    }
+
+    @Test func lingerExpiryDisconnects() async throws {
+        let connections = ChannelConnections<FakeChannel>(linger: .milliseconds(20))
+        let a = FakeChannel()
+        connections.acquire(a)
+        connections.release(a)
+        // Counts turns rather than wall time, so a main actor busy with other suites can't use up
+        // the wait before the expiry gets its turn.
+        var turns = 0
+        while a.isConnected, turns < 500 {
+            turns += 1
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(!a.isConnected)
+        #expect(connections.stores.isEmpty)
+    }
+
+    @Test func reacquiringCancelsTheExpiry() async throws {
+        let connections = ChannelConnections<FakeChannel>(linger: .milliseconds(30))
+        let a = FakeChannel()
+        connections.acquire(a)
+        connections.release(a)
+        connections.acquire(a)
+        try await Task.sleep(for: .milliseconds(120))
+        #expect(a.isConnected)
+        #expect(!a.events.contains("disconnect"))
+    }
+
+    @Test func onlyTheNewestStoresLinger() {
+        let connections = ChannelConnections<FakeChannel>(linger: .seconds(60), capacity: 2)
+        let channels = (0..<3).map { _ in FakeChannel() }
+        for channel in channels {
+            connections.acquire(channel)
+            connections.release(channel)
+        }
+        #expect(channels.map(\.isConnected) == [false, true, true])
+        #expect(connections.lingeringCount == 2)
+    }
+
+    @Test func nestedHoldsKeepTheStoreHeld() {
+        let connections = ChannelConnections<FakeChannel>(linger: .seconds(60))
+        let a = FakeChannel()
+        connections.acquire(a)
+        connections.acquire(a)
+        connections.release(a)
+        #expect(connections.lingeringCount == 0)
+        #expect(a.events == ["boundary", "connect"])
+        connections.release(a)
+        #expect(connections.lingeringCount == 1)
+        connections.release(a)
+        #expect(connections.lingeringCount == 1)
+    }
+
+    @Test func disconnectAllDropsHeldAndLingeringStores() {
+        let connections = ChannelConnections<FakeChannel>(linger: .seconds(60))
+        let held = FakeChannel(), lingering = FakeChannel()
+        connections.acquire(held)
+        connections.acquire(lingering)
+        connections.release(lingering)
+        connections.disconnectAll()
+        #expect(!held.isConnected)
+        #expect(!lingering.isConnected)
+        #expect(connections.stores.isEmpty)
+    }
+
+    @Test func noLingerDisconnectsAtOnce() {
+        let connections = ChannelConnections<FakeChannel>(linger: .zero)
+        let a = FakeChannel()
+        connections.acquire(a)
+        connections.release(a)
+        #expect(!a.isConnected)
+        #expect(connections.stores.isEmpty)
+    }
+}

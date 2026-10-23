@@ -16,7 +16,8 @@ import QuartzCore
 /// - `launch`: when the channel's first frame appears after the process starts. No budget.
 /// - `switch`: selects another catalog channel and back, four times each way. The first visit to the
 ///   other channel is cold, and the rest are warm. A warm switch's hitch is the longest pass from the
-///   selection until the window settles.
+///   selection until the window settles. It also counts the warm switches to a channel that was still
+///   connected, then measures idle while the channel it left lingers and again once it disconnects.
 /// - `messages`: streams messages one at a time, for what each costs, then 50 of them 20 ms apart,
 ///   for the longest hitch. It measures both at the first page of history and again with every older
 ///   page loaded.
@@ -177,19 +178,25 @@ final class PerformanceBenchmark {
         guard let meter else { return }
         _ = await settled()
         header()
-        var warm: [(frame: Double, hitch: Double, busy: Double)] = []
+        var warm: [(frame: Double, hitch: Double, busy: Double, live: Double, wasLive: Bool)] = []
+        var lastSelection = ContinuousClock.now
         for round in 0..<8 {
             let target = round.isMultiple(of: 2) ? other : channelID
             let isWarm = store(target)?.isLoaded == true
             try? await Task.sleep(for: .milliseconds(300))
             _ = await settled(quiet: 0.3)
+            let wasLive = store(target)?.phase.isLive == true
             meter.reset()
             let start = CACurrentMediaTime()
+            lastSelection = .now
             select?(target)
             let frame = await meter.passEnd()
             await load(target)
+            // The main thread can't apply a connection's first event before the first frame ends.
+            let live = wasLive ? start : CACurrentMediaTime()
             _ = await settled()
-            let result = (frame: (frame - start) * 1000, hitch: meter.longest * 1000, busy: meter.busy * 1000)
+            let result = (frame: (frame - start) * 1000, hitch: meter.longest * 1000, busy: meter.busy * 1000,
+                          live: (live - start) * 1000, wasLive: wasLive)
             if isWarm {
                 warm.append(result)
             } else {
@@ -202,6 +209,35 @@ final class PerformanceBenchmark {
               + "\(format(median(warm.map(\.frame).sorted()))) median first frame, "
               + "\(format(median(warm.map(\.busy).sorted()))) median busy, over \(warm.count) switches",
               value: median(hitches), budget: Budget.warmSwitch)
+        info("Warm switch connection", "\(warm.filter(\.wasLive).count) of \(warm.count) still connected when "
+             + "selected, \(format(median(warm.map(\.live).sorted()))) median until live")
+        await afterSwitching(since: lastSelection, channels: [channelID, other])
+    }
+
+    /// What leaving a channel costs: idle while its store lingers, then once the linger has ended.
+    private func afterSwitching(since selection: ContinuousClock.Instant, channels: [String]) async {
+        guard let meter else { return }
+        func connected() -> Int { channels.filter { store($0).map { $0.phase != .idle } ?? false }.count }
+        _ = await settled()
+        let lingering = connected()
+        meter.reset()
+        var start = CACurrentMediaTime()
+        try? await Task.sleep(for: .seconds(3))
+        info("Idle after the last switch", "\(idleRate(since: start)), with \(lingering) of \(channels.count) channels connected")
+        let linger = model?.connections.linger ?? .zero
+        try? await Task.sleep(until: selection + linger + .seconds(1.5), clock: .continuous)
+        let settledCount = connected()
+        meter.reset()
+        start = CACurrentMediaTime()
+        try? await Task.sleep(for: .seconds(10))
+        info("Idle once the linger ended", "\(idleRate(since: start)), with \(settledCount) of \(channels.count) channels connected")
+    }
+
+    private func idleRate(since start: CFTimeInterval) -> String {
+        guard let meter else { return "" }
+        let seconds = CACurrentMediaTime() - start
+        return String(format: "%.1f wakeups and %.2f ms busy a second", Double(meter.passes) / seconds,
+                      meter.busy * 1000 / seconds)
     }
 
     private func messages() async {
