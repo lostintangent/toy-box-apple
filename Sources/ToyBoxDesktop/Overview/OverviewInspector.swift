@@ -8,6 +8,12 @@ import SwiftUI
 /// The channel's detail view re-renders on every event. This view holds nothing but the store, so
 /// SwiftUI sees it unchanged and skips it. Property wrappers would make it look new each time,
 /// which would rebuild every section and row for each message.
+///
+/// A window that switches channels updates Overview in place, which keeps its scroll view and
+/// section headers. Everything that belongs to one channel starts over: the scroll position, each
+/// section's rows with their disclosure, popover, Quick Look and run state, and About's purpose
+/// expansion and errors. Task IDs such as `t1` repeat across channels, so rows can't rely on their
+/// own identity for that. Collapsed sections belong to the window and stay as they are.
 struct OverviewInspector: View {
     let store: ChannelStore
 
@@ -65,10 +71,12 @@ private struct OverviewInspectorContent: View {
                         .padding(.horizontal, Self.contentInsets.leading)
                         .padding(.bottom, Self.contentInsets.bottom)
                         .font(.system(size: 13 * textScale))
+                        .id(Self.topID)
                     }
                     // The automatic top edge draws nothing at the top on macOS 27, so rows would run
                     // under the glass controls. A hard edge continues the conversation's divider.
                     .scrollEdgeEffectStyle(.hard, for: .top)
+                    .onChange(of: store.id) { proxy.scrollTo(Self.topID, anchor: .top) }
                     .task(id: snapshot?.requestedState) {
                         guard let snapshot, let name = snapshot.requestedState,
                               let section = Self.snapshotSections[name] else { return }
@@ -93,6 +101,7 @@ private struct OverviewInspectorContent: View {
 
     /// Content rests 12pt below the toolbar's safe area and scrolls beneath the glass toolbar.
     static let contentInsets = EdgeInsets(top: 12, leading: 16, bottom: 16, trailing: 16)
+    private static let topID = "overview-top"
 
     private static let snapshotSections: [String: OverviewSectionID] = [
         "overview-tasks": .tasks, "overview-artifacts": .artifacts, "overview-routines": .routines,
@@ -105,7 +114,7 @@ private struct OverviewTeamSection: View {
 
     var body: some View {
         OverviewSection(id: .team, count: "\(store.roster.count)", collapsed: $collapsed) {
-            OverviewTeamList(store: store)
+            OverviewTeamList(store: store).id(store.id)
         }
     }
 }
@@ -127,6 +136,7 @@ private struct OverviewTasksSection: View {
         } content: {
             OverviewTaskList(tasks: tasks, agents: store.roster, artifacts: store.artifacts,
                              onArtifactOpen: onArtifactOpen)
+                .id(store.id)
         }
     }
 }
@@ -151,6 +161,7 @@ private struct OverviewArtifactsSection: View {
                                             open: { opener.open(artifact) })
                     }
                 }
+                .id(store.id)
             }
         }
     }
@@ -172,6 +183,7 @@ private struct OverviewRoutinesSection: View {
                         OverviewRoutineRow(routine: routine, store: store) { revealDetails(routine) }
                     }
                 }
+                .id(store.id)
             }
         }
     }
@@ -188,7 +200,7 @@ private struct OverviewAbout: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             if let purpose = details.purpose, !purpose.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                OverviewPurpose(purpose: purpose)
+                OverviewPurpose(purpose: purpose, channelId: store.id)
             } else {
                 Button("Add a purpose…") { management.present(.editChannel(channelId: store.id)) }
                     .buttonStyle(.plain)
@@ -210,6 +222,7 @@ private struct OverviewAbout: View {
                         OverviewPreviewRow(preview: preview, api: store.api, channelId: store.id)
                     }
                 }
+                .id(store.id)
                 .padding(.top, 10)
             }
         }
@@ -223,8 +236,16 @@ struct OverviewPurpose: View {
 
     @Environment(\.channelTextScale) private var textScale
     let purpose: String
-    @ViewState private var expanded = false
+    let channelId: String
+    /// The channel whose purpose is expanded. A switch to another channel starts collapsed but keeps
+    /// the measured width, so the new purpose truncates in its first pass.
+    @ViewState private var expandedChannel: String?
     @ViewState private var availableWidth: CGFloat = 0
+
+    private var expanded: Bool {
+        get { expandedChannel == channelId }
+        nonmutating set { expandedChannel = newValue ? channelId : nil }
+    }
 
     var body: some View {
         let fontSize = 13 * textScale

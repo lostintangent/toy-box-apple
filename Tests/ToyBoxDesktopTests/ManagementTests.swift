@@ -472,6 +472,17 @@ struct ManagementTests {
         #expect(Mirror(reflecting: OverviewInspector(store: store)).children.map(\.label) == ["store"])
     }
 
+    /// A row creates its pop-up button only while it shows the menu, so revealing it must not move the row.
+    @Test func aHiddenRowMenuTakesTheSpaceOfAShownOne() {
+        func size(isVisible: Bool) -> NSSize {
+            NSHostingView(rootView: HStack(spacing: 6) {
+                Text("Routine")
+                OverviewRowMenu(title: "Actions for Routine", isVisible: isVisible) { Button("Run Now") {} }
+            }).fittingSize
+        }
+        #expect(size(isVisible: false) == size(isVisible: true))
+    }
+
     /// A sheet's long text field, counting the submissions its Return key makes.
     struct LongTextHost: View {
         @Observable final class Model {

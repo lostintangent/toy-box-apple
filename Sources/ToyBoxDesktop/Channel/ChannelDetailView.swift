@@ -66,7 +66,6 @@ struct ChannelDetailView: View {
             .background(Color(nsColor: .textBackgroundColor))
             .inspector(isPresented: wideInspector) {
                 OverviewInspector(store: store)
-                    .id(ObjectIdentifier(store))
                     .settledLayout()
                     .inspectorColumnWidth(min: 280, ideal: 312, max: 400)
             }
@@ -199,7 +198,6 @@ struct ChannelDetailView: View {
             .padding(.horizontal, 16)
             .padding(.top, 16)
             OverviewInspector(store: store)
-                .id(ObjectIdentifier(store))
         }
         .onExitCommand { isOverviewSheetPresented = false }
     }
