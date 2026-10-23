@@ -1442,7 +1442,9 @@ the first visible row still, as paging does.
 The card never animates its height. Only its contents fade, and every growth, update or removal
 changes the layout once. Animating the height lays out the whole transcript on every frame, which
 cost about 0.5 seconds of 33 ms frames at 480 loaded messages. The fades are crossfades, so Reduce
-Motion needs no variant.
+Motion needs no variant. The lines clip 6 points outside their own bounds, which holds their hover
+backgrounds and focus rings and stays inside the card's padding. So when an update is shorter, its
+outgoing lines never draw past the card's border onto the messages below.
 
 The card is one accessibility container labeled with its header text, ordered before the New
 divider. Lines are buttons labeled with their text, and the needs-you line reads "Needs your
