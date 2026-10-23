@@ -13,8 +13,9 @@ struct ConversationTranscript: View {
     @Environment(ImageViewer.self) private var viewer: ImageViewer?
     @Environment(\.channelIntelligence) private var intelligence
     @ViewState private var window = TranscriptWindowObserver()
-    @ViewState private var frames: [String: TranscriptMessageFrame] = [:]
-    @ViewState private var viewport = TranscriptViewport()
+    @ViewState private var geometry = TranscriptScrollGeometry()
+    /// The newest message a reader can see, published only when it changes rather than on every frame.
+    @ViewState private var visibleSequence: Int?
     @ViewState private var hasLanded = false
     @ViewState private var isAtBottom = true
     @ViewState private var pagingAnchor: PagingAnchor?
@@ -40,11 +41,14 @@ struct ConversationTranscript: View {
                                view: interaction.messageView)
     }
 
+    private var viewport: TranscriptViewport { geometry.viewport }
+    private var frames: [String: TranscriptMessageFrame] { geometry.frames }
+
     private var visibleReadSequence: Int? {
         // The image viewer covers the transcript, so nothing beneath it counts as read.
         guard snapshot == nil, hasLanded, !isRevealing, pagingAnchor == nil, window.isKeyWindow,
-              scenePhase == .active, store.phase.isLive, viewport.height > 0, viewer?.session == nil else { return nil }
-        return viewport.readSequence(in: frames)
+              scenePhase == .active, store.phase.isLive, viewer?.session == nil else { return nil }
+        return visibleSequence
     }
 
     private var pagingRestoreTarget: PagingRestoreTarget? {
@@ -181,9 +185,10 @@ struct ConversationTranscript: View {
                                     canFollow: hasLanded && pagingAnchor == nil && !isRevealing && !isUserScrolling
                                         && catchUp?.holdsLanding != true,
                                     isJumping: pendingJump != nil)
-            viewport = new
+            geometry.viewport = new
+            publishVisibleSequence()
             TranscriptPointer.contentDidMove()
-            isAtBottom = update.isAtBottom
+            if isAtBottom != update.isAtBottom { isAtBottom = update.isAtBottom }
             let jump = pendingJump
             if update.landsJump { pendingJump = nil }
             switch update.follow {
@@ -203,12 +208,14 @@ struct ConversationTranscript: View {
             }
         }
         .onPreferenceChange(TranscriptMessageFrames.self) { new in
-            frames = new
+            geometry.frames = new
+            publishVisibleSequence()
             followReaderWhilePaging(in: new)
             restorePagingAnchor(using: new)
         }
         .onScrollPhaseChange { _, phase in
-            isUserScrolling = phase == .tracking || phase == .interacting || phase == .decelerating
+            let scrolling = phase == .tracking || phase == .interacting || phase == .decelerating
+            if isUserScrolling != scrolling { isUserScrolling = scrolling }
             if phase == .tracking || phase == .interacting { catchUp?.isPinned = false }
             // Before the page lands, the anchor follows the reader instead.
             if (phase == .tracking || phase == .interacting) && pagingRestoreTarget != nil { pagingAnchor = nil }
@@ -301,6 +308,11 @@ struct ConversationTranscript: View {
                 .font(.caption)
             }
         }
+    }
+
+    private func publishVisibleSequence() {
+        let sequence = viewport.readSequence(in: frames)
+        if sequence != visibleSequence { visibleSequence = sequence }
     }
 
     private var showsJumpToLatest: Bool { !isAtBottom && hasLanded }
@@ -794,6 +806,15 @@ private struct TranscriptJump: Equatable {
 /// The keys a row's messages measure their frames under.
 private func transcriptFrameIDs(of row: TranscriptRow) -> [String] {
     row.messages.map(\.id) + [row.id, "system-group-\(row.id)"]
+}
+
+/// Scroll geometry changes on every frame of a scroll. Kept out of SwiftUI's tracking, it lets a
+/// scroll run without re-running the transcript's body and diffing every loaded row. Only what a
+/// frame actually changes, like the visible message or reaching the bottom, is published as state.
+@MainActor
+private final class TranscriptScrollGeometry {
+    var viewport = TranscriptViewport()
+    var frames: [String: TranscriptMessageFrame] = [:]
 }
 
 private struct PagingAnchor: Equatable {
