@@ -23,7 +23,7 @@ struct ChannelSidebar: View {
 
     private var connection: SidebarConnection {
         SidebarConnection(
-            loaded: model.catalog?.lastRefreshedAt != nil, failing: model.catalog?.error != nil,
+            loaded: model.catalog?.hasLoaded == true, failing: model.catalog?.error != nil,
             fatal: model.configurationError != nil || SidebarConnection.isFatal(model.catalog?.failure)
         )
     }
