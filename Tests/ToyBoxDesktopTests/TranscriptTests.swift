@@ -574,6 +574,59 @@ struct TranscriptTests {
         #expect(harness.readRequests == 0)
     }
 
+    /// Thirty unread messages, each its own row, run well past one screen, so the first opens at the
+    /// top. One run of five fits on the last screen, so the transcript opens at the bottom with it in
+    /// view. A summary card above the first unread message then grows downward from where it's drawn.
+    @MainActor
+    @Test(arguments: [false, true], [false, true])
+    func aLoadedChannelFirstDrawsItsFirstUnreadMessageWhereItLands(opensAtBottom: Bool, summarizes: Bool)
+        async throws {
+        let latest = opensAtBottom ? 35 : 60
+        let messages = (1...latest).map {
+            opensAtBottom && $0 > 30 ? catchUpTestMessage($0, repeats: 3)
+                : catchUpTestMessage($0, sender: $0.isMultiple(of: 2) ? .user : .agent("lead"))
+        }
+        let ready = CatchUp(needsYou: nil, changes: (31...33).map {
+            .init(text: "Update \($0) moved along, with enough detail to wrap the line.", sources: [$0])
+        }, through: latest)
+        let service = summarizes ? StubChannelIntelligence(results: [.ready(ready)], holdsCatchUp: true)
+            : StubChannelIntelligence(availability: .unavailable(.deviceNotEligible))
+        let log = TranscriptOpeningLog()
+        let harness = try await TranscriptHarness(messages: messages, seenThrough: 30,
+                                                  height: opensAtBottom ? 1100 : 480, warm: true,
+                                                  intelligence: service) { harness in
+            guard !harness.capture.frames.isEmpty else { return }
+            if harness.rowsOpacity > 0 {
+                log.drawn.append(harness.capture.frames["divider-m31"]?.rect)
+            } else {
+                log.hiddenTurns += 1
+            }
+        }
+        defer {
+            service.releaseCatchUp()
+            harness.close()
+        }
+        try await harness.settle(for: .milliseconds(300))
+
+        #expect(log.hiddenTurns > 0)
+        let first = try #require(log.drawn.first ?? nil, "The first frame drawn has no divider")
+        if !opensAtBottom {
+            #expect(first.minY >= -0.5 && first.minY < 120, "The first frame drew the divider at \(first)")
+        } else {
+            #expect(first.minY >= -0.5 && harness.isVisible("divider-m31") && abs(harness.bottomGap) < 2,
+                    "The first frame drew the divider at \(first)")
+        }
+        if summarizes {
+            #expect(service.catchUpCount == 1)
+            service.releaseCatchUp()
+            try await harness.waitUntil { (harness.capture.frames["divider-m31"]?.rect.height ?? 0) > first.height + 40 }
+            try await harness.settle(for: .milliseconds(500))
+        }
+        #expect(log.drawn.allSatisfy { $0.map { abs($0.minY - first.minY) < 0.5 } == true },
+                "The divider moved after the first frame: \(log.drawn.map { $0?.minY })")
+        #expect(harness.readRequests == 0)
+    }
+
     @MainActor
     @Test func theNewestMessageStaysPinnedWhileTheWindowResizes() async throws {
         let harness = try await TranscriptHarness(messages: (1...40).map(transcriptTestMessage), resizable: true)
@@ -2001,6 +2054,7 @@ private final class TranscriptLayoutCapture {
     var frames: [String: TranscriptMessageFrame] = [:]
     var viewport = TranscriptViewport()
     var proxy: ScrollViewProxy?
+    var hasLanded = false
 }
 
 @MainActor
@@ -2210,8 +2264,7 @@ struct TranscriptCatchUpTests {
             harness.close()
         }
         let clip = harness.scrollView.contentView
-        try await harness.waitUntil { service.catchUpCount == 1 && abs(harness.bottomGap) < 2 }
-        try await harness.settle(for: .milliseconds(300))
+        try await harness.waitUntil { harness.capture.hasLanded && service.catchUpCount == 1 }
         let landed = clip.bounds.minY
         #expect(abs(harness.bottomGap) < 2, "The landing ended \(harness.bottomGap) points from the bottom")
 
@@ -2238,7 +2291,9 @@ struct TranscriptCatchUpTests {
             harness.close()
         }
         let clip = harness.scrollView.contentView
-        try await harness.waitUntil { service.catchUpCount == 1 }
+        try await harness.waitUntil { harness.capture.hasLanded && service.catchUpCount == 1 }
+        let divider = try #require(harness.capture.frames["divider-m10"]?.rect)
+        try #require(divider.minY >= -0.5 && divider.minY < 120, "Landed with the divider at \(divider)")
         let landed = clip.bounds.minY
         try await harness.scrollDown(byWheel: false) { clip.bounds.minY > landed + 400 }
         let reading = harness.visibleFrames()
@@ -2254,6 +2309,13 @@ struct TranscriptCatchUpTests {
         }
         #expect(harness.readRequests == 0)
     }
+}
+
+@MainActor
+private final class TranscriptOpeningLog {
+    /// The unread divider's frame in each pass drawn with the rows showing.
+    var drawn: [CGRect?] = []
+    var hiddenTurns = 0
 }
 
 private final class StubChannelIntelligence: ChannelIntelligenceService {
@@ -2346,12 +2408,17 @@ private final class TranscriptHarness {
     private(set) var scrollView = NSScrollView()
     private let session: URLSession
     private let window: NSWindow
+    private var turnObserver: CFRunLoopObserver?
+    private var onTurn: (@MainActor (TranscriptHarness) -> Void)?
 
     /// Lands at the bottom unless `seenThrough` leaves messages unread, in which case it lands at the first.
     /// A `resizable` transcript fills the window, so `resize(height:)` reaches it the way a live resize does.
+    /// A `warm` store is live before the transcript appears, as when switching back to a channel.
+    /// `onTurn` runs after every layout and display pass from the first one on.
     init(messages: [ChannelMessage], history: [ChannelMessage] = [], holdsHistory: Bool = false,
-         seenThrough: Int? = nil, height: CGFloat = 480, resizable: Bool = false,
-         intelligence: any ChannelIntelligenceService = LiveChannelIntelligence.shared) async throws {
+         seenThrough: Int? = nil, height: CGFloat = 480, resizable: Bool = false, warm: Bool = false,
+         intelligence: any ChannelIntelligenceService = LiveChannelIntelligence.shared,
+         onTurn: (@MainActor (TranscriptHarness) -> Void)? = nil) async throws {
         let host = "transcript-\(UUID().uuidString.lowercased()).invalid"
         let latest = messages.last?.sequence ?? 0
         let channel = Channel(id: "harness", name: "Harness", model: .init(provider: "test", name: "test"),
@@ -2369,8 +2436,17 @@ private final class TranscriptHarness {
                                  sendJournal: nil)
         let interaction = ChannelInteraction()
         let capture = TranscriptLayoutCapture()
+        if warm {
+            store.connect()
+            let deadline = ContinuousClock.now + .seconds(60)
+            while !(store.isLoaded && store.phase.isLive), ContinuousClock.now < deadline {
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            try #require(store.isLoaded && store.phase.isLive)
+        }
         let view = NSHostingView(rootView: ConversationTranscript(store: store)
             .onPreferenceChange(TranscriptMessageFrames.self) { capture.frames = $0 }
+            .onPreferenceChange(TranscriptLanded.self) { capture.hasLanded = $0 }
             .safeAreaBar(edge: .bottom, spacing: 0) { Color.clear.frame(height: 100) }
             .environment(interaction)
             .environment(ArtifactOpener())
@@ -2383,7 +2459,17 @@ private final class TranscriptHarness {
         window.contentView = view
         (self.host, self.store, self.interaction, self.capture) = (host, store, interaction, capture)
         (self.session, self.window) = (session, window)
-        store.connect()
+        if let onTurn {
+            self.onTurn = onTurn
+            // After Core Animation's commit, so it sees each pass as drawn.
+            let observer = CFRunLoopObserverCreateWithHandler(nil, CFRunLoopActivity.beforeWaiting.rawValue, true,
+                                                              CFIndex.max) { [weak self] _, _ in
+                MainActor.assumeIsolated { if let self { self.onTurn?(self) } }
+            }
+            turnObserver = observer
+            CFRunLoopAddObserver(CFRunLoopGetMain(), observer, .commonModes)
+        }
+        if !warm { store.connect() }
 
         func findScrollView(in view: NSView) -> NSScrollView? {
             view as? NSScrollView ?? view.subviews.lazy.compactMap(findScrollView(in:)).first
@@ -2391,12 +2477,9 @@ private final class TranscriptHarness {
         try await waitUntil { findScrollView(in: view)?.documentView.map { $0.bounds.height > 800 } == true }
         scrollView = try #require(findScrollView(in: view))
         if let seenThrough, seenThrough < latest {
-            let firstUnread = messages.first { $0.sequence > seenThrough }?.id ?? ""
-            try await waitUntil { capture.frames[firstUnread] != nil }
-            // The landing jump settles within half a second.
-            try await settle(for: .milliseconds(600))
+            try await waitUntil { capture.hasLanded }
         } else {
-            try await waitUntil { abs(self.bottomGap) < 2 }
+            try await waitUntil { capture.hasLanded && abs(self.bottomGap) < 2 }
             try await settle(for: .milliseconds(300))
         }
     }
@@ -2420,6 +2503,21 @@ private final class TranscriptHarness {
         capture.frames.reduce(into: [:]) { result, entry in
             if entry.value.sequence > 0, isVisible(entry.key) { result[entry.key] = entry.value.rect }
         }
+    }
+
+    /// The rows' opacity as drawn. SwiftUI applies it to the views hosting the rows' window probe.
+    var rowsOpacity: CGFloat {
+        func probe(in view: NSView) -> NSView? {
+            view is TranscriptWindowProbe.ProbeView ? view : view.subviews.lazy.compactMap(probe(in:)).first
+        }
+        var view = window.contentView.flatMap(probe(in:))
+        guard view != nil else { return 0 }
+        var opacity: CGFloat = 1
+        while let current = view {
+            opacity *= current.isHidden ? 0 : current.alphaValue
+            view = current.superview
+        }
+        return opacity
     }
 
     /// Waits up to a deadline rather than a count of cycles, since a starved runner stretches each cycle.
@@ -2503,6 +2601,8 @@ private final class TranscriptHarness {
     }
 
     func close() {
+        if let turnObserver { CFRunLoopRemoveObserver(CFRunLoopGetMain(), turnObserver, .commonModes) }
+        turnObserver = nil
         store.disconnect()
         window.close()
         session.invalidateAndCancel()

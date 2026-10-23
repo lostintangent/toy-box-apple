@@ -34,6 +34,8 @@ struct ConversationTranscript: View {
     @ViewState private var catchUp: TranscriptCatchUp?
     @ViewState private var rowBuilder = TranscriptRowBuilder()
     @ViewState private var pointer = TranscriptPointer()
+    @ViewState private var opening = TranscriptOpening()
+    @ViewState private var layoutTurns = TranscriptLayoutTurns()
 
     private var rows: [TranscriptRow] {
         guard let lead = store.roster.first else { return [] }
@@ -59,7 +61,8 @@ struct ConversationTranscript: View {
     }
 
     var body: some View {
-        content
+        resolveOpening()
+        return content
             .onChange(of: showsViewerMessage) { shown, showing in
                 // A deleted message or channel closes the viewer at once. A pending send isn't in the
                 // history yet, so only a message that leaves the history closes it.
@@ -170,13 +173,19 @@ struct ConversationTranscript: View {
                             alignment: .topLeading)
                 .padding(.top, 20)
                 .modifier(ConversationRail())
+                .opacity(hidesOpening ? 0 : 1)
         }
         .scrollEdgeEffectStyle(.soft, for: .bottom)
         .scrollEdgeEffectStyle(.hard, for: .top)
         .coordinateSpace(name: "transcript-viewport")
-        .defaultScrollAnchor(.bottom, for: .initialOffset)
-        .scrollPosition(id: $scrollPosition, anchor: .top)
+        .defaultScrollAnchor(opening.seededRowID == nil ? .bottom : .top, for: .initialOffset)
+        .scrollPosition(id: Binding {
+            // The seed holds the first unread row at the top until it lands, as the card appears above it.
+            scrollPosition ?? (hasLanded || isRevealing ? nil : opening.seededRowID)
+        } set: { scrollPosition = $0 }, anchor: .top)
+        .preference(key: TranscriptLanded.self, value: hasLanded)
         .onScrollGeometryChange(for: TranscriptViewport.self) { TranscriptViewport($0) } action: { old, new in
+            layoutTurns.moved = true
             // Keyboard scrolling has no scroll phase, so any move the transcript didn't make releases the card.
             if catchUp?.isPinned == true, hasLanded, pendingJump == nil, abs(new.top - old.top) > 0.5,
                new.contentHeight == old.contentHeight, new.height == old.height {
@@ -209,6 +218,7 @@ struct ConversationTranscript: View {
             }
         }
         .onPreferenceChange(TranscriptMessageFrames.self) { new in
+            layoutTurns.moved = true
             holdReadingPlace(in: new)
             geometry.frames = new
             publishVisibleSequence()
@@ -662,10 +672,64 @@ struct ConversationTranscript: View {
         return top >= -0.5 && top < min(120, viewport.height / 2)
     }
 
+    /// Hides the rows of a transcript opening on its first unread message until that message is in
+    /// place, so the first frame drawn never shows the bottom or a landing on its way there.
+    private var hidesOpening: Bool {
+        opening.rowID != nil && !hasLanded && !isRevealing && store.phase.isLive
+    }
+
+    /// Resolved by the first body. A transcript that's already loaded opens directly on its first
+    /// unread row, which the scroll view's first layout places. One that has to connect or page
+    /// history first opens at the bottom and lands with a jump.
+    private func resolveOpening() {
+        guard !opening.isResolved else { return }
+        opening.isResolved = true
+        guard snapshot == nil, store.isLoaded, store.phase.isLive, let unread = store.unreadAfter,
+              let first = store.state?.messages.first, first.sequence <= unread + 1 || !store.hasOlderMessages
+        else { return }
+        let rows = rows
+        guard let index = rows.firstIndex(where: { $0.messages.contains { $0.sequence > unread } }) else { return }
+        opening.open(rows[index].id, unreadAfter: unread,
+                     seeds: rows.count - index > TranscriptOpening.bottomRows)
+    }
+
+    /// Whether the row starts near the viewport's top or, on the last screen, anywhere in it.
+    private func isInPlace(_ row: TranscriptRow) -> Bool {
+        guard viewport.height > 0,
+              let top = (transcriptFrameIDs(of: row) + ["divider-\(row.id)"]).compactMap({ frames[$0]?.rect.minY })
+                .min() else { return false }
+        return top >= -0.5 && (top < min(120, viewport.height / 2) || viewport.bottomGap < 1 && top < viewport.height)
+    }
+
+    /// Lands on the row, moving only if it isn't in place already. A jump converges over several
+    /// layout passes, so the landing ends only after a run loop turn in which nothing moved. Until
+    /// then, those passes can't count as the reader scrolling, and following the bottom can't
+    /// override the landing.
+    private func settleLanding(on row: TranscriptRow, using proxy: ScrollViewProxy) async {
+        var jumps = 0
+        while await layoutTurns.settled() {
+            if pendingJump != nil {
+                // Not applied yet, or it found nothing to move and stops guarding shortly.
+                try? await Task.sleep(for: .milliseconds(16))
+                continue
+            }
+            if isInPlace(row) || jumps == 2 { break }
+            jumps += 1
+            jump(to: row.id, anchor: .top, using: proxy)
+        }
+        // Until something scrolls it, the scroll view keeps its initial bottom anchor, so a card
+        // growing above the reader would push the rows up instead of down. Scrolling to where the
+        // transcript already is ends that.
+        guard !Task.isCancelled, jumps == 0, opening.seededRowID == nil, viewport.bottomGap < 1 else { return }
+        scrollToLatest(using: proxy)
+        _ = await layoutTurns.settled()
+    }
+
     private func land(using proxy: ScrollViewProxy) async {
         guard !isRevealing else { return }
         if !capturedArrivalBoundary {
-            arrivalUnreadAfter = store.unreadAfter
+            // The opening's boundary is the one its first frame shows.
+            arrivalUnreadAfter = opening.rowID == nil ? store.unreadAfter : opening.unreadAfter
             capturedArrivalBoundary = true
         }
         await Task.yield()
@@ -675,7 +739,8 @@ struct ConversationTranscript: View {
             guard !Task.isCancelled, !isRevealing else { return }
             prepareCatchUp(unreadAfter: unread)
             if let first = rows.first(where: { $0.messages.contains { $0.sequence > unread } }) {
-                jump(to: first.id, anchor: .top, using: proxy)
+                await settleLanding(on: first, using: proxy)
+                guard !Task.isCancelled, !isRevealing else { return }
             } else { scrollToLatest(using: proxy) }
         } else {
             scrollToLatest(using: proxy)
@@ -832,6 +897,86 @@ private struct TranscriptJump: Equatable {
     var id: String
     var anchor: UnitPoint
     var token = UUID()
+}
+
+/// Where a transcript that's already loaded when it appears opens. Its body resolves this once,
+/// outside SwiftUI's tracking, so the first layout already uses it.
+@MainActor
+private final class TranscriptOpening {
+    /// A tail this short likely fits on the last screen, so it opens at the bottom, where the first
+    /// unread row already shows. A row seeded at the top couldn't scroll past the bottom anyway.
+    static let bottomRows = 8
+
+    var isResolved = false
+    /// The first unread row, or nil when the transcript lands after it connects instead.
+    private(set) var rowID: String?
+    private(set) var unreadAfter: Int?
+    private var seeds = false
+
+    /// The row the first layout scrolls to the top, unless the tail is short.
+    var seededRowID: String? { seeds ? rowID : nil }
+
+    func open(_ rowID: String, unreadAfter: Int, seeds: Bool) {
+        self.rowID = rowID
+        self.unreadAfter = unreadAfter
+        self.seeds = seeds
+    }
+}
+
+/// Waits for layout to settle. AppKit lays out and draws before the main run loop waits, so a turn
+/// that ends without the transcript's geometry or row frames changing has nothing left to apply.
+@MainActor
+private final class TranscriptLayoutTurns {
+    /// Set by the scroll geometry and row frame callbacks.
+    var moved = false
+    private var observer: CFRunLoopObserver?
+    private var waiter: CheckedContinuation<Void, Never>?
+    private var busyTurns = 0
+
+    /// Resumes after the first quiet turn, or after enough busy ones that an animation can't hold
+    /// it forever. False if the task was cancelled.
+    func settled() async -> Bool {
+        busyTurns = 0
+        repeat {
+            await withCheckedContinuation { continuation in
+                waiter = continuation
+                guard observer == nil else { return }
+                // After Core Animation's commit, which lays out and draws.
+                let observer = CFRunLoopObserverCreateWithHandler(nil, CFRunLoopActivity.beforeWaiting.rawValue,
+                                                                  true, 2_100_000) { [weak self] _, _ in
+                    MainActor.assumeIsolated { self?.turnEnded() }
+                }
+                self.observer = observer
+                CFRunLoopAddObserver(CFRunLoopGetMain(), observer, .commonModes)
+            }
+            // A callback the quiet turn's layout queued runs before this resumes, so it still counts.
+        } while moved && busyTurns < 30 && !Task.isCancelled
+        return !Task.isCancelled
+    }
+
+    private func turnEnded() {
+        guard let waiter else { return }
+        let quiet = !moved
+        moved = false
+        busyTurns += 1
+        guard quiet || busyTurns >= 30 else {
+            // A later pass may already be pending, so look again without waiting for an event.
+            CFRunLoopWakeUp(CFRunLoopGetMain())
+            return
+        }
+        self.waiter = nil
+        if let observer {
+            CFRunLoopRemoveObserver(CFRunLoopGetMain(), observer, .commonModes)
+            self.observer = nil
+        }
+        waiter.resume()
+    }
+}
+
+/// Whether the transcript has landed on its first unread message or its bottom. For its hosts and tests.
+struct TranscriptLanded: PreferenceKey {
+    static let defaultValue = false
+    static func reduce(value: inout Bool, nextValue: () -> Bool) { value = value || nextValue() }
 }
 
 /// The keys a row's messages measure their frames under.
