@@ -13,6 +13,7 @@ struct ToyBoxDesktopApp: App {
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage("appearance") private var appearance: AppAppearance = .system
     @AppStorage("textScale") private var textScale = 1.0
+    @AppStorage(MenuBarVisibility.key) private var menuBarVisibility: MenuBarVisibility = .whenActive
 
     init() {
         do {
@@ -42,6 +43,8 @@ struct ToyBoxDesktopApp: App {
         .windowStyle(.automatic)
         .commands { ChannelCommands(model: model) }
         .onChange(of: scenePhase, initial: true) { _, phase in
+            model.openChannelWindow = { openWindow(value: ChannelWindowValue(channelID: $0)) }
+            model.openMainWindow = { openWindow(id: "channels") }
             guard !model.launchOptions.isSnapshot else { return }
             appDelegate.openChannelWindow = { openWindow(id: "channels") }
             guard !didCheckStartupWindow || phase == .active else { return }
@@ -58,6 +61,20 @@ struct ToyBoxDesktopApp: App {
                 .environment(model)
                 .preferredColorScheme(appearance.colorScheme)
         }
+
+        MenuBarExtra(isInserted: menuBarInserted) {
+            MenuBarMenu().environment(model)
+        } label: {
+            MenuBarLabel(model: model)
+        }
+        .menuBarExtraStyle(.menu)
+        .onChange(of: menuBarVisibility, initial: true) { _, visibility in
+            model.menuBar.visibility = visibility
+        }
+    }
+
+    private var menuBarInserted: Binding<Bool> {
+        Binding(get: { model.showsMenuBarExtra && model.menuBar.isInserted }, set: { _ in })
     }
 
     private func root(channelID: String?) -> some View {

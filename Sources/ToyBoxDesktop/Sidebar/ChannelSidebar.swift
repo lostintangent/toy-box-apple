@@ -39,9 +39,9 @@ struct ChannelSidebar: View {
         List(selection: $selection) {
             if initialLoading {
                 ForEach(0..<3) { _ in SidebarPlaceholder().listRowInsets(EdgeInsets()).listRowSeparator(.hidden) }
-            } else if let catalog = model.catalog?.state {
+            } else if model.catalog?.state != nil {
                 ForEach(channels) { channel in
-                    row(channel, lead: catalog.lead)
+                    row(channel)
                         .listRowInsets(EdgeInsets())
                         .tag(channel.id)
                         .contextMenu { contextMenu(channel) }
@@ -101,24 +101,11 @@ struct ChannelSidebar: View {
         }.padding(20)
     }
 
-    private func row(_ channel: Channel, lead: ChannelLeadProfile) -> some View {
-        let isOpen = model.openChannelIDs.contains(channel.id)
-        let store = isOpen ? model.catalog?.channel(id: channel.id) : nil
+    private func row(_ channel: Channel) -> some View {
         let current = model.sidebarChannel(channel)
-        let agents = if let store, store.isLoaded { store.roster } else {
-            [ChannelAgent.lead(id: channel.id, profile: lead)]
-                + (model.catalog?.members.filter { $0.channelId == channel.id } ?? [])
-        }
-        let working: [ChannelAgent]
-        if let store {
-            working = store.phase.isLive
-                ? agents.filter { store.presence[$0.id]?.state == "working" } : []
-        } else {
-            working = model.catalog?.error == nil
-                ? agents.filter { model.catalog?.working.contains($0.id) == true } : []
-        }
+        let agents = model.sidebarAgents(channel)
         return ChannelSidebarRow(
-            channel: current, agents: agents, working: working,
+            channel: current, agents: agents, working: model.sidebarWorking(channel, agents: agents),
             attention: model.sidebarAttention(channel),
             folder: folderAvailability(current),
             openFolder: { if let path = current.directory { model.folders.open(path) } },

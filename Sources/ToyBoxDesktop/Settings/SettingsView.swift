@@ -1,11 +1,16 @@
 import AppKit
 import ChannelClient
+import ChannelIntelligence
 import SwiftUI
 import UserNotifications
 
 struct SettingsView: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.channelIntelligence) private var intelligence
     @AppStorage("appearance") private var appearance: AppAppearance = .system
+    @AppStorage(MenuBarVisibility.key) private var menuBarVisibility: MenuBarVisibility = .whenActive
+    @AppStorage(TranscriptIntelligenceSettings.summarizesNewMessages) private var summarizesNewMessages = true
+    @AppStorage(TranscriptIntelligenceSettings.describesImages) private var describesImages = true
     @AppStorage("notificationsEnabled") private var notificationsEnabled = false
     @AppStorage("requestNotifications") private var requestNotifications = true
     @AppStorage("completionNotifications") private var completionNotifications = true
@@ -15,14 +20,21 @@ struct SettingsView: View {
     @ViewState private var isTesting = false
     @ViewState private var isEnabling = false
     @ViewState private var confirmsServerChange = false
+    /// Read on appear and whenever the app becomes active, since the service can't be observed.
+    @ViewState private var intelligenceAvailability: IntelligenceAvailability?
 
     var body: some View {
         TabView {
-            general.tabItem { Label("General", systemImage: "gearshape") }
-            notifications.tabItem { Label("Notifications", systemImage: "bell") }
+            fitted(general).tabItem { Label("General", systemImage: "gearshape") }
+            fitted(notifications).tabItem { Label("Notifications", systemImage: "bell") }
         }
-        .frame(width: 540, height: 380)
-        .onAppear { serverURL = model.serverURL }
+        .onAppear {
+            serverURL = model.serverURL
+            intelligenceAvailability = intelligence.availability
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            intelligenceAvailability = intelligence.availability
+        }
         .task {
             await model.notifications.refreshAuthorization()
             if model.notifications.authorization == .denied { notificationsEnabled = false }
@@ -72,8 +84,73 @@ struct SettingsView: View {
                 }
                 .pickerStyle(.segmented)
             }
+            Section {
+                Picker("Show in menu bar", selection: $menuBarVisibility) {
+                    ForEach(MenuBarVisibility.allCases) { value in Text(value.title).tag(value) }
+                }
+                .pickerStyle(.menu)
+            } footer: {
+                footer("When Active shows the icon while agents are working or a channel is waiting for you.")
+            }
+            intelligenceSection
         }
         .formStyle(.grouped)
+    }
+
+    /// The on-device features. When the model can't run here, the toggles keep their values and one
+    /// footer says why in place of their descriptions.
+    private var intelligenceSection: some View {
+        let unavailable: IntelligenceUnavailableReason? = if case .unavailable(let reason) = intelligenceAvailability {
+            reason
+        } else { nil }
+        return Section {
+            Toggle(isOn: $summarizesNewMessages) {
+                Text("Summarize new messages")
+                if unavailable == nil {
+                    Text("When you return to a busy channel, a summary appears above the new messages. Made on this Mac.")
+                }
+            }
+            .disabled(unavailable != nil)
+            Toggle(isOn: $describesImages) {
+                Text("Describe images for VoiceOver")
+                if unavailable == nil {
+                    Text("While VoiceOver is running, images get descriptions made on this Mac.")
+                }
+            }
+            .disabled(unavailable != nil)
+        } footer: {
+            if let unavailable {
+                HStack(alignment: .firstTextBaseline) {
+                    footer(Self.unavailableText(unavailable))
+                    Spacer()
+                    if unavailable == .appleIntelligenceNotEnabled {
+                        Button("Open System Settings") {
+                            if let url = URL(string: "x-apple.systempreferences:com.apple.Siri-Settings.extension") {
+                                NSWorkspace.shared.open(url)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    static func unavailableText(_ reason: IntelligenceUnavailableReason) -> String {
+        switch reason {
+        case .deviceNotEligible: "This Mac doesn't support Apple Intelligence."
+        case .appleIntelligenceNotEnabled: "Turn on Apple Intelligence in System Settings to use these."
+        case .modelNotReady: "Apple Intelligence is getting ready. Try again later."
+        case .unsupportedLanguage: "Apple Intelligence doesn't support your Mac's language yet."
+        }
+    }
+
+    private func footer(_ text: String) -> some View {
+        Text(text).font(.footnote).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+    }
+
+    /// Each pane is as tall as its content, so the window grows to fit rather than scrolling.
+    private func fitted(_ pane: some View) -> some View {
+        pane.scrollDisabled(true).frame(width: 540).fixedSize(horizontal: false, vertical: true)
     }
 
     private var notifications: some View {

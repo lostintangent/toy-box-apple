@@ -101,7 +101,6 @@ struct RootView: View {
             await model.notifications.refreshAuthorization()
         }
         .onAppear {
-            model.openChannelWindow = { openWindow(value: ChannelWindowValue(channelID: $0)) }
             if selectedId == nil {
                 selectedId = model.launchOptions.isSnapshot ? initialChannelID : restoredSelectedId ?? initialChannelID
             }

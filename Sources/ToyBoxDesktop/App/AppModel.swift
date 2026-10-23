@@ -24,9 +24,15 @@ final class AppModel {
     let notifications = ChannelNotifications()
     let folders = ChannelFolders()
     let requestedRefresh = RequestedCatalogRefresh()
+    let menuBar = MenuBarPresence()
     var navigationRequest: ChannelNavigationRequest?
     var newChannelRequest: UUID?
+    /// Pending requests' messages for the menu bar, by channel.
+    private(set) var menuBarRequests: [String: ChannelNotifications.ResolvedRequest] = [:]
     @ObservationIgnored var openChannelWindow: ((String) -> Void)?
+    @ObservationIgnored var openMainWindow: (() -> Void)?
+    @ObservationIgnored private var menuBarLookups: [String: Int] = [:]
+    @ObservationIgnored private var unhideObserver: NSObjectProtocol?
     @ObservationIgnored private var connections: [ObjectIdentifier: (store: ChannelStore, count: Int)] = [:]
     @ObservationIgnored private var windows: [UUID: String] = [:]
     @ObservationIgnored private var keyWindowID: UUID?
@@ -49,10 +55,8 @@ final class AppModel {
         configure(serverURL: serverURL, persist: false)
         notifications.onActivate = { [weak self] activation in
             guard let self, self.serverURL == activation.serverURL else { return }
-            NSApplication.shared.activate(ignoringOtherApps: true)
-            self.navigationRequest = .init(channelID: activation.channelID, sequence: activation.sequence,
-                                           focusComposer: activation.focusComposer)
-            if self.activeChannelID == nil { self.openChannelWindow?(activation.channelID) }
+            self.activate(channelID: activation.channelID, sequence: activation.sequence,
+                          focusComposer: activation.focusComposer)
         }
         notifications.api = { [weak self] serverURL in
             guard let self, self.serverURL == serverURL else { return nil }
@@ -71,6 +75,7 @@ final class AppModel {
                 }
             })
         }
+        if showsMenuBarExtra { observeMenuBarActivity() }
     }
 
     isolated deinit {
@@ -92,6 +97,8 @@ final class AppModel {
             catalog = ChannelCatalogStore(api: api)
             configurationError = nil
             notifications.reset()
+            menuBarRequests = [:]
+            menuBarLookups = [:]
             catalogGeneration = UUID()
             observeCatalog(generation: catalogGeneration)
             catalog?.setActive(NSApplication.shared.isActive)
@@ -157,6 +164,123 @@ final class AppModel {
             notifications.update(channels: catalog.channels, activeChannelID: activeChannelID,
                                  serverURL: serverURL)
         }
+        resolveMenuBarRequests()
+    }
+
+    /// Brings a channel forward from outside its windows, as notifications and the menu bar do. The
+    /// frontmost window selects it, or a new window opens on it when there is none. Without a
+    /// channel, the frontmost window just comes forward.
+    func activate(channelID: String?, sequence: Int? = nil, focusComposer: Bool = false) {
+        if let channelID {
+            navigationRequest = .init(channelID: channelID, sequence: sequence, focusComposer: focusComposer)
+        }
+        let app = NSApplication.shared
+        guard app.isHidden else {
+            app.activate()
+            return bringForward(channelID)
+        }
+        // Unhiding finishes on a later turn, and until then every window reads as invisible, so
+        // looking now would open a second window beside the one coming back.
+        if let unhideObserver { NotificationCenter.default.removeObserver(unhideObserver) }
+        unhideObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didUnhideNotification, object: app, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.didUnhide(channelID) }
+        }
+        app.activate()
+        app.unhide(nil)
+    }
+
+    private func didUnhide(_ channelID: String?) {
+        if let unhideObserver { NotificationCenter.default.removeObserver(unhideObserver) }
+        unhideObserver = nil
+        bringForward(channelID)
+    }
+
+    private func bringForward(_ channelID: String?) {
+        if let window = Self.frontChannelWindow() {
+            if window.isMiniaturized { window.deminiaturize(nil) }
+            window.makeKeyAndOrderFront(nil)
+        } else if let channelID {
+            openChannelWindow?(channelID)
+        } else {
+            openMainWindow?()
+        }
+    }
+
+    private static func frontChannelWindow() -> NSWindow? {
+        func isChannelWindow(_ window: NSWindow) -> Bool {
+            window.identifier?.rawValue.hasPrefix("channels") == true && window.canBecomeMain
+        }
+        let app = NSApplication.shared
+        return app.orderedWindows.first { isChannelWindow($0) && $0.isVisible }
+            ?? app.windows.first { isChannelWindow($0) && $0.isMiniaturized }
+    }
+
+    // MARK: Menu bar extra
+
+    /// Captures, snapshots and benchmarks keep the menu bar out of what they measure.
+    var showsMenuBarExtra: Bool {
+        !launchOptions.isSnapshot && resizeBenchmark == nil && performanceBenchmark == nil
+    }
+
+    /// What the menu bar extra shows, from the same attention and working agents as the sidebar.
+    var menuBarStatus: MenuBarStatus {
+        let unreachable = configurationError != nil || catalog?.error != nil
+            ? SidebarConnection.server(serverURL) : nil
+        guard let catalog, catalog.state != nil else { return MenuBarStatus(unreachableHost: unreachable) }
+        let inputs = catalog.channels.map { channel in
+            let current = sidebarChannel(channel)
+            let isWaiting = sidebarAttention(channel) == .waiting
+            return MenuBarStatus.Input(channel: current, isWaiting: isWaiting,
+                                       working: sidebarWorking(channel, agents: sidebarAgents(channel)),
+                                       request: isWaiting ? menuBarRequest(current) : nil)
+        }
+        return MenuBarStatus(inputs, unreachableHost: unreachable)
+    }
+
+    /// An open channel's live request, otherwise the one looked up for its sequence.
+    private func menuBarRequest(_ channel: Channel) -> ChannelNotifications.ResolvedRequest? {
+        guard let sequence = channel.requestSequence else { return nil }
+        if openChannelIDs.contains(channel.id), let store = catalog?.channel(id: channel.id),
+           let request = store.request, request.sequence == sequence {
+            return .init(message: request, agents: store.roster)
+        }
+        return menuBarRequests[channel.id].flatMap { $0.message.sequence == sequence ? $0 : nil }
+    }
+
+    /// Looks up each new request's message once, so the menu can quote it before it opens.
+    private func resolveMenuBarRequests() {
+        guard let catalog, showsMenuBarExtra,
+              MenuBarVisibility(rawValue: UserDefaults.standard.string(forKey: MenuBarVisibility.key) ?? "") != .never
+        else { return }
+        let pending = Dictionary(catalog.channels.compactMap { channel in channel.requestSequence.map { (channel.id, $0) } },
+                                 uniquingKeysWith: { first, _ in first })
+        let kept = menuBarRequests.filter { pending[$0.key] == $0.value.message.sequence }
+        if kept.count != menuBarRequests.count { menuBarRequests = kept }
+        let generation = catalogGeneration
+        for channel in catalog.channels {
+            guard let sequence = pending[channel.id], kept[channel.id] == nil,
+                  menuBarLookups[channel.id] != sequence else { continue }
+            menuBarLookups[channel.id] = sequence
+            Task {
+                let resolved = await resolveRequest(channel: channel, sequence: sequence)
+                guard generation == catalogGeneration, menuBarLookups[channel.id] == sequence else { return }
+                // A failed lookup tries again on a later poll.
+                menuBarLookups[channel.id] = nil
+                if let resolved, self.catalog?.channels.first(where: { $0.id == channel.id })?.requestSequence == sequence {
+                    menuBarRequests[channel.id] = resolved
+                }
+            }
+        }
+    }
+
+    /// Keeps the status item in step with activity, including an open channel's live presence.
+    private func observeMenuBarActivity() {
+        let isActive = withObservationTracking { menuBarStatus.isActive } onChange: { [weak self] in
+            Task { @MainActor in self?.observeMenuBarActivity() }
+        }
+        menuBar.update(isActive: isActive)
     }
 
     /// A channel as the sidebar shows it: an open channel's live details and request over its catalog
@@ -176,9 +300,28 @@ final class AppModel {
         return live
     }
 
-    /// The attention the sidebar shows for a channel. The title menu mirrors it.
+    /// The attention the sidebar shows for a channel. The title menu and the menu bar mirror it.
     func sidebarAttention(_ channel: Channel) -> ChannelAttention? {
         channelSidebarStatus(sidebarChannel(channel), isOpen: openChannelIDs.contains(channel.id))
+    }
+
+    /// A channel's agents as its sidebar row shows them: an open channel's loaded roster, otherwise
+    /// the catalog's.
+    func sidebarAgents(_ channel: Channel) -> [ChannelAgent] {
+        if openChannelIDs.contains(channel.id), let store = catalog?.channel(id: channel.id), store.isLoaded {
+            return store.roster
+        }
+        return catalogAgents(channelID: channel.id)
+    }
+
+    /// Who's working in a channel: live presence for an open channel, otherwise the catalog's
+    /// `working`. The sidebar row and the menu bar both ask this one function.
+    func sidebarWorking(_ channel: Channel, agents: [ChannelAgent]) -> [ChannelAgent] {
+        if openChannelIDs.contains(channel.id), let store = catalog?.channel(id: channel.id) {
+            return store.phase.isLive ? agents.filter { store.presence[$0.id]?.state == "working" } : []
+        }
+        guard let catalog, catalog.error == nil else { return [] }
+        return agents.filter { catalog.working.contains($0.id) }
     }
 
     /// A channel's agents as the catalog knows them, for channels that aren't open.
@@ -189,6 +332,7 @@ final class AppModel {
 
     /// A request's message, from an open channel's live state, otherwise from its history.
     private func resolveRequest(channel: Channel, sequence: Int) async -> ChannelNotifications.ResolvedRequest? {
+        if let known = menuBarRequests[channel.id], known.message.sequence == sequence { return known }
         if let state = connections.values.first(where: { $0.store.id == channel.id })?.store.state,
            let message = state.request?.sequence == sequence ? state.request
                : state.messages.first(where: { $0.sequence == sequence }) {

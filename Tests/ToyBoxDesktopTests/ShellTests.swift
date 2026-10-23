@@ -1,6 +1,7 @@
 import AppKit
 import ChannelKit
 import ChannelClient
+import ChannelIntelligence
 import SwiftUI
 import Synchronization
 import Testing
@@ -1030,5 +1031,149 @@ struct NotificationTests {
         #expect(NotificationPresentation.options(kind: "completion", isActiveChannel: false) == [.list])
         #expect(NotificationPresentation.options(kind: "request", isActiveChannel: true) == [])
         #expect(NotificationPresentation.options(kind: "replyFailed", isActiveChannel: true) == [.banner, .list, .sound])
+    }
+}
+
+@MainActor
+@Suite("Menu bar extra", .timeLimit(.minutes(1)))
+struct MenuBarExtraTests {
+    private let ada = ChannelAgent(id: "ada", name: "Ada")
+    private let nova = ChannelAgent(id: "nova", name: "Nova")
+    private let lead = ChannelAgent(id: "lead", name: "Lead")
+
+    private func channel(_ id: String, updated: String = "2026-10-22T08:00:00Z", request: Int? = nil) -> Channel {
+        Channel(id: id, name: id.capitalized, model: .init(provider: "test", name: "test"), latestSequence: 20,
+                seenThrough: 10, requestSequence: request, updatedAt: updated)
+    }
+
+    private func request(_ text: String, sequence: Int = 12, at timestamp: String = "2026-10-22T08:00:00Z",
+                         from sender: String = "ada") -> ChannelNotifications.ResolvedRequest {
+        .init(message: ChannelMessage(id: "m\(sequence)", sequence: sequence, timestamp: timestamp,
+                                      sender: .init(type: "agent", agentId: sender), content: .text(text),
+                                      request: true),
+              agents: [lead, ada, nova])
+    }
+
+    @Test func theSymbolFollowsTheMostUrgentState() {
+        let idle = MenuBarStatus([], unreachableHost: nil)
+        #expect(idle.state == .idle && idle.symbol == "bubble" && !idle.isActive)
+        #expect(idle.accessibilityValue == "No agents working" && idle.emptyText == "No agents are working")
+
+        let offline = MenuBarStatus([], unreachableHost: "studio.local:3100")
+        #expect(offline.state == .disconnected && offline.symbol == "bubble" && !offline.isActive)
+        #expect(offline.accessibilityValue == "Not connected" && offline.emptyText == "Can't connect to studio.local:3100")
+
+        let working = MenuBarStatus([.init(channel: channel("a"), isWaiting: false, working: [ada])],
+                                    unreachableHost: nil)
+        #expect(working.state == .working && working.symbol == "ellipsis.bubble" && working.isActive)
+        #expect(working.accessibilityValue == "1 agent working" && working.emptyText == nil)
+
+        let waiting = MenuBarStatus([
+            .init(channel: channel("a", request: 12), isWaiting: true, working: [lead, ada]),
+            .init(channel: channel("b"), isWaiting: false, working: [nova]),
+        ], unreachableHost: "studio.local:3100")
+        #expect(waiting.state == .waiting && waiting.symbol == "questionmark.bubble.fill" && waiting.isActive)
+        #expect(waiting.accessibilityValue == "1 channel waiting for you, 3 agents working")
+    }
+
+    @Test func waitingChannelsQuoteTheirRequestNewestFirst() throws {
+        let long = "Can you confirm the history review covers paging, search and the outbox before we ship it?"
+        let status = MenuBarStatus([
+            .init(channel: channel("older", request: 12), isWaiting: true, working: [],
+                  request: request("Pick a palette\nfor the icon", at: "2026-10-22T08:00:00Z")),
+            .init(channel: channel("newer", request: 14), isWaiting: true, working: [ada],
+                  request: request(long, sequence: 14, at: "2026-10-22T09:00:00Z")),
+            .init(channel: channel("unknown", updated: "2026-10-22T07:00:00Z", request: 3), isWaiting: true,
+                  working: []),
+        ], unreachableHost: nil)
+        #expect(status.waiting.map(\.id) == ["newer", "older", "unknown"])
+        #expect(status.waiting.map(\.sequence) == [14, 12, 3])
+        #expect(status.waiting.map(\.agent?.id) == ["ada", "ada", nil])
+        #expect(status.waiting[1].subtitle == "Ada: Pick a palette for the icon")
+        let cut = status.waiting[0].subtitle
+        #expect(cut.hasPrefix("Ada: Can you confirm") && cut.hasSuffix("\u{2026}") && cut.count <= 60)
+        #expect(status.waiting[2].subtitle == "Needs your reply")
+        // A waiting channel stays out of Working even while its agents work.
+        #expect(status.working.isEmpty)
+    }
+
+    @Test func workingChannelsNameTheirAgentsLeadFirst() {
+        #expect(MenuBarStatus.workingSubtitle(["Lead"]) == "Lead is working")
+        #expect(MenuBarStatus.workingSubtitle(["Lead", "Ada"]) == "Lead and Ada are working")
+        #expect(MenuBarStatus.workingSubtitle(["Lead", "Ada", "Nova"]) == "Lead, Ada and Nova are working")
+        #expect(MenuBarStatus.workingSubtitle(["Lead", "Ada", "Nova", "Max"]) == "Lead, Ada and 2 others are working")
+        let status = MenuBarStatus([
+            .init(channel: channel("quiet"), isWaiting: false, working: []),
+            .init(channel: channel("early", updated: "2026-10-22T07:00:00Z"), isWaiting: false, working: [nova]),
+            .init(channel: channel("late", updated: "2026-10-22T09:00:00Z"), isWaiting: false, working: [lead, ada]),
+        ], unreachableHost: nil)
+        #expect(status.working.map(\.id) == ["late", "early"])
+        #expect(status.working.map(\.agent?.id) == ["lead", "nova"])
+        #expect(status.workingAgents == 3)
+    }
+
+    @Test func eachSectionShowsSixChannelsThenOpensTheWindowForTheRest() {
+        let inputs = (0..<8).map { index in
+            MenuBarStatus.Input(channel: channel("c\(index)", updated: "2026-10-22T0\(index):00:00Z"),
+                                isWaiting: false, working: [ada])
+        }
+        let section = MenuBarStatus(inputs, unreachableHost: nil).workingSection
+        #expect(section.items.map(\.id) == ["c7", "c6", "c5", "c4", "c3", "c2"] && section.overflow == 2)
+        #expect(MenuBarStatus(Array(inputs.prefix(6)), unreachableHost: nil).workingSection.overflow == 0)
+        #expect(MenuBarStatus.moreChannels(2) == "2 More Channels\u{2026}")
+        #expect(MenuBarStatus.moreChannels(1) == "1 More Channel\u{2026}")
+    }
+
+    @Test func whenActiveLingersAfterActivityAndHoldsWhileAMenuIsOpen() async throws {
+        let presence = MenuBarPresence(linger: .milliseconds(50))
+        #expect(!presence.isInserted)
+        presence.update(isActive: true)
+        #expect(presence.isInserted)
+        presence.update(isActive: false)
+        #expect(presence.isInserted)
+        await presence.linger?.value
+        #expect(!presence.isInserted)
+
+        presence.update(isActive: true)
+        presence.update(isActive: false)
+        presence.menuTracking(true)
+        await presence.linger?.value
+        #expect(presence.isInserted)
+        presence.menuTracking(false)
+        #expect(!presence.isInserted)
+
+        // Activity that resumes inside the linger keeps the item without a gap.
+        presence.update(isActive: true)
+        presence.update(isActive: false)
+        let interrupted = presence.linger
+        presence.update(isActive: true)
+        await interrupted?.value
+        #expect(presence.isInserted)
+    }
+
+    @Test func alwaysAndNeverIgnoreActivity() {
+        let presence = MenuBarPresence(linger: .milliseconds(50))
+        presence.visibility = .always
+        #expect(presence.isInserted)
+        presence.visibility = .never
+        presence.update(isActive: true)
+        #expect(!presence.isInserted)
+        presence.visibility = .whenActive
+        #expect(presence.isInserted)
+        // A hidden item doesn't linger, and a menu that opens elsewhere never brings it back.
+        presence.visibility = .never
+        presence.update(isActive: false)
+        presence.menuTracking(true)
+        presence.visibility = .whenActive
+        #expect(!presence.isInserted)
+    }
+
+    @Test func settingsNameWhyIntelligenceIsOff() {
+        #expect(SettingsView.unavailableText(.deviceNotEligible) == "This Mac doesn't support Apple Intelligence.")
+        #expect(SettingsView.unavailableText(.appleIntelligenceNotEnabled)
+            == "Turn on Apple Intelligence in System Settings to use these.")
+        #expect(SettingsView.unavailableText(.modelNotReady) == "Apple Intelligence is getting ready. Try again later.")
+        #expect(SettingsView.unavailableText(.unsupportedLanguage)
+            == "Apple Intelligence doesn't support your Mac's language yet.")
     }
 }
