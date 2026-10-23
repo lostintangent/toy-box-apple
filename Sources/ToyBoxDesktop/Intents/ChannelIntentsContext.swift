@@ -52,6 +52,9 @@ final class ChannelIntentsContext {
     /// Requests answered from a card while the app runs, by channel.
     private var replies: [String: Set<Int>] = [:]
 
+    /// Spotlight's channels, kept only for the server saved in Settings.
+    private(set) var spotlight: ChannelSpotlight?
+
     init(host: Host,
          intelligence: @autoclosure @escaping @MainActor () -> any ChannelIntelligenceService = LiveChannelIntelligence.shared,
          summarizes: @escaping @MainActor () -> Bool = { true },
@@ -84,6 +87,11 @@ final class ChannelIntentsContext {
 
     func open(_ id: String) {
         host.open(id)
+    }
+
+    /// Spotlight asks again for every channel, or for the named ones.
+    func reindexSpotlight(_ ids: [String]?) async {
+        await spotlight?.reindex(ids)
     }
 
     // MARK: Catch Me Up
@@ -233,6 +241,10 @@ extension ChannelIntentsContext {
         AppDependencyManager.shared.add(dependency: context)
         guard !model.launchOptions.isSnapshot else { return }
         ShortcutParameters.observe(model)
+        guard ChannelSpotlight.indexes(model.launchOptions) else { return }
+        let spotlight = ChannelSpotlight()
+        context.spotlight = spotlight
+        spotlight.observe(model)
     }
 }
 

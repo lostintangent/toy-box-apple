@@ -1,9 +1,10 @@
 import AppIntents
 import ChannelKit
+import CoreSpotlight
 import Foundation
 
 /// A channel on the app's Toy Box server, as Siri, Shortcuts and Spotlight see it.
-struct ChannelEntity: AppEntity, Identifiable {
+struct ChannelEntity: IndexedEntity, Identifiable {
     static let typeDisplayRepresentation = TypeDisplayRepresentation(name: "Channel", numericFormat: "\(placeholder: .int) channels")
     static let defaultQuery = ChannelQuery()
 
@@ -24,15 +25,25 @@ struct ChannelEntity: AppEntity, Identifiable {
     /// Matches the sidebar's indicator.
     let attention: ChannelAttention?
 
+    /// The first line of the channel's purpose, which Spotlight shows under its name.
+    let purpose: String?
+
+    /// The sidebar's icon, which Spotlight shows beside the name.
+    let thumbnail: Data?
+
     init(_ channel: Channel) {
         self.init(id: channel.id, name: channel.name, attention: channelStatus(channel),
-                  unreadCount: max(0, channel.latestSequence - channel.seenThrough))
+                  unreadCount: max(0, channel.latestSequence - channel.seenThrough),
+                  purpose: ChannelSidebarRow.firstLine(channel.purpose))
     }
 
-    /// A channel as a card remembers it, for its buttons.
-    init(id: String, name: String, attention: ChannelAttention? = nil, unreadCount: Int = 0) {
+    /// A channel as a card remembers it, for its buttons, or as Spotlight indexes it.
+    init(id: String, name: String, attention: ChannelAttention? = nil, unreadCount: Int = 0,
+         purpose: String? = nil, thumbnail: Data? = nil) {
         self.id = id
         self.attention = attention
+        self.purpose = purpose
+        self.thumbnail = thumbnail
         self.name = name
         self.unreadCount = unreadCount
         needsReply = attention == .waiting
@@ -43,8 +54,8 @@ struct ChannelEntity: AppEntity, Identifiable {
         DisplayRepresentation(
             title: "\(name)",
             subtitle: subtitle,
-            // The mark in the sidebar's channel icon.
-            image: .init(systemName: "number")
+            // Spotlight shows the sidebar's whole icon, and Siri and Shortcuts show its mark.
+            image: thumbnail.map { .init(data: $0) } ?? .init(systemName: "number")
         )
     }
 
@@ -55,6 +66,16 @@ struct ChannelEntity: AppEntity, Identifiable {
         case .unread: "Unread messages"
         case nil: nil
         }
+    }
+
+    /// Spotlight keeps what it indexed, so it gets the name, purpose and icon but never the
+    /// attention, which would go stale.
+    var attributeSet: CSSearchableItemAttributeSet {
+        let attributes = defaultAttributeSet
+        attributes.title = name
+        attributes.displayName = name
+        attributes.contentDescription = purpose
+        return attributes
     }
 }
 
@@ -101,5 +122,17 @@ struct ChannelQuery: EntityStringQuery, EnumerableEntityQuery {
             .components(separatedBy: CharacterSet.alphanumerics.inverted)
             .filter { !$0.isEmpty }
             .joined(separator: " ")
+    }
+}
+
+/// Spotlight asks for channels again when it loses them. Only the server saved in Settings fills
+/// Spotlight, so a session-only launch ignores it.
+extension ChannelQuery: IndexedEntityQuery {
+    func reindexAllEntities(indexDescription: CSSearchableIndexDescription) async throws {
+        await context.reindexSpotlight(nil)
+    }
+
+    func reindexEntities(for identifiers: [String], indexDescription: CSSearchableIndexDescription) async throws {
+        await context.reindexSpotlight(identifiers)
     }
 }

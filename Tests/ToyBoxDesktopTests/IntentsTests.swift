@@ -1,4 +1,5 @@
 import AppIntents
+import AppKit
 import ChannelClient
 import ChannelIntelligence
 import ChannelKit
@@ -38,6 +39,103 @@ struct IntentsTests {
         #expect(ChannelQuery.matching("cafe", in: entities).map(\.id) == ["1"])
         #expect(ChannelQuery.matching("  ", in: entities).count == 4)
         #expect(ChannelQuery.matching("roadmap", in: entities).isEmpty)
+    }
+
+    // MARK: Spotlight
+
+    @Test func spotlightGetsTheNameAndPurposeButNeverTheAttention() throws {
+        let entity = ChannelEntity(channel("a", "Studio demo", purpose: "  Ship the demo  \nThen the docs",
+                                           latest: 15, seen: 9, request: 15))
+        #expect(entity.purpose == "Ship the demo" && subtitle(entity) == "Needs your reply")
+        let attributes = entity.attributeSet
+        #expect(attributes.displayName == "Studio demo" && attributes.title == "Studio demo")
+        #expect(attributes.contentDescription == "Ship the demo" && attributes.thumbnailData == nil)
+
+        let png = try #require(ChannelSpotlight.renderIcon())
+        let quiet = ChannelEntity(id: "b", name: "Docs", attention: .unread, thumbnail: png).attributeSet
+        #expect(quiet.contentDescription == nil && quiet.thumbnailData == png)
+
+        let icon = try #require(NSBitmapImageRep(data: png))
+        #expect(icon.pixelsWide == 128 && icon.pixelsHigh == 128)
+    }
+
+    @Test func onlyTheServerSavedInSettingsFillsSpotlight() {
+        #expect(ChannelSpotlight.indexes(LaunchOptions(), environment: [:]))
+        var session = LaunchOptions()
+        session.serverURL = "http://127.0.0.1:3210"
+        #expect(!ChannelSpotlight.indexes(session, environment: [:]))
+        #expect(!ChannelSpotlight.indexes(LaunchOptions(), environment: ["TOY_BOX_SERVER_URL": "http://127.0.0.1:3210"]))
+        var snapshot = LaunchOptions()
+        snapshot.snapshotURL = URL(filePath: "/tmp/snapshot.png")
+        #expect(!ChannelSpotlight.indexes(snapshot, environment: [:]))
+    }
+
+    @Test func spotlightKeepsAnEarlierLaunchsChannelsUntilTheCatalogReplacesThem() {
+        typealias Spotlight = ChannelSpotlight
+        let loading = Spotlight.plan(from: nil, to: .init(server: "s", channels: nil))
+        #expect(loading.plan.isEmpty && loading.indexed == nil)
+
+        let a = Spotlight.Entry(id: "a", name: "Studio demo"), b = Spotlight.Entry(id: "b", name: "Docs")
+        let loaded = Spotlight.plan(from: nil, to: .init(server: "s", channels: [a, b, a]))
+        #expect(loaded.plan == .init(removesAll: true, indexes: [a, b]))
+        #expect(loaded.indexed == .init(server: "s", entries: ["a": a, "b": b]))
+
+        let noServer = Spotlight.plan(from: nil, to: .init(server: nil, channels: nil))
+        #expect(noServer.plan == .init(removesAll: true) && noServer.indexed == .init(server: nil, entries: [:]))
+        #expect(Spotlight.plan(from: noServer.indexed, to: .init(server: nil, channels: nil)).plan.isEmpty)
+    }
+
+    @Test func spotlightFollowsRenamesAndDeletionsOnTheSameServer() {
+        typealias Spotlight = ChannelSpotlight
+        let a = Spotlight.Entry(id: "a", name: "Studio demo"), b = Spotlight.Entry(id: "b", name: "Docs")
+        let c = Spotlight.Entry(id: "c", name: "Ops")
+        let indexed = Spotlight.Indexed(server: "s", entries: ["a": a, "b": b, "c": c])
+        let renamed = Spotlight.Entry(id: "b", name: "Handbook"), purpose = Spotlight.Entry(id: "a", name: "Studio demo", purpose: "Ship")
+        let d = Spotlight.Entry(id: "d", name: "Design")
+        let next = Spotlight.plan(from: indexed, to: .init(server: "s", channels: [purpose, renamed, d]))
+        #expect(next.plan == .init(removes: ["c"], indexes: [purpose, renamed, d]))
+        #expect(Spotlight.plan(from: next.indexed, to: .init(server: "s", channels: [purpose, renamed, d])).plan.isEmpty)
+        // A catalog reloading for the same server keeps what's there.
+        let reloading = Spotlight.plan(from: indexed, to: .init(server: "s", channels: nil))
+        #expect(reloading.plan.isEmpty && reloading.indexed == indexed)
+    }
+
+    @Test func switchingServersEmptiesSpotlightAtOnce() {
+        typealias Spotlight = ChannelSpotlight
+        let a = Spotlight.Entry(id: "a", name: "Studio demo"), x = Spotlight.Entry(id: "x", name: "Roadmap")
+        let switched = Spotlight.plan(from: .init(server: "one", entries: ["a": a]), to: .init(server: "two", channels: nil))
+        #expect(switched.plan == .init(removesAll: true) && switched.indexed == .init(server: "two", entries: [:]))
+        let loaded = Spotlight.plan(from: switched.indexed, to: .init(server: "two", channels: [x]))
+        #expect(loaded.plan == .init(indexes: [x]))
+        let gone = Spotlight.plan(from: loaded.indexed, to: .init(server: nil, channels: nil))
+        #expect(gone.plan == .init(removesAll: true) && gone.indexed == .init(server: nil, entries: [:]))
+    }
+
+    @Test func spotlightAppliesChangesInOrderAndStartsOverAfterAFailure() async {
+        let index = FakeSpotlightIndex()
+        let spotlight = ChannelSpotlight(index: index.index, icon: { Data("icon".utf8) })
+        let a = ChannelSpotlight.Entry(id: "a", name: "Studio demo", purpose: "Ship")
+        let b = ChannelSpotlight.Entry(id: "b", name: "Docs")
+        spotlight.update(.init(server: "s", channels: nil))
+        spotlight.update(.init(server: "s", channels: [a, b]))
+        spotlight.update(.init(server: "s", channels: [a]))
+        await spotlight.settle()
+        #expect(index.operations == ["remove all", "add a b", "remove b"])
+        #expect(index.added.allSatisfy { $0.thumbnail == Data("icon".utf8) } && index.added.first?.purpose == "Ship")
+
+        await spotlight.reindex(["a", "b"])
+        #expect(index.operations.suffix(2) == ["remove b", "add a"])
+        await spotlight.reindex()
+        #expect(index.operations.suffix(2) == ["remove all", "add a"])
+
+        index.fails = true
+        spotlight.update(.init(server: "s", channels: [a, b]))
+        await spotlight.settle()
+        #expect(spotlight.indexed == nil)
+        index.fails = false
+        spotlight.update(.init(server: "s", channels: [a, b]))
+        await spotlight.settle()
+        #expect(index.operations.suffix(2) == ["remove all", "add a b"])
     }
 
     // MARK: Catch Me Up answers
@@ -472,6 +570,26 @@ extension IntentsTests {
 
 // MARK: Fixtures
 
+/// Records what the app asks Spotlight to do, and fails on request.
+@MainActor
+private final class FakeSpotlightIndex {
+    private(set) var operations: [String] = []
+    private(set) var added: [ChannelEntity] = []
+    var fails = false
+
+    var index: ChannelSpotlight.Index {
+        .init(add: { entities in try await self.record("add " + entities.map(\.id).joined(separator: " "), entities) },
+              remove: { ids in try await self.record("remove " + ids.joined(separator: " ")) },
+              removeAll: { try await self.record("remove all") })
+    }
+
+    private func record(_ operation: String, _ entities: [ChannelEntity] = []) throws {
+        if fails { throw CancellationError() }
+        operations.append(operation)
+        added += entities
+    }
+}
+
 @MainActor
 private final class TestHost {
     let api: ChannelAPI?
@@ -551,9 +669,10 @@ private struct UnavailableIntelligence: ChannelIntelligenceService {
     func altText(_ request: AltTextRequest) async -> AltText? { nil }
 }
 
-private func channel(_ id: String, _ name: String, latest: Int = 0, seen: Int = 0, completed: Int? = nil,
-                     request: Int? = nil, updatedAt: String = "2026-01-15T00:00:00.000Z") -> Channel {
-    Channel(id: id, name: name, model: .init(provider: "test", name: "test"), latestSequence: latest,
+private func channel(_ id: String, _ name: String, purpose: String? = nil, latest: Int = 0, seen: Int = 0,
+                     completed: Int? = nil, request: Int? = nil,
+                     updatedAt: String = "2026-01-15T00:00:00.000Z") -> Channel {
+    Channel(id: id, name: name, purpose: purpose, model: .init(provider: "test", name: "test"), latestSequence: latest,
             seenThrough: seen, completedSequence: completed, requestSequence: request, updatedAt: updatedAt)
 }
 

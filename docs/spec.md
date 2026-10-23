@@ -1561,13 +1561,25 @@ The app name is "Toy Box Desktop" or its alternate, "Toy Box" (`INAlternativeApp
 shortcut tile is navy, like the icon. Tile symbols are `text.line.3.summary`,
 `bubble.left.and.bubble.right` and `paperplane`.
 
-The Channel entity is identified by channel ID and displays the name, with `number` as its
-image and the sidebar's attention as its subtitle: "Needs your reply", "All tasks completed" or
-"Unread messages". It has Name, Unread Count (`latestSequence - seenThrough`, which counts channel
-events too), Needs Your Reply and Tasks Completed properties. Its query reads the catalog fresh,
-suggests channels in sidebar order and matches names ignoring case, accents and punctuation,
-exact names first, then prefixes, then substrings. The app refreshes the shortcuts' parameters
-whenever the set of channel names changes, so Siri learns them.
+The Channel entity is identified by channel ID and displays the name, with `number` as its image
+(the whole icon in Spotlight) and the sidebar's attention as its subtitle: "Needs your reply", "All
+tasks completed" or "Unread messages". It has Name, Unread Count (`latestSequence - seenThrough`,
+which counts channel events too), Needs Your Reply and Tasks Completed properties. Its query reads
+the catalog fresh, suggests channels in sidebar order and matches names ignoring case, accents and
+punctuation, exact names first, then prefixes, then substrings. The app refreshes the shortcuts'
+parameters whenever the set of channel names changes, so Siri learns them.
+
+**Spotlight.** Every channel on the server saved in Settings is in Spotlight by name, with the
+first line of its purpose under it and the sidebar's cyan channel icon (a 128 px PNG) beside it.
+Attention is left out, since Spotlight would keep it after it goes stale. Picking a channel runs
+Open Channel. The Channel entity is an `IndexedEntity`, keyed `ChannelEntity/<id>` in the app's
+default index. The first catalog load after launch replaces whatever Spotlight held, and the last
+launch's channels stay until then. After that the app indexes only renames, purpose changes,
+additions and deletions. Switching servers, or having no valid one, removes every channel at once,
+before the new server's catalog arrives. A failed call makes the next catalog change replace
+everything. Launches with `--server`, `TOY_BOX_SERVER_URL`, a snapshot or a benchmark never touch
+the index. When Spotlight asks the app to reindex, it indexes the catalog's channels and removes
+identifiers the catalog no longer has.
 
 A window that shows a channel makes it the window's user activity (`dev.toybox.channels.channel`)
 with `appEntityIdentifier` set to its Channel entity, through `userActivity(_:element:_:)` so the
@@ -1673,9 +1685,9 @@ again later.", or, when the model doesn't support the Mac's language (`unsupport
 "Apple Intelligence doesn't support your Mac's language yet." with no button. The Settings window
 grows to fit General rather than scrolling.
 
-Owners: Shell owns notifications, the menu bar extra and Settings (t94, t95). Intelligence owns
-the model layer (t96) and Siri and Shortcuts (t126). Transcript owns the catch-up card,
-descriptions in tiles and the viewer, and Live Text (t93, t97). Designer reviews each one in
+Owners: Shell owns notifications, the menu bar extra and Settings (t94, t95). Intelligence owns the
+model layer (t96), Siri and Shortcuts (t126) and Spotlight (t166). Transcript owns the catch-up
+card, descriptions in tiles and the viewer, and Live Text (t93, t97). Designer reviews each one in
 real-window captures, in light and dark, with VoiceOver and with Reduce Motion.
 
 ### App icon

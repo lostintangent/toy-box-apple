@@ -44,6 +44,7 @@ jobs:
           for intent in CatchMeUpIntent OpenChannelIntent SendMessageIntent CatchUpSnippetIntent ReplyIntent; do
             grep -q "\"$intent\"" "$actions"
           done
+          grep -q '"com.apple.appintents.entity.Indexed"' "$actions"
       - name: Wait for crash reports
         if: failure()
         run: |
