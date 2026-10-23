@@ -6,6 +6,7 @@ import SwiftUI
 struct OverviewTeamList: View {
     @Environment(ManagementPresenter.self) private var management
     let store: ChannelStore
+    @ViewState private var slots = OverviewSlots()
 
     /// `roster` starts with the lead.
     static func ordered(_ roster: [ChannelAgent]) -> [ChannelAgent] {
@@ -21,9 +22,10 @@ struct OverviewTeamList: View {
         let presence = store.presence
         let isLive = store.phase.isLive
         VStack(alignment: .leading, spacing: 0) {
-            ForEach(Self.ordered(roster)) { agent in
+            ForEach(slots.entries(Self.ordered(roster), in: store.id)) { entry in
+                let agent = entry.item
                 let isLead = agent.id == roster.first?.id
-                OverviewAgentRow(agent: agent, presence: presence[agent.id], isLead: isLead,
+                OverviewAgentRow(agent: agent, key: entry.key, presence: presence[agent.id], isLead: isLead,
                                  model: isLead ? agent.model ?? store.details?.model : agent.model,
                                  channelId: store.id, isLive: isLive)
             }
@@ -42,24 +44,29 @@ struct OverviewAgentRow: View {
     @Environment(\.channelTextScale) private var textScale
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
     let agent: ChannelAgent
+    /// Names the agent for this visit to the channel. See `OverviewSlots`.
+    let key: String
     let presence: ChannelAgentPresence?
     let isLead: Bool
     let model: ModelConfiguration?
     let channelId: String
     let isLive: Bool
-    @ViewState private var showingAbout = false
+    @ViewState private var about = OverviewItemState(false)
     @ViewState private var isHovering = false
     @FocusState private var focus: Focus?
 
     private var status: ChannelAgentPresence { presence ?? .init(state: "idle") }
     private var showsMenu: Bool { isHovering || focus != nil || voiceOver }
+    private var showingAbout: Binding<Bool> {
+        Binding(get: { about[key] }, set: { about[key] = $0 })
+    }
 
     var body: some View {
         HStack(spacing: 6) {
-            Button { showingAbout.toggle() } label: {
+            Button { about[key].toggle() } label: {
                 HStack(spacing: 10) {
                     AgentAvatarView(agent: agent, size: 24)
-                        .popover(isPresented: $showingAbout, arrowEdge: .leading) {
+                        .popover(isPresented: showingAbout, arrowEdge: .leading) {
                             OverviewAgentAbout(agent: agent, isLead: isLead, model: model, status: status, isLive: isLive)
                         }
                     VStack(alignment: .leading, spacing: 1) {
@@ -100,7 +107,7 @@ struct OverviewAgentRow: View {
     private var actions: some View {
         Button("Reply to \(agent.name)") { interaction.reply(to: agent) }
             .disabled(agent.deleted == true)
-        Button("About \(agent.name)") { showingAbout = true }
+        Button("About \(agent.name)") { about[key] = true }
         if !isLead {
             Divider()
             Button("Edit Member…") {

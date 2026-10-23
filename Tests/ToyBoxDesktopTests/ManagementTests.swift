@@ -396,6 +396,60 @@ struct ManagementTests {
         #expect(try await host.settles(showingChild: false))
     }
 
+    /// A switch updates the rows already built, so a toggle made in one channel must not carry over
+    /// to the task at the same position in the next, or to the same channel's next visit.
+    @Test func aSwitchedTaskListStartsEachVisitFromTheDefaults() async throws {
+        let tasks = TaskStatusHost.Tasks()
+        tasks.status = "done"
+        let host = TaskWindow(TaskStatusHost(tasks: tasks)
+            .environment(\.overviewTaskFocusInteractions, .automatic))
+        defer { host.window.close() }
+        let right = String(UnicodeScalar(UInt16(NSRightArrowFunctionKey))!)
+        #expect(try await host.settles(showingChild: false))
+
+        try host.press("\t", keyCode: 48)
+        try host.press(right, keyCode: 124)
+        #expect(try await host.settles(showingChild: true))
+        tasks.channelId = "other"
+        #expect(try await host.settles(showingChild: false))
+        tasks.channelId = "tasks"
+        #expect(try await host.settles(showingChild: false))
+        tasks.status = "in_progress"
+        #expect(try await host.settles(showingChild: true))
+    }
+
+    @Test func slotsFollowAnItemWithinAVisitAndGoByPositionAcrossVisits() {
+        struct Item: Identifiable { let id: String }
+        func items(_ ids: String...) -> [Item] { ids.map(Item.init) }
+        let slots = OverviewSlots()
+
+        let first = slots.entries(items("x", "y"), in: "a")
+        #expect(first.map(\.id) == [0, 1])
+        let added = slots.entries(items("w", "x", "y"), in: "a")
+        #expect(added.map(\.id) == [2, 0, 1])
+        #expect(added.map(\.key) == ["w", "x", "y"].map { first[0].key.replacingOccurrences(of: ":x", with: ":\($0)") })
+
+        let other = slots.entries(items("p", "x"), in: "b")
+        #expect(other.map(\.id) == [0, 1])
+        #expect(Set(other.map(\.key)).isDisjoint(with: added.map(\.key)))
+        let back = slots.entries(items("x", "y"), in: "a")
+        #expect(back.map(\.id) == [0, 1])
+        #expect(Set(back.map(\.key)).isDisjoint(with: added.map(\.key)))
+    }
+
+    @Test func itemStateReadsFreshForAnotherItemAndDropsItsLateResults() {
+        var state = OverviewItemState(0)
+        state["a"] = 1
+        #expect(state["a"] == 1)
+        #expect(state["b"] == 0)
+        state.update("a") { $0 += 1 }
+        #expect(state["a"] == 2)
+        state["b"] = 5
+        state.update("a") { $0 = 9 }
+        #expect(state["a"] == 0)
+        #expect(state["b"] == 5)
+    }
+
     @Test func longTextReturnSubmitsWhileOptionReturnBreaksTheLine() async throws {
         let field = LongTextHost.Model()
         let host = TaskWindow(LongTextHost(model: field), size: NSSize(width: 480, height: 300))
@@ -508,12 +562,13 @@ struct ManagementTests {
     struct TaskStatusHost: View {
         @Observable final class Tasks {
             var status = "in_progress"
+            var channelId = "tasks"
         }
 
         let tasks: Tasks
 
         var body: some View {
-            var channel = Channel(id: "tasks", name: "Tasks", model: .init(provider: "test", name: "test"),
+            var channel = Channel(id: tasks.channelId, name: "Tasks", model: .init(provider: "test", name: "test"),
                                   latestSequence: 1, seenThrough: 1, updatedAt: "2026-10-22T08:00:00Z")
             channel.tasks = [.init(id: "parent", title: "Parent task", status: tasks.status, children: [
                 .init(id: "child", title: "Blocked child", status: "blocked")

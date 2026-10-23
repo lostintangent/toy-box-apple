@@ -14,16 +14,27 @@ struct OverviewRoutineRow: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
     let routine: ChannelRoutine
+    /// Names the routine for this visit to the channel. See `OverviewSlots`.
+    let key: String
     let store: ChannelStore
     let onExpand: () -> Void
-    @ViewState private var expanded = false
-    @ViewState private var isRunning = false
-    @ViewState private var runRequestedAt: Date?
-    @ViewState private var recovery = ManagementWriteRecovery()
+    @ViewState private var item = OverviewItemState(Item())
+    /// A routine gets its own recovery when it first runs.
+    @ViewState private var recoveries = OverviewItemState<ManagementWriteRecovery?>(nil)
     @ViewState private var isHovering = false
     @FocusState private var focus: Focus?
 
-    private var canRun: Bool { !isRunning && !recovery.blocksWrites && store.phase.isLive }
+    private struct Item {
+        var expanded = false
+        var isRunning = false
+        var runRequestedAt: Date?
+    }
+
+    private var expanded: Bool { item[key].expanded }
+    private var isRunning: Bool { item[key].isRunning }
+    private var runRequestedAt: Date? { item[key].runRequestedAt }
+    private var recovery: ManagementWriteRecovery? { recoveries[key] }
+    private var canRun: Bool { !isRunning && recovery?.blocksWrites != true && store.phase.isLive }
     private var showsMenu: Bool { isHovering || focus != nil || voiceOver }
     private var scheduleSummary: String { RoutineScheduleSummary.text(for: routine.schedule) }
     private var scheduleLine: String {
@@ -82,25 +93,25 @@ struct OverviewRoutineRow: View {
                 .padding(.bottom, 8)
                 .id("overview-routine-details-\(routine.id)")
             }
-            if let error = recovery.error {
+            if let error = recovery?.error {
                 ManagementError(message: error).padding(.leading, 38).padding(.bottom, 6)
             }
-            if let state = recovery.state {
+            if let recovery, let state = recovery.state {
                 ManagementRecoveryNotice(
                     state: state, reviewTitle: "I've Reviewed the Conversation",
-                    onCheck: { Task { await checkCurrentState() } },
+                    onCheck: { Task { await checkCurrentState(recovery) } },
                     onReview: recovery.finishReview)
                 .padding(.leading, 38)
                 .padding(.bottom, 6)
             }
         }
         .task(id: snapshot?.requestedState) {
-            if snapshot?.requestedState == "overview-routines" { expanded = true }
+            if snapshot?.requestedState == "overview-routines" { item[key].expanded = true }
         }
         .task(id: runRequestedAt) {
             guard runRequestedAt != nil else { return }
             try? await Task.sleep(for: .seconds(4))
-            if !Task.isCancelled { runRequestedAt = nil }
+            if !Task.isCancelled { item.update(key) { $0.runRequestedAt = nil } }
         }
     }
 
@@ -159,27 +170,33 @@ struct OverviewRoutineRow: View {
 
     private func setExpanded(_ value: Bool) {
         guard expanded != value else { return }
-        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) { expanded = value }
+        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) { item[key].expanded = value }
         if value { onExpand() }
     }
 
     private func run() {
         guard canRun else { return }
-        isRunning = true
-        runRequestedAt = nil
+        let recovery = self.recovery ?? ManagementWriteRecovery()
+        recoveries[key] = recovery
+        item[key].isRunning = true
+        item[key].runRequestedAt = nil
         recovery.clearError()
-        Task {
-            defer { isRunning = false }
+        Task { [key] in
+            var requestedAt: Date?
             do {
                 try await store.api.runRoutine(channelId: store.id, routineId: routine.id)
-                runRequestedAt = .now
+                requestedAt = .now
             } catch {
-                if recovery.record(error) { await checkCurrentState() }
+                if recovery.record(error) { await checkCurrentState(recovery) }
+            }
+            item.update(key) {
+                $0.isRunning = false
+                if let requestedAt { $0.runRequestedAt = requestedAt }
             }
         }
     }
 
-    private func checkCurrentState() async {
+    private func checkCurrentState(_ recovery: ManagementWriteRecovery) async {
         await recovery.check(catalog: app.catalog, channelId: store.id) { current in
             if current.channelWasDeleted {
                 return "The channel is no longer present on the server."

@@ -9,11 +9,12 @@ import SwiftUI
 /// SwiftUI sees it unchanged and skips it. Property wrappers would make it look new each time,
 /// which would rebuild every section and row for each message.
 ///
-/// A window that switches channels updates Overview in place, which keeps its scroll view and
-/// section headers. Everything that belongs to one channel starts over: the scroll position, each
-/// section's rows with their disclosure, popover, Quick Look and run state, and About's purpose
-/// expansion and errors. Task IDs such as `t1` repeat across channels, so rows can't rely on their
-/// own identity for that. Collapsed sections belong to the window and stay as they are.
+/// A window that switches channels updates Overview in place. Its scroll view, section headers and
+/// rows stay, and `OverviewSlots` hands each row the new channel's item at its position, because
+/// building rows is most of what a switch costs here. Everything that belongs to one channel still
+/// starts over: the scroll position, each row's disclosure, popover, Quick Look and run state, and
+/// About's purpose expansion and errors. Rows keep that state per item and visit, so it never
+/// follows a row to another channel. Collapsed sections belong to the window and stay as they are.
 struct OverviewInspector: View {
     let store: ChannelStore
 
@@ -114,7 +115,7 @@ private struct OverviewTeamSection: View {
 
     var body: some View {
         OverviewSection(id: .team, count: "\(store.roster.count)", collapsed: $collapsed) {
-            OverviewTeamList(store: store).id(store.id)
+            OverviewTeamList(store: store)
         }
     }
 }
@@ -135,8 +136,7 @@ private struct OverviewTasksSection: View {
             if let diff { OverviewTaskDiff(diff: diff).accessibilityHidden(true) }
         } content: {
             OverviewTaskList(tasks: tasks, agents: store.roster, artifacts: store.artifacts,
-                             onArtifactOpen: onArtifactOpen)
-                .id(store.id)
+                             channelId: store.id, onArtifactOpen: onArtifactOpen)
         }
     }
 }
@@ -145,6 +145,7 @@ private struct OverviewArtifactsSection: View {
     @Environment(ArtifactOpener.self) private var opener
     let store: ChannelStore
     @Binding var collapsed: Set<OverviewSectionID>
+    @ViewState private var slots = OverviewSlots()
 
     var body: some View {
         let artifacts = store.artifacts
@@ -155,13 +156,13 @@ private struct OverviewArtifactsSection: View {
                 let shares = store.artifactShares
                 let agents = store.roster
                 VStack(alignment: .leading, spacing: 0) {
-                    ForEach(artifacts) { artifact in
-                        OverviewArtifactRow(artifact: artifact, share: shares[artifact.file.id],
+                    ForEach(slots.entries(artifacts, in: store.id)) { entry in
+                        let artifact = entry.item
+                        OverviewArtifactRow(artifact: artifact, key: entry.key, share: shares[artifact.file.id],
                                             agents: agents, api: store.api,
                                             open: { opener.open(artifact) })
                     }
                 }
-                .id(store.id)
             }
         }
     }
@@ -171,6 +172,7 @@ private struct OverviewRoutinesSection: View {
     let store: ChannelStore
     @Binding var collapsed: Set<OverviewSectionID>
     let revealDetails: (ChannelRoutine) -> Void
+    @ViewState private var slots = OverviewSlots()
 
     var body: some View {
         let routines = store.routines
@@ -179,11 +181,12 @@ private struct OverviewRoutinesSection: View {
                 OverviewEmptyText("No routines")
             } else {
                 VStack(alignment: .leading, spacing: 0) {
-                    ForEach(routines) { routine in
-                        OverviewRoutineRow(routine: routine, store: store) { revealDetails(routine) }
+                    ForEach(slots.entries(routines, in: store.id)) { entry in
+                        OverviewRoutineRow(routine: entry.item, key: entry.key, store: store) {
+                            revealDetails(entry.item)
+                        }
                     }
                 }
-                .id(store.id)
             }
         }
     }
@@ -196,11 +199,13 @@ private struct OverviewAbout: View {
     @Environment(\.channelTextScale) private var textScale
     let details: ChannelDetails
     let store: ChannelStore
+    @ViewState private var visits = OverviewVisits()
 
     var body: some View {
+        let visit = "\(visits.visit(store.id))"
         VStack(alignment: .leading, spacing: 0) {
             if let purpose = details.purpose, !purpose.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                OverviewPurpose(purpose: purpose, channelId: store.id)
+                OverviewPurpose(purpose: purpose, visit: visit)
             } else {
                 Button("Add a purpose…") { management.present(.editChannel(channelId: store.id)) }
                     .buttonStyle(.plain)
@@ -216,13 +221,13 @@ private struct OverviewAbout: View {
                         OverviewFolderRow(
                             directory: directory,
                             availability: app.folderAvailability(path: directory, server: store.api.baseURL),
+                            visit: visit,
                             channelURL: { [app, id = store.id] in app.channelURL(channelID: id) })
                     }
                     if let preview {
-                        OverviewPreviewRow(preview: preview, api: store.api, channelId: store.id)
+                        OverviewPreviewRow(preview: preview, api: store.api, channelId: store.id, visit: visit)
                     }
                 }
-                .id(store.id)
                 .padding(.top, 10)
             }
         }
@@ -236,15 +241,16 @@ struct OverviewPurpose: View {
 
     @Environment(\.channelTextScale) private var textScale
     let purpose: String
-    let channelId: String
-    /// The channel whose purpose is expanded. A switch to another channel starts collapsed but keeps
-    /// the measured width, so the new purpose truncates in its first pass.
-    @ViewState private var expandedChannel: String?
+    /// The channel visit the purpose belongs to. See `OverviewVisits`.
+    let visit: String
+    /// The visit whose purpose is expanded. A switch starts collapsed but keeps the measured width,
+    /// so the new purpose truncates in its first pass.
+    @ViewState private var expandedVisit: String?
     @ViewState private var availableWidth: CGFloat = 0
 
     private var expanded: Bool {
-        get { expandedChannel == channelId }
-        nonmutating set { expandedChannel = newValue ? channelId : nil }
+        get { expandedVisit == visit }
+        nonmutating set { expandedVisit = newValue ? visit : nil }
     }
 
     var body: some View {
@@ -355,8 +361,15 @@ struct OverviewFolderRow: View {
     let directory: String
     /// Read from the app's shared folder cache, the same check as the sidebar's folder token.
     let availability: ChannelFolderAvailability
+    /// The channel visit the row belongs to, so an error stays with the channel it happened in.
+    var visit = ""
     let channelURL: () -> URL?
-    @ViewState private var error: String?
+    @ViewState private var errors = OverviewItemState<String?>(nil)
+
+    private var error: String? {
+        get { errors[visit] }
+        nonmutating set { errors[visit] = newValue }
+    }
 
     /// A remote server's home isn't this Mac's, so only a local path is abbreviated with `~`.
     static func shownPath(_ directory: String, availability: ChannelFolderAvailability) -> String {
@@ -430,7 +443,14 @@ struct OverviewPreviewRow: View {
     let preview: ChannelPreview
     let api: ChannelAPI
     let channelId: String
-    @ViewState private var error: String?
+    /// The channel visit the row belongs to, so an error stays with the channel it happened in.
+    let visit: String
+    @ViewState private var errors = OverviewItemState<String?>(nil)
+
+    private var error: String? {
+        get { errors[visit] }
+        nonmutating set { errors[visit] = newValue }
+    }
 
     private var target: URL? {
         preview.kind == "url" ? preview.url.flatMap(api.resourceURL) : app.channelURL(channelID: channelId)

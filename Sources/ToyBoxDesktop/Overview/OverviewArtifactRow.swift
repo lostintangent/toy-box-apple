@@ -10,13 +10,25 @@ struct OverviewArtifactRow: View {
     @Environment(ChannelInteraction.self) private var interaction
     @Environment(\.channelTextScale) private var textScale
     let artifact: ChannelArtifact
+    /// Names the artifact for this visit to the channel. See `OverviewSlots`.
+    let key: String
     let share: ChannelArtifactShare?
     let agents: [ChannelAgent]
     let api: ChannelAPI
     let open: () -> Void
-    @ViewState private var previewFile: URL?
-    @ViewState private var isFetching = false
-    @ViewState private var error: String?
+    @ViewState private var quickLook = OverviewItemState(QuickLook())
+
+    private struct QuickLook {
+        var file: URL?
+        var isFetching = false
+        var error: String?
+    }
+
+    private var isFetching: Bool { quickLook[key].isFetching }
+    private var error: String? { quickLook[key].error }
+    private var previewFile: Binding<URL?> {
+        Binding(get: { quickLook[key].file }, set: { quickLook[key].file = $0 })
+    }
 
     private var resource: URL? { artifact.url.flatMap(api.resourceURL) }
     private var type: UTType? {
@@ -69,7 +81,7 @@ struct OverviewArtifactRow: View {
             .buttonStyle(.plain)
             .help(help)
             .onKeyPress(.space) {
-                quickLook()
+                showQuickLook()
                 return .handled
             }
             .onKeyPress(.return) {
@@ -82,13 +94,13 @@ struct OverviewArtifactRow: View {
             .contextMenu { actions }
             if let error { ManagementError(message: error).padding(.leading, 38) }
         }
-        .quickLookPreview($previewFile)
+        .quickLookPreview(previewFile)
     }
 
     @ViewBuilder
     private var actions: some View {
         Button("Open", action: open)
-        Button("Quick Look", action: quickLook).disabled(resource == nil || isFetching)
+        Button("Quick Look", action: showQuickLook).disabled(resource == nil || isFetching)
         Button("Show in Transcript") {
             if let sequence = share?.sequence { interaction.reveal(sequence: sequence) }
         }
@@ -118,22 +130,23 @@ struct OverviewArtifactRow: View {
         return lines.joined(separator: "\n")
     }
 
-    private func quickLook() {
+    private func showQuickLook() {
         guard !isFetching else { return }
         guard let resource else {
-            error = "The server did not provide a usable resource URL for this artifact."
+            quickLook[key].error = "The server did not provide a usable resource URL for this artifact."
             return
         }
-        isFetching = true
-        error = nil
-        Task {
-            defer { isFetching = false }
+        quickLook[key].isFetching = true
+        quickLook[key].error = nil
+        Task { [key, artifact] in
+            var result = QuickLook()
             do {
-                previewFile = try await ArtifactDownload.file(for: artifact, from: resource)
+                result.file = try await ArtifactDownload.file(for: artifact, from: resource)
             } catch is CancellationError {
             } catch {
-                self.error = error.localizedDescription
+                result.error = error.localizedDescription
             }
+            quickLook.update(key) { $0 = result }
         }
     }
 }

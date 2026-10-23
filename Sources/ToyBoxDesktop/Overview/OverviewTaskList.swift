@@ -25,19 +25,23 @@ struct OverviewTaskList: View {
     /// Identities for task owners. The store's `roster` is enough, so status updates don't redraw tasks.
     let agents: [ChannelAgent]
     let artifacts: [ChannelArtifact]
+    /// The channel the tasks belong to. A list that switches to another channel reuses its rows.
+    let channelId: String
     let onArtifactOpen: (ChannelArtifact) -> Void
+    @ViewState private var slots = OverviewSlots()
 
-    init(tasks: [ChannelTask], agents: [ChannelAgent], artifacts: [ChannelArtifact],
+    init(tasks: [ChannelTask], agents: [ChannelAgent], artifacts: [ChannelArtifact], channelId: String = "",
          onArtifactOpen: @escaping (ChannelArtifact) -> Void) {
         self.tasks = tasks
         self.agents = agents
         self.artifacts = artifacts
+        self.channelId = channelId
         self.onArtifactOpen = onArtifactOpen
     }
 
     init(state: ChannelState, onArtifactOpen: @escaping (ChannelArtifact) -> Void) {
         self.init(tasks: state.channel.tasks, agents: state.agents, artifacts: state.artifacts,
-                  onArtifactOpen: onArtifactOpen)
+                  channelId: state.channel.id, onArtifactOpen: onArtifactOpen)
     }
 
     var body: some View {
@@ -46,8 +50,8 @@ struct OverviewTaskList: View {
                 OverviewEmptyText("No tasks yet")
             } else {
                 VStack(alignment: .leading, spacing: 0) {
-                    ForEach(tasks) { task in
-                        OverviewTaskRow(task: task, agents: agents, artifacts: artifacts,
+                    ForEach(slots.entries(tasks, in: channelId)) { entry in
+                        OverviewTaskRow(task: entry.item, key: entry.key, agents: agents, artifacts: artifacts,
                                         onArtifactOpen: onArtifactOpen)
                     }
                 }
@@ -64,22 +68,30 @@ struct OverviewTaskRow: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.overviewTaskFocusInteractions) private var focusInteractions
     let task: ChannelTask
+    /// Names the task for this visit to its channel, so its disclosure stays its own. See `OverviewSlots`.
+    let key: String
     let agents: [ChannelAgent]
     let artifacts: [ChannelArtifact]
     let onArtifactOpen: (ChannelArtifact) -> Void
-    @ViewState private var isExpanded: Bool
+    @ViewState private var disclosure: OverviewItemState<Bool?>
 
-    init(task: ChannelTask, agents: [ChannelAgent], artifacts: [ChannelArtifact],
+    init(task: ChannelTask, key: String, agents: [ChannelAgent], artifacts: [ChannelArtifact],
          onArtifactOpen: @escaping (ChannelArtifact) -> Void) {
         self.task = task
+        self.key = key
         self.agents = agents
         self.artifacts = artifacts
         self.onArtifactOpen = onArtifactOpen
-        _isExpanded = ViewState(initialValue: Self.isExpandedByDefault(status: task.status))
+        var disclosure = OverviewItemState<Bool?>(nil)
+        disclosure[key] = Self.isExpandedByDefault(status: task.status)
+        _disclosure = ViewState(initialValue: disclosure)
     }
 
     /// As in the pane's checklist, finished work folds down and everything else stays open.
     static func isExpandedByDefault(status: String) -> Bool { status != "done" }
+
+    /// A row handed another task shows its default until the key change stores it.
+    private var isExpanded: Bool { disclosure[key] ?? Self.isExpandedByDefault(status: task.status) }
 
     private var children: [ChannelTask] { task.children ?? [] }
     private var owner: ChannelAgent? { task.ownerId.map { channelAgentIdentity(agents, id: $0) } }
@@ -140,8 +152,8 @@ struct OverviewTaskRow: View {
             if isExpanded, !children.isEmpty {
                 VStack(alignment: .leading, spacing: 0) {
                     ForEach(children) { child in
-                        OverviewTaskRow(task: child, agents: agents, artifacts: artifacts,
-                                        onArtifactOpen: onArtifactOpen)
+                        OverviewTaskRow(task: child, key: "\(key)/\(child.id)", agents: agents,
+                                        artifacts: artifacts, onArtifactOpen: onArtifactOpen)
                     }
                 }
                 .padding(.leading, OverviewTaskList.depthIndent)
@@ -152,7 +164,13 @@ struct OverviewTaskRow: View {
         .onChange(of: task.status) { _, status in
             let expanded = Self.isExpandedByDefault(status: status)
             guard expanded != isExpanded else { return }
-            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) { isExpanded = expanded }
+            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) { disclosure[key] = expanded }
+        }
+        // A parent stores its default for the task it now shows, so that task's first status change
+        // animates from it too. A leaf's disclosure shows nothing.
+        .onChange(of: key) {
+            guard !children.isEmpty else { return }
+            disclosure[key] = Self.isExpandedByDefault(status: task.status)
         }
     }
 
@@ -193,7 +211,8 @@ struct OverviewTaskRow: View {
     }
 
     private func toggle() {
-        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) { isExpanded.toggle() }
+        let expanded = !isExpanded
+        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) { disclosure[key] = expanded }
     }
 
     private func setExpanded(_ expanded: Bool) -> KeyPress.Result {
