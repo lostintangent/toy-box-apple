@@ -367,7 +367,8 @@ private struct ChannelComposer: View {
                         .foregroundStyle(.secondary)
                         .padding(.horizontal, 12)
                         .padding(.top, 12)
-                        .allowsHitTesting(false)
+                        // The text view above it takes the clicks. `allowsHitTesting(false)` would
+                        // redraw this text on every live-resize frame and stall each commit.
                         .accessibilityHidden(true)
                 }
                 NativeComposerInput(text: $draft.text, document: draftID, height: $inputHeight,
