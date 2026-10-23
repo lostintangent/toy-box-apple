@@ -81,27 +81,23 @@ by `.github/workflows/build-and-release.yml` on an approved `vX.Y.Z` tag. A manu
 performs the same signing and notarization but keeps the archive as an artifact, without publishing.
 Local builds use Command Line Tools. CI uses its selected Xcode 27 toolchain on the `xcode-27` runner.
 
-Only the certificate owner runs the one-time setup, choosing either authentication method:
+Only the certificate owner runs the one-time setup:
 
 ```sh
-./script/setup-release-secrets SHA1 /path/AuthKey.p8 KEY_ID ISSUER_ID
-./script/setup-release-secrets SHA1 --apple-id EMAIL TEAM_ID
+./script/setup-release-secrets SHA1 APPLE_ID TEAM_ID
 ```
 
-The first uses an App Store Connect Team API key with Developer access. The second uses an Apple ID
-and an app-specific password from account.apple.com, with no App Store Connect setup. Its silent
-prompt reads the password without echoing or logging it. Never pass it as a script argument. Both
-commands optionally accept `OWNER/REPO` as the final argument and configure the local
+It uses an Apple ID and an app-specific password from account.apple.com. Its silent prompt reads
+the password without echoing or logging it, and accepts piped stdin with or without a trailing
+newline. Never pass the password as a script argument. The command optionally accepts `OWNER/REPO`
+as the final argument and configures the local
 `toy-box-channels-notary` keychain profile plus GitHub's `MACOS_SIGNING_CERTIFICATE`,
 `MACOS_SIGNING_PASSWORD` and `MACOS_SIGNING_IDENTITY` secrets. Setup exports only the pinned
 certificate's identity into a temporary encrypted file, then removes it on exit.
 
-API key setup also sets `APP_STORE_CONNECT_PRIVATE_KEY`, `APP_STORE_CONNECT_KEY_ID` and
-`APP_STORE_CONNECT_ISSUER_ID`. Apple ID setup instead sets `NOTARY_APPLE_ID`, `NOTARY_TEAM_ID` and
-`NOTARY_APP_PASSWORD`. CI prefers the complete API key set, otherwise the complete Apple ID set.
-It fails explicitly if neither is complete, and never retries rejected credentials with the other
-method. To switch an existing API key configuration to Apple ID, remove the three
-`APP_STORE_CONNECT_*` secrets after running Apple ID setup.
+Setup also sets `NOTARY_APPLE_ID`, `NOTARY_TEAM_ID` and `NOTARY_APP_PASSWORD`. CI requires all three
+and stores them in a temporary keychain profile for notarization. Missing or rejected credentials
+fail the release explicitly.
 
 Agents never run setup with real credentials or read signing keys and passwords. The credential-free
 regression suite, `python3 script/test-release-secrets.py`, replaces every credential, signing and

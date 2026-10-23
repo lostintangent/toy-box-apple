@@ -97,9 +97,6 @@ jobs:
         env:
           CERTIFICATE: ${{ secrets.MACOS_SIGNING_CERTIFICATE }}
           CERTIFICATE_PASSWORD: ${{ secrets.MACOS_SIGNING_PASSWORD }}
-          NOTARY_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
-          NOTARY_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
-          NOTARY_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
           NOTARY_APPLE_ID: ${{ secrets.NOTARY_APPLE_ID }}
           NOTARY_TEAM_ID: ${{ secrets.NOTARY_TEAM_ID }}
           NOTARY_APP_PASSWORD: ${{ secrets.NOTARY_APP_PASSWORD }}
@@ -109,14 +106,9 @@ jobs:
           umask 077
           : "${CERTIFICATE:?Missing MACOS_SIGNING_CERTIFICATE}"
           : "${CERTIFICATE_PASSWORD:?Missing MACOS_SIGNING_PASSWORD}"
-          if [[ -n "$NOTARY_KEY" && -n "$NOTARY_KEY_ID" && -n "$NOTARY_ISSUER_ID" ]]; then
-            notary_auth=key
-          elif [[ -n "$NOTARY_APPLE_ID" && -n "$NOTARY_TEAM_ID" && -n "$NOTARY_APP_PASSWORD" ]]; then
-            notary_auth=apple-id
-          else
-            echo "Missing notarization credentials. Set APP_STORE_CONNECT_PRIVATE_KEY, APP_STORE_CONNECT_KEY_ID and APP_STORE_CONNECT_ISSUER_ID, or NOTARY_APPLE_ID, NOTARY_TEAM_ID and NOTARY_APP_PASSWORD." >&2
-            exit 1
-          fi
+          : "${NOTARY_APPLE_ID:?Missing NOTARY_APPLE_ID}"
+          : "${NOTARY_TEAM_ID:?Missing NOTARY_TEAM_ID}"
+          : "${NOTARY_APP_PASSWORD:?Missing NOTARY_APP_PASSWORD}"
           export SIGNING_KEYCHAIN="$RUNNER_TEMP/toy-box-release.keychain-db"
           export NOTARY_KEYCHAIN="$SIGNING_KEYCHAIN"
           printf 'SIGNING_KEYCHAIN=%s\nNOTARY_KEYCHAIN=%s\n' "$SIGNING_KEYCHAIN" "$NOTARY_KEYCHAIN" >> "$GITHUB_ENV"
@@ -143,20 +135,14 @@ jobs:
           security import "$RUNNER_TEMP/toy-box-signing/identity.p12" \
             -k "$SIGNING_KEYCHAIN" -P "$CERTIFICATE_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$password" "$SIGNING_KEYCHAIN" >/dev/null
-          if [[ "$notary_auth" == key ]]; then
-            printf '%s' "$NOTARY_KEY" > "$RUNNER_TEMP/toy-box-signing/AuthKey.p8"
-            xcrun notarytool store-credentials "$NOTARY_PROFILE" --keychain "$NOTARY_KEYCHAIN" \
-              --key "$RUNNER_TEMP/toy-box-signing/AuthKey.p8" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER_ID"
-          else
-            xcrun notarytool store-credentials "$NOTARY_PROFILE" --keychain "$NOTARY_KEYCHAIN" \
-              --apple-id "$NOTARY_APPLE_ID" --team-id "$NOTARY_TEAM_ID" --password "$NOTARY_APP_PASSWORD"
-          fi
+          xcrun notarytool store-credentials "$NOTARY_PROFILE" --keychain "$NOTARY_KEYCHAIN" \
+            --apple-id "$NOTARY_APPLE_ID" --team-id "$NOTARY_TEAM_ID" --password "$NOTARY_APP_PASSWORD"
       - name: Build, sign and notarize
         env:
           SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
           SCRATCH_PATH: ${{ runner.temp }}/toy-box-release
         run: ./script/release "$RELEASE_TAG"
-      - name: Remove the temporary keychain and keys
+      - name: Remove the temporary keychain and signing material
         if: always()
         run: |
           status=0
@@ -171,7 +157,7 @@ jobs:
           if [[ -n "${SIGNING_KEYCHAIN:-}" && -e "$SIGNING_KEYCHAIN" ]]; then
             security delete-keychain "$SIGNING_KEYCHAIN" || status=$?
           fi
-          rm -f "$RUNNER_TEMP/toy-box-signing/identity.p12" "$RUNNER_TEMP/toy-box-signing/AuthKey.p8" \
+          rm -f "$RUNNER_TEMP/toy-box-signing/identity.p12" \
             "$RUNNER_TEMP/toy-box-signing/DeveloperIDCA.cer" "$RUNNER_TEMP/toy-box-signing/search-list.txt" || status=$?
           if [[ -d "$RUNNER_TEMP/toy-box-signing" ]]; then rmdir "$RUNNER_TEMP/toy-box-signing" || status=$?; fi
           exit "$status"
