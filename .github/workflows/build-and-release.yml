@@ -35,6 +35,8 @@ jobs:
         env:
           SCRATCH_PATH: ${{ runner.temp }}/toy-box-tests
         run: ./script/test
+      - name: Test notarization JSON with system plutil
+        run: python3 script/test-release-secrets.py NotaryResponseTests
       - name: Bundle with Siri and Shortcuts metadata
         env:
           SCRATCH_PATH: ${{ runner.temp }}/toy-box-tests

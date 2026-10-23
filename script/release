@@ -66,11 +66,10 @@ if [[ -n "${NOTARY_PROFILE:-}" ]]; then
     xcrun notarytool submit "$TEMP/submission.zip" "${NOTARY_ARGS[@]}" \
         --wait --timeout 30m --output-format json > "$TEMP/result.json" || SUBMISSION_STATUS=$?
     cat "$TEMP/result.json"
-    if ! plutil -lint "$TEMP/result.json" >/dev/null; then
+    if ! STATUS="$(plutil -extract status raw -o - "$TEMP/result.json")"; then
         echo "Notarization failed without a valid submission response (exit $SUBMISSION_STATUS)." >&2
         exit 1
     fi
-    STATUS="$(plutil -extract status raw -o - "$TEMP/result.json")"
     if [[ "$STATUS" != Accepted || "$SUBMISSION_STATUS" -ne 0 ]]; then
         SUBMISSION_ID="$(plutil -extract id raw -o - "$TEMP/result.json")"
         echo "Notarization was not accepted ($STATUS, submission $SUBMISSION_ID). Fetching its log:" >&2

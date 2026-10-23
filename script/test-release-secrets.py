@@ -198,5 +198,37 @@ class ReleaseSecretsTests(unittest.TestCase):
         self.assertEqual(len(self.calls("xcrun")), 1)
 
 
+@unittest.skipUnless(sys.platform == "darwin", "Requires macOS system plutil")
+class NotaryResponseTests(unittest.TestCase):
+    def parse_response(self, response):
+        source = (ROOT / "script/release").read_text()
+        validation = source.split('    cat "$TEMP/result.json"\n', 1)[1].split(
+            '    if [[ "$STATUS" != Accepted', 1)[0]
+        with tempfile.TemporaryDirectory(prefix="toy-box-notary-response-") as temporary:
+            (Path(temporary) / "result.json").write_text(response)
+            return subprocess.run(
+                ["/bin/bash", "-eu", "-c", validation + '\nprintf "%s" "$STATUS"\n'],
+                env={"PATH": "/usr/bin:/bin", "TEMP": temporary, "SUBMISSION_STATUS": "0"},
+                text=True, capture_output=True, timeout=5)
+
+    def test_real_notarytool_json_is_accepted_by_system_plutil(self):
+        response = '{"id":"01234567-89ab-cdef-0123-456789abcdef","message":"Processing complete","status":"Accepted"}'
+        result = self.parse_response(response)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "Accepted")
+
+    def test_rejected_response_preserves_its_status(self):
+        result = self.parse_response(json.dumps({"id": "fake-submission", "status": "Invalid"}))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "Invalid")
+
+    def test_malformed_or_missing_status_fails_explicitly(self):
+        for response in ("", "{", '{"id":"fake-submission"}'):
+            with self.subTest(response=response):
+                result = self.parse_response(response)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("without a valid submission response", result.stderr)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -104,6 +104,9 @@ regression suite, `python3 script/test-release-secrets.py`, replaces every crede
 network command with a fake and runs in CI. For a local release, set `SIGNING_IDENTITY=SHA1`,
 `BUILD_NUMBER=N` and `NOTARY_PROFILE=toy-box-channels-notary` when invoking `script/release vX.Y.Z`.
 Without a notary profile, the archive is named `SIGNED-UNNOTARIZED` and is never published.
+Notarization response tests also run macOS's real `plutil` against notarytool-shaped JSON, including
+accepted, rejected, malformed and missing-status responses. The release script validates JSON by
+extracting its status, not by treating it as a property list with `plutil -lint`.
 
 ## Protocol (v1)
 
