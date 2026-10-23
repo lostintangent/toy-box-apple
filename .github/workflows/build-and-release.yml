@@ -35,6 +35,19 @@ jobs:
         env:
           SCRATCH_PATH: ${{ runner.temp }}/toy-box-tests
         run: ./script/test
+      - name: Wait for crash reports
+        if: failure()
+        run: |
+          sleep 20
+          ls -l ~/Library/Logs/DiagnosticReports || true
+      - name: Upload crash reports
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: crash-reports-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ~/Library/Logs/DiagnosticReports/*.ips
+          if-no-files-found: ignore
+          retention-days: 7
 
   lint:
     runs-on: ubuntu-latest
