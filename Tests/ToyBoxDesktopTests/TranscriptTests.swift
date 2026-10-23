@@ -76,6 +76,23 @@ struct TranscriptTests {
         ])
     }
 
+    @MainActor
+    @Test func onlyACodeBlockTooWideToFitBuildsAScrollViewAndCopyCodeIsNoAppKitControl() {
+        func platformViews(_ markdown: String) -> [NSView] {
+            let host = NSHostingView(rootView: TranscriptMarkdown(content: markdown).frame(width: 400)
+                .fixedSize(horizontal: false, vertical: true))
+            host.frame = NSRect(x: 0, y: 0, width: 400, height: 200)
+            host.layoutSubtreeIfNeeded()
+            func all(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(all) }
+            return all(host)
+        }
+        let fitting = platformViews("```swift\nlet total = messages.count\n```")
+        #expect(!fitting.contains { $0 is NSScrollView })
+        #expect(!fitting.contains { $0 is NSButton })
+        let wide = platformViews("```swift\n" + String(repeating: "let total = messages.count; ", count: 6) + "\n```")
+        #expect(wide.contains { $0 is NSScrollView })
+    }
+
     @Test func tablesKeepEscapedPipesAndInlineCodeTogether() {
         let source = """
         | Name | Value |

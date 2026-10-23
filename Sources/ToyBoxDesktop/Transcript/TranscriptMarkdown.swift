@@ -12,9 +12,17 @@ struct TranscriptMarkdown: View {
     @Environment(\.transcriptSurface) private var surface
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10 * textScale) {
-            ForEach(MarkdownBlock.parse(content)) { block in
-                blockView(block.kind)
+        let blocks = MarkdownBlock.parse(content)
+        Group {
+            // Most messages are one paragraph, so they skip the block stack.
+            if blocks.count == 1, case .paragraph(let text) = blocks[0].kind {
+                blockView(.paragraph(text))
+            } else {
+                VStack(alignment: .leading, spacing: 10 * textScale) {
+                    ForEach(blocks) { block in
+                        blockView(block.kind)
+                    }
+                }
             }
         }
         .font(.system(size: 14 * textScale))
@@ -43,7 +51,8 @@ struct TranscriptMarkdown: View {
                 .accessibilityAddTraits(.isHeader)
         case .listItem(let marker, let text, let depth):
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(marker).foregroundStyle(.secondary).frame(minWidth: 14, alignment: .trailing)
+                Text(marker).foregroundStyle(.secondary).textSelection(.disabled)
+                    .frame(minWidth: 14, alignment: .trailing)
                 Text(inline(text)).fixedSize(horizontal: false, vertical: true)
             }
             .padding(.leading, CGFloat(depth) * 16)
@@ -58,19 +67,21 @@ struct TranscriptMarkdown: View {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Text(language.isEmpty ? "Code" : language).foregroundStyle(.secondary)
+                        .textSelection(.disabled)
                     Spacer(minLength: 12)
                     Button("Copy Code", systemImage: "doc.on.doc") {
                         TranscriptClipboard.copy(code)
                     }
-                    .buttonStyle(.borderless)
+                    .buttonStyle(TranscriptCopyCodeButtonStyle())
                     .help("Copy code")
                 }
                 .font(.system(size: 11 * textScale))
-                ScrollView(.horizontal) {
-                    Text(verbatim: code)
-                        .font(.system(size: 12 * textScale, design: .monospaced))
-                        .fixedSize(horizontal: true, vertical: true)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                // A nested scroll view is costly to build, so only a block too wide to fit gets one.
+                ViewThatFits(in: .horizontal) {
+                    codeText(code)
+                    ScrollView(.horizontal) {
+                        codeText(code).frame(maxWidth: .infinity, alignment: .leading)
+                    }
                 }
             }
             .padding(10)
@@ -103,10 +114,26 @@ struct TranscriptMarkdown: View {
         }
     }
 
+    private func codeText(_ code: String) -> some View {
+        Text(verbatim: code)
+            .font(.system(size: 12 * textScale, design: .monospaced))
+            .fixedSize(horizontal: true, vertical: true)
+    }
+
     private func inline(_ text: String, size: CGFloat = 14) -> AttributedString {
         transcriptInlineMarkdown(text, agents: agents, textScale: textScale, fontSize: size,
                                  mentions: .init(surface: surface, isDark: colorScheme == .dark,
                                                  isContrastIncreased: contrast == .increased))
+    }
+}
+
+/// Draws Copy Code like a borderless button, without the AppKit control that costs every code
+/// block about a millisecond to build.
+private struct TranscriptCopyCodeButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundStyle(configuration.isPressed ? .primary : .secondary)
+            .contentShape(Rectangle())
     }
 }
 
