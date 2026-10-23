@@ -56,7 +56,7 @@ struct ShellTests {
         ["--channel", "studio-demo", "--benchmark-resize", "drag"],
         ["--channel", "studio-demo", "--benchmark-resize", "width", "--snapshot", "/tmp/test.png"],
         ["--benchmark", "messages"],
-        ["--channel", "history-demo", "--benchmark", "scroll"],
+        ["--channel", "history-demo", "--benchmark", "wheel"],
         ["--channel", "history-demo", "--benchmark", "paging", "--snapshot", "/tmp/test.png"],
         ["--channel", "history-demo", "--benchmark", "paging", "--benchmark-resize", "width"]
     ])
