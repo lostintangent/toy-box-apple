@@ -217,8 +217,9 @@ private struct TranscriptAttachment: View {
         }
     }
 
-    /// A loading image holds its final size, from the inline header when there is one, so the row
-    /// never grows when the preview lands. Only a remote image of unknown size resizes, once.
+    /// A loading image holds its final size, from its inline header or from the cached file of an
+    /// earlier load, so the row never grows when the preview lands. Only a remote image the app has
+    /// never loaded resizes, once.
     private func imageTile(_ thumbnail: NSImage?) -> some View {
         let pixels = TranscriptThumbnails.pixelSize(for: attachment, api: api)
             ?? thumbnail?.size ?? CGSize(width: 120, height: 90)
@@ -447,10 +448,19 @@ enum TranscriptThumbnails {
         return cache
     }()
 
-    /// An inline image's oriented pixel size, read from the start of its payload without decoding it.
+    /// An image's oriented pixel size without decoding it, from the start of an inline payload or
+    /// from the header of a remote image an earlier load cached. A remote row built again, after
+    /// its decoded preview left the cache, then lays out at its final size instead of growing.
     static func pixelSize(for attachment: ChannelAttachment, api: ChannelAPI) -> CGSize? {
-        guard attachment.url.flatMap(api.resourceURL) == nil,
-              let payload = attachment.base64, !payload.isEmpty else { return nil }
+        if let remote = attachment.url.flatMap(api.resourceURL) {
+            let key = remote.absoluteString as NSString
+            if let size = pixelSizes.object(forKey: key)?.sizeValue { return size }
+            guard let file = TranscriptAttachmentCache.cachedFile(for: attachment, api: api),
+                  let size = filePixelSize(file) else { return nil }
+            pixelSizes.setObject(NSValue(size: size), forKey: key)
+            return size
+        }
+        guard let payload = attachment.base64, !payload.isEmpty else { return nil }
         let key = payload as NSString
         let size = pixelSizes.object(forKey: key)?.sizeValue ?? {
             let size = headerPixelSize(base64: payload) ?? .zero
@@ -467,6 +477,14 @@ enum TranscriptThumbnails {
         let source = CGImageSourceCreateIncremental(nil)
         CGImageSourceUpdateData(source, data as CFData, prefix.count == payload.utf8.count)
         guard let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any] else {
+            return nil
+        }
+        return orientedPixelSize(properties)
+    }
+
+    nonisolated static func filePixelSize(_ file: URL) -> CGSize? {
+        guard let source = CGImageSourceCreateWithURL(file as CFURL, nil),
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any] else {
             return nil
         }
         return orientedPixelSize(properties)

@@ -777,6 +777,25 @@ struct TranscriptTests {
     }
 
     @MainActor
+    @Test func aRemoteImageAnEarlierLoadCachedLaysOutAtItsFinalSizeOnTheFirstPass() throws {
+        let api = try ChannelAPI(serverURL: "http://localhost:3210")
+        // Every test process shares the attachment cache folder, so this run's own path keeps them apart.
+        let attachment = ChannelAttachment(name: "wide.png", url: "/files/\(UUID().uuidString).png",
+                                           mimeType: "image/png")
+        #expect(TranscriptThumbnails.pixelSize(for: attachment, api: api) == nil)
+        let file = try #require(TranscriptAttachmentCache.destination(for: attachment, api: api))
+        try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try #require(Data(base64Encoded: try encodedImage(width: 600, height: 300, type: .png))).write(to: file)
+        defer { try? FileManager.default.removeItem(at: file) }
+        // A miss isn't remembered, so the file a load just wrote is read the next time the row builds.
+        #expect(TranscriptThumbnails.pixelSize(for: attachment, api: api) == CGSize(width: 600, height: 300))
+        let view = NSHostingView(rootView: TranscriptAttachments(attachments: [attachment], api: api)
+            .fixedSize())
+        view.layoutSubtreeIfNeeded()
+        #expect(view.fittingSize == CGSize(width: 240, height: 120))
+    }
+
+    @MainActor
     @Test func imageFilmstripHasNoCaptionHeightAndDoesNotStackAtNarrowWidths() async throws {
         let bitmap = try #require(NSBitmapImageRep(
             bitmapDataPlanes: nil, pixelsWide: 120, pixelsHigh: 80, bitsPerSample: 8,

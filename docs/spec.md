@@ -943,7 +943,9 @@ appearance adds a soft shadow (black 10%, radius 3, y 1). Dark adds none. Increa
 raises the hairline to 40%. While an image loads, show a neutral tile at its final size
 (quaternary fill at 30%, the same corners and hairline). Add a small spinner after 300 ms and
 never show the filename. Read inline images' pixel size from the image header before decoding,
-so the first layout is final. Remote images without a known size use 120 x 90 and resize once.
+so the first layout is final. A remote image an earlier load cached reads its size from the cached
+file's header the same way, so scrolling back to it never resizes its row. Remote images without a
+known size use 120 x 90 and resize once.
 Videos have a poster, duration when known, and an explicit Play action.
 Other files show document icon, name and Open. Resolve resources against the server base URL.
 An unavailable file keeps its name and an explicit retryable error, not a blank thumbnail.

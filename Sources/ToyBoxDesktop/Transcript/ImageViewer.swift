@@ -588,11 +588,7 @@ final class ImageViewer {
 
     /// An inline image's size from its header, or a downloaded image's from its cached file.
     static func knownPixelSize(of attachment: ChannelAttachment, api: ChannelAPI) -> CGSize? {
-        if let size = TranscriptThumbnails.pixelSize(for: attachment, api: api) { return size }
-        guard let file = TranscriptAttachmentCache.cachedFile(for: attachment, api: api),
-              let source = CGImageSourceCreateWithURL(file as CFURL, nil),
-              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any] else { return nil }
-        return TranscriptThumbnails.orientedPixelSize(properties)
+        TranscriptThumbnails.pixelSize(for: attachment, api: api)
     }
 
     /// Decodes the full image, oriented, off the main actor. Very large images cap at 8192 pixels.
