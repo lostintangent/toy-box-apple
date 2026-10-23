@@ -132,11 +132,13 @@ class BundleTests(FakeCommandTests):
         self.source = source
         self.license = self.directory / "LICENSE"
         self.license.write_text("Upstream license notices")
+        self.license.chmod(0o444)
 
     def test_embedding_preserves_symlinks_trims_and_thins_all_three_executables(self):
         for _ in range(2):
             result = self.run_script("embed-sparkle", self.source, self.app, self.license)
             self.assertEqual(result.returncode, 0, result.stderr)
+            (self.app / "Contents/Resources/Sparkle-LICENSE").chmod(0o444)
         self.assertTrue((self.framework / "Versions/Current").is_symlink())
         self.assertTrue((self.framework / "Sparkle").is_symlink())
         for component in ("Headers", "PrivateHeaders", "Modules", "XPCServices"):

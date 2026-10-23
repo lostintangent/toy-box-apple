@@ -9,7 +9,7 @@ FRAMEWORK="$APP/Contents/Frameworks/Sparkle.framework"
 mkdir -p "$APP/Contents/Frameworks" "$APP/Contents/Resources"
 rm -rf "$FRAMEWORK"
 ditto "$SOURCE" "$FRAMEWORK"
-cp "$LICENSE" "$APP/Contents/Resources/Sparkle-LICENSE"
+install -m 644 "$LICENSE" "$APP/Contents/Resources/Sparkle-LICENSE"
 
 # These services are only needed by sandboxed hosts. Keep the in-process installer and updater.
 for component in XPCServices Headers PrivateHeaders Modules; do
