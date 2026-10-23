@@ -1551,19 +1551,21 @@ The system only indexes a bundle outside `/tmp` that has launched once, and para
 need a team-signed build, so verify Siri with a Developer ID build in Applications.
 
 **Settings additions.** General gains "Show in menu bar" (above) and a group of two toggles, both
-on by default:
+on by default. Each toggle's description sits in its row as secondary text under the label, the
+way System Settings describes its toggles, rather than as a section footer:
 
-| Toggle | Footer |
+| Toggle | Description |
 | --- | --- |
 | Summarize new messages | "When you return to a busy channel, a summary appears above the new messages. Made on this Mac." |
 | Describe images for VoiceOver | "While VoiceOver is running, images get descriptions made on this Mac." |
 
-When the service isn't available, both toggles are disabled and keep their values, and one
-footer replaces theirs. It reads "This Mac doesn't support Apple Intelligence.", "Turn on Apple
-Intelligence in System Settings to use these." with an Open System Settings button, "Apple
-Intelligence is getting ready. Try again later.", or, when the model doesn't support the Mac's
-language (`unsupportedLanguage`), "Apple Intelligence doesn't support your Mac's language yet."
-with no button. The Settings window grows to fit General rather than scrolling.
+When the service isn't available, both toggles are disabled and keep their values, their
+descriptions hide, and one footer under the group explains why. It reads "This Mac doesn't support
+Apple Intelligence.", "Turn on Apple Intelligence in System Settings to use these." with an Open
+System Settings button trailing on the footer's line, "Apple Intelligence is getting ready. Try
+again later.", or, when the model doesn't support the Mac's language (`unsupportedLanguage`),
+"Apple Intelligence doesn't support your Mac's language yet." with no button. The Settings window
+grows to fit General rather than scrolling.
 
 Owners: Shell owns notifications, the menu bar extra and Settings (t94, t95). Intelligence owns
 the model layer (t96) and Siri and Shortcuts (t126). Transcript owns the catch-up card,
