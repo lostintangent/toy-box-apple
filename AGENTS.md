@@ -40,10 +40,11 @@ view.
 - Integration tests are opt-in: `TOY_BOX_DEMO_URL=http://127.0.0.1:3210 ./script/test`, and
   `TOY_BOX_HISTORY_DEMO_URL=http://127.0.0.1:3211 ./script/test --filter HistoryFixtureTests`
   against a freshly started history demo.
-- `SCRATCH_PATH=/tmp/tbm-<you> ./script/benchmark [launch|switch|messages|paging|idle ...]` is the
+- `SCRATCH_PATH=/tmp/tbm-<you> ./script/benchmark [--summaries] [launch|switch|messages|paging|idle ...]` is the
   performance regression benchmark. It builds a release bundle as `dev.toybox.channels.mac.benchmark`,
   runs each scenario against a fresh `script/perf-demo.mjs` fixture on 3292 (`TOY_BOX_PERF_PORT`),
   prints each result beside its budget and exits 1 when one is over. Leave its window uncovered.
+  Catch-up summaries stay off so the card can't land mid-measurement. `--summaries` leaves them on.
 - `node script/generate-cron-fixtures.mjs ../toy-box` regenerates the cron fixtures from the
   reference without touching it.
 - Quit the instances you launch when you are done.

@@ -1,10 +1,12 @@
 #!/bin/bash
 # Builds a release bundle and measures it against script/perf-demo.mjs, with a fresh fixture and app
 # instance for each scenario, then prints every result beside its budget.
-# Usage: SCRATCH_PATH=/tmp/tbm-<you> script/benchmark [launch|switch|messages|paging|idle ...]
+# Usage: SCRATCH_PATH=/tmp/tbm-<you> script/benchmark [--summaries] [launch|switch|messages|paging|idle ...]
 # Without scenarios it runs launch, switch, messages and paging. idle takes a minute, so it runs only
-# when named. The benchmark window opens in front without taking focus. Keep it uncovered while it
-# runs. Exits 1 when a result is over budget or a scenario fails.
+# when named. Catch-up summaries stay off, because the on-device model lands one at an unpredictable
+# moment and its card animates the transcript during whichever measurement is running. --summaries
+# leaves them on to measure the card. The benchmark window opens in front without taking focus. Keep
+# it uncovered while it runs. Exits 1 when a result is over budget or a scenario fails.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -17,20 +19,24 @@ SERVER="http://127.0.0.1:$PORT"
 NAME="Toy Box Desktop Benchmark"
 ID="dev.toybox.channels.mac.benchmark"
 APP="$BUILD/$NAME.app"
-BIN="$APP/Contents/MacOS/ToyBoxDesktop"
 
-SCENARIOS=("$@")
-if [[ ${#SCENARIOS[@]} -eq 0 ]]; then SCENARIOS=(launch switch messages paging); fi
-for scenario in "${SCENARIOS[@]}"; do
-    case "$scenario" in
-        launch|switch|messages|paging|idle) ;;
-        *) echo "Unknown scenario: $scenario. Use launch, switch, messages, paging or idle." >&2; exit 2 ;;
+SUMMARIES=NO
+SCENARIOS=()
+for argument in "$@"; do
+    case "$argument" in
+        --summaries) SUMMARIES=YES ;;
+        launch|switch|messages|paging|idle) SCENARIOS+=("$argument") ;;
+        *) echo "Unknown scenario: $argument. Use launch, switch, messages, paging or idle, and --summaries to leave catch-up summaries on." >&2; exit 2 ;;
     esac
 done
+if [[ ${#SCENARIOS[@]} -eq 0 ]]; then SCENARIOS=(launch switch messages paging); fi
 if curl -s -o /dev/null --max-time 1 "$SERVER"; then
     echo "Port $PORT is already in use. Set TOY_BOX_PERF_PORT to a free port." >&2
     exit 1
 fi
+mkdir -p "$BUILD"
+# Running processes report the resolved path, such as /private/tmp for /tmp, so the cleanup matches it.
+BIN="$(cd "$BUILD" && pwd -P)/$NAME.app/Contents/MacOS/ToyBoxDesktop"
 
 LOGS="$(mktemp -d)"
 FIXTURE=""
@@ -63,6 +69,7 @@ codesign --force --sign - "$APP" 2>/dev/null
 
 over=0
 failed=0
+if [[ $SUMMARIES == YES ]]; then echo "Catch-up summaries are on"; fi
 for scenario in "${SCENARIOS[@]}"; do
     case "$scenario" in
         switch) channel=studio-demo ;;
@@ -70,6 +77,7 @@ for scenario in "${SCENARIOS[@]}"; do
     esac
     # Every scenario starts from the same window layout and settings.
     defaults delete "$ID" >/dev/null 2>&1 || true
+    defaults write "$ID" summarizeNewMessages -bool "$SUMMARIES"
     TOY_BOX_PERF_PORT="$PORT" bun "$ROOT/script/perf-demo.mjs" "$REFERENCE" >"$LOGS/fixture.log" 2>&1 &
     FIXTURE=$!
     for _ in {1..100}; do
