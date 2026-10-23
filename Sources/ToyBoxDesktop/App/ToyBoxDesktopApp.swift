@@ -19,6 +19,7 @@ struct ToyBoxDesktopApp: App {
         do {
             let options = try LaunchOptions.parse(Array(ProcessInfo.processInfo.arguments.dropFirst()))
             AppDelegate.isSnapshot = options.isSnapshot
+            AppDelegate.launchedInBackground = NSRunningApplication.current.activationPolicy == .prohibited
             if options.isSnapshot {
                 var arguments = UserDefaults.standard.volatileDomain(forName: UserDefaults.argumentDomain)
                 arguments["ApplePersistenceIgnoreState"] = true
@@ -38,7 +39,7 @@ struct ToyBoxDesktopApp: App {
             root(channelID: value?.channelID ?? model.launchOptions.channelID)
         }
         .defaultSize(width: CGFloat(model.launchOptions.width), height: CGFloat(model.launchOptions.height))
-        .defaultLaunchBehavior(.presented)
+        .defaultLaunchBehavior(AppDelegate.launchedInBackground ? .suppressed : .presented)
         .restorationBehavior(model.launchOptions.isSnapshot ? .disabled : .automatic)
         .windowStyle(.automatic)
         .commands { ChannelCommands(model: model) }
@@ -47,6 +48,8 @@ struct ToyBoxDesktopApp: App {
             model.openMainWindow = { openWindow(id: "channels") }
             guard !model.launchOptions.isSnapshot else { return }
             appDelegate.openChannelWindow = { openWindow(id: "channels") }
+            if phase != .background { appDelegate.comeForward() }
+            guard !appDelegate.isInBackground else { return }
             guard !didCheckStartupWindow || phase == .active else { return }
             didCheckStartupWindow = true
             DispatchQueue.main.async {
@@ -99,9 +102,28 @@ struct ChannelWindowValue: Codable, Hashable {
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     static var isSnapshot = false
+    /// Siri and Shortcuts launch the app with activation prohibited to run a background intent,
+    /// such as Catch Me Up or Send Message. Until something brings it forward, it opens no window
+    /// and stays out of the Dock, so the system quits it once the intent finishes.
+    static var launchedInBackground = false
+    private var cameForward = false
+    var isInBackground: Bool { Self.launchedInBackground && !cameForward }
     var openChannelWindow: (() -> Void)?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // An accessory app stays out of the Dock but can still be activated, so a reopen, the menu
+        // bar extra or a notification can bring it forward.
+        NSApplication.shared.setActivationPolicy(isInBackground ? .accessory : .regular)
+    }
+
+    func applicationWillBecomeActive(_ notification: Notification) {
+        comeForward()
+    }
+
+    /// Makes a background launch an ordinary app once it's activated or shows a window.
+    func comeForward() {
+        guard isInBackground else { return }
+        cameForward = true
         NSApplication.shared.setActivationPolicy(.regular)
     }
 
