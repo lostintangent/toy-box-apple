@@ -526,6 +526,68 @@ struct ManagementTests {
         }
     }
 
+    @Test func theWorkingPulseIsCommittedOnceForTheRenderServerToRun() throws {
+        let view = OverviewEllipsisPulseView()
+        view.frame = NSRect(x: 0, y: 0, width: 11, height: 4.5)
+        view.show(.init(size: 9, color: Color.red.resolve(in: EnvironmentValues()), scale: 2))
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 40, height: 20), styleMask: [.borderless],
+                              backing: .buffered, defer: true)
+        let start = CACurrentMediaTime()
+        window.contentView?.addSubview(view)
+        view.layoutSubtreeIfNeeded()
+
+        // The window's renderer draws the symbol, and the mask's segments decide each dot's opacity.
+        #expect(view.subviews.count == 1 && view.subviews.first is NSHostingView<AnyView>)
+        #expect(view.subviews.first?.frame == view.bounds)
+        let mask = try #require(view.layer?.mask)
+        #expect(mask.frame == view.bounds)
+        #expect(mask.sublayers?.count == 3 && mask.sublayers == view.segments)
+        var begins: [CFTimeInterval] = []
+        var edges: [CGFloat] = []
+        for segment in view.segments {
+            #expect(segment.frame.minY == 0 && segment.frame.height == view.bounds.height)
+            #expect(segment.opacity == OverviewEllipsisPulseView.rest)
+            let fade = try #require(segment.animation(forKey: "fade") as? CABasicAnimation)
+            #expect(fade.fromValue as? Float == 1 && fade.toValue as? Float == 0.25)
+            #expect(fade.duration == 0.3125)
+            let pulse = try #require(segment.animation(forKey: "pulse") as? CAKeyframeAnimation)
+            #expect((pulse.values as? [NSNumber])?.map(\.floatValue) == [0.25, 1, 0.25, 0.25])
+            #expect(pulse.keyTimes?.map(\.doubleValue) == [0, 0.1875, 0.375, 1])
+            #expect(abs(pulse.duration - 5.0 / 3) < 0.0001)
+            #expect(pulse.repeatCount == .infinity)
+            #expect(pulse.preferredFrameRateRange.maximum == 30)
+            begins.append(pulse.beginTime)
+            edges.append(segment.frame.minX)
+            edges.append(segment.frame.maxX)
+        }
+        // The first dot rises as the fade to rest ends, and the others follow a third of a second apart.
+        #expect(abs(begins[0] - start - 0.3125) < 0.05)
+        #expect(abs(begins[1] - begins[0] - 1.0 / 3) < 0.0001)
+        #expect(abs(begins[2] - begins[1] - 1.0 / 3) < 0.0001)
+        // Each segment starts where the last ends, from one side of the symbol to the other.
+        #expect(edges.first == 0 && edges.last == 11)
+        #expect(edges[1] == edges[2] && edges[3] == edges[4])
+    }
+
+    @Test(arguments: [1.0, 2.0])
+    func everyTextSizeSplitsTheEllipsisBetweenItsDots(displayScale: Double) throws {
+        for textScale in stride(from: 0.85, through: 1.4, by: 0.05) {
+            let rendering = try #require(OverviewEllipsisPulseView.rendering(size: 9 * textScale, scale: displayScale))
+            let ink = OverviewEllipsisPulseView.columnInk(in: rendering.image)
+            let width = CGFloat(rendering.image.width) / displayScale
+            #expect(rendering.splits.count == 2, "\(textScale) at \(displayScale)x")
+            for (index, split) in rendering.splits.enumerated() {
+                #expect(abs(split - width * CGFloat(index + 1) / 3) < 1, "\(textScale) at \(displayScale)x")
+                // A split crosses no ink. At 1x, with no empty column, it runs beside the faintest one.
+                let pixel = split * displayScale, column = Int(pixel)
+                let crossesNoInk = ink[column] == 0
+                let besideFaintest = pixel == pixel.rounded()
+                    && min(ink[column - 1], ink[column]) == ink[column - 2...column + 1].min()
+                #expect(crossesNoInk || (displayScale == 1 && besideFaintest), "\(textScale) at \(displayScale)x")
+            }
+        }
+    }
+
     /// Hosts a view in a window that counts as key, so typed keys reach the focused control.
     @MainActor private struct TaskWindow {
         final class KeyWindow: NSWindow {

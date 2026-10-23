@@ -1,13 +1,20 @@
 #!/usr/bin/env bun
 // The benchmark fixture that script/benchmark starts for each scenario. It serves studio-demo and
 // the 480-message history-demo on one port, through the reference demo server imported read-only,
-// and adds one route the benchmark drives:
+// and adds two routes the benchmark drives:
 //
 //   POST /perf/messages?channel=ID&count=N&interval=MS
 //
 // It answers at once with the sequences it will use, then streams N agent messages to that
-// channel's open streams, MS apart. Its messages stay out of the reference server's history, so a
-// reconnect drops them. Each benchmark launch starts a fresh fixture.
+// channel's open streams, MS apart.
+//
+//   POST /perf/working?channel=ID&count=N
+//
+// It makes the lead and then members working until N are, adding members when the channel has
+// fewer, and the rest idle.
+//
+// What these routes stream stays out of the reference server's history, so a reconnect drops it.
+// Each benchmark launch starts a fresh fixture.
 //
 // Usage: bun script/perf-demo.mjs [path to toy-box-Minecraft]. TOY_BOX_PERF_PORT sets the port (3292).
 import { readFileSync } from "node:fs";
@@ -33,6 +40,8 @@ const handlers = Object.fromEntries(Object.entries(demos).map(([id, demo]) => {
 }));
 const streams = Object.fromEntries(Object.keys(demos).map(id => [id, new Set()]));
 const injected = Object.fromEntries(Object.keys(demos).map(id => [id, 0]));
+const revisions = Object.fromEntries(Object.keys(demos).map(id => [id, 0]));
+const added = Object.fromEntries(Object.keys(demos).map(id => [id, []]));
 
 // Plain prose, a list, a mention and a code block, so new rows exercise each kind of formatting.
 const bodies = [
@@ -73,9 +82,7 @@ function streamMessages(response, url) {
             timestamp: new Date().toISOString(), sender: { type: "agent", agentId: agent.id },
             content: bodies[offset % bodies.length](offset, mentioned),
         };
-        const revision = base.revision + offset;
-        const event = `id: ${revision}\ndata: ${JSON.stringify({ type: "message", revision, message })}\n\n`;
-        for (const stream of streams[channel]) stream.write(event);
+        broadcast(channel, { type: "message", revision: base.revision + ++revisions[channel], message });
     };
     if (interval === 0) {
         for (let index = 0; index < count; index++) send();
@@ -86,6 +93,47 @@ function streamMessages(response, url) {
         send();
         if (++sent === count) clearInterval(timer);
     }, interval);
+}
+
+function broadcast(channel, event) {
+    const id = event.revision === undefined ? "" : `id: ${event.revision}\n`;
+    for (const stream of streams[channel]) stream.write(`${id}data: ${JSON.stringify(event)}\n\n`);
+}
+
+function setWorking(response, url) {
+    const channel = url.searchParams.get("channel");
+    const count = Number(url.searchParams.get("count") ?? 1);
+    if (!(channel in demos) || !Number.isInteger(count) || count < 0 || count > 100) {
+        json(response, 400, { error: "Expected a fixture channel and a count up to 100." });
+        return;
+    }
+    if (streams[channel].size === 0) {
+        json(response, 409, { error: `Nothing is streaming ${channel}.` });
+        return;
+    }
+    const base = demos[channel].snapshot();
+    const agents = [base.lead, ...base.members, ...added[channel]];
+    const statuses = new Map();
+    for (let index = 0; index < Math.max(count, agents.length); index++) {
+        statuses.set(index, index < count ? { state: "working", text: `Checking pass ${index + 1}` } : { state: "idle" });
+    }
+    for (let index = agents.length; index < count; index++) {
+        const { avatar } = base.members[index % base.members.length];
+        const member = {
+            channelId: channel, id: `perf-agent-${index}`, name: `Agent ${index}`,
+            role: "Keep the benchmark busy.", avatar, status: statuses.get(index),
+        };
+        added[channel].push(member);
+        agents.push(member);
+        broadcast(channel, { type: "member", revision: base.revision + ++revisions[channel], member });
+    }
+    agents.forEach((agent, index) => {
+        broadcast(channel, {
+            type: "status", revision: base.revision + ++revisions[channel], agentId: agent.id, status: statuses.get(index),
+        });
+    });
+    broadcast(channel, { type: "presence", presence: Object.fromEntries(agents.map((agent, index) => [agent.id, statuses.get(index)])) });
+    json(response, 200, { working: count, agents: agents.length });
 }
 
 const server = http.createServer((request, response) => {
@@ -100,13 +148,14 @@ const server = http.createServer((request, response) => {
         });
         return;
     }
-    if (url.pathname === "/perf/messages") {
+    if (url.pathname === "/perf/messages" || url.pathname === "/perf/working") {
         if (request.method !== "POST") {
             response.writeHead(405, { "Content-Type": "application/json", Allow: "POST" });
-            response.end(JSON.stringify({ error: "Stream benchmark messages with POST." }));
+            response.end(JSON.stringify({ error: `Use POST for ${url.pathname}.` }));
             return;
         }
-        streamMessages(response, url);
+        if (url.pathname === "/perf/messages") streamMessages(response, url);
+        else setWorking(response, url);
         return;
     }
     if (url.pathname === `/api/v1/channels/${historyChannelID}/messages`) {

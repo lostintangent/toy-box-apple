@@ -41,12 +41,14 @@ view.
 - Integration tests are opt-in: `TOY_BOX_DEMO_URL=http://127.0.0.1:3210 ./script/test`, and
   `TOY_BOX_HISTORY_DEMO_URL=http://127.0.0.1:3211 ./script/test --filter HistoryFixtureTests`
   against a freshly started history demo.
-- `SCRATCH_PATH=/tmp/tbm-<you> ./script/benchmark [--summaries] [launch|switch|messages|paging|idle ...]` is the
+- `SCRATCH_PATH=/tmp/tbm-<you> ./script/benchmark [--summaries] [launch|switch|messages|paging|key|idle ...]` is the
   performance regression benchmark. It builds a release bundle as `dev.toybox.channels.mac.benchmark`,
   runs each scenario against a fresh `script/perf-demo.mjs` fixture on 3292 (`TOY_BOX_PERF_PORT`),
   prints each result beside its budget and exits 1 when one is over. The spec's Performance budgets
   section defines the budgets and how busy time, saturated spans and frame gaps differ. Leave its
-  window uncovered.
+  window uncovered. `key` runs only when named, because it takes focus for about 45 seconds to
+  measure CPU in a key window with 4 and then 20 working agents, where a continuous animation shows
+  up. Warn the user before running it.
   Catch-up summaries stay off so the card can't land mid-measurement. `--summaries` leaves them on.
   Only one benchmark runs at a time on this Mac. Others wait for it, so never poll for one yourself.
 - `node script/generate-cron-fixtures.mjs ../toy-box` regenerates the cron fixtures from the

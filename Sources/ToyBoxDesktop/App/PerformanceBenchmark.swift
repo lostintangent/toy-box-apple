@@ -4,7 +4,7 @@ import Darwin
 import Observation
 import QuartzCore
 
-/// `--benchmark launch|switch|messages|paging|idle` measures one scenario in the first window,
+/// `--benchmark launch|switch|messages|paging|idle|key` measures one scenario in the first window,
 /// prints each result beside its budget and exits. `script/benchmark` builds a release bundle and
 /// runs the scenarios against `script/perf-demo.mjs`, whose `/perf/messages` route streams the agent
 /// messages that `messages` measures.
@@ -29,10 +29,13 @@ import QuartzCore
 /// - `paging`: scrolls the transcript to its top until every older page has loaded, and times each
 ///   from the scroll that crosses the transcript's paging edge until the page settles.
 /// - `idle`: a minute of wakeups and busy time once the channel settles. No budget.
+/// - `key`: makes the window key, which a person's window is, and measures the whole process's CPU
+///   while it sits there, first with the channel's own working agents and then with 20 working.
+///   Animations that run only in the key window, like the working ellipsis, show up here.
 @MainActor
 final class PerformanceBenchmark {
     enum Scenario: String, CaseIterable, Sendable {
-        case launch, messages, paging, idle
+        case launch, messages, paging, idle, key
         case switching = "switch"
     }
 
@@ -42,7 +45,12 @@ final class PerformanceBenchmark {
         static let burstFrameGap = 100.0
         static let olderPage = 250.0
         static let warmSwitch = 150.0
+        /// Percent of one core, for a key window that's only showing working agents.
+        static let keyWindowCPU = 3.0
     }
+
+    static let keyWindowSeconds = 15.0
+    static let manyWorking = 20
 
     static let burstCount = 50
     static let burstInterval = 20
@@ -55,6 +63,7 @@ final class PerformanceBenchmark {
     private var meter: MainRunLoopMeter?
     private var appearance: NSObjectProtocol?
     private var task: Task<Void, Never>?
+    private var keyResigned = false
 
     init(scenario: Scenario, channelID: String) {
         self.scenario = scenario
@@ -87,6 +96,7 @@ final class PerformanceBenchmark {
             case .messages: await messages()
             case .paging: await paging()
             case .idle: await idle()
+            case .key: await keyWindow()
             }
             exit(EXIT_SUCCESS)
         }
@@ -349,6 +359,77 @@ final class PerformanceBenchmark {
              + "saturated span")
     }
 
+    private func keyWindow() async {
+        await load(channelID)
+        guard let window, let store = store(channelID) else { return }
+        // script/benchmark opens this scenario in front, so the app may already be active.
+        NSApp.activate()
+        window.makeKeyAndOrderFront(nil)
+        let deadline = CACurrentMediaTime() + 10
+        while !window.isKeyWindow {
+            guard CACurrentMediaTime() < deadline else {
+                fail("the window didn't become key. Another app kept focus, so run key again while nobody is typing.")
+            }
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+        header()
+        func working() -> Int {
+            store.roster.count(where: { store.presence[$0.id]?.state == "working" })
+        }
+        await measureKeyWindow(window, label: "Key window with \(working()) working agents")
+        await setWorking(Self.manyWorking)
+        await until("\(Self.manyWorking) agents didn't start working") { working() >= Self.manyWorking }
+        await measureKeyWindow(window, label: "Key window with \(working()) working agents")
+    }
+
+    /// Measures the process's CPU while the window stays key.
+    private func measureKeyWindow(_ window: NSWindow, label: String) async {
+        guard let meter else { return }
+        // Work on every frame never settles, and that's what this measures, so it waits a fixed time
+        // for anything that starts when the window becomes key or a row appears.
+        try? await Task.sleep(for: .seconds(5))
+        keyResigned = false
+        let observer = NotificationCenter.default.addObserver(
+            forName: NSWindow.didResignKeyNotification, object: window, queue: .main
+        ) { [weak self] _ in MainActor.assumeIsolated { self?.keyResigned = true } }
+        defer { NotificationCenter.default.removeObserver(observer) }
+        meter.reset()
+        let start = CACurrentMediaTime()
+        let process = Self.processCPU()
+        let main = Self.mainThreadCPU()
+        try? await Task.sleep(for: .seconds(Self.keyWindowSeconds))
+        let seconds = CACurrentMediaTime() - start
+        guard !keyResigned, window.isKeyWindow else {
+            fail("the window stopped being key while it was measured, so run key again while nobody is typing.")
+        }
+        let percent = (Self.processCPU() - process) / seconds * 100
+        check(label, String(format: "%.1f%% CPU, %.1f%% on the main thread, %.1f wakeups a second, over %.0f s",
+                            percent, (Self.mainThreadCPU() - main) / seconds * 100, Double(meter.passes) / seconds,
+                            seconds),
+              value: percent, budget: Budget.keyWindowCPU, unit: "%")
+    }
+
+    /// Asks the fixture to make `count` agents working, adding members when the channel has fewer.
+    private func setWorking(_ count: Int) async {
+        guard let api = model?.api,
+              var components = URLComponents(url: api.baseURL, resolvingAgainstBaseURL: false) else { fail("there's no server") }
+        components.path = "/perf/working"
+        components.queryItems = [.init(name: "channel", value: channelID), .init(name: "count", value: "\(count)")]
+        guard let url = components.url else { fail("there's no server") }
+        var request = URLRequest(url: url, timeoutInterval: 10)
+        request.httpMethod = "POST"
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard (response as? HTTPURLResponse)?.statusCode == 200 else {
+                fail("\(api.baseURL.absoluteString) can't set working agents: "
+                     + "\(String(decoding: data, as: UTF8.self)). Run it against script/perf-demo.mjs.")
+            }
+        } catch {
+            fail("\(api.baseURL.absoluteString) can't set working agents: \(error.localizedDescription). "
+                 + "Run it against script/perf-demo.mjs.")
+        }
+    }
+
     // MARK: Waiting
 
     private func store(_ id: String) -> ChannelStore? { model?.catalog?.channel(id: id) }
@@ -502,8 +583,8 @@ final class PerformanceBenchmark {
         emit("Benchmark \(scenario.rawValue) on \(channelID): \(rate) Hz display, window \(visible ? "visible" : "covered")")
     }
 
-    private func check(_ name: String, _ detail: String, value: Double, budget: Double) {
-        emit("  \(name): \(detail) (budget \(Int(budget)) ms) \(value <= budget ? "ok" : "OVER")")
+    private func check(_ name: String, _ detail: String, value: Double, budget: Double, unit: String = " ms") {
+        emit("  \(name): \(detail) (budget \(Int(budget))\(unit)) \(value <= budget ? "ok" : "OVER")")
     }
 
     private func info(_ name: String, _ detail: String) {
@@ -522,6 +603,14 @@ final class PerformanceBenchmark {
     private func fail(_ reason: String) -> Never {
         FileHandle.standardError.write(Data("Benchmark failed: \(reason)\n".utf8))
         exit(EXIT_FAILURE)
+    }
+
+    /// Every thread's user and system CPU time, in seconds.
+    private static func processCPU() -> Double {
+        var usage = rusage()
+        guard getrusage(RUSAGE_SELF, &usage) == 0 else { return 0 }
+        return Double(usage.ru_utime.tv_sec) + Double(usage.ru_utime.tv_usec) / 1_000_000
+            + Double(usage.ru_stime.tv_sec) + Double(usage.ru_stime.tv_usec) / 1_000_000
     }
 
     /// The main thread's user and system CPU time, in seconds.

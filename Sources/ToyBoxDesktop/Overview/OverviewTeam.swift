@@ -118,8 +118,6 @@ struct OverviewAgentRow: View {
 /// One 11-point line: Messages' typing cue while working, the reason while waiting, otherwise Idle.
 struct OverviewAgentStatusLine: View {
     @Environment(\.channelTextScale) private var textScale
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.appearsActive) private var appearsActive
     let agent: ChannelAgent
     let status: ChannelAgentPresence
     let isLive: Bool
@@ -146,12 +144,7 @@ struct OverviewAgentStatusLine: View {
         let text = Self.text(status, isLive: isLive)
         HStack(spacing: 4) {
             if isLive, status.state == "working" {
-                Image(systemName: "ellipsis")
-                    .font(.system(size: 9 * textScale, weight: .heavy))
-                    .foregroundStyle(agent.avatar.flatMap { Color(hex: $0.color) } ?? Color.accentColor)
-                    .symbolEffect(.variableColor.iterative, options: .repeat(.continuous),
-                                  isActive: appearsActive && !reduceMotion)
-                    .accessibilityHidden(true)
+                OverviewWorkingEllipsis(color: agent.avatar.flatMap { Color(hex: $0.color) } ?? Color.accentColor)
                 Text(text).foregroundStyle(Color.primary.opacity(0.85))
             } else {
                 Text(text).foregroundStyle(.secondary)

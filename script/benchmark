@@ -1,12 +1,13 @@
 #!/bin/bash
 # Builds a release bundle and measures it against script/perf-demo.mjs, with a fresh fixture and app
 # instance for each scenario, then prints every result beside its budget.
-# Usage: SCRATCH_PATH=/tmp/tbm-<you> script/benchmark [--summaries] [launch|switch|messages|paging|idle ...]
-# Without scenarios it runs launch, switch, messages and paging. idle takes a minute, so it runs only
-# when named. Catch-up summaries stay off, because the on-device model lands one at an unpredictable
+# Usage: SCRATCH_PATH=/tmp/tbm-<you> script/benchmark [--summaries] [launch|switch|messages|paging|key|idle ...]
+# Without scenarios it runs launch, switch, messages and paging. idle takes a minute, and key takes
+# focus for about 45 seconds to measure a key window, so each runs only when named. Don't type while
+# key runs. Catch-up summaries stay off, because the on-device model lands one at an unpredictable
 # moment and its card animates the transcript during whichever measurement is running. --summaries
-# leaves them on to measure the card. The benchmark window opens in front without taking focus. Keep
-# it uncovered while it runs. Exits 1 when a result is over budget or a scenario fails.
+# leaves them on to measure the card. Other scenarios open the window in front without taking focus.
+# Keep it uncovered while it runs. Exits 1 when a result is over budget or a scenario fails.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -25,8 +26,8 @@ SCENARIOS=()
 for argument in "$@"; do
     case "$argument" in
         --summaries) SUMMARIES=YES ;;
-        launch|switch|messages|paging|idle) SCENARIOS+=("$argument") ;;
-        *) echo "Unknown scenario: $argument. Use launch, switch, messages, paging or idle, and --summaries to leave catch-up summaries on." >&2; exit 2 ;;
+        launch|switch|messages|paging|key|idle) SCENARIOS+=("$argument") ;;
+        *) echo "Unknown scenario: $argument. Use launch, switch, messages, paging, key or idle, and --summaries to leave catch-up summaries on." >&2; exit 2 ;;
     esac
 done
 if [[ ${#SCENARIOS[@]} -eq 0 ]]; then SCENARIOS=(launch switch messages paging); fi
@@ -88,9 +89,12 @@ failed=0
 if [[ $SUMMARIES == YES ]]; then echo "Catch-up summaries are on"; fi
 for scenario in "${SCENARIOS[@]}"; do
     case "$scenario" in
-        switch) channel=studio-demo ;;
+        switch|key) channel=studio-demo ;;
         *) channel=history-demo ;;
     esac
+    # Only key comes forward as the active app, because a key window is what it measures.
+    background=-g
+    if [[ $scenario == key ]]; then background=""; fi
     # Every scenario starts from the same window layout and settings.
     defaults delete "$ID" >/dev/null 2>&1 || true
     defaults write "$ID" summarizeNewMessages -bool "$SUMMARIES"
@@ -112,7 +116,7 @@ for scenario in "${SCENARIOS[@]}"; do
     : >"$out"
     : >"$err"
     # open -W doesn't pass on the app's exit status, so the results come from its output.
-    open -n -g -W --stdout "$out" --stderr "$err" "$APP" --args --server "$SERVER" --channel "$channel" \
+    open -n ${background:+"$background"} -W --stdout "$out" --stderr "$err" "$APP" --args --server "$SERVER" --channel "$channel" \
         --benchmark "$scenario" -ApplePersistenceIgnoreState YES 9>&-
     stop_fixture
 

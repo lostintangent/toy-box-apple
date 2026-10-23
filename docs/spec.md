@@ -217,6 +217,7 @@ messages loaded and again with every older page loaded. It times the main run lo
 | 50 messages 20 ms apart | 100 ms longest frame gap. The saturated span and busy time are reported beside it |
 | Each older page | 250 ms busy |
 | Warm switch | 150 ms median longest saturated span. A switch that lands over several frames feels as slow as one long frame, so it isn't budgeted on frame gaps |
+| Key window with 4, then 20, working agents | 3% process CPU over 15 s, so a continuous animation that updates views every frame fails it |
 
 Launch and idle report the same figures with no budget.
 
