@@ -25,7 +25,7 @@ struct OverviewRoutineRow: View {
 
     private var canRun: Bool { !isRunning && !recovery.blocksWrites && store.phase.isLive }
     private var showsMenu: Bool { isHovering || focus != nil || voiceOver }
-    private var scheduleSummary: String { (try? cronSummary(routine.schedule)) ?? routine.schedule }
+    private var scheduleSummary: String { RoutineScheduleSummary.text(for: routine.schedule) }
     private var scheduleLine: String {
         if isRunning { return "Requesting run…" }
         if runRequestedAt != nil { return "Run requested" }
@@ -186,5 +186,27 @@ struct OverviewRoutineRow: View {
             }
             return "Channel details have been refreshed. This routine may already have started. Review the current conversation before requesting another run."
         }
+    }
+}
+
+/// Routine rows re-render with their inspector, so each schedule is parsed once per locale
+/// rather than on every body.
+@MainActor
+enum RoutineScheduleSummary {
+    private static var summaries: [String: String] = [:]
+    private static var localeObserver: (any NSObjectProtocol)?
+
+    static func text(for schedule: String) -> String {
+        if let summary = summaries[schedule] { return summary }
+        if localeObserver == nil {
+            localeObserver = NotificationCenter.default.addObserver(
+                forName: NSLocale.currentLocaleDidChangeNotification, object: nil, queue: .main) { _ in
+                MainActor.assumeIsolated { summaries.removeAll() }
+            }
+        }
+        if summaries.count >= 256 { summaries.removeAll() }
+        let summary = (try? cronSummary(schedule)) ?? schedule
+        summaries[schedule] = summary
+        return summary
     }
 }

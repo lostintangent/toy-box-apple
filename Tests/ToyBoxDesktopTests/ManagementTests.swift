@@ -449,6 +449,15 @@ struct ManagementTests {
         #expect(OverviewFolderRow.shownPath(home, availability: .remote(host: "build.example.com")) == home)
     }
 
+    @Test func routineSchedulesSummarizeTheSameOnEveryRead() throws {
+        let weekdays = try cronSummary("0 9 * * 1-5")
+        #expect(RoutineScheduleSummary.text(for: "0 9 * * 1-5") == weekdays)
+        #expect(RoutineScheduleSummary.text(for: "0 9 * * 1-5") == weekdays)
+        #expect(RoutineScheduleSummary.text(for: "H 9 * * *") == "H 9 * * *")
+        #expect(RoutineScheduleSummary.text(for: "not a schedule") == "not a schedule")
+        #expect(RoutineScheduleSummary.text(for: "not a schedule") == "not a schedule")
+    }
+
     /// A sheet's long text field, counting the submissions its Return key makes.
     struct LongTextHost: View {
         @Observable final class Model {
