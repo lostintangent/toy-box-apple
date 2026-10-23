@@ -1082,15 +1082,26 @@ padding: a 24-point avatar, a 10-point gap, then the name in 13 regular primary 
 | Waiting | The reason in secondary, such as "Waiting for Moss's review" | With a wake time, "8 min" in 11 secondary tabular digits, updated at minute boundaries, help "Checks again at 9:32 AM". "Due" once it passes |
 | Idle | "Idle" in secondary | Nothing |
 
-The working ellipsis animates with `.symbolEffect(.variableColor.iterative)` only while the
-window is key, and is static under Reduce Motion. There are no rings around Team avatars. The
-row is one button that opens the member's About popover (name, full role, status and model)
-anchored to the avatar, never private session contents. On hover or keyboard focus, a
-borderless 14-point `ellipsis.circle` menu in secondary, with a 28 x 28 target, replaces the
-trailing countdown. It offers Reply to [Name], About [Name], Edit Member… and Remove Member….
-The lead offers Reply and About only, because its identity is intrinsic. The context menu has
-the same items. Add Agent… ends the list in a 36-point row: a 24-point dashed tertiary circle
-with an 11-point `plus`, and the label in 13 regular secondary. It opens Add Member.
+The working ellipsis pulses only while the window is key. Under Reduce Motion, and in every other
+window, it is static at full color. The pulse matches the system's iterative variable color on that
+symbol, measured from `.symbolEffect(.variableColor.iterative)`. All three dots rest at 25%
+opacity. Each in turn rises to 100% over 0.31 s and falls back over 0.31 s, easing in and out. Dots
+start 0.33 s apart, so a cycle lasts 1.67 s and ends with all three resting for 0.375 s. Starting
+fades all three from full to 25% over 0.31 s before the first dot rises. Stopping restores full
+color at once. Each dot's opacity is a Core Animation keyframe animation that is committed once and
+interpolated by the render server. It is never a SwiftUI animation, symbol effect, timeline or
+display-link callback that updates views every frame. It may cap its frame rate at 30 fps. Its
+static frame stays pixel-identical to the 9-point heavy symbol, in the same place in the row, at
+every text scale.
+
+There are no rings around Team avatars. The row is one button that opens the member's About popover
+(name, full role, status and model) anchored to the avatar, never private session contents. On
+hover or keyboard focus, a borderless 14-point `ellipsis.circle` menu in secondary, with a 28 x 28
+target, replaces the trailing countdown. It offers Reply to [Name], About [Name], Edit Member… and
+Remove Member…. The lead offers Reply and About only, because its identity is intrinsic. The
+context menu has the same items. Add Agent… ends the list in a 36-point row: a 24-point dashed
+tertiary circle with an 11-point `plus`, and the label in 13 regular secondary. It opens Add
+Member.
 
 **Tasks.** Status is read-only, in a 16 x 16 cell at 14 points: pending `circle` in secondary,
 in progress `circle.lefthalf.filled` in secondary, blocked `exclamationmark.circle.fill` white
@@ -1295,8 +1306,10 @@ has already loaded. Retry is user-initiated and does not resend messages or repl
 Use native selection and inspector transitions. Custom hover/focus fades last 120 ms, disclosure
 and tray changes approximately 180 ms. Scrolling to a user-requested target may animate for
 180...240 ms, but initial landing and history anchoring must be immediate. The Team's working
-ellipsis uses `.symbolEffect(.variableColor.iterative)` only in the key window. Reduce Motion
-keeps it static beside its text. Requests never animate. No looping shimmering skeletons or large empty-state art.
+ellipsis pulses only in the key window, as a render-server animation. Reduce Motion keeps it static
+beside its text. No continuous animation may update SwiftUI views or run main-thread work every
+frame, and a key window with working agents idles under 3% CPU. Requests never animate. No looping
+shimmering skeletons or large empty-state art.
 
 Every icon-only control has a localized label and help. Minimum compact control hit target is
 28 x 28. Keyboard focus is visible without hover. Expose one semantic message group with author,
