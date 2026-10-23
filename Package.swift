@@ -10,11 +10,21 @@ let package = Package(
         .library(name: "ChannelIntelligence", targets: ["ChannelIntelligence"]),
         .executable(name: "ToyBoxDesktop", targets: ["ToyBoxDesktop"]),
     ],
+    dependencies: [
+        .package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.10.0"),
+    ],
     targets: [
         .target(name: "ChannelKit"),
         .target(name: "ChannelClient", dependencies: ["ChannelKit"]),
         .target(name: "ChannelIntelligence", dependencies: ["ChannelKit"]),
-        .executableTarget(name: "ToyBoxDesktop", dependencies: ["ChannelKit", "ChannelClient", "ChannelIntelligence"]),
+        .executableTarget(
+            name: "ToyBoxDesktop",
+            dependencies: [
+                "ChannelKit", "ChannelClient", "ChannelIntelligence",
+                .product(name: "Sparkle", package: "Sparkle"),
+            ],
+            linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])]
+        ),
         .testTarget(
             name: "ChannelKitTests",
             dependencies: ["ChannelKit"],

@@ -47,6 +47,7 @@ jobs:
             grep -q "\"$intent\"" "$actions"
           done
           grep -q '"com.apple.appintents.entity.Indexed"' "$actions"
+          TOY_BOX_BUNDLE="$app" python3 script/test-sparkle.py NativeBundleTests
       - name: Wait for crash reports
         if: failure()
         run: |
@@ -72,6 +73,8 @@ jobs:
         run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
       - name: Test release credential setup with fake commands
         run: python3 script/test-release-secrets.py
+      - name: Test Sparkle packaging with fake commands
+        run: python3 script/test-sparkle.py
 
   release:
     needs: [test, lint]

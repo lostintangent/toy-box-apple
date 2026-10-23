@@ -14,7 +14,7 @@ BUILD="${BUILD_NUMBER:?Set BUILD_NUMBER to a monotonically increasing build numb
 SCRATCH="${SCRATCH_PATH:-$ROOT/.build/distribution}"
 OUTPUT="${OUTPUT_DIR:-$ROOT/dist}"
 APP="$SCRATCH/Toy Box Desktop.app"
-SIGN_ARGS=(--force --options runtime --timestamp --entitlements "$ROOT/Resources/Release.entitlements" --sign "$IDENTITY")
+SIGN_ARGS=(--force --options runtime --timestamp --sign "$IDENTITY")
 IDENTITY_ARGS=(-v -p codesigning)
 if [[ -n "${SIGNING_KEYCHAIN:-}" ]]; then
     SIGN_ARGS+=(--keychain "$SIGNING_KEYCHAIN")
@@ -44,7 +44,7 @@ if [[ "$(xcrun lipo -archs "$APP/Contents/MacOS/ToyBoxDesktop")" != arm64 ]]; th
     exit 1
 fi
 echo "Signing with the pinned identity. If a keychain prompt appears, allow codesign to use that key."
-codesign "${SIGN_ARGS[@]}" "$APP"
+"$ROOT/script/sign-app" "$APP" "${SIGN_ARGS[@]}"
 codesign --verify --strict --verbose=2 "$APP"
 SIGNATURE="$(codesign --display --verbose=4 "$APP" 2>&1)"
 if ! grep -q 'flags=.*runtime' <<<"$SIGNATURE"; then

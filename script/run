@@ -30,6 +30,7 @@ MINIMUM_OS="$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$APP/C
 # SwiftPM's current link path records the deployment minimum as the SDK version.
 xcrun vtool -set-build-version macos "$MINIMUM_OS" "$SDK_VERSION" -replace \
     -output "$EXECUTABLE" "$EXECUTABLE"
+"$ROOT/script/embed-sparkle" "$BIN/Sparkle.framework" "$APP" "$SCRATCH/checkouts/Sparkle/LICENSE"
 
 # Siri, Shortcuts and Spotlight find the app's intents in Metadata.appintents. Xcode's processor
 # builds it from the const values that SwiftPM's build system emits by default. It runs directly,
@@ -77,7 +78,7 @@ grep -i -E "warning|error" "$INTENTS_DIR/processor.log" >&2 || true
 [[ -s "$APP/Contents/Resources/Metadata.appintents/extract.actionsdata" ]] \
     || { cat "$INTENTS_DIR/processor.log" >&2; echo "No App Intents metadata was written." >&2; exit 1; }
 
-codesign --force --sign - "$APP"
+"$ROOT/script/sign-app" "$APP"
 echo "$APP"
 if [[ "${1:-}" != "--no-open" ]]; then
     open -n "$APP"

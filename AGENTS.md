@@ -131,6 +131,9 @@ view.
   is never published.
 - Hardened runtime, a secure timestamp and only the audio-input entitlement. Never `--deep`.
   Local builds use Command Line Tools, and CI uses the runner's selected Xcode 27 on `xcode-27`.
+- Sparkle is pinned to 2.10.0 in SwiftPM. Every bundle embeds its arm64-only framework, installer
+  and updater, without sandbox XPC services or development headers. `script/sign-app` signs those
+  components inside out before signing the app. Keep Sparkle's license in the bundle.
 - The Developer ID certificate and its G1 intermediate expire February 1, 2027. Before then, move
   to a G2 certificate, rerun the setup, and update the workflow's intermediate URL and SHA-256.
 - The app icon's only source is `Resources/AppIcon.icon` (Designer). After changing it, run

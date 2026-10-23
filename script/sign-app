@@ -1,0 +1,15 @@
+#!/bin/bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+APP="${1:?Usage: script/sign-app APP [codesign options]}"
+shift
+if [[ $# -eq 0 ]]; then set -- --force --timestamp=none --sign -; fi
+FRAMEWORK="$APP/Contents/Frameworks/Sparkle.framework"
+for component in "$FRAMEWORK/Versions/Current/Autoupdate" \
+    "$FRAMEWORK/Versions/Current/Updater.app" "$FRAMEWORK"; do
+    codesign "$@" "$component"
+    codesign --verify --strict "$component"
+done
+codesign "$@" --entitlements "$ROOT/Resources/Release.entitlements" "$APP"
+codesign --verify --strict "$APP"

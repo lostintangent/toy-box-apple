@@ -52,7 +52,7 @@ TEST_STAGE="$(mktemp -d "$TEST_DIR/.stage.XXXXXX")"
 ditto "$SCRATCH/Toy Box Desktop.app" "$TEST_STAGE/$TEST_NAME.app"
 /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $TEST_ID" -c "Set :CFBundleName $TEST_NAME" \
     -c "Set :CFBundleDisplayName $TEST_NAME" "$TEST_STAGE/$TEST_NAME.app/Contents/Info.plist"
-codesign --force --deep --sign - "$TEST_STAGE/$TEST_NAME.app" 2>/dev/null
+"$ROOT/script/sign-app" "$TEST_STAGE/$TEST_NAME.app"
 install_bundle "$TEST_STAGE/$TEST_NAME.app" "$TEST_APP"
 rm -rf "$TEST_STAGE"
 # Computer Use only targets apps that Launch Services knows about.
