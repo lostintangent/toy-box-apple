@@ -43,11 +43,19 @@ final class AppModel {
             ?? UserDefaults.standard.string(forKey: AppConfiguration.serverURLKey)
             ?? AppConfiguration.defaultServerURL
         configure(serverURL: serverURL, persist: false)
-        notifications.onActivate = { [weak self] channelID, sequence, serverURL in
-            guard let self, self.serverURL == serverURL else { return }
+        notifications.onActivate = { [weak self] activation in
+            guard let self, self.serverURL == activation.serverURL else { return }
             NSApplication.shared.activate(ignoringOtherApps: true)
-            self.navigationRequest = .init(channelID: channelID, sequence: sequence)
-            if self.activeChannelID == nil { self.openChannelWindow?(channelID) }
+            self.navigationRequest = .init(channelID: activation.channelID, sequence: activation.sequence,
+                                           focusComposer: activation.focusComposer)
+            if self.activeChannelID == nil { self.openChannelWindow?(activation.channelID) }
+        }
+        notifications.api = { [weak self] serverURL in
+            guard let self, self.serverURL == serverURL else { return nil }
+            return self.api
+        }
+        notifications.resolveRequest = { [weak self] channel, sequence in
+            await self?.resolveRequest(channel: channel, sequence: sequence)
         }
         for name in [NSApplication.didBecomeActiveNotification, NSApplication.didResignActiveNotification] {
             applicationObservers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) {
@@ -158,6 +166,26 @@ final class AppModel {
         channelSidebarStatus(sidebarChannel(channel), isOpen: openChannelIDs.contains(channel.id))
     }
 
+    /// A channel's agents as the catalog knows them, for channels that aren't open.
+    func catalogAgents(channelID: String) -> [ChannelAgent] {
+        guard let catalog, let lead = catalog.state?.lead else { return [] }
+        return [ChannelAgent.lead(id: channelID, profile: lead)] + catalog.members.filter { $0.channelId == channelID }
+    }
+
+    /// A request's message, from an open channel's live state, otherwise from its history.
+    private func resolveRequest(channel: Channel, sequence: Int) async -> ChannelNotifications.ResolvedRequest? {
+        if let state = connections.values.first(where: { $0.store.id == channel.id })?.store.state,
+           let message = state.request?.sequence == sequence ? state.request
+               : state.messages.first(where: { $0.sequence == sequence }) {
+            return .init(message: message, agents: state.agents)
+        }
+        guard let catalog else { return nil }
+        let agents = catalogAgents(channelID: channel.id)
+        guard let page = try? await catalog.api.history(channelId: channel.id, before: sequence + 1),
+              let message = page.messages.first(where: { $0.sequence == sequence }) else { return nil }
+        return .init(message: message, agents: agents)
+    }
+
     static func dockBadge(channels: [Channel], openChannelIDs: Set<String>) -> String? {
         let count = channels.filter {
             channelSidebarStatus($0, isOpen: openChannelIDs.contains($0.id)) != nil
@@ -219,6 +247,8 @@ struct ChannelNavigationRequest: Identifiable {
     let id = UUID()
     let channelID: String
     let sequence: Int?
+    /// Set when a reply from a notification wasn't sent and waits in the composer.
+    var focusComposer = false
 }
 
 /// The catalog refresh someone asked for, while it runs. The sidebar footer shows progress only for

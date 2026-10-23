@@ -884,3 +884,129 @@ private struct RecordingLayout: Layout {
         for subview in subviews { subview.place(at: bounds.origin, proposal: ProposedViewSize(bounds.size)) }
     }
 }
+
+@MainActor
+@Suite("Notification content, replies and withdrawal")
+struct NotificationTests {
+    private let agents = [ChannelAgent(id: "lead", name: "Lead"), ChannelAgent(id: "ada", name: "Ada Lovelace")]
+
+    private func message(_ text: String, attachments: [ChannelAttachment]? = nil, sequence: Int = 12) -> ChannelMessage {
+        ChannelMessage(id: "m\(sequence)", sequence: sequence, timestamp: "2026-10-22T08:00:00Z",
+                       sender: .init(type: "agent", agentId: "ada"), content: .text(text), request: true,
+                       attachments: attachments)
+    }
+
+    private func channel(_ id: String, request: Int? = nil, seen: Int = 10) -> Channel {
+        Channel(id: id, name: id, model: .init(provider: "test", name: "test"), latestSequence: 20,
+                seenThrough: seen, requestSequence: request, updatedAt: "2026-10-22T08:00:00Z")
+    }
+
+    @Test func requestBodyReadsLikeTheTranscript() {
+        let text = """
+            @lead @ada-lovelace, which [entrance](https://example.test/a) should we ship?
+
+            - The **arched** one
+            - The `flat` one
+
+            ```
+            let door = arch
+            ```
+            """
+        #expect(NotificationText.requestBody(message(text), agents: agents) == """
+            which entrance should we ship?
+            \u{2022} The arched one
+            \u{2022} The flat one
+            let door = arch
+            """)
+    }
+
+    @Test func attachmentOnlyRequestsSayWhatWasSent() {
+        let image = ChannelAttachment(name: "door.png", mimeType: "image/png")
+        let file = ChannelAttachment(name: "notes.pdf", mimeType: "application/pdf")
+        #expect(NotificationText.requestBody(message("@lead", attachments: [image]), agents: agents) == "Sent an image")
+        #expect(NotificationText.requestBody(message("", attachments: [image, image, image]), agents: agents) == "Sent 3 images")
+        #expect(NotificationText.requestBody(message("", attachments: [file]), agents: agents) == "Sent a file")
+        #expect(NotificationText.requestBody(message("", attachments: [image, file]), agents: agents) == "Sent 2 files")
+        #expect(NotificationText.requestBody(message("  "), agents: agents) == NotificationText.waitingBody)
+    }
+
+    @Test func longRequestsCutAtAWordBoundary() {
+        let text = String(repeating: "entrance ", count: 60)
+        let body = NotificationText.truncated(text)
+        #expect(body.count <= NotificationText.bodyLimit)
+        #expect(body.hasSuffix("entrance\u{2026}"))
+        #expect(NotificationText.truncated("Short and sweet.") == "Short and sweet.")
+        #expect(NotificationText.truncated(String(repeating: "a", count: 500)).count == NotificationText.bodyLimit)
+    }
+
+    @Test func completionNamesASingleTask() {
+        #expect(NotificationText.completionBody(tasks: [.init(id: "1", title: "Ship the door")])
+            == "Completed \u{201C}Ship the door\u{201D}")
+        #expect(NotificationText.completionBody(tasks: [.init(id: "1", title: "A"), .init(id: "2", title: "B")])
+            == "All 2 tasks completed")
+    }
+
+    @Test func repliesAreAddressedLikeTheInAppReply() {
+        #expect(NotificationText.addressedReply("  Ship it  ", to: "ada-lovelace") == "@ada-lovelace Ship it")
+        #expect(NotificationText.addressedReply("@lead Ship it", to: "ada-lovelace") == "@lead Ship it")
+        #expect(NotificationText.addressedReply("Ship it", to: nil) == "Ship it")
+        #expect(NotificationText.addressedReply(" \n ", to: "ada-lovelace") == nil)
+        #expect(NotificationText.draft("", adding: "@ada Ship it") == "@ada Ship it")
+        #expect(NotificationText.draft("Earlier thought\n", adding: "@ada Ship it") == "Earlier thought\n\n@ada Ship it")
+    }
+
+    @Test func sentRepliesMarkTheChannelReadThroughThemselves() async {
+        var read: [Int] = []
+        let reply = NotificationReply(post: { id, content in self.message(content, sequence: 31) },
+                                      markRead: { read.append($0) }, pause: {})
+        #expect(await reply.send("@ada Ship it") == .sent)
+        #expect(read == [31])
+    }
+
+    @Test func onlyTransportFailuresRetryOnceWithTheSameID() async {
+        var ids: [String] = []
+        var pauses = 0
+        func reply(_ failures: [any Error]) -> NotificationReply {
+            var remaining = failures
+            return NotificationReply(post: { id, content in
+                ids.append(id)
+                if !remaining.isEmpty { throw remaining.removeFirst() }
+                return self.message(content, sequence: 31)
+            }, markRead: { _ in }, pause: { pauses += 1 })
+        }
+
+        #expect(await reply([URLError(.timedOut)]).send("Hi", id: "a") == .sent)
+        #expect(ids == ["a", "a"] && pauses == 1)
+        #expect(await reply([URLError(.timedOut), ChannelAPIError.duplicateMessage]).send("Hi", id: "b") == .sent)
+        #expect(await reply([URLError(.timedOut), URLError(.notConnectedToInternet)]).send("Hi", id: "c") == .failed)
+        ids = []
+        pauses = 0
+        #expect(await reply([ChannelAPIError.http(status: 500, message: "Down")]).send("Hi", id: "d") == .failed)
+        #expect(await reply([ChannelAPIError.http(status: 404, message: "Gone")]).send("Hi", id: "e") == .deleted)
+        #expect(ids == ["d", "e"] && pauses == 0)
+    }
+
+    @Test func notificationsWithdrawOnceTheyStopBeingTrue() {
+        func delivered(_ channel: String, _ kind: String, _ sequence: Int, server: String = "s") -> NotificationWithdrawal.Delivered {
+            .init(identifier: "\(server):\(channel):\(kind):\(sequence)", serverURL: server, channelID: channel,
+                  kind: kind, sequence: sequence)
+        }
+        let items = [delivered("answered", "request", 11), delivered("waiting", "request", 12),
+                     delivered("seen", "completion", 9), delivered("unseen", "completion", 15),
+                     delivered("active", "completion", 15), delivered("active", "replyFailed", 0),
+                     delivered("waiting", "replyFailed", 0), delivered("deleted", "request", 4),
+                     delivered("answered", "request", 11, server: "other")]
+        let channels = [channel("answered"), channel("waiting", request: 12), channel("seen"),
+                        channel("unseen"), channel("active")]
+        #expect(Set(NotificationWithdrawal.stale(items, channels: channels, serverURL: "s", activeChannelID: "active"))
+            == ["s:answered:request:11", "s:seen:completion:9", "s:active:completion:15",
+                "s:active:replyFailed:0", "s:deleted:request:4"])
+    }
+
+    @Test func foregroundPresentationKeepsCompletionsQuiet() {
+        #expect(NotificationPresentation.options(kind: "request", isActiveChannel: false) == [.banner, .list, .sound])
+        #expect(NotificationPresentation.options(kind: "completion", isActiveChannel: false) == [.list])
+        #expect(NotificationPresentation.options(kind: "request", isActiveChannel: true) == [])
+        #expect(NotificationPresentation.options(kind: "replyFailed", isActiveChannel: true) == [.banner, .list, .sound])
+    }
+}

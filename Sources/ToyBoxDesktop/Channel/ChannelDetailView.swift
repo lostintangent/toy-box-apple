@@ -10,9 +10,12 @@ struct ChannelDetailView: View {
     let isNarrow: Bool
     let windowHeight: CGFloat
     @Binding var isOverviewSheetPresented: Bool
+    /// Asks the composer to take focus once it appears.
+    var focusesComposer = false
     var onBack: () -> Void
     /// Selects a channel in this window, as the sidebar does.
     var onSelect: (String) -> Void
+    var onComposerFocused: () -> Void = {}
     @Environment(AppModel.self) private var model
     @Environment(ChannelInteraction.self) private var interaction
     @Environment(ManagementPresenter.self) private var management
@@ -86,6 +89,18 @@ struct ChannelDetailView: View {
             .onChange(of: isColumnPresented) { placement.presentationChanged() }
             .onChange(of: interaction.messageView) { _, value in
                 if !model.launchOptions.isSnapshot { messageView = value.rawValue }
+            }
+            // The transcript's scroll view takes over the composer once the channel loads, and the
+            // replacement may not be in the window yet, so the request repeats until focus lands.
+            .task(id: focusesComposer && store.state != nil) {
+                guard focusesComposer, store.state != nil else { return }
+                for _ in 0..<20 {
+                    interaction.focusComposer()
+                    try? await Task.sleep(for: .milliseconds(50))
+                    if Task.isCancelled { return }
+                    if placement.window?.firstResponder is ComposerTextView { break }
+                }
+                onComposerFocused()
             }
             .onChange(of: store.phase) { _, phase in
                 if phase == .deleted {

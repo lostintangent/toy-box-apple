@@ -24,6 +24,9 @@ struct RootView: View {
     @ViewState private var windowHeight: CGFloat?
     @ViewState private var placement = InspectorPlacement()
     @ViewState private var isOverviewSheetPresented = false
+    /// The channel whose composer takes focus once it appears, after a notification's reply
+    /// wasn't sent and waits there as a draft.
+    @ViewState private var composerFocusChannelID: String?
 
     static let sidebarIdealWidth: CGFloat = 248
 
@@ -46,8 +49,10 @@ struct RootView: View {
                                   isNarrow: isNarrow,
                                   windowHeight: windowHeight ?? CGFloat(model.launchOptions.height),
                                   isOverviewSheetPresented: $isOverviewSheetPresented,
+                                  focusesComposer: composerFocusChannelID == selectedId,
                                   onBack: { self.selectedId = nil },
-                                  onSelect: { self.selectedId = $0 })
+                                  onSelect: { self.selectedId = $0 },
+                                  onComposerFocused: { composerFocusChannelID = nil })
                     .id("\(model.serverURL):\(selectedId)")
             } else {
                 ContentUnavailableView("Choose a Channel", systemImage: "bubble.left.and.bubble.right",
@@ -103,6 +108,7 @@ struct RootView: View {
             imageViewer.close(animated: false)
             isOverviewSheetPresented = false
             if !model.launchOptions.isSnapshot { restoredSelectedId = id }
+            if id != composerFocusChannelID { composerFocusChannelID = nil }
             model.updateWindow(windowID, channelID: id, isKey: isKeyWindow)
         }
         .onChange(of: model.serverURL) { _, _ in
@@ -161,6 +167,7 @@ struct RootView: View {
         guard let request = model.navigationRequest, isKeyWindow else { return }
         selectedId = request.channelID
         if let sequence = request.sequence { interaction.reveal(sequence: sequence) }
+        composerFocusChannelID = request.focusComposer ? request.channelID : nil
         model.navigationRequest = nil
     }
 
