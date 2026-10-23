@@ -1578,6 +1578,13 @@ server. Choose one in Settings.", "Can't connect to your Toy Box server. Check t
 then try again." and "That channel isn't on your Toy Box server anymore." Errors about the server
 always say "your Toy Box server", since "Toy Box" alone now also names the app.
 
+When Catch Me Up or Send Message launches the app, the system starts it hidden with activation
+prohibited. That launch presents no window and runs as an accessory app outside the Dock, so the
+system quits it once the intent finishes. Windows restored from the last session stay hidden, and
+no extra window opens. Activation or a shown window, from a reopen, Open Channel, the menu bar
+extra or a notification, makes it an ordinary app. Every other launch, Dock click and reopen is
+unchanged.
+
 `script/run` generates `Contents/Resources/Metadata.appintents` by running Xcode's
 `appintentsmetadataprocessor` directly over the const values SwiftPM already emits, so it needs
 Xcode installed but never `xcodebuild`. Titles, phrases and parameter names must stay literals.
