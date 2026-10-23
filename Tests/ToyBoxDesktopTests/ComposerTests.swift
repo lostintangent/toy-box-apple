@@ -128,6 +128,8 @@ struct ComposerTests {
         #expect(ComposerMentionContext.match(text: "a@pixel", selection: .init(location: 7, length: 0)) == nil)
         #expect(ComposerMentionContext.match(text: "@pi", selection: .init(location: 3, length: 1)) == nil)
         #expect(ComposerMentionContext.match(text: "@pi", selection: .init(location: NSNotFound, length: 0)) == nil)
+        // A line break after the token ends it, even though `$` alone would match before one.
+        #expect(ComposerMentionContext.match(text: "@\n", selection: .init(location: 2, length: 0)) == nil)
         let emoji = "\u{1f642} @pi"
         #expect(ComposerMentionContext.match(text: emoji, selection: .init(location: emoji.utf16.count, length: 0))?.range
                 == NSRange(location: 3, length: 3))
@@ -345,21 +347,30 @@ struct ComposerTests {
 
     @Test func tabLeavesTheComposerLikeATextareaUnlessItAcceptsAMention() async throws {
         let draft = ComposerDraft()
-        let host = NSHostingView(rootView: VStack {
-            TextField("Before", text: .constant(""))
-            ComposerInputTestHost(draft: draft)
-            TextField("After", text: .constant(""))
-        })
-        host.frame = NSRect(x: 0, y: 0, width: 400, height: 220)
-        let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        // AppKit neighbors keep these focus moves out of SwiftUI's focus state, which tests running
+        // alongside this one rely on to focus their own fields.
+        let before = NSTextField(string: "")
+        before.placeholderString = "Before"
+        let after = NSTextField(string: "")
+        after.placeholderString = "After"
+        let stack = NSStackView(views: [before, NSHostingView(rootView: ComposerInputTestHost(draft: draft)), after])
+        stack.orientation = .vertical
+        stack.frame = NSRect(x: 0, y: 0, width: 400, height: 220)
+        let window = NSWindow(contentRect: stack.frame, styleMask: [.borderless], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
-        window.contentView = host
-        // The mention popover only shows from a window on screen.
+        window.contentView = stack
+        // The mention popover only shows from an ordered-in window, so keep it out of sight.
+        window.setFrameOrigin(NSPoint(x: -10_000, y: -10_000))
         window.orderFrontRegardless()
-        defer { window.close() }
-        host.layoutSubtreeIfNeeded()
+        defer {
+            // Resigning closes any open mention popover before the window goes.
+            window.makeFirstResponder(nil)
+            window.orderOut(nil)
+            window.close()
+        }
+        stack.layoutSubtreeIfNeeded()
         try await Task.sleep(for: .milliseconds(50))
-        let input = try #require(composerInput(in: host))
+        let input = try #require(composerInput(in: stack))
         func press(_ keyCode: UInt16, _ characters: String, _ modifiers: NSEvent.ModifierFlags = []) async throws {
             input.keyDown(with: try #require(NSEvent.keyEvent(
                 with: .keyDown, location: .zero, modifierFlags: modifiers, timestamp: 0,
@@ -408,6 +419,9 @@ struct ComposerTests {
         #expect(draft.text == "@\t")
         try await type("@")
         try await press(36, "\r", .shift)
+        #expect(draft.text == "@\n")
+        // The new line ends the mention, so Return sends rather than accepting one.
+        try await press(36, "\r")
         #expect(draft.text == "@\n")
     }
 

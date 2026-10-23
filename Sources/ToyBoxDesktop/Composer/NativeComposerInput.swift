@@ -11,7 +11,7 @@ struct ComposerMentionContext {
     static func match(text: String, selection: NSRange) -> ComposerMentionContext? {
         guard selection.length == 0, selection.location >= 0, selection.location <= text.utf16.count else { return nil }
         let prefix = (text as NSString).substring(to: selection.location)
-        guard let regex = try? NSRegularExpression(pattern: "(?:^|[^a-zA-Z0-9-])@([a-zA-Z0-9-]*)$"),
+        guard let regex = try? NSRegularExpression(pattern: "(?:^|[^a-zA-Z0-9-])@([a-zA-Z0-9-]*)\\z"),
               let match = regex.firstMatch(in: prefix, range: NSRange(location: 0, length: prefix.utf16.count))
         else { return nil }
         let queryRange = match.range(at: 1)
