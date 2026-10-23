@@ -37,13 +37,13 @@ struct ChannelTitleMenu<Content: View>: View {
         .fixedSize(horizontal: false, vertical: true)
         .onHover { isHovered = $0 }
         .animation(.easeOut(duration: 0.15), value: isHovered)
-        .help("Switch Channel")
+        // Like AppKit's expansion tooltip, a truncated title's help shows the whole name.
+        .help(fit?.maxWidth == nil ? "Switch Channel" : title)
         .accessibilityLabel(title)
         .accessibilityHint("Shows every channel")
         .padding(.leading, TitleMetrics.systemTitleInset)
         .frame(maxWidth: fit?.maxWidth, alignment: .leading)
     }
-
 }
 
 /// The title menu's metrics, which its fit measures with.

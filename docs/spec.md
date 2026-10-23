@@ -461,7 +461,8 @@ permanent toolbar button. A long name truncates at the tail like the system titl
 control fits down to the 760-point minimum window. NSToolbar never compresses a SwiftUI item, so
 the title takes its width from the detail column. It ends 12 points short of an open inspector
 rather than running over it, and leaves the 20 points NSToolbar needs before the trailing capsule,
-plus 4 of margin. The menu still names the channel in full. Should the toolbar run out of room
+plus 4 of margin. While it's truncated, its help shows the full name instead of Switch Channel,
+like an expansion tooltip, and the menu still names the channel in full. Should the toolbar run out of room
 anyway, Channel Actions overflows first, then Message View, and the title and Overview stay. Keep
 working status in the floating activity row, not duplicated beside the window title.
 
