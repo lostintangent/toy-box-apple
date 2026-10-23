@@ -654,12 +654,29 @@ struct TranscriptTests {
             defer { window.close() }
             view.layoutSubtreeIfNeeded()
             window.displayIfNeeded()
-            #expect(abs(view.fittingSize.height - 80) < 0.5)
+            #expect(abs(view.fittingSize.height - 80) < 0.5, "\(scrollGeometry(in: view, width: width))")
             #expect(abs(view.fittingSize.width - width) < 0.5)
             let strip = try #require(capture.frames["strip"]).rect
             #expect(abs(strip.width - width) < 0.5)
             #expect(abs(strip.maxX - width) < 0.5)
         }
+    }
+
+    /// The measured size and every scroll view's geometry, for a failure on another machine.
+    @MainActor
+    private func scrollGeometry(in view: NSView, width: CGFloat) -> String {
+        func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(descendants) }
+        let scrollers = NSScroller.preferredScrollerStyle == .legacy ? "legacy" : "overlay"
+        let scale = view.window?.backingScaleFactor ?? 0
+        let scrollViews = descendants(view).compactMap { $0 as? NSScrollView }.map { scrollView in
+            let style = scrollView.scrollerStyle == .legacy ? "legacy" : "overlay"
+            let horizontal = scrollView.hasHorizontalScroller
+                ? "\(scrollView.horizontalScroller?.frame ?? .zero)\(scrollView.horizontalScroller?.isHidden == true ? " hidden" : "")"
+                : "none"
+            return "\(scrollView.frame) \(style), content \(scrollView.contentView.frame), document "
+                + "\(scrollView.documentView?.frame ?? .zero), horizontal scroller \(horizontal)"
+        }
+        return "\(view.fittingSize) at \(width) wide, \(scale)x, \(scrollers) scrollers. Scroll views: \(scrollViews)"
     }
 
     @MainActor

@@ -30,19 +30,6 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           persist-credentials: false
-      - name: Diagnose the runner display and scrollbars
-        run: |
-          xcrun swift - <<'SWIFT'
-          import AppKit
-          let application = NSApplication.shared
-          print("AppKit screens: \(NSScreen.screens.count)")
-          for (index, screen) in NSScreen.screens.enumerated() {
-              print("Screen \(index): frame=\(screen.frame), scale=\(screen.backingScaleFactor)")
-          }
-          print("Scroller style: \(NSScroller.preferredScrollerStyle.rawValue) (0=legacy, 1=overlay)")
-          print("Legacy scroller width: \(NSScroller.scrollerWidth(for: .regular, scrollerStyle: .legacy))")
-          print("AppleShowScrollBars: \(UserDefaults.standard.string(forKey: "AppleShowScrollBars") ?? "<unset>")")
-          SWIFT
       - name: Test
         env:
           SCRATCH_PATH: ${{ runner.temp }}/toy-box-tests

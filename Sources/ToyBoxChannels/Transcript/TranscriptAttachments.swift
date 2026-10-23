@@ -54,7 +54,9 @@ struct TranscriptAttachments: View {
             }
             .fixedSize(horizontal: false, vertical: true)
             .padding(-Self.shadowRoom)
-            .scrollIndicators(.hidden)
+            // Never, not hidden: with a mouse or "Always" scroll bars, hidden still shows a legacy
+            // scroller, which would make an overflowing strip 17 points taller than a fitting one.
+            .scrollIndicators(.never)
             .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
             .defaultScrollAnchor(alignment, for: .alignment)
             // The viewer closes into the current image's tile, so the strip keeps that tile in view.

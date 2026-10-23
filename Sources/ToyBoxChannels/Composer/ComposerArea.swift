@@ -32,6 +32,49 @@ struct AttachImagesButton: View {
     }
 }
 
+/// Pending images above the input. It scrolls sideways when they overflow, at one height for every
+/// scroller style.
+struct ComposerImageStrip: View {
+    let draft: ComposerDraft
+
+    var body: some View {
+        ScrollView(.horizontal) {
+            HStack(spacing: 10) {
+                ForEach(draft.images) { image in
+                    VStack(spacing: 4) {
+                        ZStack(alignment: .topTrailing) {
+                            Group {
+                                if let thumbnail = image.image {
+                                    Image(nsImage: thumbnail).resizable().scaledToFill()
+                                } else {
+                                    Image(systemName: "exclamationmark.triangle").foregroundStyle(.orange)
+                                }
+                            }
+                            .frame(width: 56, height: 56)
+                            .clipShape(RoundedRectangle(cornerRadius: 7))
+                            Button { draft.removeImage(id: image.id) } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .symbolRenderingMode(.palette)
+                                    .foregroundStyle(.white, Color.black.opacity(0.7))
+                                    .padding(2)
+                                    .frame(width: 28, height: 28)
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Remove \(image.name)")
+                        }
+                        Text(image.name).font(.system(size: 10)).lineLimit(1).frame(width: 68)
+                    }
+                    .help(image.image == nil ? "\(image.name) must be reattached" : image.name)
+                }
+            }
+            .padding(12)
+        }
+        // `.hidden` still shows a legacy scroller for mouse users, which would grow the strip 17pt.
+        .scrollIndicators(.never)
+    }
+}
+
 private struct ChannelComposer: View {
     let store: ChannelStore
     @Bindable var draft: ComposerDraft
@@ -274,7 +317,7 @@ private struct ChannelComposer: View {
                 ComposerTray(state: state, api: store.api)
                 hairline
             }
-            if !draft.images.isEmpty { imageStrip }
+            if !draft.images.isEmpty { ComposerImageStrip(draft: draft) }
             ZStack(alignment: .topLeading) {
                 if draft.text.isEmpty && !dictation.hasWords {
                     Text(dictation.isListening ? "Listening…" : placeholder)
@@ -344,42 +387,6 @@ private struct ChannelComposer: View {
         .onDrop(of: [UTType.fileURL, .image], isTargeted: $isDragging) { providers in
             providers.map { draft.attachProvider($0) }.contains(true)
         }
-    }
-
-    private var imageStrip: some View {
-        ScrollView(.horizontal) {
-            HStack(spacing: 10) {
-                ForEach(draft.images) { image in
-                    VStack(spacing: 4) {
-                        ZStack(alignment: .topTrailing) {
-                            Group {
-                                if let thumbnail = image.image {
-                                    Image(nsImage: thumbnail).resizable().scaledToFill()
-                                } else {
-                                    Image(systemName: "exclamationmark.triangle").foregroundStyle(.orange)
-                                }
-                            }
-                            .frame(width: 56, height: 56)
-                            .clipShape(RoundedRectangle(cornerRadius: 7))
-                            Button { draft.removeImage(id: image.id) } label: {
-                                Image(systemName: "xmark.circle.fill")
-                                    .symbolRenderingMode(.palette)
-                                    .foregroundStyle(.white, Color.black.opacity(0.7))
-                                    .padding(2)
-                                    .frame(width: 28, height: 28)
-                                    .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel("Remove \(image.name)")
-                        }
-                        Text(image.name).font(.system(size: 10)).lineLimit(1).frame(width: 68)
-                    }
-                    .help(image.image == nil ? "\(image.name) must be reattached" : image.name)
-                }
-            }
-            .padding(12)
-        }
-        .scrollIndicators(.hidden)
     }
 
     private func audience(_ state: ChannelState) -> some View {

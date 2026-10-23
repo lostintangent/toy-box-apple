@@ -492,8 +492,10 @@ struct SidebarConnectionFooterTests {
     }
 
     /// The center of the footer's dot, found by its color, in points from the leading edge and
-    /// from the bottom edge, and where the host's gray ink ends on the status line.
-    private func sample(_ window: NSWindow, dominant channel: Int) throws -> (dot: CGPoint?, textEnd: CGFloat) {
+    /// from the bottom edge, where the host's gray ink ends on the status line, and the capture's
+    /// pixels per point.
+    private func sample(_ window: NSWindow, dominant channel: Int) throws
+        -> (dot: CGPoint?, textEnd: CGFloat, scale: CGFloat) {
         let view = try #require(window.contentView)
         view.layoutSubtreeIfNeeded()
         let bitmap = try #require(view.bitmapImageRepForCachingDisplay(in: view.bounds))
@@ -517,16 +519,20 @@ struct SidebarConnectionFooterTests {
         }
         let dot = count > 3 * scale * scale
             ? CGPoint(x: sum.x / count / scale, y: footerSize.height - sum.y / count / scale) : nil
-        return (dot, CGFloat(textEnd) / scale)
+        return (dot, CGFloat(textEnd) / scale, scale)
     }
 
     @Test func theDotSharesTheIconEdgeAndClearsTheCornerEvenly() async throws {
         let healthy = hostFooter(.connected)
         defer { healthy.close() }
         try await Task.sleep(for: .milliseconds(100))
-        let connected = try #require(try sample(healthy, dominant: 1).dot)
-        #expect(abs(connected.x - (SidebarConnectionFooter.leading + 3.5)) < 0.5)
-        #expect(abs(connected.y - 24) < 0.5)
+        let capture = try sample(healthy, dominant: 1)
+        let connected = try #require(capture.dot)
+        // An odd-sized dot centered on a whole point lands half a point off at 1x, so the absolute
+        // position allows one physical pixel.
+        let pixel = 1 / capture.scale
+        #expect(abs(connected.x - (SidebarConnectionFooter.leading + 3.5)) <= pixel)
+        #expect(abs(connected.y - 24) <= pixel, "Dot at \(connected) at \(capture.scale)x")
         // The error block grows the footer upward, so the dot never moves.
         let broken = hostFooter(.unreachable, error: "Could not connect to the server.")
         defer { broken.close() }

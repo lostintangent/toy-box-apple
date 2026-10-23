@@ -477,6 +477,47 @@ struct ComposerTests {
                 "The heading should be primary ink like an open task's title, not the tray's secondary (\(headingInk) vs \(titleInk))")
     }
 
+    /// Mouse users get legacy scrollers, which `.hidden` still shows. Run with `-AppleShowScrollBars Always`
+    /// to exercise that locally. GitHub's runners use legacy scrollers already.
+    @Test func imageStripKeepsOneHeightWhenItsImagesOverflowAndStillScrolls() async throws {
+        let draft = ComposerDraft()
+        for _ in 0..<6 { draft.append(try sampleImage()) }
+        var heights: [CGFloat] = []
+        var geometry: [String] = []
+        // Six 68pt tiles need 482pt, so they overflow at 160 and fit at 640.
+        for width: CGFloat in [160, 640] {
+            let view = NSHostingView(rootView: ComposerImageStrip(draft: draft)
+                .frame(width: width)
+                .fixedSize(horizontal: false, vertical: true))
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: width, height: 200),
+                                  styleMask: [.borderless], backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            window.contentView = view
+            defer { window.close() }
+            view.layoutSubtreeIfNeeded()
+            window.displayIfNeeded()
+            heights.append(view.fittingSize.height)
+            func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(descendants) }
+            let scrollViews = descendants(view).compactMap { $0 as? NSScrollView }
+            geometry.append("\(view.fittingSize) at \(width): " + scrollViews.map {
+                "\($0.frame.size) horizontal scroller \($0.hasHorizontalScroller ? "\($0.horizontalScroller?.frame.size ?? .zero)" : "none")"
+            }.joined(separator: ", "))
+
+            // Hiding the scroller must not strand the overflow: a trackpad or Shift-wheel still reaches it.
+            guard width == 160 else { continue }
+            let scrollView = try #require(scrollViews.first)
+            for _ in 0..<60 where scrollView.contentView.bounds.minX <= 0 {
+                let notch = try #require(CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 2,
+                                                 wheel1: 0, wheel2: -3, wheel3: 0))
+                scrollView.scrollWheel(with: try #require(NSEvent(cgEvent: notch)))
+                try await Task.sleep(for: .milliseconds(16))
+            }
+            #expect(scrollView.contentView.bounds.minX > 0, "The overflowing strip should scroll sideways")
+        }
+        let style = NSScroller.preferredScrollerStyle == .legacy ? "legacy" : "overlay"
+        #expect(heights[0] == heights[1], "\(style) scrollers. \(geometry.joined(separator: "; "))")
+    }
+
     @Test func dictationTranscriptJoinsTranscriberSegmentsAndPadsAgainstTheDraft() {
         var transcript = DictationTranscript()
         let changed = transcript.receive(" Can you tighten the sidebar", isFinal: false)
@@ -769,10 +810,22 @@ struct ComposerTests {
         }
     }
 
-    @Test func theRealTranscriberHearsARecordingThroughTheAudioSourceProtocol() async throws {
-        guard let locale = await DictationTranscriber.supportedLocale(equivalentTo: Locale(identifier: "en_US")),
-              try await AssetInventory.assetInstallationRequest(
-                supporting: [DictationRecognizer.transcriber(for: locale)]) == nil else {
+    /// Whether SpeechAnalyzer's on-device English dictation model is installed. A failed inventory query
+    /// throws rather than reading as a missing model.
+    static func hasEnglishDictationModel() async throws -> Bool {
+        guard let locale = await DictationTranscriber.supportedLocale(equivalentTo: Locale(identifier: "en_US"))
+        else { return false }
+        return try await AssetInventory.assetInstallationRequest(
+            supporting: [DictationRecognizer.transcriber(for: locale)]) == nil
+    }
+
+    // GitHub's runners ship without the model, so CI skips this test. Locally it stays a requirement.
+    @Test(.disabled("This CI runner has no on-device English (en_US) dictation model for SpeechAnalyzer") {
+        guard ProcessInfo.processInfo.environment["CI"] != nil else { return false }
+        return try await !ComposerTests.hasEnglishDictationModel()
+    })
+    func theRealTranscriberHearsARecordingThroughTheAudioSourceProtocol() async throws {
+        guard try await Self.hasEnglishDictationModel() else {
             Issue.record("The on-device English dictation model is required for this test")
             return
         }
