@@ -300,6 +300,24 @@ struct TranscriptCatchUpCard: View {
     }
 }
 
+/// What leads a summary line: the pending request's state, or its first source's sender, which
+/// for a channel event is that event's own symbol as the transcript draws it.
+enum TranscriptCatchUpSlot: Equatable {
+    case need(isReplied: Bool)
+    case avatar(String)
+    case event(String?)
+    case unknown
+
+    /// `isReplied` is nil unless the line is the Needs You line.
+    init(line: CatchUp.Line, state: ChannelState, isReplied: Bool?) {
+        if let isReplied { self = .need(isReplied: isReplied); return }
+        let source = state.messages.first { $0.sequence == line.sources.first }
+        if let agentId = source?.sender.agentId { self = .avatar(agentId) }
+        else if let event = source?.system { self = .event(event.type) }
+        else { self = .unknown }
+    }
+}
+
 private struct TranscriptCatchUpLine: View {
     struct Need {
         var isReplied: Bool
@@ -310,6 +328,7 @@ private struct TranscriptCatchUpLine: View {
     let need: Need?
     @Environment(ChannelInteraction.self) private var interaction
     @Environment(\.channelTextScale) private var textScale
+    @Environment(\.colorScheme) private var colorScheme
     @ViewState private var isHovered = false
     @ViewState private var shownHeight: CGFloat = 0
     @ViewState private var fullHeight: CGFloat = 0
@@ -360,14 +379,18 @@ private struct TranscriptCatchUpLine: View {
     }
 
     @ViewBuilder private var slot: some View {
-        if let need {
-            Image(systemName: need.isReplied ? "checkmark" : "questionmark.bubble.fill")
-                .font(.system(size: 13, weight: need.isReplied ? .semibold : .regular))
-                .foregroundStyle(need.isReplied ? Color.secondary : Color.orange)
-        } else if let message = state.messages.first(where: { $0.sequence == line.sources.first }),
-                  let agentId = message.sender.agentId {
+        switch TranscriptCatchUpSlot(line: line, state: state, isReplied: need?.isReplied) {
+        case .need(let isReplied):
+            Image(systemName: isReplied ? "checkmark" : "questionmark.bubble.fill")
+                .font(.system(size: 13, weight: isReplied ? .semibold : .regular))
+                .foregroundStyle(isReplied ? Color.secondary : Color.orange)
+        case .avatar(let agentId):
             AgentAvatarView(agent: channelAgentIdentity(state.agents, id: agentId), size: 16)
-        } else {
+        case .event(let type):
+            Image(systemName: TranscriptSystemMessages.symbol(for: type))
+                .font(.system(size: 13))
+                .foregroundStyle(TranscriptSystemMessages.symbolColor(for: type, in: colorScheme))
+        case .unknown:
             Image(systemName: "info.circle")
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)

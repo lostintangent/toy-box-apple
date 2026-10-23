@@ -111,6 +111,7 @@ struct ConversationTranscript: View {
 
     private func observedScroll(state: ChannelState, proxy: ScrollViewProxy) -> some View {
         scrollViewport(state: state, proxy: proxy)
+            .onChange(of: followsLatest, initial: true) { window.pinsToBottom = followsLatest }
             .onChange(of: interaction.jumpToLatestRequest) {
                 catchUp?.isPinned = false
                 pagingAnchor = nil
@@ -185,6 +186,7 @@ struct ConversationTranscript: View {
             if update.landsJump { pendingJump = nil }
             switch update.follow {
             case .latest:
+                if window.holdsResizePin { break }
                 // Floating controls and composer growth change only the unobscured height.
                 let animation: Animation? = reduceMotion || old.contentHeight != new.contentHeight
                     ? nil : .easeOut(duration: 0.2)
@@ -278,6 +280,12 @@ struct ConversationTranscript: View {
     }
 
     private var showsJumpToLatest: Bool { !isAtBottom && hasLanded }
+
+    /// When a resize should keep the newest message in place, as the geometry action's follow does.
+    private var followsLatest: Bool {
+        isAtBottom && hasLanded && pagingAnchor == nil && !isRevealing && !isUserScrolling && pendingJump == nil
+            && catchUp?.holdsLanding != true
+    }
 
     private func floatingControls(state: ChannelState) -> some View {
         let hasWorkingAgents = store.phase.isLive && state.agents.contains {

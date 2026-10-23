@@ -447,6 +447,52 @@ struct TranscriptTests {
     }
 
     @MainActor
+    @Test func theNewestMessageStaysPinnedWhileTheWindowResizes() async throws {
+        let harness = try await TranscriptHarness(messages: (1...40).map(transcriptTestMessage), resizable: true)
+        defer { harness.close() }
+
+        // One size per display frame, as a live resize does: taller and back, shorter and back, then a zoom.
+        let steps: [CGFloat] = transcriptResizeSteps(by: 4, count: 60) + transcriptResizeSteps(by: -4, count: 40)
+            + [900, 480]
+        var gaps: [(size: CGSize, drawn: CGFloat, nextFrame: CGFloat)] = []
+        func step(width: CGFloat = 520, height: CGFloat = 480) async throws {
+            harness.resize(width: width, height: height)
+            let drawn = harness.bottomGap
+            try await harness.settle(for: .milliseconds(16))
+            gaps.append((CGSize(width: width, height: height), drawn, harness.bottomGap))
+        }
+        for height in steps { try await step(height: height) }
+        // Narrowing rewraps every message, so the content grows in the same pass as the window shrinks.
+        for width in transcriptResizeSteps(by: -4, count: 40).map({ $0 + 40 }) { try await step(width: width) }
+        for width in [360, 760, 520] as [CGFloat] { try await step(width: width, height: 600) }
+        let worst = gaps.max { max(abs($0.drawn), abs($0.nextFrame)) < max(abs($1.drawn), abs($1.nextFrame)) }
+        #expect(gaps.allSatisfy { abs($0.drawn) < 1 && abs($0.nextFrame) < 1 },
+                "Worst step: \(String(describing: worst))")
+        #expect(harness.readRequests == 0)
+    }
+
+    @MainActor
+    @Test func aReaderScrolledUpKeepsTheirPlaceWhileTheWindowResizes() async throws {
+        let harness = try await TranscriptHarness(messages: (1...40).map(transcriptTestMessage), resizable: true)
+        defer { harness.close() }
+
+        try await harness.scrollUp(byWheel: TranscriptHarness.wheelEventsApply) { harness.bottomGap > 400 }
+        let reading = harness.visibleFrames()
+        try #require(reading.count >= 3)
+        for height in transcriptResizeSteps(by: 4, count: 40) {
+            harness.resize(height: height)
+            try await harness.settle(for: .milliseconds(16))
+        }
+        try await harness.settle(for: .milliseconds(300))
+        for (id, rect) in reading {
+            let after = harness.capture.frames[id]?.rect ?? .null
+            #expect(abs(after.minY - rect.minY) < 1, "\(id) moved from \(rect) to \(after)")
+        }
+        #expect(harness.bottomGap > 300)
+        #expect(harness.readRequests == 0)
+    }
+
+    @MainActor
     @Test func scrollingIntoOlderHistoryKeepsTheReaderInPlace() async throws {
         let harness = try await TranscriptHarness(messages: (61...90).map(transcriptTestMessage),
                                                   history: (1...60).map(transcriptTestMessage),
@@ -1751,6 +1797,29 @@ struct TranscriptCatchUpTests {
         #expect(!catchUp.holdsLanding)
     }
 
+    @Test func aLineFromAChannelEventLeadsWithThatEventsOwnSymbol() {
+        var state = catchUpTestState()
+        for (index, type) in [(11, "tasks_completed"), (12, "a_future_event")] {
+            state.messages[index] = ChannelMessage(id: "m\(index + 1)", sequence: index + 1,
+                                                   timestamp: "2026-10-22T12:00:00Z", sender: .system,
+                                                   content: .system(.init(type: type)))
+        }
+        func slot(_ source: Int, isReplied: Bool? = nil) -> TranscriptCatchUpSlot {
+            TranscriptCatchUpSlot(line: .init(text: "Line", sources: [source]), state: state, isReplied: isReplied)
+        }
+        #expect(slot(12) == .event("tasks_completed"))
+        #expect(TranscriptSystemMessages.symbol(for: "tasks_completed") == "checkmark.circle.fill")
+        for scheme in [ColorScheme.light, .dark] {
+            #expect(TranscriptSystemMessages.symbolColor(for: "tasks_completed", in: scheme)
+                    == ChannelTaskColors.changes(in: scheme).added)
+        }
+        #expect(slot(13) == .event("a_future_event"))
+        #expect(TranscriptSystemMessages.symbol(for: "a_future_event") == "info.circle")
+        #expect(slot(11) == .avatar("lead"))
+        #expect(slot(12, isReplied: true) == .need(isReplied: true))
+        #expect(slot(99) == .unknown)
+    }
+
     @Test func aFailedUpdateKeepsTheSummaryAndUpdateTriesAgain() async throws {
         let newer = CatchUp(needsYou: nil, changes: [.init(text: "Ada shipped the beta.", sources: [34])], through: 36)
         let service = StubChannelIntelligence(results: [.ready(summary), .declined, .ready(newer)])
@@ -1936,6 +2005,12 @@ func transcriptTestMessage(_ sequence: Int) -> ChannelMessage {
                    content: .text("Update \(sequence) has enough words to wrap onto a second line here."))
 }
 
+/// Heights from 480 out by `count` steps and back again, like dragging the bottom edge and returning.
+func transcriptResizeSteps(by step: CGFloat, count: Int) -> [CGFloat] {
+    let out = (1...count).map { 480 + CGFloat($0) * step }
+    return out + out.dropLast().reversed() + [480]
+}
+
 /// Hosts the real transcript against an in-memory channel server. The window never becomes key, so
 /// the transcript must never acknowledge what it shows.
 @MainActor
@@ -1949,8 +2024,9 @@ private final class TranscriptHarness {
     private let window: NSWindow
 
     /// Lands at the bottom unless `seenThrough` leaves messages unread, in which case it lands at the first.
+    /// A `resizable` transcript fills the window, so `resize(height:)` reaches it the way a live resize does.
     init(messages: [ChannelMessage], history: [ChannelMessage] = [], holdsHistory: Bool = false,
-         seenThrough: Int? = nil, height: CGFloat = 480,
+         seenThrough: Int? = nil, height: CGFloat = 480, resizable: Bool = false,
          intelligence: any ChannelIntelligenceService = LiveChannelIntelligence.shared) async throws {
         let host = "transcript-\(UUID().uuidString.lowercased()).invalid"
         let latest = messages.last?.sequence ?? 0
@@ -1975,7 +2051,8 @@ private final class TranscriptHarness {
             .environment(interaction)
             .environment(ArtifactOpener())
             .environment(\.channelIntelligence, intelligence)
-            .frame(width: 520, height: height))
+            .frame(width: resizable ? nil : 520, height: resizable ? nil : height))
+        if resizable { view.sizingOptions = [] }
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: height),
                               styleMask: [.borderless], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
@@ -2075,6 +2152,14 @@ private final class TranscriptHarness {
         }
         try #require(condition(), "Stopped at \(clip.bounds.minY) with a gap of \(bottomGap)")
         try await settle(for: .milliseconds(300))
+    }
+
+    /// Moves the bottom or right edge as dragging it does: AppKit lays out and draws the new size synchronously.
+    func resize(width: CGFloat? = nil, height: CGFloat? = nil) {
+        let frame = window.frame
+        let size = CGSize(width: width ?? frame.width, height: height ?? frame.height)
+        window.setFrame(NSRect(x: frame.minX, y: frame.maxY - size.height, width: size.width, height: size.height),
+                        display: true)
     }
 
     func push(_ message: ChannelMessage, revision: Int) {

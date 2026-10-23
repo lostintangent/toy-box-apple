@@ -28,10 +28,68 @@ final class TranscriptWindowObserver {
             }
             notifications.append(token)
         }
+        if let scroll { observeResizes(of: scroll) }
     }
 
     /// The clip view's offset as AppKit has it, which can run ahead of SwiftUI's geometry after a clamp.
     var scrollOffset: CGFloat? { scrollView?.contentView.bounds.minY }
+
+    /// Whether the transcript is following its newest message. A window resize then keeps the end of the
+    /// content at the bottom of the viewport in the same layout pass that draws the new size. SwiftUI's
+    /// follow lands a frame or more later, which a live resize shows as the newest message drifting.
+    @ObservationIgnored var pinsToBottom = false
+    @ObservationIgnored private var isResizing = false
+
+    private func observeResizes(of scroll: NSScrollView) {
+        let clip = scroll.contentView
+        clip.postsFrameChangedNotifications = true
+        notifications.append(NotificationCenter.default.addObserver(
+            forName: NSView.frameDidChangeNotification, object: clip, queue: nil) { [weak self] _ in
+            MainActor.assumeIsolated { self?.containerResized() }
+        })
+        guard let document = scroll.documentView else { return }
+        document.postsFrameChangedNotifications = true
+        notifications.append(NotificationCenter.default.addObserver(
+            forName: NSView.frameDidChangeNotification, object: document, queue: nil) { [weak self] _ in
+            MainActor.assumeIsolated {
+                // Rewrapping for a new width resizes the content after the container, in the same pass.
+                guard let self, self.isResizing || self.window?.inLiveResize == true else { return }
+                self.pinToBottom()
+            }
+        })
+    }
+
+    private func containerResized() {
+        pinToBottom()
+        guard !isResizing else { return }
+        isResizing = true
+        RunLoop.main.perform { [weak self] in
+            MainActor.assumeIsolated { self?.isResizing = false }
+        }
+    }
+
+    /// Whether a resize has already pinned the transcript to its end during this layout pass, so a
+    /// SwiftUI follow would only move it. SwiftUI rests its own follow a point short of the end.
+    var holdsResizePin: Bool {
+        guard pinsToBottom, isResizing || window?.inLiveResize == true,
+              let bottom = bottomOffset, let clip = scrollView?.contentView else { return false }
+        return abs(clip.bounds.minY - bottom) <= 0.25
+    }
+
+    private var bottomOffset: CGFloat? {
+        guard let scrollView, let document = scrollView.documentView, document.isFlipped else { return nil }
+        let clip = scrollView.contentView
+        let end = document.frame.height + scrollView.contentInsets.bottom - clip.bounds.height
+        return max(-scrollView.contentInsets.top, end)
+    }
+
+    private func pinToBottom() {
+        guard pinsToBottom, let scrollView, let bottom = bottomOffset else { return }
+        let clip = scrollView.contentView
+        guard abs(clip.bounds.minY - bottom) > 0.25 else { return }
+        clip.scroll(to: NSPoint(x: clip.bounds.minX, y: bottom))
+        scrollView.reflectScrolledClipView(clip)
+    }
 
     func scroll(by delta: CGFloat) {
         guard let scrollView, let document = scrollView.documentView, delta.isFinite else { return }
@@ -56,6 +114,7 @@ final class TranscriptWindowObserver {
         scrollView = nil
         window = nil
         isKeyWindow = false
+        isResizing = false
     }
 }
 
