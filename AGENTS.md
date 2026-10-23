@@ -7,9 +7,9 @@ for parity, protocol and design. Read its Design section before changing any vie
 
 - Build only with Command Line Tools. Never use `xcodebuild`, because the Xcode license is not
   accepted on this machine.
-- Target macOS 26 or later with Swift tools 6.2 or later. `script/run` stamps the real SDK
+- Target macOS 27 or later on Apple Silicon with Swift tools 6.4 or later. `script/run` stamps the real SDK
   version before signing. Use its bundle for native visual checks, not SwiftPM's unstamped
-  executable. `script/validate` rejects bundles whose recorded SDK is below macOS 26.
+  executable. `script/validate` rejects bundles whose recorded SDK is below macOS 27.
 - Use your own scratch path so parallel builds never share `.build`:
   - `DEVELOPER_DIR=/Library/Developer/CommandLineTools swift build --scratch-path /tmp/tbm-<you>`
   - `SCRATCH_PATH=/tmp/tbm-<you> ./script/test` runs the suite with the Command Line Tools
@@ -38,7 +38,7 @@ for parity, protocol and design. Read its Design section before changing any vie
   argument domain, and refuses application-state saving/restoration. Attached native sheets
   render their own layer trees into the parent PNG. These static renders do not prove native
   interaction or capture WindowServer shadows and corner masks.
-  With the real 26+ SDK stamp, they also misrender Liquid Glass and sidebar selection. Use
+  With the real 27+ SDK stamp, they also misrender Liquid Glass and sidebar selection. Use
   them for layout evidence only. Verify materials, selection and scroll-edge effects in a real window.
 - Computer Use approves apps by bundle ID. A path is refused. The user's copy is
   `dev.toybox.channels.mac`. Agents test as `dev.toybox.channels.mac.test` ("Toy Box Channels
@@ -73,6 +73,27 @@ for parity, protocol and design. Read its Design section before changing any vie
   reimplement reducer, audience, task, attention or transcript-grouping rules. Ask Core for a
   domain or store change instead of working around it in a view.
 - `TranscriptView` is ChannelKit's message filter enum, so SwiftUI views use other names.
+
+## Releases
+
+- `script/release vX.Y.Z` reuses `script/run` in release configuration and builds arm64 only.
+  Set a pinned `SIGNING_IDENTITY` SHA-1 and a monotonically increasing `BUILD_NUMBER`.
+  It uses hardened runtime, a secure timestamp and only the audio-input entitlement.
+  Do not use `codesign --deep` for distribution or export all identities from a keychain.
+- Local release builds use Command Line Tools. GitHub Actions uses the explicitly selected
+  Xcode 27 on `xcode-27`; `DEVELOPER_DIR` is honored by both build and test scripts.
+- Set `NOTARY_PROFILE=toy-box-channels-notary` for notarization, stapling and Gatekeeper
+  validation. Without it, output is conspicuously `SIGNED-UNNOTARIZED` and not for publishing.
+- The certificate owner runs `script/setup-release-secrets`; agents must not run it or inspect
+  private keys/passwords. It exports only the specified certificate identity, stores local
+  notary credentials and uploads repo secrets. Never create or set those secrets on their behalf.
+- Push a `vX.Y.Z` tag only with release approval. The workflow tests before signing, cleans its
+  temporary keychain, and publishes the zip/checksum through a separate write-scoped job.
+  `workflow_dispatch` on `main` builds the same notarized artifact without creating a release.
+- The app icon's only source is `Resources/AppIcon.icon` (Designer). After changing it, run
+  `script/icon` to regenerate `Resources/AppIcon.icns` and commit both. Builds never render it.
+- Keep `Resources/AppIcon.icns` consistent across local and GitHub bundles. Never alter the
+  user's installed validation bundle or microphone permission state to test a release.
 
 ## Source ownership
 

@@ -1,7 +1,7 @@
 # Toy Box Channels for Mac
 
-A native SwiftUI client for the public Toy Box Channels API. Requires macOS 26 or later and
-Swift 6.2 or later Command Line Tools. No Xcode project or Xcode license is needed.
+A native SwiftUI client for the public Toy Box Channels API. Requires macOS 27 or later on
+Apple Silicon and Swift 6.4 or later Command Line Tools. No Xcode project or Xcode license is needed.
 
 ```sh
 ./script/run
@@ -11,8 +11,72 @@ The script builds with Command Line Tools, assembles and ad-hoc signs
 `.build/Toy Box Channels.app`, and opens it. Use `./script/run --no-open` to build the bundle only.
 Before signing, it records the actual SDK version in the bundled executable's Mach-O build
 command so macOS enables its native Liquid Glass behavior instead of compatibility styling.
-`script/validate` refuses to swap or launch a bundle whose recorded SDK is below macOS 26.
+`script/validate` refuses to swap or launch a bundle whose recorded SDK is below macOS 27.
 The server defaults to `http://localhost:3100` and is configurable in Settings.
+
+## Releasing
+
+Releases are Apple Silicon only, target macOS 27+, and use Developer ID signing
+with hardened runtime. Dictation's audio-input entitlement is the only added entitlement. The
+same `script/run` bundle assembly and SDK stamp serve development and distribution. Local
+builds default to Command Line Tools. CI explicitly selects Xcode 27 on GitHub's `xcode-27`
+runner, whose [published inventory](https://github.com/actions/runner-images/blob/main/images/macos/xcode-27-arm64-Readme.md)
+includes the macOS 27 SDK. Build scripts reject SDKs older than 27.
+
+**One-time setup, run by the certificate owner.** Find the SHA-1 with
+`security find-identity -v -p codesigning`. Choose one **Developer ID Application** identity,
+not Apple Development, even if two identities have the same name. Create an App Store Connect
+team API key with Developer access, download its `.p8`, and run:
+
+```sh
+./script/setup-release-secrets SHA1 /path/to/AuthKey.p8 KEY_ID ISSUER_ID
+```
+
+The repository defaults to `gh repo view`, or pass `OWNER/REPO` as the fifth argument.
+This exports only the pinned identity to a temporary password-protected p12, stores the local
+notarization profile `toy-box-channels-notary`, and uploads six repository secrets with `gh`:
+`MACOS_SIGNING_CERTIFICATE`, `MACOS_SIGNING_PASSWORD`, `MACOS_SIGNING_IDENTITY`,
+`APP_STORE_CONNECT_PRIVATE_KEY`, `APP_STORE_CONNECT_KEY_ID`, and `APP_STORE_CONNECT_ISSUER_ID`.
+It never prints secret values and deletes the temporary export on exit. Keep the original
+`.p8` outside the repository. Keychain access may ask you to authorize export or codesign.
+
+**Publish.** Push a `vX.Y.Z` tag. Actions tests the tagged code, imports the identity into an
+ephemeral keychain, builds, signs, notarizes, staples and validates the app, then creates a
+GitHub Release with the zip and `.sha256` file. The publish job alone has `contents: write`.
+The build number is the workflow run number plus its attempt, so reruns increase it too.
+The keychain and temporary private keys are cleaned even when a step fails.
+CI imports Apple's public G1 Developer ID intermediate with a pinned SHA-256 and restores
+the original keychain search list during cleanup. A rejected submission prints its notarization log.
+Use **Actions > Build and release > Run workflow** on `main` for the same signed/notarized
+pipeline without publishing. Its zip and checksum are retained as an artifact for 14 days.
+Setup secrets are required for that dry run too.
+
+**Certificate renewal.** The current Developer ID leaf and its G1 intermediate both expire on
+February 1, 2027. Timestamped, notarized releases remain valid after certificate expiry, but new
+releases must use a renewed **G2 Developer ID Application** certificate. Before that date,
+create the G2 identity, pin its new SHA-1 and rerun secret setup. Update the workflow's public
+intermediate URL and SHA-256 to Apple's matching G2 certificate at the same time.
+
+**Build locally.**
+
+```sh
+SIGNING_IDENTITY=SHA1 BUILD_NUMBER=1.1 NOTARY_PROFILE=toy-box-channels-notary \
+  ./script/release v0.1.0
+```
+
+Choose a build number higher than the last distributed build, using Apple's numeric
+`major[.minor[.patch]]` format. `CFBundleShortVersionString` comes from the release tag.
+The outputs are in `dist/`, with build products in `.build/distribution/`; override with
+`OUTPUT_DIR` and `SCRATCH_PATH`. The app is verified with `codesign --verify --strict`,
+`stapler validate` and Gatekeeper before packaging with `ditto --keepParent`.
+Check downloads with `shasum -a 256 -c *.sha256`.
+
+Without `NOTARY_PROFILE`, the script deliberately creates a `SIGNED-UNNOTARIZED` archive
+and warns that Gatekeeper will reject downloaded copies. This is for signing checks, not
+normal distribution. Never bypass a Gatekeeper warning during validation. Signing and
+notarization credentials must never be committed or sent in chat.
+
+## Development
 
 ```sh
 SCRATCH_PATH=/tmp/tbm-core ./script/test
@@ -122,7 +186,7 @@ messages read.
 Attached native sheets are included by rendering their own layer trees into the parent image.
 These are app-owned static renders, not WindowServer captures of window shadows or corner masks,
 and complement rather than replace native interaction checks.
-With the macOS 26+ SDK behavior enabled, offscreen rendering also does not faithfully reproduce
+With the macOS 27 SDK behavior enabled, offscreen rendering also does not faithfully reproduce
 Liquid Glass, sidebar selection or scroll-edge effects. Use these PNGs as layout evidence only,
 and assess materials and selection in the real window.
 

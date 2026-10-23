@@ -23,11 +23,11 @@ if ! awk '
     $1 == "sdk" {
         found = 1
         split($2, version, ".")
-        if ($2 !~ /^[0-9]+([.][0-9]+)*$/ || version[1] + 0 < 26) invalid = 1
+        if ($2 !~ /^[0-9]+([.][0-9]+)*$/ || version[1] + 0 < 27) invalid = 1
     }
     END { exit(!found || invalid) }
 ' <<<"$BUILD_VERSION"; then
-    echo "Validation requires a bundle stamped with macOS SDK 26 or later." >&2
+    echo "Validation requires a bundle stamped with macOS SDK 27 or later." >&2
     echo "$BUILD_VERSION" >&2
     exit 1
 fi

@@ -29,7 +29,7 @@ Reference sources (read-only):
 
 ## Architecture
 
-- Swift 6 (package tools 6.2) and SwiftUI on macOS 26 or later, using AppKit only where SwiftUI
+- Swift 6.4 (package tools 6.4) and SwiftUI on macOS 27 or later, Apple Silicon only, using AppKit where SwiftUI
   falls short (text input, for example). The project is a Swift package built with `swift build`
   from Command Line Tools, so it needs no Xcode project or Xcode license. A script assembles and
   launches a signed-ad-hoc `.app` bundle, stamping the binary with the installed SDK version so
@@ -255,9 +255,9 @@ displacement at 1280 x 840 and 760 x 560 in both appearances.
 
 Builds before 2026-10-22 were linked with an SDK stamp of 15.0, so macOS 27 drew them in
 compatibility mode without Liquid Glass. That, plus the opaque unified toolbar band added during
-the visual pass, is why the app read as dated. The app now targets macOS 26 and later, links
-against the installed SDK, and `script/validate` fails when the bundle's SDK stamp is below 26.
-There is no fallback appearance for older systems and no availability branching in views.
+the visual pass, is why the app read as dated. The app now requires macOS 27 on Apple Silicon,
+links against the installed SDK, and `script/validate` fails when the bundle's SDK stamp is below
+27. There is no fallback appearance and no availability branching in views.
 
 **Layers.** Content is one opaque layer made of the sidebar list, the conversation and the
 inspector. Liquid Glass is reserved for the navigation layer above it: toolbar controls, the
@@ -270,16 +270,16 @@ glass element. Custom `glassEffect` appears only on the surfaces this section na
 `.windowToolbarStyle(.unified)`, and set no `toolbarBackground`, `toolbarBackgroundVisibility`
 or column title plate anywhere. Never draw our own rule or band under the toolbar. The
 conversation and the inspector scroll beneath the toolbar, and a top scroll-edge effect
-separates content from the controls. The conversation keeps the system's automatic top edge. On
-macOS 27 that draws the unified toolbar's crisp 1-point divider, even at rest, and on macOS 26 a
-soft blur while content is beneath. Never force a top style on the conversation.
+separates content from the controls. The conversation keeps the system's automatic top edge,
+which draws the unified toolbar's crisp 1-point divider, even at rest. Never force a top style on
+the conversation.
 
-The inspector is the one exception. Its automatic top edge renders exactly like the soft style,
-which macOS 27 no longer draws at the top, so its rows scroll straight into the glass controls and the toolbar's
-divider stops at the inspector's leading edge. Give the inspector's `ScrollView`
-`.scrollEdgeEffectStyle(.hard, for: .top)`. On macOS 27 that continues the same divider at the
-same height across the inspector, so the toolbar reads as one unified band, and it keeps a
-dense column of 11-point status text from running under the controls on either system.
+The inspector is the one exception. Its automatic top edge resolves to the soft style, which the
+system doesn't draw at the top, so its rows scroll straight into the glass controls and the
+toolbar's divider stops at the inspector's leading edge. Give the inspector's `ScrollView`
+`.scrollEdgeEffectStyle(.hard, for: .top)`. That continues the same divider at the same height
+across the inspector, so the toolbar reads as one unified band, and it keeps a dense column of
+11-point status text from running under the controls.
 
 The detail toolbar shows the channel name in the system title position. Its trailing items form
 two `.primaryAction` groups. Message View and Channel Actions share one glass group, then
@@ -289,10 +289,9 @@ Pages. The only custom toolbar tint is the active
 Message View filter symbol.
 
 **Sidebar.** The `NavigationSplitView` sidebar runs the full window height with the traffic
-lights over its top, and the system decides its shape. On macOS 27 it runs flush to the window's
-leading, top and bottom edges with no margin, as Finder and Mail do. On macOS 26 the system
-floats it as an inset glass panel. Do not set a sidebar or list background, and never imitate
-either shape by hand. Inactive windows render the sidebar and inspector materials as flat fills,
+lights over its top, and the system decides its shape. It runs flush to the window's leading,
+top and bottom edges with no margin, as Finder and Mail do. Do not set a sidebar or list
+background, and never imitate the shape by hand. Inactive windows render the sidebar and inspector materials as flat fills,
 which is expected. Replace the hand-built search capsule with
 `.searchable(text:placement: .sidebar, prompt: "Search Channels")`, and drive Edit > Find
 Channel (Command-Option-F) through `.searchFocused`. Filtering semantics are unchanged.
@@ -312,8 +311,8 @@ let it extend beneath the toolbar and the composer, never clipped at a safe-area
 transcript `ScrollView` respects the top and bottom safe areas, so its first row rests below the
 toolbar and its last row rests 16 points above the floating controls. Rows scroll beneath both.
 Use `.scrollEdgeEffectStyle(.soft, for: .bottom)` on the transcript, because the composer floats
-inside the content rather than in the toolbar. Leave the top edge on the system default. On
-macOS 27 the soft edge is a fade that ramps across the whole bottom bar, from nothing at the
+inside the content rather than in the toolbar. Leave the top edge on the system default. The
+soft edge is a fade that ramps across the whole bottom bar, from nothing at the
 activity row's top to about 75 percent under the composer. Rows in the 8-point slot between the
 activity row and the composer stay legible and only lightly faded. That is the system effect
 working, not a gap. Never patch it with a mask, a fill or `.hard`, which draws its divider flush
@@ -379,22 +378,19 @@ Recording they warn and fall back to `cacheDisplay`, which leaves both blank, an
 cannot judge this section. Judge this section only in a real window on the stamped build,
 captured with ScreenCaptureKit or Computer Use, in light and dark, active and inactive, with the
 inspector open and closed, scrolled to the top and mid-history, and with Reduce Transparency
-and Increase Contrast. Confirm that the sidebar follows the running system's shape, that the
+and Increase Contrast. Confirm that the sidebar runs flush and full height, that the
 only rule under the toolbar is the system's own edge, that no inspector row runs under the
 toolbar controls, that message text beneath the composer
 never competes with typed text, and that the activity capsule and composer read as two related
 pieces of glass.
 
-| Surface | macOS 27 (primary) | macOS 26 |
-| --- | --- | --- |
-| Sidebar | Flush and full height, no margin | Inset floating glass panel |
-| Conversation top edge (automatic) | Crisp 1-point divider, also at rest | Soft blur while content is beneath |
-| Inspector top edge (explicit `.hard`) | The same divider, continuous with the conversation's | Hard edge while content is beneath |
-| Bottom edge above the composer | Our explicit `.soft` fade, ramping across the activity row and composer | Same |
-| Glass controls, composer, capsules | System Liquid Glass | Same |
-
-Both rows come from the same code. Never branch on the OS version to imitate one look on the
-other.
+| Surface | Expected |
+| --- | --- |
+| Sidebar | Flush and full height, no margin |
+| Conversation top edge (automatic) | Crisp 1-point divider, also at rest |
+| Inspector top edge (explicit `.hard`) | The same divider, continuous with the conversation's |
+| Bottom edge above the composer | Our explicit `.soft` fade, ramping across the activity row and composer |
+| Glass controls, composer, capsules | System Liquid Glass |
 
 ### Window and navigation
 
@@ -897,7 +893,7 @@ writing-direction and accessibility behavior must work through native text input
 The Dictation key and Edit > Start Dictation… stream words in at the caret with the system's own
 indicator. Keep that path intact and never remove the menu item. The composer also has its own
 Dictate button, because a button must say honestly whether it is listening, and there is no public
-API that starts system Dictation. The button uses macOS 26's on-device `SpeechAnalyzer` with a
+API that starts system Dictation. The button uses the on-device `SpeechAnalyzer` with a
 `DictationTranscriber` on the `progressiveLongDictation` preset, which gives punctuation and live
 tentative results. Audio never leaves the Mac.
 
@@ -997,7 +993,7 @@ opens that channel in Toy Box, with an explicit label, never a fictitious local 
 
 The Overview is an inspector in the Keynote and Xcode sense: a quiet, dense column of facts about
 the selected channel, with each action sitting next to the fact it acts on. It is not a
-dashboard and does not copy the pane's layout. People follow macOS 26 Messages' Details sidebar,
+dashboard and does not copy the pane's layout. People follow Messages' Details sidebar,
 and structure follows Xcode's inspectors. Reference renders: `docs/overview-inspector.png`.
 
 The inspector has no title row or close button. It runs the full window height, its content
@@ -1279,6 +1275,27 @@ categories are pending requests and unread completions, deduplicated by channel 
 sequence. Ordinary chatter does not notify by default. Suppress notifications for the active key
 channel, but never hide its request marker. Activating a notification opens the right channel and,
 for a request, reveals its message. Respect system notification permission and Focus.
+
+### App icon
+
+The icon is the Toy Box robot as a speech bubble, answered by a gold bubble behind it. It means
+your agents and you, in conversation. It carries the brand's navy and robot face, the channel
+cyan in the eyes and the lead's gold, and it never shows text or a hash mark.
+
+| Part | Specification (1024 pt Icon Composer canvas) |
+| --- | --- |
+| Source | `Resources/AppIcon.icon`, an Icon Composer document with one 1024 x 1024 SVG per layer. It's the only artwork. Edit it in Icon Composer or as text |
+| Background | Vertical linear gradient `#1C4090` to `#071937`. The dark specialization is `#122656` to `#040B1A` |
+| Head group (middle) | Speech bubble body x 174...754, y 318...748, corner radius 170, with its tail to x 236, y 840 at the lower left. Antenna stem 36 x 110 at x 446, y 232. Fill `#F3EFE6`, `#E6E2DA` in dark. Glass on, translucency 0.3, neutral shadow 0.5 |
+| Face group (front) | Visor 448 x 252 at x 240, y 406, radius 126, `#0A1530`, not glass. Eyes 56 x 100 capsules at x 354 and 518, y 466. Smile is a radius-60 arc from x 422 to 506 at y 602 with a 24 pt round stroke. Eyes and smile are `#67E8F9`. Antenna ball radius 46 at 464, 218 in `#38BDF8`, glass |
+| Reply group (back) | Bubble x 554...894, y 168...478, radius 120, with its tail to x 860, y 550 at the lower right. `#FACC15`, glass, translucency 0.4, layer-color shadow 0.5 |
+| Shipped artwork | `Resources/AppIcon.icns`, committed. `script/icon` renders the Default appearance with Icon Composer's `ictool` and places it on Apple's grid: an 824 pt body inset 100 pt, with a black 22% shadow offset 10 pt down and blurred 34 pt. That matches Apple's own `.icns` files within a pixel. Output is byte-identical across runs |
+| Builds | Local and GitHub bundles copy the same `.icns` and set `CFBundleIconFile`. No build renders the icon, so neither needs Icon Composer or `actool`. macOS 27 shows it at the system size with no gray plate |
+| Not shipped yet | The source also defines Dark, Clear and Tinted appearances. They apply only to a compiled `Assets.car`, which needs `actool`. Adding one later must ship in both local and GitHub builds, never in only one |
+
+Change the artwork only in the `.icon`, then run `script/icon` and commit both files together.
+Check 16 and 32 px on light and dark before accepting a change. The 16 px icon must still read as a
+navy tile with a white bubble and a gold corner.
 
 ### Implementation review gates
 

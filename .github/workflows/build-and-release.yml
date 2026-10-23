@@ -1,0 +1,157 @@
+name: Build and release
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Version to build without publishing (vX.Y.Z)
+        required: true
+        default: v0.1.0
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: xcode-27
+    timeout-minutes: 20
+    steps:
+      - name: Select and check the runner toolchain
+        run: |
+          export DEVELOPER_DIR="$(xcode-select -p)"
+          printf 'DEVELOPER_DIR=%s\n' "$DEVELOPER_DIR" >> "$GITHUB_ENV"
+          xcrun swift --version
+          sdk="$(xcrun --sdk macosx --show-sdk-version)"
+          echo "macOS SDK $sdk"
+          test "${sdk%%.*}" -ge 27
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - name: Test
+        env:
+          SCRATCH_PATH: ${{ runner.temp }}/toy-box-tests
+        run: ./script/test
+      - name: Lint workflows
+        run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+
+  release:
+    needs: test
+    if: (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+    runs-on: xcode-27
+    timeout-minutes: 45
+    env:
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+      BUILD_NUMBER: ${{ github.run_number }}.${{ github.run_attempt }}
+      NOTARY_PROFILE: toy-box-release-ci
+    steps:
+      - name: Select and check the runner toolchain
+        run: |
+          export DEVELOPER_DIR="$(xcode-select -p)"
+          printf 'DEVELOPER_DIR=%s\n' "$DEVELOPER_DIR" >> "$GITHUB_ENV"
+          xcrun swift --version
+          sdk="$(xcrun --sdk macosx --show-sdk-version)"
+          echo "macOS SDK $sdk"
+          test "${sdk%%.*}" -ge 27
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - name: Import the signing identity and notarization key
+        env:
+          CERTIFICATE: ${{ secrets.MACOS_SIGNING_CERTIFICATE }}
+          CERTIFICATE_PASSWORD: ${{ secrets.MACOS_SIGNING_PASSWORD }}
+          NOTARY_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+          NOTARY_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          NOTARY_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+        run: |
+          set -euo pipefail
+          umask 077
+          : "${CERTIFICATE:?Missing MACOS_SIGNING_CERTIFICATE}"
+          : "${CERTIFICATE_PASSWORD:?Missing MACOS_SIGNING_PASSWORD}"
+          : "${NOTARY_KEY:?Missing APP_STORE_CONNECT_PRIVATE_KEY}"
+          : "${NOTARY_KEY_ID:?Missing APP_STORE_CONNECT_KEY_ID}"
+          : "${NOTARY_ISSUER_ID:?Missing APP_STORE_CONNECT_ISSUER_ID}"
+          export SIGNING_KEYCHAIN="$RUNNER_TEMP/toy-box-release.keychain-db"
+          export NOTARY_KEYCHAIN="$SIGNING_KEYCHAIN"
+          printf 'SIGNING_KEYCHAIN=%s\nNOTARY_KEYCHAIN=%s\n' "$SIGNING_KEYCHAIN" "$NOTARY_KEYCHAIN" >> "$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP/toy-box-signing"
+          security list-keychains -d user > "$RUNNER_TEMP/toy-box-signing/search-list.txt"
+          curl --fail --silent --show-error --location \
+            https://www.apple.com/certificateauthority/DeveloperIDCA.cer \
+            -o "$RUNNER_TEMP/toy-box-signing/DeveloperIDCA.cer"
+          printf '7afc9d01a62f03a2de9637936d4afe68090d2de18d03f29c88cfb0b1ba63587f  %s\n' \
+            "$RUNNER_TEMP/toy-box-signing/DeveloperIDCA.cer" | shasum -a 256 -c -
+          printf '%s' "$CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/toy-box-signing/identity.p12"
+          printf '%s' "$NOTARY_KEY" > "$RUNNER_TEMP/toy-box-signing/AuthKey.p8"
+          password="$(openssl rand -base64 48)"
+          echo "::add-mask::$password"
+          security create-keychain -p "$password" "$SIGNING_KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$SIGNING_KEYCHAIN"
+          security unlock-keychain -p "$password" "$SIGNING_KEYCHAIN"
+          keychains=("$SIGNING_KEYCHAIN")
+          while IFS= read -r line; do
+            keychain="$(sed -E 's/^[[:space:]]*"//; s/"[[:space:]]*$//' <<< "$line")"
+            if [[ -n "$keychain" ]]; then keychains+=("$keychain"); fi
+          done < "$RUNNER_TEMP/toy-box-signing/search-list.txt"
+          security list-keychains -d user -s "${keychains[@]}"
+          security import "$RUNNER_TEMP/toy-box-signing/DeveloperIDCA.cer" -k "$SIGNING_KEYCHAIN" -t cert
+          security import "$RUNNER_TEMP/toy-box-signing/identity.p12" \
+            -k "$SIGNING_KEYCHAIN" -P "$CERTIFICATE_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$password" "$SIGNING_KEYCHAIN" >/dev/null
+          xcrun notarytool store-credentials "$NOTARY_PROFILE" --keychain "$NOTARY_KEYCHAIN" \
+            --key "$RUNNER_TEMP/toy-box-signing/AuthKey.p8" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER_ID"
+      - name: Build, sign and notarize
+        env:
+          SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+          SCRATCH_PATH: ${{ runner.temp }}/toy-box-release
+        run: ./script/release "$RELEASE_TAG"
+      - name: Remove the temporary keychain and keys
+        if: always()
+        run: |
+          status=0
+          if [[ -f "$RUNNER_TEMP/toy-box-signing/search-list.txt" ]]; then
+            keychains=()
+            while IFS= read -r line; do
+              keychain="$(sed -E 's/^[[:space:]]*"//; s/"[[:space:]]*$//' <<< "$line")"
+              if [[ -n "$keychain" ]]; then keychains+=("$keychain"); fi
+            done < "$RUNNER_TEMP/toy-box-signing/search-list.txt"
+            security list-keychains -d user -s "${keychains[@]}" || status=$?
+          fi
+          if [[ -n "${SIGNING_KEYCHAIN:-}" && -e "$SIGNING_KEYCHAIN" ]]; then
+            security delete-keychain "$SIGNING_KEYCHAIN" || status=$?
+          fi
+          rm -f "$RUNNER_TEMP/toy-box-signing/identity.p12" "$RUNNER_TEMP/toy-box-signing/AuthKey.p8" \
+            "$RUNNER_TEMP/toy-box-signing/DeveloperIDCA.cer" "$RUNNER_TEMP/toy-box-signing/search-list.txt" || status=$?
+          if [[ -d "$RUNNER_TEMP/toy-box-signing" ]]; then rmdir "$RUNNER_TEMP/toy-box-signing" || status=$?; fi
+          exit "$status"
+      - name: Upload the signed archive
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            dist/*.zip
+            dist/*.sha256
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    needs: release
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download the signed archive
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-${{ github.run_id }}-${{ github.run_attempt }}
+          path: dist
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          gh release create "$RELEASE_TAG" dist/*.zip dist/*.sha256 \
+            --repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes --title "$RELEASE_TAG"

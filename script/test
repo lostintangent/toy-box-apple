@@ -2,12 +2,13 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-export DEVELOPER_DIR=/Library/Developer/CommandLineTools
+export DEVELOPER_DIR="${DEVELOPER_DIR:-/Library/Developer/CommandLineTools}"
 SCRATCH="${SCRATCH_PATH:-$ROOT/.build}"
-PLUGINS="$DEVELOPER_DIR/usr/lib/swift/host/plugins/testing"
-ARGS=()
+TOOLCHAIN_USR="$(dirname "$(dirname "$(xcrun --find swiftc)")")"
+PLUGINS="$TOOLCHAIN_USR/lib/swift/host/plugins/testing"
+ARGS=(test --package-path "$ROOT" --scratch-path "$SCRATCH")
 if [[ -d "$PLUGINS" ]]; then
-    ARGS=(-Xswiftc -plugin-path -Xswiftc "$PLUGINS")
+    ARGS+=(-Xswiftc -plugin-path -Xswiftc "$PLUGINS")
 fi
 
-swift test --package-path "$ROOT" --scratch-path "$SCRATCH" "${ARGS[@]}" "$@"
+xcrun swift "${ARGS[@]}" "$@"
