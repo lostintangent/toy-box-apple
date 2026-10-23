@@ -1243,7 +1243,7 @@ struct ImageViewerTests {
 @MainActor
 @Suite("Image viewer Live Text", .serialized, .enabled(if: ImageAnalyzer.isSupported))
 struct ImageViewerLiveTextTests {
-    @Test func onlyTheSettledCurrentImageIsAnalyzedAndTheWindowRemembersIt() async throws {
+    @Test(.readsTextInImages) func onlyTheSettledCurrentImageIsAnalyzedAndTheWindowRemembersIt() async throws {
         let viewer = try Self.openViewer([Self.textPNG("Release notes ship Friday"),
                                           Self.textPNG("Quarterly roadmap review"), Self.textPNG(nil)])
         defer { viewer.close(animated: false) }
@@ -1278,7 +1278,7 @@ struct ImageViewerLiveTextTests {
         #expect(viewer.items[0]?.analysis == nil)
     }
 
-    @Test func pressesOnTextReachLiveTextAndEverythingElseReachesTheViewer() async throws {
+    @Test(.readsTextInImages) func pressesOnTextReachLiveTextAndEverythingElseReachesTheViewer() async throws {
         let viewer = try Self.openViewer([Self.textPNG("Release notes ship Friday")])
         let window = Self.host(viewer)
         defer {
@@ -1491,11 +1491,37 @@ struct ImageViewerLiveTextTests {
         }
     }
 
+    private static var visionKitReadsText: Bool?
+
+    /// Whether VisionKit itself finds the text in a plain text image, decided once per run.
+    static func probeVisionKitReadsText() async -> Bool {
+        if let visionKitReadsText { return visionKitReadsText }
+        let probe = LiveTextProbe()
+        probe.start(textImage("Release notes ship Friday"))
+        let deadline = ContinuousClock.now + .seconds(20)
+        while probe.result == nil, ContinuousClock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+        let reads = probe.result ?? false
+        visionKitReadsText = reads
+        return reads
+    }
+
     /// A 1200 x 600 white image with one line of black text along its top, or blank.
     private static func textPNG(_ text: String?) throws -> String {
-        let context = try #require(CGContext(data: nil, width: 1200, height: 600, bitsPerComponent: 8,
-                                             bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
-                                             bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue))
+        let image = try #require(textImage(text))
+        let data = NSMutableData()
+        let destination = try #require(CGImageDestinationCreateWithData(data, UTType.png.identifier as CFString, 1, nil))
+        CGImageDestinationAddImage(destination, image, nil)
+        #expect(CGImageDestinationFinalize(destination))
+        return (data as Data).base64EncodedString()
+    }
+
+    private static func textImage(_ text: String?) -> CGImage? {
+        guard let space = CGColorSpace(name: CGColorSpace.sRGB),
+              let context = CGContext(data: nil, width: 1200, height: 600, bitsPerComponent: 8, bytesPerRow: 0,
+                                      space: space, bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)
+        else { return nil }
         context.setFillColor(CGColor(srgbRed: 1, green: 1, blue: 1, alpha: 1))
         context.fill(CGRect(x: 0, y: 0, width: 1200, height: 600))
         if let text {
@@ -1508,12 +1534,33 @@ struct ImageViewerLiveTextTests {
             context.textPosition = CGPoint(x: 60, y: 420)
             CTLineDraw(CTLineCreateWithAttributedString(string), context)
         }
-        let image = try #require(context.makeImage())
-        let data = NSMutableData()
-        let destination = try #require(CGImageDestinationCreateWithData(data, UTType.png.identifier as CFString, 1, nil))
-        CGImageDestinationAddImage(destination, image, nil)
-        #expect(CGImageDestinationFinalize(destination))
-        return (data as Data).base64EncodedString()
+        return context.makeImage()
+    }
+}
+
+/// Analyzes one image on the main actor and records whether VisionKit found text in it.
+@MainActor
+private final class LiveTextProbe {
+    var result: Bool?
+
+    func start(_ image: CGImage?) {
+        guard let image else { result = false; return }
+        Task {
+            let analysis = try? await ImageAnalyzer().analyze(image, orientation: .up,
+                                                              configuration: ImageAnalyzer.Configuration([.text]))
+            result = analysis?.hasResults(for: .text) == true
+        }
+    }
+}
+
+extension Trait where Self == ConditionTrait {
+    /// GitHub's macOS runners report Live Text as supported but never read text in an image, so CI
+    /// asks VisionKit directly and skips. Locally it stays a requirement.
+    static var readsTextInImages: Self {
+        .disabled("This CI runner's VisionKit doesn't read text in images") {
+            guard ProcessInfo.processInfo.environment["CI"] != nil else { return false }
+            return await !ImageViewerLiveTextTests.probeVisionKitReadsText()
+        }
     }
 }
 
