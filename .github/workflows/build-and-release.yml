@@ -34,11 +34,19 @@ jobs:
         env:
           SCRATCH_PATH: ${{ runner.temp }}/toy-box-tests
         run: ./script/test
+
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
       - name: Lint workflows
         run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
 
   release:
-    needs: test
+    needs: [test, lint]
     if: (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
     runs-on: xcode-27
     timeout-minutes: 45
