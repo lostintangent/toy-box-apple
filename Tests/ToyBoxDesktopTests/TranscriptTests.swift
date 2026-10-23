@@ -475,6 +475,30 @@ struct TranscriptTests {
     }
 
     @MainActor
+    @Test func unreadMessagesOpenOnNewWithoutDrawingTheEndFirst() async throws {
+        // Loaded history that reaches the boundary opens there at once, and an older boundary opens
+        // once its page arrives. Either way the first frame is already on New and the newest rows are
+        // never built. Alternating senders make every message its own row.
+        func message(_ sequence: Int) -> ChannelMessage {
+            ChannelMessage(id: "m\(sequence)", sequence: sequence, timestamp: "2026-10-22T12:00:00Z",
+                           sender: sequence.isMultiple(of: 2) ? .user : .agent("lead"),
+                           content: .text("Update \(sequence) has enough words to wrap onto a second line here."))
+        }
+        for (loaded, older) in [(1...60, 1..<1), (31...60, 1..<31)] {
+            let harness = try await TranscriptHarness(messages: loaded.map(message), history: older.map(message),
+                                                      seenThrough: 10)
+            defer { harness.close() }
+            let opened = try #require(harness.capture.frames["m11"]?.rect)
+            let landed = harness.scrollView.contentView.bounds.minY
+            let committed = Set(harness.committedOffsets).sorted()
+            #expect(opened.minY >= 0 && opened.minY < 60, "Opened with m11 at \(opened.minY)")
+            #expect(committed.allSatisfy { abs($0 - landed) <= 1 }, "Committed \(committed) before \(landed)")
+            #expect(!harness.capture.measured.contains("m60"), "With \(older.count) older messages, it drew its end")
+            #expect(harness.readRequests == 0)
+        }
+    }
+
+    @MainActor
     @Test func theNewestMessageStaysPinnedWhileTheWindowResizes() async throws {
         let harness = try await TranscriptHarness(messages: (1...40).map(transcriptTestMessage), resizable: true)
         defer { harness.close() }
@@ -1879,7 +1903,11 @@ func renderedTranscriptBitmap(_ content: some View, size: CGSize,
 
 @MainActor
 private final class TranscriptLayoutCapture {
-    var frames: [String: TranscriptMessageFrame] = [:]
+    var frames: [String: TranscriptMessageFrame] = [:] {
+        didSet { measured.formUnion(frames.keys) }
+    }
+    /// Every frame ever measured, including rows the lazy stack has since dropped.
+    private(set) var measured: Set<String> = []
     var viewport = TranscriptViewport()
     var proxy: ScrollViewProxy?
 }
@@ -2186,6 +2214,9 @@ private final class TranscriptHarness {
     let interaction: ChannelInteraction
     let capture: TranscriptLayoutCapture
     private(set) var scrollView = NSScrollView()
+    /// The clip's offset at the end of every run loop pass that had a transcript to show.
+    private(set) var committedOffsets: [CGFloat] = []
+    private var commitObserver: CFRunLoopObserver?
     private let session: URLSession
     private let window: NSWindow
 
@@ -2225,15 +2256,25 @@ private final class TranscriptHarness {
         window.contentView = view
         (self.host, self.store, self.interaction, self.capture) = (host, store, interaction, capture)
         (self.session, self.window) = (session, window)
-        store.connect()
 
         func findScrollView(in view: NSView) -> NSScrollView? {
             view as? NSScrollView ?? view.subviews.lazy.compactMap(findScrollView(in:)).first
         }
+        // Ordered after Core Animation's commit, so each entry is an offset a frame could show.
+        commitObserver = CFRunLoopObserverCreateWithHandler(nil, CFRunLoopActivity.beforeWaiting.rawValue, true,
+                                                            .max) { [weak self, weak view] _, _ in
+            MainActor.assumeIsolated {
+                guard let self, let view, let scrollView = findScrollView(in: view),
+                      (scrollView.documentView?.bounds.height ?? 0) > 0 else { return }
+                self.committedOffsets.append(scrollView.contentView.bounds.minY)
+            }
+        }
+        CFRunLoopAddObserver(CFRunLoopGetMain(), commitObserver, .commonModes)
+        store.connect()
         try await waitUntil { findScrollView(in: view)?.documentView.map { $0.bounds.height > 800 } == true }
         scrollView = try #require(findScrollView(in: view))
         if let seenThrough, seenThrough < latest {
-            let firstUnread = messages.first { $0.sequence > seenThrough }?.id ?? ""
+            let firstUnread = (history + messages).first { $0.sequence > seenThrough }?.id ?? ""
             try await waitUntil { capture.frames[firstUnread] != nil }
             // The landing jump settles within half a second.
             try await settle(for: .milliseconds(600))
@@ -2343,6 +2384,7 @@ private final class TranscriptHarness {
     }
 
     func close() {
+        if let commitObserver { CFRunLoopObserverInvalidate(commitObserver) }
         store.disconnect()
         window.close()
         session.invalidateAndCancel()

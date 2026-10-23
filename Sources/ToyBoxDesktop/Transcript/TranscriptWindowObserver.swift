@@ -91,6 +91,22 @@ final class TranscriptWindowObserver {
         scrollView.reflectScrolledClipView(clip)
     }
 
+    /// SwiftUI doesn't re-measure rows after a scroll position it applies during its own layout, so
+    /// they keep reporting where they were laid out. A real scroll of one device pixel corrects them,
+    /// and it has to stay, because a scroll there and back in one turn never reaches SwiftUI.
+    func remeasure() {
+        guard let scrollView, let document = scrollView.documentView, document.isFlipped else { return }
+        let clip = scrollView.contentView
+        let origin = clip.bounds.origin
+        let pixel = 1 / (window?.backingScaleFactor ?? 2)
+        let maximum = document.bounds.height + scrollView.contentInsets.bottom - clip.bounds.height
+        let y = origin.y - pixel >= -scrollView.contentInsets.top ? origin.y - pixel
+            : origin.y + pixel <= maximum ? origin.y + pixel : origin.y
+        guard y != origin.y else { return }
+        clip.scroll(to: CGPoint(x: origin.x, y: y))
+        scrollView.reflectScrolledClipView(clip)
+    }
+
     func scroll(by delta: CGFloat) {
         guard let scrollView, let document = scrollView.documentView, delta.isFinite else { return }
         let clip = scrollView.contentView
