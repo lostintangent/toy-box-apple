@@ -33,6 +33,7 @@ struct ChannelDetailView: View {
     /// Switching channels keeps this view, its toolbar and its inspector column, and only moves
     /// the connection and the per-channel content to the new store.
     @ViewState private var connection = ChannelConnection()
+    @ViewState private var titleFit = ChannelTitleFit()
     private var wideInspector: Binding<Bool> {
         let column = column
         let placement = placement
@@ -56,6 +57,10 @@ struct ChannelDetailView: View {
 
     var body: some View {
         conversation
+            .onGeometryChange(for: ChannelTitleFit.Span.self) { geometry in
+                let frame = geometry.frame(in: .global)
+                return ChannelTitleFit.Span(minX: frame.minX, maxX: frame.maxX)
+            } action: { titleFit.update(detail: $0) }
             .settledLayout()
             .modifier(DetailMinimumWidth())
             .background(Color(nsColor: .textBackgroundColor))
@@ -64,6 +69,10 @@ struct ChannelDetailView: View {
                     .id(ObjectIdentifier(store))
                     .settledLayout()
                     .inspectorColumnWidth(min: 280, ideal: 312, max: 400)
+            }
+            // The detail column and its inspector reach the window's trailing edge.
+            .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).maxX } action: {
+                titleFit.update(windowWidth: $0)
             }
             // The toolbar draws its own backdrop over any container that keeps it in its top safe
             // area, so the canvas reaches under the glass toolbar only when its mount ignores it.
@@ -80,6 +89,7 @@ struct ChannelDetailView: View {
             .navigationSubtitle(viewing?.subtitle ?? "")
             .toolbar(removing: viewing == nil ? .title : nil)
             .toolbar { toolbar }
+            .onChange(of: title, initial: true) { titleFit.update(title: title) }
             .task {
                 interaction.isInspectorPresented = model.launchOptions.isSnapshot
                     ? model.launchOptions.width >= 1000 : inspectorVisible
@@ -253,13 +263,18 @@ struct ChannelDetailView: View {
 
     @ToolbarContentBuilder private var conversationToolbar: some ToolbarContent {
         ToolbarItem(placement: .navigation) {
-            ChannelTitleMenu(title: title, showsChevron: model.snapshot?.requestedState == "title-hover") {
+            ChannelTitleMenu(title: title, showsChevron: model.snapshot?.requestedState == "title-hover",
+                             fit: titleFit) {
                 titleMenu
             }
         }
         .sharedBackgroundVisibility(.hidden)
+        .visibilityPriority(.high)
         ToolbarSpacer(.flexible)
-        ToolbarItemGroup(placement: .primaryAction) {
+        // The title truncates first, so every control fits down to the narrowest window. Should the
+        // toolbar still run out of room, Channel Actions overflows before Message View, and the
+        // title and Overview stay. Adjacent items share one glass capsule.
+        ToolbarItem(placement: .primaryAction) {
             Menu {
                 Picker("Message View", selection: Bindable(interaction).messageView) {
                     Text("All Messages").tag(TranscriptView.all)
@@ -275,6 +290,8 @@ struct ChannelDetailView: View {
             .accessibilityLabel("Message View")
             .accessibilityValue(interaction.messageView == .all ? "All Messages" : "Your Messages")
             .disabled(!store.isLoaded)
+        }
+        ToolbarItem(placement: .primaryAction) {
             Menu {
                 Button("Open in Toy Box", systemImage: "arrow.up.forward.app") { model.openInToyBox(channelID: store.id) }
                 Button("Edit Channel…", systemImage: "pencil") { management.present(.editChannel(channelId: store.id)) }
@@ -292,6 +309,7 @@ struct ChannelDetailView: View {
             .accessibilityLabel("Channel Actions")
             .help("Channel Actions")
         }
+        .visibilityPriority(.low)
         ToolbarSpacer(.fixed, placement: .primaryAction)
         ToolbarItem(placement: .primaryAction) {
             Button("Overview", systemImage: "sidebar.trailing") {
@@ -300,6 +318,7 @@ struct ChannelDetailView: View {
                 .help("Show or Hide Overview (Option-Command-0)")
                 .disabled(store.phase == .deleted)
         }
+        .visibilityPriority(.high)
     }
 
     private var catalogChannel: Channel? { model.catalog?.channels.first { $0.id == store.id } }

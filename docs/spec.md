@@ -449,8 +449,7 @@ styled as the system title: 15 semibold, dimmed in inactive windows, and a chevr
 on hover. Keep `.navigationTitle` for Mission Control and the Window menu. The title text sits
 where the system title did, 20 points from the detail column's leading edge with the sidebar
 visible, and at the system title's spacing after the leading toolbar items with it collapsed. It
-lists
-every channel in sidebar order with the current one checked, then a divider, New Channel… and
+lists every channel in sidebar order with the current one checked, then a divider, New Channel… and
 Edit Channel…. Choosing a channel behaves like selecting it in the sidebar. Items mirror the
 sidebar's attention state with the system menu-item badge (Input Needed, Unread or Done). If the
 title menu can't carry badges, omit them rather than appending text to channel names. Shell
@@ -458,8 +457,13 @@ verifies the hover chevron and menu in the real glass toolbar.
 Trailing controls are Message View (`line.3.horizontal.decrease`),
 Channel Actions (`ellipsis`), and Overview
 (`sidebar.trailing`). Put Open in Toy Box in Channel Actions and the menu bar, not another
-permanent toolbar button. Standard toolbar overflow handles constrained widths. Keep working
-status in the floating activity row, not duplicated beside the window title.
+permanent toolbar button. A long name truncates at the tail like the system title, so every
+control fits down to the 760-point minimum window. NSToolbar never compresses a SwiftUI item, so
+the title takes its width from the detail column. It ends 12 points short of an open inspector
+rather than running over it, and leaves the 20 points NSToolbar needs before the trailing capsule,
+plus 4 of margin. The menu still names the channel in full. Should the toolbar run out of room
+anyway, Channel Actions overflows first, then Message View, and the title and Overview stay. Keep
+working status in the floating activity row, not duplicated beside the window title.
 
 Opening a channel selects it in the current window. Command-click or Open in New Window creates a
 separate window for that channel. Windows share the same channel store and draft. Only a key,

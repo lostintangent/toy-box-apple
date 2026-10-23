@@ -1201,3 +1201,70 @@ final class LaunchChannelTests {
         #expect(LaunchChannel(defaults: defaults).channelID(serverURL: "http://a.test/") == "docs")
     }
 }
+
+@Suite("Channel title fit")
+@MainActor
+struct ChannelTitleFitTests {
+    typealias Span = ChannelTitleFit.Span
+    let long = "Quarterly launch readiness review and retrospective planning"
+
+    @Test func theIdealWidthMatchesTheTitleMenusLayout() {
+        // The 12-point inset, 438 points of semibold text, 4 points of spacing and the 11-point chevron.
+        #expect(abs(ChannelTitleFit.idealWidth(of: long) - 465) <= 2)
+        #expect(ChannelTitleFit.idealWidth(of: "Studio demo") < 130)
+    }
+
+    @Test func theNarrowestWindowKeepsEveryControl() {
+        // The title starts 8 points past the 248-point sidebar and ends 24 points, plus the item's
+        // inset, before the trailing capsule at 634.
+        let room = ChannelTitleFit.room(detail: Span(minX: 248, maxX: 760), windowWidth: 760)
+        #expect(room == 350)
+        #expect(ChannelTitleFit.maxWidth(idealWidth: 465, room: room) == 350)
+    }
+
+    @Test func aCollapsedSidebarStartsTheTitleAfterTheSidebarButton() {
+        #expect(ChannelTitleFit.room(detail: Span(minX: 0, maxX: 760), windowWidth: 760) == 426)
+        // The sidebar's collapse animation passes through widths narrower than the buttons it covers.
+        #expect(ChannelTitleFit.room(detail: Span(minX: 120, maxX: 760), windowWidth: 760) == 426)
+    }
+
+    @Test func anOpenInspectorStopsTheTitleShortOfIt() {
+        let room = ChannelTitleFit.room(detail: Span(minX: 248, maxX: 688), windowWidth: 1000)
+        #expect(room == 420)
+        #expect(ChannelTitleFit.room(detail: Span(minX: 248, maxX: 968), windowWidth: 1280) == 700)
+    }
+
+    @Test func aTitleThatFitsHasNoCap() {
+        #expect(ChannelTitleFit.maxWidth(idealWidth: 465, room: 465) == nil)
+        #expect(ChannelTitleFit.maxWidth(idealWidth: 102, room: 350) == nil)
+        #expect(ChannelTitleFit.maxWidth(idealWidth: 465, room: 420.5) == 420)
+        #expect(ChannelTitleFit.maxWidth(idealWidth: 465, room: -20) == ChannelTitleFit.minimumWidth)
+    }
+
+    @Test func theCapWaitsForLayoutAndFollowsTheTitle() {
+        let fit = ChannelTitleFit()
+        fit.update(title: long)
+        fit.update(detail: Span(minX: 0, maxX: 100))
+        fit.update(windowWidth: 100)
+        #expect(fit.maxWidth == nil)
+        fit.update(detail: Span(minX: 248, maxX: 760))
+        fit.update(windowWidth: 760)
+        #expect(fit.maxWidth == 350)
+        fit.update(title: "Studio demo")
+        #expect(fit.maxWidth == nil)
+    }
+
+    @Test func aTitleThatFitsNeverRedrawsDuringAResize() {
+        let fit = ChannelTitleFit()
+        fit.update(title: "Studio demo")
+        fit.update(detail: Span(minX: 248, maxX: 1280))
+        fit.update(windowWidth: 1280)
+        let changes = Mutex(0)
+        withObservationTracking { _ = fit.maxWidth } onChange: { changes.withLock { $0 += 1 } }
+        for width in stride(from: CGFloat(1280), through: 760, by: -7) {
+            fit.update(detail: Span(minX: 248, maxX: width))
+            fit.update(windowWidth: width)
+        }
+        #expect(changes.withLock { $0 } == 0)
+    }
+}
