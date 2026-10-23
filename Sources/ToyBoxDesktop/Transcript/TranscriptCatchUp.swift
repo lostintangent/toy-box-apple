@@ -183,13 +183,13 @@ final class TranscriptCatchUp {
     }
 
     /// Messages from others after the summary's last one. Four or more make it stale.
-    static func newerCount(in state: ChannelState, after through: Int) -> Int {
-        state.messages.filter { $0.sequence > through && !$0.isSystem && $0.sender.type == "agent" }.count
+    static func newerCount(in messages: [ChannelMessage], after through: Int) -> Int {
+        messages.filter { $0.sequence > through && !$0.isSystem && $0.sender.type == "agent" }.count
     }
 
     /// Whether you replied after the request, which is what turns the transcript's outline to Replied.
-    static func isReplied(_ sequence: Int, in state: ChannelState) -> Bool {
-        state.messages.contains { $0.sender.type == "user" && $0.sequence > sequence }
+    static func isReplied(_ sequence: Int, in messages: [ChannelMessage]) -> Bool {
+        messages.contains { $0.sender.type == "user" && $0.sequence > sequence }
     }
 
     static func resetSession() {
@@ -199,10 +199,10 @@ final class TranscriptCatchUp {
     }
 }
 
+/// Reads only the store's messages and roster, so it follows new messages but not every event.
 struct TranscriptCatchUpCard: View {
     let catchUp: TranscriptCatchUp
-    let state: ChannelState
-    let server: URL
+    let store: ChannelStore
     var onDismiss: () -> Void
     @Environment(\.channelTextScale) private var textScale
     @Environment(\.colorScheme) private var colorScheme
@@ -267,17 +267,19 @@ struct TranscriptCatchUpCard: View {
     }
 
     private func content(_ summary: TranscriptCatchUp.Summary) -> some View {
-        let newer = TranscriptCatchUp.newerCount(in: state, after: summary.catchUp.through)
+        let messages = store.messages
+        let agents = store.roster
+        let newer = TranscriptCatchUp.newerCount(in: messages, after: summary.catchUp.through)
         let isUpdating = catchUp.isGenerating
         return VStack(alignment: .leading, spacing: 8) {
             VStack(alignment: .leading, spacing: 2) {
                 if let line = summary.catchUp.needsYou, let source = line.sources.first {
-                    TranscriptCatchUpLine(line: line, state: state,
+                    TranscriptCatchUpLine(line: line, messages: messages, agents: agents,
                                           need: TranscriptCatchUpLine.Need(
-                                              isReplied: TranscriptCatchUp.isReplied(source, in: state)))
+                                              isReplied: TranscriptCatchUp.isReplied(source, in: messages)))
                 }
                 ForEach(Array(summary.catchUp.changes.enumerated()), id: \.offset) { _, line in
-                    TranscriptCatchUpLine(line: line, state: state, need: nil)
+                    TranscriptCatchUpLine(line: line, messages: messages, agents: agents, need: nil)
                 }
             }
             .opacity(isUpdating ? 0.5 : 1)
@@ -287,7 +289,9 @@ struct TranscriptCatchUpCard: View {
                     .foregroundStyle(.tertiary)
                     .help("Made on this Mac from the messages below. Summaries can be wrong.")
                 if newer >= 4 {
-                    Button("Update") { catchUp.update(from: state, server: server) }
+                    Button("Update") {
+                        if let state = store.state { catchUp.update(from: state, server: store.api.baseURL) }
+                    }
                         .buttonStyle(.borderless)
                         .fontWeight(.medium)
                         .foregroundStyle(.tint)
@@ -309,9 +313,9 @@ enum TranscriptCatchUpSlot: Equatable {
     case unknown
 
     /// `isReplied` is nil unless the line is the Needs You line.
-    init(line: CatchUp.Line, state: ChannelState, isReplied: Bool?) {
+    init(line: CatchUp.Line, messages: [ChannelMessage], isReplied: Bool?) {
         if let isReplied { self = .need(isReplied: isReplied); return }
-        let source = state.messages.first { $0.sequence == line.sources.first }
+        let source = messages.first { $0.sequence == line.sources.first }
         if let agentId = source?.sender.agentId { self = .avatar(agentId) }
         else if let event = source?.system { self = .event(event.type) }
         else { self = .unknown }
@@ -324,7 +328,8 @@ private struct TranscriptCatchUpLine: View {
     }
 
     let line: CatchUp.Line
-    let state: ChannelState
+    let messages: [ChannelMessage]
+    let agents: [ChannelAgent]
     let need: Need?
     @Environment(ChannelInteraction.self) private var interaction
     @Environment(\.channelTextScale) private var textScale
@@ -379,13 +384,13 @@ private struct TranscriptCatchUpLine: View {
     }
 
     @ViewBuilder private var slot: some View {
-        switch TranscriptCatchUpSlot(line: line, state: state, isReplied: need?.isReplied) {
+        switch TranscriptCatchUpSlot(line: line, messages: messages, isReplied: need?.isReplied) {
         case .need(let isReplied):
             Image(systemName: isReplied ? "checkmark" : "questionmark.bubble.fill")
                 .font(.system(size: 13, weight: isReplied ? .semibold : .regular))
                 .foregroundStyle(isReplied ? Color.secondary : Color.orange)
         case .avatar(let agentId):
-            AgentAvatarView(agent: channelAgentIdentity(state.agents, id: agentId), size: 16)
+            AgentAvatarView(agent: channelAgentIdentity(agents, id: agentId), size: 16)
         case .event(let type):
             Image(systemName: TranscriptSystemMessages.symbol(for: type))
                 .font(.system(size: 13))

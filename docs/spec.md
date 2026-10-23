@@ -834,7 +834,9 @@ Long histories must stay as fast as short ones. Build rows incrementally: derive
 audience, display text and reactions once, and when messages only append, rebuild from the last
 row rather than from the start. Give each row only the values it renders and compare rows, so a new
 message, status or reaction re-renders only the rows it changed. Compile Markdown and mention
-patterns once, not once per row.
+patterns once, not once per row. The transcript reads only the `messages`, `roster`,
+`agentStatuses`, `presence` and `request` slices, so task, artifact, routine and detail events
+don't re-render it.
 
 The Message View menu is a native radio-choice menu: All Messages and Your Messages. A non-default
 filter gives its toolbar button an active tint and label/help. It does not change the composer

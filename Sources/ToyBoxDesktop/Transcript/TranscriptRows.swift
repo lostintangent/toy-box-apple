@@ -5,21 +5,11 @@ import SwiftUI
 /// What every row draws from the channel. It leaves out the statuses, presence and messages that
 /// change on nearly every update, so a row redraws only when something it shows does.
 struct TranscriptRowContext: Equatable {
+    /// Identities only, as the store's roster carries them.
     var agents: [ChannelAgent]
     var channelID: String
     var historyStart: Int
     var api: ChannelAPI
-
-    init(state: ChannelState, api: ChannelAPI) {
-        agents = state.agents.map { agent in
-            var identity = agent
-            identity.status = nil
-            return identity
-        }
-        channelID = state.channel.id
-        historyStart = state.messages.first?.sequence ?? 0
-        self.api = api
-    }
 
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.agents == rhs.agents && lhs.channelID == rhs.channelID && lhs.historyStart == rhs.historyStart
@@ -126,9 +116,8 @@ private struct TranscriptDividerStack: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Only the card reads the whole channel, so only this row follows its every update.
-            if let catchUp, summarizes, catchUp.phase != .collapsed, let state = store.state {
-                TranscriptCatchUpCard(catchUp: catchUp, state: state, server: store.api.baseURL) {
+            if let catchUp, summarizes, catchUp.phase != .collapsed {
+                TranscriptCatchUpCard(catchUp: catchUp, store: store) {
                     catchUp.dismiss()
                     focusesDivider = true
                 }
@@ -565,13 +554,14 @@ struct TranscriptReactionChip: View {
 }
 
 struct TranscriptWorkingRow: View {
-    let state: ChannelState
-    let isLive: Bool
+    let agents: [ChannelAgent]
+    /// Empty while the channel isn't live.
+    let presence: [String: ChannelAgentPresence]
     @ViewState private var showsDetails = false
     @Environment(\.channelTextScale) private var textScale
 
     private var working: [ChannelAgent] {
-        isLive ? state.agents.filter { state.presence[$0.id]?.state == "working" } : []
+        agents.filter { presence[$0.id]?.state == "working" }
     }
 
     var body: some View {
@@ -600,7 +590,7 @@ struct TranscriptWorkingRow: View {
                                     AgentAvatarView(agent: agent, size: 24)
                                     VStack(alignment: .leading, spacing: 3) {
                                         Text(agent.name).fontWeight(.medium)
-                                        Text(state.presence[agent.id]?.text ?? "Working")
+                                        Text(presence[agent.id]?.text ?? "Working")
                                             .foregroundStyle(.secondary).textSelection(.enabled)
                                     }
                                 }

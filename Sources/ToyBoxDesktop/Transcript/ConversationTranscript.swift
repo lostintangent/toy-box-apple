@@ -34,8 +34,8 @@ struct ConversationTranscript: View {
     @ViewState private var rowBuilder = TranscriptRowBuilder()
 
     private var rows: [TranscriptRow] {
-        guard let state = store.state else { return [] }
-        return rowBuilder.rows(state.messages, lead: state.lead, members: state.members,
+        guard let lead = store.roster.first else { return [] }
+        return rowBuilder.rows(store.messages, lead: lead, members: Array(store.roster.dropFirst()),
                                unreadAfter: capturedArrivalBoundary ? arrivalUnreadAfter : store.unreadAfter,
                                view: interaction.messageView)
     }
@@ -49,7 +49,7 @@ struct ConversationTranscript: View {
 
     private var pagingRestoreTarget: PagingRestoreTarget? {
         guard let anchor = pagingAnchor, !store.isLoadingOlder,
-              let oldest = store.state?.messages.first?.sequence, oldest < anchor.oldestSequence else { return nil }
+              let oldest = store.messages.first?.sequence, oldest < anchor.oldestSequence else { return nil }
         return .init(id: anchor.id, oldestSequence: oldest)
     }
 
@@ -64,15 +64,15 @@ struct ConversationTranscript: View {
 
     private var showsViewerMessage: Bool {
         guard let id = viewer?.session?.source.messageID, store.phase != .deleted else { return false }
-        return store.state?.messages.contains { $0.id == id } == true
+        return store.messages.contains { $0.id == id }
     }
 
     @ViewBuilder private var content: some View {
         if store.phase == .deleted {
             ContentUnavailableView("Channel Deleted", systemImage: "bubble.left",
                                    description: Text("This channel is no longer available."))
-        } else if let state = store.state {
-            transcript(state: state)
+        } else if store.isLoaded {
+            transcript
         } else {
             VStack(spacing: 12) {
                 ProgressView("Connecting...")
@@ -86,10 +86,10 @@ struct ConversationTranscript: View {
         }
     }
 
-    private func transcript(state: ChannelState) -> some View {
+    private var transcript: some View {
         ScrollViewReader { proxy in
-            observedScroll(state: state, proxy: proxy)
-                .safeAreaBar(edge: .bottom, spacing: 0) { floatingControls(state: state) }
+            observedScroll(proxy: proxy)
+                .safeAreaBar(edge: .bottom, spacing: 0) { floatingControls }
                 .task(id: store.phase.isLive) {
                     guard store.phase.isLive, !hasLanded else { return }
                     await land(using: proxy)
@@ -110,8 +110,8 @@ struct ConversationTranscript: View {
         }
     }
 
-    private func observedScroll(state: ChannelState, proxy: ScrollViewProxy) -> some View {
-        scrollViewport(state: state, proxy: proxy)
+    private func observedScroll(proxy: ScrollViewProxy) -> some View {
+        scrollViewport(proxy: proxy)
             .onChange(of: followsLatest, initial: true) { window.pinsToBottom = followsLatest }
             .onChange(of: interaction.jumpToLatestRequest) {
                 catchUp?.isPinned = false
@@ -125,7 +125,7 @@ struct ConversationTranscript: View {
                 if isAtBottom { scrollToLatest(using: proxy) }
                 if rows.isEmpty && store.hasOlderMessages { Task { await loadOlder() } }
             }
-            .onChange(of: state.messages.last?.id) {
+            .onChange(of: store.messages.last?.id) {
                 guard hasLanded, pagingAnchor == nil, !isRevealing else { return }
                 if isAtBottom {
                     catchUp?.isPinned = false
@@ -138,20 +138,20 @@ struct ConversationTranscript: View {
             .onChange(of: store.isLoadingOlder) { _, loading in
                 guard !loading else { return }
                 if let anchor = pagingAnchor,
-                   let oldest = store.state?.messages.first?.sequence, oldest < anchor.oldestSequence {
+                   let oldest = store.messages.first?.sequence, oldest < anchor.oldestSequence {
                     let row = rows.first { $0.messages.contains { $0.id == anchor.id } }
                     proxy.scrollTo(row?.id ?? anchor.id, anchor: .top)
                 }
                 restorePagingAnchor(using: frames)
             }
-            .onChange(of: state.channel.requestSequence, initial: true) { _, sequence in
+            .onChange(of: store.requestSequence, initial: true) { _, sequence in
                 let eligible = snapshot == nil && hasLanded && window.isKeyWindow
                     && scenePhase == .active && store.phase.isLive
                 guard requestAnnouncements.receive(sequence, isEligible: eligible),
                       let sequence else { return }
-                if let request = state.request, request.sequence == sequence,
+                if let request = store.request, request.sequence == sequence,
                    let agentID = request.sender.agentId {
-                    let author = channelAgentIdentity(state.agents, id: agentID).name
+                    let author = channelAgentIdentity(store.roster, id: agentID).name
                     window.announce("\(author) needs your reply.")
                 } else {
                     window.announce("Your team needs your reply.")
@@ -159,9 +159,9 @@ struct ConversationTranscript: View {
             }
     }
 
-    private func scrollViewport(state: ChannelState, proxy: ScrollViewProxy) -> some View {
+    private func scrollViewport(proxy: ScrollViewProxy) -> some View {
         ScrollView {
-            conversationRows(state: state, proxy: proxy)
+            conversationRows(proxy: proxy)
                 .background(TranscriptWindowProbe(observer: window).frame(width: 0, height: 0),
                             alignment: .topLeading)
                 .padding(.top, 20)
@@ -215,21 +215,21 @@ struct ConversationTranscript: View {
         }
     }
 
-    private func conversationRows(state: ChannelState, proxy: ScrollViewProxy) -> some View {
+    private func conversationRows(proxy: ScrollViewProxy) -> some View {
         let rows = rows
         let stacked = transcriptStackedSystemRowIDs(rows)
-        let context = TranscriptRowContext(state: state, api: store.api)
-        let statusReactions = channelStatusReactions(agents: state.agents,
-                                                     presence: store.phase.isLive ? state.presence : [:])
+        let context = TranscriptRowContext(agents: store.roster, channelID: store.id,
+                                           historyStart: store.messages.first?.sequence ?? 0, api: store.api)
+        let statusReactions = statusReactions
         let catchUp = interaction.messageView == .all ? catchUp : nil
         return LazyVStack(alignment: .leading, spacing: 0) {
             historyHeader
             if rows.isEmpty {
                 ContentUnavailableView(
-                    interaction.messageView == .yours && !state.messages.isEmpty
+                    interaction.messageView == .yours && !store.messages.isEmpty
                         ? "No Messages for You" : "A Place to Work Together",
                     systemImage: "bubble.left.and.bubble.right",
-                    description: Text(interaction.messageView == .yours && !state.messages.isEmpty
+                    description: Text(interaction.messageView == .yours && !store.messages.isEmpty
                         ? "Agent coordination is hidden. Choose All Messages to see it."
                         : "Messages from you and your team will appear here."))
                     .padding(.vertical, 40)
@@ -253,7 +253,7 @@ struct ConversationTranscript: View {
                     .padding(.top, stacked.contains(row.id) ? 4 : 20)
             }
             ForEach(store.sendAttempts) { attempt in
-                sendAttempt(attempt, state: state)
+                sendAttempt(attempt, statusReactions: statusReactions[attempt.message.sequence] ?? [])
                     .padding(.top, 20)
                     .id("attempt-\(attempt.id)")
             }
@@ -262,13 +262,22 @@ struct ConversationTranscript: View {
         .scrollTargetLayout()
     }
 
-    private func sendAttempt(_ attempt: ChannelSendAttempt, state: ChannelState) -> some View {
+    /// The looking and working reactions by sequence. Roster leaves statuses out, so they're merged back.
+    private var statusReactions: [Int: [ChannelReaction]] {
+        guard store.phase.isLive else { return [:] }
+        let statuses = store.agentStatuses
+        let agents = store.roster.map { agent in
+            var agent = agent
+            agent.status = statuses[agent.id]
+            return agent
+        }
+        return channelStatusReactions(agents: agents, presence: store.presence)
+    }
+
+    private func sendAttempt(_ attempt: ChannelSendAttempt, statusReactions: [ChannelReaction]) -> some View {
         VStack(alignment: .trailing, spacing: 6) {
-            TranscriptUserMessage(message: attempt.message, agents: state.agents, api: store.api,
-                                  deliveryLabel: attempt.phase.label,
-                                  statusReactions: channelStatusReactions(
-                                      agents: state.agents, presence: store.phase.isLive ? state.presence : [:]
-                                  )[attempt.message.sequence] ?? [])
+            TranscriptUserMessage(message: attempt.message, agents: store.roster, api: store.api,
+                                  deliveryLabel: attempt.phase.label, statusReactions: statusReactions)
                 .opacity(attempt.phase == .sending ? 0.65 : 1)
             if let error = attempt.error {
                 Text(error).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
@@ -302,10 +311,9 @@ struct ConversationTranscript: View {
             && catchUp?.holdsLanding != true
     }
 
-    private func floatingControls(state: ChannelState) -> some View {
-        let hasWorkingAgents = store.phase.isLive && state.agents.contains {
-            state.presence[$0.id]?.state == "working"
-        }
+    private var floatingControls: some View {
+        let presence = store.phase.isLive ? store.presence : [:]
+        let hasWorkingAgents = store.roster.contains { presence[$0.id]?.state == "working" }
         let rises: AnyTransition = reduceMotion ? .opacity : .opacity.combined(with: .offset(y: 4))
         let hasNotices = revealError != nil || sendActionError != nil || store.readError != nil
         return VStack(alignment: .leading, spacing: 8) {
@@ -336,7 +344,7 @@ struct ConversationTranscript: View {
             if hasWorkingAgents || showsJumpToLatest {
                 HStack(spacing: 12) {
                     if hasWorkingAgents {
-                        TranscriptWorkingRow(state: state, isLive: store.phase.isLive)
+                        TranscriptWorkingRow(agents: store.roster, presence: presence)
                             .transition(rises)
                     }
                     Spacer(minLength: 0)

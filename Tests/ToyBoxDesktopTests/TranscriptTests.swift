@@ -1077,7 +1077,8 @@ struct TranscriptTests {
             lead: agents[0], members: [agents[1]],
             presence: [agents[0].id: .init(state: "working"), agents[1].id: .init(state: "working")])
         let bitmap = try await renderedTranscriptBitmap(
-            TranscriptWorkingRow(state: state, isLive: true).frame(width: 240, height: 28, alignment: .leading),
+            TranscriptWorkingRow(agents: state.agents, presence: state.presence)
+                .frame(width: 240, height: 28, alignment: .leading),
             size: CGSize(width: 240, height: 28))
         let scale = CGFloat(bitmap.pixelsWide) / 240
         func color(atX x: CGFloat) throws -> NSColor {
@@ -1835,7 +1836,8 @@ struct TranscriptCatchUpTests {
                                                    content: .system(.init(type: type)))
         }
         func slot(_ source: Int, isReplied: Bool? = nil) -> TranscriptCatchUpSlot {
-            TranscriptCatchUpSlot(line: .init(text: "Line", sources: [source]), state: state, isReplied: isReplied)
+            TranscriptCatchUpSlot(line: .init(text: "Line", sources: [source]), messages: state.messages,
+                                  isReplied: isReplied)
         }
         #expect(slot(12) == .event("tasks_completed"))
         #expect(TranscriptSystemMessages.symbol(for: "tasks_completed") == "checkmark.circle.fill")
@@ -1858,7 +1860,7 @@ struct TranscriptCatchUpTests {
         let first = TranscriptCatchUp.Summary(catchUp: summary, count: 20)
 
         let later = catchUpTestState(through: 36)
-        #expect(TranscriptCatchUp.newerCount(in: later, after: summary.through) == 6)
+        #expect(TranscriptCatchUp.newerCount(in: later.messages, after: summary.through) == 6)
         catchUp.update(from: later, server: server)
         #expect(catchUp.phase == .updating(first))
         #expect(catchUp.title == "Summarizing 26 new messages")
@@ -1877,9 +1879,9 @@ struct TranscriptCatchUpTests {
         var state = catchUpTestState(users: [25])
         state.messages.append(ChannelMessage(id: "s31", sequence: 31, timestamp: "2026-10-22T12:00:00Z",
                                              sender: .system, content: .text("Joined")))
-        #expect(TranscriptCatchUp.newerCount(in: state, after: 20) == 9)
-        #expect(TranscriptCatchUp.isReplied(24, in: state))
-        #expect(!TranscriptCatchUp.isReplied(25, in: state))
+        #expect(TranscriptCatchUp.newerCount(in: state.messages, after: 20) == 9)
+        #expect(TranscriptCatchUp.isReplied(24, in: state.messages))
+        #expect(!TranscriptCatchUp.isReplied(25, in: state.messages))
     }
 
     @Test func aHeightChangeAboveTheViewportScrollsByTheSameAmount() throws {
