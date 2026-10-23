@@ -208,6 +208,8 @@ struct TranscriptCatchUpCard: View {
             header
             // Always present, so its lines are what's inserted and fade in while the card takes its
             // new height in one pass. Overlapping, so an update's crossfade never stacks old and new.
+            // The clip keeps a shorter update's outgoing lines inside the card, and its 6 points
+            // hold the lines' hover backgrounds and focus rings within the card's padding.
             ZStack(alignment: .topLeading) {
                 if let summary = catchUp.summary {
                     content(summary)
@@ -215,6 +217,7 @@ struct TranscriptCatchUpCard: View {
                         .transition(.opacity.animation(.easeOut(duration: 0.2)))
                 }
             }
+            .clipShape(Rectangle().inset(by: -6))
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
