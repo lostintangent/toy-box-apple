@@ -87,6 +87,18 @@ final class AppModel {
         for token in applicationObservers { NotificationCenter.default.removeObserver(token) }
     }
 
+    func authorizeImportedNotificationsIfNeeded() async {
+        guard AppPreferencesMigration.takeNotificationOptIn(isSnapshot: launchOptions.isSnapshot) else { return }
+        await notifications.refreshAuthorization()
+        if notifications.authorization == .notDetermined {
+            if !(await notifications.enable()) {
+                UserDefaults.standard.set(false, forKey: "notificationsEnabled")
+            }
+        } else if notifications.authorization == .denied {
+            UserDefaults.standard.set(false, forKey: "notificationsEnabled")
+        }
+    }
+
     var api: ChannelAPI? { catalog?.api }
 
     func configure(serverURL: String, persist: Bool = true) {

@@ -1241,6 +1241,154 @@ struct MenuBarExtraTests {
     }
 }
 
+@Suite("App identity preferences")
+final class AppPreferencesMigrationTests {
+    private let sourceDomain = "legacy-preferences-\(UUID().uuidString)"
+    private let destinationDomain = "desktop-preferences-\(UUID().uuidString)"
+    private var defaults: UserDefaults { UserDefaults(suiteName: destinationDomain)! }
+
+    deinit {
+        defaults.removePersistentDomain(forName: sourceDomain)
+        defaults.removePersistentDomain(forName: destinationDomain)
+    }
+
+    private func migrate(bundleIdentifier: String? = AppPreferencesMigration.bundleIdentifier,
+                         isSnapshot: Bool = false) {
+        AppPreferencesMigration.run(
+            isSnapshot: isSnapshot, bundleIdentifier: bundleIdentifier, defaults: defaults,
+            sourceDomain: sourceDomain, destinationDomain: destinationDomain
+        )
+    }
+
+    @Test func theFirstLaunchImportsEveryPersistentAppSetting() {
+        let source: [String: Any] = [
+            AppConfiguration.serverURLKey: "https://legacy.example/toy-box",
+            LaunchChannel.key: ["https://legacy.example/toy-box": "studio"],
+            "appearance": "dark", "textScale": 1.25, MenuBarVisibility.key: "never",
+            "notificationsEnabled": true, "requestNotifications": false,
+            "completionNotifications": false, TranscriptIntelligenceSettings.summarizesNewMessages: false,
+            TranscriptIntelligenceSettings.describesImages: true,
+        ]
+        defaults.setPersistentDomain(source, forName: sourceDomain)
+        migrate()
+        let imported = defaults.persistentDomain(forName: destinationDomain) ?? [:]
+        var expected = source
+        expected[AppPreferencesMigration.completionKey] = true
+        expected[AppPreferencesMigration.notificationOptInKey] = true
+        #expect(NSDictionary(dictionary: imported).isEqual(to: expected))
+        #expect(defaults.bool(forKey: AppPreferencesMigration.completionKey))
+        #expect(LaunchChannel(defaults: defaults).channelID(serverURL: "https://legacy.example/toy-box") == "studio")
+        #expect(NSDictionary(dictionary: source).isEqual(to: defaults.persistentDomain(forName: sourceDomain) ?? [:]))
+    }
+
+    @Test func existingDestinationKeysAlwaysWinIncludingFalseAndEmptyValues() {
+        defaults.setPersistentDomain([
+            "serverURL": "https://legacy.example", "appearance": "dark",
+            "notificationsEnabled": true, "textScale": 1.25,
+            LaunchChannel.key: ["https://legacy.example": "old"],
+        ], forName: sourceDomain)
+        let destination: [String: Any] = [
+            "serverURL": "", "notificationsEnabled": false, "textScale": 0.0,
+            LaunchChannel.key: ["https://new.example": "new"],
+        ]
+        defaults.setPersistentDomain(destination, forName: destinationDomain)
+        migrate()
+        let imported = defaults.persistentDomain(forName: destinationDomain) ?? [:]
+        var expected = destination
+        expected["appearance"] = "dark"
+        expected[AppPreferencesMigration.completionKey] = true
+        #expect(NSDictionary(dictionary: imported).isEqual(to: expected))
+    }
+
+    @Test func registeredDefaultsDoNotHideLegacySettings() {
+        defaults.register(defaults: ["registeredMigrationSetting": "fallback"])
+        defaults.setPersistentDomain(["registeredMigrationSetting": "legacy"], forName: sourceDomain)
+        migrate()
+        #expect(defaults.string(forKey: "registeredMigrationSetting") == "legacy")
+    }
+
+    @Test func aCompletedImportNeverRunsAgainEvenWhenAnImportedKeyIsRemoved() {
+        defaults.setPersistentDomain(["appearance": "dark"], forName: sourceDomain)
+        migrate()
+        defaults.removeObject(forKey: "appearance")
+        defaults.setPersistentDomain(["appearance": "light", "textScale": 2.0], forName: sourceDomain)
+        migrate()
+        #expect(defaults.object(forKey: "appearance") == nil)
+        #expect(defaults.object(forKey: "textScale") == nil)
+    }
+
+    @Test func anAbsentLegacyDomainStillCompletesTheOneTimeImport() {
+        migrate()
+        #expect(defaults.bool(forKey: AppPreferencesMigration.completionKey))
+        defaults.setPersistentDomain(["appearance": "dark"], forName: sourceDomain)
+        migrate()
+        #expect(defaults.object(forKey: "appearance") == nil)
+    }
+
+    @Test(arguments: [
+        String?.none, AppPreferencesMigration.legacyDomain,
+        AppPreferencesMigration.bundleIdentifier + ".test",
+        AppPreferencesMigration.bundleIdentifier + ".benchmark",
+        AppPreferencesMigration.bundleIdentifier + ".updatetest",
+    ])
+    func otherBundleIdentitiesNeverReadOrMarkTheMigration(_ bundleIdentifier: String?) {
+        defaults.setPersistentDomain(["appearance": "dark"], forName: sourceDomain)
+        migrate(bundleIdentifier: bundleIdentifier)
+        #expect(defaults.persistentDomain(forName: destinationDomain) == nil)
+    }
+
+    @Test func snapshotsLeaveMigrationPendingForTheFirstOrdinaryLaunch() {
+        defaults.setPersistentDomain(["appearance": "dark"], forName: sourceDomain)
+        migrate(isSnapshot: true)
+        #expect(defaults.persistentDomain(forName: destinationDomain) == nil)
+        migrate()
+        #expect(defaults.string(forKey: "appearance") == "dark")
+    }
+
+    @Test(arguments: [Bool?.none, false, true])
+    func onlyAnImportedNotificationOptInIsConsumedOnce(_ enabled: Bool?) {
+        var source: [String: Any] = [:]
+        if let enabled { source["notificationsEnabled"] = enabled }
+        defaults.setPersistentDomain(source, forName: sourceDomain)
+        migrate()
+        #expect(takeNotificationOptIn() == (enabled == true))
+        #expect(!takeNotificationOptIn())
+    }
+
+    @Test(arguments: [false, true])
+    func existingNotificationPreferencesDoNotPrompt(_ enabled: Bool) {
+        defaults.setPersistentDomain(["notificationsEnabled": true], forName: sourceDomain)
+        defaults.set(enabled, forKey: "notificationsEnabled")
+        migrate()
+        #expect(!takeNotificationOptIn())
+        #expect(defaults.bool(forKey: "notificationsEnabled") == enabled)
+    }
+
+    @Test func aBackgroundImportWaitsForTheRealAppWithoutBeingConsumedByTestsOrSnapshots() {
+        defaults.setPersistentDomain(["notificationsEnabled": true], forName: sourceDomain)
+        migrate()
+        #expect(!takeNotificationOptIn(isSnapshot: true))
+        #expect(!takeNotificationOptIn(bundleIdentifier: AppPreferencesMigration.bundleIdentifier + ".test"))
+        #expect(takeNotificationOptIn())
+        #expect(!takeNotificationOptIn())
+    }
+
+    @Test func turningNotificationsOffBeforeTheFirstActiveWindowCancelsThePrompt() {
+        defaults.setPersistentDomain(["notificationsEnabled": true], forName: sourceDomain)
+        migrate()
+        defaults.set(false, forKey: "notificationsEnabled")
+        #expect(!takeNotificationOptIn())
+        #expect(defaults.object(forKey: AppPreferencesMigration.notificationOptInKey) == nil)
+    }
+
+    private func takeNotificationOptIn(bundleIdentifier: String? = AppPreferencesMigration.bundleIdentifier,
+                                      isSnapshot: Bool = false) -> Bool {
+        AppPreferencesMigration.takeNotificationOptIn(
+            isSnapshot: isSnapshot, bundleIdentifier: bundleIdentifier, defaults: defaults
+        )
+    }
+}
+
 @Suite("Launch channel")
 final class LaunchChannelTests {
     private let suite = "launch-channel-\(UUID().uuidString)"

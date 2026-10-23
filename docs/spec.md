@@ -1397,6 +1397,13 @@ download and install updates" bound to Sparkle's own settings. Automatic install
 while automatic checks are off or the updater disallows it. These controls are hidden without a
 running updater. Only a bundle containing `SUFeedURL` outside snapshot mode starts the standard
 Sparkle updater, so development, validation and test bundles cannot update themselves.
+The first ordinary launch of `dev.toybox.desktop` imports missing persistent preferences from
+`dev.toybox.channels.mac` once, before creating the app model. Existing new-domain values always
+win, including per-server channel memory. Snapshot and non-production identities never import or
+mark that migration. System permission grants do not transfer. An imported notification opt-in
+requests authorization once, on the first active app window, only if permission is undetermined.
+A background Siri launch leaves that request pending until the app comes forward. An imported
+opt-out never prompts, and denial clears the enabled preference.
 
 ### Menu and keyboard model
 
@@ -1688,7 +1695,7 @@ everything. Launches with `--server`, `TOY_BOX_SERVER_URL`, a snapshot or a benc
 the index. When Spotlight asks the app to reindex, it indexes the catalog's channels and removes
 identifiers the catalog no longer has.
 
-A window that shows a channel makes it the window's user activity (`dev.toybox.channels.channel`)
+A window that shows a channel makes it the window's user activity (`dev.toybox.desktop.channel`)
 with `appEntityIdentifier` set to its Channel entity, through `userActivity(_:element:_:)` so the
 activity follows a switch. AppKit makes the main window's activity current, so Siri and Apple
 Intelligence take "this channel" to mean the one in front, and with no channel shown there's no

@@ -18,6 +18,7 @@ struct ToyBoxDesktopApp: App {
     init() {
         do {
             let options = try LaunchOptions.parse(Array(ProcessInfo.processInfo.arguments.dropFirst()))
+            AppPreferencesMigration.run(isSnapshot: options.isSnapshot)
             AppDelegate.isSnapshot = options.isSnapshot
             AppDelegate.launchedInBackground = NSRunningApplication.current.activationPolicy == .prohibited
             if options.isSnapshot {
@@ -50,6 +51,9 @@ struct ToyBoxDesktopApp: App {
             appDelegate.openChannelWindow = { openWindow(id: "channels") }
             if phase != .background { appDelegate.comeForward() }
             guard !appDelegate.isInBackground else { return }
+            if phase == .active {
+                Task { await model.authorizeImportedNotificationsIfNeeded() }
+            }
             guard !didCheckStartupWindow || phase == .active else { return }
             didCheckStartupWindow = true
             DispatchQueue.main.async {
