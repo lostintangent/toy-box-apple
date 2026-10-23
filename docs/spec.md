@@ -222,7 +222,8 @@ background: approximately 4.5% in light appearance and 7% in dark. Preserve norm
 agent-colored avatars and the muted accent treatment for the user's own messages. A pending
 question takes a warm orange wash, its explicit label and a Reply button, never an outline.
 Increase Contrast adds a meaningful boundary rather than making all agent messages saturated
-identity-colored cards.
+identity-colored cards. Every bubble, agent or your own, gets a 1-point `primary` edge at 50%, and
+pending requests keep their orange edge.
 
 The working summary is live application status, not historical transcript content. It floats
 as a glass capsule directly above the composer, even when reading older history. Show at most
@@ -464,6 +465,7 @@ drop shadows. Use an 8-point spacing rhythm, with 4-point adjustments inside com
 | --- | --- |
 | Conversation background | `textBackgroundColor`, opaque in both appearances |
 | Agent message surface | Neutral tonal fill over the conversation, approximately 4.5% primary ink in light and 7% in dark. A pending request swaps it for a warm orange wash. Borders only under Increase Contrast |
+| Your message surface | Accent at 9% over the conversation, with normal label text. Under Increase Contrast, the same 1-point `primary` edge at 50% as agent bubbles |
 | Navigation and inspector | System sidebar and inspector materials, no manual blur stacking |
 | Floating controls and popovers | Native toolbar, popover and control materials |
 | Text | `labelColor`, `secondaryLabelColor`, `tertiaryLabelColor` by hierarchy |
