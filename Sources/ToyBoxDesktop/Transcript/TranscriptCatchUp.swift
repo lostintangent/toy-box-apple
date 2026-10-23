@@ -38,12 +38,9 @@ final class TranscriptCatchUp {
     /// Until the reader scrolls, uses the keyboard or reveals anything, the transcript doesn't follow
     /// its bottom, so the card's top stays where it landed.
     var isPinned = true
-    /// While the transcript is jumping, the jump owns the scroll position and repeats until it lands.
-    @ObservationIgnored var isJumping = false
-    /// The top of the card and New divider in the viewport, measured by the divider row.
-    @ObservationIgnored private(set) var top: CGFloat?
-    /// Keeps the rows below in place when the card changes height above the viewport.
-    @ObservationIgnored var scroll: ((CGFloat) -> Void)?
+    /// The top of the card and New divider in the viewport, measured by the divider row. The
+    /// transcript keeps the rows below in place when the card changes height above the viewport.
+    @ObservationIgnored var top: CGFloat?
     @ObservationIgnored private let timeout: Duration
     /// What the summary being updated was made from, restored if the update fails so Update can retry.
     @ObservationIgnored private var updatingFrom: CatchUpRequest?
@@ -147,13 +144,6 @@ final class TranscriptCatchUp {
         Self.dismissed.insert(boundary)
         generation = nil
         Task { await collapse() }
-    }
-
-    /// Height changes above the viewport scroll by the same amount, so the first visible row holds still.
-    func dividerMoved(from old: CGRect, to new: CGRect) {
-        top = new.minY
-        let growth = new.height - old.height
-        if old.minY < -0.5, abs(growth) > 0.5, !isJumping { scroll?(growth) }
     }
 
     /// The card never animates its height, because each frame of that lays out the whole transcript.

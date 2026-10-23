@@ -453,6 +453,21 @@ struct TranscriptTests {
         #expect(TranscriptViewport().topVisibleFrame(in: frames) == nil)
     }
 
+    @Test func theReadingAnchorIsTheFirstRowStartingInTheViewport() {
+        let viewport = TranscriptViewport(width: 600, height: 400)
+        func row(_ y: CGFloat, _ height: CGFloat, top: CGFloat) -> TranscriptMessageFrame {
+            .init(sequence: 1, rect: CGRect(x: 24, y: y, width: 300, height: height), historyStart: 1, contentTop: top)
+        }
+        let frames = ["spanning": row(-100, 150, top: 900), "first": row(50, 150, top: 1050),
+                      "second": row(200, 300, top: 1200), "below": row(420, 80, top: 1420)]
+        #expect(viewport.readingAnchor(in: frames) == .init(id: "first", contentTop: 1050))
+        // After a scroll down by 60, the first row spans the top and the next one starts in view.
+        #expect(viewport.readingAnchor(in: frames, scrolledBy: 60) == .init(id: "second", contentTop: 1200))
+        // A row taller than the viewport is the anchor while it fills it.
+        #expect(viewport.readingAnchor(in: ["tall": row(-300, 900, top: 600)]) == .init(id: "tall", contentTop: 600))
+        #expect(TranscriptViewport().readingAnchor(in: frames) == nil)
+    }
+
     @Test func followingTheBottomSurvivesGrowthUntilTheReaderMovesAway() {
         func viewport(gap: CGFloat, content: CGFloat = 2000) -> TranscriptViewport {
             TranscriptViewport(top: content - 400 - gap, bottomGap: gap, width: 600, height: 400,
@@ -2122,22 +2137,6 @@ struct TranscriptCatchUpTests {
         #expect(!TranscriptCatchUp.isReplied(25, in: state.messages))
     }
 
-    @Test func aHeightChangeAboveTheViewportScrollsByTheSameAmount() throws {
-        let catchUp = try #require(make())
-        var scrolled: [CGFloat] = []
-        catchUp.scroll = { scrolled.append($0) }
-        // In view the card grows downward from a top that holds still.
-        catchUp.dividerMoved(from: CGRect(x: 0, y: 20, width: 400, height: 60),
-                             to: CGRect(x: 0, y: 20, width: 400, height: 180))
-        #expect(scrolled.isEmpty)
-        catchUp.dividerMoved(from: CGRect(x: 0, y: -300, width: 400, height: 60),
-                             to: CGRect(x: 0, y: -300, width: 400, height: 180))
-        catchUp.dividerMoved(from: CGRect(x: 0, y: -300, width: 400, height: 180),
-                             to: CGRect(x: 0, y: -300, width: 400, height: 30))
-        #expect(scrolled == [120, -150])
-        #expect(catchUp.top == -300)
-    }
-
     @Test func theSettingsReadAsOnUntilTurnedOff() throws {
         let suite = "catch-up-\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suite))
@@ -2224,6 +2223,36 @@ struct TranscriptCatchUpTests {
 
         harness.interaction.jumpToLatest()
         try await harness.waitUntil { abs(harness.bottomGap) < 2 }
+    }
+
+    @Test func aCardGrowingAboveTheViewportLeavesTheReaderInPlace() async throws {
+        let ready = CatchUp(needsYou: nil, changes: (11...16).map {
+            .init(text: "Lead moved update \($0) along, with enough detail to wrap the line.", sources: [$0])
+        }, through: 40)
+        let service = StubChannelIntelligence(results: [.ready(ready)], holdsCatchUp: true)
+        let messages = (1...40).map { catchUpTestMessage($0, repeats: $0 > 9 ? 3 : 1) }
+        let harness = try await TranscriptHarness(messages: messages, seenThrough: 9, height: 800,
+                                                  intelligence: service)
+        defer {
+            service.releaseCatchUp()
+            harness.close()
+        }
+        let clip = harness.scrollView.contentView
+        try await harness.waitUntil { service.catchUpCount == 1 }
+        let landed = clip.bounds.minY
+        try await harness.scrollDown(byWheel: false) { clip.bounds.minY > landed + 400 }
+        let reading = harness.visibleFrames()
+        try #require(reading.count >= 2)
+        let height = harness.scrollView.documentView?.bounds.height ?? 0
+
+        service.releaseCatchUp()
+        try await harness.waitUntil { (harness.scrollView.documentView?.bounds.height ?? 0) > height + 40 }
+        try await harness.settle(for: .milliseconds(500))
+        for (id, rect) in reading {
+            let after = harness.capture.frames[id]?.rect ?? .null
+            #expect(abs(after.minY - rect.minY) < 1, "\(id) moved from \(rect) to \(after)")
+        }
+        #expect(harness.readRequests == 0)
     }
 }
 
@@ -2386,10 +2415,10 @@ private final class TranscriptHarness {
         return rect.minY >= 0 && rect.maxY <= scrollView.contentView.bounds.height - scrollView.contentInsets.bottom
     }
 
-    /// Frames of the rows wholly inside the unobscured viewport.
+    /// Frames of the messages wholly inside the unobscured viewport. Dividers come and go as pages join runs.
     func visibleFrames() -> [String: CGRect] {
         capture.frames.reduce(into: [:]) { result, entry in
-            if isVisible(entry.key) { result[entry.key] = entry.value.rect }
+            if entry.value.sequence > 0, isVisible(entry.key) { result[entry.key] = entry.value.rect }
         }
     }
 

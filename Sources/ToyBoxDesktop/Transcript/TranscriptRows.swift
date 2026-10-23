@@ -61,7 +61,9 @@ struct TranscriptRowContent: View, @MainActor Equatable {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             if let divider = row.divider {
+                // A frame, so a card starting in the viewport keeps the reader's place and grows downward.
                 TranscriptDividerStack(divider: divider, catchUp: catchUp, store: store)
+                    .transcriptMessageFrame(id: "divider-\(row.id)", sequence: 0, historyStart: context.historyStart)
             }
             switch row.content {
             case .user(let message):
@@ -127,8 +129,8 @@ private struct TranscriptDividerStack: View {
             TranscriptRule(divider: divider)
                 .accessibilityFocused($focusesDivider)
         }
-        .onGeometryChange(for: CGRect.self) { $0.frame(in: .named("transcript-viewport")) } action: { old, new in
-            catchUp?.dividerMoved(from: old, to: new)
+        .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named("transcript-viewport")).minY } action: { top in
+            catchUp?.top = top
         }
     }
 }

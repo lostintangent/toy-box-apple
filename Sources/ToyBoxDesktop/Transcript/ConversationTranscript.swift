@@ -110,7 +110,6 @@ struct ConversationTranscript: View {
                 }
                 // Owned here rather than by the card, which the lazy stack drops when it scrolls away.
                 .task(id: catchUp?.generation) { await catchUp?.run(using: intelligence) }
-                .onChange(of: pendingJump) { catchUp?.isJumping = pendingJump != nil }
         }
     }
 
@@ -210,6 +209,7 @@ struct ConversationTranscript: View {
             }
         }
         .onPreferenceChange(TranscriptMessageFrames.self) { new in
+            holdReadingPlace(in: new)
             geometry.frames = new
             publishVisibleSequence()
             followReaderWhilePaging(in: new)
@@ -248,6 +248,11 @@ struct ConversationTranscript: View {
                                      highlightedSequence: highlightedSequence, catchUp: catchUp, store: store,
                                      expandedMessageIds: expandedMessageIds,
                                      onSetExpanded: { id, expands in
+                                         // The message changes height below its own top, even when
+                                         // that top is above the viewport.
+                                         if let frame = frames[id] {
+                                             geometry.readingAnchor = .init(id: id, contentTop: frame.contentTop)
+                                         }
                                          if expands {
                                              expandedMessageIds.insert(id)
                                              return
@@ -269,6 +274,7 @@ struct ConversationTranscript: View {
             Color.clear.frame(height: 16).id("transcript-end")
         }
         .scrollTargetLayout()
+        .coordinateSpace(name: "transcript-content")
     }
 
     /// The looking and working reactions by sequence. Roster leaves statuses out, so they're merged back.
@@ -688,8 +694,6 @@ struct ConversationTranscript: View {
                   availability: intelligence.availability,
                   isOn: TranscriptIntelligenceSettings.isOn(TranscriptIntelligenceSettings.summarizesNewMessages))
         else { return }
-        made.isJumping = pendingJump != nil
-        made.scroll = { [window] delta in window.scroll(by: delta) }
         catchUp = made
     }
 
@@ -758,6 +762,31 @@ struct ConversationTranscript: View {
         if current != anchor { pagingAnchor = current }
     }
 
+    /// LazyVStack estimates the heights of rows it hasn't built and corrects them as it builds rows
+    /// above the viewport, without moving the offset, so scrolling up moved the reader's rows by
+    /// hundreds of points at a time. In the same pass, the viewport now scrolls by however far the
+    /// first row starting in it moved through the content, so only scrolling moves what's on screen,
+    /// while rows starting in the viewport still grow downward. Each correction costs a second layout
+    /// pass, so a frame or two, but only while rows above change height.
+    private func holdReadingPlace(in frames: [String: TranscriptMessageFrame]) {
+        // Anything else that moves the scroll position owns it outright, so the hold stands down while
+        // following the bottom, landing, paging, jumping or revealing. New code that scrolls the
+        // transcript needs to switch it off here too.
+        let holds = hasLanded && pagingAnchor == nil && pendingJump == nil && !isRevealing
+            && (!isAtBottom || catchUp?.holdsLanding == true)
+        var shift: CGFloat = 0
+        if holds, let anchor = geometry.readingAnchor, let frame = frames[anchor.id] {
+            shift = frame.contentTop - anchor.contentTop
+        } else if holds, geometry.readingAnchor != nil,
+                  let common = viewport.readingAnchor(in: frames.filter { geometry.frames[$0.key] != nil }),
+                  let previous = geometry.frames[common.id] {
+            // The pass that moved the anchor out of the built rows still moved the rows that stayed.
+            shift = common.contentTop - previous.contentTop
+        }
+        if abs(shift) > 0.25 { window.scroll(by: shift) } else { shift = 0 }
+        geometry.readingAnchor = holds ? viewport.readingAnchor(in: frames, scrolledBy: shift) : nil
+    }
+
     private func restorePagingAnchor(using frames: [String: TranscriptMessageFrame]) {
         guard let anchor = pagingAnchor, !store.isLoadingOlder,
               let oldest = store.state?.messages.first?.sequence, oldest < anchor.oldestSequence,
@@ -817,6 +846,13 @@ private func transcriptFrameIDs(of row: TranscriptRow) -> [String] {
 private final class TranscriptScrollGeometry {
     var viewport = TranscriptViewport()
     var frames: [String: TranscriptMessageFrame] = [:]
+    var readingAnchor: TranscriptReadingAnchor?
+}
+
+/// A row whose place on screen the reader keeps, by where its top sits in the content.
+struct TranscriptReadingAnchor: Equatable {
+    var id: String
+    var contentTop: CGFloat
 }
 
 private struct PagingAnchor: Equatable {
@@ -909,6 +945,25 @@ struct TranscriptViewport: Equatable {
             $0.sequence > 0 && $0.rect.intersects(visible)
                 && $0.rect.intersection(visible).height >= min(24, $0.rect.height / 2)
         }.map(\.sequence).max()
+    }
+
+    /// The first frame starting in the viewport or, when one row fills it, the frame spanning its top.
+    /// Rows above it change height out of the reader's sight. `shift` is a scroll made since `frames`.
+    func readingAnchor(in frames: [String: TranscriptMessageFrame], scrolledBy shift: CGFloat = 0)
+        -> TranscriptReadingAnchor? {
+        guard width > 0, height > 0 else { return nil }
+        var starting: (id: String, frame: TranscriptMessageFrame)?
+        var spanning: (id: String, frame: TranscriptMessageFrame)?
+        for (id, frame) in frames {
+            let top = frame.rect.minY - shift
+            guard top < height, frame.rect.maxY - shift > 0 else { continue }
+            if top >= -0.5 {
+                if starting.map({ top < $0.frame.rect.minY - shift }) ?? true { starting = (id, frame) }
+            } else if spanning.map({ top > $0.frame.rect.minY - shift }) ?? true {
+                spanning = (id, frame)
+            }
+        }
+        return (starting ?? spanning).map { .init(id: $0.id, contentTop: $0.frame.contentTop) }
     }
 
     func topVisibleFrame(in frames: [String: TranscriptMessageFrame])
