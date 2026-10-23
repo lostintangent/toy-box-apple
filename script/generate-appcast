@@ -1,0 +1,72 @@
+#!/bin/bash
+set +x
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+TAG="${1:?Usage: script/generate-appcast vX.Y.Z}"
+[[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Release tag must be vX.Y.Z." >&2; exit 1; }
+OUTPUT="${OUTPUT_DIR:-$ROOT/dist}"
+ARCHIVE="$OUTPUT/ToyBoxDesktop-${TAG#v}-arm64.zip"
+[[ -s "$ARCHIVE" ]] || { echo "A notarized release archive is required: $ARCHIVE" >&2; exit 1; }
+BUILD="${BUILD_NUMBER:?Set BUILD_NUMBER to the archived build number.}"
+KEY_FILE="${SPARKLE_ED_KEY_FILE:--}"
+if [[ "$KEY_FILE" == - ]]; then
+    : "${SPARKLE_ED_PRIVATE_KEY:?Missing SPARKLE_ED_PRIVATE_KEY}"
+else
+    [[ -s "$KEY_FILE" ]] || { echo "The update signing key file is missing." >&2; exit 1; }
+fi
+TOOLS="$("$ROOT/script/sparkle-tools")"
+PREFIX="${DOWNLOAD_URL_PREFIX:-https://github.com/lostintangent/toy-box-desktop/releases/download/$TAG/}"
+signing_tool() {
+    local tool="$1"
+    shift
+    if [[ "$KEY_FILE" == - ]]; then
+        printf '%s' "$SPARKLE_ED_PRIVATE_KEY" | "$TOOLS/bin/$tool" --ed-key-file - "$@"
+    else
+        "$TOOLS/bin/$tool" --ed-key-file "$KEY_FILE" "$@"
+    fi
+}
+
+NOTES="${ARCHIVE%.zip}.txt"
+git -C "$ROOT" for-each-ref --format='%(contents)' "refs/tags/$TAG" > "$NOTES"
+if [[ ! -s "$NOTES" ]]; then printf 'Toy Box Desktop %s\n' "${TAG#v}" > "$NOTES"; fi
+signing_tool generate_appcast --download-url-prefix "$PREFIX" --embed-release-notes \
+    --maximum-deltas 0 --link https://github.com/lostintangent/toy-box-desktop \
+    -o "$OUTPUT/appcast.xml" "$OUTPUT"
+
+SIGNATURE="$(python3 - "$OUTPUT/appcast.xml" "$ARCHIVE" "$BUILD" "${TAG#v}" "$PREFIX" <<'PY'
+import base64
+from pathlib import Path
+import sys
+import xml.etree.ElementTree as ET
+
+feed, archive, build, version, prefix = sys.argv[1:]
+ns = "{http://www.andymatuschak.org/xml-namespaces/sparkle}"
+items = ET.parse(feed).getroot().findall("./channel/item")
+if len(items) != 1:
+    sys.exit("The release feed must contain exactly one update.")
+item = items[0]
+enclosure = item.find("enclosure")
+if enclosure is None:
+    sys.exit("The release feed has no update enclosure.")
+expected = {
+    "url": prefix + Path(archive).name,
+    "length": str(Path(archive).stat().st_size),
+}
+if any(enclosure.get(key) != value for key, value in expected.items()):
+    sys.exit("The appcast URL or archive length does not match the release.")
+for key, expected in (("version", build), ("shortVersionString", version),
+                      ("minimumSystemVersion", "27.0")):
+    if item.findtext(ns + key) != expected:
+        sys.exit(f"The appcast {key} does not match the release.")
+if item.findtext(ns + "hardwareRequirements") not in (None, "arm64"):
+    sys.exit("The appcast has an unsupported hardware requirement.")
+signature = enclosure.get(ns + "edSignature", "")
+if len(base64.b64decode(signature, validate=True)) != 64:
+    sys.exit("The archive is missing a valid EdDSA signature.")
+print(signature)
+PY
+)"
+signing_tool sign_update --verify "$ARCHIVE" "$SIGNATURE"
+signing_tool sign_update --verify "$OUTPUT/appcast.xml"
+echo "Signed update feed: $OUTPUT/appcast.xml"

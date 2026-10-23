@@ -77,8 +77,9 @@ Reference sources (read-only):
 ## Releases
 
 Releases are Developer ID signed, notarized and stapled, then published with their SHA-256 checksum
-by `.github/workflows/build-and-release.yml` on an approved `vX.Y.Z` tag. A manual run on `main`
-performs the same signing and notarization but keeps the archive as an artifact, without publishing.
+and signed Sparkle appcast by `.github/workflows/build-and-release.yml` on an approved `vX.Y.Z` tag.
+A manual run on `main` performs the same signing, notarization and appcast generation but keeps them
+as artifacts, without publishing.
 Local builds use Command Line Tools. CI uses its selected Xcode 27 toolchain on the `xcode-27` runner.
 
 Only the certificate owner runs the one-time setup:
@@ -108,6 +109,50 @@ Without a notary profile, the archive is named `SIGNED-UNNOTARIZED` and is never
 Notarization response tests also run macOS's real `plutil` against notarytool-shaped JSON, including
 accepted, rejected, malformed and missing-status responses. The release script validates JSON by
 extracting its status, not by treating it as a property list with `plutil -lint`.
+
+### In-place updates
+
+Sparkle 2.10.0 is an exact SwiftPM dependency of the app target. Every bundle includes the framework,
+`Autoupdate` installer and `Updater.app`, thinned to arm64, with symlinks and license notices
+preserved. Headers, modules and sandbox-only XPC services are omitted. The framework adds about
+1.3 MB installed, or 0.5 MB compressed. Signing proceeds from installer to updater to framework to
+app, verifying each component strictly and never using `--deep`. Developer ID releases use hardened
+runtime and secure timestamps throughout. Ad-hoc development signing does not enable hardened
+runtime, because library validation cannot match Team IDs between ad-hoc-signed binaries.
+
+Only `script/release` adds the production `SUFeedURL` and `SUPublicEDKey`. The stable feed is
+`https://github.com/lostintangent/toy-box-desktop/releases/latest/download/appcast.xml`, and every
+enclosure points at that version's GitHub release asset URL. Development, validation,
+snapshot and test bundles have no feed or verification key and never start an updater. Release
+bundles enable automatic checking without Sparkle's permission prompt, but leave automatic
+installation off by default. Both choices remain user-configurable through Sparkle.
+
+The user runs `./script/setup-update-secrets [OWNER/REPO]` once. Sparkle generates or reuses the
+app-specific `dev.toybox.channels.mac` Keychain account, without touching its global default key.
+Setup uploads the exported key as `SPARKLE_ED_PRIVATE_KEY`, configures `SPARKLE_ED_PUBLIC_KEY` as a
+public repository variable, and removes the temporary export. Keep a secure backup of the Keychain
+key. Existing installs trust its public half, so losing or casually rotating it breaks the update
+chain. Agents never run this setup with real credentials or read that key.
+
+After notarization and stapling, `script/generate-appcast` uses Sparkle's checksum-pinned tools to
+sign the finished archive and the whole feed with Ed25519. The archive signature, length, URL,
+machine and human-readable versions, and minimum macOS version are checked before publishing.
+The feed signature is independently verified with `sign_update`. Archive verification is required
+before extraction, and signed feeds are required. Tag annotations are embedded as release notes,
+with a version-title fallback for dry runs. Deltas are intentionally omitted for these small apps.
+Both the feed and zip are attached to every release and retained by dry runs.
+
+`CFBundleVersion` is `github.run_number.github.run_attempt`. Release workflows are serialized, and
+the new numeric build must exceed every version in the latest published appcast. Missing or
+malformed prior metadata fails the release instead of allowing a downgrade. The first Sparkle
+release bootstraps from 0.1.0, which has no feed and must be upgraded manually. Local releases can
+set `PREVIOUS_APPCAST` to apply the same monotonicity guard.
+
+`script/test-sparkle.py` exercises packaging, inside-out signing, key setup, failure propagation
+and numeric build ordering without real credentials. Its macOS native checks verify the bundled
+architectures and signatures. A real `generate_appcast`/`sign_update` round trip uses an isolated
+throwaway CryptoKit key file and verifies rejection of a modified archive and feed, never accessing the
+default Sparkle Keychain entry.
 
 ## Protocol (v1)
 

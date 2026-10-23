@@ -14,6 +14,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch') && 'release-publication' || format('build-{0}', github.run_id) }}
+  cancel-in-progress: false
+
 jobs:
   test:
     runs-on: xcode-27
@@ -48,6 +52,8 @@ jobs:
           done
           grep -q '"com.apple.appintents.entity.Indexed"' "$actions"
           TOY_BOX_BUNDLE="$app" python3 script/test-sparkle.py NativeBundleTests
+          tools="$(./script/sparkle-tools)"
+          TOY_BOX_BUNDLE="$app" SPARKLE_TOOLS_DIR="$tools" python3 script/test-sparkle.py NativeAppcastTests
       - name: Wait for crash reports
         if: failure()
         run: |
@@ -88,6 +94,7 @@ jobs:
       SIGNING_IDENTITY: 69A492FDF7DDFC679B93DB465E0D5E94F22DAC6A
       NOTARY_APPLE_ID: joncart@outlook.com
       NOTARY_TEAM_ID: RHFNBL7EG4
+      SPARKLE_ED_PUBLIC_KEY: ${{ vars.SPARKLE_ED_PUBLIC_KEY }}
     steps:
       - name: Select and check the runner toolchain
         run: |
@@ -101,6 +108,25 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           persist-credentials: false
+      - name: Check update signing configuration and build number
+        env:
+          SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set +x
+          set -euo pipefail
+          : "${SPARKLE_ED_PRIVATE_KEY:?Missing SPARKLE_ED_PRIVATE_KEY}"
+          : "${SPARKLE_ED_PUBLIC_KEY:?Missing SPARKLE_ED_PUBLIC_KEY repository variable}"
+          url="$(gh release view --repo "$GITHUB_REPOSITORY" --json assets \
+            --jq '.assets[] | select(.name == "appcast.xml") | .url')"
+          args=("$BUILD_NUMBER")
+          if [[ -n "$url" ]]; then
+            previous="$RUNNER_TEMP/previous-appcast.xml"
+            curl --fail --silent --show-error --location "$url" -o "$previous"
+            printf 'PREVIOUS_APPCAST=%s\n' "$previous" >> "$GITHUB_ENV"
+            args+=("$previous")
+          fi
+          python3 script/check-update-version.py "${args[@]}"
       - name: Import the signing identity and notarization credentials
         env:
           CERTIFICATE: ${{ secrets.MACOS_SIGNING_CERTIFICATE }}
@@ -147,6 +173,10 @@ jobs:
         env:
           SCRATCH_PATH: ${{ runner.temp }}/toy-box-release
         run: ./script/release "$RELEASE_TAG"
+      - name: Generate and verify the signed update feed
+        env:
+          SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
+        run: ./script/generate-appcast "$RELEASE_TAG"
       - name: Remove the temporary keychain and signing material
         if: always()
         run: |
@@ -173,6 +203,7 @@ jobs:
           path: |
             dist/*.zip
             dist/*.sha256
+            dist/appcast.xml
           if-no-files-found: error
           retention-days: 14
 
@@ -193,5 +224,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          gh release create "$RELEASE_TAG" dist/*.zip dist/*.sha256 \
+          gh release create "$RELEASE_TAG" dist/*.zip dist/*.sha256 dist/appcast.xml \
             --repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes --title "$RELEASE_TAG"

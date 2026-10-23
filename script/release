@@ -10,6 +10,11 @@ IDENTITY="${SIGNING_IDENTITY:?Set SIGNING_IDENTITY to a Developer ID Application
 [[ "$IDENTITY" =~ ^[[:xdigit:]]{40}$ ]] || { echo "Signing identity must be a 40-digit SHA-1." >&2; exit 1; }
 BUILD="${BUILD_NUMBER:?Set BUILD_NUMBER to a monotonically increasing build number.}"
 [[ "$BUILD" =~ ^[1-9][0-9]{0,3}(\.[0-9]{1,2}){0,2}$ ]] || { echo "Build number must use Apple's numeric major[.minor[.patch]] format." >&2; exit 1; }
+VERSION_ARGS=("$BUILD")
+if [[ -n "${PREVIOUS_APPCAST:-}" ]]; then VERSION_ARGS+=("$PREVIOUS_APPCAST"); fi
+python3 "$ROOT/script/check-update-version.py" "${VERSION_ARGS[@]}"
+PUBLIC_KEY="${SPARKLE_ED_PUBLIC_KEY:?Set SPARKLE_ED_PUBLIC_KEY to the update verification key.}"
+[[ "$PUBLIC_KEY" =~ ^[A-Za-z0-9+/]{43}=$ ]] || { echo "The update public key must encode 32 bytes." >&2; exit 1; }
 [[ -s "$ROOT/Resources/AppIcon.icns" ]] || { echo "The release app icon is missing. Run script/icon." >&2; exit 1; }
 SCRATCH="${SCRATCH_PATH:-$ROOT/.build/distribution}"
 OUTPUT="${OUTPUT_DIR:-$ROOT/dist}"
@@ -39,6 +44,12 @@ ARCHIVE="$OUTPUT/ToyBoxDesktop-$VERSION-arm64$SUFFIX.zip"
 CONFIGURATION=release SCRATCH_PATH="$SCRATCH" "$ROOT/script/run" --no-open
 PLIST="$APP/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" -c "Set :CFBundleVersion $BUILD" "$PLIST"
+/usr/libexec/PlistBuddy \
+    -c "Add :SUFeedURL string https://github.com/lostintangent/toy-box-desktop/releases/latest/download/appcast.xml" \
+    -c "Add :SUPublicEDKey string $PUBLIC_KEY" \
+    -c "Add :SUEnableAutomaticChecks bool true" \
+    -c "Add :SUVerifyUpdateBeforeExtraction bool true" \
+    -c "Add :SURequireSignedFeed bool true" "$PLIST"
 if [[ "$(xcrun lipo -archs "$APP/Contents/MacOS/ToyBoxDesktop")" != arm64 ]]; then
     echo "Release executable must contain only arm64." >&2
     exit 1

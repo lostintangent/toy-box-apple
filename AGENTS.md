@@ -116,8 +116,8 @@ view.
 ## Releases
 
 - Push a `vX.Y.Z` tag, only with the user's approval. Actions tests the tag, then signs,
-  notarizes, staples and publishes the zip and its checksum. Running the workflow by hand on
-  `main` is a dry run that keeps the zip as an artifact.
+  notarizes, staples and publishes the zip, its checksum and a signed `appcast.xml`. Running the
+  workflow by hand on `main` is a dry run that keeps all three as artifacts.
 - One-time setup, by the certificate owner only:
   `./script/setup-release-secrets SHA1 APPLE_ID TEAM_ID`, using an Apple ID app-specific password
   entered at the silent prompt or piped on stdin, never as a script argument. This configures the
@@ -126,14 +126,29 @@ view.
   Apple ID and Team ID directly. Keep them in sync with the setup arguments when rotating identities.
   Agents never run setup with real credentials, create
   secrets or read keys and passwords. `python3 script/test-release-secrets.py` uses fake commands only.
-- Locally: `SIGNING_IDENTITY=SHA1 BUILD_NUMBER=N NOTARY_PROFILE=toy-box-channels-notary
+- Update signing setup, by the user only: `./script/setup-update-secrets [OWNER/REPO]`. It reuses
+  or creates the `dev.toybox.channels.mac` Sparkle Keychain account, uploads `SPARKLE_ED_PRIVATE_KEY`
+  as a secret and `SPARKLE_ED_PUBLIC_KEY` as a public repository variable, then deletes its temporary
+  export. Back up that Keychain key. Do not replace it casually, since existing installs trust it.
+  Agents never run this setup or read the real key. `python3 script/test-sparkle.py` uses fake commands.
+  Its opt-in macOS `NativeAppcastTests` uses a throwaway CryptoKit key file, never a Keychain item.
+- Locally: `SPARKLE_ED_PUBLIC_KEY=... SIGNING_IDENTITY=SHA1 BUILD_NUMBER=N NOTARY_PROFILE=toy-box-channels-notary
   ./script/release vX.Y.Z`. Without `NOTARY_PROFILE` the zip is named `SIGNED-UNNOTARIZED` and
-  is never published.
+  is never published. `PREVIOUS_APPCAST=path` enforces an increasing build number locally. CI always
+  compares against the latest published feed and serializes release workflows. Its build number is
+  `github.run_number.github.run_attempt`, so reruns advance too.
 - Hardened runtime, a secure timestamp and only the audio-input entitlement. Never `--deep`.
   Local builds use Command Line Tools, and CI uses the runner's selected Xcode 27 on `xcode-27`.
 - Sparkle is pinned to 2.10.0 in SwiftPM. Every bundle embeds its arm64-only framework, installer
   and updater, without sandbox XPC services or development headers. `script/sign-app` signs those
   components inside out before signing the app. Keep Sparkle's license in the bundle.
+- Only release bundles receive `SUFeedURL` and `SUPublicEDKey`. All other bundles have no updater,
+  even if the user previously enabled it in preferences. The release feed is
+  `https://github.com/lostintangent/toy-box-desktop/releases/latest/download/appcast.xml`.
+  Automatic checking defaults on without a permission prompt. Installation remains opt-in.
+  `script/generate-appcast` runs after notarization and verifies both the archive and feed signatures.
+  It accepts the private key on stdin from `SPARKLE_ED_PRIVATE_KEY`, or an explicit
+  `SPARKLE_ED_KEY_FILE` for isolated testing. It never falls back to a default Keychain key.
 - The Developer ID certificate and its G1 intermediate expire February 1, 2027. Before then, move
   to a G2 certificate, rerun the setup, and update the workflow's intermediate URL and SHA-256.
 - The app icon's only source is `Resources/AppIcon.icon` (Designer). After changing it, run
