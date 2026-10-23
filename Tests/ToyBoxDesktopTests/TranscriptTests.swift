@@ -114,65 +114,46 @@ struct TranscriptTests {
     }
 
     /// Each selectable `Text` adds a platform view, most of what a long message costs to scroll in, so a
-    /// message builds them only once the pointer reaches it, never as it slides under a still pointer.
+    /// message builds them only once the pointer reaches it, and keeps them so a selection outlasts it.
     @MainActor
-    @Test func messagesBuildSelectableTextOnlyOnceThePointerArrives() async throws {
-        let lead = ChannelAgent.lead(id: "lead")
-        let store = ChannelStore(id: "selection", api: try ChannelAPI(serverURL: "https://selection.invalid"),
-                                 sendJournal: nil)
-        let message = ChannelMessage(id: "m1", sequence: 1, timestamp: "2026-10-22T10:00:00Z", sender: .agent("lead"),
-                                     content: .text(String(repeating: "A paragraph long enough to wrap. ", count: 6)
-                                         + "\n\nA second paragraph."))
-        let row = try #require(transcriptRows([message], lead: lead, members: []).last)
-        let context = TranscriptRowContext(agents: [lead], channelID: "selection", historyStart: 1, api: store.api)
-        let host = NSHostingView(rootView:
-            TranscriptRowContent(row: row, context: context, statusReactions: [:], highlightedSequence: nil,
-                                 catchUp: nil, store: store, expandedMessageIds: [], onSetExpanded: { _, _ in })
-                .padding(20)
-                .frame(width: 600, height: 300, alignment: .topLeading)
-                .coordinateSpace(name: "transcript-viewport")
-                .environment(ChannelInteraction()))
-        final class KeyWindow: NSWindow {
-            override var canBecomeKey: Bool { true }
-        }
-        let window = KeyWindow(contentRect: NSRect(x: 0, y: 0, width: 600, height: 300), styleMask: [.borderless],
-                               backing: .buffered, defer: false)
-        window.isReleasedWhenClosed = false
-        window.contentView = host
-        window.setFrameOrigin(NSPoint(x: -6000, y: -6000))
-        window.orderFrontRegardless()
-        window.makeKey()
-        defer { window.close() }
-        host.layoutSubtreeIfNeeded()
-        try await Task.sleep(for: .milliseconds(100))
-        func platformViews() -> Int {
-            func all(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(all) }
-            return all(host).count
-        }
-        func hover(x: CGFloat = 120) throws -> NSEvent {
-            try #require(NSEvent.mouseEvent(
-                with: .mouseMoved, location: CGPoint(x: x, y: 300 - 92), modifierFlags: [],
-                timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber, context: nil,
-                eventNumber: 0, clickCount: 0, pressure: 0))
-        }
-        let mounted = platformViews()
-
-        TranscriptPointer.contentDidMove()
-        host.mouseEntered(with: try hover())
-        host.mouseMoved(with: try hover())
-        try await Task.sleep(for: .milliseconds(100))
-        #expect(platformViews() == mounted)
+    @Test func messagesBuildSelectableTextOnceThePointerArrives() async throws {
+        let message = try await HoveredMessage()
+        defer { message.close() }
+        let mounted = message.platformViews()
 
         TranscriptPointer.forgetContentMove()
-        host.mouseMoved(with: try hover(x: 140))
+        message.host.mouseEntered(with: try message.hover())
+        message.host.mouseMoved(with: try message.hover())
         try await Task.sleep(for: .milliseconds(100))
-        let selectable = platformViews()
+        let selectable = message.platformViews()
         #expect(selectable > mounted)
 
-        // A selection outlasts the pointer leaving.
-        host.mouseExited(with: try hover(x: 140))
+        message.host.mouseExited(with: try message.hover())
         try await Task.sleep(for: .milliseconds(100))
-        #expect(platformViews() == selectable)
+        #expect(message.platformViews() == selectable)
+    }
+
+    /// A message that scrolls under a still pointer builds nothing while the content moves, but turns
+    /// selectable once it holds still, so a drag that starts without moving the pointer still selects.
+    @MainActor
+    @Test func messagesUnderAStillPointerTurnSelectableOnceScrollingSettles() async throws {
+        let message = try await HoveredMessage()
+        defer { message.close() }
+        let mounted = message.platformViews()
+        let settleDelay = TranscriptPointer.settleDelay
+        TranscriptPointer.settleDelay = 0.6
+        defer { TranscriptPointer.settleDelay = settleDelay }
+
+        TranscriptPointer.contentDidMove()
+        message.host.mouseEntered(with: try message.hover())
+        message.host.mouseMoved(with: try message.hover(x: 140))
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(message.platformViews() == mounted)
+
+        for _ in 0..<40 where message.platformViews() == mounted {
+            try await Task.sleep(for: .milliseconds(100))
+        }
+        #expect(message.platformViews() > mounted)
     }
 
     @Test func tablesKeepEscapedPipesAndInlineCodeTogether() {
@@ -2571,4 +2552,60 @@ private final class TranscriptServerProtocol: URLProtocol, @unchecked Sendable {
             client?.urlProtocolDidFinishLoading(self)
         }
     }
+}
+
+
+/// One long agent message in a key window off screen, hovered by calling its tracking methods
+/// directly, since a test's posted moves never reach SwiftUI's hover tracking.
+@MainActor
+private final class HoveredMessage {
+    private final class KeyWindow: NSWindow {
+        override var canBecomeKey: Bool { true }
+    }
+
+    let host: NSView
+    private let window: NSWindow
+
+    init() async throws {
+        let lead = ChannelAgent.lead(id: "lead")
+        let store = ChannelStore(id: "selection", api: try ChannelAPI(serverURL: "https://selection.invalid"),
+                                 sendJournal: nil)
+        let message = ChannelMessage(id: "m1", sequence: 1, timestamp: "2026-10-22T10:00:00Z", sender: .agent("lead"),
+                                     content: .text(String(repeating: "A paragraph long enough to wrap. ", count: 6)
+                                         + "\n\nA second paragraph."))
+        let row = try #require(transcriptRows([message], lead: lead, members: []).last)
+        let context = TranscriptRowContext(agents: [lead], channelID: "selection", historyStart: 1, api: store.api)
+        host = NSHostingView(rootView:
+            TranscriptRowContent(row: row, context: context, statusReactions: [:], highlightedSequence: nil,
+                                 catchUp: nil, store: store, expandedMessageIds: [], onSetExpanded: { _, _ in })
+                .padding(20)
+                .frame(width: 600, height: 300, alignment: .topLeading)
+                .coordinateSpace(name: "transcript-viewport")
+                .environment(ChannelInteraction()))
+        window = KeyWindow(contentRect: NSRect(x: 0, y: 0, width: 600, height: 300), styleMask: [.borderless],
+                           backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        window.setFrameOrigin(NSPoint(x: -6000, y: -6000))
+        window.orderFrontRegardless()
+        window.makeKey()
+        host.layoutSubtreeIfNeeded()
+        try await Task.sleep(for: .milliseconds(100))
+    }
+
+    func platformViews() -> Int {
+        func all(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(all) }
+        return all(host).count
+    }
+
+    /// A pointer event over the message's text. Each move needs its own point, since SwiftUI ignores
+    /// a hover that doesn't move.
+    func hover(x: CGFloat = 120) throws -> NSEvent {
+        try #require(NSEvent.mouseEvent(
+            with: .mouseMoved, location: CGPoint(x: x, y: 300 - 92), modifierFlags: [],
+            timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber, context: nil,
+            eventNumber: 0, clickCount: 0, pressure: 0))
+    }
+
+    func close() { window.close() }
 }

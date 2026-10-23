@@ -211,7 +211,18 @@ struct TranscriptUserMessage: View {
             }
         }
         .onContinuousHover { phase in
-            if case .active = phase, !selectsText, TranscriptPointer.hasMovedSinceContentMoved { selectsText = true }
+            guard !selectsText else { return }
+            switch phase {
+            case .active:
+                if TranscriptPointer.hasMovedSinceContentMoved {
+                    selectsText = true
+                } else {
+                    let selects = $selectsText
+                    TranscriptPointer.rest(on: message.id) { selects.wrappedValue = true }
+                }
+            case .ended:
+                TranscriptPointer.leave(message.id)
+            }
         }
         .contextMenu {
             Button("Copy Message", systemImage: "doc.on.doc") { TranscriptClipboard.copy(message.text) }
@@ -302,11 +313,16 @@ private struct TranscriptAgentMessage: View {
         .onContinuousHover { phase in
             switch phase {
             case .active:
-                if !isHovered && TranscriptPointer.hasMovedSinceContentMoved {
+                guard !isHovered else { break }
+                if TranscriptPointer.hasMovedSinceContentMoved {
                     isHovered = true
                     if !selectsText { selectsText = true }
+                } else if !selectsText {
+                    let selects = $selectsText
+                    TranscriptPointer.rest(on: entry.message.id) { selects.wrappedValue = true }
                 }
             case .ended:
+                TranscriptPointer.leave(entry.message.id)
                 if isHovered { isHovered = false }
             }
         }
@@ -419,16 +435,54 @@ private struct TranscriptHoverActions: View {
 /// Where the pointer was when transcript content last moved. Like AppKit's tracking areas, a row
 /// that slides under a still pointer, as when the transcript follows a new message, waits for the
 /// pointer to move before it shows its actions, so arrivals don't re-render the row beneath it.
+/// Its text turns selectable once the content holds still, so a drag that starts right after a
+/// scroll, without moving the pointer, still selects.
 @MainActor
 enum TranscriptPointer {
+    /// How long content holds still before a message it carried under a still pointer counts as reached.
+    static var settleDelay: TimeInterval = 0.15
     private static var locationWhenContentMoved: CGPoint?
+    private static var contentMovedAt: TimeInterval = 0
+    private static var resting: (id: String, reached: () -> Void)?
+    private static var settleTimer: Timer?
 
-    static func contentDidMove() { locationWhenContentMoved = NSEvent.mouseLocation }
+    static func contentDidMove() {
+        locationWhenContentMoved = NSEvent.mouseLocation
+        contentMovedAt = ProcessInfo.processInfo.systemUptime
+    }
 
     static var hasMovedSinceContentMoved: Bool { NSEvent.mouseLocation != locationWhenContentMoved }
 
     /// Counts the next hover as the pointer's own. Tests need it because their events never move the pointer.
     static func forgetContentMove() { locationWhenContentMoved = nil }
+
+    /// Notes the message the content carried under a still pointer, which hears `reached` once the
+    /// content holds still unless the pointer leaves it first.
+    static func rest(on id: String, reached: @escaping () -> Void) {
+        resting = (id, reached)
+        if settleTimer == nil { scheduleSettle(after: settleDelay) }
+    }
+
+    static func leave(_ id: String) {
+        if resting?.id == id { resting = nil }
+    }
+
+    private static func scheduleSettle(after delay: TimeInterval) {
+        let timer = Timer(timeInterval: delay, repeats: false) { _ in
+            MainActor.assumeIsolated { settle() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        settleTimer = timer
+    }
+
+    private static func settle() {
+        settleTimer = nil
+        let still = ProcessInfo.processInfo.systemUptime - contentMovedAt
+        if still < settleDelay { return scheduleSettle(after: settleDelay - still) }
+        let arrival = resting
+        resting = nil
+        arrival?.reached()
+    }
 }
 
 /// Floats hover actions over a bubble's top trailing corner, but never past its leading edge, so
