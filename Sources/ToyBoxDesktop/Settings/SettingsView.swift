@@ -158,7 +158,7 @@ struct SettingsView: View {
             Section {
                 Text("Get notified when your team needs a response or finishes its work. Ordinary messages don't notify, and the channel you're actively reading stays quiet.")
                     .font(.callout).foregroundStyle(.secondary)
-                Toggle("Enable Notifications", isOn: Binding(
+                Toggle("Allow notifications", isOn: Binding(
                     get: { notificationsEnabled },
                     set: { enabled in
                         if !enabled { notificationsEnabled = false }
@@ -171,7 +171,7 @@ struct SettingsView: View {
                         }
                     }
                 ))
-                .accessibilityLabel("Enable Notifications")
+                .accessibilityLabel("Allow notifications")
                 .disabled(isEnabling || model.notifications.authorization == .denied)
                 Toggle("Requests for your response", isOn: $requestNotifications)
                     .accessibilityLabel("Requests for your response").disabled(!notificationsEnabled)
