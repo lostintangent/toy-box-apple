@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
-// The benchmark fixture that script/benchmark starts for each scenario. It serves studio-demo and
-// the 480-message history-demo on one port, through the reference demo server imported read-only,
-// and adds two routes the benchmark drives:
+// The benchmark fixture that script/benchmark starts for each scenario. It serves studio-demo, the
+// 480-message history-demo and the 300 long messages of scroll-demo on one port, through the
+// reference demo server imported read-only, and adds two routes the benchmark drives:
 //
 //   POST /perf/messages?channel=ID&count=N&interval=MS
 //
@@ -22,6 +22,7 @@ import http from "node:http";
 import { resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createHistoryFixture, historyChannelID, writeHistoryPage } from "./history-fixture.mjs";
+import { createScrollFixture, scrollChannelID, writeScrollImage } from "./scroll-fixture.mjs";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const reference = resolve(process.argv[2] ?? resolve(root, "../toy-box-Minecraft"));
@@ -30,9 +31,15 @@ const source = JSON.parse(readFileSync(resolve(reference, "fixtures/channel-snap
 const port = Number(process.env.TOY_BOX_PERF_PORT ?? 3292);
 if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("Invalid TOY_BOX_PERF_PORT.");
 const now = Date.now();
-const { snapshot: historySnapshot, history } = createHistoryFixture(source, { now, origin: `http://127.0.0.1:${port}` });
+const origin = `http://127.0.0.1:${port}`;
+const { snapshot: historySnapshot, history } = createHistoryFixture(source, { now, origin });
+const { snapshot: scrollSnapshot, history: scrollHistory } = createScrollFixture(source, { now, origin });
+const histories = { [historyChannelID]: history, [scrollChannelID]: scrollHistory };
 
-const demos = { "studio-demo": createDemoServer(source, now), [historyChannelID]: createDemoServer(historySnapshot, now) };
+const demos = {
+    "studio-demo": createDemoServer(source, now), [historyChannelID]: createDemoServer(historySnapshot, now),
+    [scrollChannelID]: createDemoServer(scrollSnapshot, now),
+};
 const handlers = Object.fromEntries(Object.entries(demos).map(([id, demo]) => {
     const listeners = demo.server.listeners("request");
     if (listeners.length !== 1) throw new Error("Expected the reference demo server's single HTTP handler.");
@@ -139,12 +146,11 @@ function setWorking(response, url) {
 const server = http.createServer((request, response) => {
     const url = new URL(request.url ?? "/", `http://127.0.0.1:${port}`);
     if (request.method === "GET" && url.pathname === "/api/v1/channels") {
-        const studio = demos["studio-demo"].snapshot();
-        const history = demos[historyChannelID].snapshot();
-        const { name, role, avatar } = studio.lead;
+        const snapshots = Object.values(demos).map(demo => demo.snapshot());
+        const { name, role, avatar } = snapshots[0].lead;
         json(response, 200, {
-            version: 1, lead: { name, role, avatar }, channels: [studio.channel, history.channel],
-            members: [...studio.members, ...history.members],
+            version: 1, lead: { name, role, avatar }, channels: snapshots.map(snapshot => snapshot.channel),
+            members: snapshots.flatMap(snapshot => snapshot.members),
         });
         return;
     }
@@ -158,17 +164,19 @@ const server = http.createServer((request, response) => {
         else setWorking(response, url);
         return;
     }
-    if (url.pathname === `/api/v1/channels/${historyChannelID}/messages`) {
+    const paged = Object.keys(histories).find(id => url.pathname === `/api/v1/channels/${id}/messages`);
+    if (paged) {
         if (request.method !== "GET") {
             response.writeHead(405, { "Content-Type": "application/json", Allow: "GET" });
             response.end(JSON.stringify({ error: "This history fixture supports read receipts, not message sends." }));
             return;
         }
-        writeHistoryPage(response, url, history, demos[historyChannelID].snapshot().revision);
+        writeHistoryPage(response, url, histories[paged], demos[paged].snapshot().revision);
         return;
     }
-    // Artifact and preview routes belong to studio-demo, whose snapshot history-demo copies.
-    const channel = url.pathname.startsWith(`/api/v1/channels/${historyChannelID}`) ? historyChannelID : "studio-demo";
+    if (request.method === "GET" && writeScrollImage(response, url.pathname)) return;
+    // Artifact and preview routes belong to studio-demo, whose snapshot the other channels copy.
+    const channel = Object.keys(histories).find(id => url.pathname.startsWith(`/api/v1/channels/${id}`)) ?? "studio-demo";
     if (request.method === "GET" && url.pathname === `/api/v1/channels/${channel}`) {
         streams[channel].add(response);
         response.on("close", () => streams[channel].delete(response));
@@ -177,6 +185,6 @@ const server = http.createServer((request, response) => {
 });
 server.on("error", error => { console.error(error); process.exit(1); });
 server.listen(port, "127.0.0.1", () => {
-    console.log(`Benchmark fixture: http://127.0.0.1:${port} · channels studio-demo, ${historyChannelID}`);
+    console.log(`Benchmark fixture: ${origin} · channels ${Object.keys(demos).join(", ")}`);
 });
 for (const signal of ["SIGINT", "SIGTERM"]) process.once(signal, () => process.exit(0));

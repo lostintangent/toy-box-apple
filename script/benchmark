@@ -1,8 +1,9 @@
 #!/bin/bash
 # Builds a release bundle and measures it against script/perf-demo.mjs, with a fresh fixture and app
 # instance for each scenario, then prints every result beside its budget.
-# Usage: SCRATCH_PATH=/tmp/tbm-<you> script/benchmark [--summaries] [launch|switch|messages|paging|key|idle ...]
-# Without scenarios it runs launch, switch, messages and paging. idle takes a minute, and key takes
+# Usage: SCRATCH_PATH=/tmp/tbm-<you> script/benchmark [--summaries] [launch|switch|messages|paging|scroll|key|idle ...]
+# Without scenarios it runs launch, switch, messages, paging and scroll. scroll reports hover only
+# while the pointer rests over the window, and says whether it did. idle takes a minute, and key takes
 # focus for about 45 seconds to measure a key window, so each runs only when named. Don't type while
 # key runs. Catch-up summaries stay off, because the on-device model lands one at an unpredictable
 # moment and its card animates the transcript during whichever measurement is running. --summaries
@@ -26,11 +27,11 @@ SCENARIOS=()
 for argument in "$@"; do
     case "$argument" in
         --summaries) SUMMARIES=YES ;;
-        launch|switch|messages|paging|key|idle) SCENARIOS+=("$argument") ;;
-        *) echo "Unknown scenario: $argument. Use launch, switch, messages, paging, key or idle, and --summaries to leave catch-up summaries on." >&2; exit 2 ;;
+        launch|switch|messages|paging|scroll|key|idle) SCENARIOS+=("$argument") ;;
+        *) echo "Unknown scenario: $argument. Use launch, switch, messages, paging, scroll, key or idle, and --summaries to leave catch-up summaries on." >&2; exit 2 ;;
     esac
 done
-if [[ ${#SCENARIOS[@]} -eq 0 ]]; then SCENARIOS=(launch switch messages paging); fi
+if [[ ${#SCENARIOS[@]} -eq 0 ]]; then SCENARIOS=(launch switch messages paging scroll); fi
 
 # One benchmark runs at a time on this Mac, because two would measure each other's CPU and share the
 # app's defaults. This script's own descriptor holds the lock, so it's released however the script
@@ -90,6 +91,7 @@ if [[ $SUMMARIES == YES ]]; then echo "Catch-up summaries are on"; fi
 for scenario in "${SCENARIOS[@]}"; do
     case "$scenario" in
         switch|key) channel=studio-demo ;;
+        scroll) channel=scroll-demo ;;
         *) channel=history-demo ;;
     esac
     # Only key comes forward as the active app, because a key window is what it measures.

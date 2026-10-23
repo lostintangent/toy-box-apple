@@ -65,7 +65,7 @@ struct LaunchOptions: Equatable, Sendable {
                 options.resizeBenchmark = mode
             case "--benchmark":
                 guard let scenario = PerformanceBenchmark.Scenario(rawValue: value) else {
-                    throw LaunchArgumentError("--benchmark must be launch, switch, messages, paging, idle or key")
+                    throw LaunchArgumentError("--benchmark must be launch, switch, messages, paging, scroll, idle or key")
                 }
                 options.benchmark = scenario
             default: break

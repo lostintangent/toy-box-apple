@@ -4,7 +4,7 @@ import Darwin
 import Observation
 import QuartzCore
 
-/// `--benchmark launch|switch|messages|paging|idle|key` measures one scenario in the first window,
+/// `--benchmark launch|switch|messages|paging|scroll|idle|key` measures one scenario in the first window,
 /// prints each result beside its budget and exits. `script/benchmark` builds a release bundle and
 /// runs the scenarios against `script/perf-demo.mjs`, whose `/perf/messages` route streams the agent
 /// messages that `messages` measures.
@@ -28,6 +28,12 @@ import QuartzCore
 ///   older page loaded.
 /// - `paging`: scrolls the transcript to its top until every older page has loaded, and times each
 ///   from the scroll that crosses the transcript's paging edge until the page settles.
+/// - `scroll`: a steady trackpad scroll up the transcript and back down, 15,000 pt each way at
+///   2,400 pt a second, first at the first page of history and again with every older page loaded.
+///   The wheel events go through the app's event queue, one per display frame, as a person's do.
+///   A frame the display link skips is a dropped frame. The budget is on hitch time, the dropped
+///   frames' milliseconds per second of scrolling. Hover runs only while the pointer is over the
+///   transcript, which the results say.
 /// - `idle`: a minute of wakeups and busy time once the channel settles. No budget.
 /// - `key`: makes the window key, which a person's window is, and measures the whole process's CPU
 ///   while it sits there, first with the channel's own working agents and then with 20 working.
@@ -35,7 +41,7 @@ import QuartzCore
 @MainActor
 final class PerformanceBenchmark {
     enum Scenario: String, CaseIterable, Sendable {
-        case launch, messages, paging, idle, key
+        case launch, messages, paging, scroll, idle, key
         case switching = "switch"
     }
 
@@ -45,12 +51,19 @@ final class PerformanceBenchmark {
         static let burstFrameGap = 100.0
         static let olderPage = 250.0
         static let warmSwitch = 150.0
+        /// Milliseconds of dropped frames per second of scrolling. Under 5 reads as smooth.
+        static let scrollHitches = 5.0
         /// Percent of one core, for a key window that's only showing working agents.
         static let keyWindowCPU = 3.0
     }
 
     static let keyWindowSeconds = 15.0
     static let manyWorking = 20
+
+    static let scrollSpeed = 2_400.0
+    static let scrollDistance = 15_000.0
+    /// How far a scroll stays from the transcript's ends, well clear of its paging edge.
+    static let scrollMargin = 1_000.0
 
     static let burstCount = 50
     static let burstInterval = 20
@@ -95,6 +108,7 @@ final class PerformanceBenchmark {
             case .switching: await switching()
             case .messages: await messages()
             case .paging: await paging()
+            case .scroll: await scrolling()
             case .idle: await idle()
             case .key: await keyWindow()
             }
@@ -341,6 +355,76 @@ final class PerformanceBenchmark {
         guard page > 0 else {
             fail("\(channelID) has no older messages. Measure paging on history-demo from script/perf-demo.mjs.")
         }
+    }
+
+    private func scrolling() async {
+        await load(channelID)
+        guard let store = store(channelID) else { return }
+        // The first rows' images load before the first measurement.
+        try? await Task.sleep(for: .seconds(1))
+        _ = await settled()
+        header()
+        await measureScrolling(in: store)
+        let loaded = store.messages.count
+        while store.hasOlderMessages {
+            await store.loadOlder()
+            _ = await settled(quiet: 0.3)
+        }
+        guard store.messages.count > loaded else {
+            fail("\(channelID) has no older messages. Measure scroll on scroll-demo from script/perf-demo.mjs.")
+        }
+        let gap = await scrollToEnd()
+        guard gap < 2 else { fail("the transcript stayed \(Int(gap)) pt from the latest message") }
+        await measureScrolling(in: store)
+    }
+
+    /// Scrolls up from the latest message and back down the same distance.
+    private func measureScrolling(in store: ChannelStore) async {
+        guard let meter, let window else { return }
+        guard let scroll = transcriptScrollView() else { fail("there's no transcript scroll view") }
+        let loaded = store.messages.count
+        let reach = min(Self.scrollDistance, offsetFromTop(scroll) - Self.scrollMargin)
+        guard reach >= Self.scrollDistance / 2 else {
+            fail("\(channelID) is \(Int(offsetFromTop(scroll))) pt tall, too short to scroll. "
+                 + "Measure scroll on scroll-demo from script/perf-demo.mjs.")
+        }
+        info("Pointer at \(loaded) loaded", pointerIsOver(scroll)
+             ? "over the transcript, so hover runs as it does for a person"
+             : "outside the transcript, so hover doesn't run")
+        var distance = reach
+        for up in [true, false] {
+            try? await Task.sleep(for: .milliseconds(300))
+            _ = await settled()
+            let start = offsetFromTop(scroll)
+            let gesture = WheelGesture(window: window, over: scroll, speed: up ? Self.scrollSpeed : -Self.scrollSpeed,
+                                       distance: distance) { [weak self] in
+                guard let self else { return true }
+                return up ? self.offsetFromTop(scroll) < Self.scrollMargin : self.gapToEnd(scroll) < 1
+            }
+            meter.reset()
+            let frames = await gesture.run()
+            let busy = meter.busy
+            let moved = abs(offsetFromTop(scroll) - start)
+            guard moved > gesture.scrolled / 4 else {
+                fail("the transcript moved \(Int(moved)) pt for \(Int(gesture.scrolled)) pt of wheel events")
+            }
+            let hitches = Double(frames.dropped) * frames.duration * 1000 / max(frames.seconds, 0.001)
+            check("Scrolling \(up ? "up" : "down") \(Int(gesture.scrolled)) pt at \(loaded) loaded",
+                  "\(frames.dropped) of \(frames.count) frames dropped, \(format(frames.longest * 1000)) longest frame, "
+                  + String(format: "%.1f ms/s hitch time, main thread %.0f%% busy", hitches,
+                           busy / max(frames.seconds, 0.001) * 100),
+                  value: hitches, budget: Budget.scrollHitches, unit: " ms/s")
+            distance = gesture.scrolled
+        }
+    }
+
+    /// Whether the person's pointer rests over the transcript, where hover tracks the rows that
+    /// scroll under it.
+    private func pointerIsOver(_ scroll: NSScrollView) -> Bool {
+        guard let window else { return false }
+        let pointer = NSEvent.mouseLocation
+        return window.convertToScreen(scroll.convert(scroll.bounds, to: nil)).contains(pointer)
+            && NSWindow.windowNumber(at: pointer, belowWindowWithWindowNumber: 0) == window.windowNumber
     }
 
     private func idle() async {
@@ -637,6 +721,113 @@ final class PerformanceBenchmark {
         let time = info.kp_proc.p_un.__p_starttime
         return Date(timeIntervalSince1970: TimeInterval(time.tv_sec) + TimeInterval(time.tv_usec) / 1_000_000)
     }
+}
+
+/// One steady trackpad scroll over `scroll`, a step each display frame through the app's event
+/// queue, the way a person's gesture arrives. Each step covers the time since the last frame, so a
+/// late frame scrolls further, as the coalesced events of a held-up gesture do.
+@MainActor
+private final class WheelGesture: NSObject {
+    struct Frames {
+        /// Display frames the gesture spanned, including the ones it dropped.
+        var count = 0
+        var dropped = 0
+        var longest: CFTimeInterval = 0
+        var seconds: CFTimeInterval = 0
+        var duration: CFTimeInterval = 1.0 / 60
+    }
+
+    private weak var window: NSWindow?
+    private weak var scroll: NSScrollView?
+    /// Points a second. Positive scrolls toward the top.
+    private let speed: Double
+    private let distance: Double
+    private let stop: @MainActor () -> Bool
+    private(set) var scrolled = 0.0
+    private var frames = Frames()
+    private var link: CADisplayLink?
+    private var first: CFTimeInterval?
+    private var last: CFTimeInterval?
+    private var carried = 0.0
+    private var finished: CheckedContinuation<Void, Never>?
+
+    init(window: NSWindow, over scroll: NSScrollView, speed: Double, distance: Double,
+         stop: @escaping @MainActor () -> Bool) {
+        self.window = window
+        self.scroll = scroll
+        self.speed = speed
+        self.distance = distance
+        self.stop = stop
+    }
+
+    func run() async -> Frames {
+        guard let scroll else { return frames }
+        let link = scroll.displayLink(target: self, selector: #selector(tick(_:)))
+        let rate = Float(scroll.window?.screen?.maximumFramesPerSecond ?? 60)
+        link.preferredFrameRateRange = CAFrameRateRange(minimum: rate, maximum: rate, preferred: rate)
+        link.add(to: .main, forMode: .common)
+        self.link = link
+        await withCheckedContinuation { finished = $0 }
+        link.invalidate()
+        return frames
+    }
+
+    @objc private func tick(_ link: CADisplayLink) {
+        guard finished != nil else { return }
+        let now = link.timestamp
+        frames.duration = link.targetTimestamp - link.timestamp
+        let elapsed = last.map { now - $0 } ?? frames.duration
+        if last != nil {
+            let spanned = max(1, Int((elapsed / frames.duration).rounded()))
+            frames.count += spanned
+            frames.dropped += spanned - 1
+            frames.longest = max(frames.longest, elapsed)
+            frames.seconds = now - (first ?? now)
+        } else {
+            first = now
+        }
+        let begins = last == nil
+        last = now
+        guard scrolled < distance, !stop() else {
+            post(.ended, delta: 0)
+            finished?.resume()
+            finished = nil
+            return
+        }
+        let step = speed * elapsed + carried
+        let whole = min(abs(step.rounded(.towardZero)), distance - scrolled).rounded(.up)
+        carried = step - whole * (speed < 0 ? -1 : 1)
+        post(begins ? .began : .changed, delta: Int32(whole * (speed < 0 ? -1 : 1)))
+        scrolled += whole
+    }
+
+    /// Posts a trackpad scroll event over the scroll view's center. Quartz's scroll event can't name
+    /// a window, so the scroll fields move onto an AppKit event that does.
+    private func post(_ phase: CGScrollPhase, delta: Int32) {
+        guard let window, let scroll,
+              let wheel = CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 1, wheel1: delta, wheel2: 0,
+                                  wheel3: 0),
+              let event = NSEvent.mouseEvent(with: .mouseMoved,
+                                             location: scroll.convert(NSPoint(x: scroll.bounds.midX,
+                                                                              y: scroll.bounds.midY), to: nil),
+                                             modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                                             windowNumber: window.windowNumber, context: nil, eventNumber: 0,
+                                             clickCount: 0, pressure: 0)?.cgEvent else { return }
+        event.type = .scrollWheel
+        for field in Self.integerFields { event.setIntegerValueField(field, value: wheel.getIntegerValueField(field)) }
+        for field in Self.fractionalFields { event.setDoubleValueField(field, value: wheel.getDoubleValueField(field)) }
+        event.setIntegerValueField(.scrollWheelEventScrollPhase, value: Int64(phase.rawValue))
+        guard let posted = NSEvent(cgEvent: event) else { return }
+        NSApp.postEvent(posted, atStart: false)
+    }
+
+    /// Every field Quartz sets on a pixel scroll event. 101, 126 and 142 aren't named, but AppKit
+    /// reads the deltas from them.
+    private static let integerFields: [CGEventField] = [.scrollWheelEventDeltaAxis1, .scrollWheelEventIsContinuous,
+                                                        .scrollWheelEventPointDeltaAxis1]
+        + [101].compactMap { CGEventField(rawValue: $0) }
+    private static let fractionalFields: [CGEventField] = [.scrollWheelEventFixedPtDeltaAxis1]
+        + [126, 142].compactMap { CGEventField(rawValue: $0) }
 }
 
 /// Resumes one wait once, whether a change or its timeout comes first.
