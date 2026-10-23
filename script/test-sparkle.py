@@ -43,8 +43,13 @@ elif command == "codesign":
 elif command == "gh":
     if args[:2] == ["repo", "view"]:
         print("example/fake-repository")
+    elif args[:2] == ["release", "view"]:
+        print(os.environ.get("PREVIOUS_FEED_URL", "") if args[args.index("--json") + 1] == "assets"
+              else os.environ.get("LATEST_TAG", "v0.1.0"))
     elif args[:2] == ["secret", "set"] and os.environ.get("FAIL_SECRET") == "1":
         sys.exit(24)
+elif command == "curl":
+    shutil.copyfile(os.environ["FAKE_PREVIOUS_FEED"], args[args.index("-o") + 1])
 elif command == "generate_keys":
     if os.environ.get("FAIL_KEY") == "1":
         sys.exit(25)
@@ -83,7 +88,7 @@ class FakeCommandTests(unittest.TestCase):
         self.directory = Path(self.temporary.name)
         binary = self.directory / "bin"
         binary.mkdir()
-        for command in ("ditto", "xcrun", "codesign", "gh", "generate_keys",
+        for command in ("ditto", "xcrun", "codesign", "gh", "curl", "generate_keys",
                         "generate_appcast", "sign_update"):
             path = binary / command
             path.write_text(f"#!{sys.executable}\n" + FAKE_COMMAND)
@@ -247,6 +252,33 @@ class AppcastTests(FakeCommandTests):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue(all(call["args"][:2] == ["--ed-key-file", str(key)]
                             for call in self.calls("generate_appcast") + self.calls("sign_update")))
+
+    def test_workflow_only_bootstraps_the_known_release_and_rejects_older_builds(self):
+        lines = (ROOT / ".github/workflows/build-and-release.yml").read_text().splitlines()
+        start = lines.index("      - name: Check update signing configuration and build number")
+        run = lines.index("        run: |", start) + 1
+        body = []
+        for line in lines[run:]:
+            if line and not line.startswith("          "):
+                break
+            body.append(line[10:])
+        previous = self.directory / "source-appcast.xml"
+        previous.write_text("""<rss xmlns:s="http://www.andymatuschak.org/xml-namespaces/sparkle">
+          <channel><item><s:version>200.1</s:version></item></channel></rss>""")
+        environment = {
+            **self.environment, "SPARKLE_ED_PUBLIC_KEY": "fake-public-key",
+            "RUNNER_TEMP": str(self.directory), "GITHUB_ENV": str(self.directory / "github-env"),
+            "GITHUB_REPOSITORY": "example/fake-repository", "FAKE_PREVIOUS_FEED": str(previous),
+        }
+        for extra, succeeds in (({}, True), ({"LATEST_TAG": "v0.2.0"}, False),
+                                ({"PREVIOUS_FEED_URL": "https://example.invalid/appcast.xml",
+                                  "BUILD_NUMBER": "200.2"}, True),
+                                ({"PREVIOUS_FEED_URL": "https://example.invalid/appcast.xml"}, False)):
+            with self.subTest(extra=extra):
+                result = subprocess.run(["/bin/bash", "-c", "\n".join(body)],
+                                        env={**environment, **extra}, cwd=ROOT,
+                                        capture_output=True, text=True, timeout=15)
+                self.assertEqual(result.returncode == 0, succeeds, result.stderr)
 
 
 class UpdateVersionTests(unittest.TestCase):

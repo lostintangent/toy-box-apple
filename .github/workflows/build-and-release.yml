@@ -125,6 +125,13 @@ jobs:
             curl --fail --silent --show-error --location "$url" -o "$previous"
             printf 'PREVIOUS_APPCAST=%s\n' "$previous" >> "$GITHUB_ENV"
             args+=("$previous")
+          else
+            latest="$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName)"
+            if [[ "$latest" != v0.1.0 ]]; then
+              echo "The latest release is missing its update feed. Refusing to bypass build ordering." >&2
+              exit 1
+            fi
+            echo "Bootstrapping updates from v0.1.0, which shipped without Sparkle."
           fi
           python3 script/check-update-version.py "${args[@]}"
       - name: Import the signing identity and notarization credentials
