@@ -61,6 +61,9 @@ stop_fixture() {
     fi
 }
 cleanup() {
+    # An interrupted `open -W` fails first, so set -e starts this cleanup before the INT trap runs.
+    # Ignoring the pending INT keeps that trap's exit from cutting the cleanup short of the app.
+    trap '' INT TERM
     stop_fixture
     for pid in $(pgrep -f "^$BIN" || true); do kill "$pid" 2>/dev/null || true; done
     rm -rf "$LOGS"
