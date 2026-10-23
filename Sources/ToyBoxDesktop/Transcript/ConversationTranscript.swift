@@ -32,17 +32,13 @@ struct ConversationTranscript: View {
     @ViewState private var requestAnnouncements = TranscriptRequestAnnouncements()
     @ViewState private var catchUp: TranscriptCatchUp?
     @ViewState private var rowBuilder = TranscriptRowBuilder()
-    @ViewState private var opening = TranscriptOpening()
-    @ViewState private var hasShownTranscript = false
-    @ViewState private var showsHistoryProgress = false
 
     private var rows: [TranscriptRow] {
         guard let lead = store.roster.first else { return [] }
         return rowBuilder.rows(store.messages, lead: lead, members: Array(store.roster.dropFirst()),
-                               unreadAfter: dividerUnreadAfter, view: interaction.messageView)
+                               unreadAfter: capturedArrivalBoundary ? arrivalUnreadAfter : store.unreadAfter,
+                               view: interaction.messageView)
     }
-
-    private var dividerUnreadAfter: Int? { capturedArrivalBoundary ? arrivalUnreadAfter : store.unreadAfter }
 
     private var visibleReadSequence: Int? {
         // The image viewer covers the transcript, so nothing beneath it counts as read.
@@ -76,7 +72,7 @@ struct ConversationTranscript: View {
             ContentUnavailableView("Channel Deleted", systemImage: "bubble.left",
                                    description: Text("This channel is no longer available."))
         } else if store.isLoaded {
-            if awaitsArrivalHistory { arrivalHistory } else { transcript }
+            transcript
         } else {
             VStack(spacing: 12) {
                 ProgressView("Connecting...")
@@ -90,44 +86,10 @@ struct ConversationTranscript: View {
         }
     }
 
-    /// Unread messages that start before the loaded history open once that history arrives, so the
-    /// transcript's first frame is the New divider rather than its bottom.
-    private var awaitsArrivalHistory: Bool {
-        guard !hasShownTranscript, store.phase.isLive, store.historyError == nil,
-              let unread = store.unreadAfter else { return false }
-        return needsHistory(through: unread + 1)
-    }
-
-    private var arrivalHistory: some View {
-        VStack {
-            if showsHistoryProgress { ProgressView().controlSize(.small) }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .task {
-            guard let unread = store.unreadAfter else { return }
-            await loadHistory(through: unread + 1)
-        }
-        .task {
-            // A local page arrives before a spinner would read as anything but a flash.
-            do { try await Task.sleep(for: .milliseconds(500)) }
-            catch { return }
-            showsHistoryProgress = true
-        }
-    }
-
     private var transcript: some View {
         ScrollViewReader { proxy in
             observedScroll(proxy: proxy)
                 .safeAreaBar(edge: .bottom, spacing: 0) { floatingControls }
-                .onAppear {
-                    hasShownTranscript = true
-                    // A live boundary is final, so a card whose history is here joins the first frame.
-                    guard store.phase.isLive, !hasLanded, !isRevealing else { return }
-                    captureArrivalBoundary()
-                    if let unread = arrivalUnreadAfter, !needsHistory(through: unread + 1) {
-                        prepareCatchUp(unreadAfter: unread)
-                    }
-                }
                 .task(id: store.phase.isLive) {
                     guard store.phase.isLive, !hasLanded else { return }
                     await land(using: proxy)
@@ -141,12 +103,8 @@ struct ConversationTranscript: View {
                 .task(id: snapshot?.requestedState) {
                     await prepareSnapshot(using: proxy)
                 }
-                // Owned here rather than by the card, which the lazy stack drops when it scrolls away. A card
-                // made on appear changes the id before the first run starts, so only the current one runs.
-                .task(id: catchUp?.generation) { [generation = catchUp?.generation] in
-                    guard let catchUp, catchUp.generation == generation else { return }
-                    await catchUp.run(using: intelligence)
-                }
+                // Owned here rather than by the card, which the lazy stack drops when it scrolls away.
+                .task(id: catchUp?.generation) { await catchUp?.run(using: intelligence) }
                 .onChange(of: pendingJump) { catchUp?.isJumping = pendingJump != nil }
         }
     }
@@ -201,10 +159,8 @@ struct ConversationTranscript: View {
     }
 
     private func scrollViewport(proxy: ScrollViewProxy) -> some View {
-        let rows = rows
-        opening.resolve { openingRowID(in: rows) }
-        return ScrollView {
-            conversationRows(rows, proxy: proxy)
+        ScrollView {
+            conversationRows(proxy: proxy)
                 .background(TranscriptWindowProbe(observer: window).frame(width: 0, height: 0),
                             alignment: .topLeading)
                 .padding(.top, 20)
@@ -213,12 +169,11 @@ struct ConversationTranscript: View {
         .scrollEdgeEffectStyle(.soft, for: .bottom)
         .scrollEdgeEffectStyle(.hard, for: .top)
         .coordinateSpace(name: "transcript-viewport")
-        .defaultScrollAnchor(opening.rowID == nil ? .bottom : .top, for: .initialOffset)
-        .scrollPosition(id: landingScrollPosition, anchor: .top)
+        .defaultScrollAnchor(.bottom, for: .initialOffset)
+        .scrollPosition(id: $scrollPosition, anchor: .top)
         .onScrollGeometryChange(for: TranscriptViewport.self) { TranscriptViewport($0) } action: { old, new in
             // Keyboard scrolling has no scroll phase, so any move the transcript didn't make releases the card.
-            // A landing's one-pixel remeasure isn't a move.
-            if catchUp?.isPinned == true, hasLanded, pendingJump == nil, abs(new.top - old.top) > 1,
+            if catchUp?.isPinned == true, hasLanded, pendingJump == nil, abs(new.top - old.top) > 0.5,
                new.contentHeight == old.contentHeight, new.height == old.height {
                 catchUp?.isPinned = false
             }
@@ -260,7 +215,8 @@ struct ConversationTranscript: View {
         }
     }
 
-    private func conversationRows(_ rows: [TranscriptRow], proxy: ScrollViewProxy) -> some View {
+    private func conversationRows(proxy: ScrollViewProxy) -> some View {
+        let rows = rows
         let stacked = transcriptStackedSystemRowIDs(rows)
         let context = TranscriptRowContext(agents: store.roster, channelID: store.id,
                                            historyStart: store.messages.first?.sequence ?? 0, api: store.api)
@@ -348,13 +304,6 @@ struct ConversationTranscript: View {
     }
 
     private var showsJumpToLatest: Bool { !isAtBottom && hasLanded }
-
-    /// Until the transcript lands, its scroll view opens on the row it opens on, which SwiftUI applies
-    /// within its first layout. Reader scrolls still write their place here, as without an opening row.
-    private var landingScrollPosition: Binding<String?> {
-        Binding(get: { scrollPosition ?? (hasLanded || isRevealing ? nil : opening.rowID) },
-                set: { scrollPosition = $0 })
-    }
 
     /// When a resize should keep the newest message in place, as the geometry action's follow does.
     private var followsLatest: Bool {
@@ -695,51 +644,24 @@ struct ConversationTranscript: View {
 
     private func land(using proxy: ScrollViewProxy) async {
         guard !isRevealing else { return }
-        captureArrivalBoundary()
+        if !capturedArrivalBoundary {
+            arrivalUnreadAfter = store.unreadAfter
+            capturedArrivalBoundary = true
+        }
         await Task.yield()
         if rows.isEmpty && store.hasOlderMessages { await loadOlder() }
         if let unread = arrivalUnreadAfter {
             await loadHistory(through: unread + 1)
             guard !Task.isCancelled, !isRevealing else { return }
             prepareCatchUp(unreadAfter: unread)
-            if let first = firstUnreadRow(in: rows, after: unread) {
-                // A scroll view that opened on this row is already there. SwiftUI skips an opening row
-                // its first screen shows, though, and that one still needs the jump.
-                if first.id == opening.rowID && (viewport.top > 0.5 || first.id == rows.first?.id) {
-                    scrollPosition = nil
-                    if viewport.top > 0.5 { window.remeasure() }
-                } else {
-                    jump(to: first.id, anchor: .top, using: proxy)
-                }
+            if let first = rows.first(where: { $0.messages.contains { $0.sequence > unread } }) {
+                jump(to: first.id, anchor: .top, using: proxy)
             } else { scrollToLatest(using: proxy) }
         } else {
             scrollToLatest(using: proxy)
         }
         await Task.yield()
         hasLanded = true
-    }
-
-    /// Captured once the store is live, so it never moves as the reader reads.
-    private func captureArrivalBoundary() {
-        guard !capturedArrivalBoundary else { return }
-        arrivalUnreadAfter = store.unreadAfter
-        capturedArrivalBoundary = true
-    }
-
-    private func firstUnreadRow(in rows: [TranscriptRow], after unread: Int) -> TranscriptRow? {
-        rows.first { $0.messages.contains { $0.sequence > unread } }
-    }
-
-    /// The row a fresh transcript opens on: its first unread row once the loaded history reaches it,
-    /// or nil for the end.
-    private func openingRowID(in rows: [TranscriptRow]) -> String? {
-        guard let unread = dividerUnreadAfter, !needsHistory(through: unread + 1) else { return nil }
-        return firstUnreadRow(in: rows, after: unread)?.id
-    }
-
-    private func needsHistory(through sequence: Int) -> Bool {
-        guard let first = store.state?.messages.first else { return false }
-        return first.sequence > sequence && store.hasOlderMessages
     }
 
     /// The summary exists only when this landing is eligible, so an ineligible one reserves no space.
@@ -784,7 +706,8 @@ struct ConversationTranscript: View {
     }
 
     private func loadHistory(through sequence: Int) async {
-        while needsHistory(through: sequence), let before = store.state?.messages.first?.sequence {
+        while let first = store.state?.messages.first, first.sequence > sequence && store.hasOlderMessages {
+            let before = first.sequence
             if store.isLoadingOlder {
                 do { try await Task.sleep(for: .milliseconds(40)) }
                 catch { return }
@@ -821,8 +744,6 @@ struct ConversationTranscript: View {
         if current != anchor { pagingAnchor = current }
     }
 
-    /// This runs twice per page on purpose. SwiftUI doesn't register an AppKit scroll made during its own
-    /// update, so the re-measure after it moves the clip back about 85 pt, and the second pass fixes that.
     private func restorePagingAnchor(using frames: [String: TranscriptMessageFrame]) {
         guard let anchor = pagingAnchor, !store.isLoadingOlder,
               let oldest = store.state?.messages.first?.sequence, oldest < anchor.oldestSequence,
@@ -868,20 +789,6 @@ private struct TranscriptJump: Equatable {
     var id: String
     var anchor: UnitPoint
     var token = UUID()
-}
-
-/// The row a transcript opens on, resolved once from the first rows it draws. Starting the scroll
-/// view's first layout there keeps a channel with unread messages from drawing its end and then
-/// jumping, which also built every row between the end and New.
-@MainActor private final class TranscriptOpening {
-    private var isResolved = false
-    private(set) var rowID: String?
-
-    func resolve(_ rowID: () -> String?) {
-        guard !isResolved else { return }
-        isResolved = true
-        self.rowID = rowID()
-    }
 }
 
 /// The keys a row's messages measure their frames under.
