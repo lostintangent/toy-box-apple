@@ -83,9 +83,10 @@ view.
   though the normal launch fallback now handles a restored zero-window state.
 - A Computer Use session binds to the first bundle path it inspects and then rejects windows from
   other paths ("no longer belongs to the approved app"). Keep using that one path. Run
-  `SCRATCH_PATH=/tmp/tbm-<you> ./script/validate`, which builds, swaps your build into both
-  bundles without disturbing running instances, and launches the test bundle in the background
-  against the demo.
+  `SCRATCH_PATH=/tmp/tbm-<you> ./script/validate`, which always builds with `CONFIGURATION=release`,
+  swaps that optimized build into both bundles without disturbing running instances, and launches
+  the test bundle in the background against the demo. Judge feel with these optimized bundles.
+  Quick `script/run` loops still default to debug.
 - Clicks only work while one instance has the test ID. If a click fails with "no perception
   baseline for this pid", another agent's test instance is running, so wait for it to quit.
   Reads still work, so call `list_apps` and pass your own `window`. Before acting, confirm the

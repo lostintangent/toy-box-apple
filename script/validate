@@ -1,5 +1,5 @@
 #!/bin/bash
-# Builds the current tree, refreshes the user's validation bundle, and launches the build in the
+# Builds an optimized release bundle, refreshes the user's validation copy, and launches it in the
 # background from the agents' test bundle.
 # Usage: SCRATCH_PATH=/tmp/tbm-<you> [SERVER_URL=...] script/validate [--channel ID] [other app arguments]
 # The test bundle has its own bundle ID, so Computer Use can drive it while the user's copy of the
@@ -16,7 +16,7 @@ TEST_NAME="Toy Box Desktop Test"
 TEST_ID="dev.toybox.channels.mac.test"
 TEST_APP="$TEST_DIR/$TEST_NAME.app"
 
-SCRATCH_PATH="$SCRATCH" "$ROOT/script/run" --no-open >/dev/null
+CONFIGURATION=release SCRATCH_PATH="$SCRATCH" "$ROOT/script/run" --no-open >/dev/null
 
 BUILD_VERSION="$(xcrun vtool -show-build "$SCRATCH/Toy Box Desktop.app/Contents/MacOS/ToyBoxDesktop")"
 if ! awk '
