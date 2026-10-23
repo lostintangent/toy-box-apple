@@ -1,5 +1,6 @@
 import AppKit
 import ChannelClient
+import ChannelIntelligence
 import ChannelKit
 import Foundation
 import ImageIO
@@ -1677,6 +1678,258 @@ private final class TranscriptGapLog {
     var values: [CGFloat] = []
 }
 
+@MainActor
+@Suite("Catch-up summary")
+struct TranscriptCatchUpTests {
+    /// Each test uses its own server, so the session's memo and dismissals never cross tests.
+    let server = URL(string: "https://catch-up-\(UUID().uuidString.lowercased()).invalid")!
+    let summary = CatchUp(needsYou: nil, changes: [.init(text: "Lead verified the reconnect fix.", sources: [12])],
+                          through: 30)
+
+    func make(_ state: ChannelState = catchUpTestState(), unreadAfter: Int? = 10, view: TranscriptView = .all,
+              availability: IntelligenceAvailability = .available, isOn: Bool = true,
+              timeout: Duration = .seconds(15)) -> TranscriptCatchUp? {
+        TranscriptCatchUp.make(server: server, state: state, unreadAfter: unreadAfter, view: view,
+                               availability: availability, isOn: isOn, timeout: timeout)
+    }
+
+    @Test func aLandingIsEligibleOnlyWithTheModelTheSettingAndEnoughToRead() throws {
+        let catchUp = try #require(make())
+        #expect(catchUp.phase == .loading)
+        #expect(catchUp.generation != nil)
+        #expect(catchUp.holdsLanding)
+        #expect(catchUp.title == "Summarizing 20 new messages")
+        #expect(make(availability: .unavailable(.modelNotReady)) == nil)
+        #expect(make(isOn: false) == nil)
+        #expect(make(view: .yours) == nil)
+        #expect(make(unreadAfter: nil) == nil)
+        #expect(make(unreadAfter: 28) == nil)
+    }
+
+    @Test func dismissingHidesTheSummaryForThatBoundaryForTheRestOfTheSession() async throws {
+        let catchUp = try #require(make())
+        catchUp.dismiss()
+        #expect(catchUp.generation == nil)
+        #expect(make() == nil)
+        #expect(make(unreadAfter: 9) != nil)
+        for _ in 0..<100 where catchUp.phase != .collapsed { try await Task.sleep(for: .milliseconds(20)) }
+        #expect(catchUp.phase == .collapsed)
+        #expect(!catchUp.holdsLanding)
+    }
+
+    @Test func aSummaryMadeEarlierIsThereOnTheFirstFrame() async throws {
+        let service = StubChannelIntelligence(results: [.ready(summary)])
+        let first = try #require(make())
+        await first.run(using: service)
+        #expect(first.phase == .ready(.init(catchUp: summary, count: 20)))
+        #expect(first.title == "Summary of 20 new messages")
+
+        let again = try #require(make())
+        #expect(again.phase == first.phase)
+        #expect(again.generation == nil)
+        await again.run(using: service)
+        #expect(service.catchUpCount == 1)
+    }
+
+    @Test func aSlowModelCollapsesAtTheTimeoutAndIsAskedAgainNextTime() async throws {
+        let service = StubChannelIntelligence(results: [.ready(summary)], delay: .seconds(300))
+        let catchUp = try #require(make(timeout: .milliseconds(50)))
+        let start = ContinuousClock.now
+        await catchUp.run(using: service)
+        #expect(catchUp.phase == .collapsed)
+        // Generous, since other suites can keep the main actor busy for seconds at a time.
+        #expect(ContinuousClock.now - start < .seconds(60))
+        #expect(make()?.phase == .loading)
+    }
+
+    @Test(arguments: [CatchUpResult.nothingNew, .declined, .unavailable(.modelNotReady)])
+    func aSummaryWithNothingToSayCollapses(result: CatchUpResult) async throws {
+        let catchUp = try #require(make())
+        await catchUp.run(using: StubChannelIntelligence(results: [result]))
+        #expect(catchUp.phase == .collapsed)
+        #expect(catchUp.isFading)
+        #expect(!catchUp.holdsLanding)
+    }
+
+    @Test func aFailedUpdateKeepsTheSummaryAndUpdateTriesAgain() async throws {
+        let newer = CatchUp(needsYou: nil, changes: [.init(text: "Ada shipped the beta.", sources: [34])], through: 36)
+        let service = StubChannelIntelligence(results: [.ready(summary), .declined, .ready(newer)])
+        let catchUp = try #require(make())
+        await catchUp.run(using: service)
+        let first = TranscriptCatchUp.Summary(catchUp: summary, count: 20)
+
+        let later = catchUpTestState(through: 36)
+        #expect(TranscriptCatchUp.newerCount(in: later, after: summary.through) == 6)
+        catchUp.update(from: later, server: server)
+        #expect(catchUp.phase == .updating(first))
+        #expect(catchUp.title == "Summarizing 26 new messages")
+        await catchUp.run(using: service)
+        #expect(catchUp.phase == .ready(first))
+        #expect(catchUp.title == "Summary of 20 new messages")
+
+        catchUp.update(from: later, server: server)
+        #expect(catchUp.isGenerating)
+        await catchUp.run(using: service)
+        #expect(catchUp.phase == .ready(.init(catchUp: newer, count: 26)))
+        #expect(service.catchUpCount == 3)
+    }
+
+    @Test func newerMessagesAndRepliesCountOnlyWhatTheTranscriptShows() {
+        var state = catchUpTestState(users: [25])
+        state.messages.append(ChannelMessage(id: "s31", sequence: 31, timestamp: "2026-10-22T12:00:00Z",
+                                             sender: .system, content: .text("Joined")))
+        #expect(TranscriptCatchUp.newerCount(in: state, after: 20) == 9)
+        #expect(TranscriptCatchUp.isReplied(24, in: state))
+        #expect(!TranscriptCatchUp.isReplied(25, in: state))
+    }
+
+    @Test func aHeightChangeAboveTheViewportScrollsByTheSameAmount() throws {
+        let catchUp = try #require(make())
+        var scrolled: [CGFloat] = []
+        catchUp.scroll = { scrolled.append($0) }
+        // In view the card grows downward from a top that holds still.
+        catchUp.dividerMoved(from: CGRect(x: 0, y: 20, width: 400, height: 60),
+                             to: CGRect(x: 0, y: 20, width: 400, height: 180))
+        #expect(scrolled.isEmpty)
+        catchUp.dividerMoved(from: CGRect(x: 0, y: -300, width: 400, height: 60),
+                             to: CGRect(x: 0, y: -300, width: 400, height: 180))
+        catchUp.dividerMoved(from: CGRect(x: 0, y: -300, width: 400, height: 180),
+                             to: CGRect(x: 0, y: -300, width: 400, height: 30))
+        #expect(scrolled == [120, -150])
+        #expect(catchUp.top == -300)
+    }
+
+    @Test func theSettingsReadAsOnUntilTurnedOff() throws {
+        let suite = "catch-up-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let key = TranscriptIntelligenceSettings.summarizesNewMessages
+        #expect(TranscriptIntelligenceSettings.isOn(key, defaults: defaults))
+        defaults.set(false, forKey: key)
+        #expect(!TranscriptIntelligenceSettings.isOn(key, defaults: defaults))
+    }
+
+    @Test func imagesAreDescribedOnlyForVoiceOverAndOnlyOnce() async throws {
+        let descriptions = TranscriptImageDescriptions(observesVoiceOver: false)
+        let service = StubChannelIntelligence(descriptions: ["chart": "A chart of weekly signups rising."])
+        #expect(!descriptions.isActive(using: service, isOn: true))
+        descriptions.isVoiceOverRunning = true
+        #expect(descriptions.isActive(using: service, isOn: true))
+        #expect(!descriptions.isActive(using: service, isOn: false))
+        #expect(!descriptions.isActive(using: StubChannelIntelligence(availability: .unavailable(.deviceNotEligible)),
+                                       isOn: true))
+
+        let request = describedImage("chart")
+        #expect(descriptions.text(for: request) == nil)
+        #expect(TranscriptImageDescriptions.value(descriptions.text(for: request)) == "")
+        await descriptions.describe(request, using: service)
+        #expect(TranscriptImageDescriptions.value(descriptions.text(for: request))
+                == "Generated description: A chart of weekly signups rising.")
+        // The viewer asks for the same image at a higher priority and finds it described.
+        let focused = describedImage("chart", priority: .focused)
+        #expect(descriptions.text(for: focused) == "A chart of weekly signups rising.")
+        await descriptions.describe(focused, using: service)
+
+        // An image the model can't describe isn't asked about again.
+        await descriptions.describe(describedImage("photo"), using: service)
+        await descriptions.describe(describedImage("photo"), using: service)
+        #expect(descriptions.text(for: describedImage("photo")) == nil)
+        #expect(service.altTextCount == 2)
+    }
+
+    @Test func aDescriptionGivenUpWhenItsTileScrollsAwayIsAskedForAgain() async throws {
+        let descriptions = TranscriptImageDescriptions(observesVoiceOver: false)
+        let slow = StubChannelIntelligence(delay: .seconds(30), descriptions: ["chart": "A chart."])
+        let request = describedImage("chart")
+        let task = Task { await descriptions.describe(request, using: slow) }
+        for _ in 0..<100 where slow.altTextCount == 0 { try await Task.sleep(for: .milliseconds(10)) }
+        task.cancel()
+        await task.value
+        #expect(descriptions.text(for: request) == nil)
+
+        await descriptions.describe(request, using: StubChannelIntelligence(descriptions: ["chart": "A chart."]))
+        #expect(descriptions.text(for: request) == "A chart.")
+    }
+
+    private func describedImage(_ digest: String, priority: AltTextRequest.Priority = .visible) -> AltTextRequest {
+        AltTextRequest(server: server, digest: digest, fileURL: URL(fileURLWithPath: "/tmp/\(digest).png"),
+                       priority: priority)
+    }
+
+    @Test func theCardGrowsDownwardFromWhereTheTranscriptLanded() async throws {
+        let ready = CatchUp(needsYou: nil, changes: (11...13).map {
+            .init(text: "Lead moved update \($0) along, with enough detail to wrap the line.", sources: [$0])
+        }, through: 14)
+        let service = StubChannelIntelligence(results: [.ready(ready)], delay: .seconds(1.5))
+        // The unread messages fit below the divider, so the landing ends at the bottom, where following
+        // would push the card's top up as it grows.
+        let messages = (1...14).map { catchUpTestMessage($0, repeats: $0 > 9 ? 3 : 1) }
+        let harness = try await TranscriptHarness(messages: messages, seenThrough: 9, height: 1100,
+                                                  intelligence: service)
+        defer { harness.close() }
+        let clip = harness.scrollView.contentView
+        let landed = clip.bounds.minY
+        #expect(service.catchUpCount == 1)
+        #expect(abs(harness.bottomGap) < 2, "The landing ended \(harness.bottomGap) points from the bottom")
+
+        try await harness.waitUntil { harness.bottomGap > 40 }
+        try await harness.settle(for: .milliseconds(500))
+        #expect(abs(clip.bounds.minY - landed) < 1, "Moved from \(landed) to \(clip.bounds.minY)")
+        #expect(harness.readRequests == 0)
+
+        harness.interaction.jumpToLatest()
+        try await harness.waitUntil { abs(harness.bottomGap) < 2 }
+    }
+}
+
+private final class StubChannelIntelligence: ChannelIntelligenceService {
+    let availability: IntelligenceAvailability
+    private let results: Mutex<[CatchUpResult]>
+    private let descriptions: [String: String]
+    private let delay: Duration
+    private let calls = Mutex((catchUp: 0, altText: 0))
+
+    init(availability: IntelligenceAvailability = .available, results: [CatchUpResult] = [],
+         delay: Duration = .zero, descriptions: [String: String] = [:]) {
+        self.availability = availability
+        self.results = Mutex(results)
+        self.delay = delay
+        self.descriptions = descriptions
+    }
+
+    var catchUpCount: Int { calls.withLock { $0.catchUp } }
+    var altTextCount: Int { calls.withLock { $0.altText } }
+
+    /// Answers with each result in turn, then keeps answering with the last.
+    func catchUp(_ request: CatchUpRequest) async -> CatchUpResult {
+        calls.withLock { $0.catchUp += 1 }
+        if delay > .zero { try? await Task.sleep(for: delay) }
+        return results.withLock { $0.count > 1 ? $0.removeFirst() : $0.first ?? .declined }
+    }
+
+    func altText(_ request: AltTextRequest) async -> AltText? {
+        calls.withLock { $0.altText += 1 }
+        if delay > .zero { try? await Task.sleep(for: delay) }
+        return descriptions[request.digest].map(AltText.init(text:))
+    }
+}
+
+func catchUpTestMessage(_ sequence: Int, sender: ChannelMessageSender = .agent("lead"),
+                        repeats: Int = 1) -> ChannelMessage {
+    let sentence = "Update \(sequence) moves the launch checklist forward, with the reconnect fix verified and "
+        + "the badge holding at zero unread."
+    return ChannelMessage(id: "m\(sequence)", sequence: sequence, timestamp: "2026-10-22T12:00:00Z", sender: sender,
+                          content: .text(Array(repeating: sentence, count: repeats).joined(separator: " ")))
+}
+
+func catchUpTestState(through latest: Int = 30, seenThrough: Int = 10, users: Set<Int> = []) -> ChannelState {
+    let channel = Channel(id: "catch-up", name: "Catch-up", model: .init(provider: "test", name: "test"),
+                          latestSequence: latest, seenThrough: seenThrough, updatedAt: "2026-10-22T12:00:00Z")
+    return ChannelState(revision: 1, channel: channel, lead: .lead(id: "lead"), messages: (1...latest).map {
+        catchUpTestMessage($0, sender: users.contains($0) ? .user : .agent("lead"))
+    })
+}
+
 func transcriptTestMessage(_ sequence: Int) -> ChannelMessage {
     ChannelMessage(id: "m\(sequence)", sequence: sequence, timestamp: "2026-10-22T12:00:00Z",
                    sender: .agent("lead"),
@@ -1695,11 +1948,15 @@ private final class TranscriptHarness {
     private let session: URLSession
     private let window: NSWindow
 
-    init(messages: [ChannelMessage], history: [ChannelMessage] = [], holdsHistory: Bool = false) async throws {
+    /// Lands at the bottom unless `seenThrough` leaves messages unread, in which case it lands at the first.
+    init(messages: [ChannelMessage], history: [ChannelMessage] = [], holdsHistory: Bool = false,
+         seenThrough: Int? = nil, height: CGFloat = 480,
+         intelligence: any ChannelIntelligenceService = LiveChannelIntelligence.shared) async throws {
         let host = "transcript-\(UUID().uuidString.lowercased()).invalid"
         let latest = messages.last?.sequence ?? 0
         let channel = Channel(id: "harness", name: "Harness", model: .init(provider: "test", name: "test"),
-                              latestSequence: latest, seenThrough: latest, updatedAt: "2026-10-22T12:00:00Z")
+                              latestSequence: latest, seenThrough: seenThrough ?? latest,
+                              updatedAt: "2026-10-22T12:00:00Z")
         let snapshot = try TranscriptServerProtocol.event(.init(type: "snapshot", state: ChannelState(
             revision: 1, channel: channel, lead: .lead(id: "lead"), messages: messages)))
         TranscriptServerProtocol.fixtures.withLock {
@@ -1717,8 +1974,9 @@ private final class TranscriptHarness {
             .safeAreaBar(edge: .bottom, spacing: 0) { Color.clear.frame(height: 100) }
             .environment(interaction)
             .environment(ArtifactOpener())
-            .frame(width: 520, height: 480))
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 480),
+            .environment(\.channelIntelligence, intelligence)
+            .frame(width: 520, height: height))
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: height),
                               styleMask: [.borderless], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         window.contentView = view
@@ -1731,8 +1989,15 @@ private final class TranscriptHarness {
         }
         try await waitUntil { findScrollView(in: view)?.documentView.map { $0.bounds.height > 800 } == true }
         scrollView = try #require(findScrollView(in: view))
-        try await waitUntil { abs(self.bottomGap) < 2 }
-        try await settle(for: .milliseconds(300))
+        if let seenThrough, seenThrough < latest {
+            let firstUnread = messages.first { $0.sequence > seenThrough }?.id ?? ""
+            try await waitUntil { capture.frames[firstUnread] != nil }
+            // The landing jump settles within half a second.
+            try await settle(for: .milliseconds(600))
+        } else {
+            try await waitUntil { abs(self.bottomGap) < 2 }
+            try await settle(for: .milliseconds(300))
+        }
     }
 
     var bottomGap: CGFloat {

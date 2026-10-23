@@ -1,6 +1,7 @@
 import AppKit
 import AVKit
 import ChannelClient
+import ChannelIntelligence
 import ChannelKit
 import CryptoKit
 import ImageIO
@@ -126,8 +127,17 @@ private struct TranscriptAttachment: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.colorSchemeContrast) private var contrast
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.channelIntelligence) private var intelligence
+    @AppStorage(TranscriptIntelligenceSettings.describesImages) private var describesImages = true
 
     private var name: String { imageName ?? transcriptAttachmentName(attachment) }
+
+    /// Asked for as the tile appears, while VoiceOver is running.
+    private var descriptionRequest: AltTextRequest? {
+        guard isImage, TranscriptImageDescriptions.shared.isActive(using: intelligence, isOn: describesImages)
+        else { return nil }
+        return TranscriptImageDescriptions.request(for: attachment, api: api, file: localURL, priority: .visible)
+    }
     private var fileType: UTType? { transcriptAttachmentType(attachment) }
     private var isImage: Bool { fileType?.conforms(to: .image) == true }
     private var isVideo: Bool { fileType?.conforms(to: .movie) == true }
@@ -257,8 +267,13 @@ private struct TranscriptAttachment: View {
             isAccessibilityFocused = true
         }
         .accessibilityLabel("View \(name)")
-        .accessibilityValue(thumbnail == nil ? "Loading" : "")
+        .accessibilityValue(thumbnail == nil ? "Loading"
+                            : TranscriptImageDescriptions.value(TranscriptImageDescriptions.shared.text(for: descriptionRequest)))
         .help("View \(name)")
+        .task(id: descriptionRequest) {
+            guard let descriptionRequest else { return }
+            await TranscriptImageDescriptions.shared.describe(descriptionRequest, using: intelligence)
+        }
     }
 
     private func load() async {
@@ -298,11 +313,12 @@ private struct TranscriptAttachment: View {
 
 /// A loading indicator that appears only after 300 ms, so quick loads never flash a spinner.
 struct TranscriptDelayedSpinner: View {
+    var controlSize: ControlSize = .small
     @ViewState private var isVisible = false
 
     var body: some View {
         ZStack {
-            if isVisible { ProgressView().controlSize(.small) }
+            if isVisible { ProgressView().controlSize(controlSize) }
         }
         .task {
             do { try await Task.sleep(for: .milliseconds(300)) }

@@ -1,5 +1,6 @@
 import AppKit
 import ChannelClient
+import ChannelIntelligence
 import ChannelKit
 import ImageIO
 import SwiftUI
@@ -669,6 +670,8 @@ private struct ImageViewerStage: View {
     @Environment(\.colorSchemeContrast) private var contrast
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.displayScale) private var displayScale
+    @Environment(\.channelIntelligence) private var intelligence
+    @AppStorage(TranscriptIntelligenceSettings.describesImages) private var describesImages = true
     @ViewState private var isRevealed = false
     @ViewState private var showsBackdrop = false
     @ViewState private var magnification: ImageViewer.Magnification?
@@ -801,6 +804,9 @@ private struct ImageViewerStage: View {
             .allowsHitTesting(isCurrent)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(viewer.accessibilityLabel)
+            .accessibilityValue(isCurrent && viewer.items[position]?.image != nil
+                                ? TranscriptImageDescriptions.value(TranscriptImageDescriptions.shared.text(
+                                    for: descriptionRequest(position))) : "")
             .accessibilityAddTraits(.isImage)
             .accessibilityAction(named: "Next") { viewer.showNext() }
             .accessibilityAction(named: "Previous") { viewer.showPrevious() }
@@ -812,6 +818,17 @@ private struct ImageViewerStage: View {
             // Hiding comes last. Applied before the element, the hidden page gains a new outer
             // element with the current image's label.
             .accessibilityHidden(!isCurrent)
+            .task(id: isCurrent ? descriptionRequest(position) : nil) {
+                guard isCurrent, let request = descriptionRequest(position) else { return }
+                await TranscriptImageDescriptions.shared.describe(request, using: intelligence)
+            }
+    }
+
+    /// The current image goes ahead of tiles in the description queue.
+    private func descriptionRequest(_ position: Int) -> AltTextRequest? {
+        guard TranscriptImageDescriptions.shared.isActive(using: intelligence, isOn: describesImages) else { return nil }
+        return TranscriptImageDescriptions.request(for: session.images[position], api: session.api,
+                                                   file: viewer.items[position]?.file, priority: .focused)
     }
 
     @ViewBuilder

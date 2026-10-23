@@ -7,6 +7,7 @@ struct TranscriptRowContent: View {
     let state: ChannelState
     let store: ChannelStore
     let highlightedSequence: Int?
+    var catchUp: TranscriptCatchUp?
     @Binding var expandedMessageIds: Set<String>
     var onCollapse: (String) -> Void
     @Environment(ChannelInteraction.self) private var interaction
@@ -14,7 +15,10 @@ struct TranscriptRowContent: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            if let divider = row.divider { TranscriptRule(divider: divider) }
+            if let divider = row.divider {
+                TranscriptDividerStack(divider: divider, state: state, server: store.api.baseURL,
+                                       catchUp: divider.unread && interaction.messageView == .all ? catchUp : nil)
+            }
             switch row.content {
             case .user(let message):
                 TranscriptUserMessage(message: message, state: state, api: store.api, isLive: store.phase.isLive)
@@ -51,6 +55,34 @@ struct TranscriptRowContent: View {
                                             historyStart: state.messages.first?.sequence ?? 0)
                     .id(row.id)
             }
+        }
+    }
+}
+
+/// A divider, with the catch-up summary above the New divider for the landing that has one.
+private struct TranscriptDividerStack: View {
+    let divider: TranscriptDivider
+    let state: ChannelState
+    let server: URL
+    let catchUp: TranscriptCatchUp?
+    @AppStorage(TranscriptIntelligenceSettings.summarizesNewMessages) private var summarizes = true
+    @AccessibilityFocusState private var focusesDivider: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if let catchUp, summarizes, catchUp.phase != .collapsed {
+                TranscriptCatchUpCard(catchUp: catchUp, state: state, server: server) {
+                    catchUp.dismiss()
+                    focusesDivider = true
+                }
+                .padding(.bottom, 12)
+                .transition(.opacity)
+            }
+            TranscriptRule(divider: divider)
+                .accessibilityFocused($focusesDivider)
+        }
+        .onGeometryChange(for: CGRect.self) { $0.frame(in: .named("transcript-viewport")) } action: { old, new in
+            catchUp?.dividerMoved(from: old, to: new)
         }
     }
 }

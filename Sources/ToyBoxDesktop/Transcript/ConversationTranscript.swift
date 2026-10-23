@@ -1,4 +1,5 @@
 import ChannelClient
+import ChannelIntelligence
 import ChannelKit
 import SwiftUI
 
@@ -10,6 +11,7 @@ struct ConversationTranscript: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.channelTextScale) private var textScale
     @Environment(ImageViewer.self) private var viewer: ImageViewer?
+    @Environment(\.channelIntelligence) private var intelligence
     @ViewState private var window = TranscriptWindowObserver()
     @ViewState private var frames: [String: TranscriptMessageFrame] = [:]
     @ViewState private var viewport = TranscriptViewport()
@@ -28,6 +30,7 @@ struct ConversationTranscript: View {
     @ViewState private var isUserScrolling = false
     @ViewState private var pendingJump: TranscriptJump?
     @ViewState private var requestAnnouncements = TranscriptRequestAnnouncements()
+    @ViewState private var catchUp: TranscriptCatchUp?
 
     private var rows: [TranscriptRow] {
         guard let state = store.state else { return [] }
@@ -99,24 +102,33 @@ struct ConversationTranscript: View {
                 .task(id: snapshot?.requestedState) {
                     await prepareSnapshot(using: proxy)
                 }
+                // Owned here rather than by the card, which the lazy stack drops when it scrolls away.
+                .task(id: catchUp?.generation) { await catchUp?.run(using: intelligence) }
+                .onChange(of: reduceMotion) { catchUp?.reducesMotion = reduceMotion }
+                .onChange(of: pendingJump) { catchUp?.isJumping = pendingJump != nil }
         }
     }
 
     private func observedScroll(state: ChannelState, proxy: ScrollViewProxy) -> some View {
         scrollViewport(state: state, proxy: proxy)
             .onChange(of: interaction.jumpToLatestRequest) {
+                catchUp?.isPinned = false
                 pagingAnchor = nil
                 isAtBottom = true
                 scrollToLatest(using: proxy)
             }
             .onChange(of: interaction.messageView) {
+                catchUp?.isPinned = false
                 pagingAnchor = nil
                 if isAtBottom { scrollToLatest(using: proxy) }
                 if rows.isEmpty && store.hasOlderMessages { Task { await loadOlder() } }
             }
             .onChange(of: state.messages.last?.id) {
                 guard hasLanded, pagingAnchor == nil, !isRevealing else { return }
-                if isAtBottom { scrollToLatest(using: proxy) }
+                if isAtBottom {
+                    catchUp?.isPinned = false
+                    scrollToLatest(using: proxy)
+                }
             }
             .onChange(of: store.sendAttempts.map(\.id)) { old, new in
                 if isAtBottom && new.count > old.count { scrollToLatest(using: proxy) }
@@ -158,8 +170,14 @@ struct ConversationTranscript: View {
         .defaultScrollAnchor(.bottom, for: .initialOffset)
         .scrollPosition(id: $scrollPosition, anchor: .top)
         .onScrollGeometryChange(for: TranscriptViewport.self) { TranscriptViewport($0) } action: { old, new in
+            // Keyboard scrolling has no scroll phase, so any move the transcript didn't make releases the card.
+            if catchUp?.isPinned == true, hasLanded, pendingJump == nil, abs(new.top - old.top) > 0.5,
+               new.contentHeight == old.contentHeight, new.height == old.height {
+                catchUp?.isPinned = false
+            }
             let update = new.update(after: old, wasAtBottom: isAtBottom,
-                                    canFollow: hasLanded && pagingAnchor == nil && !isRevealing && !isUserScrolling,
+                                    canFollow: hasLanded && pagingAnchor == nil && !isRevealing && !isUserScrolling
+                                        && catchUp?.holdsLanding != true,
                                     isJumping: pendingJump != nil)
             viewport = new
             isAtBottom = update.isAtBottom
@@ -187,6 +205,7 @@ struct ConversationTranscript: View {
         }
         .onScrollPhaseChange { _, phase in
             isUserScrolling = phase == .tracking || phase == .interacting || phase == .decelerating
+            if phase == .tracking || phase == .interacting { catchUp?.isPinned = false }
             // Before the page lands, the anchor follows the reader instead.
             if (phase == .tracking || phase == .interacting) && pagingRestoreTarget != nil { pagingAnchor = nil }
         }
@@ -209,7 +228,7 @@ struct ConversationTranscript: View {
             }
             ForEach(rows) { row in
                 TranscriptRowContent(row: row, state: state, store: store,
-                                     highlightedSequence: highlightedSequence,
+                                     highlightedSequence: highlightedSequence, catchUp: catchUp,
                                      expandedMessageIds: $expandedMessageIds,
                                      onCollapse: { id in
                                          Task { @MainActor in
@@ -414,6 +433,9 @@ struct ConversationTranscript: View {
         case "transcript-viewer":
             await openViewerSnapshot(name, using: proxy)
             return
+        case "transcript-catchup":
+            await validateCatchUpSnapshot(name)
+            return
         case "transcript-paging":
             await validatePagingSnapshot(using: proxy)
             return
@@ -503,8 +525,47 @@ struct ConversationTranscript: View {
         snapshot.markStateReady(name)
     }
 
-    private func waitForSnapshotLayout(until predicate: () -> Bool) async -> Bool {
-        let deadline = Date.now.addingTimeInterval(5)
+    /// The card lands where the New divider would have, 20 points down unless the unread messages are too
+    /// short to scroll that far, and its summary arrives without moving its top. While the card is in view
+    /// nothing above it changes, so its top holds exactly when the clip view's offset does.
+    private func validateCatchUpSnapshot(_ name: String) async {
+        guard let snapshot else { return }
+        guard let catchUp else {
+            snapshot.failState(name, message: "The channel isn't eligible for a catch-up summary.")
+            return
+        }
+        guard await waitForSnapshotLayout(within: 5, until: { pendingJump == nil && catchUp.top != nil }) else {
+            snapshot.failState(name, message: "The catch-up card never laid out.")
+            return
+        }
+        do { try await Task.sleep(for: .milliseconds(150)) }
+        catch { return }
+        let wasLoading = catchUp.isGenerating
+        let landedAtBottom = isAtBottom
+        guard let landed = catchUp.top, let offset = window.scrollOffset else { return }
+        guard landedAtBottom || abs(landed - 20) <= 1 else {
+            snapshot.failState(name, message: "The card landed at \(landed), not 20 points below the viewport's top.")
+            return
+        }
+        _ = await waitForSnapshotLayout(within: 20) { !catchUp.isGenerating }
+        guard catchUp.summary != nil else {
+            snapshot.failState(name, message: "The summary collapsed or never arrived.")
+            return
+        }
+        do { try await Task.sleep(for: .milliseconds(600)) }
+        catch { return }
+        guard let top = catchUp.top, let settled = window.scrollOffset, abs(settled - offset) <= 1 else {
+            snapshot.failState(name, message: "The transcript scrolled from \(offset) to "
+                               + "\(String(describing: window.scrollOffset)) when the summary arrived.")
+            return
+        }
+        print("Transcript catch-up landed at \(landed)\(landedAtBottom ? " at the bottom" : "") while "
+              + "\(wasLoading ? "loading" : "ready") and settled at \(top), scrolled \(offset) then \(settled).")
+        snapshot.markStateReady(name)
+    }
+
+    private func waitForSnapshotLayout(within seconds: TimeInterval = 5, until predicate: () -> Bool) async -> Bool {
+        let deadline = Date.now.addingTimeInterval(seconds)
         while !predicate() && Date.now < deadline {
             do { try await Task.sleep(for: .milliseconds(40)) }
             catch { return false }
@@ -561,6 +622,7 @@ struct ConversationTranscript: View {
         if let unread = arrivalUnreadAfter {
             await loadHistory(through: unread + 1)
             guard !Task.isCancelled, !isRevealing else { return }
+            prepareCatchUp(unreadAfter: unread)
             if let first = rows.first(where: { $0.messages.contains { $0.sequence > unread } }) {
                 jump(to: first.id, anchor: .top, using: proxy)
             } else { scrollToLatest(using: proxy) }
@@ -571,7 +633,24 @@ struct ConversationTranscript: View {
         hasLanded = true
     }
 
+    /// The summary exists only when this landing is eligible, so an ineligible one reserves no space.
+    /// Snapshots other than the catch-up's own never show it, so they stay deterministic.
+    private func prepareCatchUp(unreadAfter: Int) {
+        guard catchUp == nil, let state = store.state,
+              snapshot == nil || snapshot?.requestedState == "transcript-catchup",
+              let made = TranscriptCatchUp.make(
+                  server: store.api.baseURL, state: state, unreadAfter: unreadAfter, view: interaction.messageView,
+                  availability: intelligence.availability,
+                  isOn: TranscriptIntelligenceSettings.isOn(TranscriptIntelligenceSettings.summarizesNewMessages))
+        else { return }
+        made.reducesMotion = reduceMotion
+        made.isJumping = pendingJump != nil
+        made.scroll = { [window] delta in window.scroll(by: delta) }
+        catchUp = made
+    }
+
     private func reveal(sequence: Int, using proxy: ScrollViewProxy) async {
+        catchUp?.isPinned = false
         isRevealing = true
         revealError = nil
         pagingAnchor = nil

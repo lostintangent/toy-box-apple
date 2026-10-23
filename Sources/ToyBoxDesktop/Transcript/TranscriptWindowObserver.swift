@@ -30,6 +30,9 @@ final class TranscriptWindowObserver {
         }
     }
 
+    /// The clip view's offset as AppKit has it, which can run ahead of SwiftUI's geometry after a clamp.
+    var scrollOffset: CGFloat? { scrollView?.contentView.bounds.minY }
+
     func scroll(by delta: CGFloat) {
         guard let scrollView, let document = scrollView.documentView, delta.isFinite else { return }
         let clip = scrollView.contentView
