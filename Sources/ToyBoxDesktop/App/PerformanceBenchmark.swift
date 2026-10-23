@@ -47,6 +47,7 @@ final class PerformanceBenchmark {
     private weak var model: AppModel?
     private var select: ((String) -> Void)?
     private var meter: MainRunLoopMeter?
+    private var appearance: NSObjectProtocol?
     private var task: Task<Void, Never>?
 
     init(scenario: Scenario, channelID: String) {
@@ -89,13 +90,32 @@ final class PerformanceBenchmark {
 
     private struct LaunchMoments {
         let window: Date
+        let appeared: AsyncStream<Date>
         let catalog: AsyncStream<Date>
         let channel: AsyncStream<(applied: Date, frame: Date)>
     }
 
     private func launchMoments(meter: MainRunLoopMeter) -> LaunchMoments? {
-        guard let catalog = model?.catalog, let store = store(channelID) else { return nil }
+        guard let window, let catalog = model?.catalog, let store = store(channelID) else { return nil }
         let now = Date.now
+        // AppKit can show the window partway through the pass that builds it, before that pass
+        // draws the channel, so the window appears on its own schedule.
+        let (appeared, appearedContinuation) = AsyncStream.makeStream(of: Date.self)
+        if window.occlusionState.contains(.visible) {
+            appearedContinuation.yield(now)
+        } else {
+            appearance = NotificationCenter.default.addObserver(
+                forName: NSWindow.didChangeOcclusionStateNotification, object: window, queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let self, self.window?.occlusionState.contains(.visible) == true else { return }
+                    appearedContinuation.yield(.now)
+                    appearedContinuation.finish()
+                    if let appearance = self.appearance { NotificationCenter.default.removeObserver(appearance) }
+                    self.appearance = nil
+                }
+            }
+        }
         let (catalogLoaded, catalogContinuation) = AsyncStream.makeStream(of: Date.self)
         if catalog.state != nil {
             catalogContinuation.yield(now)
@@ -107,7 +127,12 @@ final class PerformanceBenchmark {
         }
         let (channelLoaded, channelContinuation) = AsyncStream.makeStream(of: (applied: Date, frame: Date).self)
         if store.isLoaded {
-            channelContinuation.yield((now, now))
+            // A channel connected before the window opened first draws when the pass that opens
+            // the window ends.
+            meter.afterPass { _ in
+                channelContinuation.yield((now, .now))
+                channelContinuation.finish()
+            }
         } else {
             withObservationTracking { _ = store.isLoaded } onChange: {
                 let applied = Date.now
@@ -120,7 +145,7 @@ final class PerformanceBenchmark {
                 }
             }
         }
-        return LaunchMoments(window: now, catalog: catalogLoaded, channel: channelLoaded)
+        return LaunchMoments(window: now, appeared: appeared, catalog: catalogLoaded, channel: channelLoaded)
     }
 
     private func launch(_ moments: LaunchMoments) async {
@@ -128,7 +153,8 @@ final class PerformanceBenchmark {
             for await value in stream { return value }
             return nil
         }
-        guard let meter, let catalog = await first(moments.catalog), let channel = await first(moments.channel) else {
+        guard let meter, let catalog = await first(moments.catalog), let channel = await first(moments.channel),
+              let appeared = await first(moments.appeared) else {
             fail("\(channelID) didn't load")
         }
         let settledAt = await settled(quiet: 1)
@@ -137,7 +163,8 @@ final class PerformanceBenchmark {
         func since(_ date: Date) -> String { String(format: "%.0f ms", date.timeIntervalSince(start) * 1000) }
         header()
         info("First content", "\(since(channel.frame)) after the process started. The window opened at "
-             + "\(since(moments.window)), the catalog arrived at \(since(catalog)) and the channel at \(since(channel.applied))")
+             + "\(since(moments.window)) and appeared at \(since(appeared)), the catalog arrived at \(since(catalog)) "
+             + "and the channel at \(since(channel.applied))")
         info("Settled", "\(since(settled)), after \(format(Self.mainThreadCPU() * 1000)) of main-thread CPU and a "
              + "\(format(meter.longest * 1000)) longest hitch after the window opened")
     }
@@ -497,7 +524,8 @@ private final class MainRunLoopMeter {
     private(set) var longest: Double = 0
     /// When the last pass over a millisecond ended.
     private(set) var lastWorkEnded = CACurrentMediaTime()
-    private var wokeAt: CFTimeInterval?
+    /// The meter starts partway through a pass, which counts from then.
+    private var wokeAt: CFTimeInterval? = CACurrentMediaTime()
     private var callbacks: [(CFTimeInterval) -> Void] = []
 
     init() {
