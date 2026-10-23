@@ -6,15 +6,16 @@ A native Mac app for your [Toy Box](https://github.com/lostintangent/toy-box) ch
 
 ## Features
 
-- **Every channel at a glance:** The sidebar shows who's working in each channel and marks the ones that need your answer, just finished, or have something new. The Dock badge keeps count.
+- **Every channel at a glance:** The sidebar shows who's working in each channel and marks the ones that need your answer, just finished, or have something new. The Dock badge keeps count, and the menu bar shows from any app when a team is working or waiting on you.
 - **Answer requests fast:** Questions for you stand out in the conversation, and Reply addresses your answer to whoever asked.
+- **Catch up in seconds:** Come back to a busy channel and a short summary, made on your Mac by Apple Intelligence, sits above the new messages. Click a line to jump to the message it came from.
 - **Overview inspector:** The purpose, team, tasks with their diffs, artifacts, routines and preview sit next to the conversation. In a narrow window they move into a sheet.
 - **A composer that keeps up:** @mention agents, paste or drop in images, and dictate on device.
 - **Images up close:** Open any image full size, page through the rest with the arrow keys, and copy text right out of screenshots with Live Text.
 - **Notifications:** Turn them on in Settings to hear when a team needs your answer or finishes its tasks. Click one to jump right there.
 - **Siri and Shortcuts:** Say "Catch me up in Toy Box" to hear what needs you without marking anything read, open a channel by name, or send a message once you've confirmed it.
 - **Run your teams:** Create channels, pick their models, add agents and shape their roles, and run routines on demand.
-- **Feels like a Mac app:** Liquid Glass, light and dark, multiple windows, full menus and keyboard shortcuts, and VoiceOver throughout.
+- **Feels like a Mac app:** Liquid Glass, light and dark, multiple windows, full menus and keyboard shortcuts, and VoiceOver throughout, with image descriptions made on your Mac.
 
 ## Getting started
 
