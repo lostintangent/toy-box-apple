@@ -182,6 +182,7 @@ struct ConversationTranscript: View {
                                         && catchUp?.holdsLanding != true,
                                     isJumping: pendingJump != nil)
             viewport = new
+            TranscriptPointer.contentDidMove()
             isAtBottom = update.isAtBottom
             let jump = pendingJump
             if update.landsJump { pendingJump = nil }

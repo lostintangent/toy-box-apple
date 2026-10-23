@@ -228,33 +228,40 @@ private struct TranscriptAgentMessage: View {
     let expanded: Bool
     var onSetExpanded: (String, Bool) -> Void
     @Environment(\.channelTextScale) private var textScale
-    @ViewState private var naturalHeight: CGFloat = 0
+    /// Whether a collapsible message runs past the clamp. Others never measure, so a new message
+    /// lays out once instead of again when its height arrives.
+    @ViewState private var overflows = false
     @ViewState private var isHovered = false
     @FocusState private var isFocused: Bool
 
-    private var isClamped: Bool { entry.collapsible && !expanded && naturalHeight > 160 }
+    private static let clampHeight: CGFloat = 160
+    private var isClamped: Bool { entry.collapsible && !expanded && overflows }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             if entry.showHeader { header.accessibilityHidden(true) }
             if !entry.body.isEmpty {
                 VStack(alignment: .leading, spacing: 6) {
-                    TranscriptMarkdown(content: entry.body, agents: agents, baseURL: api.baseURL)
-                        .environment(\.transcriptSurface, surface)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .onGeometryChange(for: CGFloat.self, of: \.size.height) { naturalHeight = $0 }
-                        .frame(height: isClamped ? 160 : nil, alignment: .top)
-                        .clipped()
-                        .mask(alignment: .bottom) {
-                            if isClamped {
-                                VStack(spacing: 0) {
-                                    Rectangle()
-                                    LinearGradient(colors: [.black, .clear], startPoint: .top, endPoint: .bottom)
-                                        .frame(height: 24)
-                                }
-                            } else { Rectangle() }
-                        }
-                    if entry.collapsible && naturalHeight > 160 {
+                    if entry.collapsible {
+                        markdown
+                            .onGeometryChange(for: Bool.self, of: { $0.size.height > Self.clampHeight }) {
+                                overflows = $0
+                            }
+                            .frame(height: isClamped ? Self.clampHeight : nil, alignment: .top)
+                            .clipped()
+                            .mask(alignment: .bottom) {
+                                if isClamped {
+                                    VStack(spacing: 0) {
+                                        Rectangle()
+                                        LinearGradient(colors: [.black, .clear], startPoint: .top, endPoint: .bottom)
+                                            .frame(height: 24)
+                                    }
+                                } else { Rectangle() }
+                            }
+                    } else {
+                        markdown
+                    }
+                    if entry.collapsible && overflows {
                         Button(expanded ? "Show Less" : "Show More") { onSetExpanded(entry.id, !expanded) }
                             .buttonStyle(.borderless)
                             .font(.system(size: 12 * textScale))
@@ -274,27 +281,8 @@ private struct TranscriptAgentMessage: View {
                 .padding(.vertical, 10)
                 .transcriptBubble(surface)
                 .overlay {
-                    if isHovered || isFocused {
-                        HStack(spacing: 8) {
-                            if agent.deleted != true {
-                                Button("Reply", systemImage: "arrowshape.turn.up.left") {
-                                    interaction.reply(to: agent)
-                                }
-                                .help("Reply to \(agent.name)")
-                            }
-                            Button("Copy Message", systemImage: "doc.on.doc") {
-                                TranscriptClipboard.copy(entry.message.text)
-                            }
-                            .help("Copy message")
-                        }
-                        .labelStyle(.iconOnly)
-                        .buttonStyle(.borderless)
-                        .padding(6)
-                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 7))
-                        .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(.separator, lineWidth: 0.5))
-                        .fixedSize()
-                        .modifier(TranscriptHoverActionsPlacement())
-                    }
+                    TranscriptHoverActions(isHovered: $isHovered, isFocused: isFocused, agent: agent,
+                                           text: entry.message.text, interaction: interaction)
                 }
                 .transcriptWidthCap(TranscriptWidthCap.agentSurface * textScale)
             }
@@ -304,7 +292,14 @@ private struct TranscriptAgentMessage: View {
             }
             TranscriptReactions(message: entry.message, agents: agents, statusReactions: statusReactions)
         }
-        .onHover { isHovered = $0 }
+        .onContinuousHover { phase in
+            switch phase {
+            case .active:
+                if !isHovered && TranscriptPointer.hasMovedSinceContentMoved { isHovered = true }
+            case .ended:
+                if isHovered { isHovered = false }
+            }
+        }
         .focusable()
         .focused($isFocused)
         .focusEffectDisabled()
@@ -329,6 +324,12 @@ private struct TranscriptAgentMessage: View {
                 TranscriptClipboard.copy(entry.message.text)
             }
         }
+    }
+
+    private var markdown: some View {
+        TranscriptMarkdown(content: entry.body, agents: agents, baseURL: api.baseURL)
+            .environment(\.transcriptSurface, surface)
+            .fixedSize(horizontal: false, vertical: true)
     }
 
     private var header: some View {
@@ -369,6 +370,52 @@ private struct TranscriptAgentMessage: View {
 
     private var isPending: Bool { entry.request == .pending }
     private var surface: TranscriptSurface { isPending ? .pendingAgent : .agent }
+}
+
+/// A message's Reply and Copy actions while it's hovered or focused. It reads the hover itself, so
+/// the pointer crossing rows re-renders these buttons instead of each message.
+private struct TranscriptHoverActions: View {
+    @Binding var isHovered: Bool
+    let isFocused: Bool
+    let agent: ChannelAgent
+    let text: String
+    let interaction: ChannelInteraction
+
+    var body: some View {
+        if isHovered || isFocused {
+            HStack(spacing: 8) {
+                if agent.deleted != true {
+                    Button("Reply", systemImage: "arrowshape.turn.up.left") {
+                        interaction.reply(to: agent)
+                    }
+                    .help("Reply to \(agent.name)")
+                }
+                Button("Copy Message", systemImage: "doc.on.doc") {
+                    TranscriptClipboard.copy(text)
+                }
+                .help("Copy message")
+            }
+            .labelStyle(.iconOnly)
+            .buttonStyle(.borderless)
+            .padding(6)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 7))
+            .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(.separator, lineWidth: 0.5))
+            .fixedSize()
+            .modifier(TranscriptHoverActionsPlacement())
+        }
+    }
+}
+
+/// Where the pointer was when transcript content last moved. Like AppKit's tracking areas, a row
+/// that slides under a still pointer, as when the transcript follows a new message, waits for the
+/// pointer to move before it shows its actions, so arrivals don't re-render the row beneath it.
+@MainActor
+enum TranscriptPointer {
+    private static var locationWhenContentMoved: CGPoint?
+
+    static func contentDidMove() { locationWhenContentMoved = NSEvent.mouseLocation }
+
+    static var hasMovedSinceContentMoved: Bool { NSEvent.mouseLocation != locationWhenContentMoved }
 }
 
 /// Floats hover actions over a bubble's top trailing corner, but never past its leading edge, so

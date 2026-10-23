@@ -791,10 +791,12 @@ button, and the historical header shows a secondary `checkmark` and "Replied". N
 nor an optimistic send clears a request. Requests never pulse. Increase Contrast adds a 1-point
 orange border to pending bubbles only. VoiceOver reads "Needs your reply" with the message and
 exposes Reply as an action.
-Reply and Copy Message appear on hover or keyboard focus and in the context menu. Reply prepends
-the agent's mention once, preserves the draft and focuses the composer. Deleted agents cannot
-be replied to. Your own messages expose Copy Message as an accessibility action, as well as in
-their context menu. Keep message selection, link selection and context menus usable independently.
+Reply and Copy Message appear on hover or keyboard focus and in the context menu. As with AppKit's
+tracking areas, a message that slides under a still pointer, as when the transcript follows a new
+message or scrolls, shows them once the pointer moves. Reply prepends the agent's mention once,
+preserves the draft and focuses the composer. Deleted agents cannot be replied to. Your own
+messages expose Copy Message as an accessibility action, as well as in their context menu. Keep
+message selection, link selection and context menus usable independently.
 
 System rows are channel events, not speech, so they sit in the neutral center of the
 conversation, as in Messages, rather than in the avatar column that belongs to agents. Each row
@@ -848,10 +850,11 @@ continue paging even when a page contains no visible rows.
 Long histories must stay as fast as short ones. Build rows incrementally: derive each message's
 audience, display text and reactions once, and when messages only append, rebuild from the last
 row rather than from the start. Give each row only the values it renders and compare rows, so a new
-message, status or reaction re-renders only the rows it changed. Compile Markdown and mention
-patterns once, not once per row. The transcript reads only the `messages`, `roster`,
-`agentStatuses`, `presence` and `request` slices, so task, artifact, routine and detail events
-don't re-render it.
+message, status or reaction re-renders only the rows it changed. Only a message that can collapse
+measures its own height, so a new message lays out once rather than again when its height arrives.
+Compile Markdown and mention patterns once, not once per row. The transcript reads only the
+`messages`, `roster`, `agentStatuses`, `presence` and `request` slices, so task, artifact, routine
+and detail events don't re-render it.
 
 The Message View menu is a native radio-choice menu: All Messages and Your Messages. A non-default
 filter gives its toolbar button an active tint and label/help. It does not change the composer
