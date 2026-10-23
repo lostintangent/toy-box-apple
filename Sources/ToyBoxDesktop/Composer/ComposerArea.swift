@@ -285,8 +285,11 @@ private struct ChannelComposer: View {
         }
         await dictation.refresh()
         switch name {
+        case "composer-dictation-access-off":
+            // Access is first checked by a click. The button shows it without the click's popover.
+            await dictation.startTracking()
         case "composer-dictation-listening", "composer-dictation-listening-empty", "composer-dictation-download",
-             "composer-dictation-recording", "composer-dictation-unsent":
+             "composer-dictation-recording", "composer-dictation-unsent", "composer-dictation-no-microphone":
             dictation.contextualStrings = dictationContext
             dictation.toggle()
             let deadline = ContinuousClock.now + .seconds(recording ? 20 : 5)
@@ -296,6 +299,7 @@ private struct ChannelComposer: View {
                 case "composer-dictation-recording", "composer-dictation-unsent":
                     dictation.hasTentativeWords && !draft.text.isEmpty
                 case "composer-dictation-download": dictation.notice != nil
+                case "composer-dictation-no-microphone": dictation.notice == .noMicrophone
                 default: dictation.isListening && dictation.level > 0.5
                 }
                 if ready { break }

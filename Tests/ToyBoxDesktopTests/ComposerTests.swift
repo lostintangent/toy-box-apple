@@ -1,4 +1,5 @@
 import AppKit
+import AVFoundation
 import ChannelClient
 import ChannelKit
 import Foundation
@@ -883,10 +884,14 @@ struct ComposerTests {
         let dictation = ComposerDictation(system: system)
         await dictation.refresh()
         #expect(dictation.availability == .available)
-        #expect(dictation.accessOff == .microphone)
+        #expect(dictation.accessOff == nil, "Access waits for the first click")
         dictation.toggle()
-        #expect(dictation.showsAccessExplanation)
+        try await waitUntil("the first click finds access off") { dictation.showsAccessExplanation }
+        #expect(dictation.accessOff == .microphone)
         #expect(dictation.phase == .idle)
+        dictation.showsAccessExplanation = false
+        dictation.toggle()
+        #expect(dictation.showsAccessExplanation, "Later clicks explain at once")
         dictation.openSettings()
         #expect(opened == [.microphone])
         #expect(!dictation.showsAccessExplanation)
@@ -911,6 +916,42 @@ struct ComposerTests {
         let elsewhere = ComposerDictation(system: unsupported)
         await elsewhere.refresh()
         #expect(elsewhere.availability == .unsupported)
+    }
+
+    @Test func theMicrophoneAndItsAccessWaitForTheFirstClick() async throws {
+        let probe = MicrophoneProbe()
+        var system = DictationSystem.scripted()
+        system.hasMicrophone = {
+            probe.deviceChecks += 1
+            return probe.isConnected
+        }
+        system.microphoneAccess = {
+            probe.accessChecks += 1
+            return .granted
+        }
+        var announcements: [String] = []
+        system.announce = { announcements.append($0) }
+        let dictation = ComposerDictation(system: system)
+        dictation.activate()
+        defer { dictation.deactivate() }
+        try await waitUntil("the language check finishes") { dictation.availability != .checking }
+        await dictation.refresh()
+        #expect(probe.deviceChecks == 0, "Finding the input device starts Core Audio, so activating never does")
+        #expect(probe.accessChecks == 0)
+        #expect(dictation.availability == .available, "Dictate shows before anything looks for a microphone")
+
+        dictation.toggle()
+        try await waitUntil("the first click finds no microphone") { dictation.notice == .noMicrophone }
+        #expect(dictation.availability == .noMicrophone)
+        #expect(dictation.phase == .idle)
+        #expect(dictation.notice?.text == "Connect a microphone to dictate.")
+        #expect(announcements == ["Connect a microphone to dictate."])
+        #expect(probe.deviceChecks == 1)
+
+        probe.isConnected = true
+        NotificationCenter.default.post(name: AVCaptureDevice.wasConnectedNotification, object: nil)
+        try await waitUntil("connecting a microphone enables Dictate") { dictation.availability == .available }
+        #expect(dictation.notice == nil)
     }
 
     @Test func firstUseDownloadShowsProgressCancelsAndOnlyStartsInTheKeyWindow() async throws {
@@ -1322,6 +1363,12 @@ private final class ObservedChange: Sendable {
 
     func showDictation(_ transcript: DictationTranscript) {}
     func endDictation(_ finalized: String) {}
+}
+
+@MainActor private final class MicrophoneProbe {
+    var isConnected = false
+    var deviceChecks = 0
+    var accessChecks = 0
 }
 
 @MainActor private final class MicrophoneAccessBox {

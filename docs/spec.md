@@ -941,10 +941,10 @@ tentative results. Audio never leaves the Mac.
 | --- | --- | --- |
 | Ready | `mic` with the same borderless style, 12-point symbol, secondary ink and 28-point frame as Attach Image. Help and label "Dictate" | Unchanged |
 | Unsupported | Hidden when `DictationTranscriber.supportedLocale(equivalentTo:)` finds no match for the user's language | Unchanged |
-| No microphone | Disabled `mic`. Help "Connect a microphone to dictate" | Unchanged |
+| No microphone | Disabled `mic` once a click finds no input device. Help "Connect a microphone to dictate" | Notice row: "Connect a microphone to dictate." It clears when a microphone connects |
 | First use | A 22-point determinate ring around a 10-point `mic`, 2-point accent stroke over a `primary` 12% track, showing the language asset download. Clicking cancels | Notice row: "Downloading English dictation. This happens once." in the composer's caption notice style |
 | Listening | `waveform` at 13 points semibold in accent ink on a 28-point circle of accent at 15%. Its `variableValue` follows the smoothed input level, about 12 updates a second. Help and label "Stop Dictation". Reduce Motion holds a static full `waveform` | An empty draft's placeholder reads "Listening…". Tentative words draw in secondary ink at the insertion point and settle to primary ink as they finalize |
-| Access off | `mic.slash` in secondary ink. Clicking opens a popover from the button | Unchanged |
+| Access off | `mic.slash` in secondary ink once a click finds access off. That click and every later one open a popover from the button | Unchanged |
 | Failed | Returns to Ready | Notice row names the cause, such as "Dictation stopped because the microphone became unavailable." Every finalized word stays |
 
 Send stays the only filled control. Listening uses a tint, never a second solid accent circle, and
@@ -952,8 +952,10 @@ never red, which reads as recording or error.
 
 - **Start.** Click Dictate. Focus moves to the composer, and words replace the selection at the
   caret. The first click, never launch, raises the system microphone prompt, plus speech
-  recognition if the framework requires it. There is no separate menu command or shortcut, because
-  Edit > Start Dictation… and the Dictation key already own those.
+  recognition if the framework requires it. Launch and channel switches only check the language.
+  The first click is also the first time the app looks for an input device or reads microphone
+  access, because finding the default input device starts Core Audio. There is no separate menu
+  command or shortcut, because Edit > Start Dictation… and the Dictation key already own those.
 - **Stop.** Stop on any of these, keeping every word: click the button again, press Escape, type
   any character, switch channels, the window resigns key, or 30 seconds pass with no new words.
   Stopping finalizes the pending tentative words before returning to Ready.

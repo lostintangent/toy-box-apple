@@ -110,7 +110,8 @@ enum DictationError: LocalizedError {
 /// The platform services dictation depends on. Tests and snapshot states replace them.
 @MainActor struct DictationSystem {
     var supportedLocale: () async -> Locale?
-    var hasMicrophone: () -> Bool
+    /// Finding the default input device starts Core Audio, so only the first click asks.
+    var hasMicrophone: () async -> Bool
     var microphoneAccess: () -> DictationMicrophoneAccess
     var requestMicrophoneAccess: () async -> Bool
     var speechRecognitionDenied: () -> Bool
@@ -135,7 +136,7 @@ extension DictationSystem {
                 resolvedLocale = .some(locale)
                 return locale
             },
-            hasMicrophone: { AVCaptureDevice.default(for: .audio) != nil },
+            hasMicrophone: { await Task.detached { AVCaptureDevice.default(for: .audio) != nil }.value },
             microphoneAccess: {
                 switch AVCaptureDevice.authorizationStatus(for: .audio) {
                 case .authorized: .granted
@@ -473,11 +474,14 @@ final class ComposerDictation {
         /// Send held the message back because dictation didn't finish. It describes the draft at
         /// `revision`, and clears once the draft changes or the person sends.
         case unsent(revision: UUID?)
+        /// A click found no microphone. It clears once one is connected.
+        case noMicrophone
 
         var text: String {
             switch self {
             case .downloading(let language): "Downloading \(language) dictation. This happens once."
             case .failed(let message): message
+            case .noMicrophone: "Connect a microphone to dictate."
             case .unsent: "Dictation didn't finish, so the message wasn't sent. Check the last words, then send."
             }
         }
@@ -519,30 +523,52 @@ final class ComposerDictation {
     @ObservationIgnored private var lastLevelAt = ContinuousClock.now
     @ObservationIgnored private var rawLevel: Double = 0
     @ObservationIgnored private var observers: [any NSObjectProtocol] = []
+    @ObservationIgnored private var isActive = false
+    /// True from the first click on, once devices and access have been checked.
+    @ObservationIgnored private(set) var isTracking = false
 
     init(system: DictationSystem = .live) {
         self.system = system
     }
 
-    /// Starts tracking devices and access. Permission prompts wait for the first click.
+    /// Checks the language, which decides whether Dictate shows. The microphone and its access
+    /// wait for the first click, so launch and channel switches never start Core Audio.
     func activate() {
-        guard observers.isEmpty else { return }
-        let center = NotificationCenter.default
-        for name in [AVCaptureDevice.wasConnectedNotification, AVCaptureDevice.wasDisconnectedNotification,
-                     NSApplication.didBecomeActiveNotification] {
-            observers.append(center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated { self?.refreshDevicesAndAccess() }
-            })
-        }
+        guard !isActive else { return }
+        isActive = true
+        if isTracking { observe() }
         Task { await refresh() }
     }
 
     /// Commits any session and stops tracking, such as when the composer goes away.
     func deactivate() {
+        isActive = false
         observers.forEach(NotificationCenter.default.removeObserver)
         observers.removeAll()
         commitNow()
         if phase != .idle { cancelPreparation() }
+    }
+
+    /// Checks devices and access now and follows their changes from here on.
+    func startTracking() async {
+        guard !isTracking else { return }
+        isTracking = true
+        if isActive { observe() }
+        await refreshDevicesAndAccess()
+    }
+
+    private func observe() {
+        guard observers.isEmpty else { return }
+        let center = NotificationCenter.default
+        for name in [AVCaptureDevice.wasConnectedNotification, AVCaptureDevice.wasDisconnectedNotification,
+                     NSApplication.didBecomeActiveNotification] {
+            observers.append(center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    Task { await self.refreshDevicesAndAccess() }
+                }
+            })
+        }
     }
 
     /// Commits any session to the draft it was spoken into and drops what described that draft,
@@ -560,12 +586,18 @@ final class ComposerDictation {
             availability = .unsupported
             return
         }
-        refreshDevicesAndAccess()
+        if isTracking {
+            await refreshDevicesAndAccess()
+        } else if availability == .checking {
+            availability = .available
+        }
     }
 
-    private func refreshDevicesAndAccess() {
+    private func refreshDevicesAndAccess() async {
         guard availability != .unsupported, locale != nil else { return }
-        availability = system.hasMicrophone() ? .available : .noMicrophone
+        let hasMicrophone = await system.hasMicrophone()
+        availability = hasMicrophone ? .available : .noMicrophone
+        if hasMicrophone, notice == .noMicrophone { notice = nil }
         let restored = switch accessOff {
         case .microphone: system.microphoneAccess() != .denied
         case .speechRecognition: !system.speechRecognitionDenied()
@@ -628,9 +660,20 @@ final class ComposerDictation {
     }
 
     private func prepareAndListen(locale: Locale, generation: Int) async {
+        if !isTracking {
+            await startTracking()
+            guard self.generation == generation else { return }
+            guard availability == .available else {
+                phase = .idle
+                notice = .noMicrophone
+                system.announce(Notice.noMicrophone.text)
+                return
+            }
+        }
         switch system.microphoneAccess() {
         case .denied:
             accessOff = .microphone
+            showsAccessExplanation = true
             phase = .idle
             return
         case .undetermined:
@@ -764,7 +807,7 @@ final class ComposerDictation {
     private func stop(failure: String) async {
         guard isSessionActive else { return }
         _ = await finish(failure: failure, reason: nil)
-        refreshDevicesAndAccess()
+        await refreshDevicesAndAccess()
     }
 
     private func finish(failure: String?, reason: StopReason?) async -> Bool {
