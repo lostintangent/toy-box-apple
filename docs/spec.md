@@ -42,6 +42,10 @@ Reference sources (read-only):
   phase, unread boundary and paging. The catalog store owns the channel list and refreshes it on
   launch, on app activation, on demand, and on a timer: about 5 seconds while the app is active, and
   about 15 seconds in the background so requests still reach the Dock badge and notifications.
+  Neither waits for the main thread to start a request. Polling sends its first catalog request
+  at once, and connecting starts the stream and the outbox read together. Events are read off the
+  main actor and queued for it as each one decodes, after the restored outbox, so a snapshot that
+  arrives while the first window is being built applies in the main thread's next turn.
   Views read the store's observed slices (`details`, `roster`, `agentStatuses`, `presence`,
   `messages`, `request`, `requestSequence`, `tasks`, `artifacts`, `artifactShares`, `routines`)
   rather than `state`, which changes on every event. An event then re-renders only the views that

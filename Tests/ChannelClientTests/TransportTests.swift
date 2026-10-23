@@ -124,6 +124,19 @@ struct TransportTests {
         #expect(store.state?.presence["test"]?.state == "working")
     }
 
+    @Test @MainActor func aRejectedEventClosesItsStreamBeforeReconnecting() async throws {
+        let mock = MockTransport { _, _ in
+            try .stream([.init(type: "resumed", presence: ["test": .init(state: "working")])])
+        }
+        let store = ChannelStore(id: "test", api: try mock.api(),
+                                 reconnectPolicy: .init(initialDelay: 5), sendJournal: nil)
+        store.connect()
+        defer { store.disconnect() }
+        try await eventually { store.phase.message != nil }
+        try await eventually { mock.stops == 1 }
+        #expect(mock.requests.count == 1)
+    }
+
     @Test @MainActor func deletionIsTerminal() async throws {
         let initial = testState()
         let mock = MockTransport { _, _ in

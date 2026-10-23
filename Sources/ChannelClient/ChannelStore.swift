@@ -121,38 +121,61 @@ public final class ChannelStore {
 
     deinit { observation?.cancel() }
 
+    /// Starts the stream and the outbox restore at once. Events are read off the main actor and
+    /// each one is queued for it as soon as it decodes. Iterating the stream from the main actor
+    /// would hop off and back even for a buffered event, which at launch held the first snapshot
+    /// until after the window's first render.
     public func connect() {
         guard observation == nil, phase != .deleted else { return }
         generation = UUID()
         let token = generation
-        let api = api
-        let id = id
-        let policy = reconnectPolicy
         phase = .connecting
-        observation = Task { [weak self] in
-            do { try await self?.restoreSendAttempts() }
-            catch { self?.attemptPersistenceError = error.localizedDescription }
+        let restore = attemptsRestored ? nil : restoreSendAttemptsConcurrently()
+        var first: AsyncThrowingStream<ChannelObservationEvent, any Error>? =
+            api.observe(channelId: id, after: state?.revision)
+        observation = Task.detached(priority: Task.currentPriority) { [weak self] in
+            // Each stream lives only inside `do`, so leaving it for any reason closes the request.
+            var next = first.take()
             var attempt = 0
-            while !Task.isCancelled && self?.generation == token {
+            while true {
                 do {
-                    for try await event in api.observe(channelId: id, after: self?.state?.revision) {
-                        guard !Task.isCancelled, self?.generation == token else { return }
-                        guard let terminal = try self?.apply(event) else { return }
-                        if terminal { return }
+                    guard let events = next.take() else { return }
+                    for try await event in events {
+                        guard try await self?.receive(event, token: token, after: restore) == true else { return }
                         if event.type == "snapshot" || event.type == "resumed" { attempt = 0 }
                     }
                     throw ChannelAPIError.streamEnded
                 } catch {
-                    guard !Task.isCancelled, self?.generation == token else { return }
-                    let delay = policy.delay(attempt: attempt)
+                    guard let delay = await self?.scheduleReconnect(after: error, attempt: attempt, token: token)
+                    else { return }
                     attempt += 1
-                    self?.phase = .stale(message: error.localizedDescription,
-                                         retryAt: Date.now.addingTimeInterval(delay))
                     do { try await Task.sleep(for: .seconds(delay)) }
                     catch { return }
+                    next = await self?.resumeObservation(token: token)
                 }
             }
         }
+    }
+
+    /// Applies an observed event once restored send attempts are known, so the event can
+    /// reconcile them. Returns whether observation continues.
+    private func receive(_ event: ChannelObservationEvent, token: UUID,
+                         after restore: Task<Void, Never>?) async throws -> Bool {
+        await restore?.value
+        guard !Task.isCancelled, generation == token else { return false }
+        return try !apply(event)
+    }
+
+    private func scheduleReconnect(after error: any Error, attempt: Int, token: UUID) -> TimeInterval? {
+        guard !Task.isCancelled, generation == token else { return nil }
+        let delay = reconnectPolicy.delay(attempt: attempt)
+        phase = .stale(message: error.localizedDescription, retryAt: Date.now.addingTimeInterval(delay))
+        return delay
+    }
+
+    private func resumeObservation(token: UUID) -> AsyncThrowingStream<ChannelObservationEvent, any Error>? {
+        guard !Task.isCancelled, generation == token else { return nil }
+        return api.observe(channelId: id, after: state?.revision)
     }
 
     public func disconnect() {
@@ -360,8 +383,28 @@ public final class ChannelStore {
 
     private func restoreSendAttempts() async throws {
         guard !attemptsRestored else { return }
+        try await restoreSendAttempts(from: loadSendAttempts())
+    }
+
+    private func restoreSendAttemptsConcurrently() -> Task<Void, Never> {
+        let load = loadSendAttempts()
+        return Task { [weak self] in try? await self?.restoreSendAttempts(from: load) }
+    }
+
+    /// Reads the journal off the main actor, so a finished read restores without another hop.
+    private func loadSendAttempts() -> Task<[ChannelSendAttempt], any Error> {
+        let journal = sendJournal
+        let server = api.baseURL
+        let id = id
+        return Task.detached(priority: Task.currentPriority) {
+            try await journal?.load(server: server, channelId: id) ?? []
+        }
+    }
+
+    private func restoreSendAttempts(from load: Task<[ChannelSendAttempt], any Error>) async throws {
+        guard !attemptsRestored else { return }
         do {
-            let restored = try await sendJournal?.load(server: api.baseURL, channelId: id) ?? []
+            let restored = try await load.value
             guard !attemptsRestored else { return }
             sendAttempts = restored.map { attempt in
                 var next = attempt
@@ -526,13 +569,22 @@ public final class ChannelCatalogStore {
     }
 
     public func refresh() async {
-        guard !isLoading else { return }
+        await refresh(prefetched: nil)
+    }
+
+    private func refresh(prefetched: Task<ChannelCatalog, any Error>?) async {
+        guard !isLoading else { prefetched?.cancel(); return }
         let token = UUID()
         catalogGeneration = token
         isLoading = true
         defer { if catalogGeneration == token { isLoading = false } }
         do {
-            let catalog = try await api.catalog()
+            let catalog = if let prefetched {
+                try await withTaskCancellationHandler { try await prefetched.value }
+                    onCancel: { prefetched.cancel() }
+            } else {
+                try await api.catalog()
+            }
             guard !Task.isCancelled, catalogGeneration == token else { return }
             applyCatalog(catalog)
         } catch {
@@ -588,12 +640,19 @@ public final class ChannelCatalogStore {
         failure = nil
     }
 
+    /// Requests the first catalog immediately. A main-actor task would send it only on the main
+    /// thread's first free turn, which at launch comes after the first window is built.
     public func startPolling(interval: TimeInterval = 5) {
         guard polling == nil else { return }
         activePollingInterval = interval
+        let api = api
+        let first = Task.detached(priority: Task.currentPriority) { try await api.catalog() }
         polling = Task { [weak self] in
+            var prefetched: Task<ChannelCatalog, any Error>? = first
+            defer { prefetched?.cancel() }
             while !Task.isCancelled {
-                await self?.refresh()
+                await self?.refresh(prefetched: prefetched)
+                prefetched = nil
                 guard !Task.isCancelled, let delay = self?.pollingInterval else { return }
                 let pause = Task {
                     do { try await Task.sleep(for: .seconds(delay)) }
