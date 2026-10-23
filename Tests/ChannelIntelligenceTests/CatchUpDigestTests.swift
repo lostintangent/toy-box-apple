@@ -23,6 +23,16 @@ struct CatchUpDigestTests {
         #expect(digest.isComplete)
     }
 
+    @Test func speechNamesMentionsAndWritingKeepsTheirAt() throws {
+        let state = try TestChannel.state([
+            TestChannel.message(4, from: "ada-engineer", "@moss Thanks. Looping in @moss and @everyone, not @nobody."),
+        ])
+        let message = try #require(CatchUpDigest(state: state, unreadAfter: 3).unread.first)
+        #expect(message.text == "Thanks. Looping in Moss and everyone, not @nobody.")
+        #expect(message.written == "Thanks. Looping in @Moss and @everyone, not @nobody.")
+        #expect(message.mentioned == ["moss-reviewer"])
+    }
+
     @Test func requestIsKeptAfterItsRead() throws {
         let state = try TestChannel.state([
             TestChannel.message(4, from: "studio-demo", "Ship it today or tomorrow?", request: true),

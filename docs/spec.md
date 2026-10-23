@@ -1609,13 +1609,13 @@ the sentence.
 | Part | One channel |
 | --- | --- |
 | Header | The channel's name, 15 pt semibold, over a 12 pt secondary caption: `text.line.3.summary` with "Summary of 27 new messages", or "Waiting for your reply" (then "Replied") with " · 1 new message" when there are others, "3 new messages" or "All tasks completed" |
-| Lines | The spoken answer's, in 13 pt up to 3 lines each beside the transcript card's 16-point slots. With a summary, its needs-you line and changes, exactly as the transcript card leads them. Otherwise the request, then the newest 3 messages as "**Ada:** …" beside the author's avatar, or "Moss shared 2 images." for images alone. A completion adds "All tasks completed" with its event symbol, unless the summary cites it |
+| Lines | The spoken answer's, in 13 pt up to 3 lines each beside the transcript card's 16-point slots. With a summary, its needs-you line and changes, exactly as the transcript card leads them. Otherwise the request, then the newest 3 messages as "**Ada:** …" beside the author's avatar, or "Moss shared 2 images." for images alone. Inline mentions keep their @ ("@Moss", "@everyone") in the transcript's mention ink and weight, though speech says the names. A completion adds "All tasks completed" with its event symbol, unless the summary cites it |
 | Footnote | 11 pt tertiary: "Summarized on this Mac", or "Plus 9 earlier messages" ("Plus at least 9…" when the loaded history doesn't reach the boundary) |
 | Buttons | Large capsule buttons of equal width. "Reply to Lead" (`arrowshape.turn.up.left`) is prominent while the request waits, and plain "Reply" otherwise. "Open" (`arrow.up.forward.app`) runs Open Channel |
 
 The overview card is "Updates in 4 channels" over a row for each of the first 5 channels: the
 sidebar's indicator, the name in 13 pt medium, then the status in 12 pt secondary ("Waiting for
-your reply", "Finished all its tasks", "3 new messages", "Updates" or "New messages") and a
+your reply", "Finished all its tasks", "3 new messages", "New activity" or "New messages") and a
 chevron. Each row runs Open Channel. "Plus 2 more channels" follows when there are more.
 
 The card is a hidden `SnippetIntent` that carries its content as JSON, so the system can redraw

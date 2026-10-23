@@ -9,9 +9,24 @@ public struct CatchUpDigest: Sendable, Hashable {
         public let sequence: Int
         /// "Lead" or a member's name.
         public let speaker: String
-        /// Markdown and leading mentions reduced to one line. Empty when the message is only images.
+        /// Markdown and leading mentions reduced to one line, for speech, so other mentions read
+        /// as plain names. Empty when the message is only images.
         public let text: String
+        /// The same line for reading, where other mentions keep their @, as in "@Moss".
+        public let written: String
+        /// The IDs of the agents `written` mentions, in order, apart from @everyone.
+        public let mentioned: [String]
         public let images: Int
+
+        public init(sequence: Int, speaker: String, text: String, written: String? = nil,
+                    mentioned: [String] = [], images: Int) {
+            self.sequence = sequence
+            self.speaker = speaker
+            self.text = text
+            self.written = written ?? text
+            self.mentioned = mentioned
+            self.images = images
+        }
     }
 
     public static let defaultLimit = 280
@@ -52,11 +67,18 @@ private extension CatchUpDigest.Message {
     init?(_ message: ChannelMessage, state: ChannelState, shorten: (String) -> String) {
         guard !message.isSystem, message.sender.type == "agent" else { return nil }
         let agents = state.agents
-        let text = shorten(catchUpPlainText(withoutLeadingMentions(message.text, agents: agents), agents: agents))
+        let body = withoutLeadingMentions(message.text, agents: agents)
+        let text = shorten(catchUpPlainText(body, agents: agents))
         let images = message.attachments?.count ?? 0
         guard !text.isEmpty || images > 0 else { return nil }
+        var mentioned: [String] = []
+        let written = shorten(catchUpPlainText(body, agents: agents) { agent in
+            guard let agent else { return "@everyone" }
+            if !mentioned.contains(agent.id) { mentioned.append(agent.id) }
+            return "@" + agent.name
+        })
         self.init(sequence: message.sequence, speaker: CatchUpDescriber(state: state).name(message.sender),
-                  text: text, images: images)
+                  text: text, written: written, mentioned: mentioned, images: images)
     }
 }
 

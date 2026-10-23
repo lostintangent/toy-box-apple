@@ -71,7 +71,7 @@ enum CatchUpAnswer {
                 case let count? where count > 0:
                     sentences.append("\(channel.name) has \(messages(count)).")
                 case 0:
-                    sentences.append("\(channel.name) has updates.")
+                    sentences.append("\(channel.name) has new activity.")
                 default:
                     sentences.append("\(channel.name) has new messages.")
                 }
@@ -173,15 +173,15 @@ enum CatchUpAnswer {
                 asked = asked ?? source
                 lines.append(.init(slot: .request, text: needsYou.text))
             } else if let request {
-                lines.append(line(request, slot: .request))
+                lines.append(line(request, slot: .request, in: state))
             }
             lines += summary.catchUp.changes.map { .init(slot: slot(for: $0.sources.first, in: state), text: $0.text) }
             if completed, !mentionsCompletion(summary.catchUp, in: info) { lines.append(completion) }
             footnote = "Summarized on this Mac"
         } else {
-            if let request { lines.append(line(request, slot: .request)) }
+            if let request { lines.append(line(request, slot: .request, in: state)) }
             let shown = unread.suffix(quotedMessageLimit)
-            lines += shown.map { line($0, slot: slot(for: $0.sequence, in: state)) }
+            lines += shown.map { line($0, slot: slot(for: $0.sequence, in: state), in: state) }
             if completed, !lines.isEmpty { lines.append(completion) }
             let earlier = unread.count - shown.count
             if !digest.isComplete {
@@ -213,17 +213,24 @@ enum CatchUpAnswer {
         case .unread, nil:
             switch newMessages {
             case let count? where count > 0: messages(count)
-            case 0: "Updates"
+            case 0: "New activity"
             default: "New messages"
             }
         }
     }
 
-    private static func line(_ message: CatchUpDigest.Message, slot: CatchUpCard.Line.Slot) -> CatchUpCard.Line {
+    /// A message in its author's words, with mentions written as "@Name" as they read in the channel.
+    private static func line(_ message: CatchUpDigest.Message, slot: CatchUpCard.Line.Slot,
+                             in state: ChannelState) -> CatchUpCard.Line {
         guard !message.text.isEmpty else {
             return .init(slot: slot, text: "\(message.speaker) shared \(images(message.images)).")
         }
-        return .init(slot: slot, speaker: message.speaker, text: message.text)
+        let mentions = message.mentioned.map { id in
+            let agent = channelAgentIdentity(state.agents, id: id)
+            return ChannelAgent(id: agent.id, name: agent.name, avatar: agent.avatar, deleted: agent.deleted)
+        }
+        return .init(slot: slot, speaker: message.speaker, text: message.written,
+                     mentions: mentions.isEmpty ? nil : mentions)
     }
 
     /// What leads a line, as the transcript's card draws it: the first source's sender, or that

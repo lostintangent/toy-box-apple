@@ -262,8 +262,10 @@ struct CatchUpDescriber: Sendable {
     }
 }
 
-/// Markdown and mentions reduced to readable prose on one line.
-func catchUpPlainText(_ markdown: String, agents: [ChannelAgent]) -> String {
+/// Markdown and mentions reduced to readable prose on one line. A mention reads as the agent's name,
+/// or "everyone" for nil, unless `mention` writes it another way.
+func catchUpPlainText(_ markdown: String, agents: [ChannelAgent],
+                      mention: (ChannelAgent?) -> String = { $0?.name ?? "everyone" }) -> String {
     var text = markdown
     text = text.replacing(/```[\s\S]*?(```|$)/, with: " (code) ")
     text = text.replacing(/!\[([^\]]*)\]\([^)]*\)/, with: { $0.1.isEmpty ? "" : " (image: \($0.1)) " })
@@ -274,11 +276,11 @@ func catchUpPlainText(_ markdown: String, agents: [ChannelAgent]) -> String {
     text = text.replacing(/(?m)^\s*([-*+]|\d+[.)])\s+/, with: "; ")
     text = text.replacing(/(^|[^a-zA-Z0-9-])@([a-zA-Z0-9][a-zA-Z0-9-]*)/, with: { match in
         let handle = match.2.lowercased()
-        if handle == "everyone" { return String(match.1) + "everyone" }
-        guard let name = agents.first(where: { agentHandleFromName($0.name) == handle })?.name else {
+        if handle == "everyone" { return String(match.1) + mention(nil) }
+        guard let agent = agents.first(where: { agentHandleFromName($0.name) == handle }) else {
             return String(match.0)
         }
-        return String(match.1) + name
+        return String(match.1) + mention(agent)
     })
     text = text.replacing(/\s+/, with: " ")
     text = text.replacing(/^[;\s]+/, with: "")

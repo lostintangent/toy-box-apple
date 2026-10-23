@@ -65,7 +65,7 @@ struct IntentsTests {
             tasks. Design has 3 new messages. There's 1 more channel with updates.
             """)
         #expect(CatchUpAnswer.overview(Array(needing.suffix(2)), newMessages: ["design": 0]) == """
-            You have updates in 2 channels. Design has updates. Ops has new messages.
+            You have updates in 2 channels. Design has new activity. Ops has new messages.
             """)
         #expect(CatchUpAnswer.overview(Array(needing.prefix(1)), newMessages: [:]) == "Studio demo is waiting for your reply.")
         #expect(CatchUpAnswer.overview([], newMessages: [:]) == "You're all caught up.")
@@ -144,17 +144,20 @@ struct IntentsTests {
         let asking = state(channel("studio-demo", "Studio demo", latest: 15, seen: 9, request: 15), [
             message(9, from: "ada", "Earlier, already read."),
             event(11),
-            message(12, from: "ada", "@moss Please review the **handoff**."),
+            message(12, from: "ada", "@moss Please review the **handoff** with @iris and @everyone."),
             message(15, from: "lead", "Where should the shared library sit?", request: true),
         ])
         let answer = answerWithCard(asking)
         #expect(answer.headline == "Lead needs your reply in Studio demo.")
+        #expect(answer.spoken.contains("Please review the handoff with Iris and everyone."))
         let card = try #require(answer.card)
         #expect(card.channelID == "studio-demo" && card.title == "Studio demo" && card.subtitle == "1 new message")
         #expect(card.caption == "Waiting for your reply \u{00B7} 1 new message")
         #expect(!card.isSummary && card.footnote == nil && !card.isReplied)
         #expect(card.lines.map(\.speaker) == ["Lead", "Ada"])
-        #expect(card.lines.map(\.text) == ["Where should the shared library sit?", "Please review the handoff."])
+        #expect(card.lines.map(\.text) == ["Where should the shared library sit?",
+                                            "Please review the handoff with @Iris and @everyone."])
+        #expect(card.lines[0].mentions == nil && card.lines[1].mentions?.map(\.name) == ["Iris"])
         #expect(card.lines[0].slot == .request)
         guard case .agent(let ada) = card.lines[1].slot else { Issue.record("Ada's line has no avatar"); return }
         #expect(ada.id == "ada" && ada.name == "Ada" && ada.role == nil)
@@ -167,6 +170,12 @@ struct IntentsTests {
             message(15, from: "lead", "Ship it?", request: true),
         ])).card)
         #expect(askOnly.subtitle == nil && askOnly.caption == "Waiting for your reply")
+    }
+
+    @Test func cardInksOnlyWholeMentions() {
+        let text = "@Ada, @Adam, x@Ada, @Ada-bot and @Ada's"
+        let ranges = CatchUpCard.Line.ranges(of: "@Ada", in: text)
+        #expect(ranges.map { String(text[$0.upperBound...].prefix(2)) } == [", ", "'s"])
     }
 
     @Test func cardShowsTheNewestFewOfManyMessages() throws {
@@ -240,7 +249,7 @@ struct IntentsTests {
         #expect(card.rows.map(\.name) == ["Studio demo", "Docs", "Design", "Ops", "Notes"])
         #expect(card.rows.map(\.attention) == ["waiting", "finished", "unread", "unread", "unread"])
         #expect(card.rows.map(\.detail) == ["Waiting for your reply", "Finished all its tasks", "3 new messages",
-                                             "Updates", "New messages"])
+                                             "New activity", "New messages"])
         #expect(card.footnote == "Plus 2 more channels")
     }
 
