@@ -59,7 +59,7 @@
         { "name" : "Reply", "image-name" : "reply.svg", "glass" : true }
       ],
       "shadow" : { "kind" : "layer-color", "opacity" : 0.5 },
-      "translucency" : { "enabled" : true, "value" : 0.4 },
+      "translucency" : { "enabled" : true, "value" : 0.1 },
       "specular" : true
     }
   ],
