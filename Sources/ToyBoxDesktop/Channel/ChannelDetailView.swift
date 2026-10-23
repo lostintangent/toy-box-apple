@@ -34,6 +34,17 @@ struct ChannelDetailView: View {
     /// the connection and the per-channel content to the new store.
     @ViewState private var connection = ChannelConnection()
     @ViewState private var titleFit = ChannelTitleFit()
+    /// A window draws its channel's first content before Overview and the composer build, which
+    /// keeps their first build off the launch's critical path. Once mounted, they stay.
+    @ViewState private var mountsSurroundings = false
+    private var showsSurroundings: Bool { mountsSurroundings || model.launchOptions.isSnapshot }
+    /// The transcript, an error or the deleted state is on screen.
+    private var hasFirstContent: Bool {
+        switch store.phase {
+        case .stale, .deleted: true
+        case .idle, .connecting, .live: store.isLoaded
+        }
+    }
     private var wideInspector: Binding<Bool> {
         let column = column
         let placement = placement
@@ -65,9 +76,11 @@ struct ChannelDetailView: View {
             .modifier(DetailMinimumWidth())
             .background(Color(nsColor: .textBackgroundColor))
             .inspector(isPresented: wideInspector) {
-                OverviewInspector(store: store)
-                    .settledLayout()
-                    .inspectorColumnWidth(min: 280, ideal: 312, max: 400)
+                Group {
+                    if showsSurroundings { OverviewInspector(store: store) } else { Color.clear }
+                }
+                .settledLayout()
+                .inspectorColumnWidth(min: 280, ideal: 312, max: 400)
             }
             // The detail column and its inspector reach the window's trailing edge.
             .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).maxX } action: {
@@ -94,6 +107,19 @@ struct ChannelDetailView: View {
                     ? model.launchOptions.width >= 1000 : inspectorVisible
                 interaction.messageView = model.launchOptions.isSnapshot ? .all : TranscriptView(rawValue: messageView) ?? .all
             }
+            // Overview and the composer mount once the first content has drawn, or after a second
+            // for a channel that's slow to connect.
+            .task(id: hasFirstContent) {
+                guard !mountsSurroundings else { return }
+                if hasFirstContent {
+                    await passEnd()
+                } else {
+                    try? await Task.sleep(for: .seconds(1))
+                }
+                if !Task.isCancelled {
+                    mountsSurroundings = true
+                }
+            }
             .task(id: ObjectIdentifier(store)) { connection.hold(store, in: model) }
             .onDisappear { connection.drop(in: model) }
             .onChange(of: interaction.isInspectorPresented) { _, value in
@@ -105,8 +131,9 @@ struct ChannelDetailView: View {
             }
             // The transcript's scroll view takes over the composer once the channel loads, and the
             // replacement may not be in the window yet, so the request repeats until focus lands.
-            .task(id: ComposerFocus(channel: ObjectIdentifier(store), isRequested: focusesComposer && store.isLoaded)) {
-                guard focusesComposer, store.isLoaded else { return }
+            .task(id: ComposerFocus(channel: ObjectIdentifier(store),
+                                    isRequested: focusesComposer && store.isLoaded && showsSurroundings)) {
+                guard focusesComposer, store.isLoaded, showsSurroundings else { return }
                 for _ in 0..<20 {
                     interaction.focusComposer()
                     try? await Task.sleep(for: .milliseconds(50))
@@ -152,7 +179,7 @@ struct ChannelDetailView: View {
                 Button("Retry") { store.reconnect() }
                 Button("Settings") { openSettings() }
             }
-            .safeAreaBar(edge: .bottom, spacing: 0) { ComposerArea(store: store) }
+            .safeAreaBar(edge: .bottom, spacing: 0) { composer }
         } else {
             // The transcript's scroll position, paging and read state belong to one channel. Its bars
             // sit outside that identity, since a bar is rebuilt with the view it's attached to, so
@@ -166,7 +193,16 @@ struct ChannelDetailView: View {
                     staleBanner(error)
                 }
             }
-            .safeAreaBar(edge: .bottom, spacing: 0) { ComposerArea(store: store) }
+            .safeAreaBar(edge: .bottom, spacing: 0) { composer }
+        }
+    }
+
+    /// Until the composer mounts, a bar of its resting height keeps the transcript's bottom inset.
+    @ViewBuilder private var composer: some View {
+        if showsSurroundings {
+            ComposerArea(store: store)
+        } else {
+            Color.clear.frame(height: 125)
         }
     }
 
@@ -358,6 +394,20 @@ private final class ColumnPresentation {
     func drop(in model: AppModel) {
         if let store { model.release(store) }
         store = nil
+    }
+}
+
+/// Waits until the main run loop has no more work and is about to sleep, once Core Animation has
+/// committed what that work drew.
+@MainActor private func passEnd() async {
+    await withCheckedContinuation { continuation in
+        // Core Animation commits at order 2,000,000, so the highest order runs after it.
+        let observer = CFRunLoopObserverCreateWithHandler(
+            nil, CFRunLoopActivity.beforeWaiting.rawValue, false, .max
+        ) { _, _ in continuation.resume() }
+        CFRunLoopAddObserver(CFRunLoopGetMain(), observer, .commonModes)
+        // An observer added while the run loop calls observers first runs on the next pass.
+        CFRunLoopWakeUp(CFRunLoopGetMain())
     }
 }
 
