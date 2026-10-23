@@ -50,7 +50,9 @@ Reference sources (read-only):
   `messages`, `request`, `requestSequence`, `tasks`, `artifacts`, `artifactShares`, `routines`)
   rather than `state`, which changes on every event. An event then re-renders only the views that
   show what it changed. `roster` leaves out each agent's status, which `agentStatuses` carries, so
-  status updates don't re-render identity.
+  status updates don't re-render identity. A catalog poll that changes nothing announces only
+  `lastRefreshedAt` and `isLoading`, and a failure that repeats the current one isn't announced
+  again. Views that only ask whether the catalog has loaded read `hasLoaded`.
 - **Wire rules:**
   - Decode leniently, so unknown system message kinds and fields degrade to a generic row instead
     of failing the stream.

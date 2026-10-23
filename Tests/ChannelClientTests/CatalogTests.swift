@@ -1,9 +1,72 @@
 import ChannelKit
 import Foundation
+import Observation
+import Synchronization
 import Testing
 @testable import ChannelClient
 
 struct CatalogTests {
+    private final class Announcements: Sendable {
+        let names = Mutex<Set<String>>([])
+    }
+
+    /// The observed properties that announced a change while `work` ran.
+    @MainActor private func announcements(in catalog: ChannelCatalogStore,
+                                          during work: () async -> Void) async -> Set<String> {
+        let announcements = Announcements()
+        let reads: [(String, () -> Void)] = [
+            ("state", { _ = catalog.state }),
+            ("working", { _ = catalog.working }),
+            ("isLoading", { _ = catalog.isLoading }),
+            ("error", { _ = catalog.error }),
+            ("failure", { _ = catalog.failure }),
+            ("hasLoaded", { _ = catalog.hasLoaded }),
+            ("lastRefreshedAt", { _ = catalog.lastRefreshedAt }),
+        ]
+        for (name, read) in reads {
+            withObservationTracking(read) { announcements.names.withLock { _ = $0.insert(name) } }
+        }
+        await work()
+        return announcements.names.withLock { $0 }
+    }
+
+    @Test @MainActor func aPollThatChangesNothingAnnouncesOnlyItsTime() async throws {
+        let served = ChannelCatalog(lead: testLeadProfile, channels: [testState().channel], working: ["test"])
+        let mock = MockTransport { _, _ in try .json(served) }
+        let catalog = ChannelCatalogStore(api: try mock.api())
+        #expect(!catalog.hasLoaded)
+        #expect(await announcements(in: catalog) { await catalog.refresh() }
+                == ["state", "working", "isLoading", "hasLoaded", "lastRefreshedAt"])
+        #expect(catalog.hasLoaded)
+        #expect(await announcements(in: catalog) { await catalog.refresh() } == ["isLoading", "lastRefreshedAt"])
+        #expect(catalog.state == served)
+        #expect(mock.requests.count == 2)
+    }
+
+    @Test @MainActor func aRepeatedFailureAnnouncesOnlyTheAttempt() async throws {
+        let served = ChannelCatalog(lead: testLeadProfile, channels: [testState().channel])
+        let mock = MockTransport { _, count in
+            switch count {
+            case 1, 2: MockResponse(status: 503, body: Data(#"{"error":"Catalog unavailable."}"#.utf8))
+            case 3: MockResponse(status: 401, body: Data(#"{"error":"Catalog unavailable."}"#.utf8))
+            default: try .json(served)
+            }
+        }
+        let catalog = ChannelCatalogStore(api: try mock.api())
+        #expect(await announcements(in: catalog) { await catalog.refresh() } == ["isLoading", "error", "failure"])
+        #expect(await announcements(in: catalog) { await catalog.refresh() } == ["isLoading"])
+        #expect(catalog.failure as? ChannelAPIError == .http(status: 503, message: "Catalog unavailable."))
+        #expect(!catalog.hasLoaded)
+
+        #expect(await announcements(in: catalog) { await catalog.refresh() } == ["isLoading", "error", "failure"])
+        #expect(catalog.failure as? ChannelAPIError == .http(status: 401, message: "Catalog unavailable."))
+
+        #expect(await announcements(in: catalog) { await catalog.refresh() }
+                == ["state", "isLoading", "error", "failure", "hasLoaded", "lastRefreshedAt"])
+        #expect(catalog.error == nil)
+        #expect(catalog.failure == nil)
+        #expect(catalog.working.isEmpty)
+    }
     @Test @MainActor func activityAndExactPollingIntervals() async throws {
         let mock = MockTransport { _, _ in
             try .json(ChannelCatalog(lead: testLeadProfile, channels: [testState().channel],

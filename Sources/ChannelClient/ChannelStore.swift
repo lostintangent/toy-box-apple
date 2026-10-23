@@ -546,6 +546,9 @@ public final class ChannelCatalogStore {
     public private(set) var isLoading = false
     public private(set) var error: String?
     public private(set) var failure: (any Error)?
+    /// Whether any catalog has arrived. Unlike `lastRefreshedAt`, it changes once, so a view that
+    /// only asks whether the catalog loaded doesn't re-render on every poll.
+    public private(set) var hasLoaded = false
     public private(set) var lastRefreshedAt: Date?
     @ObservationIgnored private var polling: Task<Void, Never>?
     @ObservationIgnored private var pollingDelay: Task<Void, Never>?
@@ -591,8 +594,7 @@ public final class ChannelCatalogStore {
             guard !Task.isCancelled, !(error is CancellationError),
                   (error as? URLError)?.code != .cancelled,
                   catalogGeneration == token else { return }
-            self.error = error.localizedDescription
-            failure = error
+            setFailure(error)
         }
     }
 
@@ -626,18 +628,37 @@ public final class ChannelCatalogStore {
             applyCatalog(catalog)
             return .init(catalog: catalog, channelId: channelId, state: snapshot)
         } catch {
-            self.error = error.localizedDescription
-            failure = error
+            setFailure(error)
             throw error
         }
     }
 
+    /// A poll that changes nothing announces only `lastRefreshedAt` and `isLoading`, so the sidebar
+    /// and its rows don't re-render every few seconds. `@Observable` skips assigning an equal
+    /// value, and only `failure`, which isn't Equatable, needs its own check.
     private func applyCatalog(_ catalog: ChannelCatalog) {
         state = catalog
         working = Set(catalog.working)
+        hasLoaded = true
         lastRefreshedAt = .now
-        error = nil
-        failure = nil
+        setFailure(nil)
+    }
+
+    /// A failure that repeats the current one keeps it, so polls that keep failing the same way
+    /// don't notify on each attempt.
+    private func setFailure(_ new: (any Error)?) {
+        switch (failure, new) {
+        case (nil, nil): return
+        case let (current?, new?) where Self.isSameFailure(current, new): return
+        default:
+            error = new?.localizedDescription
+            failure = new
+        }
+    }
+
+    private static func isSameFailure(_ lhs: any Error, _ rhs: any Error) -> Bool {
+        if let lhs = lhs as? ChannelAPIError, let rhs = rhs as? ChannelAPIError { return lhs == rhs }
+        return type(of: lhs) == type(of: rhs) && lhs.localizedDescription == rhs.localizedDescription
     }
 
     /// Requests the first catalog immediately. A main-actor task would send it only on the main
