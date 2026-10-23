@@ -1420,19 +1420,23 @@ count. Both numbers are parameters.
 
 | State | Behavior |
 | --- | --- |
-| Loading | The card shows only its header, reading "Summarizing 42 new messages", with a mini spinner 6 points before Dismiss after 300 ms. About 40 points high. There are no placeholder lines or shimmer |
-| Ready | Lines fade in over 0.2 seconds while the card grows with a spring (response 0.35, damping 0.9). A cached result is ready on the first frame |
-| Nothing new, declined, unavailable, or no result after 15 seconds | The card fades over 0.15 seconds, then collapses over 0.2. Failures stay silent, because the messages are right below |
+| Loading | The card shows only its header, reading "Summarizing 42 new messages", with a mini spinner 6 points before Dismiss after 300 ms. About 40 points high. There are no placeholder lines or shimmer. The result runs from 1 to 4 lines of 1 to 3 text lines each, so any reserved height would be a guess, would push the real messages down while you wait, and would leave a larger hole to close when a summary fails |
+| Ready | The card takes its full height in one layout pass, and the lines fade in over 0.2 seconds. A cached result is ready on the first frame |
+| Nothing new, declined, unavailable, or no result after 15 seconds | The card fades over 0.15 seconds, then leaves in one layout pass. Failures stay silent, because the messages are right below |
 | Stale | When at least 4 messages from others arrive after the result's `through`, the footer reads "Summarized on this Mac · 6 newer messages", with a borderless 11-point medium accent "Update". Update dims the lines to 50%, shows the header spinner, and crossfades in the new result. Nothing regenerates on its own |
-| Dismissed | Fades and collapses as above, and focus moves to the New divider. It doesn't return for this channel and boundary during this app session |
+| Dismissed | Fades and leaves as above, and focus moves to the New divider. It doesn't return for this channel and boundary during this app session |
 | Unavailable from the start | No card and no reserved space |
 
 Landing and motion. When a channel is eligible, land with the card's top where the New divider
 would otherwise land. Until the reader scrolls, uses the keyboard in the transcript or reveals
 anything, the card's top stays pinned, and its growth or collapse moves the rows below it. This
 keeps the change in the place the "Summarizing" header promised. After that, height changes keep
-the first visible row still, as paging does. Reduce Motion replaces the spring and collapse with
-an instant layout change and a 0.2-second crossfade.
+the first visible row still, as paging does.
+
+The card never animates its height. Only its contents fade, and every growth, update or removal
+changes the layout once. Animating the height lays out the whole transcript on every frame, which
+cost about 0.5 seconds of 33 ms frames at 480 loaded messages. The fades are crossfades, so Reduce
+Motion needs no variant.
 
 The card is one accessibility container labeled with its header text, ordered before the New
 divider. Lines are buttons labeled with their text, and the needs-you line reads "Needs your
