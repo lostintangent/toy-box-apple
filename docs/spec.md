@@ -493,7 +493,7 @@ All dimensions are logical points, not pixels.
 | Main window | 1280 x 840 | Minimum 760 x 560. Restore size, selected channel, sidebar, filter and inspector per window. When quitting closed the windows, the first new window at launch opens on the channel you were last in on that server. Later new windows open without one |
 | Sidebar | 248 wide | Resizable 220...320. Full window height, system floating glass panel and source-list selection |
 | Conversation | Remaining width | At least 420. One full-width lane inside 24-point side insets. Agent surfaces cap at 760 and yours at 80% of the lane up to 640, both scaled by Text Size. The floating composer spans the lane |
-| Inspector | 312 wide | Resizable 280...400. Full window height with no title row. Do not squeeze conversation below 420 |
+| Inspector | 312 wide | Resizable 280...400. A dragged width survives sidebar toggles, channel switches and hiding and showing Overview. Full window height with no title row. Do not squeeze conversation below 420 |
 | Toolbar | System height | System default style, transparent, glass controls, traffic lights and normal window dragging. No band or rule beneath it |
 | Narrow window | Below 1000 wide, or wherever a wider sidebar or inspector leaves the conversation under 420 | Inspector opens as a native sheet, preferred width 360, rather than stealing transcript width |
 

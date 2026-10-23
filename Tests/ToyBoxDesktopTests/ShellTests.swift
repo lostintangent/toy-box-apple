@@ -2,6 +2,7 @@ import AppKit
 import ChannelKit
 import ChannelClient
 import ChannelIntelligence
+import Observation
 import SwiftUI
 import Synchronization
 import Testing
@@ -822,6 +823,43 @@ struct InspectorPlacementTests {
         placement.update(sidebar: nil, inspector: 312)
         #expect(placement.widthNeeded == 1000)
         #expect(placement.isNarrow(windowWidth: 990))
+    }
+
+    @Test(arguments: [CGFloat(281), 291, 371, 399])
+    func aDraggedInspectorKeepsItsWidthThroughSidebarAndWindowChanges(_ width: CGFloat) {
+        let clock = Clock()
+        let placement = placement(clock)
+        placement.update(windowWidth: 1442)
+        clock.advance(1.2)
+        placement.update(sidebar: 234.5, inspector: width)
+        for sidebar in [CGFloat(0), 234.5] {
+            placement.update(sidebar: sidebar, inspector: width)
+            #expect(placement.inspectorWidth == width)
+            #expect(placement.isWindowNarrow == false)
+        }
+        placement.update(windowWidth: 980)
+        placement.update(sidebar: nil, inspector: nil)
+        #expect(placement.isWindowNarrow == true)
+        #expect(placement.inspectorWidth == width)
+        placement.update(windowWidth: 1442)
+        #expect(placement.isWindowNarrow == false)
+        #expect(placement.inspectorWidth == width)
+    }
+
+    @Test func rememberingTheInspectorWidthDoesNotObserveEveryDragFrame() {
+        let clock = Clock()
+        let placement = placement(clock)
+        let changes = Mutex(0)
+        withObservationTracking {
+            _ = placement.inspectorWidth
+        } onChange: {
+            changes.withLock { $0 += 1 }
+        }
+        for width in [CGFloat(280), 300, 370, 400] {
+            placement.update(sidebar: nil, inspector: width)
+            #expect(placement.inspectorWidth == width)
+        }
+        #expect(changes.withLock { $0 } == 0)
     }
 
     /// A resize reports every frame, and views read only whether Overview is a sheet.

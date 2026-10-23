@@ -80,7 +80,9 @@ struct ChannelDetailView: View {
                     if showsSurroundings { OverviewInspector(store: store) } else { Color.clear }
                 }
                 .settledLayout()
-                .inspectorColumnWidth(min: 280, ideal: 312, max: 400)
+                // A sidebar toggle briefly proposes the ideal again. Keep the last measured
+                // width, without observing every frame of a divider drag.
+                .inspectorColumnWidth(min: 280, ideal: min(400, max(280, placement.inspectorWidth)), max: 400)
             }
             // The detail column and its inspector reach the window's trailing edge.
             .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).maxX } action: {
