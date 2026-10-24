@@ -36,9 +36,10 @@ struct QuickAskView: View {
             if let session {
                 AuxiliaryComposer(
                     session: session, style: .quickAsk, isPresented: model.quickAsk.isPresented,
-                    presentationID: focusID, onConfirmed: { confirmed($0, session: session) },
+                    presentationID: model.quickAsk.presentationID, onConfirmed: { confirmed($0, session: session) },
                     onOpenChannel: { open(session) }, onDismiss: model.quickAsk.dismiss,
-                    onChooseChannel: { showsChooser = true }, onDraggingChanged: { isDragging = $0 }
+                    onChooseChannel: { showsChooser = true }, onDraggingChanged: { isDragging = $0 },
+                    focusID: focusID
                 )
                 .id(ObjectIdentifier(session))
             } else {
