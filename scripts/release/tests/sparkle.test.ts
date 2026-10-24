@@ -1,11 +1,12 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { chmod, lstat, mkdir, rm, symlink } from "node:fs/promises";
 import { join } from "node:path";
-import { bundleIdentity, root } from "../../lib.ts";
+import { bundleIdentity, command, root, temporary, text } from "../../lib.ts";
 import { checkVersion } from "../check-update-version.ts";
 import { FakeHarness, workflowBody } from "./helpers.ts";
 import { checkTestCompletion } from "../../dev/test.ts";
 import { configureShareExtension } from "../share-extension.ts";
+import { releaseNotes } from "../generate-appcast.ts";
 
 describe("Sparkle packaging without credentials", () => {
     let fake: FakeHarness;
@@ -178,6 +179,50 @@ describe("signed appcast generation", () => {
             FAKE_PREVIOUS_FEED: previous, ...extra,
         });
         expect(result.code === 0).toBe(success);
+    });
+});
+
+describe("release notes from real Git tag objects", () => {
+    const tag = "v0.2.0";
+    const annotation = "Toy Box 0.2.0\n\nQuick Send and the menu bar inbox.";
+    const commitMessage = "Internal implementation detail\n\nCo-authored-by: Copilot <copilot@example.invalid>";
+    async function repository(directory: string) {
+        await command(["git", "init", "--quiet", directory], { quiet: true });
+        await command(["git", "-C", directory, "-c", "user.name=Release test",
+            "-c", "user.email=release@example.invalid", "-c", "commit.gpgSign=false",
+            "commit", "--quiet", "--allow-empty", "-m", commitMessage], { quiet: true });
+    }
+    test.each(["annotated", "lightweight", "missing"] as const)("%s tags never substitute the commit message", async kind => {
+        await temporary("toy-box-release-notes.", async directory => {
+            await repository(directory);
+            if (kind !== "missing") {
+                await command(["git", "-C", directory, "-c", "user.name=Release test",
+                    "-c", "user.email=release@example.invalid", "-c", "tag.gpgSign=false", "tag",
+                    ...(kind === "annotated" ? ["-a", tag, "-m", annotation] : [tag])], { quiet: true });
+            }
+            const notes = await releaseNotes(tag, directory);
+            expect(notes).toBe(kind === "annotated" ? annotation + "\n" : "Toy Box 0.2.0\n");
+            expect(notes).not.toContain("Internal implementation detail");
+            expect(notes).not.toContain("Co-authored-by");
+        });
+    });
+    test("workflow fetch replaces checkout's lightweight ref with the annotated tag object", async () => {
+        await temporary("toy-box-release-tag-fetch.", async directory => {
+            const origin = join(directory, "origin"), checkout = join(directory, "checkout");
+            await repository(origin);
+            await command(["git", "-C", origin, "-c", "user.name=Release test",
+                "-c", "user.email=release@example.invalid", "tag", "--no-sign", "-a", tag, "-m", annotation], { quiet: true });
+            await command(["git", "init", "--quiet", checkout], { quiet: true });
+            await command(["git", "-C", checkout, "remote", "add", "origin", origin], { quiet: true });
+            const commit = await text(["git", "-C", origin, "rev-parse", "HEAD"]);
+            await command(["git", "-C", checkout, "fetch", "--quiet", "--no-tags", "--depth=1", "origin", commit], { quiet: true });
+            await command(["git", "-C", checkout, "update-ref", `refs/tags/${tag}`, commit], { quiet: true });
+            expect(await releaseNotes(tag, checkout)).toBe("Toy Box 0.2.0\n");
+            await command(["/bin/bash", "-c", await workflowBody("Fetch annotated release tag")], {
+                cwd: checkout, env: { RELEASE_TAG: tag }, quiet: true,
+            });
+            expect(await releaseNotes(tag, checkout)).toBe(annotation + "\n");
+        });
     });
 });
 

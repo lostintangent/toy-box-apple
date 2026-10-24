@@ -190,6 +190,10 @@ jobs:
         env:
           SCRATCH_PATH: ${{ runner.temp }}/toy-box-release
         run: bun run release "$RELEASE_TAG"
+      - name: Fetch annotated release tag
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+        run: |
+          git fetch --force --no-tags --depth=1 origin "refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG"
       - name: Generate and verify the signed update feed
         env:
           SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}

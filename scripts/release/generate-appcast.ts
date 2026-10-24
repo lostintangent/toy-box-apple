@@ -3,6 +3,16 @@ import { command, main, releaseTag, repositoryURL, required, root, text } from "
 import { sparkleTools } from "./sparkle-tools.ts";
 import { appcastItems } from "./xml.ts";
 
+export async function releaseNotes(tag: string, repository = root) {
+    releaseTag(tag);
+    const ref = `refs/tags/${tag}`;
+    const contents = await text(["git", "-C", repository, "for-each-ref",
+        "--format=%(refname)%00%(objecttype)%00%(contents)", ref]);
+    const annotationPrefix = `${ref}\0tag\0`;
+    const notes = contents.startsWith(annotationPrefix) ? contents.slice(annotationPrefix.length).trim() : "";
+    return notes ? notes + "\n" : `Toy Box ${tag.slice(1)}\n`;
+}
+
 export async function generateAppcast(tag: string) {
     releaseTag(tag);
     const output = resolve(process.env.OUTPUT_DIR || join(root, "dist"));
@@ -18,8 +28,7 @@ export async function generateAppcast(tag: string) {
         await command([join(tools, "bin", name), "--ed-key-file", keyFile, ...args], { input });
     }
     const notes = archive.replace(/\.zip$/, ".txt");
-    const contents = await text(["git", "-C", root, "for-each-ref", "--format=%(contents)", `refs/tags/${tag}`]);
-    await Bun.write(notes, contents ? contents + "\n" : `Toy Box ${tag.slice(1)}\n`);
+    await Bun.write(notes, await releaseNotes(tag));
     await signingTool("generate_appcast", ["--download-url-prefix", prefix, "--embed-release-notes",
         "--maximum-deltas", "0", "--link", repositoryURL, "-o", join(output, "appcast.xml"), output]);
     const items = appcastItems(await Bun.file(join(output, "appcast.xml")).text());

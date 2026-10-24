@@ -165,8 +165,10 @@ After notarization and stapling, `bun run generate-appcast` uses Sparkle's check
 sign the finished archive and the whole feed with Ed25519. The archive signature, length, URL,
 machine and human-readable versions, and minimum macOS version are checked before publishing.
 The feed signature is independently verified with `sign_update`. Archive verification is required
-before extraction, and signed feeds are required. Tag annotations are embedded as release notes,
-with a version-title fallback for dry runs. Deltas are intentionally omitted for these small apps.
+before extraction, and signed feeds are required. The workflow fetches the actual release tag
+object after checkout. Only annotated tags supply release notes; lightweight or missing tags
+use a version-title fallback, never the underlying commit message. Deltas are intentionally omitted
+for these small apps.
 Both the feed and zip are attached to every release and retained by dry runs.
 
 `CFBundleVersion` is `github.run_number.github.run_attempt`. Release workflows are serialized, and
