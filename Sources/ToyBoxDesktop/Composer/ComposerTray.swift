@@ -16,7 +16,7 @@ struct ComposerTray: View {
     @ViewState private var artifactsChannel: ObjectIdentifier?
     @ViewState private var tasksChannel: ObjectIdentifier?
 
-    private var artifacts: [ChannelArtifact] { Array(store.artifacts.reversed()) }
+    private var artifacts: [ChannelArtifact] { channelArtifactsNewestFirst(store.artifacts) }
     private var progress: TaskProgress { channelTasksProgress(store.tasks) }
     private var showArtifacts: Binding<Bool> { presented($artifactsChannel) }
     private var showTasks: Binding<Bool> { presented($tasksChannel) }
