@@ -187,7 +187,10 @@ view.
 - The Developer ID certificate and its G1 intermediate expire February 1, 2027. Before then, move
   to a G2 certificate, rerun the setup, and update the workflow's intermediate URL and SHA-256.
 - The app icon's only source is `Resources/AppIcon.icon` (Designer). After changing it, run
-  `bun run icon` and commit both it and `Resources/AppIcon.icns`.
+  `bun run icon` and commit it with `Resources/AppIcon.icns` and `Resources/Assets.car`. Generation
+  needs Icon Composer and Xcode's `actool`. Builds only copy these outputs, so CLT builds and CI
+  need neither tool. `CFBundleIconName` selects the layered dark, clear and tinted appearances;
+  the `.icns` stays the fallback.
 - Never alter the user's installed validation bundle or microphone permission state to test a
   release.
 
