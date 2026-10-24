@@ -1469,8 +1469,8 @@ preserve path prefixes and display actionable failures. Changing servers prompts
 live connections, namespaces drafts, then refreshes the catalog. Notifications explains requests
 and completions before asking system permission in response to an explicit enable action.
 Permission denial shows Open System Settings, never repeated permission prompts. General also
-holds Show in menu bar, the Quick Send shortcut recorder, and the two on-device toggles specified
-under Mac features beyond the pane.
+holds Open at Login, Show in menu bar, the Quick Send shortcut recorder, and the two on-device
+toggles specified under Mac features beyond the pane.
 Release builds also show Updates, with "Automatically check for updates" and "Automatically
 download and install updates" bound to Sparkle's own settings. Automatic installation is disabled
 while automatic checks are off or the updater disallows it. These controls are hidden without a
@@ -1974,6 +1974,77 @@ model layer (t96), Siri and Shortcuts (t126) and Spotlight (t166). Transcript ow
 card, descriptions in tiles and the viewer, and Live Text (t93, t97). Designer reviews each one in
 real-window captures, in light and dark, with VoiceOver and with Reduce Motion.
 
+### Open at Login
+
+General Settings adds "Open at Login", off by default, with the secondary description
+"Keep Toy Box ready in the Dock and menu bar without opening a window." Use the real
+`SMAppService.mainApp` status, not a separately saved Boolean, and refresh it when Settings
+becomes active. Enabling registers the main app and disabling unregisters it. A pending request
+for approval must visibly say "Approval Required", followed by "Allow Toy Box in System Settings
+to open at login." and "Open Login Items…". It must remain possible to cancel the registration.
+Never claim a pending or failed registration is enabled. Unavailable registration and failed
+changes show an actionable inline explanation rather than silently resetting a checkmark.
+
+An explicit `keyAELaunchedAsLogInItem` launch opens no window and restores no visible windows,
+but remains a regular app with its Dock icon, badge, menu bar inbox and normal background
+observation. Do not reuse the accessory-app launch path for background intents. A Dock click,
+notification or explicit Open action opens the normal channel window. No login launch prompts
+for notifications or microphone access. Merely opening Settings never registers anything.
+Only the ordinary production identity may alter login registration. Test, snapshot, benchmark
+and explicit demo-server launches use a disabled control and injected service in tests.
+
+### Dock request menu and attention
+
+The Dock context menu uses native `NSMenuItem` rows, not custom cards or a second inbox. Build
+it on opening from `MenuBarStatus.waiting`, preserving its newest-request-first order and
+canonical request sequence. The menu never fetches history, changes selection or marks read.
+
+| Order | Content |
+| --- | --- |
+| Waiting requests | One item per waiting channel: "[Channel]: [plain-text question]". Collapse whitespace in the quote and shorten at a word boundary with an ellipsis when needed. Keep the complete quote, channel and requester in the item's help. While resolving the quote, use "[Channel]: Needs your reply" |
+| No requests | A disabled "Nothing needs you" row instead of an empty region |
+| Cached offline content | Keep cached request items, preceded by a disabled "May be out of date". Without usable content, show "Connect to Toy Box", not "Nothing needs you" |
+| Commands | One separator, then "Quick Send…" and "New Channel…". These open the existing panel and `ManagementPresenter` flow |
+
+A request opens its exact channel and message through the widget's validated navigation path.
+Invalid or deleted targets show the existing unavailable state, never a different request.
+Catch Me Up is deliberately absent: its current result is a system-hosted Siri card, not an
+in-app destination for this menu. macOS retains its own standard Dock items.
+
+Notifications Settings adds "Bounce Dock icon for new requests", off by default, with
+"Bounce once when a new request arrives while you're using another app." It is independent of
+notification authorization. Use one `.informationalRequest` for a newly observed request while
+Toy Box is inactive, never persistent attention or one bounce per agent. Deduplicate by server,
+channel and request sequence. The first usable catalog after launch or a server switch establishes
+a quiet baseline. Enabling the setting, losing focus, reopening the menu, resolving quote text
+or reconnecting with an already-known request never bounces. Test, snapshot and benchmark
+launches never request real Dock attention.
+
+### Requests in Spotlight
+
+Waiting requests join the existing channel results as their own `IndexedEntity`. Channel results
+retain their current name/purpose presentation and Open Channel behavior. Index requests from
+`MenuBarStatus.waiting`, not a separate interpretation of unread messages.
+
+Each request displays its plain-text question as the title, "[Agent] · [Channel]" as the
+secondary context and the requester's catalog avatar. A missing quote says "Needs your reply".
+Keep full text in the entity even when Spotlight truncates its visible row. Identity includes
+the normalized server, channel ID and request sequence. Opening the result reveals that request
+in the channel. It never automatically sends or answers it.
+
+"Reply to Request" is discoverable in Spotlight's action pane with a parameter summary
+"Reply to [Request] with [Message]". It asks for missing text, confirms the message, requester and
+channel, then revalidates that the original request is still waiting on the current server.
+An answered, replaced or unavailable request explains the change without posting to a newer one.
+Use the existing scoped reply's canonical mention and one caller-owned UUID/outbox attempt,
+without opening a window. Empty text posts nothing. Rejection and uncertain-delivery handling
+preserve the submitted text through the existing intent send path.
+
+Remove indexed requests when answered, replaced, deleted or after a server switch. Follow
+`ChannelSpotlight`'s production and server-override gating for indexing and cleanup. Background
+indexing and reading a Spotlight result never mark read. Deterministic coverage must prove
+identity isolation, withdrawal and a stale result's inability to send to a different request.
+
 ### Morning digest
 
 One quiet morning notification helps the user return to the teams, rather than adding another
@@ -2029,8 +2100,9 @@ not message volume. Requests follow the menu bar's newest-first ordering.
 | Medium | Header/count and up to two compact request rows, with 8 points between rows and a single-line quote per row. Overflow uses "+N more" |
 | Large | Header/count and up to four request rows, with 12 points between rows and a single-line quote per row. Overflow uses "+N more" |
 
-In Medium and Large, each request row is one link. WidgetKit gives Small one target for the
-whole tile, which opens its top request. Use a 24-point avatar from the catalog profile, an 8-point gap to
+In Medium and Large, each request's content is one Open link, with a separate trailing Reply
+target. WidgetKit gives Small one target for the whole tile, which opens its top request, with
+no separate Reply. Use a 24-point avatar from the catalog profile, an 8-point gap to
 the text column, a 13-point semibold channel name, a 12-point plain-text quote (one line in Medium
 and Large, up to two in Small), then 11-point secondary "[Agent] · 12m ago". Age is based on the
 request timestamp, not the last widget refresh. Keep visible text free of Markdown syntax and preserve the full question in
@@ -2038,6 +2110,25 @@ the link's accessibility label. A quote that is still resolving says "Needs your
 than appearing blank. Agent identity uses the supplied mark and color with the shared contrast
 rules. System accented/tinted widget appearances may remap color, but never remove the mark or
 make the text depend on avatar color alone.
+
+Medium and Large add a quiet 28 x 28 `arrowshape.turn.up.left` Reply button beside each request.
+Use sibling Open and Reply targets, never a button nested in a link. Its help and accessibility
+label are "Reply to [Agent] in [Channel]". It opens Quick Send with the existing request-scoped
+inbox draft and canonical audience. Opening it never sends, marks read or borrows a main-window
+draft. An answered or replaced request preserves editable text and explains why sending is
+unavailable, rather than silently replying to its successor.
+The strict route is `toybox-desktop://reply?server=<encoded-server>&channel=<encoded-ID>&sequence=<positive-request-sequence>`.
+The plain `toybox-desktop://quick-send` route opens the usual channel chooser/draft selection.
+Existing `quick-send?pasteboard=...` intake and request-reveal routes retain their behavior.
+
+Full Color, Tinted and Clear use the same layout and semantic hierarchy. Let WidgetKit supply
+the background and style treatment, and apply `widgetAccentable` deliberately rather than
+painting every text line with the accent. Catalog avatar marks remain distinct from their
+surrounding fill in accented rendering. In Clear, let the system adapt or remove the material
+without losing labels, request context or readable ink. Do not bake a desktop wallpaper or simulated glass into the
+content. Check all three sizes in Light/Dark, full-color and accented content, including long
+names, empty and stale states. Off-screen Clear-equivalent or accented renders establish content
+layout only, not the system's actual desktop materials.
 
 The empty state uses `checkmark.bubble`, "Nothing needs you" and the secondary sentence
 "Your teams will appear here when they need a reply." Small may omit the explanatory sentence
@@ -2053,10 +2144,39 @@ Clicking a request opens Toy Box at that channel and request sequence through a 
 The empty Small tile opens the main app. In Medium and Large, the empty state, header, overflow
 and background open the main app. A stale link never redirects to a
 different channel or sends anything. Normal active-window read policy applies only after opening
-the app, not while WidgetKit renders the snapshot. Check small, medium and large layouts in light,
-dark and the system's accented appearance, plus long names, long quotes, empty and stale states.
+the channel window, not while WidgetKit renders the snapshot or opens a reply panel. Check
+Small, Medium and Large in Light, Dark and the system's accented appearance, plus long names,
+long quotes, empty and stale states.
 If Developer ID app-group access or widget registration cannot be established within the release
 timebox, defer this feature rather than shipping a widget that cannot receive data.
+
+### Control Center and menu bar controls
+
+The existing widget extension offers two `ControlWidget` buttons, letting macOS host them in
+Control Center and the menu bar. These are momentary actions, not on/off switches. Use system
+control sizes, typography, shapes and tint. Do not add a custom glass capsule, persistent
+animation, extra status dot or a second menu bar inbox implementation.
+
+| Control | Symbol and label | Action |
+| --- | --- | --- |
+| Quick Send | `square.and.pencil`, "Quick Send" | Opens the existing Quick Send panel through its plain route. It never preloads clipboard data or sends automatically |
+| Needs You | `questionmark.bubble`, "Needs You", with "1 waiting" or "[N] waiting" | Opens the existing menu bar inbox through `toybox-desktop://inbox`. If the menu bar icon is normally hidden, the action must still present that inbox |
+
+Needs You reads the same app-group snapshot as the widget, with the same server scope and
+freshness policy. Zero says "Nothing needs you". Without a usable snapshot, say
+"Open Toy Box to connect". Known-stale content says "May be out of date" rather than presenting
+a live-looking zero. Compact placements may omit the secondary value visually, but the
+accessibility label retains the meaningful count or unavailable state.
+Opening a control or the inbox never marks read, answers a request or changes the user's
+Show in menu bar preference. If native inbox presentation fails, show an explicit error or
+the normal app recovery surface, never silently report success.
+
+The extension remains sandboxed with no network entitlement. Snapshot and validation bundles
+omit these controls with the widget and never register replacement production controls.
+Validate compiled control metadata and the host-opening action, not merely the presence of a
+source declaration. Tests use injected actions, not clicks in the user's Control Center.
+Actual Control Center/menu bar presentation, widget gallery styles and system tap-through
+remain explicit installed-build checks when automation cannot observe those surfaces.
 
 ### App icon
 
