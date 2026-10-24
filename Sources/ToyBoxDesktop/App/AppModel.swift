@@ -106,6 +106,7 @@ final class AppModel {
     func configure(serverURL: String, persist: Bool = true) {
         do {
             let api = try ChannelAPI(serverURL: serverURL)
+            if self.serverURL != api.baseURL.absoluteString { quickAsk.dismiss() }
             catalog?.stopPolling()
             connections.disconnectAll()
             self.serverURL = api.baseURL.absoluteString

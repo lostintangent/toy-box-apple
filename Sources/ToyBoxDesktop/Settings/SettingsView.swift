@@ -85,11 +85,19 @@ struct SettingsView: View {
                 .pickerStyle(.segmented)
             }
             Section {
+                Picker("Show in menu bar", selection: $menuBarVisibility) {
+                    ForEach(MenuBarVisibility.allCases) { value in Text(value.title).tag(value) }
+                }
+                .pickerStyle(.menu)
+            } footer: {
+                footer("When Active shows the icon while agents are working or a channel is waiting for you.")
+            }
+            Section {
                 HStack {
                     Text("Quick Ask shortcut")
                     Spacer()
                     QuickAskShortcutRecorder(controller: model.quickAsk)
-                        .fixedSize()
+                        .frame(width: 132, height: 28)
                         .disabled(!model.quickAsk.isEnabled)
                     Button {
                         model.quickAsk.setShortcut(nil)
@@ -97,6 +105,7 @@ struct SettingsView: View {
                         Image(systemName: "xmark.circle.fill")
                     }
                     .buttonStyle(.plain)
+                    .frame(minWidth: 28, minHeight: 28)
                     .foregroundStyle(.secondary)
                     .accessibilityLabel("Clear Quick Ask shortcut")
                     .help("Clear Quick Ask shortcut")
@@ -106,15 +115,7 @@ struct SettingsView: View {
                     errorLabel(error)
                 }
             } footer: {
-                footer("Send a message from any app. Click to record a shortcut, or clear it to turn the global shortcut off.")
-            }
-            Section {
-                Picker("Show in menu bar", selection: $menuBarVisibility) {
-                    ForEach(MenuBarVisibility.allCases) { value in Text(value.title).tag(value) }
-                }
-                .pickerStyle(.menu)
-            } footer: {
-                footer("When Active shows the icon while agents are working or a channel is waiting for you.")
+                footer("Send a message from any app. Clearing the shortcut keeps Quick Ask available in the menus.")
             }
             intelligenceSection
             updatesSection

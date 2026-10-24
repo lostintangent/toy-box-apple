@@ -18,6 +18,7 @@ struct QuickAskShortcutRecorder: NSViewRepresentable {
 
     func updateNSView(_ button: ShortcutButton, context: Context) {
         button.controller = controller
+        button.isEnabled = context.environment.isEnabled
         button.refreshTitle()
     }
 
@@ -34,8 +35,8 @@ final class ShortcutButton: NSButton {
     @objc func record() {
         guard !isRecording else { stopRecording(); return }
         guard window?.makeFirstResponder(self) == true else { return }
-        isRecording = true
         controller?.setRecording(true)
+        isRecording = controller?.isRecording == true
         refreshTitle()
     }
 
@@ -84,11 +85,11 @@ final class ShortcutButton: NSButton {
     override func flagsChanged(with event: NSEvent) {
         guard isRecording else { super.flagsChanged(with: event); return }
         let modifiers = QuickAskShortcut(keyCode: 0, flags: event.modifierFlags).modifierLabel
-        title = modifiers.isEmpty ? "Press Shortcut" : modifiers + "…"
+        title = modifiers.isEmpty ? "Press shortcut…" : modifiers + "…"
     }
 
     func refreshTitle() {
-        title = isRecording ? "Press Shortcut" : controller?.shortcut?.displayName ?? "Record Shortcut"
+        title = isRecording ? "Press shortcut…" : controller?.shortcut?.displayName ?? "None"
         setAccessibilityValue(isRecording ? "Recording shortcut" : controller?.shortcut?.displayName ?? "Not set")
     }
 }
