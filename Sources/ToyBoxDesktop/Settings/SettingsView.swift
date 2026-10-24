@@ -94,28 +94,28 @@ struct SettingsView: View {
             }
             Section {
                 HStack {
-                    Text("Quick Ask shortcut")
+                    Text("Quick Send shortcut")
                     Spacer()
-                    QuickAskShortcutRecorder(controller: model.quickAsk)
+                    QuickSendShortcutRecorder(controller: model.quickSend)
                         .frame(width: 132, height: 28)
-                        .disabled(!model.quickAsk.isEnabled)
+                        .disabled(!model.quickSend.isEnabled)
                     Button {
-                        model.quickAsk.setShortcut(nil)
+                        model.quickSend.setShortcut(nil)
                     } label: {
                         Image(systemName: "xmark.circle.fill")
                     }
                     .buttonStyle(.plain)
                     .frame(minWidth: 28, minHeight: 28)
                     .foregroundStyle(.secondary)
-                    .accessibilityLabel("Clear Quick Ask shortcut")
-                    .help("Clear Quick Ask shortcut")
-                    .disabled(model.quickAsk.shortcut == nil)
+                    .accessibilityLabel("Clear Quick Send shortcut")
+                    .help("Clear Quick Send shortcut")
+                    .disabled(model.quickSend.shortcut == nil)
                 }
-                if let error = model.quickAsk.error {
+                if let error = model.quickSend.error {
                     errorLabel(error)
                 }
             } footer: {
-                footer("Send a message from any app. Clearing the shortcut keeps Quick Ask available in the menus.")
+                footer("Send a message from any app. Clearing the shortcut keeps Quick Send available in the menus.")
             }
             intelligenceSection
             updatesSection

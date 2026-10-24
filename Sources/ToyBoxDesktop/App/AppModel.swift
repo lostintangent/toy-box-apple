@@ -17,7 +17,7 @@ final class AppModel {
     let resizeBenchmark: ResizeBenchmark?
     let performanceBenchmark: PerformanceBenchmark?
     let updates: AppUpdates
-    let quickAsk: QuickAskController
+    let quickSend: QuickSendController
     private(set) var serverURL: String
     private(set) var catalog: ChannelCatalogStore?
     private(set) var configurationError: String?
@@ -47,7 +47,7 @@ final class AppModel {
     init(launchOptions: LaunchOptions = .init()) {
         self.launchOptions = launchOptions
         updates = AppUpdates(isSnapshot: launchOptions.isSnapshot)
-        quickAsk = QuickAskController(options: launchOptions)
+        quickSend = QuickSendController(options: launchOptions)
         snapshot = launchOptions.isSnapshot ? WindowSnapshot(options: launchOptions) : nil
         resizeBenchmark = launchOptions.resizeBenchmark.flatMap { mode in
             launchOptions.channelID.map { ResizeBenchmark(mode: mode, channelID: $0) }
@@ -110,7 +110,7 @@ final class AppModel {
     func configure(serverURL: String, persist: Bool = true) {
         do {
             let api = try ChannelAPI(serverURL: serverURL)
-            if self.serverURL != api.baseURL.absoluteString { quickAsk.dismiss() }
+            if self.serverURL != api.baseURL.absoluteString { quickSend.dismiss() }
             catalog?.stopPolling()
             connections.disconnectAll()
             self.serverURL = api.baseURL.absoluteString

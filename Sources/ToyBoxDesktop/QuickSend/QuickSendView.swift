@@ -4,13 +4,13 @@ import ChannelKit
 import SwiftUI
 import UniformTypeIdentifiers
 
-struct QuickAskView: View {
+struct QuickSendView: View {
     var lastUsedChannel: () -> String? = { nil }
     @Environment(AppModel.self) private var model
     @Environment(\.colorSchemeContrast) private var contrast
     @Environment(\.openSettings) private var openSettings
     @AppStorage("textScale") private var textScale = 1.0
-    @ViewState private var history: QuickAskTargetHistory?
+    @ViewState private var history: QuickSendTargetHistory?
     @ViewState private var sessions: [String: AuxiliaryComposerSession] = [:]
     @ViewState private var heldStore: ChannelStore?
     @ViewState private var showsChooser = false
@@ -35,9 +35,9 @@ struct QuickAskView: View {
             if showsHeader { header }
             if let session {
                 AuxiliaryComposer(
-                    session: session, style: .quickAsk, isPresented: model.quickAsk.isPresented,
-                    presentationID: model.quickAsk.presentationID, onConfirmed: { confirmed($0, session: session) },
-                    onOpenChannel: { open(session) }, onDismiss: model.quickAsk.dismiss,
+                    session: session, style: .quickSend, isPresented: model.quickSend.isPresented,
+                    presentationID: model.quickSend.presentationID, onConfirmed: { confirmed($0, session: session) },
+                    onOpenChannel: { open(session) }, onDismiss: model.quickSend.dismiss,
                     onChooseChannel: { showsChooser = true }, onDraggingChanged: { isDragging = $0 },
                     focusID: focusID
                 )
@@ -64,20 +64,20 @@ struct QuickAskView: View {
             return providers.map { session.draft.attachProvider($0) }.contains(true)
         }
         .environment(\.channelTextScale, textScale)
-        .onChange(of: model.quickAsk.isPresented, initial: true) { _, presented in
+        .onChange(of: model.quickSend.isPresented, initial: true) { _, presented in
             if presented { beginPresentation() }
             else { endPresentation() }
         }
-        .onChange(of: model.quickAsk.presentationID) { _, _ in focusID = UUID() }
+        .onChange(of: model.quickSend.presentationID) { _, _ in focusID = UUID() }
         .onChange(of: model.catalog?.hasLoaded) { _, loaded in
-            if loaded == true, model.quickAsk.isPresented, selectedID == nil { chooseInitialTarget() }
+            if loaded == true, model.quickSend.isPresented, selectedID == nil { chooseInitialTarget() }
         }
         .onChange(of: selectedID) { _, _ in holdSelectedStore() }
         .onChange(of: session?.draft.revision) { _, _ in trackDraft() }
         .onChange(of: model.serverURL) { _, _ in
             confirmationDismissal?.cancel()
             for session in sessions.values { session.cancelOpenOnConfirmation() }
-            model.quickAsk.dismiss()
+            model.quickSend.dismiss()
             endPresentation()
             sessions = [:]
             history = nil
@@ -98,7 +98,7 @@ struct QuickAskView: View {
                 Text("Connect to Toy Box").font(.system(size: 15, weight: .semibold))
                 Text("Set a server in Settings to send a message.").foregroundStyle(.secondary)
                 Button("Open Settings") {
-                    model.quickAsk.dismiss()
+                    model.quickSend.dismiss()
                     NSApplication.shared.activate()
                     openSettings()
                 }
@@ -106,7 +106,7 @@ struct QuickAskView: View {
                 Text("No channels yet").font(.system(size: 15, weight: .semibold))
                 Text("Open Toy Box Desktop to create one.").foregroundStyle(.secondary)
                 Button("Open Toy Box Desktop") {
-                    model.quickAsk.dismiss()
+                    model.quickSend.dismiss()
                     model.activate(channelID: nil)
                 }
             } else if let error = model.catalog?.error {
@@ -138,7 +138,7 @@ struct QuickAskView: View {
             .disabled(session?.isSubmitting == true || session?.confirmation != nil)
             .accessibilityLabel("Channel, \(channelName)")
             .popover(isPresented: $showsChooser, arrowEdge: .bottom) {
-                QuickAskChannelChooser(channels: history?.choices(channels: channels, query: "") ?? channels,
+                QuickSendChannelChooser(channels: history?.choices(channels: channels, query: "") ?? channels,
                                        history: history, selectedID: selectedID) { channel in
                     select(channel)
                     showsChooser = false
@@ -174,7 +174,7 @@ struct QuickAskView: View {
         guard let api = model.api else { showsChooser = false; return }
         history?.restoreTarget(channels: channels, lastUsedID: model.activeChannelID ?? lastUsedChannel(),
                                catalogLoaded: model.catalog?.hasLoaded == true) {
-            ComposerDraft.shared(serverURL: api.baseURL, channelID: $0, scope: .quickAsk).hasContent
+            ComposerDraft.shared(serverURL: api.baseURL, channelID: $0, scope: .quickSend).hasContent
         }
         if let selectedID {
             installSession(channelID: selectedID)
@@ -193,11 +193,11 @@ struct QuickAskView: View {
 
     private func installSession(channelID: String) {
         guard sessions[channelID] == nil, let catalog = model.catalog else { return }
-        sessions[channelID] = AuxiliaryComposerSession(store: catalog.channel(id: channelID), scope: .quickAsk)
+        sessions[channelID] = AuxiliaryComposerSession(store: catalog.channel(id: channelID), scope: .quickSend)
     }
 
     private func holdSelectedStore() {
-        let next = model.quickAsk.isPresented ? session?.store : nil
+        let next = model.quickSend.isPresented ? session?.store : nil
         guard heldStore !== next else { return }
         if let heldStore { model.release(heldStore) }
         heldStore = next
@@ -220,7 +220,7 @@ struct QuickAskView: View {
 
     private func open(_ session: AuxiliaryComposerSession, sequence: Int? = nil) {
         guard model.api?.baseURL == session.store.api.baseURL else { return }
-        model.quickAsk.dismiss()
+        model.quickSend.dismiss()
         model.activate(channelID: session.store.id, sequence: sequence)
     }
 
@@ -229,21 +229,21 @@ struct QuickAskView: View {
         guard model.api?.baseURL == session.store.api.baseURL else { return }
         trackDraft()
         if confirmation.opensChannel { open(session, sequence: confirmation.sequence); return }
-        guard model.quickAsk.isPresented, self.session === session else { return }
-        let presentation = model.quickAsk.presentationID
+        guard model.quickSend.isPresented, self.session === session else { return }
+        let presentation = model.quickSend.presentationID
         confirmationDismissal?.cancel()
         confirmationDismissal = Task {
             do { try await Task.sleep(for: .milliseconds(700)) }
             catch { return }
-            guard model.quickAsk.presentationID == presentation, self.session === session else { return }
-            model.quickAsk.dismiss()
+            guard model.quickSend.presentationID == presentation, self.session === session else { return }
+            model.quickSend.dismiss()
         }
     }
 }
 
-private struct QuickAskChannelChooser: View {
+private struct QuickSendChannelChooser: View {
     let channels: [Channel]
-    let history: QuickAskTargetHistory?
+    let history: QuickSendTargetHistory?
     let selectedID: String?
     let choose: (Channel) -> Void
     @ViewState private var query = ""

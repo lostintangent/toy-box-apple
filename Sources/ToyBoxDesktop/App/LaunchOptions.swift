@@ -10,10 +10,11 @@ struct LaunchOptions: Equatable, Sendable {
     var snapshotState: String?
     var resizeBenchmark: ResizeBenchmark.Mode?
     var benchmark: PerformanceBenchmark.Scenario?
+    var quickSendValidation: QuickSendValidation?
 
     var isSnapshot: Bool { snapshotURL != nil }
 
-    static func parse(_ arguments: [String]) throws -> LaunchOptions {
+    static func parse(_ arguments: [String], environment: [String: String] = [:]) throws -> LaunchOptions {
         var options = LaunchOptions()
         var seen: Set<String> = []
         var index = 0
@@ -24,7 +25,7 @@ struct LaunchOptions: Equatable, Sendable {
                 continue
             }
             guard ["--server", "--channel", "--appearance", "--size", "--snapshot", "--state",
-                   "--benchmark-resize", "--benchmark"].contains(flag) else {
+                   "--benchmark-resize", "--benchmark", "--validate-quick-send"].contains(flag) else {
                 throw LaunchArgumentError("Unknown argument: \(flag)")
             }
             guard seen.insert(flag).inserted else { throw LaunchArgumentError("Repeated argument: \(flag)") }
@@ -68,6 +69,11 @@ struct LaunchOptions: Equatable, Sendable {
                     throw LaunchArgumentError("--benchmark must be launch, switch, messages, paging, scroll, idle or key")
                 }
                 options.benchmark = scenario
+            case "--validate-quick-send":
+                guard let mode = QuickSendValidation(rawValue: value) else {
+                    throw LaunchArgumentError("--validate-quick-send must be trace or hold")
+                }
+                options.quickSendValidation = mode
             default: break
             }
             index += 2
@@ -84,8 +90,24 @@ struct LaunchOptions: Equatable, Sendable {
         if options.benchmark != nil, options.isSnapshot || options.channelID == nil || options.resizeBenchmark != nil {
             throw LaunchArgumentError("--benchmark requires --channel and can't take a snapshot or run with --benchmark-resize")
         }
+        if options.quickSendValidation == nil, let value = environment["TOY_BOX_QUICK_SEND_VALIDATION"] {
+            guard let mode = QuickSendValidation(rawValue: value) else {
+                throw LaunchArgumentError("TOY_BOX_QUICK_SEND_VALIDATION must be trace or hold")
+            }
+            options.quickSendValidation = mode
+        }
+        if options.quickSendValidation != nil,
+           options.isSnapshot || options.benchmark != nil || options.resizeBenchmark != nil {
+            throw LaunchArgumentError("Quick Send validation can't run with snapshots or benchmarks")
+        }
         return options
     }
+}
+
+enum QuickSendValidation: String, Sendable {
+    case trace, hold
+
+    static let argumentKey = "ToyBoxQuickSendValidation"
 }
 
 struct LaunchArgumentError: LocalizedError, Equatable {

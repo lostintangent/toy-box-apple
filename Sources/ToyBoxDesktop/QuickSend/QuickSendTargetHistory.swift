@@ -3,7 +3,7 @@ import Foundation
 import Observation
 
 @MainActor @Observable
-final class QuickAskTargetHistory {
+final class QuickSendTargetHistory {
     private struct Saved: Codable {
         var lastChosenID: String?
         var draftTargetID: String?
@@ -19,10 +19,10 @@ final class QuickAskTargetHistory {
 
     init(serverURL: URL, defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        key = "quickAsk.channels." + ComposerDraft.storageKey(serverURL: serverURL, channelID: "", scope: .quickAsk)
+        key = "quickSend.channels." + ComposerDraft.storageKey(serverURL: serverURL, channelID: "", scope: .quickSend)
         if let data = defaults.data(forKey: key) {
             do { saved = try JSONDecoder().decode(Saved.self, from: data) }
-            catch { self.error = "Saved Quick Ask channel choices could not be restored: \(error.localizedDescription)" }
+            catch { self.error = "Saved Quick Send channel choices could not be restored: \(error.localizedDescription)" }
         }
     }
 
@@ -82,6 +82,6 @@ final class QuickAskTargetHistory {
         do {
             defaults.set(try JSONEncoder().encode(saved), forKey: key)
             error = nil
-        } catch { self.error = "Quick Ask channel choices could not be saved: \(error.localizedDescription)" }
+        } catch { self.error = "Quick Send channel choices could not be saved: \(error.localizedDescription)" }
     }
 }

@@ -17,18 +17,22 @@ struct ToyBoxDesktopApp: App {
 
     init() {
         do {
-            let options = try LaunchOptions.parse(Array(ProcessInfo.processInfo.arguments.dropFirst()))
+            let options = try LaunchOptions.parse(Array(ProcessInfo.processInfo.arguments.dropFirst()),
+                                                 environment: ProcessInfo.processInfo.environment)
             AppPreferencesMigration.run(isSnapshot: options.isSnapshot)
             AppDelegate.isSnapshot = options.isSnapshot
             AppDelegate.launchedInBackground = NSRunningApplication.current.activationPolicy == .prohibited
-            if options.isSnapshot {
+            if options.isSnapshot || options.quickSendValidation != nil {
                 var arguments = UserDefaults.standard.volatileDomain(forName: UserDefaults.argumentDomain)
-                arguments["ApplePersistenceIgnoreState"] = true
+                if options.isSnapshot { arguments["ApplePersistenceIgnoreState"] = true }
+                if let validation = options.quickSendValidation {
+                    arguments[QuickSendValidation.argumentKey] = validation.rawValue
+                }
                 UserDefaults.standard.setVolatileDomain(arguments, forName: UserDefaults.argumentDomain)
             }
             let model = AppModel(launchOptions: options)
-            model.quickAsk.setContent(
-                QuickAskView(lastUsedChannel: { model.lastUsedChannelID }).environment(model)
+            model.quickSend.setContent(
+                QuickSendView(lastUsedChannel: { model.lastUsedChannelID }).environment(model)
             )
             ChannelIntentsContext.register(model)
             _model = ViewState(wrappedValue: model)

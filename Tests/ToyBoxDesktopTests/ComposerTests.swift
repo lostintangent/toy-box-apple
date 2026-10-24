@@ -121,12 +121,12 @@ struct ComposerTests {
         #expect(key == ComposerDraft.storageKey(serverURL: normalized, channelID: "channel"))
         #expect(key != ComposerDraft.storageKey(serverURL: otherServer, channelID: "channel"))
         #expect(key != ComposerDraft.storageKey(serverURL: normalized, channelID: "another"))
-        let quickAsk = ComposerDraft.storageKey(serverURL: normalized, channelID: "channel", scope: .quickAsk)
+        let quickSend = ComposerDraft.storageKey(serverURL: normalized, channelID: "channel", scope: .quickSend)
         let reply = ComposerDraft.storageKey(serverURL: normalized, channelID: "channel", scope: .inboxReply(sequence: 8))
-        #expect(Set([key, quickAsk, reply]).count == 3)
+        #expect(Set([key, quickSend, reply]).count == 3)
         #expect(reply != ComposerDraft.storageKey(serverURL: normalized, channelID: "channel",
                                                 scope: .inboxReply(sequence: 9)))
-        #expect(quickAsk == ComposerDraft.storageKey(serverURL: upper, channelID: "channel", scope: .quickAsk))
+        #expect(quickSend == ComposerDraft.storageKey(serverURL: upper, channelID: "channel", scope: .quickSend))
     }
 
     @Test func auxiliaryRepliesSeedOnceAndKeepStaleRequestsUnsent() async throws {
@@ -170,8 +170,8 @@ struct ComposerTests {
         }
     }
 
-    @Test func quickAskRestoresDraftTargetsBeforeRecentsAndNeverGuessesAmongChannels() throws {
-        let suite = "ComposerQuickAsk-\(UUID())"
+    @Test func quickSendRestoresDraftTargetsBeforeRecentsAndNeverGuessesAmongChannels() throws {
+        let suite = "ComposerQuickSend-\(UUID())"
         let defaults = try #require(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         let server = try #require(URL(string: "http://localhost:3210"))
@@ -179,7 +179,7 @@ struct ComposerTests {
                             model: .init(provider: "test", name: "test"), updatedAt: "2026-10-24T00:00:00Z")
         var beta = alpha
         beta.id = "beta"; beta.name = "Beta"; beta.purpose = "Sketch the entrance"
-        let history = QuickAskTargetHistory(serverURL: server, defaults: defaults)
+        let history = QuickSendTargetHistory(serverURL: server, defaults: defaults)
         #expect(history.initialTarget(channels: [beta, alpha], lastUsedID: nil, hasDraft: { _ in false }) == nil)
         #expect(history.initialTarget(channels: [beta, alpha], lastUsedID: "alpha", hasDraft: { _ in false }) == "alpha")
         #expect(history.initialTarget(channels: [beta], lastUsedID: nil, hasDraft: { _ in false }) == "beta")
@@ -193,14 +193,14 @@ struct ComposerTests {
         history.restoreTarget(channels: [alpha, beta], lastUsedID: "beta", catalogLoaded: true,
                               hasDraft: { $0 == "alpha" })
         #expect(history.selectedID == "alpha")
-        let restored = QuickAskTargetHistory(serverURL: server, defaults: defaults)
+        let restored = QuickSendTargetHistory(serverURL: server, defaults: defaults)
         #expect(restored.initialTarget(channels: [beta], lastUsedID: "beta", hasDraft: { $0 == "alpha" }) == "alpha")
         #expect(restored.choices(channels: [alpha, beta], query: "").map(\.id) == ["beta", "alpha"])
         #expect(restored.choices(channels: [alpha, beta], query: "entrance").map(\.id) == ["beta"])
         #expect(restored.choices(channels: [alpha, beta], query: "LAUNCH").map(\.id) == ["alpha"])
         restored.trackDraft(channelID: "alpha", name: nil, hasContent: false)
         #expect(restored.initialTarget(channels: [alpha], lastUsedID: "alpha", hasDraft: { _ in false }) == nil)
-        let otherServer = QuickAskTargetHistory(serverURL: try #require(URL(string: "http://localhost:3211")),
+        let otherServer = QuickSendTargetHistory(serverURL: try #require(URL(string: "http://localhost:3211")),
                                                defaults: defaults)
         #expect(otherServer.initialTarget(channels: [alpha, beta], lastUsedID: nil, hasDraft: { _ in false }) == nil)
     }
@@ -225,7 +225,7 @@ struct ComposerTests {
                                                                     lead: .lead(id: "lead"))))
             draft.text = "Original message"
             draft.append(try sampleImage())
-            let session = AuxiliaryComposerSession(store: store, scope: .quickAsk, draft: draft)
+            let session = AuxiliaryComposerSession(store: store, scope: .quickSend, draft: draft)
             await session.send(opensChannel: true)
             let originalID = try #require(draft.sendAttemptID)
             #expect(session.confirmation == nil)
@@ -256,7 +256,7 @@ struct ComposerTests {
                                      sendJournal: nil)
             draft.text = "An unconfirmed message"
             draft.associateSend(id: "original")
-            let session = AuxiliaryComposerSession(store: store, scope: .quickAsk, draft: draft)
+            let session = AuxiliaryComposerSession(store: store, scope: .quickSend, draft: draft)
             #expect(session.isReadOnly)
             #expect(session.deliveryNotice == "Delivery not confirmed. It may have arrived.")
             let message = ChannelMessage(id: "original", sequence: 9, timestamp: "2026-10-24T00:00:00Z",
@@ -276,7 +276,7 @@ struct ComposerTests {
             #expect(session.confirmation == nil)
             draft.text = "A different unconfirmed message"
             draft.associateSend(id: "second")
-            let editedSession = AuxiliaryComposerSession(store: store, scope: .quickAsk, draft: draft)
+            let editedSession = AuxiliaryComposerSession(store: store, scope: .quickSend, draft: draft)
             editedSession.edit()
             #expect(editedSession.editedUnconfirmedMessage)
             #expect(draft.sendAttemptID == nil)

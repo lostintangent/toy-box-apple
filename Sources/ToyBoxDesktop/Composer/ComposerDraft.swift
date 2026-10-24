@@ -22,13 +22,13 @@ struct ComposerImage: Codable, Equatable, Identifiable, Sendable {
 final class ComposerDraft {
     enum Scope: Hashable {
         case conversation
-        case quickAsk
+        case quickSend
         case inboxReply(sequence: Int)
 
         fileprivate var storageComponent: String? {
             switch self {
             case .conversation: nil
-            case .quickAsk: "quick-ask"
+            case .quickSend: "quick-send"
             case .inboxReply(let sequence): "inbox-reply:\(sequence)"
             }
         }

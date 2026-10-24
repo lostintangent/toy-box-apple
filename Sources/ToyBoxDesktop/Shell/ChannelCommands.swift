@@ -59,7 +59,7 @@ struct ChannelCommands: Commands {
             Button("Check for Updates…") { model.updates.checkForUpdates() }
                 .disabled(!model.updates.canCheckForUpdates)
             Divider()
-            QuickAskMenuButton(controller: model.quickAsk)
+            QuickSendMenuButton(controller: model.quickSend)
         }
         CommandGroup(replacing: .newItem) {
             Button("New Channel…") {

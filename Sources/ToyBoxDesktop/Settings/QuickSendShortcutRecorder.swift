@@ -1,8 +1,8 @@
 import AppKit
 import SwiftUI
 
-struct QuickAskShortcutRecorder: NSViewRepresentable {
-    let controller: QuickAskController
+struct QuickSendShortcutRecorder: NSViewRepresentable {
+    let controller: QuickSendController
 
     func makeNSView(context: Context) -> ShortcutButton {
         let button = ShortcutButton()
@@ -11,7 +11,7 @@ struct QuickAskShortcutRecorder: NSViewRepresentable {
         button.font = .systemFont(ofSize: NSFont.systemFontSize)
         button.target = button
         button.action = #selector(ShortcutButton.record)
-        button.setAccessibilityLabel("Quick Ask keyboard shortcut")
+        button.setAccessibilityLabel("Quick Send keyboard shortcut")
         button.toolTip = "Record a global shortcut. Escape cancels. Delete clears it."
         return button
     }
@@ -28,7 +28,7 @@ struct QuickAskShortcutRecorder: NSViewRepresentable {
 }
 
 final class ShortcutButton: NSButton {
-    weak var controller: QuickAskController?
+    weak var controller: QuickSendController?
     private var isRecording = false
     override var acceptsFirstResponder: Bool { true }
 
@@ -64,7 +64,7 @@ final class ShortcutButton: NSButton {
             controller?.setShortcut(nil)
             stopRecording()
         } else {
-            let shortcut = QuickAskShortcut(keyCode: event.keyCode, flags: event.modifierFlags)
+            let shortcut = QuickSendShortcut(keyCode: event.keyCode, flags: event.modifierFlags)
             if let error = shortcut.validationError {
                 controller?.reportInvalidShortcut(error)
             } else {
@@ -84,7 +84,7 @@ final class ShortcutButton: NSButton {
 
     override func flagsChanged(with event: NSEvent) {
         guard isRecording else { super.flagsChanged(with: event); return }
-        let modifiers = QuickAskShortcut(keyCode: 0, flags: event.modifierFlags).modifierLabel
+        let modifiers = QuickSendShortcut(keyCode: 0, flags: event.modifierFlags).modifierLabel
         title = modifiers.isEmpty ? "Press shortcut…" : modifiers + "…"
     }
 

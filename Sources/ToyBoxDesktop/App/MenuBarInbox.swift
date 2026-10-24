@@ -51,7 +51,7 @@ struct MenuBarInbox: View {
             if let session = replySession,
                let request = inbox.requests.first(where: { $0.id == session.store.id }),
                request.state == .answered || request.state == .newerRequest {
-                session.invalidateRequest()
+                session.invalidateRequest(replacementSequence: status.waiting.first { $0.id == request.id }?.sequence)
             }
         }
         .onChange(of: model.serverURL) { _, _ in
@@ -156,7 +156,6 @@ struct MenuBarInbox: View {
                     Text(quote)
                         .font(.system(size: 13 * textScale))
                         .lineSpacing(2)
-                        .lineLimit(3)
                         .accessibilityLabel(quote)
                 } else {
                     Text("Request preview unavailable")
@@ -238,12 +237,12 @@ struct MenuBarInbox: View {
     private var footer: some View {
         VStack(spacing: 0) {
             Button {
-                closeThen { model.quickAsk.present() }
+                closeThen { model.quickSend.present() }
             } label: {
                 HStack {
-                    Label("Quick Ask…", systemImage: "square.and.pencil")
+                    Label("Quick Send…", systemImage: "square.and.pencil")
                     Spacer()
-                    if let shortcut = model.quickAsk.shortcut {
+                    if let shortcut = model.quickSend.shortcut {
                         Text(shortcut.displayName).foregroundStyle(.secondary)
                     }
                 }

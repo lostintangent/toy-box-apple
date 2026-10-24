@@ -1,31 +1,35 @@
 import AppKit
 import Observation
+import OSLog
 import SwiftUI
 
 @MainActor @Observable
-final class QuickAskController: NSObject, NSWindowDelegate {
+final class QuickSendController: NSObject, NSWindowDelegate {
     let isEnabled: Bool
-    private(set) var shortcut: QuickAskShortcut?
+    private(set) var shortcut: QuickSendShortcut?
     private(set) var error: String?
     private(set) var isPresented = false
     private(set) var presentationID = UUID()
     private(set) var isRecording = false
     private(set) var isRegistered = false
     @ObservationIgnored private let defaults: UserDefaults
-    @ObservationIgnored private let hotKey: any QuickAskHotKeyRegistering
-    @ObservationIgnored private var panel: QuickAskPanel?
+    @ObservationIgnored private let hotKey: any QuickSendHotKeyRegistering
+    @ObservationIgnored private var panel: QuickSendPanel?
     @ObservationIgnored private var hosting: NSHostingView<AnyView>?
-    @ObservationIgnored private var content = AnyView(QuickAskPlaceholder())
+    @ObservationIgnored private var content = AnyView(QuickSendPlaceholder())
+    @ObservationIgnored private let validation: QuickSendValidation?
+    private static let logger = Logger(subsystem: "dev.toybox.desktop", category: "QuickSend")
 
     init(options: LaunchOptions = .init(), defaults: UserDefaults = .standard,
-         hotKey: any QuickAskHotKeyRegistering = CarbonQuickAskHotKey()) {
+         hotKey: any QuickSendHotKeyRegistering = CarbonQuickSendHotKey()) {
         isEnabled = !options.isSnapshot && options.benchmark == nil && options.resizeBenchmark == nil
+        validation = options.quickSendValidation
         self.defaults = defaults
         self.hotKey = hotKey
         super.init()
         do {
-            if let data = defaults.data(forKey: QuickAskShortcut.preferenceKey) {
-                shortcut = try JSONDecoder().decode(QuickAskShortcut?.self, from: data)
+            if let data = defaults.data(forKey: QuickSendShortcut.preferenceKey) {
+                shortcut = try JSONDecoder().decode(QuickSendShortcut?.self, from: data)
             } else {
                 shortcut = .defaultValue
             }
@@ -36,11 +40,11 @@ final class QuickAskController: NSObject, NSWindowDelegate {
                 registerShortcut()
             }
         } catch {
-            self.error = "The saved Quick Ask shortcut couldn't be read. Record it again."
+            self.error = "The saved Quick Send shortcut couldn't be read. Record it again."
         }
     }
 
-    func setShortcut(_ value: QuickAskShortcut?) {
+    func setShortcut(_ value: QuickSendShortcut?) {
         guard isEnabled else { return }
         if let validationError = value?.validationError {
             error = validationError
@@ -51,7 +55,7 @@ final class QuickAskController: NSObject, NSWindowDelegate {
             try hotKey.replace(with: value) { [weak self] in self?.toggle() }
             isRegistered = value != nil
             shortcut = value
-            defaults.set(data, forKey: QuickAskShortcut.preferenceKey)
+            defaults.set(data, forKey: QuickSendShortcut.preferenceKey)
             error = nil
         } catch {
             self.error = error.localizedDescription
@@ -103,7 +107,7 @@ final class QuickAskController: NSObject, NSWindowDelegate {
     func present() {
         guard isEnabled else { return }
         if panel == nil {
-            let panel = QuickAskPanel(contentRect: NSRect(x: 0, y: 0, width: 560, height: 220),
+            let panel = QuickSendPanel(contentRect: NSRect(x: 0, y: 0, width: 560, height: 220),
                                       styleMask: [.borderless, .nonactivatingPanel, .fullSizeContentView],
                                       backing: .buffered, defer: false)
             panel.delegate = self
@@ -118,8 +122,8 @@ final class QuickAskController: NSObject, NSWindowDelegate {
             panel.hasShadow = true
             panel.animationBehavior = .utilityWindow
             panel.isMovableByWindowBackground = true
-            panel.title = "Quick Ask"
-            panel.setAccessibilityLabel("Quick Ask")
+            panel.title = "Quick Send"
+            panel.setAccessibilityLabel("Quick Send")
             panel.onCancel = { [weak self] in self?.dismiss() }
             let hosting = NSHostingView(rootView: hostedContent())
             hosting.sizingOptions = [.intrinsicContentSize]
@@ -135,15 +139,32 @@ final class QuickAskController: NSObject, NSWindowDelegate {
         presentationID = UUID()
         isPresented = true
         panel.makeKeyAndOrderFront(nil)
+        if validation != nil {
+            tracePanel("presented")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in self?.tracePanel("settled") }
+        }
+    }
+
+    private func tracePanel(_ phase: String) {
+        guard let panel else { return }
+        Self.logger.notice("""
+            Quick Send \(phase, privacy: .public): visible=\(panel.isVisible), key=\(panel.isKeyWindow), \
+            alpha=\(panel.alphaValue), frame=\(String(describing: panel.frame), privacy: .public), \
+            role=\(panel.accessibilityRole()?.rawValue ?? "nil", privacy: .public), \
+            subrole=\(panel.accessibilitySubrole()?.rawValue ?? "nil", privacy: .public)
+            """)
     }
 
     func dismiss() {
         guard isPresented else { return }
         isPresented = false
         panel?.orderOut(nil)
+        if validation != nil { Self.logger.notice("Dismissed Quick Send") }
     }
 
     func windowDidResignKey(_ notification: Notification) {
+        if validation != nil { Self.logger.notice("Quick Send resigned key") }
+        guard validation != .hold else { return }
         // Attachment sheets and popovers belong to the panel, not to a click away.
         DispatchQueue.main.async { [weak self] in
             guard let self, let panel = self.panel, !panel.isKeyWindow, panel.attachedSheet == nil else { return }
@@ -152,6 +173,7 @@ final class QuickAskController: NSObject, NSWindowDelegate {
                 if window == panel { return }
                 parent = window.parent
             }
+            if self.validation != nil { Self.logger.notice("Dismissing Quick Send after resign key") }
             self.dismiss()
         }
     }
@@ -167,7 +189,7 @@ final class QuickAskController: NSObject, NSWindowDelegate {
     }
 
     private func hostedContent() -> AnyView {
-        AnyView(QuickAskAppearance(content: content)
+        AnyView(QuickSendAppearance(content: content)
             .frame(width: 560)
             .fixedSize(horizontal: false, vertical: true)
             .onGeometryChange(for: CGSize.self) { $0.size } action: { [weak self] size in
@@ -182,21 +204,22 @@ final class QuickAskController: NSObject, NSWindowDelegate {
     }
 }
 
-struct QuickAskMenuButton: View {
-    let controller: QuickAskController
+struct QuickSendMenuButton: View {
+    let controller: QuickSendController
 
     var body: some View {
-        Button("Quick Ask…") { controller.present() }
+        Button("Quick Send…") { controller.present() }
             .keyboardShortcut(controller.isRegistered && !controller.isRecording
                               ? controller.shortcut?.keyboardShortcut : nil)
             .disabled(!controller.isEnabled || controller.isRecording)
     }
 }
 
-private final class QuickAskPanel: NSPanel {
+final class QuickSendPanel: NSPanel {
     var onCancel: (() -> Void)?
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
+    override func accessibilitySubrole() -> NSAccessibility.Subrole? { .floatingWindow }
     override func cancelOperation(_ sender: Any?) { onCancel?() }
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         if event.charactersIgnoringModifiers == "w",
@@ -208,7 +231,7 @@ private final class QuickAskPanel: NSPanel {
     }
 }
 
-private struct QuickAskAppearance: View {
+private struct QuickSendAppearance: View {
     let content: AnyView
     @AppStorage("appearance") private var appearance: AppAppearance = .system
     @AppStorage("textScale") private var textScale = 1.0
@@ -220,10 +243,10 @@ private struct QuickAskAppearance: View {
     }
 }
 
-private struct QuickAskPlaceholder: View {
+private struct QuickSendPlaceholder: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Quick Ask").font(.headline)
+            Text("Quick Send").font(.headline)
             Text("Send a message to your team from anywhere.")
                 .foregroundStyle(.secondary)
         }

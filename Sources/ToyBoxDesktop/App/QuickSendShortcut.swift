@@ -2,8 +2,8 @@ import AppKit
 import Carbon
 import SwiftUI
 
-struct QuickAskShortcut: Codable, Equatable, Sendable {
-    static let preferenceKey = "quickAskShortcut"
+struct QuickSendShortcut: Codable, Equatable, Sendable {
+    static let preferenceKey = "quickSendShortcut"
     static let defaultValue = Self(keyCode: UInt32(kVK_Space), modifiers: UInt32(controlKey | shiftKey))
 
     let keyCode: UInt32
@@ -120,11 +120,11 @@ struct QuickAskShortcut: Codable, Equatable, Sendable {
 }
 
 @MainActor
-protocol QuickAskHotKeyRegistering: AnyObject {
-    func replace(with shortcut: QuickAskShortcut?, onPress: @escaping @MainActor () -> Void) throws
+protocol QuickSendHotKeyRegistering: AnyObject {
+    func replace(with shortcut: QuickSendShortcut?, onPress: @escaping @MainActor () -> Void) throws
 }
 
-struct QuickAskHotKeyError: LocalizedError {
+struct QuickSendHotKeyError: LocalizedError {
     let operation: String
     let status: OSStatus
 
@@ -132,13 +132,13 @@ struct QuickAskHotKeyError: LocalizedError {
         if status == eventHotKeyExistsErr {
             return "That shortcut is already in use. Choose another."
         }
-        return "Couldn't \(operation) the Quick Ask shortcut (macOS error \(status)). Choose another shortcut."
+        return "Couldn't \(operation) the Quick Send shortcut (macOS error \(status)). Choose another shortcut."
     }
 }
 
 @MainActor
-final class CarbonQuickAskHotKey: QuickAskHotKeyRegistering {
-    private static let signature: OSType = 0x54425141
+final class CarbonQuickSendHotKey: QuickSendHotKeyRegistering {
+    private static let signature: OSType = 0x54425153
     private var hotKey: EventHotKeyRef?
     private var handler: EventHandlerRef?
     private var currentID: UInt32 = 0
@@ -150,7 +150,7 @@ final class CarbonQuickAskHotKey: QuickAskHotKeyRegistering {
         if let handler { RemoveEventHandler(handler) }
     }
 
-    func replace(with shortcut: QuickAskShortcut?, onPress: @escaping @MainActor () -> Void) throws {
+    func replace(with shortcut: QuickSendShortcut?, onPress: @escaping @MainActor () -> Void) throws {
         if handler == nil, shortcut != nil {
             var types = [
                 EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed)),
@@ -164,8 +164,8 @@ final class CarbonQuickAskHotKey: QuickAskHotKeyRegistering {
                                               MemoryLayout<EventHotKeyID>.size, nil, &id)
                 guard status == noErr else { return status }
                 return MainActor.assumeIsolated {
-                    let owner = Unmanaged<CarbonQuickAskHotKey>.fromOpaque(context).takeUnretainedValue()
-                    guard id.signature == CarbonQuickAskHotKey.signature, id.id == owner.currentID else {
+                    let owner = Unmanaged<CarbonQuickSendHotKey>.fromOpaque(context).takeUnretainedValue()
+                    guard id.signature == CarbonQuickSendHotKey.signature, id.id == owner.currentID else {
                         return OSStatus(eventNotHandledErr)
                     }
                     if GetEventKind(event) == kEventHotKeyReleased {
@@ -177,7 +177,7 @@ final class CarbonQuickAskHotKey: QuickAskHotKeyRegistering {
                     return noErr
                 }
             }, types.count, &types, Unmanaged.passUnretained(self).toOpaque(), &handler)
-            guard status == noErr else { throw QuickAskHotKeyError(operation: "listen for", status: status) }
+            guard status == noErr else { throw QuickSendHotKeyError(operation: "listen for", status: status) }
         }
         var replacement: EventHotKeyRef?
         let nextID = currentID &+ 1
@@ -185,13 +185,13 @@ final class CarbonQuickAskHotKey: QuickAskHotKeyRegistering {
             let status = RegisterEventHotKey(shortcut.keyCode, shortcut.modifiers,
                                             EventHotKeyID(signature: Self.signature, id: nextID),
                                             GetApplicationEventTarget(), 0, &replacement)
-            guard status == noErr else { throw QuickAskHotKeyError(operation: "register", status: status) }
+            guard status == noErr else { throw QuickSendHotKeyError(operation: "register", status: status) }
         }
         if let hotKey {
             let status = UnregisterEventHotKey(hotKey)
             guard status == noErr else {
                 if let replacement { UnregisterEventHotKey(replacement) }
-                throw QuickAskHotKeyError(operation: "change", status: status)
+                throw QuickSendHotKeyError(operation: "change", status: status)
             }
         }
         hotKey = replacement

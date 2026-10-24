@@ -1405,7 +1405,8 @@ preserve path prefixes and display actionable failures. Changing servers prompts
 live connections, namespaces drafts, then refreshes the catalog. Notifications explains requests
 and completions before asking system permission in response to an explicit enable action.
 Permission denial shows Open System Settings, never repeated permission prompts. General also
-holds Show in menu bar and the two on-device toggles specified under Mac features beyond the pane.
+holds Show in menu bar, the Quick Send shortcut recorder, and the two on-device toggles specified
+under Mac features beyond the pane.
 Release builds also show Updates, with "Automatically check for updates" and "Automatically
 download and install updates" bound to Sparkle's own settings. Automatic installation is disabled
 while automatic checks are off or the updater disallows it. These controls are hidden without a
@@ -1429,6 +1430,7 @@ disabled whenever the updater's `canCheckForUpdates` is false, including in bund
 
 | Menu | Command | Shortcut |
 | --- | --- | --- |
+| App | Quick Send | Configurable global shortcut, `Ctrl-Shift-Space` by default |
 | File | New Channel | `Cmd-N` |
 | File | Open Channel in New Window | `Cmd-Shift-N` |
 | File | Open in Toy Box | `Cmd-Shift-O` |
@@ -1573,25 +1575,82 @@ General settings adds "Show in menu bar" as a pop-up with Always, When Active an
 Active is the default, with the footer "When Active shows the icon while agents are working or a
 channel is waiting for you." In When Active, the item appears as soon as anything is active,
 stays 10 seconds after the last activity ends so short gaps between agent turns don't shift the
-menu bar, and never leaves while its menu is open.
+menu bar, and never leaves while its inbox is open.
 
-Use `MenuBarExtra` with `.menuBarExtraStyle(.menu)`, a real menu with native keyboard and
-VoiceOver behavior, not a popover window.
+Use `MenuBarExtra` with `.menuBarExtraStyle(.window)`. Its inbox uses the native window material,
+shape and shadow, with no custom glass plate. It is 380 points wide and content-fit, capped at
+640 points or the usable screen height minus 24, whichever is smaller. The body scrolls above a
+fixed footer, with 16-point content insets.
 
-| Menu part | Specification |
+| Inbox part | Specification |
 | --- | --- |
-| Waiting for You | Section header. One item per channel with a pending request, newest request first. Title: channel name. Subtitle: "[Agent]: [request text]" cut to 60 characters with "…", or "Needs your reply" until the text is known. Image: the requester's 16-point avatar, otherwise none |
-| Working | Section header. Channels with working agents and no pending request, most recently updated first. Subtitle: "Shell is working", "Shell and Transcript are working" or "Shell, Transcript and 2 others are working". Image: the first working agent's 16-point avatar, lead first |
-| Overflow | At most 6 channel items per section, then "[n] More Channels…", which opens the main window |
-| Empty | One disabled item, "No agents are working". When the catalog is unreachable, "Can't connect to [host]" instead |
-| Footer | Separator, "Open Toy Box Desktop", then "Settings…". No Quit, because this is a regular Dock app |
-| Activation | A channel item activates the app, brings the main window forward (opening one if needed) and selects the channel. A waiting item also reveals the request, through the same route as notification activation |
+| Waiting for You | 15-point semibold header with the live waiting count. Every pending channel is shown, newest request first on opening. A 28-point requester avatar precedes the 13-point semibold channel name and 11-point secondary "[Agent] needs your reply" |
+| Request | Full, wrapping 13-point quote, flattened from Markdown without dropping @mentions. No character or line truncation. The channel title and separate 28-point Open control reveal the request in the main window. Reply expands an editor beneath the quote |
+| Reply | One expanded editor at a time. Native 14-point text, three lines before scrolling, 12-point insets, 10-point corners and primary-at-5% fill. Attach Images, the canonical audience, Dictate and Send reuse the existing composer components, without another glass surface |
+| Working Now | Up to three channels with working agents and no pending request, most recently updated first. Static 20-point avatar stacks show up to three agents, lead first. The existing working subtitle names the team. Overflow opens the main window |
+| Empty and unavailable | "All caught up" when nothing needs attention, "Connecting…" before the first catalog, "No channels yet" with the main-window route, and "Connect to Toy Box" with Settings for invalid configuration. Offline keeps cached rows, says requests may be out of date and offers Retry |
+| Footer | A fixed Quick Send command with the configured shortcut, then Open Toy Box Desktop and Settings. Close the inbox before opening another surface. No Quit, because this is a regular Dock app |
+
+An open inbox preserves its original request order and appends newly waiting channels. Answered
+and confirmed-sent rows stay in place until the next opening. A newer request never silently
+replaces the original quote. If an expanded request is answered or replaced, keep its editable
+draft, disable sending and show the corresponding explanation with Open Channel. Reply drafts
+are separate from main-window and Quick Send drafts, keyed by normalized server URL, channel and
+request sequence. A new empty reply visibly seeds the requester's canonical @handle.
 
 Waiting comes from the same attention as the sidebar. Working must come from the one function
 the sidebar row uses (live presence for an open channel, otherwise the catalog's `working`), so
-the menu bar, the sidebar and the Dock can never disagree. Render avatars with `AgentAvatarView`
-into images. Don't refresh the catalog when the menu opens, so items never move under the
-pointer. Its normal cadence (5 seconds active, 15 inactive) is the latency.
+the menu bar, the sidebar and the Dock can never disagree. Render identities with
+`AgentAvatarView`. Opening the inbox does not refresh the catalog. Its normal cadence
+(5 seconds active, 15 inactive) is the latency. Opening it, reading a quote and expanding Reply
+never mark a channel read.
+
+**Quick Send.** The app-menu command, inbox footer and configurable global shortcut present one
+retained, non-activating, key-capable floating `NSPanel`. It uses one regular system-glass surface,
+24-point continuous corners and the system shadow, without a title bar or nested glass composer.
+It is 560 points wide, starts around 220 high and grows to at most 420, clamped to 24-point screen
+margins. Each presentation centers it on the pointer's screen, with its top 22% below the usable
+top. Content growth preserves that top edge. The host uses the system utility-window animation.
+Appearance, Text Size, Increase Contrast and Reduce Transparency follow the app and system.
+
+Content has 16-point padding, a 32-point channel row, a native transparent 16-point editor and a
+32-point controls row. Command-L opens the searchable channel chooser. Choices put up to three
+recent channels before the remaining alphabetical list. Changing channels saves and restores
+separate Quick Send drafts rather than borrowing the main-window draft. Target history is scoped
+to the server and prefers an unfinished Quick Send draft, then the last explicit Quick Send target,
+the last main-window channel or the sole available channel. With no suitable target it offers
+the chooser instead of selecting an urgent channel. No-server, no-channel, deleted-target and
+offline states offer the appropriate Settings, main-window, Choose Channel or Retry action.
+
+Return sends, Shift-Return inserts a newline and Command-Return sends and opens the confirmed
+message. IME and mention completion consume Return first. Escape closes completion or a picker
+before stopping dictation, then hides the panel. Command-W, another global shortcut press or a
+click away also hide it, preserving the draft. Owned sheets and popovers are not outside clicks.
+Images and dictation reuse the main composer's validation and permission handling. Opening Quick
+Ask never requests microphone permission, reads the clipboard or marks messages read.
+
+Both auxiliary editors use the channel's shared outbox and one caller-owned message UUID.
+Sending is read-only and makes one attempt. Hiding does not cancel or retry delivery.
+Unconfirmed delivery retains the submitted text and images with explicit Edit and Send Again.
+Send Again reuses the original UUID. Confirmation clears only the unchanged submitted revision,
+announces once and shows Sent. Quick Send hides after 700 ms, or opens the confirmed message for
+Command-Return. A confirmation while hidden never reopens the panel. Changing servers closes
+both surfaces and cancels navigation from the old server.
+
+General settings places the native Quick Send shortcut recorder below Show in menu bar. The
+default is Control-Shift-Space. It records physical keys, displays the current keyboard layout,
+rejects reserved combinations and shows registration failures explicitly. Recording suspends
+the existing binding. A failed replacement restores it without changing the saved preference.
+Escape cancels recording, unmodified Delete clears it, and a separate Clear control is available.
+Clearing keeps both menu commands usable. Global registration uses Carbon without Accessibility
+permission, and snapshot and benchmark launches never register or present these surfaces.
+
+For native validation only, `--validate-quick-send trace` logs panel visibility, key state,
+geometry and accessibility role. `hold` additionally suppresses resign-key dismissal, not Escape,
+Command-W or explicit dismissal. `TOY_BOX_QUICK_SEND_VALIDATION` accepts the same launch-only
+values for a test bundle launched through Launch Services. The command-line value wins.
+The mode is recorded only in the volatile argument domain, never saved as a preference, and
+cannot be combined with snapshots or benchmarks. Normal launches leave it unset.
 
 **Catch-up summary.** When you return to a busy channel, a short on-device summary sits above the
 New divider. Each line points at the messages it came from.

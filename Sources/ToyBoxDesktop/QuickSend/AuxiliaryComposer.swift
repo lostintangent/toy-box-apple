@@ -4,9 +4,9 @@ import ChannelKit
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// Shared editing surface for Quick Ask and a single expanded inbox request.
+/// Shared editing surface for Quick Send and a single expanded inbox request.
 struct AuxiliaryComposer: View {
-    enum Style { case quickAsk, reply }
+    enum Style { case quickSend, reply }
 
     @Bindable var session: AuxiliaryComposerSession
     var style: Style = .reply
@@ -77,7 +77,7 @@ struct AuxiliaryComposer: View {
                         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { imageHeight = $0 }
                 }
                 editor
-                controls.padding(.top, style == .quickAsk ? 12 : 4)
+                controls.padding(.top, style == .quickSend ? 12 : 4)
             }
         }
         .fileImporter(isPresented: $showPicker, allowedContentTypes: [.image], allowsMultipleSelection: true) { result in
@@ -119,24 +119,24 @@ struct AuxiliaryComposer: View {
         return ZStack(alignment: .topLeading) {
             if draft.text.isEmpty && !dictation.hasWords {
                 Text(dictation.isListening ? "Listening…" : "Message this channel, or @mention an agent")
-                    .font(.system(size: (style == .quickAsk ? 16 : 14) * textScale))
+                    .font(.system(size: (style == .quickSend ? 16 : 14) * textScale))
                     .foregroundStyle(.secondary)
                     .padding(12)
                     .accessibilityHidden(true)
             }
             NativeComposerInput(
                 text: $draft.text, document: draftID, height: $inputHeight, focused: $focused, dragging: $dragging,
-                fontSize: (style == .quickAsk ? 16 : 14) * textScale, focusRequest: focusRequest,
+                fontSize: (style == .quickSend ? 16 : 14) * textScale, focusRequest: focusRequest,
                 agents: store.roster, canManage: false, onSend: { send(opensChannel: false) },
                 onFiles: draft.attachFiles, onImage: draft.append, onError: { draft.error = $0 },
                 onCreate: { _ in throw AuxiliaryEditingError.managementUnavailable }, onEdit: { _ in },
                 dictation: dictation, allowsAgentManagement: false, isEditable: canEdit,
-                minimumHeight: style == .quickAsk ? 100 : 84, maximumLineCount: style == .quickAsk ? 10 : 3,
+                minimumHeight: style == .quickSend ? 100 : 84, maximumLineCount: style == .quickSend ? 10 : 3,
                 startsAtEnd: true,
                 onSendAndOpen: { send(opensChannel: true) }, onEscape: dismissOrStopDictation,
                 onChooseChannel: onChooseChannel
             )
-            .frame(height: style == .quickAsk
+            .frame(height: style == .quickSend
                    ? min(inputHeight, max(100, 300 - noticeRegionHeight
                                           - (draft.images.isEmpty ? 0 : imageHeight)))
                    : 60 * textScale + 24)
