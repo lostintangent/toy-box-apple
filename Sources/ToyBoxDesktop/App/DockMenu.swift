@@ -5,22 +5,24 @@ import Foundation
 enum DockMenu {
     static let titleLimit = 120
 
-    static func make(status: MenuBarStatus, quickSendEnabled: Bool, canCreateChannel: Bool,
+    static func make(status: MenuBarStatus, hasCatalog: Bool, quickSendEnabled: Bool, canCreateChannel: Bool,
                      open: @escaping (MenuBarStatus.Item) -> Void,
                      quickSend: @escaping () -> Void, newChannel: @escaping () -> Void) -> NSMenu {
         let menu = NSMenu(title: "Toy Box")
         menu.autoenablesItems = false
-        if status.waiting.isEmpty {
-            let empty = NSMenuItem(title: "Nothing needs you", action: nil, keyEquivalent: "")
-            empty.isEnabled = false
-            menu.addItem(empty)
+        if !hasCatalog {
+            menu.addItem(disabled("Connect to Toy Box"))
         } else {
+            if status.unreachableHost != nil { menu.addItem(disabled("May be out of date")) }
+            if status.waiting.isEmpty {
+                menu.addItem(disabled(status.unreachableHost == nil ? "Nothing needs you" : "Connect to Toy Box"))
+            }
             for request in status.waiting {
                 let question = request.quote?.split(whereSeparator: \.isWhitespace).joined(separator: " ") ?? ""
                 let name = request.name.split(whereSeparator: \.isWhitespace).joined(separator: " ")
                 let fullTitle = "\(name): \(question.isEmpty ? MenuBarStatus.needsReply : question)"
                 let item = item(NotificationText.truncated(fullTitle, limit: titleLimit)) { open(request) }
-                item.toolTip = fullTitle
+                item.toolTip = request.agent.map { "\(fullTitle)\n\($0.name) needs your reply" } ?? fullTitle
                 menu.addItem(item)
             }
         }
@@ -32,6 +34,12 @@ enum DockMenu {
         create.isEnabled = canCreateChannel
         menu.addItem(create)
         return menu
+    }
+
+    private static func disabled(_ title: String) -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        item.isEnabled = false
+        return item
     }
 
     private static func item(_ title: String, action: @escaping () -> Void) -> NSMenuItem {
@@ -108,7 +116,8 @@ final class DockAttention {
 extension AppModel {
     func makeDockMenu() -> NSMenu {
         let server = serverURL
-        return DockMenu.make(status: menuBarStatus, quickSendEnabled: quickSend.isEnabled,
+        return DockMenu.make(status: menuBarStatus, hasCatalog: catalog?.state != nil,
+                             quickSendEnabled: quickSend.isEnabled,
                              canCreateChannel: api != nil, open: { [weak self] item in
             guard let self else { return }
             guard self.serverURL == server else {

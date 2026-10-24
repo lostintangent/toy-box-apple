@@ -18,7 +18,8 @@ struct DockMenuTests {
         var opened: [MenuBarStatus.Item] = []
         var sent = 0
         var created = 0
-        let menu = DockMenu.make(status: .init(waiting: requests), quickSendEnabled: true, canCreateChannel: true,
+        let menu = DockMenu.make(status: .init(waiting: requests), hasCatalog: true,
+                                quickSendEnabled: true, canCreateChannel: true,
                                 open: { opened.append($0) }, quickSend: { sent += 1 }, newChannel: { created += 1 })
         #expect(menu.items.map(\.title) == [
             "newest: Should I tag v0.1.4?", "Core: Should I tag v0.1.4?", "oldest: Should I tag v0.1.4?",
@@ -26,6 +27,7 @@ struct DockMenuTests {
         ])
         #expect(!menu.autoenablesItems)
         #expect(menu.items[3].isSeparatorItem)
+        #expect(opened.isEmpty && sent == 0 && created == 0, "Opening the menu must not perform any action.")
         for index in [0, 1, 2, 4, 5] {
             let item = menu.items[index]
             let action = try #require(item.action)
@@ -38,7 +40,7 @@ struct DockMenuTests {
     }
 
     @Test func emptyMenusHaveOneDisabledLineAndUnavailableCommandsStayDisabled() {
-        let menu = DockMenu.make(status: .init(), quickSendEnabled: false, canCreateChannel: false,
+        let menu = DockMenu.make(status: .init(), hasCatalog: true, quickSendEnabled: false, canCreateChannel: false,
                                 open: { _ in Issue.record("There is no request to open.") },
                                 quickSend: {}, newChannel: {})
         #expect(menu.items.map(\.title) == ["Nothing needs you", "", "Quick Send\u{2026}", "New Channel\u{2026}"])
@@ -51,6 +53,7 @@ struct DockMenuTests {
     @Test func longQuestionsKeepTheirFullPlainTextInHelpAndUnavailablePreviewsStayHonest() {
         let quote = Array(repeating: "A long question about the release", count: 20).joined(separator: "\n")
         let menu = DockMenu.make(status: .init(waiting: [waiting(quote: quote), waiting("unknown", quote: nil)]),
+                                hasCatalog: true,
                                 quickSendEnabled: true, canCreateChannel: true,
                                 open: { _ in }, quickSend: {}, newChannel: {})
         #expect(menu.items[0].title.count <= DockMenu.titleLimit)
@@ -156,10 +159,32 @@ struct DockMenuTests {
 
     @Test func everyWaitingRequestIsListedWithoutTheWorkingSectionLimit() {
         let requests = (1...25).map { waiting("channel-\($0)", sequence: $0) }
-        let menu = DockMenu.make(status: .init(waiting: requests), quickSendEnabled: true, canCreateChannel: true,
+        let menu = DockMenu.make(status: .init(waiting: requests), hasCatalog: true,
+                                quickSendEnabled: true, canCreateChannel: true,
                                 open: { _ in }, quickSend: {}, newChannel: {})
         #expect(menu.items.count == requests.count + 3)
         #expect(menu.items[24].title == "channel-25: Should I tag v0.1.4?")
+    }
+
+    @Test func offlineMenusLabelCachedRequestsAndNeverClaimAnUnverifiedEmptyInbox() {
+        var request = waiting()
+        request.agent = .lead(id: "lead")
+        let cached = DockMenu.make(status: .init(waiting: [request], unreachableHost: "server"), hasCatalog: true,
+                                  quickSendEnabled: true, canCreateChannel: true,
+                                  open: { _ in }, quickSend: {}, newChannel: {})
+        #expect(cached.items.map(\.title).prefix(2) == ["May be out of date", "Core: Should I tag v0.1.4?"])
+        #expect(!cached.items[0].isEnabled)
+        #expect(cached.items[1].isEnabled)
+        #expect(cached.items[1].toolTip == "Core: Should I tag v0.1.4?\nLead needs your reply")
+        for (status, hasCatalog) in [(MenuBarStatus(), false),
+                                     (MenuBarStatus(unreachableHost: "server"), false),
+                                     (MenuBarStatus(unreachableHost: "server"), true)] {
+            let empty = DockMenu.make(status: status, hasCatalog: hasCatalog,
+                                     quickSendEnabled: true, canCreateChannel: true,
+                                     open: { _ in }, quickSend: {}, newChannel: {})
+            #expect(empty.items.contains { $0.title == "Connect to Toy Box" && !$0.isEnabled })
+            #expect(!empty.items.contains { $0.title == "Nothing needs you" })
+        }
     }
 
     @Test func theApplicationDelegateReturnsTheInjectedNativeMenu() {

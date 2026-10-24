@@ -343,7 +343,7 @@ final class AppModel {
     /// Keeps the status item in step with activity, including an open channel's live presence.
     private func observeMenuBarActivity() {
         let (status, hasCatalog) = withObservationTracking {
-            (menuBarStatus, catalog?.lastRefreshedAt != nil)
+            (menuBarStatus, catalog?.hasLoaded == true)
         } onChange: { [weak self] in
             Task { @MainActor in self?.observeMenuBarActivity() }
         }
