@@ -144,7 +144,7 @@ struct MorningDigestTests {
         ], channels: [], serverURL: "https://example.test", activeChannelID: "a").isEmpty)
     }
 
-    @Test func serverChangesAndDisablingDuringGenerationCancelDelivery() async throws {
+    @Test func serverAndPreferenceChangesDuringGenerationCancelDelivery() async throws {
         let suite = "MorningDigestTests.\(UUID())"
         let defaults = try #require(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
@@ -171,6 +171,18 @@ struct MorningDigestTests {
         ), defaults: defaults, allowed: true,
            now: { date("2026-10-24T08:00:00Z") }, calendar: calendar)
         await disabled.check()
+        #expect(defaults.object(forKey: MorningDigest.lastRunKey) == nil)
+        defaults.set(true, forKey: MorningDigest.enabledKey)
+        let rescheduled = MorningDigest(host: .init(
+            server: { server }, authorized: { true },
+            build: { _ in
+                defaults.set(540, forKey: MorningDigest.timeKey)
+                return .init(lines: [.init(channelID: "a", name: "Studio", count: 2, text: "2 new messages")])
+            },
+            deliver: { _, _, _ in Issue.record("The new delivery time has not arrived") }
+        ), defaults: defaults, allowed: true,
+           now: { date("2026-10-24T08:00:00Z") }, calendar: calendar)
+        await rescheduled.check()
         #expect(defaults.object(forKey: MorningDigest.lastRunKey) == nil)
     }
 

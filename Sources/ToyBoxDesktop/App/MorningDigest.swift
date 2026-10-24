@@ -121,7 +121,8 @@ final class MorningDigest {
             guard !Task.isCancelled, host.server() == server,
                   defaults.object(forKey: Self.enabledKey) as? Bool != false,
                   defaults.bool(forKey: "notificationsEnabled"),
-                  Self.window(now: now(), calendar: calendar(), minutes: minutes,
+                  Self.window(now: now(), calendar: calendar(),
+                              minutes: defaults.object(forKey: Self.timeKey) as? Int ?? 480,
                               lastRun: defaults.object(forKey: Self.lastRunKey) as? Date,
                               coveredThrough: nil) != nil else { return }
             if !content.lines.isEmpty {
@@ -140,6 +141,7 @@ final class MorningDigest {
     func sendTest() async {
         guard testAllowed, Self.canTest(bundleID: Bundle.main.bundleIdentifier, options: nil, server: host.server()),
               !isRunning else { return }
+        let server = host.server()
         isRunning = true
         defer { isRunning = false }
         guard await host.authorized() else {
@@ -147,7 +149,7 @@ final class MorningDigest {
             return
         }
         do {
-            let server = host.server()
+            guard host.server() == server else { return }
             let date = now()
             let content = try await host.build(Window(since: date.addingTimeInterval(-86_400), through: date))
             guard host.server() == server else { return }
