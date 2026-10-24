@@ -18,6 +18,7 @@ final class AppModel {
     let resizeBenchmark: ResizeBenchmark?
     let performanceBenchmark: PerformanceBenchmark?
     let updates: AppUpdates
+    let openAtLogin: OpenAtLogin
     let quickSend: QuickSendController
     let widgetSnapshots: WidgetSnapshotPublisher
     private let dockAttention: DockAttention
@@ -51,6 +52,8 @@ final class AppModel {
     init(launchOptions: LaunchOptions = .init()) {
         self.launchOptions = launchOptions
         updates = AppUpdates(isSnapshot: launchOptions.isSnapshot)
+        openAtLogin = OpenAtLogin(isAvailable: OpenAtLogin.isAllowed(
+            launchOptions, bundleID: Bundle.main.bundleIdentifier))
         quickSend = QuickSendController(options: launchOptions)
         widgetSnapshots = WidgetSnapshotPublisher(enabled:
             !launchOptions.isSnapshot && launchOptions.benchmark == nil && launchOptions.resizeBenchmark == nil

@@ -23,6 +23,7 @@ struct ToyBoxDesktopApp: App {
             AppPreferencesMigration.run(isSnapshot: options.isSnapshot)
             AppDelegate.isSnapshot = options.isSnapshot
             AppDelegate.launchedInBackground = NSRunningApplication.current.activationPolicy == .prohibited
+            AppDelegate.detectLoginLaunch()
             if options.isSnapshot || options.quickSendValidation != nil {
                 var arguments = UserDefaults.standard.volatileDomain(forName: UserDefaults.argumentDomain)
                 if options.isSnapshot { arguments["ApplePersistenceIgnoreState"] = true }
@@ -51,32 +52,18 @@ struct ToyBoxDesktopApp: App {
     }
 
     var body: some Scene {
+        let _ = configureWindowActions()
         WindowGroup("Channels", id: "channels", for: ChannelWindowValue.self) { $value in
             root(channelID: value?.channelID ?? model.launchOptions.channelID)
         }
         .defaultSize(width: CGFloat(model.launchOptions.width), height: CGFloat(model.launchOptions.height))
-        .defaultLaunchBehavior(AppDelegate.launchedInBackground ? .suppressed : .presented)
-        .restorationBehavior(model.launchOptions.isSnapshot ? .disabled : .automatic)
+        // Wait for the open-application event before deciding whether to open a first window.
+        .defaultLaunchBehavior(.suppressed)
+        .restorationBehavior(model.launchOptions.isSnapshot || AppDelegate.launchedAtLogin ? .disabled : .automatic)
         .windowStyle(.automatic)
         .commands { ChannelCommands(model: model) }
         .onChange(of: scenePhase, initial: true) { _, phase in
-            model.openChannelWindow = { openWindow(value: ChannelWindowValue(channelID: $0)) }
-            model.openMainWindow = { openWindow(id: "channels") }
-            guard !model.launchOptions.isSnapshot else { return }
-            appDelegate.openChannelWindow = { openWindow(id: "channels") }
-            if phase != .background { appDelegate.comeForward() }
-            guard !appDelegate.isInBackground else { return }
-            if phase == .active {
-                Task { await model.authorizeImportedNotificationsIfNeeded() }
-            }
-            guard !didCheckStartupWindow || phase == .active else { return }
-            didCheckStartupWindow = true
-            DispatchQueue.main.async {
-                guard AppDelegate.quickSendIntake?.hasReceivedContent != true else { return }
-                if !NSApp.windows.contains(where: { ($0.isVisible || $0.isMiniaturized) && $0.canBecomeMain }) {
-                    openWindow(id: "channels")
-                }
-            }
+            updateStartupWindow(phase: phase)
         }
 
         Settings {
@@ -100,6 +87,36 @@ struct ToyBoxDesktopApp: App {
 
     private var menuBarInserted: Binding<Bool> {
         Binding(get: { model.showsMenuBarExtra && model.menuBar.isInserted }, set: { _ in })
+    }
+
+    private func configureWindowActions() {
+        model.openChannelWindow = { openWindow(value: ChannelWindowValue(channelID: $0)) }
+        model.openMainWindow = { openWindow(id: "channels") }
+        appDelegate.openChannelWindow = { openWindow(id: "channels") }
+        appDelegate.openStartupWindow = { updateStartupWindow(phase: scenePhase) }
+    }
+
+    private func updateStartupWindow(phase: ScenePhase) {
+        guard appDelegate.didFinishLaunching else { return }
+        if !model.launchOptions.isSnapshot, phase != .background { appDelegate.comeForward() }
+        if phase == .active, !model.launchOptions.isSnapshot, !appDelegate.isInBackground,
+           !AppDelegate.launchedAtLogin || NSApp.windows.contains(where: { $0.isVisible && $0.canBecomeMain }) {
+            Task { await model.authorizeImportedNotificationsIfNeeded() }
+        }
+        guard !AppLoginLaunch.suppressesStartupWindow(
+            login: AppDelegate.launchedAtLogin, backgroundIntent: AppDelegate.launchedInBackground
+        ) else { return }
+        guard !didCheckStartupWindow || phase == .active else { return }
+        didCheckStartupWindow = true
+        DispatchQueue.main.async {
+            if AppLoginLaunch.shouldOpenStartupWindow(
+                login: AppDelegate.launchedAtLogin, backgroundIntent: AppDelegate.launchedInBackground,
+                receivedContent: AppDelegate.receivedOpenEvent || AppDelegate.quickSendIntake?.hasReceivedContent == true,
+                hasMainWindow: NSApp.windows.contains(where: { ($0.isVisible || $0.isMiniaturized) && $0.canBecomeMain })
+            ) {
+                openWindow(id: "channels")
+            }
+        }
     }
 
     private func root(channelID: String?) -> some View {
@@ -128,18 +145,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// such as Catch Me Up or Send Message. Until something brings it forward, it opens no window
     /// and stays out of the Dock, so the system quits it once the intent finishes.
     static var launchedInBackground = false
+    static var launchedAtLogin = false
+    static var receivedOpenEvent = false
     static var quickSendIntake: QuickSendIntake?
     static var widgetURLHandler: ((URL) throws -> Bool)?
     static var dockMenuProvider: (() -> NSMenu)?
     private var cameForward = false
-    var isInBackground: Bool { Self.launchedInBackground && !cameForward }
+    var isInBackground: Bool { Self.launchedInBackground && !Self.launchedAtLogin && !cameForward }
     var openChannelWindow: (() -> Void)?
+    var openStartupWindow: (() -> Void)?
+    private(set) var didFinishLaunching = false
+
+    static func detectLoginLaunch() {
+        guard !isSnapshot, AppLoginLaunch.isLoginEvent(NSAppleEventManager.shared().currentAppleEvent) else { return }
+        launchedAtLogin = true
+        var arguments = UserDefaults.standard.volatileDomain(forName: UserDefaults.argumentDomain)
+        arguments["ApplePersistenceIgnoreState"] = true
+        UserDefaults.standard.setVolatileDomain(arguments, forName: UserDefaults.argumentDomain)
+    }
+
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        Self.detectLoginLaunch()
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        Self.detectLoginLaunch()
         // An accessory app stays out of the Dock but can still be activated, so a reopen, the menu
         // bar extra or a notification can bring it forward.
-        NSApplication.shared.setActivationPolicy(isInBackground ? .accessory : .regular)
+        NSApplication.shared.setActivationPolicy(AppLoginLaunch.activationPolicy(
+            login: Self.launchedAtLogin, backgroundIntent: isInBackground))
         NSApplication.shared.servicesProvider = Self.quickSendIntake
+        didFinishLaunching = true
+        DispatchQueue.main.async { self.openStartupWindow?() }
     }
 
     func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
@@ -147,10 +184,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldOpenUntitledFile(_ sender: NSApplication) -> Bool {
-        Self.quickSendIntake?.hasReceivedContent != true
+        Self.detectLoginLaunch()
+        return !AppLoginLaunch.suppressesStartupWindow(login: Self.launchedAtLogin, backgroundIntent: Self.launchedInBackground)
+            && !Self.receivedOpenEvent && Self.quickSendIntake?.hasReceivedContent != true
     }
 
     func application(_ sender: NSApplication, openFiles filenames: [String]) {
+        Self.receivedOpenEvent = true
         do {
             guard let intake = Self.quickSendIntake else { throw QuickSendIntake.IntakeError.unavailable }
             try intake.openFiles(filenames)
@@ -162,6 +202,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {
+        Self.receivedOpenEvent = true
         for url in urls {
             do {
                 if try Self.widgetURLHandler?(url) == true { continue }
@@ -200,6 +241,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldRestoreSecureApplicationState(_ app: NSApplication) -> Bool {
-        !Self.isSnapshot
+        Self.detectLoginLaunch()
+        return !Self.isSnapshot && !Self.launchedAtLogin
     }
 }

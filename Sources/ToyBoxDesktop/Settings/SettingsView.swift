@@ -34,9 +34,11 @@ struct SettingsView: View {
         .onAppear {
             serverURL = model.serverURL
             intelligenceAvailability = intelligence.availability
+            model.openAtLogin.refresh()
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             intelligenceAvailability = intelligence.availability
+            model.openAtLogin.refresh()
         }
         .task {
             await model.notifications.refreshAuthorization()
@@ -94,6 +96,40 @@ struct SettingsView: View {
                 .pickerStyle(.menu)
             } footer: {
                 footer("When Active shows the icon while agents are working or a channel is waiting for you.")
+            }
+            Section {
+                Toggle("Open at Login", isOn: Binding(
+                    get: { model.openAtLogin.isEnabled },
+                    set: { enabled in Task { await model.openAtLogin.setEnabled(enabled) } }
+                ))
+                .accessibilityLabel("Open at Login")
+                .disabled(!model.openAtLogin.isAvailable || model.openAtLogin.isUpdating)
+                if model.openAtLogin.isUpdating {
+                    ProgressView("Updating Login Items…").controlSize(.small)
+                }
+                if model.openAtLogin.requiresApproval {
+                    Label("Approval Required", systemImage: "exclamationmark.circle")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                if let message = model.openAtLogin.statusMessage {
+                    Text(message).font(.caption).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if model.openAtLogin.isAvailable,
+                   model.openAtLogin.statusMessage != nil {
+                    HStack {
+                        Button("Open Login Items…") { model.openAtLogin.openSettings() }
+                        if model.openAtLogin.requiresApproval {
+                            Button("Cancel Request") {
+                                Task { await model.openAtLogin.setEnabled(false) }
+                            }
+                        }
+                    }
+                    .disabled(model.openAtLogin.isUpdating)
+                }
+                if let error = model.openAtLogin.error { errorLabel(error) }
+            } footer: {
+                footer("Keep Toy Box ready in the Dock and menu bar without opening a window.")
             }
             Section {
                 HStack {
