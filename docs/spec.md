@@ -1056,6 +1056,16 @@ doesn't cross into other messages. Videos and files keep their own actions.
 Transcript owns the viewer and its transition. Shell routes the viewing toolbar and the zoom
 and close commands.
 
+**SVG attachments.** SVGs are images throughout the transcript filmstrip, viewer and gallery
+capsule, with the same loading, error and keyboard behavior as raster images. Read their intrinsic
+dimensions before the first layout when available. Decode and rasterize off the main thread,
+at the effective display size and scale up to the existing 8192-pixel cap. Keep vector detail sharp
+at supported zoom levels rather than enlarging a thumbnail, within that cap. Live Text receives
+the resulting `CGImage`. External image or font references must not trigger network requests.
+Malformed, unusably sized or unsupported SVGs show the existing retryable image error, never a
+crash, blank success state or unbounded allocation. This attachment path is separate from the
+artifact viewer's script-disabled SVG web renderer.
+
 Reactions are display-only in this client, matching the user pane. Use the existing emoji for
 done, agree, celebrate, love and laugh. Also show the projected looking/working reactions while
 the agent's live presence and matching status target permit them. Group by reaction, then show up
@@ -1383,10 +1393,10 @@ projects it, show the localized type ("Markdown") instead. Sort by `sharedAt` ne
 with undated items last and existing order preserved for equal dates. The tray is also
 newest-first. Clicking opens the artifact, and Space on a focused row shows Quick
 Look. The context menu offers Open, Quick Look, Show in Transcript (reveals the share event) and
-Copy Link. Markdown opens a native reader sheet or window with a selectable body, title, path,
-Open in Toy Box and Share or Copy Link. Other supported types use Quick Look or the default
-application. Show actual fetching and error states, and never open a blank success-shaped
-reader. Load reader content from the server resource URL, never by assuming the file is local.
+Copy Link. Markdown, HTML, SVG and image artifacts open the in-window artifact viewer below,
+not a reader sheet. Other types retain Quick Look and the default application. Show actual
+fetching and error states, and never open a blank success-shaped reader. Load content from the
+server resource URL, never by assuming the file is local.
 
 **Routines.** Rows share the artifact geometry: a 28-point icon cell with a 15-point secondary
 `calendar.badge.clock`, the title in 13 regular, and the schedule in words in 11 secondary:
@@ -1404,6 +1414,77 @@ context menu offer Run Now and Delete Routine…. Run disables while pending and
 requested" in place of the schedule line for 4 seconds, never as a synthetic transcript post.
 Delete has a native confirmation that names the routine. The user does not create or edit
 routines here, matching the pane.
+
+### Artifact viewer
+
+Shared work deserves the same direct, in-window treatment as an image, not a dialog around a
+document. Every artifact entry point uses `ArtifactOpener.open`: inspector rows, the composer
+tray, task links and transcript share events all open the same viewer. The person remains in
+their channel and can move between its artifacts without closing and reopening files.
+`docs/artifact-viewer.svg` is the layout wireframe, not evidence of native materials.
+
+| Part | Specification |
+| --- | --- |
+| Presentation | Replace the conversation and Overview with one viewer in the detail column, as the image gallery does. The source-list sidebar stays visible and usable. Keep the underlying transcript, composer draft, inspector width and visibility mounted and unchanged. No sheet, floating window, second sidebar or browser address bar |
+| Toolbar | Native window toolbar, not a custom header. Leading Back uses `chevron.backward`, help "Back to Conversation". The title is the artifact title, 14 semibold, one line with tail truncation. Subtitle is "Markdown · 2 of 5", "HTML · 3 of 5", "SVG · 4 of 5" or the localized file type. Omit position for one artifact. Full title and path are available in help. Trailing: Share (`square.and.arrow.up`) and More (`ellipsis`). Channel Actions, Message View, Find and Overview controls step aside until closing |
+| Canvas | Full bleed under the toolbar, with the same native scroll-edge treatment as the gallery. Images and SVG use `underPageBackgroundColor`. Markdown has a flat `textBackgroundColor` reading surface, without a boxed paper card, border or shadow. HTML retains its authored background inside the native frame. Do not recolor an artifact's artwork or HTML to imitate dark mode |
+| Navigation capsule | Only with two or more artifacts. Center horizontally, 16 points above the detail's bottom edge. Reuse the image gallery's regular interactive glass capsule, 8-point padding, 28 x 28 Previous/Next targets, 32-point preview cells, 6-point gaps and 6-point corners. Native Finder icons represent Markdown, HTML and unsupported types. Images and SVG use safely decoded thumbnails when available, otherwise their Finder icon. The current cell has the gallery's 2-point accent ring. Full titles appear in help and accessibility, not tiny filenames beneath every cell |
+| Order and identity | Use the inspector's channel artifact list, newest first, including unsupported types. Previous goes toward newer artifacts and Next toward older ones. Disable at either end, without wrapping. Past nine cells the strip scrolls and keeps the selected one visible. Track selection by server, channel and artifact ID, never its list index. Arrivals and metadata changes may update the list or count but never change the displayed artifact |
+| Content clearance | Markdown and HTML can scroll their final content fully above the capsule, leaving at least 16 points of clear space. Images and SVG fit within 24-point side margins, 16 points below the toolbar and 16 above the capsule. Without a capsule, retain a 24-point bottom margin. At 760 x 560, the reading surface and navigation still work, and long titles yield before toolbar actions |
+| Actions | Share uses the original artifact resource, not a screenshot or sandbox wrapper. More contains Open in Toy Box, Reload and Copy Link. Keep Quick Look and Open in the default application available for supported files. Show in Transcript is available when the share event is known and closes the viewer before using the existing reveal path. Failed actions show an explicit, actionable error without discarding the displayed artifact |
+| Transition and return | Open and close with a 0.2-second crossfade, not a zoom from a document icon. Paging crossfades with the gallery's 40-point directional slide. Reduce Motion uses crossfade only. Closing returns to the exact channel reading position and draft. Restore the wide inspector's previous state. A narrow Overview sheet dismisses before opening and is not automatically reopened on close. Return keyboard focus to the invoking artifact control when it still exists, otherwise its owning section or the Overview toolbar button |
+
+#### Each kind keeps its own strengths
+
+| Content | Behavior |
+| --- | --- |
+| Markdown | Render natively with `TranscriptMarkdown`, selectable text, normal links, code and tables. Use a centered text lane at most 720 points wide, at least 24-point side insets and 32-point top padding. Body is 15-point system text with 4-point additional line spacing; code is 13-point monospaced. Follow the app's Text Size setting. Do not display source syntax or put prose inside a web view. Keep document scroll position when revisiting it during this viewer visit |
+| HTML | Display the authored page in `WKWebView`, filling the available content area. Preserve its responsive layout, forms and interactions. Use a non-persistent data store and the reference pane's CSP sandbox with scripts, forms, modals, popups and user-activated external navigation, but no same-origin permission. Its origin is opaque, and it must have no Toy Box server cookies, API access or privileged host bridge. Relative resources resolve from the artifact's directory. User-activated links and new-window requests open in the default browser, never replace the Toy Box channel. Leave ordinary text input, selection and scrolling with the web view |
+| SVG | Use a separate `WKWebView` configuration with JavaScript disabled. Fit the drawing without cropping, preserve transparent backgrounds, and allow magnification and pan. Use the same isolated resource and navigation policy as HTML. Never execute scripts to display a drawing. This is a viewing surface, not an SVG editor |
+| Raster images | Use the native image rendering and zoom/pan behavior of the image gallery, including Live Text when available. Changing artifacts resets image zoom as changing gallery images does. Do not fabricate a transcript message to represent an artifact |
+| Other files | Keep the artifact title, type and gallery position visible. Center the real file icon, a short explanation, Quick Look and Open in the default application. Unsupported content is an honest fallback, not a failed Markdown page. Quick Look may use its normal system panel |
+
+Same-document anchors stay inside the artifact. The HTML policy follows
+`src/shared/embeddedHtml.ts` in the reference. Its current permissions
+are downloads, forms, modals, popups, scripts and top navigation by user activation, deliberately
+without `allow-same-origin`. The native implementation must establish the equivalent boundary,
+not merely use a private cookie jar. The trusted loader may fetch the artifact and approved
+relative resources; the embedded page cannot use that loader as arbitrary server API access.
+Block privileged URL schemes. Do not add a JavaScript bridge into the app. Stop a web renderer's
+work when paging away or closing, rather than keeping hidden interactive pages running.
+
+#### Keyboard, accessibility and state
+
+Back and Escape close the viewer. Escape first dismisses an active native popover or dialog.
+Left and Right page when the viewer or strip owns keyboard focus, but never intercept text
+selection, caret movement, form controls or a web page's own interaction. Space belongs to the
+focused control or scrollable document, not a universal artifact-dismiss shortcut. This is an
+intentional difference from the image-only gallery because an artifact may be interactive.
+Native Markdown supports normal scrolling and selection keys; image/SVG zoom commands apply
+only to those renderers. The content remains read-only unless the artifact itself is an
+interactive HTML page. Editing the original file stays in Open in Toy Box.
+
+Expose one modal viewer region within the channel window. The sidebar remains available, but
+the covered transcript and inspector are absent from the accessibility tree. Focus first moves
+to the artifact title or document, announced as "[Title], [Type], artifact 2 of 5". Name controls
+"Back to Conversation", "Previous Artifact", "Next Artifact" and "[Title], selected, 2 of 5".
+Use native document and web accessibility rather than one flattened text label. Loading and
+failure announcements are polite and occur once, not on every layout pass.
+
+| State | Required result |
+| --- | --- |
+| Loading | Show the final-size viewer and title immediately. A mini spinner with "Loading artifact…" appears after 300 ms. Keep Back, the strip and available navigation working. Cancel obsolete loads so a late response cannot replace the newly selected artifact |
+| Load failure | Center `doc.badge.ellipsis`, "Couldn't Load Artifact", the actual useful error and Retry. Keep the selected cell, title and neighbor navigation. Never turn failure into an empty document |
+| Missing or removed artifact | "Artifact Unavailable" and "This artifact is no longer available." Keep Back and other artifacts available. Do not silently substitute a neighbor |
+| No artifacts | `doc`, "No Artifacts Yet", "Files shared by this team will appear here." No empty capsule or enabled paging arrows |
+| Offline | Keep already loaded content visible. A fetch that cannot complete shows the existing connection error and Retry rather than a false empty state |
+| Channel/server change | Close the viewer without animation and cancel its loads. A deleted channel returns to the normal deleted-channel state. Do not retain another server's files, gallery or web state |
+
+Opening, rendering, paging and closing never post messages, answer requests or mark underlying
+messages read. Do not restore a viewer on app relaunch. One viewer per channel window is active
+at a time; opening an attachment image replaces an artifact viewer and vice versa, without a
+stack of hidden viewers. Overview owns the artifact presentation, loaders and renderers.
+The existing image gallery remains Transcript's surface.
 
 ### Management and Settings
 
@@ -2216,6 +2297,11 @@ real AppKit/SwiftUI behavior over a custom imitation, and preserve it through al
 | Text and information density | Short content never shows an unnecessary Show More. Timestamps do not tick every second. Full values remain available without turning every row into a multi-line card. Messages and artifact prose are genuinely selectable |
 | Platform appearance | Light, dark, inactive selection, user accent, increased contrast, reduced transparency and reduced motion retain the same hierarchy and meaning. Custom rendering is justified only when native controls cannot meet the behavior |
 | Evidence and closure | Recheck the actual corrected build, not just the intended code change. A screenshot closes only the visual state it shows. Missing interaction or accessibility evidence remains explicitly open |
+
+Every user-visible feature lands with its README update in the same pass. Designer keeps the
+README grouped around the most compelling user outcomes, rather than appending a release log.
+Feature owners provide the accepted behavior and any limits so it does not advertise a future
+capability as already shipped.
 
 #### Accessibility audit evidence, 2026-10-22
 

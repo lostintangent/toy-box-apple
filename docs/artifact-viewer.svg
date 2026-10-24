@@ -1,0 +1,312 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1640 1460" fill="none" font-family="-apple-system, BlinkMacSystemFont, Helvetica, Arial, sans-serif">
+  <title>Artifact viewer for Toy Box</title>
+  <desc>A native 1280 by 840 point channel window with a readable Markdown artifact replacing the conversation and inspector. The channel sidebar stays, native Back, Share and More controls frame the document, and the existing image-gallery capsule moves between artifacts. Supporting detail excerpts show interactive HTML, a script-disabled SVG in Dark appearance, and an explicit loading failure. Materials are schematic, not native-rendering evidence.</desc>
+  <defs>
+    <linearGradient id="sidebar-material" x1="32" y1="90" x2="280" y2="930" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#edf0f5"/>
+      <stop offset="1" stop-color="#e7ebf0"/>
+    </linearGradient>
+    <linearGradient id="gallery-material" x1="660" y1="866" x2="660" y2="914" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ffffff" stop-opacity=".96"/>
+      <stop offset="1" stop-color="#f0f1f4" stop-opacity=".94"/>
+    </linearGradient>
+    <linearGradient id="image-preview" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#9edee6"/>
+      <stop offset="1" stop-color="#7e93ca"/>
+    </linearGradient>
+    <filter id="capsule-lift" x="-15%" y="-40%" width="130%" height="190%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="3" stdDeviation="7" flood-color="#162336" flood-opacity=".12"/>
+    </filter>
+  </defs>
+
+  <g id="proposal-heading">
+    <text x="32" y="36" fill="#18212d" font-size="26" font-weight="650">Artifacts, without leaving the channel</text>
+    <text x="32" y="62" fill="#66717d" font-size="14">A proposal for Toy Box 0.1.5. Same gallery chrome, a renderer suited to each file. Materials are schematic.</text>
+  </g>
+
+  <g id="markdown-channel-window">
+    <rect x="32.5" y="90.5" width="1279" height="839" rx="14" fill="#ffffff" stroke="#c8cfd8"/>
+    <path d="M47 91H280V929H47A14 14 0 0 1 33 915V105A14 14 0 0 1 47 91Z" fill="url(#sidebar-material)"/>
+    <path d="M280 91V929" stroke="#d5dbe3"/>
+  </g>
+
+  <g id="sidebar-window-controls">
+    <circle cx="54" cy="116" r="6" fill="#ff6058"/>
+    <circle cx="74" cy="116" r="6" fill="#ffbe2f"/>
+    <circle cx="94" cy="116" r="6" fill="#2bc840"/>
+    <rect x="120" y="109" width="18" height="14" rx="3" stroke="#65717f" stroke-width="1.5"/>
+    <path d="M126 110V122" stroke="#65717f" stroke-width="1.5"/>
+    <text x="153" y="121" fill="#293443" font-size="13" font-weight="600">Channels</text>
+    <path d="M252 110V122M246 116H258" stroke="#65717f" stroke-width="1.5" stroke-linecap="round"/>
+  </g>
+
+  <g id="sidebar-search">
+    <rect x="48" y="148" width="216" height="30" rx="15" fill="#ffffff" fill-opacity=".7"/>
+    <circle cx="64" cy="162" r="4" stroke="#8a94a1" stroke-width="1.3"/>
+    <path d="M67 165L71 169" stroke="#8a94a1" stroke-width="1.3" stroke-linecap="round"/>
+    <text x="80" y="167" fill="#85909c" font-size="12">Search Channels</text>
+  </g>
+
+  <g id="sidebar-working-channel">
+    <circle cx="64" cy="218" r="15" fill="#22a4c0"/>
+    <path d="M62 211L60 225M68 211L66 225M58 215H71M57 221H70" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round"/>
+    <text x="88" y="213" fill="#283443" font-size="13" font-weight="600">Studio</text>
+    <text x="88" y="231" fill="#7b8795" font-size="11">Designing the next release</text>
+    <circle cx="252" cy="213" r="3.5" fill="#1685ef"/>
+  </g>
+
+  <g id="sidebar-selected-channel">
+    <rect x="40" y="252" width="232" height="54" rx="8" fill="#167bf0"/>
+    <circle cx="64" cy="279" r="15" fill="#ffffff" fill-opacity=".2"/>
+    <path d="M62 272L60 286M68 272L66 286M58 276H71M57 282H70" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round"/>
+    <text x="88" y="273" fill="#ffffff" font-size="13" font-weight="600">Launch site</text>
+    <text x="88" y="291" fill="#ffffff" fill-opacity=".82" font-size="11">toy-box</text>
+    <path d="M245 271H254A3 3 0 0 1 257 274V279A3 3 0 0 1 254 282H250L246 286V282H245A3 3 0 0 1 242 279V274A3 3 0 0 1 245 271Z" fill="#ffffff"/>
+    <path d="M248 275A2 2 0 1 1 250 277V278M250 280V280.2" stroke="#167bf0" stroke-width="1.2" stroke-linecap="round"/>
+  </g>
+
+  <g id="sidebar-other-channels">
+    <circle cx="64" cy="344" r="15" fill="#22a4c0"/>
+    <path d="M62 337L60 351M68 337L66 351M58 341H71M57 347H70" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round"/>
+    <text x="88" y="339" fill="#283443" font-size="13" font-weight="600">Research notes</text>
+    <text x="88" y="357" fill="#7b8795" font-size="11">Three directions to explore</text>
+    <circle cx="64" cy="406" r="15" fill="#22a4c0"/>
+    <path d="M62 399L60 413M68 399L66 413M58 403H71M57 409H70" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round"/>
+    <text x="88" y="401" fill="#283443" font-size="13" font-weight="600">API cleanup</text>
+    <text x="88" y="419" fill="#7b8795" font-size="11">Ready for review</text>
+    <circle cx="252" cy="403" r="7" fill="#196c2e"/>
+    <path d="M248.5 403L251 405.5L255 400.8" stroke="#e9edf2" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="64" cy="468" r="15" fill="#22a4c0"/>
+    <path d="M62 461L60 475M68 461L66 475M58 465H71M57 471H70" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round"/>
+    <text x="88" y="463" fill="#283443" font-size="13" font-weight="600">Design crit</text>
+    <text x="88" y="481" fill="#7b8795" font-size="11">Review the onboarding flow</text>
+  </g>
+
+  <g id="sidebar-server">
+    <circle cx="54" cy="907" r="3.5" fill="#399970"/>
+    <text x="64" y="911" fill="#7b8795" font-size="11">127.0.0.1:3210</text>
+  </g>
+
+  <g id="artifact-native-toolbar">
+    <g id="back-to-conversation">
+      <path d="M310 109L303 116L310 123" stroke="#526171" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+    <g id="artifact-title">
+      <text x="332" y="112" fill="#202a38" font-size="14" font-weight="600">Launch plan</text>
+      <text x="332" y="130" fill="#7b8795" font-size="11">Markdown · 2 of 5</text>
+    </g>
+    <g id="share-artifact">
+      <rect x="1214" y="100" width="32" height="32" rx="16" fill="#f7f8fa" stroke="#e5e8ed"/>
+      <path d="M1225 113V123H1235V113M1230 117V106M1226 110L1230 106L1234 110" stroke="#5a6878" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+    <g id="artifact-more">
+      <rect x="1262" y="100" width="32" height="32" rx="16" fill="#f7f8fa" stroke="#e5e8ed"/>
+      <circle cx="1272" cy="116" r="1.5" fill="#5a6878"/>
+      <circle cx="1278" cy="116" r="1.5" fill="#5a6878"/>
+      <circle cx="1284" cy="116" r="1.5" fill="#5a6878"/>
+    </g>
+  </g>
+
+  <g id="native-markdown-page">
+    <text x="436" y="218" fill="#1f2937" font-size="26" font-weight="650">A calmer way to ship</text>
+    <text x="436" y="258" fill="#354050" font-size="15">Bring the team's decisions, work and evidence into one place.</text>
+    <text x="436" y="282" fill="#354050" font-size="15">Keep the window calm. Make the next action unmistakable.</text>
+    <text x="436" y="338" fill="#24303f" font-size="20" font-weight="600">What we're shipping</text>
+    <circle cx="442" cy="372" r="2.5" fill="#536071"/>
+    <text x="458" y="377" fill="#354050" font-size="15">Know what needs you. Requests stay close, wherever you work.</text>
+    <circle cx="442" cy="403" r="2.5" fill="#536071"/>
+    <text x="458" y="408" fill="#354050" font-size="15">Answer in context. The question and your reply stay together.</text>
+    <circle cx="442" cy="434" r="2.5" fill="#536071"/>
+    <text x="458" y="439" fill="#354050" font-size="15">See the result. Designs and prototypes open in one viewer.</text>
+    <g id="markdown-code-block">
+      <rect x="436" y="476" width="720" height="88" rx="8" fill="#f3f4f6"/>
+      <text x="454" y="503" fill="#697586" font-family="SFMono-Regular, Menlo, monospace" font-size="13">// Keep the work inside its channel.</text>
+      <text x="454" y="525" fill="#37465a" font-family="SFMono-Regular, Menlo, monospace" font-size="13">open(artifact)</text>
+      <text x="454" y="547" fill="#37465a" font-family="SFMono-Regular, Menlo, monospace" font-size="13">returnToConversation()</text>
+    </g>
+    <text x="436" y="614" fill="#24303f" font-size="20" font-weight="600">The review loop</text>
+    <text x="436" y="647" fill="#354050" font-size="15">Read the plan, try the prototype, inspect the drawing.</text>
+    <text x="436" y="671" fill="#354050" font-size="15">Then go back to the exact message and draft you left.</text>
+    <g id="markdown-table">
+      <path d="M436 710H1156M436 749H1156M436 788H1156M436 827H1156" stroke="#e3e7ed"/>
+      <text x="448" y="736" fill="#344052" font-size="13" font-weight="600">Artifact</text>
+      <text x="888" y="736" fill="#344052" font-size="13" font-weight="600">Best way to see it</text>
+      <text x="448" y="775" fill="#536071" font-size="14">Launch plan</text>
+      <text x="888" y="775" fill="#536071" font-size="14">Native Markdown</text>
+      <text x="448" y="814" fill="#536071" font-size="14">Interactive prototype</text>
+      <text x="888" y="814" fill="#536071" font-size="14">Sandboxed HTML</text>
+    </g>
+    <rect x="1303" y="229" width="3" height="315" rx="1.5" fill="#a9b1bd" fill-opacity=".65"/>
+  </g>
+
+  <g id="channel-artifact-gallery">
+    <rect x="660" y="866" width="272" height="48" rx="24" fill="url(#gallery-material)" stroke="#dde2e8" filter="url(#capsule-lift)"/>
+    <g id="previous-artifact">
+      <path d="M685 884L679 890L685 896" stroke="#566475" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+    <g id="artifact-cell-brief">
+      <rect x="704" y="874" width="32" height="32" rx="6" fill="#e6ebf1"/>
+      <path d="M714 878H723L728 883V902H713V879Z" fill="#ffffff" stroke="#a8b7c8"/>
+      <path d="M723 879V884H728M717 889H724M717 893H724M717 897H722" stroke="#7a91ad" stroke-width="1"/>
+    </g>
+    <g id="artifact-cell-selected-markdown">
+      <rect x="738" y="870" width="40" height="40" rx="9" stroke="#167bf0" stroke-width="2"/>
+      <rect x="742" y="874" width="32" height="32" rx="6" fill="#e6ebf1"/>
+      <path d="M752 878H761L766 883V902H751V879Z" fill="#ffffff" stroke="#a8b7c8"/>
+      <path d="M761 879V884H766M755 889H762M755 893H762M755 897H760" stroke="#7a91ad" stroke-width="1"/>
+    </g>
+    <g id="artifact-cell-html">
+      <rect x="780" y="874" width="32" height="32" rx="6" fill="#e6ebf1"/>
+      <path d="M790 878H799L804 883V902H789V879Z" fill="#ffffff" stroke="#c0af9b"/>
+      <path d="M799 879V884H804M794 889L791 892L794 895M799 889L802 892L799 895" stroke="#bd8550" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+    <g id="artifact-cell-svg">
+      <rect x="818" y="874" width="32" height="32" rx="6" fill="#e9e7f3"/>
+      <path d="M825 890H843M834 881V899" stroke="#8a77bd" stroke-width="1.1"/>
+      <circle cx="827" cy="890" r="4" fill="#a4cdd8" stroke="#6c9fad"/>
+      <circle cx="841" cy="890" r="4" fill="#c3b5e9" stroke="#9683c5"/>
+    </g>
+    <g id="artifact-cell-image">
+      <rect x="856" y="874" width="32" height="32" rx="6" fill="url(#image-preview)"/>
+      <path d="M859 899L868 888L875 896L880 890L885 901Z" fill="#eef6f4" fill-opacity=".8"/>
+      <circle cx="879" cy="882" r="3" fill="#f9efd1"/>
+    </g>
+    <g id="next-artifact">
+      <path d="M907 884L913 890L907 896" stroke="#566475" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+  </g>
+
+  <g id="chrome-callout">
+    <path d="M1314 116H1330" stroke="#b0bccb"/>
+    <text x="1344" y="124" fill="#273649" font-size="16" font-weight="600">In-place, not a sheet</text>
+    <text x="1344" y="150" fill="#647387" font-size="13">The sidebar stays.</text>
+    <text x="1344" y="171" fill="#647387" font-size="13">Back returns to the same</text>
+    <text x="1344" y="192" fill="#647387" font-size="13">conversation, draft and</text>
+    <text x="1344" y="213" fill="#647387" font-size="13">inspector state.</text>
+    <text x="1344" y="247" fill="#647387" font-size="13">Share the original.</text>
+    <text x="1344" y="268" fill="#647387" font-size="13">Open in Toy Box and</text>
+    <text x="1344" y="289" fill="#647387" font-size="13">Reload live in More.</text>
+  </g>
+
+  <g id="reading-callout">
+    <path d="M1314 382H1330" stroke="#b0bccb"/>
+    <text x="1344" y="390" fill="#273649" font-size="16" font-weight="600">Readable, native text</text>
+    <text x="1344" y="416" fill="#647387" font-size="13">720-point maximum lane.</text>
+    <text x="1344" y="437" fill="#647387" font-size="13">15-point body, selectable.</text>
+    <text x="1344" y="458" fill="#647387" font-size="13">Code, tables and links</text>
+    <text x="1344" y="479" fill="#647387" font-size="13">keep their meaning.</text>
+    <text x="1344" y="513" fill="#647387" font-size="13">No faux paper card.</text>
+    <text x="1344" y="534" fill="#647387" font-size="13">No web view for Markdown.</text>
+  </g>
+
+  <g id="interaction-callout">
+    <text x="1344" y="650" fill="#273649" font-size="16" font-weight="600">Content stays in charge</text>
+    <text x="1344" y="676" fill="#647387" font-size="13">HTML keeps its layout,</text>
+    <text x="1344" y="697" fill="#647387" font-size="13">forms and interactions.</text>
+    <text x="1344" y="718" fill="#647387" font-size="13">Typing and selection do</text>
+    <text x="1344" y="739" fill="#647387" font-size="13">not trigger gallery paging.</text>
+    <text x="1344" y="773" fill="#647387" font-size="13">Escape and Back close.</text>
+    <text x="1344" y="794" fill="#647387" font-size="13">Space scrolls documents.</text>
+  </g>
+
+  <g id="gallery-callout">
+    <path d="M1314 889H1330" stroke="#b0bccb"/>
+    <text x="1344" y="871" fill="#273649" font-size="16" font-weight="600">One channel gallery</text>
+    <text x="1344" y="897" fill="#647387" font-size="13">Newest first. No wrapping.</text>
+    <text x="1344" y="918" fill="#647387" font-size="13">32-point cells, 28-point arrows.</text>
+    <text x="1344" y="939" fill="#647387" font-size="13">Only the selected item is live.</text>
+  </g>
+
+  <g id="supporting-excerpts-heading">
+    <text x="32" y="996" fill="#263346" font-size="22" font-weight="600">Same frame, different kinds of work</text>
+    <text x="32" y="1021" fill="#6b7787" font-size="13">Detail excerpts. The file supplies the content. Toy Box supplies a consistent way in, through and back.</text>
+  </g>
+
+  <g id="html-detail-excerpt">
+    <rect x="32.5" y="1044.5" width="495" height="327" rx="12" fill="#ffffff" stroke="#c8cfd8"/>
+    <path d="M51 1061L45 1067L51 1073" stroke="#65758b" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="66" y="1064" fill="#26364a" font-size="13" font-weight="600">Signup prototype</text>
+    <text x="66" y="1080" fill="#7c8999" font-size="10">HTML · 3 of 5</text>
+    <path d="M466 1067V1075H476V1067M471 1070V1060M467 1064L471 1060L475 1064" stroke="#65758b" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="500" cy="1068" r="1.3" fill="#65758b"/>
+    <circle cx="505" cy="1068" r="1.3" fill="#65758b"/>
+    <circle cx="510" cy="1068" r="1.3" fill="#65758b"/>
+    <g id="html-authored-prototype">
+      <text x="72" y="1132" fill="#92703d" font-size="10" font-weight="600" letter-spacing="1.3">A LITTLE LESS NOISE</text>
+      <text x="72" y="1169" fill="#303c45" font-size="28" font-weight="650">Room for the next idea.</text>
+      <text x="72" y="1198" fill="#687682" font-size="13">An interactive page, right where the team shared it.</text>
+      <rect x="72" y="1221" width="278" height="34" rx="7" fill="#fafbf9" stroke="#d8dfda"/>
+      <text x="84" y="1243" fill="#87948d" font-size="12">Your email</text>
+      <rect x="360" y="1221" width="128" height="34" rx="7" fill="#3c6555"/>
+      <text x="424" y="1243" fill="#ffffff" font-size="12" font-weight="600" text-anchor="middle">Join the preview</text>
+    </g>
+    <g id="html-mini-gallery">
+      <rect x="209" y="1319" width="142" height="36" rx="18" fill="#f0f2f5" fill-opacity=".96" stroke="#dde2e8"/>
+      <path d="M225 1332L220 1337L225 1342M335 1332L340 1337L335 1342" stroke="#6a788b" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+      <rect x="240" y="1327" width="20" height="20" rx="4" fill="#d9e2ed"/>
+      <rect x="268" y="1324" width="26" height="26" rx="6" stroke="#167bf0" stroke-width="1.5"/>
+      <rect x="271" y="1327" width="20" height="20" rx="4" fill="#e8dacc"/>
+      <rect x="302" y="1327" width="20" height="20" rx="4" fill="#d5cbea"/>
+    </g>
+  </g>
+
+  <g id="svg-dark-detail-excerpt">
+    <rect x="552.5" y="1044.5" width="495" height="327" rx="12" fill="#232529" stroke="#494d55"/>
+    <path d="M571 1061L565 1067L571 1073" stroke="#b1bbc9" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="586" y="1064" fill="#e5e9ef" font-size="13" font-weight="600">Release path</text>
+    <text x="586" y="1080" fill="#9aa5b3" font-size="10">SVG · 4 of 5</text>
+    <path d="M986 1067V1075H996V1067M991 1070V1060M987 1064L991 1060L995 1064" stroke="#b1bbc9" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="1020" cy="1068" r="1.3" fill="#b1bbc9"/>
+    <circle cx="1025" cy="1068" r="1.3" fill="#b1bbc9"/>
+    <circle cx="1030" cy="1068" r="1.3" fill="#b1bbc9"/>
+    <g id="svg-vector-drawing">
+      <text x="800" y="1141" fill="#e0e5ed" font-size="20" font-weight="600" text-anchor="middle">From an idea to a release</text>
+      <path d="M708 1210H749M851 1210H892" stroke="#91a2bd" stroke-width="1.5"/>
+      <path d="M744 1206L749 1210L744 1214M887 1206L892 1210L887 1214" stroke="#91a2bd" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+      <rect x="608" y="1180" width="100" height="60" rx="12" fill="#234754" stroke="#5e9db0"/>
+      <text x="658" y="1215" fill="#dceff3" font-size="14" font-weight="600" text-anchor="middle">Brief</text>
+      <rect x="750" y="1180" width="100" height="60" rx="12" fill="#423753" stroke="#9b82bd"/>
+      <text x="800" y="1215" fill="#eee5fa" font-size="14" font-weight="600" text-anchor="middle">Build</text>
+      <rect x="892" y="1180" width="100" height="60" rx="12" fill="#2c453a" stroke="#6d9e80"/>
+      <text x="942" y="1215" fill="#e0efe5" font-size="14" font-weight="600" text-anchor="middle">Review</text>
+      <text x="800" y="1278" fill="#a7b2c2" font-size="12" text-anchor="middle">Fit, magnify and pan. No scripts to display a drawing.</text>
+    </g>
+    <g id="svg-mini-gallery">
+      <rect x="729" y="1319" width="142" height="36" rx="18" fill="#363a41" stroke="#505762"/>
+      <path d="M745 1332L740 1337L745 1342M855 1332L860 1337L855 1342" stroke="#bac5d5" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+      <rect x="760" y="1327" width="20" height="20" rx="4" fill="#668591"/>
+      <rect x="788" y="1324" width="26" height="26" rx="6" stroke="#5ba7ff" stroke-width="1.5"/>
+      <rect x="791" y="1327" width="20" height="20" rx="4" fill="#9b82bd"/>
+      <rect x="822" y="1327" width="20" height="20" rx="4" fill="#5e9075"/>
+    </g>
+  </g>
+
+  <g id="error-detail-excerpt">
+    <rect x="1072.5" y="1044.5" width="495" height="327" rx="12" fill="#f6f7f9" stroke="#c8cfd8"/>
+    <path d="M1091 1061L1085 1067L1091 1073" stroke="#65758b" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="1106" y="1064" fill="#26364a" font-size="13" font-weight="600">Research notes</text>
+    <text x="1106" y="1080" fill="#7c8999" font-size="10">PNG · 5 of 5</text>
+    <path d="M1305 1137H1324L1334 1147V1181H1305Z" stroke="#94a0af" stroke-width="2" stroke-linejoin="round"/>
+    <path d="M1324 1138V1148H1333M1313 1158H1325M1313 1165H1325" stroke="#94a0af" stroke-width="1.5" stroke-linecap="round"/>
+    <text x="1320" y="1215" fill="#344155" font-size="18" font-weight="600" text-anchor="middle">Couldn't Load Artifact</text>
+    <text x="1320" y="1242" fill="#718097" font-size="12" text-anchor="middle">The server could not load this file.</text>
+    <rect x="1284" y="1260" width="72" height="28" rx="6" fill="#ffffff" stroke="#cbd2dc"/>
+    <text x="1320" y="1279" fill="#3b4b61" font-size="12" text-anchor="middle">Retry</text>
+    <g id="error-mini-gallery">
+      <rect x="1249" y="1319" width="142" height="36" rx="18" fill="#eef1f5" stroke="#dde2e8"/>
+      <path d="M1265 1332L1260 1337L1265 1342" stroke="#6a788b" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M1375 1332L1380 1337L1375 1342" stroke="#c3cad4" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+      <rect x="1280" y="1327" width="20" height="20" rx="4" fill="#d9e2ed"/>
+      <rect x="1311" y="1327" width="20" height="20" rx="4" fill="#e3d8cb"/>
+      <rect x="1339" y="1324" width="26" height="26" rx="6" stroke="#167bf0" stroke-width="1.5"/>
+      <rect x="1342" y="1327" width="20" height="20" rx="4" fill="#d8deea"/>
+    </g>
+  </g>
+
+  <g id="excerpt-captions">
+    <text x="32" y="1400" fill="#647387" font-size="13">HTML is interactive, with an opaque origin and no host access.</text>
+    <text x="552" y="1400" fill="#647387" font-size="13">SVG uses a separate, script-disabled renderer.</text>
+    <text x="1072" y="1400" fill="#647387" font-size="13">A failure keeps Back and the other artifacts available.</text>
+    <text x="32" y="1434" fill="#8792a2" font-size="12">The strip is shared across types. Arrows never hijack text input. Loaded content stays put until the person navigates or reloads.</text>
+  </g>
+</svg>
