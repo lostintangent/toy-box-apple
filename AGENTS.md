@@ -65,6 +65,9 @@ view.
   up. Warn the user before running it.
   Catch-up summaries stay off so the card can't land mid-measurement. `--summaries` leaves them on.
   Only one benchmark runs at a time on this Mac. Others wait for it, so never poll for one yourself.
+  Compare actual main-thread CPU work when the Mac is loaded: scroll reports CPU ms per 1,000
+  native points and paging reports CPU ms per older page, both informational. Judge wall-clock
+  hitches only on a quiet machine, since run-loop busy time includes scheduling delays.
 - `bun run generate-cron-fixtures ../toy-box` regenerates the cron fixtures from the
   reference without touching it.
 - Quit the instances you launch when you are done.

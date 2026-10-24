@@ -321,6 +321,11 @@ messages loaded and again with every older page loaded. It times the main run lo
 
 Launch and idle report the same figures with no budget.
 
+Scroll also reports actual main-thread CPU ms per 1,000 native points, and paging reports CPU ms
+per older page. These are informational, not new budgets. Compare CPU work when the Mac is
+loaded, since run-loop wall time includes scheduling delays. Judge hitches only on a quiet
+machine, with the same gesture, distance, loaded count and hover state in both builds.
+
 ## Design
 
 ### Direction and reference
