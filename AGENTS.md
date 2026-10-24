@@ -48,13 +48,13 @@ view.
 - `TOY_BOX_REAL_DICTATION_TESTS=1 bun run test --filter ComposerTests/theRealTranscriberHearsARecordingThroughTheAudioSourceProtocol`
   opts into the real transcriber check. It needs the on-device English dictation model and uses
   synthesized audio, not microphone access. The normal suite never queries speech-model assets.
-- `TOY_BOX_TEST_TRANSCRIPT_TIMING=1 SCRATCH_PATH=/tmp/tbm-you bun run test --filter 'TranscriptTests|TranscriptCatchUpTests'`
-  opts into native Transcript frame-timing checks. Run these locally before changes to landing,
-  paging or following arrivals.
+- `TOY_BOX_TEST_TRANSCRIPT_TIMING=1 SCRATCH_PATH=/tmp/tbm-you bun run test --filter 'Transcript|ImageViewer'`
+  opts into native Transcript frame-timing and VisionKit selection-layer checks. Run these locally
+  before changes to landing, paging, following arrivals or native image text selection.
 - `TOY_BOX_TEST_LIVE_TEXT_INTERACTION=1 SCRATCH_PATH=/tmp/tbm-<you> bun run test --filter pressesOnTextReachLiveTextAndEverythingElseReachesTheViewer`
   opts into native Live Text press/drag routing in an ordered off-screen window. WindowServer
-  events can stop the test runner's outer run loop. VisionKit analysis, selection-highlight
-  geometry and routing-policy checks remain in the default suite.
+  events can stop the test runner's outer run loop. VisionKit analysis and deterministic geometry
+  and routing-policy checks remain in the default suite.
 - `SCRATCH_PATH=/tmp/tbm-<you> bun run benchmark [--summaries] [launch|switch|messages|paging|key|idle ...]` is the
   performance regression benchmark. It builds a release bundle as `dev.toybox.desktop.benchmark`,
   runs each scenario against a fresh `bun run perf-demo` fixture on 3292 (`TOY_BOX_PERF_PORT`),
