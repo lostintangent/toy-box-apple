@@ -92,6 +92,31 @@ struct SettingsView: View {
             } footer: {
                 footer("When Active shows the icon while agents are working or a channel is waiting for you.")
             }
+            Section {
+                HStack {
+                    Text("Quick Ask shortcut")
+                    Spacer()
+                    QuickAskShortcutRecorder(controller: model.quickAsk)
+                        .frame(width: 132, height: 28)
+                        .disabled(!model.quickAsk.isEnabled)
+                    Button {
+                        model.quickAsk.setShortcut(nil)
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                    }
+                    .buttonStyle(.plain)
+                    .frame(minWidth: 28, minHeight: 28)
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel("Clear Quick Ask shortcut")
+                    .help("Clear Quick Ask shortcut")
+                    .disabled(model.quickAsk.shortcut == nil)
+                }
+                if let error = model.quickAsk.error {
+                    errorLabel(error)
+                }
+            } footer: {
+                footer("Send a message from any app. Clearing the shortcut keeps Quick Ask available in the menus.")
+            }
             intelligenceSection
             updatesSection
         }

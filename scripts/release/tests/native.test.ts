@@ -12,6 +12,10 @@ test.skipIf(!hasBundle)("native bundle: arm64-only, strictly signed and no devel
     const framework = join(app, "Contents/Frameworks/Sparkle.framework");
     const info: Record<string, unknown> = JSON.parse(await text(["plutil", "-convert", "json", "-o", "-", join(app, "Contents/Info.plist")]));
     expect(info.SUFeedURL).toBeUndefined(); expect(info.SUPublicEDKey).toBeUndefined();
+    expect(info.CFBundleIconFile).toBe("AppIcon"); expect(info.CFBundleIconName).toBe("AppIcon");
+    for (const name of ["AppIcon.icns", "Assets.car"]) {
+        expect(Bun.file(join(app, "Contents/Resources", name)).size).toBeGreaterThan(0);
+    }
     expect((await lstat(join(framework, "Versions/Current"))).isSymbolicLink()).toBe(true);
     expect(await Bun.file(join(app, "Contents/Resources/Sparkle-LICENSE")).exists()).toBe(true);
     for (const component of ["Headers", "PrivateHeaders", "Modules", "XPCServices"]) {

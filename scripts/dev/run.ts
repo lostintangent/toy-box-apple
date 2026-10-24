@@ -3,6 +3,7 @@ import { basename, dirname, join, resolve } from "node:path";
 import { command, executable, main, plist, root, scratchPath, text } from "../lib.ts";
 import { embedSparkle } from "../release/embed-sparkle.ts";
 import { signApp } from "../release/sign-app.ts";
+import { embedAppIcon } from "./icon.ts";
 
 export async function buildApp(configuration = process.env.CONFIGURATION || "debug", scratch = scratchPath()) {
     const sdk = process.env.SDKROOT || await text(["xcrun", "--sdk", "macosx", "--show-sdk-path"]);
@@ -21,10 +22,8 @@ export async function buildApp(configuration = process.env.CONFIGURATION || "deb
     await mkdir(join(app, "Contents/Resources"), { recursive: true });
     await copyFile(join(bin, "ToyBoxDesktop"), binary);
     await copyFile(join(root, "Resources/Info.plist"), info);
-    if (await Bun.file(join(root, "Resources/AppIcon.icns")).exists()) {
-        await copyFile(join(root, "Resources/AppIcon.icns"), join(app, "Contents/Resources/AppIcon.icns"));
-        await plist(info, ["Add :CFBundleIconFile string AppIcon"]);
-    }
+    await embedAppIcon(join(root, "Resources"), app);
+    await plist(info, ["Add :CFBundleIconFile string AppIcon", "Add :CFBundleIconName string AppIcon"]);
     const minimumOS = await plist(info, ["Print :LSMinimumSystemVersion"]);
     await command(["xcrun", "vtool", "-set-build-version", "macos", minimumOS, sdkVersion,
         "-replace", "-output", binary, binary]);
