@@ -2027,8 +2027,9 @@ Waiting requests join the existing channel results as their own `IndexedEntity`.
 retain their current name/purpose presentation and Open Channel behavior. Index requests from
 `MenuBarStatus.waiting`, not a separate interpretation of unread messages.
 
-Each request displays its plain-text question as the title, "[Agent] · [Channel]" as the
-secondary context and the requester's catalog avatar. A missing quote says "Needs your reply".
+Each resolved request displays its plain-text question as the title, "[Agent] · [Channel]" as
+the secondary context and the requester's catalog avatar. Hold unresolved quotes or requester
+identities out of the index until they resolve, rather than publishing placeholder search results.
 Keep full text in the entity even when Spotlight truncates its visible row. Identity includes
 the normalized server, channel ID and request sequence. Opening the result reveals that request
 in the channel. It never automatically sends or answers it.
