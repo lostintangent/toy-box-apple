@@ -33,6 +33,7 @@ struct AuxiliaryComposer: View {
     private var draft: ComposerDraft { session.draft }
     private var store: ChannelStore { session.store }
     private var draftID: ObjectIdentifier { ObjectIdentifier(draft) }
+    private var noticeRegionHeight: CGFloat { noticeHeight > 0 ? min(noticeHeight, 84) + 16 : 0 }
     private var canEdit: Bool { !session.isReadOnly && session.confirmation == nil }
     private var canSend: Bool {
         !finalizing && (session.canSend || (dictation.hasWords && !store.isSending && store.phase.isLive
@@ -42,31 +43,33 @@ struct AuxiliaryComposer: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if let confirmation = session.confirmation {
-                Label(style == .reply ? "Reply sent" : "Sent to \(store.state?.channel.name ?? "channel")",
+            if session.confirmation != nil {
+                Label(confirmationText,
                       systemImage: "checkmark.circle.fill")
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, minHeight: style == .reply ? 84 : 144)
                     .onAppear {
-                        if let window = NSApp.keyWindow {
+                        guard let confirmation = session.takeConfirmationPresentation() else { return }
+                        if isPresented, let window = NSApp.keyWindow {
                             NSAccessibility.post(element: window, notification: .announcementRequested,
-                                                 userInfo: [.announcement: style == .reply ? "Reply sent" : "Message sent",
+                                                 userInfo: [.announcement: confirmationText,
                                                             .priority: NSAccessibilityPriorityLevel.medium.rawValue])
                         }
                         onConfirmed(confirmation)
                     }
             } else {
+                ScrollView {
+                    notices
+                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { noticeHeight = $0 }
+                }
+                .frame(height: min(noticeHeight, 84))
+                .padding(.vertical, noticeHeight > 0 ? 8 : 0)
                 if !draft.images.isEmpty {
                     ComposerImageStrip(draft: draft).disabled(!canEdit)
                         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { imageHeight = $0 }
                 }
                 editor
-                ScrollView {
-                    notices
-                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { noticeHeight = $0 }
-                }
-                .frame(height: min(noticeHeight, 100))
                 controls.padding(.top, style == .quickAsk ? 12 : 4)
             }
         }
@@ -87,6 +90,12 @@ struct AuxiliaryComposer: View {
         .onChange(of: draft.revision) { _, revision in
             registerDraft()
             dictation.draftChanged(to: revision)
+        }
+        .onChange(of: store.phase) { _, phase in
+            if phase == .deleted {
+                dictation.leaveDraft()
+                showPicker = false
+            }
         }
         .onDisappear { dictation.deactivate() }
         .task(id: store.phase) { await connectGrace.watch(store.phase, for: draftID) }
@@ -114,7 +123,7 @@ struct AuxiliaryComposer: View {
                 onChooseChannel: onChooseChannel
             )
             .frame(height: style == .quickAsk
-                   ? min(inputHeight, max(100, 300 - min(noticeHeight, 100)
+                   ? min(inputHeight, max(100, 300 - noticeRegionHeight
                                           - (draft.images.isEmpty ? 0 : imageHeight)))
                    : 60 * textScale + 24)
         }
@@ -133,7 +142,7 @@ struct AuxiliaryComposer: View {
                 registerDraft()
                 dictation.toggle()
             }
-            .disabled(!canEdit)
+            .disabled(!canEdit || store.phase == .deleted)
             if session.isSubmitting || finalizing || session.attempt?.phase == .sending {
                 ProgressView().controlSize(.small).frame(width: 28, height: 28)
                     .accessibilityLabel("Sending")
@@ -151,10 +160,13 @@ struct AuxiliaryComposer: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(!canSend)
-                .help(style == .reply ? "Reply (Return)" : "Send (Return)")
+                .help(style == .reply ? "Reply \u{00b7} Return" : "Send \u{00b7} Return")
                 .accessibilityLabel(style == .reply ? "Reply" : "Send message")
+                .accessibilityHint(!store.phase.isLive ? "Reconnect before sending."
+                                   : session.requestChanged ? session.requestChangeNotice : "")
                 .contextMenu {
-                    Button("Send and Open Channel") { send(opensChannel: true) }.disabled(!canSend)
+                    Button("Send and Open Channel") { send(opensChannel: true) }
+                        .keyboardShortcut(.return, modifiers: .command).disabled(!canSend)
                 }
             }
         }
@@ -166,7 +178,7 @@ struct AuxiliaryComposer: View {
         VStack(alignment: .leading, spacing: 6) {
             if session.requestChanged {
                 HStack(alignment: .firstTextBaseline) {
-                    Text("This request was answered or replaced. Your draft is still here.")
+                    Text(session.requestChangeNotice)
                     Spacer(minLength: 0)
                     Button("Open Channel", action: onOpenChannel).buttonStyle(.link)
                 }
@@ -176,7 +188,14 @@ struct AuxiliaryComposer: View {
             if session.editedUnconfirmedMessage {
                 Text("Sending edited text creates a new message. The earlier message may already have arrived.")
             }
-            if let error = draft.error { Text(error).foregroundStyle(.primary) }
+            if let error = draft.error {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(error).foregroundStyle(.primary)
+                    Spacer(minLength: 0)
+                    Button("Dismiss", systemImage: "xmark") { draft.error = nil }
+                        .labelStyle(.iconOnly).buttonStyle(.borderless)
+                }
+            }
             if let error = store.attemptPersistenceError { Text(error).foregroundStyle(.primary) }
             if let error = session.error, session.deliveryNotice == nil { Text(error).foregroundStyle(.primary) }
             if let notice = dictation.notice { Text(notice.text) }
@@ -194,16 +213,23 @@ struct AuxiliaryComposer: View {
             }
         }
         .font(.system(size: 12))
-        .foregroundStyle(.secondary)
+        .foregroundStyle(.primary)
         .fixedSize(horizontal: false, vertical: true)
         .textSelection(.enabled)
     }
 
     private var connectionText: String {
-        if store.phase == .deleted { return "This channel was deleted. Your draft stays on this Mac." }
+        if store.phase == .deleted {
+            return draft.isSavedLocally ? "This channel is no longer available. Your draft is saved."
+                : "This channel is no longer available. This draft could not be saved. Copy it somewhere safe."
+        }
         if ConnectGrace.isConnecting(store.phase) { return "Connecting…" }
         return draft.isSavedLocally ? "Offline. Your draft stays on this Mac."
             : "Offline. This draft could not be saved. Copy it somewhere safe."
+    }
+
+    private var confirmationText: String {
+        style == .reply ? "Reply sent" : "Sent to \(store.details?.name ?? "channel")"
     }
 
     private func registerDraft() {
@@ -213,6 +239,7 @@ struct AuxiliaryComposer: View {
 
     private func updatePresentation() {
         if isPresented {
+            connectGrace.reset()
             session.beginPresentation()
             registerDraft()
             dictation.activate()

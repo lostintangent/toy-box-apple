@@ -1,3 +1,4 @@
+import AppKit
 import ChannelClient
 import ChannelKit
 import SwiftUI
@@ -7,6 +8,7 @@ struct QuickAskView: View {
     var lastUsedChannel: () -> String? = { nil }
     @Environment(AppModel.self) private var model
     @Environment(\.colorSchemeContrast) private var contrast
+    @Environment(\.openSettings) private var openSettings
     @AppStorage("textScale") private var textScale = 1.0
     @ViewState private var history: QuickAskTargetHistory?
     @ViewState private var selectedID: String?
@@ -16,9 +18,11 @@ struct QuickAskView: View {
     @ViewState private var focusID = UUID()
     @ViewState private var confirmationDismissal: Task<Void, Never>?
     @ViewState private var isDragging = false
+    @ViewState private var catalogConnectingLong = false
 
     private var channels: [Channel] { model.catalog?.channels ?? [] }
     private var session: AuxiliaryComposerSession? { selectedID.flatMap { sessions[$0] } }
+    private var showsHeader: Bool { session != nil || !channels.isEmpty }
     private var channelName: String {
         guard let selectedID else { return "Choose Channel" }
         return channels.first { $0.id == selectedID }?.name ?? session?.store.details?.name
@@ -28,7 +32,7 @@ struct QuickAskView: View {
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: 24, style: .continuous)
         VStack(alignment: .leading, spacing: 12) {
-            header
+            if showsHeader { header }
             if let session {
                 AuxiliaryComposer(
                     session: session, style: .quickAsk, isPresented: model.quickAsk.isPresented,
@@ -38,17 +42,7 @@ struct QuickAskView: View {
                 )
                 .id(ObjectIdentifier(session))
             } else {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Choose a channel to start a message.")
-                        .foregroundStyle(.secondary)
-                    if let error = model.catalog?.error ?? model.configurationError {
-                        Text(error).font(.system(size: 12)).foregroundStyle(.secondary)
-                        Button("Retry") { Task { await model.catalog?.refresh() } }
-                    } else if model.catalog?.isLoading == true {
-                        ProgressView().controlSize(.small)
-                    }
-                }
-                .frame(maxWidth: .infinity, minHeight: 144, alignment: .topLeading)
+                emptyState.frame(maxWidth: .infinity, minHeight: showsHeader ? 144 : 188, alignment: .topLeading)
             }
             if let error = history?.error {
                 Text(error).font(.system(size: 12)).foregroundStyle(.secondary)
@@ -89,6 +83,43 @@ struct QuickAskView: View {
             history = nil
         }
         .onDisappear { endPresentation() }
+        .task(id: model.catalog?.hasLoaded) {
+            catalogConnectingLong = false
+            guard model.catalog?.hasLoaded == false else { return }
+            do { try await Task.sleep(for: .seconds(1)) }
+            catch { return }
+            catalogConnectingLong = true
+        }
+    }
+
+    private var emptyState: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if model.api == nil {
+                Text("Connect to Toy Box").font(.system(size: 15, weight: .semibold))
+                Text("Set a server in Settings to send a message.").foregroundStyle(.secondary)
+                Button("Open Settings") {
+                    model.quickAsk.dismiss()
+                    NSApplication.shared.activate()
+                    openSettings()
+                }
+            } else if model.catalog?.hasLoaded == true, channels.isEmpty {
+                Text("No channels yet").font(.system(size: 15, weight: .semibold))
+                Text("Open Toy Box Desktop to create one.").foregroundStyle(.secondary)
+                Button("Open Toy Box Desktop") {
+                    model.quickAsk.dismiss()
+                    model.activate(channelID: nil)
+                }
+            } else if let error = model.catalog?.error {
+                Text("Offline.").font(.system(size: 15, weight: .semibold))
+                Text(error).font(.system(size: 12)).foregroundStyle(.secondary)
+                Button("Retry") { Task { await model.catalog?.refresh() } }
+            } else if model.catalog?.hasLoaded == true {
+                Text("Choose a channel to start a message.").foregroundStyle(.secondary)
+            } else if catalogConnectingLong {
+                Text("Connecting…").foregroundStyle(.secondary)
+                Button("Retry") { Task { await model.catalog?.refresh() } }
+            }
+        }
     }
 
     private var header: some View {
@@ -144,16 +175,17 @@ struct QuickAskView: View {
             installSession(channelID: selectedID)
             return
         }
-        guard let api = model.api else { showsChooser = true; return }
+        guard let api = model.api else { showsChooser = false; return }
         let target = history?.initialTarget(channels: channels,
-                                           lastUsedID: model.activeChannelID ?? lastUsedChannel()) {
+                                           lastUsedID: model.activeChannelID ?? lastUsedChannel(),
+                                           catalogLoaded: model.catalog?.hasLoaded == true) {
             ComposerDraft.shared(serverURL: api.baseURL, channelID: $0, scope: .quickAsk).hasContent
         }
         if let target {
             selectedID = target
             installSession(channelID: target)
         } else {
-            showsChooser = model.catalog?.hasLoaded == true
+            showsChooser = model.catalog?.hasLoaded == true && !channels.isEmpty
         }
     }
 
@@ -193,17 +225,17 @@ struct QuickAskView: View {
         heldStore = nil
     }
 
-    private func open(_ session: AuxiliaryComposerSession) {
+    private func open(_ session: AuxiliaryComposerSession, sequence: Int? = nil) {
         guard model.api?.baseURL == session.store.api.baseURL else { return }
         model.quickAsk.dismiss()
-        model.activate(channelID: session.store.id)
+        model.activate(channelID: session.store.id, sequence: sequence)
     }
 
     private func confirmed(_ confirmation: AuxiliaryComposerSession.Confirmation,
                            session: AuxiliaryComposerSession) {
         guard model.api?.baseURL == session.store.api.baseURL else { return }
         trackDraft()
-        if confirmation.opensChannel { open(session); return }
+        if confirmation.opensChannel { open(session, sequence: confirmation.sequence); return }
         guard model.quickAsk.isPresented, self.session === session else { return }
         let presentation = model.quickAsk.presentationID
         confirmationDismissal?.cancel()
@@ -241,7 +273,7 @@ private struct QuickAskChannelChooser: View {
                 .focused($searching)
                 .onSubmit(selectHighlighted)
             if matches.isEmpty {
-                Text(query.isEmpty ? "No channels available" : "No matching channels")
+                Text(query.isEmpty ? "No channels yet" : "No channels found")
                     .foregroundStyle(.secondary).frame(maxWidth: .infinity, minHeight: 44)
             } else {
                 List(matches, selection: $highlightedID) { channel in

@@ -546,6 +546,7 @@ struct NativeComposerInput: NSViewRepresentable {
         }
 
         func acceptPasteboard(_ pasteboard: NSPasteboard) -> Bool {
+            guard parent.isEditable else { return false }
             if let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: [
                 .urlReadingFileURLsOnly: true
             ]) as? [URL], !urls.isEmpty {
@@ -844,6 +845,7 @@ extension NativeComposerInput.Coordinator: DictationTextTarget {
     }
 
     override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation {
+        guard isEditable, coordinator?.parent.isEditable != false else { return [] }
         coordinator?.parent.dragging = true
         return .copy
     }

@@ -25,9 +25,12 @@ final class QuickAskTargetHistory {
         }
     }
 
-    func initialTarget(channels: [Channel], lastUsedID: String?, hasDraft: (String) -> Bool) -> String? {
+    func initialTarget(channels: [Channel], lastUsedID: String?, catalogLoaded: Bool = true,
+                       hasDraft: (String) -> Bool) -> String? {
         if let id = saved.draftTargetID, hasDraft(id) { return id }
-        if let id = saved.lastChosenID { return channels.contains { $0.id == id } ? id : nil }
+        if let id = saved.lastChosenID {
+            return !catalogLoaded || hasDraft(id) || channels.contains { $0.id == id } ? id : nil
+        }
         if let lastUsedID, channels.contains(where: { $0.id == lastUsedID }) { return lastUsedID }
         return channels.count == 1 ? channels.first?.id : nil
     }
