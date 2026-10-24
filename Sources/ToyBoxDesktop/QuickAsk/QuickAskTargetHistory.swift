@@ -12,6 +12,7 @@ final class QuickAskTargetHistory {
     }
 
     private var saved = Saved()
+    private(set) var selectedID: String?
     private(set) var error: String?
     private let defaults: UserDefaults
     private let key: String
@@ -37,7 +38,14 @@ final class QuickAskTargetHistory {
 
     func name(for id: String) -> String? { saved.names[id] }
 
+    func restoreTarget(channels: [Channel], lastUsedID: String?, catalogLoaded: Bool,
+                       hasDraft: (String) -> Bool) {
+        selectedID = initialTarget(channels: channels, lastUsedID: lastUsedID,
+                                   catalogLoaded: catalogLoaded, hasDraft: hasDraft)
+    }
+
     func choose(_ channel: Channel) {
+        selectedID = channel.id
         saved.lastChosenID = channel.id
         saved.recents.removeAll { $0 == channel.id }
         saved.recents.insert(channel.id, at: 0)
