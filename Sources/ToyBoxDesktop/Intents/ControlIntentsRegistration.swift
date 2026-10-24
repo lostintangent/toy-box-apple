@@ -9,10 +9,18 @@ struct DesktopControlIntents: AppIntentsPackage {
 extension ToyBoxControlsContext {
     @MainActor
     static func register(_ model: AppModel) {
-        let context = ToyBoxControlsContext { [weak model] url in
-            guard let model, try model.openWidgetURL(url) else { throw ControlRouteError.unavailable }
+        let context = makeRouter { [weak model] url in
+            try model?.openWidgetURL(url) == true
         }
         AppDependencyManager.shared.add(dependency: context)
+    }
+
+    @MainActor
+    static func makeRouter(_ openURL: @escaping @MainActor (URL) throws -> Bool) -> ToyBoxControlsContext {
+        ToyBoxControlsContext { url in
+            AppDelegate.receivedOpenEvent = true
+            guard try openURL(url) else { throw ControlRouteError.unavailable }
+        }
     }
 }
 
