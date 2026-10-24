@@ -19,6 +19,8 @@ final class ChannelInteraction {
 
     /// The transcript consumes this to scroll to, page toward and briefly highlight a message.
     private(set) var revealRequest: (sequence: Int, token: UUID)?
+    /// Consuming the request must not cancel the task handling it.
+    private(set) var revealRequestToken = UUID()
     private(set) var jumpToLatestRequest = UUID()
 
     func reply(to agent: ChannelAgent) {
@@ -28,6 +30,13 @@ final class ChannelInteraction {
 
     func focusComposer() { composerFocusRequest = UUID() }
     func editSendAttempt(id: String) { editSendAttemptRequest = (id, UUID()) }
-    func reveal(sequence: Int) { revealRequest = (sequence, UUID()) }
+    func reveal(sequence: Int) {
+        revealRequestToken = UUID()
+        revealRequest = (sequence, revealRequestToken)
+    }
+
+    func consumeRevealRequest(_ token: UUID) {
+        if revealRequest?.token == token { revealRequest = nil }
+    }
     func jumpToLatest() { jumpToLatestRequest = UUID() }
 }

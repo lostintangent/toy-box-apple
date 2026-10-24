@@ -446,17 +446,19 @@ private struct TranscriptHoverActions: View {
 final class TranscriptPointer {
     /// How long content holds still before a message it carried under a still pointer counts as reached.
     var settleDelay: TimeInterval = 0.15
+    var uptime: @MainActor () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }
+    var location: @MainActor () -> CGPoint = { NSEvent.mouseLocation }
     private var locationWhenContentMoved: CGPoint?
     private var contentMovedAt: TimeInterval = 0
     private var resting: (id: String, reached: () -> Void)?
     private var settlePending = false
 
     func contentDidMove() {
-        locationWhenContentMoved = NSEvent.mouseLocation
-        contentMovedAt = ProcessInfo.processInfo.systemUptime
+        locationWhenContentMoved = location()
+        contentMovedAt = uptime()
     }
 
-    var hasMovedSinceContentMoved: Bool { NSEvent.mouseLocation != locationWhenContentMoved }
+    var hasMovedSinceContentMoved: Bool { location() != locationWhenContentMoved }
 
     /// The message the content carried under a still pointer, until the content holds still.
     var restingID: String? { resting?.id }
@@ -482,7 +484,7 @@ final class TranscriptPointer {
 
     private func settle() {
         settlePending = false
-        let still = ProcessInfo.processInfo.systemUptime - contentMovedAt
+        let still = uptime() - contentMovedAt
         if still < settleDelay { return scheduleSettle(after: settleDelay - still) }
         let arrival = resting
         resting = nil
