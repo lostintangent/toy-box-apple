@@ -1,7 +1,15 @@
 import { join } from "node:path";
 import { command, main, root } from "../lib.ts";
+import { configureShareExtension, shareExtension } from "./share-extension.ts";
 
 export async function signApp(app: string, options = ["--force", "--timestamp=none", "--sign", "-"]) {
+    const extension = shareExtension(app);
+    if (await Bun.file(join(extension, "Contents/Info.plist")).exists()) {
+        await configureShareExtension(app);
+        const extensionOptions = options.includes("--options") ? options : [...options, "--options", "runtime"];
+        await command(["codesign", ...extensionOptions, "--entitlements", join(root, "Resources/ShareExtension.entitlements"), extension]);
+        await command(["codesign", "--verify", "--strict", extension]);
+    }
     const framework = join(app, "Contents/Frameworks/Sparkle.framework");
     for (const component of [
         join(framework, "Versions/Current/Autoupdate"),

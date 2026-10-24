@@ -1,6 +1,6 @@
-# Toy Box Desktop
+# Toy Box
 
-Toy Box Desktop is a native SwiftUI client for Toy Box Channels. [docs/spec.md](docs/spec.md) is
+Toy Box is a native SwiftUI client for Toy Box Channels. [docs/spec.md](docs/spec.md) is
 the source of truth for parity, protocol and design. Read its Design section before changing any
 view.
 
@@ -98,13 +98,13 @@ view.
   With the real 27+ SDK stamp, they also misrender Liquid Glass and sidebar selection. Use
   them for layout evidence only. Verify materials, selection and scroll-edge effects in a real window.
 - Computer Use approves apps by bundle ID. A path is refused. The user's copy is
-  `dev.toybox.desktop`. Agents test as `dev.toybox.desktop.test` ("Toy Box Desktop
+  `dev.toybox.desktop`. Agents test as `dev.toybox.desktop.test` ("Toy Box
   Test" in `.build/agents`), which `bun run validate` builds and launches. Instances that share a
   bundle ID can be read but not clicked, so the separate ID is what lets you interact while the
   user's app is open. Until the user approves the test ID, `bun run validate` falls back to the
   shared bundle and says so.
 - Launch your own build in the background against the demo:
-  `open -n -g "/tmp/tbm-<you>/Toy Box Desktop.app" --args --server http://127.0.0.1:3210 -ApplePersistenceIgnoreState YES`.
+  `open -n -g "/tmp/tbm-<you>/Toy Box.app" --args --server http://127.0.0.1:3210 -ApplePersistenceIgnoreState YES`.
   `-g` keeps it from taking the user's focus. A `--server` or `TOY_BOX_SERVER_URL` launch is
   session-only and never replaces the server the user saved in Settings.
   `-ApplePersistenceIgnoreState YES` keeps test instances from restoring or overwriting the
@@ -172,8 +172,18 @@ view.
   is never published. `PREVIOUS_APPCAST=path` enforces an increasing build number locally. CI always
   compares against the latest published feed and serializes release workflows. Its build number is
   `github.run_number.github.run_attempt`, so reruns advance too.
-- Hardened runtime, a secure timestamp and only the audio-input entitlement. Never `--deep`.
+- Hardened runtime and a secure timestamp throughout. The app has only audio-input permission.
+  `Contents/PlugIns/ToyBoxShare.appex` has only App Sandbox, no network or file-access entitlement.
+  Its identity is the app's ID plus `.share`, with matching version/build, signed before the app.
+  Never `--deep`. Validation checks its arm64 architecture, SDK stamp, signature and sandbox.
   Local builds use Command Line Tools, and CI uses the runner's selected Xcode 27 on `xcode-27`.
+- The Share extension is built by SwiftPM with `_NSExtensionMain`, without Xcode or a storyboard.
+  It loads only explicitly shared items, writes `dev.toybox.desktop.share.<UUID>` pasteboards,
+  and opens `toybox-desktop://quick-send?pasteboard=...`. The host imports and clears that board.
+  It never sends automatically or connects to a server. Test/validation/benchmark clones and
+  snapshots omit the extension, Services, URL schemes and document handlers to avoid taking over
+  the user's integrations. To check registration, use `pluginkit -m -v -i dev.toybox.desktop.share`
+  on a normal built bundle, not an isolated validation clone.
 - Sparkle is pinned to 2.10.0 in SwiftPM. Every bundle embeds its arm64-only framework, installer
   and updater, without sandbox XPC services or development headers. `bun run sign-app` signs those
   components inside out before signing the app. Keep Sparkle's license in the bundle.

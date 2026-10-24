@@ -8,7 +8,7 @@ describe("committed icon packaging without Icon Composer or actool", () => {
     test("copies the layered appearances and fallback without rendering them", async () => {
         await temporary("toy-box-icon-test.", async directory => {
             const source = join(directory, "source");
-            const app = join(directory, "Toy Box Desktop.app");
+            const app = join(directory, "Toy Box.app");
             await mkdir(source);
             for (const name of ["AppIcon.icns", "Assets.car"]) {
                 await Bun.write(join(source, name), `fixture ${name}`);
@@ -23,7 +23,7 @@ describe("committed icon packaging without Icon Composer or actool", () => {
     test.each(["AppIcon.icns", "Assets.car"])("rejects missing or empty %s before copying", async missing => {
         await temporary("toy-box-icon-test.", async directory => {
             const source = join(directory, "source");
-            const app = join(directory, "Toy Box Desktop.app");
+            const app = join(directory, "Toy Box.app");
             await mkdir(source);
             const other = missing === "Assets.car" ? "AppIcon.icns" : "Assets.car";
             await Bun.write(join(source, other), "valid fixture");

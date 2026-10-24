@@ -5,14 +5,22 @@ import { bundleIdentity, root } from "../../lib.ts";
 import { checkVersion } from "../check-update-version.ts";
 import { FakeHarness, workflowBody } from "./helpers.ts";
 import { checkTestCompletion } from "../../dev/test.ts";
+import { configureShareExtension } from "../share-extension.ts";
 
 describe("Sparkle packaging without credentials", () => {
     let fake: FakeHarness;
     let app: string, framework: string, source: string, license: string;
     beforeEach(async () => {
         fake = await FakeHarness.create();
-        app = join(fake.directory, "Toy Box Desktop.app");
+        app = join(fake.directory, "Toy Box.app");
         framework = join(app, "Contents/Frameworks/Sparkle.framework");
+        await mkdir(join(app, "Contents/PlugIns/ToyBoxShare.appex/Contents"), { recursive: true });
+        await Bun.write(join(app, "Contents/Info.plist"), `<plist version="1.0"><dict>
+            <key>CFBundleIdentifier</key><string>dev.toybox.desktop</string>
+            <key>CFBundleShortVersionString</key><string>0.1.0</string>
+            <key>CFBundleVersion</key><string>1</string></dict></plist>`);
+        await Bun.write(join(app, "Contents/PlugIns/ToyBoxShare.appex/Contents/Info.plist"),
+            await Bun.file(join(root, "Resources/ShareExtension-Info.plist")).text());
         source = join(fake.directory, "source.framework");
         const version = join(source, "Versions/B");
         await mkdir(version, { recursive: true });
@@ -50,30 +58,44 @@ describe("Sparkle packaging without credentials", () => {
         expect(thinned.every(call => JSON.stringify(call.args.slice(2, 4)) === JSON.stringify(["-thin", "arm64"]))).toBe(true);
         expect(await Bun.file(join(app, "Contents/Resources/Sparkle-LICENSE")).text()).toBe(await Bun.file(license).text());
     });
-    test("production signing is inside-out, hardened and timestamped, with app-only entitlements", async () => {
+    test("production signing is inside-out with separate sandboxed extension and app entitlements", async () => {
         const options = ["--force", "--options", "runtime", "--timestamp", "--sign", "FAKE_IDENTITY"];
         const result = await fake.script("release/sign-app.ts", [app, ...options]);
         expect(result.code).toBe(0);
         const calls = await fake.calls("codesign");
         const signed = calls.filter(call => !call.args.includes("--verify"));
         expect(signed.map(call => call.args.at(-1))).toEqual([
+            join(app, "Contents/PlugIns/ToyBoxShare.appex"),
             join(framework, "Versions/Current/Autoupdate"), join(framework, "Versions/Current/Updater.app"), framework, app,
         ]);
         expect(signed.every(call => JSON.stringify(call.args.slice(0, options.length)) === JSON.stringify(options))).toBe(true);
-        expect(signed.slice(0, -1).every(call => !call.args.includes("--entitlements"))).toBe(true);
+        expect(signed[0].args).toContain(join(root, "Resources/ShareExtension.entitlements"));
+        expect(signed.slice(1, -1).every(call => !call.args.includes("--entitlements"))).toBe(true);
         expect(signed.at(-1)?.args).toContain("--entitlements");
-        expect(calls.filter(call => call.args.includes("--strict"))).toHaveLength(4);
+        expect(calls.filter(call => call.args.includes("--strict"))).toHaveLength(5);
         expect(calls.some(call => call.args.includes("--deep"))).toBe(false);
     });
     test("ad-hoc signing avoids hardened runtime and never hides a signing error", async () => {
         expect((await fake.script("release/sign-app.ts", [app])).code).toBe(0);
-        const first = (await fake.calls("codesign"))[0].args;
+        const calls = await fake.calls("codesign");
+        expect(calls[0].args).toContain("runtime");
+        const first = calls.find(call => call.args.at(-1) === framework && !call.args.includes("--verify"))!.args;
         expect(first).toContain("--timestamp=none");
         expect(first).not.toContain("--options");
         expect(first[first.indexOf("--sign") + 1]).toBe("-");
         await rm(fake.log);
         expect((await fake.script("release/sign-app.ts", [app], { FAIL_SIGN: "1" })).code).toBe(23);
         expect(await fake.calls("codesign")).toHaveLength(1);
+    });
+    test("extension metadata follows its container identity and release versions", async () => {
+        const info = join(app, "Contents/Info.plist");
+        await Bun.write(info, (await Bun.file(info).text()).replace("dev.toybox.desktop", "dev.toybox.desktop.test")
+            .replace("0.1.0", "0.1.2").replace("<string>1</string>", "<string>400.2</string>"));
+        await configureShareExtension(app);
+        const result = await Bun.file(join(app, "Contents/PlugIns/ToyBoxShare.appex/Contents/Info.plist")).text();
+        expect(result).toContain("<string>dev.toybox.desktop.test.share</string>");
+        expect(result).toContain("<string>0.1.2</string>");
+        expect(result).toContain("<string>400.2</string>");
     });
 });
 
@@ -112,7 +134,7 @@ describe("signed appcast generation", () => {
         fake = await FakeHarness.create();
         const output = join(fake.directory, "release");
         await mkdir(output);
-        await Bun.write(join(output, "ToyBoxDesktop-0.2.0-arm64.zip"), "fake archive");
+        await Bun.write(join(output, "ToyBox-0.2.0-arm64.zip"), "fake archive");
         env = { OUTPUT_DIR: output, BUILD_NUMBER: "200.1", SPARKLE_ED_PRIVATE_KEY: "fake-sparkle-private-key" };
     });
     afterEach(async () => { await fake.dispose(); });

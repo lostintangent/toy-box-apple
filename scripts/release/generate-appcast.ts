@@ -6,7 +6,7 @@ import { appcastItems } from "./xml.ts";
 export async function generateAppcast(tag: string) {
     releaseTag(tag);
     const output = resolve(process.env.OUTPUT_DIR || join(root, "dist"));
-    const archive = join(output, `ToyBoxDesktop-${tag.slice(1)}-arm64.zip`);
+    const archive = join(output, `ToyBox-${tag.slice(1)}-arm64.zip`);
     if (!Bun.file(archive).size) throw new Error(`A notarized release archive is required: ${archive}`);
     const build = required("BUILD_NUMBER");
     const keyFile = process.env.SPARKLE_ED_KEY_FILE || "-";
@@ -19,7 +19,7 @@ export async function generateAppcast(tag: string) {
     }
     const notes = archive.replace(/\.zip$/, ".txt");
     const contents = await text(["git", "-C", root, "for-each-ref", "--format=%(contents)", `refs/tags/${tag}`]);
-    await Bun.write(notes, contents ? contents + "\n" : `Toy Box Desktop ${tag.slice(1)}\n`);
+    await Bun.write(notes, contents ? contents + "\n" : `Toy Box ${tag.slice(1)}\n`);
     await signingTool("generate_appcast", ["--download-url-prefix", prefix, "--embed-release-notes",
         "--maximum-deltas", "0", "--link", repositoryURL, "-o", join(output, "appcast.xml"), output]);
     const items = appcastItems(await Bun.file(join(output, "appcast.xml")).text());

@@ -41,13 +41,13 @@ export async function fake(command: string) {
         else if (args.includes("-p")) console.log(Buffer.alloc(32, "p").toString("base64"));
     } else if (command === "generate_appcast") {
         const output = args[args.indexOf("-o") + 1];
-        const archive = join(process.env.OUTPUT_DIR!, "ToyBoxDesktop-0.2.0-arm64.zip");
+        const archive = join(process.env.OUTPUT_DIR!, "ToyBox-0.2.0-arm64.zip");
         writeFileSync(output, Bun.XML.stringify({ rss: {
             "@xmlns:s": "http://www.andymatuschak.org/xml-namespaces/sparkle", channel: { item: {
                 "s:version": "200.1", "s:shortVersionString": "0.2.0", "s:minimumSystemVersion": "27.0",
                 "s:hardwareRequirements": "arm64",
                 enclosure: {
-                    "@url": args[args.indexOf("--download-url-prefix") + 1] + "ToyBoxDesktop-0.2.0-arm64.zip",
+                    "@url": args[args.indexOf("--download-url-prefix") + 1] + "ToyBox-0.2.0-arm64.zip",
                     "@length": String(Bun.file(archive).size),
                     "@s:edSignature": process.env.UNSIGNED_FEED === "1" ? "" : Buffer.alloc(64, "s").toString("base64"),
                 },

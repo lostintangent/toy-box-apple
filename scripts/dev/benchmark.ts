@@ -5,6 +5,7 @@ import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { bundleIdentity, command, main, plist, required, root, temporary } from "../lib.ts";
 import { pidsFor } from "./validate.ts";
+import { isolateIntegrations } from "./isolate-integrations.ts";
 
 async function benchmarkLock() {
     const library = dlopen("/usr/lib/libSystem.B.dylib", {
@@ -50,7 +51,7 @@ if (import.meta.main) await main(async () => {
     const reference = process.env.TOY_BOX_REFERENCE || resolve(root, "../toy-box-Minecraft");
     const port = process.env.TOY_BOX_PERF_PORT || "3292";
     const server = `http://127.0.0.1:${port}`;
-    const name = "Toy Box Desktop Benchmark";
+    const name = "Toy Box Benchmark";
     const identity = `${bundleIdentity}.benchmark`;
     const app = join(build, `${name}.app`);
     const unlock = await benchmarkLock();
@@ -88,7 +89,8 @@ if (import.meta.main) await main(async () => {
                     throw new Error((result.stdout.toString() + result.stderr.toString()).split("\n").slice(-40).join("\n"));
                 }
                 await rm(app, { recursive: true, force: true });
-                await command(["ditto", join(build, "Toy Box Desktop.app"), app]);
+                await command(["ditto", join(build, "Toy Box.app"), app]);
+                await isolateIntegrations(app);
                 await plist(join(app, "Contents/Info.plist"), [`Set :CFBundleIdentifier ${identity}`,
                     `Set :CFBundleName ${name}`, `Set :CFBundleDisplayName ${name}`]);
                 await command(["codesign", "--force", "--sign", "-", app], { quiet: true });

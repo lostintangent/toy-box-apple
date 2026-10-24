@@ -4,6 +4,7 @@ import { command, main, plist, releaseTag, repositoryURL, required, root, tempor
 import { buildApp } from "../dev/run.ts";
 import { checkVersion } from "./check-update-version.ts";
 import { signApp } from "./sign-app.ts";
+import { validateShareExtension } from "./share-extension.ts";
 
 export function parseNotaryResponse(response: string, status: number) {
     let parsed: unknown;
@@ -45,7 +46,7 @@ if (import.meta.main) await main(async () => {
     const suffix = notary ? "" : "-SIGNED-UNNOTARIZED";
     if (!notary) console.error("WARNING: NOTARY_PROFILE is unset. This is SIGNED ONLY. Gatekeeper will block downloaded copies.");
     await mkdir(output, { recursive: true });
-    const archive = join(output, `ToyBoxDesktop-${version}-arm64${suffix}.zip`);
+    const archive = join(output, `ToyBox-${version}-arm64${suffix}.zip`);
     if (await Bun.file(archive).exists() || await Bun.file(`${archive}.sha256`).exists()) {
         throw new Error(`Release output already exists: ${archive}`);
     }
@@ -60,6 +61,7 @@ if (import.meta.main) await main(async () => {
     }
     console.log("Signing with the pinned identity. If a keychain prompt appears, allow codesign to use that key.");
     await signApp(app, signArgs);
+    await validateShareExtension(app);
     await command(["codesign", "--verify", "--strict", "--verbose=2", app]);
     const display = await command(["codesign", "--display", "--verbose=4", app], { quiet: true });
     if (!/flags=.*runtime/.test(display.stdout.toString() + display.stderr.toString())) {

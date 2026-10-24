@@ -4,18 +4,19 @@ import { command, executable, main, plist, root, scratchPath, text } from "../li
 import { embedSparkle } from "../release/embed-sparkle.ts";
 import { signApp } from "../release/sign-app.ts";
 import { embedAppIcon } from "./icon.ts";
+import { embedShareExtension } from "../release/share-extension.ts";
 
 export async function buildApp(configuration = process.env.CONFIGURATION || "debug", scratch = scratchPath()) {
     const sdk = process.env.SDKROOT || await text(["xcrun", "--sdk", "macosx", "--show-sdk-path"]);
     const sdkVersion = await text(["xcrun", "--sdk", sdk, "--show-sdk-version"]);
     if (!/^\d+(?:\.\d+)*$/.test(sdkVersion) || Number(sdkVersion.split(".")[0]) < 27) {
-        throw new Error("Toy Box Desktop requires macOS SDK 27 or later.");
+        throw new Error("Toy Box requires macOS SDK 27 or later.");
     }
     const args = ["--package-path", root, "--scratch-path", scratch, "--configuration", configuration,
         "--sdk", sdk, "--arch", "arm64"];
     await command(["xcrun", "swift", "build", ...args]);
     const bin = await text(["xcrun", "swift", "build", ...args, "--show-bin-path"]);
-    const app = join(scratch, "Toy Box Desktop.app");
+    const app = join(scratch, "Toy Box.app");
     const binary = join(app, "Contents/MacOS/ToyBoxDesktop");
     const info = join(app, "Contents/Info.plist");
     await mkdir(join(app, "Contents/MacOS"), { recursive: true });
@@ -28,6 +29,7 @@ export async function buildApp(configuration = process.env.CONFIGURATION || "deb
     await command(["xcrun", "vtool", "-set-build-version", "macos", minimumOS, sdkVersion,
         "-replace", "-output", binary, binary]);
     await embedSparkle(join(bin, "Sparkle.framework"), app, join(scratch, "checkouts/Sparkle/LICENSE"));
+    await embedShareExtension(bin, app, sdkVersion, minimumOS);
 
     let processor = process.env.APP_INTENTS_PROCESSOR;
     if (!processor) {

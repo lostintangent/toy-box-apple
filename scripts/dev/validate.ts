@@ -2,6 +2,8 @@ import { mkdir, mkdtemp, realpath, rename, rm } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { bundleIdentity, command, isMissing, main, plist, required, root, text } from "../lib.ts";
 import { signApp } from "../release/sign-app.ts";
+import { validateShareExtension } from "../release/share-extension.ts";
+import { isolateIntegrations } from "./isolate-integrations.ts";
 
 async function installBundle(staged: string, destination: string) {
     const old = await mkdtemp(join(dirname(destination), ".old."));
@@ -28,32 +30,34 @@ export async function pidsFor(binary: string) {
 if (import.meta.main) await main(async () => {
     const scratch = resolve(required("SCRATCH_PATH"));
     const server = process.env.SERVER_URL || "http://127.0.0.1:3210";
-    const app = join(root, ".build/validation/Toy Box Desktop.app");
-    const testName = "Toy Box Desktop Test";
+    const app = join(root, ".build/validation/Toy Box.app");
+    const testName = "Toy Box Test";
     const testID = `${bundleIdentity}.test`;
     const testApp = join(root, ".build/agents", `${testName}.app`);
     await command([process.execPath, join(root, "scripts/dev/run.ts"), "--no-open"], {
         env: { CONFIGURATION: "release", SCRATCH_PATH: scratch }, quiet: true,
     });
     const buildVersion = await text(["xcrun", "vtool", "-show-build",
-        join(scratch, "Toy Box Desktop.app/Contents/MacOS/ToyBoxDesktop")]);
+        join(scratch, "Toy Box.app/Contents/MacOS/ToyBoxDesktop")]);
     const versions = [...buildVersion.matchAll(/^\s*sdk\s+(\S+)/gm)].map(match => match[1]);
     if (!versions.length || versions.some(value => !/^\d+(?:\.\d+)*$/.test(value) || Number(value.split(".")[0]) < 27)) {
         throw new Error(`Validation requires a bundle stamped with macOS SDK 27 or later.\n${buildVersion}`);
     }
+    await validateShareExtension(join(scratch, "Toy Box.app"));
     for (const [destination, test] of [[app, false], [testApp, true]] as const) {
         await mkdir(dirname(destination), { recursive: true });
         const stage = await mkdtemp(join(dirname(destination), ".stage."));
         try {
-            const staged = join(stage, "Toy Box Desktop.app");
-            await command(["ditto", join(scratch, "Toy Box Desktop.app"), staged]);
+            const staged = join(stage, "Toy Box.app");
+            await command(["ditto", join(scratch, "Toy Box.app"), staged]);
             if (test) {
                 await plist(join(staged, "Contents/Info.plist"), [
                     `Set :CFBundleIdentifier ${testID}`, `Set :CFBundleName ${testName}`,
                     `Set :CFBundleDisplayName ${testName}`,
                 ]);
-                await signApp(staged);
             }
+            await isolateIntegrations(staged);
+            await signApp(staged);
             await installBundle(staged, destination);
         } finally { await rm(stage, { recursive: true, force: true }); }
     }

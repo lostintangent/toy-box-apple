@@ -82,6 +82,24 @@ A manual run on `main` performs the same signing, notarization and appcast gener
 as artifacts, without publishing.
 Local builds use Command Line Tools. CI uses its selected Xcode 27 toolchain on the `xcode-27` runner.
 
+Every normal bundle embeds `Contents/PlugIns/ToyBoxShare.appex`, a SwiftPM executable linked with
+`_NSExtensionMain` for `com.apple.share-services`. Its activation rules accept text, URLs, images
+and files. It performs no networking and presents no editor. It loads the explicit items into a
+uniquely named `dev.toybox.desktop.share.<UUID>` pasteboard, then opens
+`toybox-desktop://quick-send?pasteboard=<name>`. Quick Send imports and clears that pasteboard,
+preserving drafts and requiring an explicit send. Image bytes are loaded before the extension
+completes so a provider's temporary URL cannot expire underneath the host.
+Only in-place non-image files are passed as paths. Temporary/provider-only non-image files and
+sandbox-container paths are rejected explicitly, rather than giving an agent an expired or
+inaccessible path. This release does not upload arbitrary files.
+
+The extension has only App Sandbox, with hardened runtime and a secure timestamp in releases.
+Its ID is the containing app's ID plus `.share`, and its version and build match the app.
+Inside-out signing verifies the extension before signing the container, without `--deep`.
+Validation checks its architecture, SDK stamp, extension point, metadata, signature and entitlements.
+Isolated validation/benchmark bundles and snapshots remove Share, Services, URL-scheme and document
+registrations so they cannot take over the user's integrations.
+
 The app's bundle identity is `dev.toybox.desktop`. Agent validation uses `dev.toybox.desktop.test`,
 and the benchmark uses `dev.toybox.desktop.benchmark`, keeping their preferences and permissions
 isolated from the user's app.
