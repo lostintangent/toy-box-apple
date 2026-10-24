@@ -30,6 +30,7 @@ final class AuxiliaryComposerSession {
     private var submission: Submission?
     private var requestInvalidated = false
     private var replacementRequestSequence: Int?
+    @ObservationIgnored var prepareForExternalEdit: (@MainActor () -> Void)?
     @ObservationIgnored private var observation = UUID()
     @ObservationIgnored private var presentedConfirmationID: String?
 

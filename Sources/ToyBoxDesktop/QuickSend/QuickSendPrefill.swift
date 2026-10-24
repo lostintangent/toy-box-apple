@@ -16,10 +16,13 @@ struct QuickSendPrefill: Identifiable, Sendable {
 /// Incoming content is durable before a channel is chosen and never edits an immutable send.
 @MainActor @Observable
 final class QuickSendPrefillInbox {
+    let serverURL: URL
     let draft: ComposerDraft
     private let allowsLocalPaths: Bool
+    @ObservationIgnored private var lastAppliedRevision: UUID?
 
     init(serverURL: URL, draft: ComposerDraft? = nil) {
+        self.serverURL = serverURL
         self.draft = draft ?? .shared(serverURL: serverURL, channelID: "", scope: .quickSendIncoming)
         allowsLocalPaths = Self.acceptsLocalPaths(serverURL: serverURL)
     }
@@ -36,6 +39,7 @@ final class QuickSendPrefillInbox {
     var hasPendingContent: Bool { draft.hasContent || draft.isLoadingImages || draft.error != nil }
 
     func receive(_ prefill: QuickSendPrefill) {
+        lastAppliedRevision = nil
         draft.text = joinedComposerText(draft.text, prefill.text)
         for image in prefill.images {
             var copy = image
@@ -47,12 +51,15 @@ final class QuickSendPrefillInbox {
 
     @discardableResult
     func apply(to session: AuxiliaryComposerSession) -> Bool {
-        guard hasPendingContent, !draft.isLoadingImages, !session.isReadOnly,
-              !session.isSubmitting, session.confirmation == nil else { return false }
+        guard draft.revision != lastAppliedRevision, session.store.api.baseURL == serverURL,
+              hasPendingContent, !draft.isLoadingImages, !session.isReadOnly,
+              !session.isSubmitting, session.confirmation == nil, session.store.phase != .deleted else { return false }
+        session.prepareForExternalEdit?()
         let revision = draft.revision
         session.draft.append(contentsOf: draft)
-        draft.clear(ifUnchanged: revision)
         draft.error = nil
+        draft.clear(ifUnchanged: revision)
+        lastAppliedRevision = draft.revision
         return true
     }
 }

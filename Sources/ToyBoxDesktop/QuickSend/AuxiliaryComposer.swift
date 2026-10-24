@@ -18,6 +18,7 @@ struct AuxiliaryComposer: View {
     var onChooseChannel: (() -> Void)? = nil
     var onDraggingChanged: ((Bool) -> Void)? = nil
     var focusID: UUID? = nil
+    var incomingContentNotice: String? = nil
 
     private struct ConnectionWait: Equatable {
         let phase: ChannelConnectionPhase
@@ -134,7 +135,8 @@ struct AuxiliaryComposer: View {
                 minimumHeight: style == .quickSend ? 100 : 84, maximumLineCount: style == .quickSend ? 10 : 3,
                 startsAtEnd: true,
                 onSendAndOpen: { send(opensChannel: true) }, onEscape: dismissOrStopDictation,
-                onChooseChannel: onChooseChannel
+                onChooseChannel: onChooseChannel,
+                onPrepareForExternalEdit: { session.prepareForExternalEdit = $0 }
             )
             .frame(height: style == .quickSend
                    ? min(inputHeight, max(100, 300 - noticeRegionHeight
@@ -190,6 +192,7 @@ struct AuxiliaryComposer: View {
 
     @ViewBuilder private var notices: some View {
         VStack(alignment: .leading, spacing: 6) {
+            if let incomingContentNotice { Text(incomingContentNotice) }
             if session.requestChanged {
                 HStack(alignment: .firstTextBaseline) {
                     Text(session.requestChangeNotice)

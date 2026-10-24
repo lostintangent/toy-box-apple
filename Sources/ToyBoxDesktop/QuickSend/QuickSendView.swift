@@ -11,6 +11,7 @@ struct QuickSendView: View {
     @Environment(\.openSettings) private var openSettings
     @AppStorage("textScale") private var textScale = 1.0
     @ViewState private var history: QuickSendTargetHistory?
+    @ViewState private var incoming: QuickSendPrefillInbox?
     @ViewState private var sessions: [String: AuxiliaryComposerSession] = [:]
     @ViewState private var heldStore: ChannelStore?
     @ViewState private var showsChooser = false
@@ -39,7 +40,7 @@ struct QuickSendView: View {
                     presentationID: model.quickSend.presentationID, onConfirmed: { confirmed($0, session: session) },
                     onOpenChannel: { open(session) }, onDismiss: model.quickSend.dismiss,
                     onChooseChannel: { showsChooser = true }, onDraggingChanged: { isDragging = $0 },
-                    focusID: focusID
+                    focusID: focusID, incomingContentNotice: incomingContentNotice
                 )
                 .id(ObjectIdentifier(session))
             } else {
@@ -47,6 +48,12 @@ struct QuickSendView: View {
             }
             if let error = history?.error {
                 Text(error).font(.system(size: 12)).foregroundStyle(.secondary)
+            }
+            if session == nil, let error = incoming?.draft.error {
+                ScrollView {
+                    Text(error).frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled)
+                }
+                .font(.system(size: 12)).foregroundStyle(.secondary).frame(maxHeight: 84)
             }
         }
         .font(.system(size: 13))
@@ -68,12 +75,20 @@ struct QuickSendView: View {
             if presented { beginPresentation() }
             else { endPresentation() }
         }
-        .onChange(of: model.quickSend.presentationID) { _, _ in focusID = UUID() }
+        .onChange(of: model.quickSend.presentationID) { _, _ in
+            focusID = UUID()
+            receivePendingPrefill()
+        }
+        .onChange(of: model.quickSend.pendingPrefill?.id) { _, _ in receivePendingPrefill() }
         .onChange(of: model.catalog?.hasLoaded) { _, loaded in
             if loaded == true, model.quickSend.isPresented, selectedID == nil { chooseInitialTarget() }
         }
-        .onChange(of: selectedID) { _, _ in holdSelectedStore() }
+        .onChange(of: selectedID) { _, _ in holdSelectedStore(); applyIncoming() }
         .onChange(of: session?.draft.revision) { _, _ in trackDraft() }
+        .onChange(of: session?.isReadOnly) { _, _ in applyIncoming() }
+        .onChange(of: session?.confirmation?.id) { _, _ in applyIncoming() }
+        .onChange(of: incoming?.draft.isLoadingImages) { _, _ in applyIncoming() }
+        .onChange(of: incoming?.draft.revision) { _, _ in applyIncoming() }
         .onChange(of: model.serverURL) { _, _ in
             confirmationDismissal?.cancel()
             for session in sessions.values { session.cancelOpenOnConfirmation() }
@@ -81,6 +96,7 @@ struct QuickSendView: View {
             endPresentation()
             sessions = [:]
             history = nil
+            incoming = nil
         }
         .onDisappear { endPresentation() }
         .task(id: model.catalog?.hasLoaded) {
@@ -90,6 +106,24 @@ struct QuickSendView: View {
             catch { return }
             catalogConnectingLong = true
         }
+    }
+
+    private var incomingContentNotice: String? {
+        guard incoming?.hasPendingContent == true else { return nil }
+        if let error = incoming?.draft.error { return error }
+        if incoming?.draft.isSavedLocally == false {
+            return "Shared content could not be saved. Keep Quick Send open and copy it somewhere safe."
+        }
+        if session?.isSubmitting == true {
+            return "Shared content is saved and will be added after this send."
+        }
+        if session?.isReadOnly == true {
+            return "Shared content is saved. Choose another channel or Edit this message to add it."
+        }
+        if session?.store.phase == .deleted {
+            return "Shared content is saved. Choose another channel to add it."
+        }
+        return incoming?.draft.isLoadingImages == true ? "Adding shared images..." : nil
     }
 
     private var emptyState: some View {
@@ -164,9 +198,32 @@ struct QuickSendView: View {
 
     private func beginPresentation() {
         confirmationDismissal?.cancel()
-        if history == nil, let api = model.api { history = .init(serverURL: api.baseURL) }
+        if let api = model.api {
+            if history == nil { history = .init(serverURL: api.baseURL) }
+            if incoming == nil { incoming = .init(serverURL: api.baseURL) }
+        }
         chooseInitialTarget()
         holdSelectedStore()
+        receivePendingPrefill()
+        applyIncoming()
+        focusID = UUID()
+    }
+
+    private func receivePendingPrefill() {
+        guard let api = model.api, let prefill = model.quickSend.pendingPrefill else { return }
+        confirmationDismissal?.cancel()
+        session?.cancelOpenOnConfirmation()
+        if incoming?.serverURL != api.baseURL { incoming = .init(serverURL: api.baseURL) }
+        incoming?.receive(prefill)
+        model.quickSend.consumePrefill(id: prefill.id)
+        applyIncoming()
+    }
+
+    private func applyIncoming() {
+        guard let session, model.api?.baseURL == session.store.api.baseURL,
+              model.catalog?.hasLoaded != true || channels.contains(where: { $0.id == session.store.id }),
+              incoming?.apply(to: session) == true else { return }
+        trackDraft()
         focusID = UUID()
     }
 
@@ -187,6 +244,7 @@ struct QuickSendView: View {
         confirmationDismissal?.cancel()
         history?.choose(channel)
         installSession(channelID: channel.id)
+        applyIncoming()
         trackDraft()
         holdSelectedStore()
     }
@@ -228,14 +286,19 @@ struct QuickSendView: View {
                            session: AuxiliaryComposerSession) {
         guard model.api?.baseURL == session.store.api.baseURL else { return }
         trackDraft()
-        if confirmation.opensChannel { open(session, sequence: confirmation.sequence); return }
         guard model.quickSend.isPresented, self.session === session else { return }
+        if confirmation.opensChannel { open(session, sequence: confirmation.sequence); return }
         let presentation = model.quickSend.presentationID
         confirmationDismissal?.cancel()
         confirmationDismissal = Task {
             do { try await Task.sleep(for: .milliseconds(700)) }
             catch { return }
             guard model.quickSend.presentationID == presentation, self.session === session else { return }
+            if incoming?.hasPendingContent == true {
+                session.beginPresentation()
+                applyIncoming()
+                return
+            }
             model.quickSend.dismiss()
         }
     }

@@ -188,6 +188,11 @@ struct ComposerTests {
             #expect(staged.images.count == 1)
             let store = ChannelStore(id: "test", api: try ChannelAPI(serverURL: server.absoluteString), sendJournal: nil)
             let session = AuxiliaryComposerSession(store: store, scope: .quickSend, draft: draft)
+            let otherStore = ChannelStore(id: "test", api: try ChannelAPI(serverURL: "https://other.example"),
+                                          sendJournal: nil)
+            let otherSession = AuxiliaryComposerSession(store: otherStore, scope: .quickSend, draft: draft)
+            #expect(!inbox.apply(to: otherSession))
+            #expect(draft.text == "Keep this draft")
             #expect(inbox.apply(to: session))
             #expect(draft.text == "Keep this draft\n\n" + staged.text)
             #expect(draft.images.count == 2)
@@ -201,10 +206,16 @@ struct ComposerTests {
             #expect(draft.sendAttemptID == nil)
             #expect(ComposerDraft(fileURL: url).text == draft.text)
             #expect(!ComposerDraft(fileURL: incomingURL).hasContent)
+            inbox.receive(.init(images: [.init(name: "Corrupt.png", mimeType: "image/png", data: Data([1, 2, 3]))]))
+            #expect(inbox.apply(to: session))
+            #expect(draft.revision == revision)
+            #expect(draft.images.count == 2)
+            #expect(draft.error?.contains("cannot be decoded") == true)
         }
     }
 
-    @Test func quickSendPrefillWaitsForAnExplicitEditOfAnUnconfirmedSend() async throws {
+    @Test(arguments: [true, false])
+    func quickSendPrefillWaitsForConfirmationOrAnExplicitEditOfAnImmutableSend(edit: Bool) async throws {
         try await withDraft { draft, _ in
             let server = try #require(URL(string: "http://localhost:3210"))
             let inbox = QuickSendPrefillInbox(serverURL: server, draft: ComposerDraft())
@@ -217,11 +228,24 @@ struct ComposerTests {
             #expect(draft.text == "Original immutable message")
             #expect(draft.sendAttemptID == "original")
             #expect(inbox.hasPendingContent)
-            session.edit()
+            if edit {
+                session.edit()
+            } else {
+                let channel = Channel(id: "test", name: "Test", model: .init(provider: "test", name: "test"),
+                                      latestSequence: 1, updatedAt: "2026-10-24T00:00:00Z")
+                let message = ChannelMessage(id: "original", sequence: 1, timestamp: channel.updatedAt,
+                                             sender: .user, content: .text(draft.text))
+                _ = try store.apply(.init(type: "snapshot", state: .init(revision: 1, channel: channel,
+                    lead: .lead(id: "lead"), messages: [message])))
+                session.reconcileDelivery()
+                #expect(session.confirmation != nil)
+                #expect(!inbox.apply(to: session))
+                session.beginPresentation()
+            }
             #expect(inbox.apply(to: session))
-            #expect(draft.text == "Original immutable message\n\nShared content")
+            #expect(draft.text == (edit ? "Original immutable message\n\nShared content" : "Shared content"))
             #expect(draft.sendAttemptID == nil)
-            #expect(session.editedUnconfirmedMessage)
+            #expect(session.editedUnconfirmedMessage == edit)
             #expect(store.sendAttempts.isEmpty)
         }
     }
@@ -461,6 +485,18 @@ struct ComposerTests {
         #expect(draft.text == "Keep this text")
         #expect(draft.error?.contains("could not be saved") == true)
         #expect(!draft.isSavedLocally)
+        let server = try #require(URL(string: "http://localhost:3210"))
+        let inbox = QuickSendPrefillInbox(serverURL: server, draft: draft)
+        inbox.receive(.init(text: "Shared content"))
+        let target = ComposerDraft()
+        let store = ChannelStore(id: "test", api: try ChannelAPI(serverURL: server.absoluteString), sendJournal: nil)
+        let session = AuxiliaryComposerSession(store: store, scope: .quickSend, draft: target)
+        #expect(inbox.apply(to: session))
+        #expect(target.text == "Keep this text\n\nShared content")
+        #expect(inbox.draft.error?.contains("could not be saved") == true)
+        let revision = target.revision
+        #expect(!inbox.apply(to: session))
+        #expect(target.revision == revision)
     }
 
     @Test func aDropIsPendingUntilItsImageDataHasBeenRead() async throws {
@@ -726,7 +762,7 @@ struct ComposerTests {
         #expect(draft.text == "@\n")
     }
 
-    @Test func modelSynchronizationDoesNotOverwriteAnInProgressNativeEdit() {
+    @Test func modelSynchronizationDoesNotOverwriteAnInProgressNativeEdit() throws {
         let draft = ComposerDraft()
         draft.text = "Seed"
         let parent = NativeComposerInput(
@@ -756,6 +792,36 @@ struct ComposerTests {
         draft.text += "!"
         coordinator.synchronizeModelText(draft.text)
         #expect(input.selectedRange() == NSRange(location: 2, length: 4))
+        input.delegate = coordinator
+        input.coordinator = coordinator
+        input.allowsUndo = true
+        coordinator.history.groupsByEvent = false
+        coordinator.history.beginUndoGrouping()
+        input.setMarkedText("\u{5019}\u{88dc}", selectedRange: .init(location: 2, length: 0),
+                            replacementRange: .init(location: NSNotFound, length: 0))
+        coordinator.history.endUndoGrouping()
+        #expect(input.hasMarkedText())
+        let server = try #require(URL(string: "http://localhost:3210"))
+        let inbox = QuickSendPrefillInbox(serverURL: server, draft: ComposerDraft())
+        inbox.receive(.init(text: "Shared selection"))
+        let store = ChannelStore(id: "test", api: try ChannelAPI(serverURL: server.absoluteString), sendJournal: nil)
+        let session = AuxiliaryComposerSession(store: store, scope: .quickSend, draft: draft)
+        session.prepareForExternalEdit = { coordinator.leaveDocument() }
+        #expect(inbox.apply(to: session))
+        #expect(!input.hasMarkedText())
+        let beforePrefill = input.string
+        #expect(beforePrefill.contains("\u{5019}\u{88dc}"))
+        #expect(draft.text == beforePrefill + "\n\nShared selection")
+        coordinator.history.removeAllActions()
+        coordinator.history.beginUndoGrouping()
+        coordinator.synchronizeModelText(draft.text)
+        coordinator.history.endUndoGrouping()
+        #expect(input.string == draft.text)
+        coordinator.history.undo()
+        #expect(input.string == beforePrefill)
+        #expect(draft.text == beforePrefill)
+        coordinator.history.redo()
+        #expect(draft.text == beforePrefill + "\n\nShared selection")
     }
 
     @Test func sendFailureAnnouncementsUseFreshEventsForRepeatedSameMessageFailures() {

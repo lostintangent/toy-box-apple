@@ -63,6 +63,7 @@ struct NativeComposerInput: NSViewRepresentable {
     var onSendAndOpen: (() -> Void)? = nil
     var onEscape: (() -> Void)? = nil
     var onChooseChannel: (() -> Void)? = nil
+    var onPrepareForExternalEdit: ((@escaping @MainActor () -> Void) -> Void)? = nil
 
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
 
@@ -103,6 +104,7 @@ struct NativeComposerInput: NSViewRepresentable {
         configure(input)
         if startsAtEnd { input.setSelectedRange(NSRange(location: text.utf16.count, length: 0)) }
         dictation?.target = context.coordinator
+        onPrepareForExternalEdit? { [weak coordinator = context.coordinator] in coordinator?.leaveDocument() }
         return scroll
     }
 
