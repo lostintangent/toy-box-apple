@@ -66,7 +66,7 @@ final class ImageViewer {
         var analysis: ImageAnalysis?
         /// How light the image is under the Live Text button.
         var cornerTone: ImageViewerCornerTone?
-        /// The oriented pixel size, known from the image header before the full decode lands.
+        /// The raster's oriented pixel size, or the vector's intrinsic logical point size.
         var pixelSize: CGSize?
         var isVector = false
         var failure: String?
@@ -189,7 +189,8 @@ final class ImageViewer {
         pan = .zero
         focusReturn = nil
         items = Dictionary(uniqueKeysWithValues: images.indices.map { position in
-            (position, Item(pixelSize: Self.knownPixelSize(of: images[position], api: api)))
+            (position, Item(pixelSize: Self.knownPixelSize(of: images[position], api: api),
+                            isVector: transcriptAttachmentType(images[position])?.conforms(to: .svg) == true))
         })
         loadAround(index)
     }
@@ -289,12 +290,13 @@ final class ImageViewer {
 
     func pointSize(at index: Int, in layout: Layout) -> CGSize? {
         guard let pixels = items[index]?.pixelSize, pixels.width > 0, pixels.height > 0 else { return nil }
+        if items[index]?.isVector == true { return pixels }
         let scale = max(1, layout.displayScale)
         return CGSize(width: pixels.width / scale, height: pixels.height / scale)
     }
 
     /// The scale that fits an image in the canvas. It never upscales past the image's point size,
-    /// so a 2x screenshot shows at its native size.
+    /// so a 2x screenshot shows at its native size and an SVG keeps its natural point size.
     func fitScale(at index: Int, in layout: Layout) -> CGFloat {
         let area = availableRect(in: layout)
         guard let point = pointSize(at: index, in: layout) else { return 1 }

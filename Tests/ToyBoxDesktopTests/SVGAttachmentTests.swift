@@ -71,6 +71,38 @@ struct SVGAttachmentTests {
         #expect(ImageViewer.knownPixelSize(of: attachment, api: api) == CGSize(width: 800, height: 400))
     }
 
+    @MainActor @Test(arguments: [CGSize(width: 1200, height: 720), CGSize(width: 64, height: 32)])
+    func vectorsFitUsingNaturalPointsIncludingBeforeTheFullDecode(_ size: CGSize) async throws {
+        let source = """
+            <svg xmlns="http://www.w3.org/2000/svg" width="\(size.width)" height="\(size.height)">
+              <rect width="100%" height="100%" fill="#327785"/>
+            </svg>
+            """
+        let attachment = ChannelAttachment(name: "natural-size.svg", mimeType: "image/svg+xml",
+                                           base64: Data(source.utf8).base64EncodedString())
+        let api = try ChannelAPI(serverURL: "http://localhost:3210")
+        let file = try await TranscriptAttachmentCache.shared.file(for: attachment, api: api)
+        defer { try? FileManager.default.removeItem(at: file) }
+        _ = try await TranscriptThumbnails.image(at: file, for: attachment, api: api)
+        let layout = ImageViewer.Layout(size: CGSize(width: 1000, height: 800), topInset: 52)
+        let viewer = ImageViewer()
+        viewer.layout = layout
+        viewer.open(images: [attachment], at: 0,
+                    source: .init(messageID: "natural-svg", sender: "Core", timestamp: "2026-10-24T23:00:00Z"),
+                    api: api)
+        defer { viewer.close(animated: false) }
+        #expect(viewer.pointSize(at: 0, in: layout) == size)
+        #expect(viewer.pointSize(at: 0, in: .init(size: layout.size, topInset: 52, displayScale: 3)) == size)
+        let opening = viewer.frame(at: 0, in: layout)
+        let expected = size.width > 952 ? CGSize(width: 952, height: 571.2) : size
+        #expect(abs(opening.width - expected.width) < 0.000001)
+        #expect(abs(opening.height - expected.height) < 0.000001)
+        try await waitFor { viewer.items[0]?.bitmap != nil || viewer.items[0]?.failure != nil }
+        #expect(viewer.items[0]?.failure == nil)
+        #expect(viewer.pointSize(at: 0, in: layout) == size)
+        #expect(viewer.frame(at: 0, in: layout) == opening)
+    }
+
     @Test(arguments: [
         "",
         "not an image",
@@ -176,7 +208,7 @@ struct SVGAttachmentTests {
         #expect(viewer.items[0]?.failure == nil)
         #expect(viewer.items[0]?.bitmap?.width == 8192)
         #expect(viewer.items[0]?.pixelSize == CGSize(width: 12000, height: 6000))
-        #expect(viewer.zoom == 8 && frame.size == CGSize(width: 32000, height: 16000))
+        #expect(viewer.zoom == 8 && frame.size == CGSize(width: 96000, height: 48000))
         #expect(viewer.frame(at: 0, in: try #require(viewer.layout)) == frame)
     }
 
@@ -204,9 +236,9 @@ struct SVGAttachmentTests {
         #expect(viewer.items[0]?.bitmap === original)
         #expect(viewer.items[0]?.pixelSize == CGSize(width: 800, height: 400))
         viewer.retry()
-        try await waitFor { (viewer.items[0]?.bitmap?.width ?? 0) >= 6400 || viewer.items[0]?.failure != nil }
+        try await waitFor { viewer.items[0]?.bitmap?.width == 8192 || viewer.items[0]?.failure != nil }
         #expect(viewer.items[0]?.failure == nil)
-        #expect(viewer.items[0]?.bitmap?.width == 6400)
+        #expect(viewer.items[0]?.bitmap?.width == 8192)
         #expect(viewer.items[0]?.pixelSize == CGSize(width: 800, height: 400))
     }
 
