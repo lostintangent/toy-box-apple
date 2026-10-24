@@ -20,6 +20,7 @@ final class AppModel {
     let updates: AppUpdates
     let quickSend: QuickSendController
     let widgetSnapshots: WidgetSnapshotPublisher
+    private let dockAttention: DockAttention
     private(set) var serverURL: String
     private(set) var catalog: ChannelCatalogStore?
     private(set) var configurationError: String?
@@ -32,7 +33,7 @@ final class AppModel {
     let menuBar = MenuBarPresence()
     var navigationRequest: ChannelNavigationRequest?
     var newChannelRequest: UUID?
-    /// Pending requests' messages for the menu bar, by channel.
+    /// Pending requests' messages shared by the menu bar, Dock and widget, by channel.
     private(set) var menuBarRequests: [String: ChannelNotifications.ResolvedRequest] = [:]
     @ObservationIgnored var openChannelWindow: ((String) -> Void)?
     @ObservationIgnored var openMainWindow: (() -> Void)?
@@ -55,6 +56,12 @@ final class AppModel {
             !launchOptions.isSnapshot && launchOptions.benchmark == nil && launchOptions.resizeBenchmark == nil
             && launchOptions.serverURL == nil && launchOptions.quickSendValidation == nil
             && ProcessInfo.processInfo.environment["TOY_BOX_SERVER_URL"] == nil)
+        dockAttention = DockAttention(
+            allowed: DockAttention.isAllowed(launchOptions, bundleID: Bundle.main.bundleIdentifier),
+            enabled: { UserDefaults.standard.bool(forKey: DockAttention.enabledKey) },
+            active: { NSApplication.shared.isActive },
+            request: { _ = NSApplication.shared.requestUserAttention($0) }
+        )
         snapshot = launchOptions.isSnapshot ? WindowSnapshot(options: launchOptions) : nil
         resizeBenchmark = launchOptions.resizeBenchmark.flatMap { mode in
             launchOptions.channelID.map { ResizeBenchmark(mode: mode, channelID: $0) }
@@ -150,6 +157,7 @@ final class AppModel {
             catalog = ChannelCatalogStore(api: api)
             configurationError = nil
             notifications.reset()
+            dockAttention.reset()
             menuBarRequests = [:]
             menuBarLookups = [:]
             catalogGeneration = UUID()
@@ -302,12 +310,9 @@ final class AppModel {
         return menuBarRequests[channel.id].flatMap { $0.message.sequence == sequence ? $0 : nil }
     }
 
-    /// Looks up each new request's message once, so the menu can quote it before it opens.
+    /// Looks up each new request once, including when the menu bar item is hidden.
     private func resolveMenuBarRequests() {
-        guard let catalog, showsMenuBarExtra,
-              widgetSnapshots.isEnabled ||
-              MenuBarVisibility(rawValue: UserDefaults.standard.string(forKey: MenuBarVisibility.key) ?? "") != .never
-        else { return }
+        guard let catalog, showsMenuBarExtra else { return }
         let pending = Dictionary(catalog.channels.compactMap { channel in channel.requestSequence.map { (channel.id, $0) } },
                                  uniquingKeysWith: { first, _ in first })
         let kept = menuBarRequests.filter { pending[$0.key] == $0.value.message.sequence }
@@ -337,11 +342,14 @@ final class AppModel {
 
     /// Keeps the status item in step with activity, including an open channel's live presence.
     private func observeMenuBarActivity() {
-        let status = withObservationTracking { menuBarStatus } onChange: { [weak self] in
+        let (status, hasCatalog) = withObservationTracking {
+            (menuBarStatus, catalog?.lastRefreshedAt != nil)
+        } onChange: { [weak self] in
             Task { @MainActor in self?.observeMenuBarActivity() }
         }
         menuBar.update(isActive: status.isActive)
         widgetSnapshots.update(status: status, serverURL: serverURL, hasCatalog: catalog?.state != nil)
+        dockAttention.update(status: status, serverURL: serverURL, hasCatalog: hasCatalog)
     }
 
     /// A channel as the sidebar shows it: an open channel's live details and request over its catalog

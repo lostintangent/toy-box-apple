@@ -14,6 +14,7 @@ struct SettingsView: View {
     @AppStorage("notificationsEnabled") private var notificationsEnabled = false
     @AppStorage("requestNotifications") private var requestNotifications = true
     @AppStorage("completionNotifications") private var completionNotifications = true
+    @AppStorage(DockAttention.enabledKey) private var bounceDockForRequests = false
     @AppStorage(MorningDigest.enabledKey) private var morningDigestEnabled = true
     @AppStorage(MorningDigest.timeKey) private var morningDigestMinutes = 480
     @ViewState private var serverURL = ""
@@ -216,6 +217,12 @@ struct SettingsView: View {
                     .accessibilityLabel("Requests for your response").disabled(!notificationsEnabled)
                 Toggle("Completed tasks", isOn: $completionNotifications)
                     .accessibilityLabel("Completed tasks").disabled(!notificationsEnabled)
+            }
+            Section {
+                Toggle("Bounce Dock icon for new requests", isOn: $bounceDockForRequests)
+                    .accessibilityLabel("Bounce Dock icon for new requests")
+            } footer: {
+                footer("Bounce once when a new request arrives while you're using another app.")
             }
             Section {
                 Toggle("Morning digest", isOn: $morningDigestEnabled)

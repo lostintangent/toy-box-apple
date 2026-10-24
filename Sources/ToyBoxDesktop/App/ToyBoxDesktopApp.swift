@@ -40,6 +40,7 @@ struct ToyBoxDesktopApp: App {
             } : nil
             ChannelIntentsContext.register(model)
             AppDelegate.widgetURLHandler = { try model.openWidgetURL($0) }
+            AppDelegate.dockMenuProvider = { model.makeDockMenu() }
             _model = ViewState(wrappedValue: model)
         } catch {
             FileHandle.standardError.write(Data("Invalid launch arguments: \(error.localizedDescription)\n".utf8))
@@ -127,6 +128,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     static var launchedInBackground = false
     static var quickSendIntake: QuickSendIntake?
     static var widgetURLHandler: ((URL) throws -> Bool)?
+    static var dockMenuProvider: (() -> NSMenu)?
     private var cameForward = false
     var isInBackground: Bool { Self.launchedInBackground && !cameForward }
     var openChannelWindow: (() -> Void)?
@@ -136,6 +138,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // bar extra or a notification can bring it forward.
         NSApplication.shared.setActivationPolicy(isInBackground ? .accessory : .regular)
         NSApplication.shared.servicesProvider = Self.quickSendIntake
+    }
+
+    func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
+        Self.dockMenuProvider?()
     }
 
     func applicationShouldOpenUntitledFile(_ sender: NSApplication) -> Bool {
