@@ -505,8 +505,17 @@ struct NativeComposerInput: NSViewRepresentable {
         }
 
         func canAcceptPasteboard(_ pasteboard: NSPasteboard) -> Bool {
+            pasteboard.types?.contains(.fileURL) == true || !imageTypes(in: pasteboard).isEmpty
+        }
+
+        private func imageTypes(in pasteboard: NSPasteboard) -> [NSPasteboard.PasteboardType] {
             let types = pasteboard.types ?? []
-            return types.contains(.fileURL) || types.contains { UTType($0.rawValue)?.conforms(to: .image) == true }
+            guard let imageIndex = types.firstIndex(where: { UTType($0.rawValue)?.conforms(to: .image) == true })
+            else { return [] }
+            if let textIndex = types.firstIndex(where: {
+                [.string, .rtf, .rtfd, .html].contains($0) || UTType($0.rawValue)?.conforms(to: .text) == true
+            }), textIndex < imageIndex { return [] }
+            return types.filter { UTType($0.rawValue)?.conforms(to: .image) == true }
         }
 
         func acceptPasteboard(_ pasteboard: NSPasteboard) -> Bool {
@@ -516,7 +525,7 @@ struct NativeComposerInput: NSViewRepresentable {
                 parent.onFiles(urls)
                 return true
             }
-            let imageTypes = (pasteboard.types ?? []).filter { UTType($0.rawValue)?.conforms(to: .image) == true }
+            let imageTypes = imageTypes(in: pasteboard)
             let supported: [UTType] = [.png, .jpeg, .gif, .webP]
             for uniform in supported {
                 guard let type = imageTypes.first(where: { UTType($0.rawValue)?.conforms(to: uniform) == true }),

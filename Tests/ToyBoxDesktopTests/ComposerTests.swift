@@ -321,6 +321,19 @@ struct ComposerTests {
         input.paste(nil)
         #expect(images.last?.mimeType == "image/png")
         #expect(images.last?.image != nil)
+        pasteboard.declareTypes([.string, .tiff, .png], owner: nil)
+        #expect(pasteboard.setString("Copied spreadsheet cells", forType: .string))
+        #expect(pasteboard.setData(tiff, forType: .tiff))
+        #expect(pasteboard.setData(image.data, forType: .png))
+        #expect(!coordinator.canAcceptPasteboard(pasteboard))
+        #expect(!coordinator.acceptPasteboard(pasteboard))
+        #expect(images.count == 3)
+        pasteboard.declareTypes([.tiff, .string], owner: nil)
+        #expect(pasteboard.setData(tiff, forType: .tiff))
+        #expect(pasteboard.setString("Image description", forType: .string))
+        #expect(coordinator.canAcceptPasteboard(pasteboard))
+        #expect(coordinator.acceptPasteboard(pasteboard))
+        #expect(images.count == 4)
         input.isEditable = false
         #expect(!input.validateMenuItem(paste))
         input.paste(nil)
@@ -329,7 +342,7 @@ struct ComposerTests {
         #expect(coordinator.acceptPasteboard(pasteboard))
         #expect(errors.count == 1)
         #expect(errors.first?.contains("could not be read") == true)
-        #expect(images.count == 3)
+        #expect(images.count == 4)
     }
 
     @Test func tabLeavesTheComposerLikeATextareaUnlessItAcceptsAMention() async throws {
