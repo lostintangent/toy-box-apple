@@ -10,11 +10,25 @@ import Synchronization
 /// off the main thread. A landing whose summary is cached never pays for it. Copies share one
 /// selection, and two requests with the same key are the same request, as the summary cache treats them.
 public struct CatchUpRequest: Sendable, Hashable {
+    /// A daily window excludes older pending requests, so it cannot reuse an unread window's cache.
+    public enum Scope: Sendable, Hashable {
+        case unread, dailyDigest
+    }
+
     public struct Key: Sendable, Hashable {
         public let server: String
         public let channelId: String
         public let unreadAfter: Int
         public let through: Int
+        public let scope: Scope
+
+        init(server: String, channelId: String, unreadAfter: Int, through: Int, scope: Scope = .unread) {
+            self.server = server
+            self.channelId = channelId
+            self.unreadAfter = unreadAfter
+            self.through = through
+            self.scope = scope
+        }
     }
 
     public static let defaultMinimumUnread = 4
@@ -40,7 +54,8 @@ public struct CatchUpRequest: Sendable, Hashable {
     /// long always leaves lines to summarize, and if it somehow didn't, generation would decline.
     public init?(server: URL, state: ChannelState, unreadAfter: Int?,
                  minimumUnread: Int = CatchUpRequest.defaultMinimumUnread,
-                 minimumCharacters: Int = CatchUpRequest.defaultMinimumCharacters) {
+                 minimumCharacters: Int = CatchUpRequest.defaultMinimumCharacters,
+                 scope: Scope = .unread) {
         guard let unreadAfter else { return nil }
         let unread = state.messages.filter { $0.sequence > unreadAfter }
         let fromAgents = unread.filter { !$0.isSystem && $0.sender.type == "agent" }
@@ -53,7 +68,7 @@ public struct CatchUpRequest: Sendable, Hashable {
         let describer = CatchUpDescriber(agents: state.agents, leadId: state.lead.id)
         let through = max(state.messages.last?.sequence ?? unreadAfter, unreadAfter)
         key = Key(server: intelligenceServerKey(server), channelId: state.channel.id,
-                  unreadAfter: unreadAfter, through: through)
+                  unreadAfter: unreadAfter, through: through, scope: scope)
         unreadFromOthers = fromAgents.count
         selection = CatchUpSelection {
             CatchUpSelection.Lines(candidates: candidates, pending: pending, describer: describer)

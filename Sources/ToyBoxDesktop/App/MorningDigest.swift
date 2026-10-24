@@ -247,7 +247,8 @@ extension MorningDigest {
             var summary: CatchUp?
             if summarizes, intelligence.availability.isAvailable,
                let request = CatchUpRequest(server: api.baseURL, state: state,
-                                            unreadAfter: (state.messages.first?.sequence ?? 1) - 1) {
+                                            unreadAfter: (state.messages.first?.sequence ?? 1) - 1,
+                                            scope: .dailyDigest) {
                 summary = await withTaskGroup(of: CatchUp?.self) { group in
                     group.addTask { await intelligence.catchUp(request).catchUp }
                     group.addTask {

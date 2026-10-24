@@ -75,6 +75,19 @@ struct CatchUpSelectionTests {
         #expect(!request.entries.contains { $0.sequence == 480 })
     }
 
+    @Test func dailyDigestCannotReuseAnUnreadSummaryWithAnOlderPendingRequest() throws {
+        let state = try T.fixture("history-demo")
+        let unread = try #require(CatchUpRequest(server: T.server, state: state, unreadAfter: 450))
+        var dailyState = state
+        dailyState.channel.requestSequence = nil
+        dailyState.request = nil
+        let daily = try #require(CatchUpRequest(server: T.server, state: dailyState, unreadAfter: 450,
+                                               scope: .dailyDigest))
+        #expect(unread.key.unreadAfter == daily.key.unreadAfter && unread.through == daily.through)
+        #expect(unread.key != daily.key)
+        #expect(daily.key.scope == .dailyDigest && daily.request == nil)
+    }
+
     @Test func linesNameSpeakersAndAddressees() throws {
         let state = try T.fixture("studio-demo")
         let request = try #require(CatchUpRequest(server: T.server, state: state, unreadAfter: 8,
