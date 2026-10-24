@@ -685,21 +685,10 @@ struct ConversationTranscript: View {
     private func resolveOpening() {
         guard !opening.isResolved else { return }
         opening.isResolved = true
-        guard snapshot == nil, store.isLoaded, store.phase.isLive, let unread = store.unreadAfter,
-              let first = store.state?.messages.first, first.sequence <= unread + 1 || !store.hasOlderMessages
-        else { return }
-        let rows = rows
-        guard let index = rows.firstIndex(where: { $0.messages.contains { $0.sequence > unread } }) else { return }
-        opening.open(rows[index].id, unreadAfter: unread,
-                     seeds: rows.count - index > TranscriptOpening.bottomRows)
-    }
-
-    /// Whether the row starts near the viewport's top or, on the last screen, anywhere in it.
-    private func isInPlace(_ row: TranscriptRow) -> Bool {
-        guard viewport.height > 0,
-              let top = (transcriptFrameIDs(of: row) + ["divider-\(row.id)"]).compactMap({ frames[$0]?.rect.minY })
-                .min() else { return false }
-        return top >= -0.5 && (top < min(120, viewport.height / 2) || viewport.bottomGap < 1 && top < viewport.height)
+        guard snapshot == nil, store.isLoaded, store.phase.isLive else { return }
+        opening.plan = TranscriptLanding.opening(
+            unreadAfter: store.unreadAfter, oldestSequence: store.state?.messages.first?.sequence,
+            hasOlderMessages: store.hasOlderMessages, rows: rows)
     }
 
     /// Lands on the row, moving only if it isn't in place already. A jump converges over several
@@ -708,23 +697,25 @@ struct ConversationTranscript: View {
     /// override the landing.
     private func settleLanding(on row: TranscriptRow, using proxy: ScrollViewProxy) async {
         var jumps = 0
-        while await layoutTurns.settled() {
-            if pendingJump != nil {
+        landing: while await layoutTurns.settled() {
+            let step = TranscriptLanding.step(on: row, frames: frames, viewport: viewport,
+                                             isColdOpening: opening.rowID == nil, jumps: jumps,
+                                             hasPendingJump: pendingJump != nil)
+            switch step {
+            case .waitForJump:
                 // Not applied yet, or it found nothing to move and stops guarding shortly.
                 try? await Task.sleep(for: .milliseconds(16))
-                continue
-            }
-            // A cold lazy stack can still report its old bottom before measuring the unread run.
-            // Target the row once even if those provisional frames appear to fit on the last screen.
-            if jumps == 0, opening.rowID == nil {
+            case .placeColdOpening:
+                // Cold lazy rows can report their old bottom before measuring the unread run.
                 scrollPosition = nil
                 proxy.scrollTo(row.id, anchor: .top)
                 jumps += 1
-                continue
+            case .correctPosition:
+                jumps += 1
+                jump(to: row.id, anchor: .top, using: proxy)
+            case .settled:
+                break landing
             }
-            if isInPlace(row) || jumps == 2 { break }
-            jumps += 1
-            jump(to: row.id, anchor: .top, using: proxy)
         }
         // A no-move jump leaves the initial bottom anchor active. End it before a summary grows.
         guard !Task.isCancelled, opening.seededRowID == nil, viewport.bottomGap < 1 else { return }
@@ -752,7 +743,8 @@ struct ConversationTranscript: View {
             await loadHistory(through: unread + 1)
             guard !Task.isCancelled, !isRevealing else { return }
             prepareCatchUp(unreadAfter: unread)
-            if let first = rows.first(where: { $0.messages.contains { $0.sequence > unread } }) {
+            if case .unread(let id) = TranscriptLanding.target(unreadAfter: unread, rows: rows),
+               let first = rows.first(where: { $0.id == id }) {
                 await settleLanding(on: first, using: proxy)
                 guard !Task.isCancelled, !isRevealing else { return }
             } else { await settleLatestLanding(using: proxy) }
@@ -918,24 +910,14 @@ private struct TranscriptJump: Equatable {
 /// outside SwiftUI's tracking, so the first layout already uses it.
 @MainActor
 private final class TranscriptOpening {
-    /// A tail this short likely fits on the last screen, so it opens at the bottom, where the first
-    /// unread row already shows. A row seeded at the top couldn't scroll past the bottom anyway.
-    static let bottomRows = 8
-
     var isResolved = false
-    /// The first unread row, or nil when the transcript lands after it connects instead.
-    private(set) var rowID: String?
-    private(set) var unreadAfter: Int?
-    private var seeds = false
+    var plan: TranscriptLanding.Opening?
+
+    var rowID: String? { plan?.rowID }
+    var unreadAfter: Int? { plan?.unreadAfter }
 
     /// The row the first layout scrolls to the top, unless the tail is short.
-    var seededRowID: String? { seeds ? rowID : nil }
-
-    func open(_ rowID: String, unreadAfter: Int, seeds: Bool) {
-        self.rowID = rowID
-        self.unreadAfter = unreadAfter
-        self.seeds = seeds
-    }
+    var seededRowID: String? { plan?.seeds == true ? rowID : nil }
 }
 
 /// Waits for layout to settle. AppKit lays out and draws before the main run loop waits, so a turn

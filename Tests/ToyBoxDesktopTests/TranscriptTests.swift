@@ -1196,6 +1196,111 @@ struct TranscriptTests {
     }
 }
 
+@Suite("Transcript landing policy")
+struct TranscriptLandingTests {
+    private func rows(_ range: ClosedRange<Int> = 1...20) -> [TranscriptRow] {
+        transcriptRows(range.map {
+            catchUpTestMessage($0, sender: $0.isMultiple(of: 2) ? .user : .agent("lead"))
+        }, lead: .lead(id: "lead"), members: [])
+    }
+
+    private func frame(_ y: CGFloat) -> TranscriptMessageFrame {
+        .init(sequence: 1, rect: CGRect(x: 0, y: y, width: 400, height: 40), historyStart: 1)
+    }
+
+    private func step(top: CGFloat, height: CGFloat = 400, bottomGap: CGFloat = 100,
+                      isColdOpening: Bool = false, jumps: Int = 0, hasPendingJump: Bool = false) -> TranscriptLanding.Step {
+        let row = rows()[0]
+        return TranscriptLanding.step(
+            on: row, frames: [row.messages[0].id: frame(top)],
+            viewport: TranscriptViewport(bottomGap: bottomGap, width: 500, height: height),
+            isColdOpening: isColdOpening, jumps: jumps, hasPendingJump: hasPendingJump)
+    }
+
+    @Test func theTargetIsTheFirstRowContainingUnreadMessagesOrLatest() throws {
+        let rows = rows()
+        #expect(TranscriptLanding.target(unreadAfter: nil, rows: rows) == .latest)
+        #expect(TranscriptLanding.target(unreadAfter: 20, rows: rows) == .latest)
+        #expect(TranscriptLanding.target(unreadAfter: 0, rows: []) == .latest)
+        #expect(TranscriptLanding.target(unreadAfter: 10, rows: rows) == .unread(rows[10].id))
+        let run = transcriptRows((1...10).map(transcriptTestMessage),
+                                 lead: .lead(id: "lead"), members: [], unreadAfter: 5)
+        let unread = try #require(run.first { $0.messages.contains { $0.sequence == 6 } })
+        #expect(TranscriptLanding.target(unreadAfter: 5, rows: run) == .unread(unread.id))
+    }
+
+    @Test func aWarmOpeningRequiresTheUnreadBoundaryToBeLoaded() {
+        let rows = rows(31...50)
+        #expect(TranscriptLanding.opening(unreadAfter: nil, oldestSequence: 31,
+                                         hasOlderMessages: true, rows: rows) == nil)
+        #expect(TranscriptLanding.opening(unreadAfter: 30, oldestSequence: nil,
+                                         hasOlderMessages: true, rows: rows) == nil)
+        #expect(TranscriptLanding.opening(unreadAfter: 20, oldestSequence: 31,
+                                         hasOlderMessages: true, rows: rows) == nil)
+        #expect(TranscriptLanding.opening(unreadAfter: 30, oldestSequence: 31,
+                                         hasOlderMessages: true, rows: rows)?.rowID == rows[0].id)
+        #expect(TranscriptLanding.opening(unreadAfter: 20, oldestSequence: 31,
+                                         hasOlderMessages: false, rows: rows)?.rowID == rows[0].id)
+        #expect(TranscriptLanding.opening(unreadAfter: 50, oldestSequence: 31,
+                                         hasOlderMessages: false, rows: rows) == nil)
+    }
+
+    @Test func aWarmOpeningSeedsOnlyTailsLongerThanEightRows() throws {
+        let rows = rows()
+        let short = try #require(TranscriptLanding.opening(unreadAfter: 12, oldestSequence: 1,
+                                                           hasOlderMessages: false, rows: rows))
+        #expect(short == .init(rowID: rows[12].id, unreadAfter: 12, seeds: false))
+        let long = try #require(TranscriptLanding.opening(unreadAfter: 11, oldestSequence: 1,
+                                                          hasOlderMessages: false, rows: rows))
+        #expect(long == .init(rowID: rows[11].id, unreadAfter: 11, seeds: true))
+    }
+
+    @Test func aColdOpeningMustTargetUnreadOnceEvenWhenProvisionalFramesLookLanded() {
+        #expect(step(top: 132.6857, height: 800, bottomGap: 0, isColdOpening: true) == .placeColdOpening)
+        #expect(step(top: 20, isColdOpening: true) == .placeColdOpening)
+        #expect(step(top: 20, isColdOpening: true, jumps: 1) == .settled)
+        #expect(step(top: 20) == .settled)
+    }
+
+    @Test(arguments: [(CGFloat(-0.51), false), (-0.5, true), (0, true), (119.99, true), (120, false)])
+    func aTopLandingUsesTheExactVisibleThreshold(_ sample: (top: CGFloat, fits: Bool)) {
+        #expect(step(top: sample.top) == (sample.fits ? .settled : .correctPosition))
+        #expect(step(top: 49.99, height: 100) == .settled)
+        #expect(step(top: 50, height: 100) == .correctPosition)
+    }
+
+    @Test func aShortTailMayLandAnywhereInsideTheLastScreenButNotUnderTheFloatingBar() {
+        #expect(step(top: 300, bottomGap: 0) == .settled)
+        #expect(step(top: 300, bottomGap: 0.99) == .settled)
+        #expect(step(top: 300, bottomGap: 1) == .correctPosition)
+        #expect(step(top: 400, bottomGap: 0) == .correctPosition)
+        #expect(step(top: -0.51, bottomGap: 0) == .correctPosition)
+    }
+
+    @Test func placementMeasuresTheMessageRunSystemGroupAndUnreadDivider() {
+        let row = rows()[0]
+        let viewport = TranscriptViewport(bottomGap: 100, width: 500, height: 400)
+        for id in [row.messages[0].id, row.id, "system-group-\(row.id)", "divider-\(row.id)"] {
+            #expect(TranscriptLanding.step(on: row, frames: [id: frame(20)], viewport: viewport,
+                                            isColdOpening: false, jumps: 0, hasPendingJump: false) == .settled)
+        }
+        #expect(TranscriptLanding.step(on: row, frames: [:], viewport: viewport,
+                                       isColdOpening: false, jumps: 0, hasPendingJump: false) == .correctPosition)
+        #expect(step(top: 20, height: 0) == .correctPosition)
+        let straddling = [row.messages[0].id: frame(-10), "divider-\(row.id)": frame(20)]
+        #expect(TranscriptLanding.step(on: row, frames: straddling, viewport: viewport,
+                                       isColdOpening: false, jumps: 0, hasPendingJump: false) == .correctPosition)
+    }
+
+    @Test func anInFlightJumpOwnsThePositionAndCorrectionsStayBounded() {
+        #expect(step(top: 20, hasPendingJump: true) == .waitForJump)
+        #expect(step(top: 20, isColdOpening: true, hasPendingJump: true) == .waitForJump)
+        #expect(step(top: 500, jumps: 1) == .correctPosition)
+        #expect(step(top: 500, jumps: 2) == .settled)
+        #expect(step(top: 500, jumps: 2, hasPendingJump: true) == .waitForJump)
+    }
+}
+
 @MainActor
 @Suite("Image viewer")
 struct ImageViewerTests {
