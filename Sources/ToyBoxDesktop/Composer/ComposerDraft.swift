@@ -20,6 +20,20 @@ struct ComposerImage: Codable, Equatable, Identifiable, Sendable {
 
 @MainActor @Observable
 final class ComposerDraft {
+    enum Scope: Hashable {
+        case conversation
+        case quickAsk
+        case inboxReply(sequence: Int)
+
+        fileprivate var storageComponent: String? {
+            switch self {
+            case .conversation: nil
+            case .quickAsk: "quick-ask"
+            case .inboxReply(let sequence): "inbox-reply:\(sequence)"
+            }
+        }
+    }
+
     private struct SavedImage: Codable {
         var id: UUID
         var name: String
@@ -47,12 +61,13 @@ final class ComposerDraft {
     private var loadingImageCount = 0
     private(set) var sendAttemptID: String?
     private(set) var isSavedLocally = true
+    private(set) var isNew = true
     var error: String?
     private let fileURL: URL?
     private let imagesURL: URL?
     private var restoring = true
 
-    static func storageKey(serverURL: URL, channelID: String) -> String {
+    static func storageKey(serverURL: URL, channelID: String, scope: Scope = .conversation) -> String {
         var components = URLComponents(url: serverURL, resolvingAgainstBaseURL: false)
         let scheme = components?.scheme?.lowercased()
         let host = components?.host?.lowercased()
@@ -64,12 +79,13 @@ final class ComposerDraft {
         }
         let normalized = (components?.string ?? serverURL.absoluteString)
             .replacingOccurrences(of: "/+$", with: "", options: .regularExpression)
-        return SHA256.hash(data: Data("\(normalized)\n\(channelID)".utf8))
+        let identity = "\(normalized)\n\(channelID)" + (scope.storageComponent.map { "\n\($0)" } ?? "")
+        return SHA256.hash(data: Data(identity.utf8))
             .map { String(format: "%02x", $0) }.joined()
     }
 
-    static func shared(serverURL: URL, channelID: String) -> ComposerDraft {
-        let key = storageKey(serverURL: serverURL, channelID: channelID)
+    static func shared(serverURL: URL, channelID: String, scope: Scope = .conversation) -> ComposerDraft {
+        let key = storageKey(serverURL: serverURL, channelID: channelID, scope: scope)
         if let draft = drafts[key] { return draft }
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         let fileURL = support.appendingPathComponent("ToyBoxDesktop/Drafts", isDirectory: true)
@@ -84,6 +100,7 @@ final class ComposerDraft {
         imagesURL = fileURL?.deletingPathExtension()
         isSavedLocally = fileURL != nil
         if let fileURL, let imagesURL, FileManager.default.fileExists(atPath: fileURL.path) {
+            isNew = false
             do {
                 let saved = try JSONDecoder().decode(Saved.self, from: Data(contentsOf: fileURL))
                 text = saved.text
@@ -232,7 +249,14 @@ final class ComposerDraft {
         save()
     }
 
+    func editAsNewMessage() {
+        sendAttemptID = nil
+        revision = UUID()
+        save()
+    }
+
     private func save() {
+        isNew = false
         guard !restoring, let fileURL, let imagesURL else { return }
         do {
             try FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(),

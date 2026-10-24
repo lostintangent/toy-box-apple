@@ -55,6 +55,13 @@ struct NativeComposerInput: NSViewRepresentable {
     var snapshot: WindowSnapshot? = nil
     var failureFeedback: ComposerFailureFeedback? = nil
     var dictation: ComposerDictation? = nil
+    var allowsAgentManagement = true
+    var isEditable = true
+    var minimumHeight: CGFloat = 44
+    var maximumLineCount = 3
+    var onSendAndOpen: (() -> Void)? = nil
+    var onEscape: (() -> Void)? = nil
+    var onChooseChannel: (() -> Void)? = nil
 
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
 
@@ -151,6 +158,7 @@ struct NativeComposerInput: NSViewRepresentable {
     }
 
     private func configure(_ input: NSTextView) {
+        input.isEditable = isEditable
         guard input.font?.pointSize != fontSize
                 || input.defaultParagraphStyle?.minimumLineHeight != fontSize * 20 / 14 else { return }
         let selection = input.selectedRange()
@@ -343,7 +351,9 @@ struct NativeComposerInput: NSViewRepresentable {
             guard let input, let container = input.textContainer, let layout = input.layoutManager else { return }
             layout.ensureLayout(for: container)
             let line = parent.fontSize * 20 / 14
-            let height = max(line, min(line * 3, layout.usedRect(for: container).height)) + 24
+            let height = max(parent.minimumHeight,
+                             max(line, min(line * CGFloat(parent.maximumLineCount),
+                                           layout.usedRect(for: container).height)) + 24)
             if abs(parent.height - height) > 0.5 {
                 DispatchQueue.main.async { [weak self] in self?.parent.height = height }
             }
@@ -358,13 +368,17 @@ struct NativeComposerInput: NSViewRepresentable {
                 }
                 if [36, 76].contains(event.keyCode), !modifiers.contains(.shift),
                    modifiers.isDisjoint(with: [.option, .control]) {
-                    parent.onSend()
+                    send(modifiers: modifiers)
                     return true
                 }
                 // Typing takes over from dictation, keeping every word already shown.
                 dictation.commitNow()
             }
             guard let input, !input.hasMarkedText() else { return false }
+            if event.keyCode == 37, modifiers == .command, let choose = parent.onChooseChannel {
+                choose()
+                return true
+            }
             if popover?.isShown == true {
                 switch event.keyCode {
                 case 125:
@@ -389,10 +403,20 @@ struct NativeComposerInput: NSViewRepresentable {
             }
             if [36, 76].contains(event.keyCode), !modifiers.contains(.shift),
                modifiers.isDisjoint(with: [.option, .control]) {
-                parent.onSend()
+                send(modifiers: modifiers)
+                return true
+            }
+            if event.keyCode == 53, let escape = parent.onEscape {
+                escape()
                 return true
             }
             return false
+        }
+
+        private func send(modifiers: NSEvent.ModifierFlags) {
+            guard parent.isEditable else { return }
+            if modifiers.contains(.command), let sendAndOpen = parent.onSendAndOpen { sendAndOpen() }
+            else { parent.onSend() }
         }
 
         private func moveSelection(by offset: Int) {
@@ -413,7 +437,7 @@ struct NativeComposerInput: NSViewRepresentable {
         }
 
         func updateCompletion() {
-            guard let input, dictationSession == nil, input.window?.firstResponder === input, !input.hasMarkedText(),
+            guard let input, parent.isEditable, dictationSession == nil, input.window?.firstResponder === input, !input.hasMarkedText(),
                   input.selectedRange().length == 0, suppressedContext != contextSignature else {
                 dismissCompletion()
                 return
@@ -421,11 +445,14 @@ struct NativeComposerInput: NSViewRepresentable {
             guard let context = ComposerMentionContext.match(text: input.string, selection: input.selectedRange())
             else { dismissCompletion(); return }
             mentionRange = context.range
-            let items = MentionChoice.items(query: context.query, agents: parent.agents)
+            let items = MentionChoice.items(query: context.query, agents: parent.agents,
+                                            allowsCreation: parent.allowsAgentManagement)
             guard !items.isEmpty else { dismissCompletion(); return }
             if completion.items.map(\.id) != items.map(\.id) { completion.selected = 0 }
             if completion.items != items { completion.items = items }
-            if completion.canManage != parent.canManage { completion.canManage = parent.canManage }
+            let canManage = parent.canManage && parent.allowsAgentManagement
+            if completion.canManage != canManage { completion.canManage = canManage }
+            completion.showsManagement = parent.allowsAgentManagement
             if popover == nil {
                 let popover = NSPopover()
                 popover.behavior = .semitransient
@@ -808,7 +835,7 @@ struct MentionChoice: Identifiable, Equatable {
     var isCreate = false
     var isMember = false
 
-    static func items(query: String, agents: [ChannelAgent]) -> [MentionChoice] {
+    static func items(query: String, agents: [ChannelAgent], allowsCreation: Bool = true) -> [MentionChoice] {
         var items: [MentionChoice] = []
         if query.isEmpty || "everyone".contains(query) {
             items.append(.init(id: "everyone", name: "Everyone", detail: "Notify everyone in the channel",
@@ -822,7 +849,7 @@ struct MentionChoice: Identifiable, Equatable {
                                isMember: agent.id != agents.first?.id))
         }
         let words = query.split(separator: "-")
-        if !words.isEmpty && !items.contains(where: { $0.handle == "@\(query)" }) {
+        if allowsCreation, !words.isEmpty && !items.contains(where: { $0.handle == "@\(query)" }) {
             let name = words.map { $0.prefix(1).uppercased() + $0.dropFirst() }.joined(separator: " ")
             items.append(.init(id: "create-\(query)", name: name, detail: "Creates and starts a new agent",
                                handle: "@\(query)", isCreate: true))
@@ -835,6 +862,7 @@ struct MentionChoice: Identifiable, Equatable {
     var items: [MentionChoice] = []
     var selected = 0
     var canManage = false
+    var showsManagement = true
     var creatingID: String?
     var error: String?
     @ObservationIgnored var onAccept: ((MentionChoice) -> Void)?
@@ -902,7 +930,7 @@ private struct MentionCompletionMenu: View {
             .buttonStyle(.plain)
             .disabled(model.creatingID != nil || (item.isCreate && !model.canManage))
             .accessibilityAddTraits(index == model.selected ? .isSelected : [])
-            if let agent = item.agent, item.isMember {
+            if model.showsManagement, let agent = item.agent, item.isMember {
                 Button("Edit…") { model.onEdit?(agent) }
                     .buttonStyle(.borderless)
                     .font(.caption)

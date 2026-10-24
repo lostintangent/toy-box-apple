@@ -1,6 +1,6 @@
 import AppKit
 import AVFoundation
-import ChannelClient
+@testable import ChannelClient
 import ChannelKit
 import Foundation
 import Speech
@@ -116,9 +116,92 @@ struct ComposerTests {
         let normalized = try #require(URL(string: "http://localhost/prefix"))
         let otherServer = try #require(URL(string: "http://localhost:3210/prefix"))
         let key = ComposerDraft.storageKey(serverURL: upper, channelID: "channel")
+        #expect(key == "7666436268910164a35f2ac26b9f08b3bf3ebed835c132e3d2c6e8984549822e")
         #expect(key == ComposerDraft.storageKey(serverURL: normalized, channelID: "channel"))
         #expect(key != ComposerDraft.storageKey(serverURL: otherServer, channelID: "channel"))
         #expect(key != ComposerDraft.storageKey(serverURL: normalized, channelID: "another"))
+        let quickAsk = ComposerDraft.storageKey(serverURL: normalized, channelID: "channel", scope: .quickAsk)
+        let reply = ComposerDraft.storageKey(serverURL: normalized, channelID: "channel", scope: .inboxReply(sequence: 8))
+        #expect(Set([key, quickAsk, reply]).count == 3)
+        #expect(reply != ComposerDraft.storageKey(serverURL: normalized, channelID: "channel",
+                                                scope: .inboxReply(sequence: 9)))
+        #expect(quickAsk == ComposerDraft.storageKey(serverURL: upper, channelID: "channel", scope: .quickAsk))
+    }
+
+    @Test func auxiliaryRepliesSeedOnceAndKeepStaleRequestsUnsent() async throws {
+        try await withDraft { draft, url in
+            let store = ChannelStore(id: "test", api: try ChannelAPI(serverURL: "http://localhost:3210"),
+                                     sendJournal: nil)
+            let channel = Channel(id: "test", name: "Test", model: .init(provider: "test", name: "test"),
+                                  requestSequence: 8, updatedAt: "2026-10-24T00:00:00Z")
+            let initial = ChannelState(revision: 1, channel: channel, lead: .lead(id: "lead"))
+            _ = try store.apply(.init(type: "snapshot", state: initial))
+            let session = AuxiliaryComposerSession(store: store, scope: .inboxReply(sequence: 8),
+                                                   requester: .init(id: "ada", name: "Ada Lovelace"), draft: draft)
+            #expect(draft.text == "@ada-lovelace ")
+            #expect(session.canSend)
+            #expect(!session.requestChanged)
+            #expect(store.state?.channel.seenThrough == 0)
+            draft.text = ""
+            let restored = ComposerDraft(fileURL: url)
+            let reopened = AuxiliaryComposerSession(store: store, scope: .inboxReply(sequence: 8),
+                                                    requester: .init(id: "ada", name: "Ada Lovelace"), draft: restored)
+            #expect(reopened.draft.text.isEmpty)
+            draft.text = "Keep this reply"
+            var changed = initial
+            changed.revision = 2
+            changed.channel.requestSequence = 9
+            _ = try store.apply(.init(type: "snapshot", state: changed))
+            #expect(session.requestChanged)
+            #expect(!session.canSend)
+            await session.send()
+            #expect(draft.text == "Keep this reply")
+            #expect(draft.sendAttemptID == nil)
+            #expect(store.sendAttempts.isEmpty)
+            #expect(session.error?.contains("request changed") == true)
+            #expect(store.state?.channel.seenThrough == 0)
+        }
+    }
+
+    @Test func auxiliaryEchoConfirmationClearsOnlyItsOwnUnchangedDraft() async throws {
+        try await withDraft { draft, _ in
+            let store = ChannelStore(id: "test", api: try ChannelAPI(serverURL: "http://localhost:3210"),
+                                     sendJournal: nil)
+            draft.text = "An unconfirmed message"
+            draft.associateSend(id: "original")
+            let session = AuxiliaryComposerSession(store: store, scope: .quickAsk, draft: draft)
+            #expect(session.isReadOnly)
+            #expect(session.deliveryNotice == "Delivery not confirmed. It may have arrived.")
+            let message = ChannelMessage(id: "original", sequence: 9, timestamp: "2026-10-24T00:00:00Z",
+                                         sender: .user, content: .text(draft.text))
+            let channel = Channel(id: "test", name: "Test", model: .init(provider: "test", name: "test"),
+                                  latestSequence: 9, updatedAt: message.timestamp)
+            let state = ChannelState(revision: 2, channel: channel, lead: .lead(id: "lead"), messages: [message])
+            _ = try store.apply(.init(type: "snapshot", state: state))
+            session.reconcileDelivery()
+            #expect(session.confirmation?.id == "original")
+            #expect(session.confirmation?.sequence == 9)
+            #expect(!draft.hasContent)
+            #expect(draft.sendAttemptID == nil)
+            session.beginPresentation()
+            #expect(session.confirmation == nil)
+            draft.text = "A different unconfirmed message"
+            draft.associateSend(id: "second")
+            let editedSession = AuxiliaryComposerSession(store: store, scope: .quickAsk, draft: draft)
+            editedSession.edit()
+            #expect(editedSession.editedUnconfirmedMessage)
+            #expect(draft.sendAttemptID == nil)
+            draft.text = "A newer draft"
+            var second = message
+            second.id = "second"
+            var updated = state
+            updated.revision = 3
+            updated.messages.append(second)
+            _ = try store.apply(.init(type: "snapshot", state: updated))
+            editedSession.reconcileDelivery()
+            #expect(draft.text == "A newer draft")
+            #expect(editedSession.confirmation == nil)
+        }
     }
 
     @Test func mentionContextUsesCaretAndCanonicalBoundaries() {
@@ -269,6 +352,18 @@ struct ComposerTests {
         #expect(try !coordinator.handle(key("\r", code: 36, in: window)))
         #expect(sends == 2)
         input.unmarkText()
+        var sendsAndOpen = 0
+        var dismissals = 0
+        coordinator.parent.onSendAndOpen = { sendsAndOpen += 1 }
+        coordinator.parent.onEscape = { dismissals += 1 }
+        #expect(try coordinator.handle(key("\r", code: 36, in: window, modifiers: .command)))
+        #expect(try coordinator.handle(key("\u{1b}", code: 53, in: window)))
+        #expect(sendsAndOpen == 1)
+        #expect(dismissals == 1)
+        #expect(sends == 2)
+        coordinator.parent.isEditable = false
+        #expect(try coordinator.handle(key("\r", code: 36, in: window, modifiers: .command)))
+        #expect(sendsAndOpen == 1)
     }
 
     @Test func pasteboardImagesAndFilesUseTheSameImportCallbacks() throws {

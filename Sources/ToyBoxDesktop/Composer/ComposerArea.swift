@@ -388,7 +388,8 @@ private struct ChannelComposer: View {
             }
             HStack(spacing: 8) {
                 AttachImagesButton { showPicker = true }
-                if let lead = store.roster.first { audience(lead: lead, members: Array(store.roster.dropFirst())) }
+                ComposerAudienceView(text: draft.text, agents: store.roster,
+                                     acknowledgesRequest: store.requestSequence != nil)
                 if let request = store.request { inputNeeded(request) }
                 Spacer(minLength: 0)
                 if draft.isLoadingImages {
@@ -430,41 +431,6 @@ private struct ChannelComposer: View {
         .onDrop(of: [UTType.fileURL, .image], isTargeted: $isDragging) { providers in
             providers.map { draft.attachProvider($0) }.contains(true)
         }
-    }
-
-    private func audience(lead: ChannelAgent, members: [ChannelAgent]) -> some View {
-        let recipients = resolveChannelAudience(content: draft.text, sender: .user, lead: lead, members: members,
-                                                acknowledgedRequest: store.requestSequence != nil)
-        let names = recipients.map(\.name).joined(separator: ", ")
-        let label = recipients.isEmpty ? "No one will be notified"
-            : "To \(channelAudienceLabel(recipients, reachableCount: members.count + 1))"
-        return ViewThatFits(in: .horizontal) {
-            HStack(spacing: 4) {
-                if recipients.isEmpty {
-                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
-                } else {
-                    ForEach(recipients.prefix(3)) { agent in AgentAvatarView(agent: agent, size: 16) }
-                }
-                Text(label).lineLimit(1)
-            }
-            .fixedSize(horizontal: true, vertical: false)
-            HStack(spacing: 4) {
-                if let first = recipients.first {
-                    AgentAvatarView(agent: first, size: 16)
-                } else {
-                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
-                }
-                Text(recipients.isEmpty ? "No recipients" : "\(recipients.count)")
-            }
-        }
-        .padding(.horizontal, 7)
-        .frame(height: 24)
-        .background(recipients.isEmpty ? Color.orange.opacity(0.1) : Color.secondary.opacity(0.08), in: Capsule())
-        .foregroundStyle(recipients.isEmpty ? Color.primary : .secondary)
-        .help(recipients.isEmpty ? label : "Notifies \(names)")
-        .accessibilityElement(children: .ignore)
-        .accessibilityAddTraits(.isStaticText)
-        .accessibilityLabel(recipients.isEmpty ? label : "To \(names)")
     }
 
     private func inputNeeded(_ request: ChannelMessage) -> some View {
