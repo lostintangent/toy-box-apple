@@ -274,30 +274,62 @@ struct ComposerTests {
     @Test func pasteboardImagesAndFilesUseTheSameImportCallbacks() throws {
         var images: [ComposerImage] = []
         var files: [URL] = []
+        var errors: [String] = []
         let parent = NativeComposerInput(
             text: .constant(""), height: .constant(44), focused: .constant(false),
             dragging: .constant(false), fontSize: 14, focusRequest: UUID(),
             agents: [], canManage: false, onSend: {}, onFiles: { files += $0 },
-            onImage: { images.append($0) }, onError: { _ in },
+            onImage: { images.append($0) }, onError: { errors.append($0) },
             onCreate: { .init(id: "created", name: $0) }, onEdit: { _ in }
         )
         let coordinator = parent.makeCoordinator()
+        let input = ComposerTextView()
+        input.isRichText = false
+        input.importsGraphics = false
+        input.coordinator = coordinator
         let pasteboard = NSPasteboard.withUniqueName()
+        input.attachmentPasteboard = pasteboard
+        let paste = NSMenuItem(title: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
         defer { pasteboard.releaseGlobally() }
         let image = try sampleImage()
         #expect(pasteboard.setData(image.data, forType: .png))
-        #expect(coordinator.acceptPasteboard(pasteboard))
+        #expect(input.validateMenuItem(paste))
+        input.paste(nil)
         #expect(images.first?.data == image.data)
         #expect(images.first?.mimeType == "image/png")
         pasteboard.clearContents()
         let file = URL(fileURLWithPath: "/tmp/composer-pasteboard-fixture.png")
         #expect(pasteboard.writeObjects([file as NSURL]))
+        #expect(input.validateMenuItem(paste))
         #expect(coordinator.acceptPasteboard(pasteboard))
         #expect(files == [file])
         #expect(images.count == 1)
         pasteboard.clearContents()
         #expect(pasteboard.setString("Ordinary text", forType: .string))
+        #expect(!coordinator.canAcceptPasteboard(pasteboard))
         #expect(!coordinator.acceptPasteboard(pasteboard))
+        let tiff = try #require(image.image?.tiffRepresentation)
+        pasteboard.declareTypes([.tiff, .png], owner: nil)
+        #expect(pasteboard.setData(tiff, forType: .tiff))
+        #expect(pasteboard.setData(image.data, forType: .png))
+        #expect(coordinator.acceptPasteboard(pasteboard))
+        #expect(images.last?.data == image.data)
+        #expect(images.last?.mimeType == "image/png")
+        pasteboard.declareTypes([.tiff], owner: nil)
+        #expect(pasteboard.setData(tiff, forType: .tiff))
+        #expect(input.validateMenuItem(paste))
+        input.paste(nil)
+        #expect(images.last?.mimeType == "image/png")
+        #expect(images.last?.image != nil)
+        input.isEditable = false
+        #expect(!input.validateMenuItem(paste))
+        input.paste(nil)
+        pasteboard.declareTypes([.png], owner: nil)
+        #expect(pasteboard.setData(Data([1, 2, 3]), forType: .png))
+        #expect(coordinator.acceptPasteboard(pasteboard))
+        #expect(errors.count == 1)
+        #expect(errors.first?.contains("could not be read") == true)
+        #expect(images.count == 3)
     }
 
     @Test func tabLeavesTheComposerLikeATextareaUnlessItAcceptsAMention() async throws {
