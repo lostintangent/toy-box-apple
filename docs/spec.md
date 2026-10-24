@@ -1071,8 +1071,9 @@ Find belongs to the open channel, not the channel catalog. Edit > Find > Find…
 opens and focuses a native find bar at the top of the conversation column, directly below the
 window toolbar. It does not cover the sidebar or Overview. The bar uses the system control
 background, with no custom glass plate, 12-point horizontal and 6-point vertical insets. Its
-first row is a flexible 28-point native search field with the prompt "Search this channel", a
-secondary 11-point monospaced result position ("3 of 12"), previous/next chevrons and Done.
+first row places a flexible native search field with the prompt "Search this channel" in a
+28-point row, followed by a secondary 11-point monospaced result position ("3 of 12"),
+previous/next chevrons and Done.
 Controls retain 28-point hit targets, and the field yields width before the controls truncate.
 At the narrow supported window size the count and all controls remain visible.
 
@@ -2000,7 +2001,7 @@ present a demo banner for acceptance without changing the production daily-deliv
 
 Under Settings > Notifications, add a separate grouped section below the existing request and
 completion alerts. Its rows are an on-by-default "Morning digest" toggle and a native time-only
-picker labeled "Deliver at", initially 8:00 AM and formatted for the user's locale. The footer
+morning picker labeled "Deliver at", initially 8:00 AM and formatted for the user's locale. The footer
 reads "A daily recap of activity from your teams. Made on this Mac. If your Mac is asleep, it
 arrives when you return before noon." Turning the digest off disables its time picker without
 discarding the chosen time. Existing notification authorization remains the master gate:
@@ -2028,7 +2029,8 @@ not message volume. Requests follow the menu bar's newest-first ordering.
 | Medium | Header/count and up to two compact request rows, with 8 points between rows and a single-line quote per row. Overflow uses "+N more" |
 | Large | Header/count and up to four request rows, with 12 points between rows. Overflow uses "+N more" |
 
-Each request row is one link. Use a 24-point avatar from the catalog profile, an 8-point gap to
+In Medium and Large, each request row is one link. WidgetKit gives Small one target for the
+whole tile, which opens its top request. Use a 24-point avatar from the catalog profile, an 8-point gap to
 the text column, a 13-point semibold channel name, a 12-point plain-text quote (one line in Medium,
 up to two in Small and Large), then 11-point secondary "[Agent] · 12m ago". Age is based on the
 request timestamp, not the last widget refresh. Keep visible text free of Markdown syntax and preserve the full question in
@@ -2045,8 +2047,9 @@ to preserve legibility. Cached requests after a known disconnect retain their co
 usable snapshot, say "Open Toy Box to connect" instead of claiming nothing needs attention.
 Do not expose requests from the previous server after a switch.
 
-Clicking a row opens Toy Box at that channel and request sequence through a validated URL route.
-The empty state, header and overflow open the main app. A stale link never redirects to a
+Clicking a request opens Toy Box at that channel and request sequence through a validated URL route.
+The empty Small tile opens the main app. In Medium and Large, the empty state, header, overflow
+and background open the main app. A stale link never redirects to a
 different channel or sends anything. Normal active-window read policy applies only after opening
 the app, not while WidgetKit renders the snapshot. Check small, medium and large layouts in light,
 dark and the system's accented appearance, plus long names, long quotes, empty and stale states.
