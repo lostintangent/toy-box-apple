@@ -146,6 +146,9 @@ struct ComposerTests {
             session.invalidateRequest()
             #expect(session.requestChanged)
             #expect(!session.canSend)
+            #expect(session.requestChangeNotice == "This request was answered elsewhere.")
+            session.invalidateRequest(replacementSequence: 9)
+            #expect(session.requestChangeNotice == "A newer request is waiting.")
             draft.text = ""
             let restored = ComposerDraft(fileURL: url)
             let reopened = AuxiliaryComposerSession(store: store, scope: .inboxReply(sequence: 8),
@@ -181,6 +184,8 @@ struct ComposerTests {
         #expect(history.initialTarget(channels: [beta, alpha], lastUsedID: "alpha", hasDraft: { _ in false }) == "alpha")
         #expect(history.initialTarget(channels: [beta], lastUsedID: nil, hasDraft: { _ in false }) == "beta")
         history.choose(beta)
+        #expect(history.initialTarget(channels: [], lastUsedID: nil, catalogLoaded: false,
+                                      hasDraft: { _ in false }) == "beta")
         #expect(history.initialTarget(channels: [beta, alpha], lastUsedID: "alpha", hasDraft: { _ in false }) == "beta")
         history.trackDraft(channelID: "alpha", name: "Alpha", hasContent: true)
         let restored = QuickAskTargetHistory(serverURL: server, defaults: defaults)
@@ -258,6 +263,8 @@ struct ComposerTests {
             session.reconcileDelivery()
             #expect(session.confirmation?.id == "original")
             #expect(session.confirmation?.sequence == 9)
+            #expect(session.takeConfirmationPresentation()?.id == "original")
+            #expect(session.takeConfirmationPresentation() == nil)
             #expect(!draft.hasContent)
             #expect(draft.sendAttemptID == nil)
             session.beginPresentation()

@@ -29,7 +29,9 @@ final class AuxiliaryComposerSession {
     private(set) var editedUnconfirmedMessage = false
     private var submission: Submission?
     private var requestInvalidated = false
+    private var replacementRequestSequence: Int?
     @ObservationIgnored private var observation = UUID()
+    @ObservationIgnored private var presentedConfirmationID: String?
 
     init(store: ChannelStore, scope: ComposerDraft.Scope, requester: ChannelAgent? = nil,
          draft: ComposerDraft? = nil) {
@@ -56,7 +58,18 @@ final class AuxiliaryComposerSession {
         requestSequence.map { requestInvalidated || (store.isLoaded && store.requestSequence != $0) } ?? false
     }
 
-    func invalidateRequest() { requestInvalidated = true }
+    func invalidateRequest(replacementSequence: Int? = nil) {
+        requestInvalidated = true
+        replacementRequestSequence = replacementSequence
+    }
+
+    var requestChangeNotice: String {
+        if replacementRequestSequence != nil
+            || (store.requestSequence != nil && store.requestSequence != requestSequence) {
+            return "A newer request is waiting."
+        }
+        return "This request was answered elsewhere."
+    }
 
     var isReadOnly: Bool { submission != nil && draft.sendAttemptID == submission?.id }
 
@@ -119,6 +132,12 @@ final class AuxiliaryComposerSession {
     }
 
     func cancelOpenOnConfirmation() { submission?.opensChannel = false }
+
+    func takeConfirmationPresentation() -> Confirmation? {
+        guard let confirmation, presentedConfirmationID != confirmation.id else { return nil }
+        presentedConfirmationID = confirmation.id
+        return confirmation
+    }
 
     func beginPresentation() {
         guard confirmation != nil else { return }
