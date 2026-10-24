@@ -23,12 +23,14 @@ final class ComposerDraft {
     enum Scope: Hashable {
         case conversation
         case quickSend
+        case quickSendIncoming
         case inboxReply(sequence: Int)
 
         fileprivate var storageComponent: String? {
             switch self {
             case .conversation: nil
             case .quickSend: "quick-send"
+            case .quickSendIncoming: "quick-send-incoming"
             case .inboxReply(let sequence): "inbox-reply:\(sequence)"
             }
         }
@@ -151,6 +153,10 @@ final class ComposerDraft {
     }
 
     func attachFiles(_ urls: [URL]) {
+        attachFiles(urls, allowingLocalPaths: false)
+    }
+
+    func attachFiles(_ urls: [URL], allowingLocalPaths: Bool) {
         guard !urls.isEmpty else { return }
         loadingImageCount += 1
         Task {
@@ -158,16 +164,23 @@ final class ComposerDraft {
             for url in urls {
                 let scoped = url.startAccessingSecurityScopedResource()
                 do {
-                    let image = try await Task.detached {
+                    let imported = try await Task.detached {
                         let resource = try url.resourceValues(forKeys: [.contentTypeKey, .isRegularFileKey])
-                        guard resource.isRegularFile == true, let type = resource.contentType,
-                              type.conforms(to: .image), let mime = type.preferredMIMEType else {
+                        guard url.isFileURL, resource.isRegularFile == true else {
                             throw ImageError.unsupported
                         }
-                        return ComposerImage(name: url.lastPathComponent, mimeType: mime,
-                                             data: try Data(contentsOf: url))
+                        if let type = resource.contentType, type.conforms(to: .image),
+                           let mime = type.preferredMIMEType {
+                            return ImportedFile.image(ComposerImage(name: url.lastPathComponent, mimeType: mime,
+                                                                    data: try Data(contentsOf: url)))
+                        }
+                        guard allowingLocalPaths else { throw ImageError.unsupported }
+                        return .path(url.path)
                     }.value
-                    append(image)
+                    switch imported {
+                    case .image(let image): append(image)
+                    case .path(let path): text = joinedComposerText(text, path)
+                    }
                 } catch {
                     failures.append("\(url.lastPathComponent): \(error.localizedDescription)")
                 }
@@ -255,6 +268,22 @@ final class ComposerDraft {
         save()
     }
 
+    func append(contentsOf other: ComposerDraft) {
+        guard other !== self else { return }
+        text = joinedComposerText(text, other.text)
+        for image in other.images {
+            var copy = image
+            copy.id = UUID()
+            images.append(copy)
+        }
+        if !other.images.isEmpty {
+            revision = UUID()
+            sendAttemptID = nil
+        }
+        if let error = other.error { self.error = error }
+        save()
+    }
+
     private func save() {
         isNew = false
         guard !restoring, let fileURL, let imagesURL else { return }
@@ -269,6 +298,7 @@ final class ComposerDraft {
                     try image.data.write(to: imageURL, options: .atomic)
                     try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: imageURL.path)
                 }
+
             }
             let metadata = images.map { SavedImage(id: $0.id, name: $0.name, mimeType: $0.mimeType) }
             let encoded = try JSONEncoder().encode(Saved(text: text, images: metadata, sendAttemptID: sendAttemptID))
@@ -286,12 +316,21 @@ final class ComposerDraft {
         }
     }
 
+    private enum ImportedFile: Sendable {
+        case image(ComposerImage)
+        case path(String)
+    }
+
     private enum ImageError: LocalizedError {
         case unsupported
         var errorDescription: String? {
             switch self {
-            case .unsupported: "Choose an image file. Other attachment formats are not supported."
+            case .unsupported: "Only images can be attached."
             }
         }
     }
+}
+
+func joinedComposerText(_ existing: String, _ incoming: String) -> String {
+    [existing, incoming].filter { !$0.isEmpty }.joined(separator: "\n\n")
 }

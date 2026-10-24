@@ -170,6 +170,107 @@ struct ComposerTests {
         }
     }
 
+    @Test func quickSendPrefillPreservesDraftsAndIsAppliedOnlyOnce() async throws {
+        try await withDraft { draft, url in
+            let server = try #require(URL(string: "http://localhost:3210"))
+            let incomingURL = url.deletingLastPathComponent().appendingPathComponent("incoming.json")
+            let inbox = QuickSendPrefillInbox(serverURL: server, draft: ComposerDraft(fileURL: incomingURL))
+            let original = try sampleImage()
+            draft.text = "Keep this draft"
+            draft.append(original)
+            let prefill = QuickSendPrefill(text: "Selected text\nhttps://example.com", images: [original])
+            let extra = QuickSendPrefill(text: "Another selection")
+            let merged = prefill.appending(extra)
+            #expect(merged.id != prefill.id && merged.id != extra.id)
+            inbox.receive(merged)
+            let staged = ComposerDraft(fileURL: incomingURL)
+            #expect(staged.text == "Selected text\nhttps://example.com\n\nAnother selection")
+            #expect(staged.images.count == 1)
+            let store = ChannelStore(id: "test", api: try ChannelAPI(serverURL: server.absoluteString), sendJournal: nil)
+            let session = AuxiliaryComposerSession(store: store, scope: .quickSend, draft: draft)
+            #expect(inbox.apply(to: session))
+            #expect(draft.text == "Keep this draft\n\n" + staged.text)
+            #expect(draft.images.count == 2)
+            #expect(draft.images.first?.id == original.id)
+            #expect(Set(draft.images.map(\.id)).count == 2)
+            #expect(!inbox.hasPendingContent)
+            let revision = draft.revision
+            #expect(!inbox.apply(to: session))
+            #expect(draft.revision == revision)
+            #expect(store.sendAttempts.isEmpty)
+            #expect(draft.sendAttemptID == nil)
+            #expect(ComposerDraft(fileURL: url).text == draft.text)
+            #expect(!ComposerDraft(fileURL: incomingURL).hasContent)
+        }
+    }
+
+    @Test func quickSendPrefillWaitsForAnExplicitEditOfAnUnconfirmedSend() async throws {
+        try await withDraft { draft, _ in
+            let server = try #require(URL(string: "http://localhost:3210"))
+            let inbox = QuickSendPrefillInbox(serverURL: server, draft: ComposerDraft())
+            draft.text = "Original immutable message"
+            draft.associateSend(id: "original")
+            let store = ChannelStore(id: "test", api: try ChannelAPI(serverURL: server.absoluteString), sendJournal: nil)
+            let session = AuxiliaryComposerSession(store: store, scope: .quickSend, draft: draft)
+            inbox.receive(.init(text: "Shared content"))
+            #expect(!inbox.apply(to: session))
+            #expect(draft.text == "Original immutable message")
+            #expect(draft.sendAttemptID == "original")
+            #expect(inbox.hasPendingContent)
+            session.edit()
+            #expect(inbox.apply(to: session))
+            #expect(draft.text == "Original immutable message\n\nShared content")
+            #expect(draft.sendAttemptID == nil)
+            #expect(session.editedUnconfirmedMessage)
+            #expect(store.sendAttempts.isEmpty)
+        }
+    }
+
+    @Test(arguments: ["http://localhost:3210", "https://remote.example"])
+    func quickSendPrefillAttachesImagesAndKeepsNonImagePathsLocal(serverAddress: String) async throws {
+        try await withDraft { draft, url in
+            let server = try #require(URL(string: serverAddress))
+            let inbox = QuickSendPrefillInbox(serverURL: server, draft: ComposerDraft())
+            let imageURL = url.deletingLastPathComponent().appendingPathComponent("image.png")
+            let fileURL = url.deletingLastPathComponent().appendingPathComponent("private notes.txt")
+            try sampleImage().data.write(to: imageURL)
+            try Data("Private file contents".utf8).write(to: fileURL)
+            draft.text = "Keep this draft"
+            let store = ChannelStore(id: "test", api: try ChannelAPI(serverURL: serverAddress), sendJournal: nil)
+            let session = AuxiliaryComposerSession(store: store, scope: .quickSend, draft: draft)
+            inbox.receive(.init(text: "Shared text", fileURLs: [imageURL, fileURL]))
+            #expect(inbox.draft.isLoadingImages)
+            #expect(!inbox.apply(to: session))
+            try await waitUntil("prefill files finish importing") { !inbox.draft.isLoadingImages }
+            #expect(inbox.apply(to: session))
+            #expect(draft.images.count == 1)
+            #expect(draft.text.hasPrefix("Keep this draft\n\nShared text"))
+            if server.host == "localhost" {
+                #expect(draft.text.hasSuffix(fileURL.path))
+                #expect(draft.error == nil)
+            } else {
+                #expect(!draft.text.contains(fileURL.path))
+                #expect(draft.error?.contains("Only images can be attached") == true)
+            }
+            #expect(!draft.text.contains("Private file contents"))
+            #expect(store.sendAttempts.isEmpty)
+        }
+    }
+
+    @Test func quickSendPrefillRecognizesOnlyActualLoopbackHosts() throws {
+        for host in ["localhost", "LOCALHOST.", "app.localhost", "127.0.0.1", "127.12.3.4", "[::1]"] {
+            let server = try #require(URL(string: "http://\(host):3210"))
+            #expect(QuickSendPrefillInbox.acceptsLocalPaths(serverURL: server))
+        }
+        for host in ["127.attacker.example", "127.0.0.999", "localhost.example", "192.168.1.3", "example.com"] {
+            let server = try #require(URL(string: "http://\(host):3210"))
+            #expect(!QuickSendPrefillInbox.acceptsLocalPaths(serverURL: server))
+        }
+        let server = try #require(URL(string: "http://localhost:3210"))
+        #expect(ComposerDraft.storageKey(serverURL: server, channelID: "", scope: .quickSendIncoming)
+            != ComposerDraft.storageKey(serverURL: server, channelID: "", scope: .quickSend))
+    }
+
     @Test func quickSendRestoresDraftTargetsBeforeRecentsAndNeverGuessesAmongChannels() throws {
         let suite = "ComposerQuickSend-\(UUID())"
         let defaults = try #require(UserDefaults(suiteName: suite))
