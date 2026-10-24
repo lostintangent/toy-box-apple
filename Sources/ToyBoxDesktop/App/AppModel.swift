@@ -103,6 +103,10 @@ final class AppModel {
 
     var api: ChannelAPI? { catalog?.api }
 
+    var lastUsedChannelID: String? {
+        activeChannelID ?? launchChannel.channelID(serverURL: serverURL)
+    }
+
     func configure(serverURL: String, persist: Bool = true) {
         do {
             let api = try ChannelAPI(serverURL: serverURL)
@@ -291,6 +295,12 @@ final class AppModel {
                 }
             }
         }
+    }
+
+    func retryMenuBarRequest(channelID: String) {
+        guard menuBarLookups[channelID] == nil else { return }
+        menuBarRequests[channelID] = nil
+        resolveMenuBarRequests()
     }
 
     /// Keeps the status item in step with activity, including an open channel's live presence.

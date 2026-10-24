@@ -70,11 +70,12 @@ struct ToyBoxDesktopApp: App {
         }
 
         MenuBarExtra(isInserted: menuBarInserted) {
-            MenuBarMenu().environment(model)
+            MenuBarInbox().environment(model)
+                .preferredColorScheme(appearance.colorScheme)
         } label: {
             MenuBarLabel(model: model)
         }
-        .menuBarExtraStyle(.menu)
+        .menuBarExtraStyle(.window)
         .onChange(of: menuBarVisibility, initial: true) { _, visibility in
             model.menuBar.visibility = visibility
         }

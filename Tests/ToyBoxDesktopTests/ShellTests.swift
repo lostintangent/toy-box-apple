@@ -1117,9 +1117,10 @@ struct MenuBarExtraTests {
         #expect(status.waiting.map(\.id) == ["newer", "older", "unknown"])
         #expect(status.waiting.map(\.sequence) == [14, 12, 3])
         #expect(status.waiting.map(\.agent?.id) == ["ada", "ada", nil])
-        #expect(status.waiting[1].subtitle == "Ada: Pick a palette for the icon")
-        let cut = status.waiting[0].subtitle
-        #expect(cut.hasPrefix("Ada: Can you confirm") && cut.hasSuffix("\u{2026}") && cut.count <= 60)
+        #expect(status.waiting[1].subtitle == "Ada needs your reply")
+        #expect(status.waiting[1].quote == "Pick a palette\nfor the icon")
+        #expect(status.waiting[0].quote == long)
+        #expect(status.waiting[2].quote == nil)
         #expect(status.waiting[2].subtitle == "Needs your reply")
         // A waiting channel stays out of Working even while its agents work.
         #expect(status.working.isEmpty)
@@ -1140,16 +1141,80 @@ struct MenuBarExtraTests {
         #expect(status.workingAgents == 3)
     }
 
-    @Test func eachSectionShowsSixChannelsThenOpensTheWindowForTheRest() {
+    @Test func workingShowsThreeChannelsThenOpensTheWindowForTheRest() {
         let inputs = (0..<8).map { index in
             MenuBarStatus.Input(channel: channel("c\(index)", updated: "2026-10-22T0\(index):00:00Z"),
                                 isWaiting: false, working: [ada])
         }
         let section = MenuBarStatus(inputs, unreachableHost: nil).workingSection
-        #expect(section.items.map(\.id) == ["c7", "c6", "c5", "c4", "c3", "c2"] && section.overflow == 2)
-        #expect(MenuBarStatus(Array(inputs.prefix(6)), unreachableHost: nil).workingSection.overflow == 0)
-        #expect(MenuBarStatus.moreChannels(2) == "2 More Channels\u{2026}")
-        #expect(MenuBarStatus.moreChannels(1) == "1 More Channel\u{2026}")
+        #expect(section.items.map(\.id) == ["c7", "c6", "c5"] && section.overflow == 5)
+        #expect(section.items.allSatisfy { $0.agents == [ada] })
+        #expect(MenuBarStatus(Array(inputs.prefix(3)), unreachableHost: nil).workingSection.overflow == 0)
+    }
+
+    @Test func inboxQuotesFlattenMarkdownWithoutDroppingMentionsOrCuttingAtSixtyCharacters() {
+        let text = "@user **Please review** [this proposal](https://example.test). " + String(repeating: "Details. ", count: 30)
+        let status = MenuBarStatus([
+            .init(channel: channel("one", request: 12), isWaiting: true, working: [], request: request(text))
+        ], unreachableHost: nil)
+        #expect(status.waiting[0].quote?.hasPrefix("@user Please review this proposal.") == true)
+        #expect((status.waiting[0].quote?.count ?? 0) > 200)
+        #expect(status.waiting[0].quote?.contains("https://") == false)
+    }
+
+    @Test func anOpenInboxKeepsAnsweredRowsAndAppendsNewRequestsWithoutReordering() {
+        let first = MenuBarStatus([
+            .init(channel: channel("one", request: 12), isWaiting: true, working: [], request: request("First?")),
+            .init(channel: channel("two", request: 13), isWaiting: true, working: [],
+                  request: request("Second?", sequence: 13)),
+        ], unreachableHost: nil)
+        var inbox = MenuBarInboxState(status: first)
+        let next = MenuBarStatus(waiting: [
+            .init(id: "new", name: "New", subtitle: "Needs your reply", agent: ada, sequence: 14, quote: "New?"),
+            first.waiting[1],
+        ])
+        inbox.update(next)
+        #expect(inbox.requests.map(\.id) == ["one", "two", "new"])
+        #expect(inbox.requests[0].state == .answered)
+        #expect(!inbox.requests[0].canReply)
+        #expect(inbox.requests[1].canReply)
+        #expect(MenuBarInboxState(status: next).requests.map(\.id) == ["new", "two"])
+    }
+
+    @Test func aChangedRequestKeepsTheOriginalQuoteAndDisablesItsReply() {
+        let item = MenuBarStatus.Item(id: "one", name: "One", subtitle: "", agent: ada, sequence: 12, quote: "First?")
+        var inbox = MenuBarInboxState(status: .init(waiting: [item]))
+        var newer = item
+        newer.sequence = 20
+        newer.quote = "Different question?"
+        inbox.update(.init(waiting: [newer]))
+        #expect(inbox.requests[0].item == item)
+        #expect(inbox.requests[0].state == .newerRequest)
+        #expect(!inbox.requests[0].canReply)
+    }
+
+    @Test func aConfirmedReplyStaysSentUntilTheNextOpening() {
+        let item = MenuBarStatus.Item(id: "one", name: "One", subtitle: "", agent: ada, sequence: 12, quote: "First?")
+        var inbox = MenuBarInboxState(status: .init(waiting: [item]))
+        inbox.confirmed("one")
+        inbox.update(.init(waiting: [item]))
+        #expect(inbox.requests[0].state == .sent)
+        #expect(!inbox.requests[0].canReply)
+        inbox.update(.init())
+        #expect(inbox.requests[0].state == .sent)
+        #expect(MenuBarInboxState(status: .init()).requests.isEmpty)
+    }
+
+    @Test func previewArrivalEnablesReplyWithoutInventingARequester() {
+        var item = MenuBarStatus.Item(id: "one", name: "One", subtitle: "", sequence: 12)
+        var inbox = MenuBarInboxState(status: .init(waiting: [item]))
+        #expect(!inbox.requests[0].canReply)
+        item.quote = "Question?"
+        inbox.update(.init(waiting: [item]))
+        #expect(!inbox.requests[0].canReply)
+        item.agent = ada
+        inbox.update(.init(waiting: [item]))
+        #expect(inbox.requests[0].canReply)
     }
 
     @Test func whenActiveLingersAfterActivityAndHoldsWhileAMenuIsOpen() async throws {
@@ -1168,6 +1233,16 @@ struct MenuBarExtraTests {
         await presence.linger?.value
         #expect(presence.isInserted)
         presence.menuTracking(false)
+        #expect(!presence.isInserted)
+
+        presence.update(isActive: true)
+        presence.popoverVisibilityChanged(true)
+        presence.update(isActive: false)
+        await presence.linger?.value
+        presence.menuTracking(true)
+        presence.menuTracking(false)
+        #expect(presence.isInserted)
+        presence.popoverVisibilityChanged(false)
         #expect(!presence.isInserted)
 
         // Activity that resumes inside the linger keeps the item without a gap.

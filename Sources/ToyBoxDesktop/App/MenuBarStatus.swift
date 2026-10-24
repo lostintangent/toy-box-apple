@@ -34,6 +34,8 @@ struct MenuBarStatus: Equatable {
         var agent: ChannelAgent?
         /// The request a waiting item reveals.
         var sequence: Int?
+        var quote: String? = nil
+        var agents: [ChannelAgent] = []
     }
 
     struct Section: Equatable {
@@ -51,8 +53,7 @@ struct MenuBarStatus: Equatable {
         var request: ChannelNotifications.ResolvedRequest?
     }
 
-    static let sectionLimit = 6
-    static let subtitleLimit = 60
+    static let workingLimit = 3
     static let needsReply = "Needs your reply"
 
     var waiting: [Item] = []
@@ -82,18 +83,18 @@ struct MenuBarStatus: Equatable {
                 let requester = request.flatMap { request in
                     request.agents.first { $0.id == request.message.sender.agentId }
                 }
-                let text = request.map { NotificationText.requestBody($0.message, agents: $0.agents) }
-                    .flatMap { $0 == NotificationText.waitingBody ? nil : $0 }
                 return Item(id: input.channel.id, name: input.channel.name,
-                            subtitle: Self.waitingSubtitle(requester: requester?.name, text: text),
-                            agent: requester, sequence: input.channel.requestSequence)
+                            subtitle: requester.map { NotificationText.subtitle(requester: $0.name) } ?? Self.needsReply,
+                            agent: requester, sequence: input.channel.requestSequence,
+                            quote: request.map(Self.quote))
             }
         working = inputs.filter { !$0.isWaiting && !$0.working.isEmpty }
             .map { input in (input, date(input.channel.updatedAt)) }
             .sorted { $0.1 > $1.1 }
             .map { input, _ in
                 Item(id: input.channel.id, name: input.channel.name,
-                     subtitle: Self.workingSubtitle(input.working.map(\.name)), agent: input.working.first)
+                     subtitle: Self.workingSubtitle(input.working.map(\.name)), agent: input.working.first,
+                     agents: input.working)
             }
     }
 
@@ -126,28 +127,14 @@ struct MenuBarStatus: Equatable {
         }
     }
 
-    var waitingSection: Section { Self.section(waiting) }
-    var workingSection: Section { Self.section(working) }
+    var workingSection: Section {
+        Section(items: Array(working.prefix(Self.workingLimit)), overflow: max(working.count - Self.workingLimit, 0))
+    }
 
     /// The one disabled line an empty menu shows.
     var emptyText: String? {
         guard waiting.isEmpty, working.isEmpty else { return nil }
         return unreachableHost.map { "Can't connect to \($0)" } ?? "No agents are working"
-    }
-
-    private static func section(_ items: [Item]) -> Section {
-        Section(items: Array(items.prefix(sectionLimit)), overflow: max(items.count - sectionLimit, 0))
-    }
-
-    static func moreChannels(_ count: Int) -> String {
-        "\(count) More \(count == 1 ? "Channel" : "Channels")\u{2026}"
-    }
-
-    /// "[Agent]: [request text]", cut to 60 characters, once the request's text is known.
-    static func waitingSubtitle(requester: String?, text: String?) -> String {
-        guard let text else { return needsReply }
-        let line = text.split(whereSeparator: \.isNewline).joined(separator: " ")
-        return NotificationText.truncated(requester.map { "\($0): \(line)" } ?? line, limit: subtitleLimit)
     }
 
     static func workingSubtitle(_ names: [String]) -> String {
@@ -158,6 +145,11 @@ struct MenuBarStatus: Equatable {
         case 3: return "\(names[0]), \(names[1]) and \(names[2]) are working"
         default: return "\(names[0]), \(names[1]) and \(names.count - 2) others are working"
         }
+    }
+
+    private static func quote(_ request: ChannelNotifications.ResolvedRequest) -> String {
+        let text = NotificationText.plainText(request.message.text)
+        return text.isEmpty ? NotificationText.requestBody(request.message, agents: request.agents) : text
     }
 
     private static func count(_ value: Int, _ noun: String) -> String {
