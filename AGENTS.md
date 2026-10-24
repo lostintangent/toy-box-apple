@@ -48,6 +48,9 @@ view.
 - `TOY_BOX_REAL_DICTATION_TESTS=1 bun run test --filter ComposerTests/theRealTranscriberHearsARecordingThroughTheAudioSourceProtocol`
   opts into the real transcriber check. It needs the on-device English dictation model and uses
   synthesized audio, not microphone access. The normal suite never queries speech-model assets.
+- `TOY_BOX_TEST_TRANSCRIPT_TIMING=1 SCRATCH_PATH=/tmp/tbm-you bun run test --filter 'TranscriptTests|TranscriptCatchUpTests'`
+  opts into native Transcript frame-timing checks. Run these locally before changes to landing,
+  paging or following arrivals.
 - `TOY_BOX_TEST_LIVE_TEXT_INTERACTION=1 SCRATCH_PATH=/tmp/tbm-<you> bun run test --filter pressesOnTextReachLiveTextAndEverythingElseReachesTheViewer`
   opts into native Live Text press/drag routing in an ordered off-screen window. WindowServer
   events can stop the test runner's outer run loop. VisionKit analysis, selection-highlight
@@ -67,6 +70,18 @@ view.
 - Quit the instances you launch when you are done.
 - Attach channel images from your own session `files/` folder, never `/tmp`. Toy Box serves
   attachments from their original paths, so a cleaned scratch folder breaks earlier posts.
+
+## Test reliability
+
+- A test that fails on main without an identified code cause must be quarantined behind an
+  explicit opt-in the same day. Do not leave it in the merge gate while rerunning CI or patching
+  timing races in place. Record the failed run, test case and diagnostics, with an owner and
+  follow-up task. Quarantine changes gating, not responsibility for the failure.
+- CI should protect decisions with deterministic tests over inputs such as measured frames.
+  Native window tests in CI may assert settled end states, never per-frame timing. Frame-timing
+  and WindowServer-event checks remain opt-in and must run locally before changes to their behavior.
+- Restore a quarantined test to CI only after identifying the cause and adding deterministic
+  regression coverage. Do not loosen assertions or add retries to turn an unexplained failure green.
 
 ## Validating the running app
 
