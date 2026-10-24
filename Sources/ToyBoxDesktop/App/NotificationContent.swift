@@ -135,6 +135,7 @@ enum NotificationWithdrawal {
                       activeChannelID: String?) -> [String] {
         let byID = Dictionary(channels.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         return delivered.filter { item in
+            if item.kind == MorningDigest.category { return false }
             guard item.serverURL == serverURL else { return false }
             if item.channelID == activeChannelID { return true }
             guard let channel = byID[item.channelID] else { return item.kind == ChannelNotifications.Event.Kind.request.rawValue }
@@ -152,6 +153,7 @@ enum NotificationWithdrawal {
 /// channel never notifies, except to say a reply from a notification wasn't sent.
 enum NotificationPresentation {
     static func options(kind: String?, isActiveChannel: Bool) -> UNNotificationPresentationOptions {
+        if kind == MorningDigest.category { return [.banner, .list] }
         if kind == ChannelNotifications.replyFailedCategory { return [.banner, .list, .sound] }
         if isActiveChannel { return [] }
         return kind == ChannelNotifications.Event.Kind.completion.rawValue ? [.list] : [.banner, .list, .sound]

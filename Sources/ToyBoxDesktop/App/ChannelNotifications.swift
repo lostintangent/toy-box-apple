@@ -64,6 +64,7 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
             UNNotificationCategory(identifier: Event.Kind.completion.rawValue, actions: [], intentIdentifiers: [],
                                    hiddenPreviewsBodyPlaceholder: NotificationText.completionPlaceholder),
             UNNotificationCategory(identifier: Self.replyFailedCategory, actions: [], intentIdentifiers: []),
+            UNNotificationCategory(identifier: MorningDigest.category, actions: [], intentIdentifiers: []),
         ])
     }
 
@@ -152,6 +153,23 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
     private func add(_ request: UNNotificationRequest) async {
         do { try await center.add(request) }
         catch { self.error = error.localizedDescription }
+    }
+
+    func deliverMorningDigest(_ digest: MorningDigest.Content, serverURL: String, identifier: String) async throws {
+        guard let content = Self.morningDigestContent(digest, serverURL: serverURL) else { return }
+        try await center.add(UNNotificationRequest(identifier: identifier, content: content, trigger: nil))
+    }
+
+    static func morningDigestContent(_ digest: MorningDigest.Content, serverURL: String) -> UNNotificationContent? {
+        guard let busiest = digest.busiest else { return nil }
+        let content = UNMutableNotificationContent()
+        content.title = "Morning digest"
+        content.body = digest.body
+        content.categoryIdentifier = MorningDigest.category
+        content.threadIdentifier = MorningDigest.category
+        content.userInfo = ["channelID": busiest.channelID, "channelName": busiest.name,
+                            "kind": MorningDigest.category, "serverURL": serverURL]
+        return content
     }
 
     private func withdrawStale(force: Bool = false) {

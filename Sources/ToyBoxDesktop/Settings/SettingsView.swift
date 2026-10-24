@@ -14,6 +14,8 @@ struct SettingsView: View {
     @AppStorage("notificationsEnabled") private var notificationsEnabled = false
     @AppStorage("requestNotifications") private var requestNotifications = true
     @AppStorage("completionNotifications") private var completionNotifications = true
+    @AppStorage(MorningDigest.enabledKey) private var morningDigestEnabled = true
+    @AppStorage(MorningDigest.timeKey) private var morningDigestMinutes = 480
     @ViewState private var serverURL = ""
     @ViewState private var result: String?
     @ViewState private var resultIsError = false
@@ -215,6 +217,23 @@ struct SettingsView: View {
                 Toggle("Completed tasks", isOn: $completionNotifications)
                     .accessibilityLabel("Completed tasks").disabled(!notificationsEnabled)
             }
+            Section {
+                Toggle("Morning digest", isOn: $morningDigestEnabled)
+                    .accessibilityLabel("Morning digest")
+                    .disabled(!notificationsEnabled)
+                DatePicker("Deliver at", selection: digestTime,
+                           in: digestTimeRange,
+                           displayedComponents: .hourAndMinute)
+                    .accessibilityLabel("Deliver at")
+                    .disabled(!notificationsEnabled || !morningDigestEnabled)
+                if MorningDigest.canTest(bundleID: Bundle.main.bundleIdentifier,
+                                         options: model.launchOptions, server: model.serverURL) {
+                    Button("Send Test Digest") { Task { await model.morningDigest?.sendTest() } }
+                        .disabled(model.morningDigest?.isRunning == true)
+                }
+            } footer: {
+                footer("A daily recap of activity from your teams. Made on this Mac. If your Mac is asleep, it arrives when you return before noon.")
+            }
             if model.notifications.authorization == .denied {
                 Section {
                     Text("Notifications are turned off in System Settings. Enable them there to receive requests and completions.")
@@ -229,8 +248,29 @@ struct SettingsView: View {
             if let error = model.notifications.error {
                 errorLabel(error)
             }
+            if let error = model.morningDigest?.error { errorLabel(error) }
         }
         .formStyle(.grouped)
+    }
+
+    private var digestTimeRange: ClosedRange<Date> {
+        let start = Calendar.current.startOfDay(for: .now)
+        let end = Calendar.current.date(bySettingHour: 11, minute: 59, second: 0, of: start) ?? start
+        return start...end
+    }
+
+    private var digestTime: Binding<Date> {
+        Binding(
+            get: {
+                let minutes = (0..<720).contains(morningDigestMinutes) ? morningDigestMinutes : 480
+                return Calendar.current.date(bySettingHour: minutes / 60,
+                                             minute: minutes % 60, second: 0, of: .now) ?? .now
+            },
+            set: {
+                let parts = Calendar.current.dateComponents([.hour, .minute], from: $0)
+                morningDigestMinutes = min(719, (parts.hour ?? 8) * 60 + (parts.minute ?? 0))
+            }
+        )
     }
 
     private func errorLabel(_ error: String) -> some View {

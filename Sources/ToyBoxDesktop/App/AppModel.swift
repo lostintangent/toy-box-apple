@@ -1,5 +1,6 @@
 import AppKit
 import ChannelClient
+import ChannelIntelligence
 import ChannelKit
 import Foundation
 import Observation
@@ -25,6 +26,7 @@ final class AppModel {
     private(set) var openChannelIDs: Set<String> = []
     private(set) var activeChannelID: String?
     let notifications = ChannelNotifications()
+    private(set) var morningDigest: MorningDigest?
     let folders = ChannelFolders()
     let requestedRefresh = RequestedCatalogRefresh()
     let menuBar = MenuBarPresence()
@@ -88,6 +90,29 @@ final class AppModel {
             })
         }
         if showsMenuBarExtra { observeMenuBarActivity() }
+        morningDigest = MorningDigest(host: .init(
+            server: { [weak self] in self?.serverURL ?? "" },
+            authorized: { [weak self] in
+                guard let notifications = self?.notifications else { return false }
+                await notifications.refreshAuthorization()
+                return notifications.authorization == .authorized || notifications.authorization == .provisional
+            },
+            build: { [weak self] window in
+                guard let api = self?.api else { throw ChannelAPIError.invalidServerURL }
+                return try await MorningDigest.build(
+                    api: api, window: window,
+                    summarizes: TranscriptIntelligenceSettings.isOn(TranscriptIntelligenceSettings.summarizesNewMessages),
+                    intelligence: LiveChannelIntelligence.shared
+                )
+            },
+            deliver: { [weak self] content, server, identifier in
+                guard let notifications = self?.notifications else { throw ChannelAPIError.disconnected }
+                try await notifications.deliverMorningDigest(content, serverURL: server, identifier: identifier)
+            }
+        ), allowed: MorningDigest.isAllowed(launchOptions, bundleID: Bundle.main.bundleIdentifier),
+           testAllowed: MorningDigest.canTest(bundleID: Bundle.main.bundleIdentifier,
+                                              options: launchOptions, server: serverURL))
+        morningDigest?.start()
     }
 
     isolated deinit {

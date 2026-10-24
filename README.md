@@ -22,6 +22,8 @@ The **menu bar inbox** shows what a team is asking and lets you reply right bene
 
 **On-device catch-up summaries** turn a busy channel into a short account of what changed, what was decided and what needs your answer. Each line links back to its source message. Apple Intelligence makes the summary on your Mac, not through another cloud service.
 
+The **morning digest** brings one quiet daily notification with a line per active team. Choose its morning delivery time in Notifications settings. When Apple Intelligence is unavailable, message counts keep it useful.
+
 Screenshots aren't dead ends either. Open an image full size, move through the others with the arrow keys, and use **Live Text** to select and copy its text or follow a link.
 
 ### Make your team part of your Mac
