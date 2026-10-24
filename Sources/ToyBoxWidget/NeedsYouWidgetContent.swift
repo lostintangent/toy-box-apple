@@ -85,7 +85,7 @@ struct NeedsYouWidgetContent: View {
             }
             VStack(alignment: .leading, spacing: 2) {
                 Text(request.channelName).font(.system(size: 13, weight: .semibold)).lineLimit(1)
-                Text(request.quote).font(.system(size: 12)).lineLimit(family == .systemMedium ? 1 : 2)
+                Text(request.quote).font(.system(size: 12)).lineLimit(family == .systemSmall ? 2 : 1)
                     .multilineTextAlignment(.leading)
                 HStack(spacing: 3) {
                     if let name = request.agentName { Text(name).lineLimit(1) }
@@ -102,12 +102,13 @@ struct NeedsYouWidgetContent: View {
     }
 
     private func footer(_ snapshot: NeedsYouSnapshot) -> some View {
-        HStack {
-            if snapshot.waitingCount > limit {
+        let isStale = snapshot.isStale(at: entry.date)
+        return HStack {
+            if snapshot.waitingCount > limit && (family != .systemSmall || !isStale) {
                 Text("+\(snapshot.waitingCount - limit) more")
             }
             Spacer(minLength: 2)
-            if snapshot.isStale(at: entry.date) {
+            if isStale {
                 Text("May be out of date")
             } else if family != .systemSmall {
                 Text("Updated \(snapshot.updatedAt, format: .relative(presentation: .numeric, unitsStyle: .narrow))")
