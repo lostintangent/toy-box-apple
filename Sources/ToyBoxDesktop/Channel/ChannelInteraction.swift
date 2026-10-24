@@ -9,6 +9,7 @@ final class ChannelInteraction {
     /// Transcript filter from the Message View menu. It never changes audience or read policy.
     var messageView: TranscriptView = .all
     var isInspectorPresented = true
+    var isArtifactViewerPresented = false
 
     /// The composer consumes these. `token` changes on every request so repeats still fire.
     private(set) var replyRequest: (agent: ChannelAgent, token: UUID)?
