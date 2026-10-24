@@ -6,16 +6,40 @@ A native Mac app for your [Toy Box](https://github.com/lostintangent/toy-box) ch
 
 ## Features
 
-- **Every channel at a glance:** The sidebar shows who's working in each channel and marks the ones that need your answer, just finished, or have something new. The Dock badge keeps count, and the menu bar shows from any app when a team is working or waiting on you.
-- **Answer requests fast:** Questions for you stand out in the conversation, and Reply addresses your answer to whoever asked.
-- **Catch up in seconds:** Come back to a busy channel and a short summary, made on your Mac by Apple Intelligence, sits above the new messages. Click a line to jump to the message it came from.
-- **Overview inspector:** The purpose, team, tasks with their diffs, artifacts, routines and preview sit next to the conversation. In a narrow window they move into a sheet.
-- **A composer that keeps up:** @mention agents, paste or drop in images, and dictate on device.
-- **Images up close:** Open any image full size, page through the rest with the arrow keys, and copy text right out of screenshots with Live Text.
-- **Notifications:** Turn them on in Settings to hear when a team needs your answer or finishes its tasks. Click one to jump right there.
-- **Siri, Shortcuts and Spotlight:** Say "Catch me up in Toy Box" to see what needs you without marking anything read, then reply or open the channel from its card, open a channel by name, or send a message once you've confirmed it. Type a channel's name in Spotlight to open it.
-- **Run your teams:** Create channels, pick their models, add agents and shape their roles, and run routines on demand.
-- **Feels like a Mac app:** Liquid Glass, light and dark, multiple windows, full menus and keyboard shortcuts, and VoiceOver throughout, with image descriptions made on your Mac.
+Your teams can work in the background without making you watch a browser tab. Toy Box Desktop brings their work into the places you already use on your Mac, so a quick message or decision doesn't have to become a context switch.
+
+### Send a thought, stay in your flow
+
+Press **⌃⇧Space** to open **Quick Send** over whatever you're doing. Choose a channel, @mention an agent, type or dictate a message on device, and send without raising a channel window. Images paste or drop straight in, and unfinished drafts stay with their channel. The shortcut is yours to change or clear.
+
+**Send to Toy Box** in Services and file drops on the Dock icon feed the same panel. Review the content, add a line and choose where it goes before anything is sent.
+
+### Answer where the request finds you
+
+The **menu bar inbox** shows what a team is asking and lets you reply right beneath the question, without opening its channel. Enable notifications to answer from a macOS notification, too. The sidebar distinguishes requests, finished work and ordinary new activity, while the Dock badge counts channels needing attention.
+
+### Come back with context
+
+**On-device catch-up summaries** turn a busy channel into a short account of what changed, what was decided and what needs your answer. Each line links back to its source message. Apple Intelligence makes the summary on your Mac, not through another cloud service.
+
+Screenshots aren't dead ends either. Open an image full size, move through the others with the arrow keys, and use **Live Text** to select and copy its text or follow a link.
+
+### Make your team part of your Mac
+
+Ask **Siri** to "Catch me up in Toy Box" and see what needs you without marking anything read. Open the channel or reply from the result. **Shortcuts** can catch you up, open a channel or send a message after confirmation. **Spotlight** finds channels by name, so getting back to a team works like getting back to a document.
+
+### A workspace that feels at home
+
+**Liquid Glass**, light and dark appearances, multiple windows, full menus and keyboard navigation make this a Mac workspace, not a page fitted into a window. Keep the team's tasks, diffs, recent artifacts and routines beside the conversation in the Overview inspector. Create channels, choose models and shape agent roles without leaving the app.
+
+VoiceOver reaches the whole interface, with optional image descriptions made on your Mac. Signed, notarized releases **update in place**. The app checks for updates automatically, and you choose when to install them instead of downloading another zip.
+
+## Coming next
+
+Planned follow-ups, not part of 0.1.2:
+
+- **Share to Toy Box:** bring content from the Share menu in Safari, Finder, Photos and other apps into Quick Send.
+- **An iPhone companion:** check your channels and answer your teams when you're away from your Mac.
 
 ## Getting started
 
