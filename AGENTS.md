@@ -102,7 +102,9 @@ view.
   Test" in `.build/agents`), which `bun run validate` builds and launches. Instances that share a
   bundle ID can be read but not clicked, so the separate ID is what lets you interact while the
   user's app is open. Until the user approves the test ID, `bun run validate` falls back to the
-  shared bundle and says so.
+  shared bundle and says so. It unregisters pre-rename `Toy Box Desktop Test.app` copies of
+  the test identity before registering `Toy Box Test.app`, without deleting those bundles or
+  changing the user's app registration.
 - Launch your own build in the background against the demo:
   `open -n -g "/tmp/tbm-<you>/Toy Box.app" --args --server http://127.0.0.1:3210 -ApplePersistenceIgnoreState YES`.
   `-g` keeps it from taking the user's focus. A `--server` or `TOY_BOX_SERVER_URL` launch is

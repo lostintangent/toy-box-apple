@@ -1,9 +1,30 @@
 import { mkdir, mkdtemp, realpath, rename, rm } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { bundleIdentity, command, isMissing, main, plist, required, root, text } from "../lib.ts";
 import { signApp } from "../release/sign-app.ts";
 import { validateShareExtension } from "../release/share-extension.ts";
 import { isolateIntegrations } from "./isolate-integrations.ts";
+
+const lsregister = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister";
+
+export function legacyTestBundles(registrations: string) {
+    const paths = new Set<string>();
+    for (const record of registrations.split(/^-{2,}\r?$/m)) {
+        const identifier = record.match(/^identifier:[ \t]+([^\r\n]+)$/m)?.[1].trim();
+        if (identifier !== `${bundleIdentity}.test`) continue;
+        const path = record.match(/^path:[ \t]+([^\r\n]+)$/m)?.[1]
+            .replace(/[ \t]+\(0x[\da-f]+\)[ \t]*$/i, "");
+        if (path && isAbsolute(path) && basename(path) === "Toy Box Desktop Test.app") paths.add(path);
+    }
+    return [...paths];
+}
+
+export async function registerTestBundle(app: string) {
+    for (const path of legacyTestBundles(await text([lsregister, "-dump"]))) {
+        await command([lsregister, "-u", path]);
+    }
+    await command([lsregister, "-f", app]);
+}
 
 async function installBundle(staged: string, destination: string) {
     const old = await mkdtemp(join(dirname(destination), ".old."));
@@ -61,8 +82,7 @@ if (import.meta.main) await main(async () => {
             await installBundle(staged, destination);
         } finally { await rm(stage, { recursive: true, force: true }); }
     }
-    await command(["/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister",
-        "-f", testApp]);
+    await registerTestBundle(testApp);
     const approvals = Bun.file(join(required("HOME"), ".copilot/computer-use/approvals.json"));
     const approved = await approvals.exists() && (await approvals.text()).includes(`"${testID}"`);
     const launchApp = approved ? testApp : app;
