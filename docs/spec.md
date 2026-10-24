@@ -1086,17 +1086,18 @@ window toolbar. It does not cover the sidebar or Overview. The bar uses the syst
 background, with no custom glass plate, 12-point horizontal and 6-point vertical insets. Its
 first row places a flexible native search field with the prompt "Search this channel" in a
 28-point row, followed by a secondary 11-point monospaced result position ("3 of 12"),
-previous/next chevrons and Done.
+previous/next chevrons and a trailing plain `xmark` close button, not a circled field-clear icon.
 Controls retain 28-point hit targets, and the field yields width before the controls truncate.
 At the narrow supported window size the count and all controls remain visible.
 
 Find Next (`Cmd-G` or Return in the search field) and Find Previous (`Shift-Cmd-G` or
 Shift-Return) move chronologically through matching messages and wrap at the ends. Each matching
-message is one result, even if its text contains the query more than once. Escape or Done closes
+message is one result, even if its text contains the query more than once. Escape or Close Find closes
 the bar without moving the conversation or changing its draft. Opening and closing both preserve
 the visible message anchor at the same pixel-aligned screen position after layout, with no bounce.
-Changes to the progress or error row preserve that anchor too. Reopening Find selects the
-current query for replacement. Switching channels cancels that channel's in-flight search and
+Changes to the progress or error row preserve that anchor too. Closing retains the query.
+Reopening Find selects the current query for replacement. Switching channels cancels that
+channel's in-flight search and
 closes the bar, so an old response cannot navigate the newly selected channel.
 
 Match case- and diacritic-insensitively against the rendered message text: visible link labels,
@@ -1128,7 +1129,8 @@ Opening Find, fetching history and revealing results never mark messages read or
 request. Read marking remains suspended after search navigation until the reader explicitly
 resumes normal scrolling or Jump to Latest. Closing the bar alone is not a read action.
 VoiceOver gets "Find in [channel]", named Previous Match and Next Match controls, the result
-position and one polite completed-result announcement, not an announcement for every older page.
+position and a "Close Find" button with matching help. Give one polite completed-result
+announcement, not an announcement for every older page.
 Use the same semantic colors in both appearances and the normal system focus ring. Reduce Motion
 uses the reveal path's nonmoving alternative.
 
