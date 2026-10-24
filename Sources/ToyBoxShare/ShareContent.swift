@@ -104,7 +104,7 @@ enum ShareContent: Equatable, Sendable {
     nonisolated static func inPlaceFile(_ url: URL) throws -> URL {
         let path = url.standardizedFileURL.resolvingSymlinksInPath().path
         let temporary = ["/tmp/", "/private/tmp/", "/var/", "/private/var/"].contains { path.hasPrefix($0) }
-            || path.contains("/tmp/") || path.contains("/TemporaryItems/")
+            || path.contains("/TemporaryItems/")
         let container = path.contains("/Library/Containers/") || path.contains("/Library/Group Containers/")
         guard url.isFileURL, !temporary, !container else { throw Failure.temporaryFile }
         return url

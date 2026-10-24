@@ -57,6 +57,8 @@ struct ShareContentTests {
 
     @Test
     func temporaryAndSandboxContainerPathsAreNeverHandedToAgents() async throws {
+        let inPlace = URL(fileURLWithPath: "/Users/example/code/tmp/notes.md")
+        #expect(try ShareContent.inPlaceFile(inPlace) == inPlace)
         for path in ["/tmp/shared.txt", "/private/var/folders/example/shared.txt",
                      "/Users/example/Library/Containers/other.app/Data/shared.txt",
                      "/Users/example/Library/Group Containers/group.example/shared.txt"] {
