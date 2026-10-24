@@ -1,9 +1,9 @@
-# Toy Box Desktop: spec
+# Toy Box for Mac: spec
 
-Toy Box Desktop is a native macOS client for Toy Box Channels. It gives the user the full Channel
-pane experience (transcript, composer, overview) in an app that feels first-party on macOS. Toy Box
-keeps owning Channels, agents, sessions and durable work. This app is a presentation and input
-surface over the same public Channel protocol that the Minecraft client uses.
+Toy Box is a native macOS client for Toy Box Channels. It gives the user the full Channel
+pane experience (transcript, composer, overview) in an app that feels first-party on macOS. The
+Toy Box server keeps owning Channels, agents, sessions and durable work. This app is a
+presentation and input surface over the same public Channel protocol that the Minecraft client uses.
 
 Reference sources (read-only):
 
@@ -1107,13 +1107,13 @@ never red, which reads as recording or error.
   offline once the language asset is installed, like the rest of offline editing.
 - **Access off popover.** 280 wide with 14-point padding. A 15-point secondary `mic.slash` sits
   before the 13-point semibold title "Microphone Access Is Off". The 12-point secondary body reads
-  "Allow Toy Box Desktop to use the microphone in Privacy & Security settings. The Dictation key
+  "Allow Toy Box to use the microphone in Privacy & Security settings. The Dictation key
   still works." It has one trailing button, "Open System Settings", which opens Privacy & Security >
   Microphone. If speech recognition is the missing permission, the title and body say "Speech
   Recognition" instead.
 - **Accessibility.** VoiceOver announces "Listening" on start and "Dictation stopped" on stop. The
   live level is never announced. Full Keyboard Access reaches the button in control order.
-- **Bundle.** `Info.plist` carries `NSMicrophoneUsageDescription`, "Toy Box Desktop uses the
+- **Bundle.** `Info.plist` carries `NSMicrophoneUsageDescription`, "Toy Box uses the
   microphone only while you dictate a message.", and `NSSpeechRecognitionUsageDescription`,
   "Dictation is transcribed on this Mac."
 
@@ -1567,7 +1567,7 @@ waiting for you. It never animates, because a team can work for hours, and it ne
 | Nothing active (Always only) | `bubble` | "No agents working" |
 | Catalog unreachable | `bubble` | "Not connected" |
 
-The label is "Toy Box Desktop". Waiting outranks working. The symbol swaps with
+The label is "Toy Box". Waiting outranks working. The symbol swaps with
 `.contentTransition(.symbolEffect(.replace))` where the status item supports it, and instantly
 under Reduce Motion. Show no count, because the Dock badge already counts.
 
@@ -1589,7 +1589,7 @@ fixed footer, with 16-point content insets.
 | Reply | One expanded editor at a time. Native 14-point text, three lines before scrolling, 12-point insets, 10-point corners and primary-at-5% fill. Attach Images, the canonical audience, Dictate and Send reuse the existing composer components, without another glass surface |
 | Working Now | Up to three channels with working agents and no pending request, most recently updated first. Static 20-point avatar stacks show up to three agents, lead first. The existing working subtitle names the team. Overflow opens the main window |
 | Empty and unavailable | "All caught up" when nothing needs attention, "Connecting…" before the first catalog, "No channels yet" with the main-window route, and "Connect to Toy Box" with Settings for invalid configuration. Offline keeps cached rows, says requests may be out of date and offers Retry |
-| Footer | A fixed Quick Send command with the configured shortcut, then Open Toy Box Desktop and Settings. Close the inbox before opening another surface. No Quit, because this is a regular Dock app |
+| Footer | A fixed Quick Send command with the configured shortcut, then Open Toy Box and Settings. Close the inbox before opening another surface. No Quit, because this is a regular Dock app |
 
 An open inbox preserves its original request order and appends newly waiting channels. Answered
 and confirmed-sent rows stay in place until the next opening. A newer request never silently
@@ -1656,12 +1656,14 @@ separate server-scoped staging draft. Append it to the target only when that dra
 Multiple invocations preserve all incoming content rather than replacing an earlier payload,
 and consumption happens once so reopening the panel cannot duplicate it.
 
-Images use the existing attachment validation. Other regular files become visible plain path
+Images use the existing attachment validation. Other in-place regular files become visible plain path
 text only when the server has a loopback host, so agents on this Mac can open them. Those paths
 are text for the person to review before sending, not uploads or pretend attachments. A remote
 server rejects non-image files with "Only images can be attached" and preserves the existing
-draft. The Share extension has no editor or networking of its own; it hands the explicitly shared
-content to the host's same prefill path.
+draft. The Share extension has no editor or networking of its own. It hands the explicitly shared
+content to the host's same prefill path. It copies image bytes before the provider expires, but
+rejects temporary non-image files in this release. Never give agents a path inside a sandbox
+container.
 
 For native validation only, `--validate-quick-send trace` logs panel visibility, key state,
 geometry and accessibility role. `hold` additionally suppresses resign-key dismissal, not Escape,
@@ -1762,9 +1764,8 @@ the transcript's summary, and asking never marks anything read.
 | "Open [channel]", "Show [channel]", "Open a channel" | Open Channel |
 | "Send a message", "Send a message to [channel]", "Message [channel]" | Send Message |
 
-The app name is "Toy Box Desktop" or its alternate, "Toy Box" (`INAlternativeAppNames`). The
-shortcut tile is navy, like the icon. Tile symbols are `text.line.3.summary`,
-`bubble.left.and.bubble.right` and `paperplane`.
+The app name is "Toy Box". The shortcut tile is navy, like the icon. Tile symbols are
+`text.line.3.summary`, `bubble.left.and.bubble.right` and `paperplane`.
 
 The Channel entity is identified by channel ID and displays the name, with `number` as its image
 (the whole icon in Spotlight) and the sidebar's attention as its subtitle: "Needs your reply", "All
@@ -1855,7 +1856,7 @@ through the channel's shared `ChannelStore` with a fresh caller-owned ID, so it 
 and appears in an open window at once. It never retries. A rejection says "Your message to
 [channel] wasn't sent. It's waiting in the channel so you can send it again." An unconfirmed
 delivery says "Your Toy Box server didn't confirm your message to [channel]. Open the channel to
-see if it arrived before you send it again." Other errors: "Toy Box Desktop isn't connected to a
+see if it arrived before you send it again." Other errors: "Toy Box isn't connected to a
 server. Choose one in Settings.", "Can't connect to your Toy Box server. Check that it's running,
 then try again." and "That channel isn't on your Toy Box server anymore." Errors about the server
 always say "your Toy Box server", since "Toy Box" alone now also names the app.

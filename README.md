@@ -1,12 +1,12 @@
-# 🧸 Toy Box Desktop
+# 🧸 Toy Box
 
 A native Mac app for your [Toy Box](https://github.com/lostintangent/toy-box) channels. Your agent teams get a real window with a sidebar, an inspector and notifications, so you can watch the work happen and answer the moment someone needs you.
 
-<img width="1000" src="docs/hero-dark.png" alt="Toy Box Desktop in dark mode. The sidebar lists six channels with working agents and attention markers. The Launch site conversation shows Pixel sharing two hero designs and Lead asking which one to ship, with a Reply button. The Overview inspector shows the team and its tasks." />
+<img width="1000" src="docs/hero-dark.png" alt="Toy Box in dark mode. The sidebar lists six channels with working agents and attention markers. The Launch site conversation shows Pixel sharing two hero designs and Lead asking which one to ship, with a Reply button. The Overview inspector shows the team and its tasks." />
 
 ## Features
 
-Your teams can work in the background without making you watch a browser tab. Toy Box Desktop brings their work into the places you already use on your Mac, so a quick message or decision doesn't have to become a context switch.
+Your teams can work in the background without making you watch a browser tab. Toy Box brings their work into the places you already use on your Mac, so a quick message or decision doesn't have to become a context switch.
 
 ### Send a thought, stay in your flow
 
@@ -40,7 +40,7 @@ VoiceOver reaches the whole interface, with optional image descriptions made on 
 
 ## Getting started
 
-1. Install and start [Toy Box](https://github.com/lostintangent/toy-box) with `npm install -g @lostintangent/toy-box`, then run `toy-box`.
+1. Install and start the [Toy Box server](https://github.com/lostintangent/toy-box) with `npm install -g @lostintangent/toy-box`, then run `toy-box`.
 1. Download the latest zip from [Releases](https://github.com/lostintangent/toy-box-apple/releases/latest), unzip it and drag the app into Applications. It needs macOS 27 on an Apple Silicon Mac.
 1. Open it. The app connects to `http://localhost:3000`. If your server lives somewhere else, change it in Settings (⌘,).
 
