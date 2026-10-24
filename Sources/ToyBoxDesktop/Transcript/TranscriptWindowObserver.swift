@@ -34,6 +34,11 @@ final class TranscriptWindowObserver {
     /// The clip view's offset as AppKit has it, which can run ahead of SwiftUI's geometry after a clamp.
     var scrollOffset: CGFloat? { scrollView?.contentView.bounds.minY }
 
+    var viewportTop: CGFloat? {
+        guard let scrollView else { return nil }
+        return scrollView.contentView.bounds.minY + scrollView.contentInsets.top
+    }
+
     /// Whether the transcript is following its newest message. A window resize then keeps the end of the
     /// content at the bottom of the viewport in the same layout pass that draws the new size. SwiftUI's
     /// follow lands a frame or more later, which a live resize shows as the newest message drifting.
@@ -99,6 +104,27 @@ final class TranscriptWindowObserver {
                              y: min(maximum, max(0, clip.bounds.origin.y + (document.isFlipped ? delta : -delta))))
         clip.scroll(to: target)
         scrollView.reflectScrolledClipView(clip)
+    }
+
+    func restoreReadingBottom(_ bottom: CGFloat, of frame: TranscriptMessageFrame) -> Bool {
+        guard let scrollView, let document = scrollView.documentView,
+              document.isFlipped else { return false }
+        let clip = scrollView.contentView
+        let offset = TranscriptCoordinates.targetOffset(
+            for: frame, bottom: bottom, topInset: scrollView.contentInsets.top)
+        let minimum = -scrollView.contentInsets.top
+        let maximum = max(minimum, document.bounds.height + scrollView.contentInsets.bottom - clip.bounds.height)
+        let target = min(maximum, max(minimum, offset))
+        guard abs(clip.bounds.minY - target) > 0.25 else { return true }
+        let previous = clip.bounds.minY
+        clip.scroll(to: NSPoint(x: clip.bounds.minX, y: target))
+        scrollView.reflectScrolledClipView(clip)
+        if ProcessInfo.processInfo.environment["TOY_BOX_TEST_PAGING_TRACE"] == "1" {
+            let line = "Transcript paging m\(frame.sequence): native \(previous) -> \(clip.bounds.minY), "
+                + "target \(target), content top \(frame.contentTop), saved bottom \(bottom)\n"
+            FileHandle.standardError.write(Data(line.utf8))
+        }
+        return false
     }
 
     func announce(_ message: String) {
