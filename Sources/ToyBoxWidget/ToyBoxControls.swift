@@ -33,10 +33,13 @@ struct NeedsYouControl: ControlWidget {
 }
 
 struct NeedsYouControlProvider: ControlValueProvider {
+    var read: @Sendable () -> NeedsYouSnapshot? = { WidgetSnapshotReader.load() }
+    var now: @Sendable () -> Date = { .now }
+
     var previewValue: NeedsYouControlValue { .init(waitingCount: 2, isStale: false) }
 
     func currentValue() async throws -> NeedsYouControlValue {
-        .init(snapshot: WidgetSnapshotReader.load(), now: .now)
+        .init(snapshot: read(), now: now())
     }
 }
 

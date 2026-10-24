@@ -18,6 +18,16 @@ import Testing
         #expect(NeedsYouControlValue(snapshot: snapshot(count: 0), now: now).status == "Nothing needs you")
     }
 
+    @Test func providerReadsOnlyItsInjectedSnapshotAndClockWhilePreviewIsIllustrative() async throws {
+        let cached = snapshot(count: 8)
+        let expired = now.addingTimeInterval(NeedsYouSnapshot.freshnessInterval)
+        let provider = NeedsYouControlProvider(read: { cached }, now: { expired })
+        #expect(provider.previewValue == .init(waitingCount: 2, isStale: false))
+        #expect(try await provider.currentValue() == .init(waitingCount: 8, isStale: true))
+        let missing = NeedsYouControlProvider(read: { nil }, now: { expired })
+        #expect(try await missing.currentValue().status == "Open Toy Box to connect")
+    }
+
     @Test func missingUnavailableOrUnsupportedSnapshotsNeverClaimAnEmptyInbox() {
         var unsupported = snapshot(count: 0)
         unsupported.version = 2

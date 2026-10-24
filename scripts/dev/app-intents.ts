@@ -1,7 +1,7 @@
 import { mkdir, rm } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import { command, executable, plist, root, text } from "../lib.ts";
-import { widgetExtension } from "../release/widget-extension.ts";
+import { validateControlMetadata, widgetExtension } from "../release/widget-extension.ts";
 
 export async function extractAppIntents(app: string, scratch: string, configuration: string,
     sdk: string, minimumOS: string) {
@@ -61,9 +61,11 @@ export async function extractAppIntents(app: string, scratch: string, configurat
             throw new Error(log || `${module} App Intents metadata extraction failed.`);
         }
         for (const line of log.split("\n").filter(line => /warning|error/i.test(line))) console.error(line);
-        if (!Bun.file(join(output, "Metadata.appintents/extract.actionsdata")).size) {
+        const metadata = Bun.file(join(output, "Metadata.appintents/extract.actionsdata"));
+        if (!metadata.size) {
             throw new Error(`${log}\nNo ${module} App Intents metadata was written.`);
         }
+        validateControlMetadata(await metadata.text());
     }
 
     await extract("ToyBoxControlIntents", app, "ToyBoxDesktop", sharedOutput, []);
