@@ -340,16 +340,19 @@ final class PerformanceBenchmark {
             let first = store.messages.first?.sequence ?? 0
             let loaded = store.messages.count
             meter.reset()
+            let cpuStart = Self.mainThreadCPU()
             move(scroll, toTopOffset: 0)
             await until("scrolling to the top didn't load an older page", timeout: 20) {
                 (store.messages.first?.sequence ?? 0) < first || !store.hasOlderMessages
             }
             guard store.messages.count > loaded else { break }
             _ = await settled(quiet: 1)
+            let cpuMilliseconds = (Self.mainThreadCPU() - cpuStart) * 1000
             page += 1
             check("Older page \(page), \(loaded) to \(store.messages.count) loaded",
                   "\(format(meter.busy * 1000)) busy, \(format(meter.longestGap * 1000)) longest frame gap, "
-                  + "\(format(meter.longestSpan * 1000)) longest saturated span",
+                  + "\(format(meter.longestSpan * 1000)) longest saturated span, "
+                  + "\(format(cpuMilliseconds)) main-thread CPU",
                   value: meter.busy * 1000, budget: Budget.olderPage)
         }
         guard page > 0 else {
@@ -402,7 +405,9 @@ final class PerformanceBenchmark {
                 return up ? self.offsetFromTop(scroll) < Self.scrollMargin : self.gapToEnd(scroll) < 1
             }
             meter.reset()
+            let cpuStart = Self.mainThreadCPU()
             let frames = await gesture.run()
+            let cpuMilliseconds = (Self.mainThreadCPU() - cpuStart) * 1000
             let busy = meter.busy
             let moved = abs(offsetFromTop(scroll) - start)
             guard moved > gesture.scrolled / 4 else {
@@ -411,8 +416,10 @@ final class PerformanceBenchmark {
             let hitches = Double(frames.dropped) * frames.duration * 1000 / max(frames.seconds, 0.001)
             check("Scrolling \(up ? "up" : "down") \(Int(gesture.scrolled)) pt at \(loaded) loaded",
                   "\(frames.dropped) of \(frames.count) frames dropped, \(format(frames.longest * 1000)) longest frame, "
-                  + String(format: "%.1f ms/s hitch time, main thread %.0f%% busy", hitches,
-                           busy / max(frames.seconds, 0.001) * 100),
+                  + String(format: "%.1f ms/s hitch time, main thread %.0f%% busy, "
+                           + "%.1f ms main-thread CPU, %.1f pt native travel, %.1f CPU ms/1,000 pt",
+                           hitches, busy / max(frames.seconds, 0.001) * 100,
+                           cpuMilliseconds, Double(moved), cpuMilliseconds / Double(moved) * 1000),
                   value: hitches, budget: Budget.scrollHitches, unit: " ms/s")
             distance = gesture.scrolled
         }
