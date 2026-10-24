@@ -20,6 +20,7 @@ struct ChannelDetailView: View {
     @Environment(ChannelInteraction.self) private var interaction
     @Environment(ManagementPresenter.self) private var management
     @Environment(ImageViewer.self) private var viewer
+    @Environment(ArtifactOpener.self) private var artifacts
     @Environment(\.openSettings) private var openSettings
     @SceneStorage("inspectorVisible") private var inspectorVisible = true
     @SceneStorage("messageView") private var messageView = "all"
@@ -65,9 +66,12 @@ struct ChannelDetailView: View {
 
     /// The image the viewer shows over this channel, which takes over the toolbar until it closes.
     private var viewing: ImageViewer.Presentation? { viewer.presentation }
+    private var isViewing: Bool { viewing != nil || artifacts.isPresented }
 
     var body: some View {
         conversation
+            .accessibilityHidden(artifacts.isPresented)
+            .allowsHitTesting(!artifacts.isPresented)
             .onGeometryChange(for: ChannelTitleFit.Span.self) { geometry in
                 let frame = geometry.frame(in: .global)
                 return ChannelTitleFit.Span(minX: frame.minX, maxX: frame.maxX)
@@ -79,6 +83,8 @@ struct ChannelDetailView: View {
                 Group {
                     if showsSurroundings { OverviewInspector(store: store) } else { Color.clear }
                 }
+                .accessibilityHidden(artifacts.isPresented)
+                .allowsHitTesting(!artifacts.isPresented)
                 .settledLayout()
                 // A sidebar toggle briefly proposes the ideal again. Keep the last measured
                 // width, without observing every frame of a divider drag.
@@ -93,15 +99,16 @@ struct ChannelDetailView: View {
             // The open viewer is modal, which takes the conversation and Overview out of the
             // accessibility tree.
             .overlay { ImageViewerCanvas().ignoresSafeArea(edges: .top) }
+            .overlay { ArtifactViewerCanvas(store: store).ignoresSafeArea(edges: .top) }
             .sheet(isPresented: narrowInspector) {
                 overviewSheet.frame(minWidth: 360, idealWidth: 360, maxWidth: 360, minHeight: 420,
                                     idealHeight: min(640, windowHeight - 100), maxHeight: max(420, windowHeight - 100))
             }
             // The viewer shows the sender and position as the system title and subtitle, as
             // Photos does. Otherwise the title menu stands in for the title.
-            .navigationTitle(viewing?.sender ?? title)
-            .navigationSubtitle(viewing?.subtitle ?? "")
-            .toolbar(removing: viewing == nil ? .title : nil)
+            .navigationTitle(artifacts.artifact?.title ?? viewing?.sender ?? title)
+            .navigationSubtitle(artifacts.isPresented ? artifacts.subtitle : viewing?.subtitle ?? "")
+            .toolbar(removing: isViewing ? nil : .title)
             .toolbar { toolbar }
             .onChange(of: title, initial: true) { titleFit.update(title: title) }
             .task {
@@ -157,6 +164,9 @@ struct ChannelDetailView: View {
                     isOverviewSheetPresented = false
                     interaction.isInspectorPresented = true
                 }
+            }
+            .onChange(of: artifacts.isPresented) { _, presented in
+                if presented { isOverviewSheetPresented = false }
             }
     }
 
@@ -270,7 +280,13 @@ struct ChannelDetailView: View {
     }
 
     @ToolbarContentBuilder private var toolbar: some ToolbarContent {
-        if viewing != nil { viewerToolbar } else { conversationToolbar }
+        if artifacts.isPresented {
+            ArtifactViewerToolbar(opener: artifacts, store: store, app: model, interaction: interaction)
+        } else if viewing != nil {
+            viewerToolbar
+        } else {
+            conversationToolbar
+        }
     }
 
     @ToolbarContentBuilder private var viewerToolbar: some ToolbarContent {

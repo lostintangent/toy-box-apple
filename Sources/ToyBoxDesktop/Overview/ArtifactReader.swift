@@ -2,164 +2,215 @@ import AppKit
 import ChannelClient
 import ChannelKit
 import Observation
-import QuickLook
-import SwiftUI
+import UniformTypeIdentifiers
+import WebKit
 
 @MainActor @Observable
 final class ArtifactOpener {
-    var artifact: ChannelArtifact?
-    func open(_ artifact: ChannelArtifact) { self.artifact = artifact }
-}
+    private(set) var artifact: ChannelArtifact?
+    private(set) var pages: ArtifactPageList?
+    private(set) var content: ArtifactContent?
+    private(set) var image: NSImage?
+    private(set) var isLoading = false
+    private(set) var loadError: String?
+    var actionError: String?
+    var previewFile: URL?
+    private(set) var direction = 0
+    private(set) var animates = true
+    @ObservationIgnored private var api: ChannelAPI?
+    @ObservationIgnored private var channelID: String?
+    @ObservationIgnored private var available: [ChannelArtifact] = []
+    @ObservationIgnored private var extra: ChannelArtifact?
+    @ObservationIgnored private var cached: [String: ArtifactContent] = [:]
+    @ObservationIgnored private var images: [String: NSImage] = [:]
+    @ObservationIgnored private var loadTask: Task<Void, Never>?
+    @ObservationIgnored private var token = UUID()
+    @ObservationIgnored private weak var interaction: ChannelInteraction?
+    @ObservationIgnored private weak var imageViewer: ImageViewer?
+    @ObservationIgnored private weak var invokingResponder: NSResponder?
+    @ObservationIgnored private weak var invokingWindow: NSWindow?
+    @ObservationIgnored var webView: WKWebView?
+    @ObservationIgnored var scrollOffsets: [String: CGFloat] = [:]
 
-extension View {
-    func artifactReaders(_ opener: ArtifactOpener, channelId: String? = nil) -> some View {
-        modifier(ArtifactReadersModifier(opener: opener, channelId: channelId))
+    var isPresented: Bool { artifact != nil }
+    var isUnavailable: Bool { artifact != nil && pages?.selected == nil }
+    var resource: URL? { artifact?.url.flatMap { api?.resourceURL($0) } }
+    var kind: ArtifactContentKind { artifact.map(ArtifactContentKind.init) ?? .file }
+    var subtitle: String {
+        guard let artifact else { return "" }
+        let type = kind.label(for: artifact)
+        guard let pages, pages.artifacts.count > 1, let index = pages.index else { return type }
+        return "\(type) · \(index + 1) of \(pages.artifacts.count)"
     }
-}
 
-private struct ArtifactReadersModifier: ViewModifier {
-    @Environment(AppModel.self) private var app
-    @Bindable var opener: ArtifactOpener
-    let channelId: String?
+    func configure(api: ChannelAPI?, channelID: String, artifacts: [ChannelArtifact],
+                   interaction: ChannelInteraction, imageViewer: ImageViewer) {
+        if self.channelID != channelID || self.api?.baseURL != api?.baseURL { close(animated: false) }
+        self.api = api
+        self.channelID = channelID
+        self.interaction = interaction
+        self.imageViewer = imageViewer
+        update(artifacts)
+    }
 
-    func body(content: Content) -> some View {
-        content.sheet(item: $opener.artifact) { artifact in
-            if let api = app.api {
-                ArtifactReader(artifact: artifact, api: api, channelId: channelId)
-            } else {
-                ContentUnavailableView("Server Unavailable", systemImage: "wifi.exclamationmark",
-                                       description: Text("Configure the Toy Box server in Settings."))
-            }
+    func update(_ artifacts: [ChannelArtifact]) {
+        available = artifacts
+        guard pages != nil else { return }
+        if let extra, artifacts.contains(where: { $0.id == extra.id }) { self.extra = nil }
+        var listed = artifacts
+        if let extra { listed.append(extra) }
+        pages?.update(listed)
+        if let selected = pages?.selected { artifact = selected }
+        else {
+            loadTask?.cancel()
+            webView?.stopLoading()
+            content = nil
+            image = nil
+            isLoading = false
         }
     }
-}
 
-struct ArtifactReader: View {
-    @Environment(\.dismiss) private var dismiss
-    @Environment(AppModel.self) private var app
-    let artifact: ChannelArtifact
-    let api: ChannelAPI
-    var channelId: String?
-    @ViewState private var content: String?
-    @ViewState private var isLoading = false
-    @ViewState private var error: String?
-    @ViewState private var attempt = 0
-    @ViewState private var localFile: URL?
-    @ViewState private var previewFile: URL?
-
-    private var isMarkdown: Bool {
-        ["md", "markdown", "mdown"].contains((artifact.file.path as NSString).pathExtension.lowercased())
-    }
-    private var resource: URL? { artifact.url.flatMap(api.resourceURL) }
-
-    var body: some View {
-        VStack(spacing: 0) {
-            HStack(alignment: .top, spacing: 12) {
-                Image(systemName: "doc.text").font(.title2).foregroundStyle(.secondary)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(artifact.title).font(.headline)
-                    Text(artifact.file.path)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                        .truncationMode(.middle)
-                        .textSelection(.enabled)
-                }
-                Spacer()
-                Button("Done") { dismiss() }.keyboardShortcut(.cancelAction)
-            }
-            .padding(20)
-            Divider()
-            Group {
-                if isLoading {
-                    ProgressView("Loading artifact").frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else if let error {
-                    ContentUnavailableView {
-                        Label("Couldn't Open Artifact", systemImage: "doc.badge.ellipsis")
-                    } description: {
-                        Text(error)
-                    } actions: {
-                        Button("Try Again") { attempt += 1 }
-                    }
-                } else if let content {
-                    ScrollView {
-                        TranscriptMarkdown(content: content, agents: [], baseURL: resource)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(24)
-                    }
-                } else if let localFile {
-                    ContentUnavailableView {
-                        Label(artifact.title, systemImage: "doc")
-                    } description: {
-                        Text("Preview this file without leaving the channel, or open it in its default application.")
-                    } actions: {
-                        Button("Quick Look", systemImage: "eye") { previewFile = localFile }
-                        Button("Open File") {
-                            if !NSWorkspace.shared.open(localFile) {
-                                error = "The file could not be opened by its default application."
-                            }
-                        }
-                    }
-                } else {
-                    ContentUnavailableView("Artifact Unavailable", systemImage: "doc.badge.ellipsis")
-                }
-            }
-            Divider()
-            HStack(spacing: 12) {
-                Button("Open in Toy Box") { openInToyBox() }
-                if let resource {
-                    ShareLink(item: resource) { Label("Share", systemImage: "square.and.arrow.up") }
-                    Button("Copy Link") {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(resource.absoluteString, forType: .string)
-                    }
-                }
-                Spacer()
-                if content != nil || localFile != nil {
-                    Button("Reload", systemImage: "arrow.clockwise") { attempt += 1 }
-                }
-            }
-            .padding(16)
-        }
-        .frame(minWidth: 480, idealWidth: 680, maxWidth: 820,
-               minHeight: 360, idealHeight: 560, maxHeight: 760)
-        .quickLookPreview($previewFile)
-        .task(id: attempt) { await load() }
+    func open(_ artifact: ChannelArtifact) {
+        animates = true
+        invokingWindow = NSApp?.keyWindow
+        invokingResponder = NSApp?.keyWindow?.firstResponder
+        imageViewer?.close(animated: false)
+        extra = available.contains(where: { $0.id == artifact.id }) ? nil : artifact
+        pages = ArtifactPageList(artifacts: available, opening: artifact)
+        direction = 0
+        self.artifact = artifact
+        interaction?.isArtifactViewerPresented = true
+        load()
     }
 
-    private func load() async {
+    func select(_ id: String) {
+        guard id != artifact?.id else { return }
+        guard let previous = pages?.index, pages?.select(id) == true, let selected = pages?.selected else { return }
+        direction = (pages?.index ?? previous) > previous ? 1 : -1
+        artifact = selected
+        load()
+    }
+
+    func move(by offset: Int) {
+        guard let index = pages?.index, let pages, pages.artifacts.indices.contains(index + offset) else { return }
+        select(pages.artifacts[index + offset].id)
+    }
+
+    func close(animated: Bool = true) {
+        animates = animated
+        loadTask?.cancel()
+        token = UUID()
+        webView?.stopLoading()
+        webView = nil
+        artifact = nil
+        pages = nil
         content = nil
-        error = nil
-        guard let resource else {
-            error = "The server did not provide a usable resource URL for this artifact."
-            return
-        }
-        isLoading = true
-        defer { isLoading = false }
-        do {
-            if isMarkdown {
-                let text = try await ArtifactDownload.text(from: resource)
-                guard !Task.isCancelled else { return }
-                content = text
-            } else {
-                let file = try await ArtifactDownload.file(for: artifact, from: resource)
-                guard !Task.isCancelled else { return }
-                localFile = file
+        image = nil
+        cached = [:]
+        images = [:]
+        scrollOffsets = [:]
+        loadError = nil
+        actionError = nil
+        previewFile = nil
+        isLoading = false
+        interaction?.isArtifactViewerPresented = false
+        if animated, let window = invokingWindow, let responder = invokingResponder {
+            Task { @MainActor [weak self, weak window, weak responder] in
+                try? await Task.sleep(for: .milliseconds(220))
+                guard self?.artifact == nil, let window, let responder else { return }
+                if let view = responder as? NSView, view.window !== window { return }
+                window.makeFirstResponder(responder)
             }
-        } catch is CancellationError {
-            return
-        } catch {
-            if !Task.isCancelled { self.error = error.localizedDescription }
         }
     }
 
-    private func openInToyBox() {
-        guard let id = channelId ?? app.activeChannelID,
-              let url = app.channelURL(channelID: id, files: [artifact.file]) else {
-            error = "The channel's Toy Box editor link is unavailable."
+    func reload() { load(reloading: true) }
+    func thumbnail(for artifact: ChannelArtifact) -> NSImage? { images[artifact.id] }
+
+    func copyLink() {
+        guard let resource else { actionError = "The artifact's link is unavailable."; return }
+        NSPasteboard.general.clearContents()
+        if !NSPasteboard.general.setString(resource.absoluteString, forType: .string) {
+            actionError = "The artifact's link could not be copied."
+        }
+    }
+
+    func openFile() {
+        guard let file = content?.file else { actionError = "Load the artifact before opening its file."; return }
+        if !NSWorkspace.shared.open(file) { actionError = "The file could not be opened by its default application." }
+    }
+
+    func openInToyBox(app: AppModel) {
+        guard let artifact, let channelID, let url = app.channelURL(channelID: channelID, files: [artifact.file]) else {
+            actionError = "The channel's Toy Box editor link is unavailable."
             return
         }
-        if !NSWorkspace.shared.open(url) { error = "The Toy Box editor could not be opened." }
+        if !NSWorkspace.shared.open(url) { actionError = "The Toy Box editor could not be opened." }
+    }
+
+    var canPageUsingKeys: Bool {
+        guard let responder = NSApp?.keyWindow?.firstResponder else { return true }
+        if responder is NSTextView { return false }
+        if let view = responder as? NSView, let webView, view.isDescendant(of: webView) { return false }
+        return true
+    }
+
+    private func load(reloading: Bool = false) {
+        loadTask?.cancel()
+        if !reloading {
+            webView?.stopLoading()
+            webView = nil
+            image = nil
+            content = nil
+        }
+        token = UUID()
+        loadError = nil
+        actionError = nil
+        guard let artifact else { return }
+        if !reloading, let cached = cached[artifact.id] {
+            content = cached
+            image = images[artifact.id]
+            isLoading = false
+            return
+        }
+        guard let api else { loadError = "The Toy Box server is unavailable."; return }
+        isLoading = true
+        let token = token
+        loadTask = Task { [weak self] in
+            do {
+                let loaded = try await ArtifactContent.load(artifact, api: api)
+                let bitmap = loaded.kind == .image
+                    ? try await Task.detached(priority: .userInitiated) { try ImageViewer.decode(loaded.file) }.value : nil
+                try Task.checkCancellation()
+                guard let self, self.token == token else { return }
+                cached[artifact.id] = loaded
+                content = loaded
+                if let bitmap {
+                    let decoded = NSImage(cgImage: bitmap, size: .zero)
+                    images[artifact.id] = decoded
+                    image = decoded
+                }
+                isLoading = false
+            } catch is CancellationError {
+            } catch {
+                guard let self, self.token == token, !Task.isCancelled else { return }
+                isLoading = false
+                if content != nil { actionError = error.localizedDescription }
+                else { loadError = error.localizedDescription }
+            }
+        }
+    }
+}
+
+extension ArtifactContentKind {
+    func label(for artifact: ChannelArtifact) -> String {
+        switch self {
+        case .markdown: "Markdown"
+        case .html: "HTML"
+        case .svg: "SVG"
+        case .image, .file:
+            UTType(filenameExtension: (artifact.file.path as NSString).pathExtension)?.localizedDescription ?? "Document"
+        }
     }
 }
 
@@ -175,7 +226,6 @@ enum ArtifactDownload {
         return text
     }
 
-    /// Downloads into a private temporary folder under the artifact's own file name.
     static func file(for artifact: ChannelArtifact, from resource: URL) async throws -> URL {
         let request = URLRequest(url: resource, cachePolicy: .reloadIgnoringLocalCacheData)
         let (temporary, response) = try await URLSession.shared.download(for: request)

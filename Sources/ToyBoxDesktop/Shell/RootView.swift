@@ -68,7 +68,6 @@ struct RootView: View {
         .environment(interaction)
         .environment(imageViewer)
         .managementFlows(management)
-        .artifactReaders(artifactOpener, channelId: selectedId)
         .focusedSceneValue(\.channelCommands, commandActions)
         .background(WindowObserver(onAttach: { window in
             placement.window = window
@@ -111,6 +110,7 @@ struct RootView: View {
         .onDisappear { model.removeWindow(windowID) }
         .onChange(of: selectedId) { _, id in
             imageViewer.close(animated: false)
+            artifactOpener.close(animated: false)
             isOverviewSheetPresented = false
             if !model.launchOptions.isSnapshot { restoredSelectedId = id }
             if id != composerFocusChannelID { composerFocusChannelID = nil }
@@ -120,7 +120,7 @@ struct RootView: View {
             imageViewer.close(animated: false)
             selectedId = nil
             management.flow = nil
-            artifactOpener.artifact = nil
+            artifactOpener.close(animated: false)
         }
         .onChange(of: management.createdChannel?.token) { _, _ in
             if let created = management.createdChannel { selectedId = created.channel.id }
