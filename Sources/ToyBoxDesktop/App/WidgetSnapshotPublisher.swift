@@ -50,6 +50,7 @@ final class WidgetSnapshotPublisher {
             try data.write(to: file, options: .atomic)
             previous = snapshot
             WidgetCenter.shared.reloadTimelines(ofKind: NeedsYouSnapshot.kind)
+            ControlCenter.shared.reloadControls(ofKind: NeedsYouSnapshot.controlKind)
         } catch {
             logger.error("Could not publish the widget snapshot: \(error.localizedDescription, privacy: .public)")
         }

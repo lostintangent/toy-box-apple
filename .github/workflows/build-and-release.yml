@@ -49,9 +49,11 @@ jobs:
         run: |
           app="$(bun run app --no-open | tail -n 1)"
           actions="$app/Contents/Resources/Metadata.appintents/extract.actionsdata"
-          for intent in CatchMeUpIntent OpenChannelIntent SendMessageIntent CatchUpSnippetIntent ReplyIntent; do
+          for intent in CatchMeUpIntent OpenChannelIntent SendMessageIntent CatchUpSnippetIntent ReplyIntent \
+            OpenToyBoxControlIntent OpenRequestIntent ReplyToRequestIntent; do
             grep -q "\"$intent\"" "$actions"
           done
+          grep -q '"WaitingRequestEntity"' "$actions"
           grep -q '"com.apple.appintents.entity.Indexed"' "$actions"
           tools="$(bun run sparkle-tools)"
           TOY_BOX_BUNDLE="$app" SPARKLE_TOOLS_DIR="$tools" bun test scripts/release/tests/native.test.ts

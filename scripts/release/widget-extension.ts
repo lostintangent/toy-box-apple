@@ -7,6 +7,46 @@ export const widgetAppGroup = "RHFNBL7EG4.dev.toybox.desktop";
 export const widgetGroupKey = "ToyBoxWidgetAppGroup";
 export function widgetExtension(app: string) { return join(app, "Contents/PlugIns/ToyBoxWidget.appex"); }
 
+function record(value: unknown): Record<string, unknown> | undefined {
+    return value !== null && typeof value === "object" && !Array.isArray(value)
+        ? value as Record<string, unknown> : undefined;
+}
+
+export function validateControlMetadata(contents: string) {
+    const metadata = record(JSON.parse(contents));
+    const intent = record(record(metadata?.actions)?.OpenToyBoxControlIntent);
+    const parameters = intent?.parameters;
+    const target = Array.isArray(parameters) && parameters.length === 1 ? record(parameters[0]) : undefined;
+    const enumeration = record(record(record(target?.valueType)?.linkEnumeration)?.wrapper);
+    const destinations = Array.isArray(metadata?.enums)
+        ? metadata.enums.map(record).find(value => value?.identifier === "ToyBoxControlDestination") : undefined;
+    const cases = Array.isArray(destinations?.cases) ? destinations.cases.map(value => record(value)?.identifier) : [];
+    if (intent?.fullyQualifiedTypeName !== "ToyBoxControlIntents.OpenToyBoxControlIntent"
+        || intent.openAppWhenRun !== true || intent.supportedModes !== 2 || intent.isDiscoverable !== false
+        || target?.name !== "target" || target.isOptional !== false
+        || enumeration?.identifier !== "ToyBoxControlDestination"
+        || destinations?.fullyQualifiedTypeName !== "ToyBoxControlIntents.ToyBoxControlDestination"
+        || JSON.stringify(cases.toSorted()) !== JSON.stringify(["needsYou", "quickSend"])) {
+        throw new Error("Control metadata requires the shared foreground intent and both typed destinations.");
+    }
+}
+
+export function validateControlExports(symbols: string, isWidget: boolean) {
+    const required = [
+        "ToyBoxControlIntents.OpenToyBoxControlIntent : AppIntents.AppIntent",
+        ...(isWidget ? [
+            "ToyBoxWidget.ToyBoxWidgets : SwiftUI.WidgetBundle",
+            "ToyBoxWidget.QuickSendControl : SwiftUI.ControlWidget",
+            "ToyBoxWidget.NeedsYouControl : SwiftUI.ControlWidget",
+        ] : []),
+    ];
+    for (const name of required) {
+        if (!symbols.includes(`protocol conformance descriptor for ${name} in `)) {
+            throw new Error(`Missing compiled control conformance: ${name}.`);
+        }
+    }
+}
+
 export async function embedWidgetExtension(bin: string, app: string, sdkVersion: string, minimumOS: string) {
     const extension = widgetExtension(app);
     await rm(extension, { recursive: true, force: true });
@@ -62,6 +102,14 @@ export async function validateWidgetExtension(app: string) {
     const sdks = [...versions.matchAll(/^\s*sdk\s+(\S+)/gm)].map(match => match[1]);
     if (!sdks.length || sdks.some(version => !/^\d+(?:\.\d+)*$/.test(version) || Number(version.split(".")[0]) < 27)) {
         throw new Error("The widget extension requires a macOS SDK 27 or later stamp.");
+    }
+    for (const bundle of [app, extension]) {
+        validateControlMetadata(await Bun.file(join(bundle, "Contents/Resources/Metadata.appintents/extract.actionsdata")).text());
+        const executable = bundle === app ? "ToyBoxDesktop" : "ToyBoxWidget";
+        const symbols = await text(["xcrun", "swift-demangle"], {
+            input: await text(["xcrun", "nm", "-gU", join(bundle, "Contents/MacOS", executable)]),
+        });
+        validateControlExports(symbols, bundle === extension);
     }
     await command(["codesign", "--verify", "--strict", extension]);
     const display = await command(["codesign", "--display", "--verbose=4", extension], { quiet: true });

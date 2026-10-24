@@ -184,6 +184,10 @@ view.
   Ad-hoc builds have no app-group entitlement or snapshot publishing. Isolated validation,
   snapshot and benchmark copies remove the widget and group metadata. Register the containing
   app with LaunchServices before probing WidgetKit registration.
+  The same extension supplies Quick Send and Needs You controls. Their foreground intent lives
+  in `ToyBoxControlIntents`, included by both executables through `AppIntentsPackage`.
+  `bun run app` extracts the shared package's metadata first, then merges it into the host and
+  extension metadata before signing. Controls open host routes and never send from the extension.
   Local builds use Command Line Tools, and CI uses the runner's selected Xcode 27 on `xcode-27`.
 - The Share extension is built by SwiftPM with `_NSExtensionMain`, without Xcode or a storyboard.
   It loads only explicitly shared items, writes `dev.toybox.desktop.share.<UUID>` pasteboards,

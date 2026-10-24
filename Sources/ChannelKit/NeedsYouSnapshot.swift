@@ -5,6 +5,8 @@ public struct NeedsYouSnapshot: Codable, Equatable, Sendable {
     public static let groupInfoKey = "ToyBoxWidgetAppGroup"
     public static let fileName = "needs-you.json"
     public static let kind = "ToyBoxNeedsYou"
+    public static let controlKind = "ToyBoxNeedsYouControl"
+    public static let quickSendControlKind = "ToyBoxQuickSendControl"
     public static let freshnessInterval: TimeInterval = 30 * 60
     public static let mainURL = URL(string: "toybox-desktop://needs-you")!
 

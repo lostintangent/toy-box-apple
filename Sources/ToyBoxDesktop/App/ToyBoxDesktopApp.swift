@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import ToyBoxControlIntents
 
 // The macOS 27 CLT SDK exports a same-named macro without its plugin. Keep the property wrapper.
 typealias ViewState<Value> = SwiftUI.State<Value>
@@ -39,6 +40,7 @@ struct ToyBoxDesktopApp: App {
                 model.quickSend.present(prefill: prefill)
             } : nil
             ChannelIntentsContext.register(model)
+            ToyBoxControlsContext.register(model)
             AppDelegate.widgetURLHandler = { try model.openWidgetURL($0) }
             AppDelegate.dockMenuProvider = { model.makeDockMenu() }
             _model = ViewState(wrappedValue: model)

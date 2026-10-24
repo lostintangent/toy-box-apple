@@ -19,6 +19,7 @@ let package = Package(
         .target(name: "ChannelKit"),
         .target(name: "ChannelClient", dependencies: ["ChannelKit"]),
         .target(name: "ChannelIntelligence", dependencies: ["ChannelKit"]),
+        .target(name: "ToyBoxControlIntents", swiftSettings: [.unsafeFlags(["-application-extension"])]),
         .executableTarget(
             name: "ToyBoxShare",
             swiftSettings: [.unsafeFlags(["-application-extension"])],
@@ -26,13 +27,14 @@ let package = Package(
         ),
         .executableTarget(
             name: "ToyBoxWidget",
-            dependencies: ["ChannelKit"],
+            dependencies: ["ChannelKit", "ToyBoxControlIntents"],
             swiftSettings: [.unsafeFlags(["-application-extension"])]
         ),
         .executableTarget(
             name: "ToyBoxDesktop",
             dependencies: [
                 "ChannelKit", "ChannelClient", "ChannelIntelligence",
+                "ToyBoxControlIntents",
                 .product(name: "Sparkle", package: "Sparkle"),
             ],
             linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])]
@@ -45,6 +47,7 @@ let package = Package(
         .testTarget(name: "ChannelClientTests", dependencies: ["ChannelClient"]),
         .testTarget(name: "ToyBoxDesktopTests", dependencies: ["ToyBoxDesktop"]),
         .testTarget(name: "ToyBoxShareTests", dependencies: ["ToyBoxShare"]),
+        .testTarget(name: "ToyBoxWidgetTests", dependencies: ["ToyBoxWidget"]),
         .testTarget(
             name: "ChannelIntelligenceTests",
             dependencies: ["ChannelIntelligence"],
