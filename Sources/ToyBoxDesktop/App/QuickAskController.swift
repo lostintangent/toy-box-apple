@@ -211,8 +211,13 @@ private final class QuickAskPanel: NSPanel {
 private struct QuickAskAppearance: View {
     let content: AnyView
     @AppStorage("appearance") private var appearance: AppAppearance = .system
+    @AppStorage("textScale") private var textScale = 1.0
 
-    var body: some View { content.preferredColorScheme(appearance.colorScheme) }
+    var body: some View {
+        content
+            .environment(\.channelTextScale, textScale)
+            .preferredColorScheme(appearance.colorScheme)
+    }
 }
 
 private struct QuickAskPlaceholder: View {

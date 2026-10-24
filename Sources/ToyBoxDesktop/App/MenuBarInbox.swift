@@ -6,10 +6,14 @@ import SwiftUI
 struct MenuBarInbox: View {
     @Environment(AppModel.self) private var model
     @Environment(\.openSettings) private var openSettings
+    @Environment(\.channelTextScale) private var textScale
     @ViewState private var inbox = MenuBarInboxState()
     @ViewState private var isPresented = false
     @ViewState private var presentationID = UUID()
     @ViewState private var expandedChannelID: String?
+    @ViewState private var replySession: AuxiliaryComposerSession?
+    @ViewState private var holdsReplyConnection = false
+    @ViewState private var replyError: String?
     @ViewState private var bodyHeight: CGFloat = 160
     @ViewState private var maximumHeight: CGFloat = 640
     @ViewState private var window = MenuBarInboxWindowReference()
@@ -44,11 +48,15 @@ struct MenuBarInbox: View {
         .onChange(of: status) { _, status in
             if isPresented { inbox.update(status) }
         }
-        .onChange(of: model.serverURL) { _, _ in close() }
+        .onChange(of: model.serverURL) { _, _ in
+            replySession?.cancelOpenOnConfirmation()
+            close()
+            collapseReply()
+        }
         .onAppear { presentationChanged(true) }
         .onDisappear { presentationChanged(false) }
         .onExitCommand {
-            if expandedChannelID != nil { expandedChannelID = nil }
+            if expandedChannelID != nil { collapseReply() }
             else { close() }
         }
         .accessibilityLabel("Toy Box inbox")
@@ -69,6 +77,10 @@ struct MenuBarInbox: View {
                         Button("Retry") { model.refreshCatalog() }
                             .controlSize(.small)
                     }
+                }
+                if let replyError {
+                    Label(replyError, systemImage: "exclamationmark.circle")
+                        .font(.system(size: 12))
                 }
                 if !inbox.requests.isEmpty {
                     waiting
@@ -136,7 +148,7 @@ struct MenuBarInbox: View {
             VStack(alignment: .leading, spacing: 8) {
                 if let quote = item.quote {
                     Text(quote)
-                        .font(.system(size: 13))
+                        .font(.system(size: 13 * textScale))
                         .lineSpacing(2)
                         .lineLimit(3)
                         .accessibilityLabel(quote)
@@ -154,11 +166,19 @@ struct MenuBarInbox: View {
                     }
                 }
                 if expandedChannelID == item.id {
-                    replyPlaceholder(item)
+                    if let replySession {
+                        AuxiliaryComposer(
+                            session: replySession, style: .reply, isPresented: isPresented,
+                            presentationID: presentationID,
+                            onConfirmed: { confirmation in confirmedReply(confirmation, to: item) },
+                            onOpenChannel: { open(item) },
+                            onDismiss: collapseReply
+                        )
                         .id("reply-\(item.id)")
+                    }
                 } else if request.canReply {
                     Button {
-                        expandedChannelID = item.id
+                        expandReply(to: item)
                     } label: {
                         Label("Reply", systemImage: "arrowshape.turn.up.left")
                     }
@@ -170,16 +190,6 @@ struct MenuBarInbox: View {
             }
             .padding(.leading, 38)
         }
-    }
-
-    private func replyPlaceholder(_ item: MenuBarStatus.Item) -> some View {
-        TextField("Reply to \(item.agent?.name ?? item.name)", text: .constant(""), axis: .vertical)
-            .font(.system(size: 14))
-            .textFieldStyle(.plain)
-            .lineLimit(3...3)
-            .padding(12)
-            .background(.primary.opacity(0.05), in: .rect(cornerRadius: 10))
-            .disabled(true)
     }
 
     private func working(_ section: MenuBarStatus.Section, total: Int) -> some View {
@@ -268,10 +278,51 @@ struct MenuBarInbox: View {
         guard visible != isPresented else { return }
         isPresented = visible
         model.menuBar.popoverVisibilityChanged(visible)
-        expandedChannelID = nil
         if visible {
+            collapseReply()
+            replyError = nil
             inbox = MenuBarInboxState(status: model.menuBarStatus)
             presentationID = UUID()
+        } else {
+            releaseReplyConnection()
+        }
+    }
+
+    private func expandReply(to item: MenuBarStatus.Item) {
+        guard let sequence = item.sequence, let requester = item.agent else {
+            replyError = "Request preview unavailable. Open the channel to review it."
+            return
+        }
+        guard let catalog = model.catalog, catalog.channels.contains(where: { $0.id == item.id }) else {
+            replyError = "This channel is no longer available. Your draft is saved."
+            return
+        }
+        let store = catalog.channel(id: item.id)
+        collapseReply()
+        replyError = nil
+        replySession = AuxiliaryComposerSession(store: store, scope: .inboxReply(sequence: sequence), requester: requester)
+        model.acquire(store)
+        holdsReplyConnection = true
+        expandedChannelID = item.id
+    }
+
+    private func collapseReply() {
+        releaseReplyConnection()
+        expandedChannelID = nil
+        replySession = nil
+    }
+
+    private func releaseReplyConnection() {
+        guard holdsReplyConnection, let replySession else { return }
+        model.release(replySession.store)
+        holdsReplyConnection = false
+    }
+
+    private func confirmedReply(_ confirmation: AuxiliaryComposerSession.Confirmation, to item: MenuBarStatus.Item) {
+        guard let replySession, model.serverURL == replySession.store.api.baseURL.absoluteString else { return }
+        inbox.confirmed(item.id)
+        if confirmation.opensChannel {
+            closeThen { model.activate(channelID: item.id, sequence: confirmation.sequence) }
         }
     }
 
@@ -325,7 +376,9 @@ private struct MenuBarInboxWindowObserver: NSViewRepresentable {
             super.viewDidMoveToWindow()
             observation = nil
             guard let window else { return }
-            onAttach?(window)
+            DispatchQueue.main.async { [weak self, weak window] in
+                if let window { self?.onAttach?(window) }
+            }
             observation = window.observe(\.isVisible, options: [.initial, .new]) { [weak self] _, change in
                 let visible = change.newValue == true
                 DispatchQueue.main.async { self?.onVisibility?(visible) }

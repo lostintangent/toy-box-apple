@@ -71,6 +71,7 @@ struct ToyBoxDesktopApp: App {
 
         MenuBarExtra(isInserted: menuBarInserted) {
             MenuBarInbox().environment(model)
+                .environment(\.channelTextScale, textScale)
                 .preferredColorScheme(appearance.colorScheme)
         } label: {
             MenuBarLabel(model: model)
