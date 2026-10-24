@@ -77,9 +77,11 @@ final class ChannelSpotlight {
     /// Only the server saved in Settings fills Spotlight. A `--server` or `TOY_BOX_SERVER_URL`
     /// launch is session-only, so a test against a demo never replaces your channels.
     static func indexes(_ options: LaunchOptions,
+                        bundleID: String? = Bundle.main.bundleIdentifier,
                         environment: [String: String] = ProcessInfo.processInfo.environment) -> Bool {
         !options.isSnapshot && options.serverURL == nil && environment["TOY_BOX_SERVER_URL"] == nil
-            && options.resizeBenchmark == nil && options.benchmark == nil
+            && options.resizeBenchmark == nil && options.benchmark == nil && options.quickSendValidation == nil
+            && bundleID == "dev.toybox.desktop"
     }
 
     /// Follows the app's server and catalog for as long as the app runs.

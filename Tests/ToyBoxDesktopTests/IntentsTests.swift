@@ -60,14 +60,39 @@ struct IntentsTests {
     }
 
     @Test func onlyTheServerSavedInSettingsFillsSpotlight() {
-        #expect(ChannelSpotlight.indexes(LaunchOptions(), environment: [:]))
+        #expect(ChannelSpotlight.indexes(LaunchOptions(), bundleID: "dev.toybox.desktop", environment: [:]))
         var session = LaunchOptions()
         session.serverURL = "http://127.0.0.1:3210"
-        #expect(!ChannelSpotlight.indexes(session, environment: [:]))
-        #expect(!ChannelSpotlight.indexes(LaunchOptions(), environment: ["TOY_BOX_SERVER_URL": "http://127.0.0.1:3210"]))
+        #expect(!ChannelSpotlight.indexes(session, bundleID: "dev.toybox.desktop", environment: [:]))
+        #expect(!ChannelSpotlight.indexes(LaunchOptions(), bundleID: "dev.toybox.desktop",
+                                         environment: ["TOY_BOX_SERVER_URL": "http://127.0.0.1:3210"]))
         var snapshot = LaunchOptions()
         snapshot.snapshotURL = URL(filePath: "/tmp/snapshot.png")
-        #expect(!ChannelSpotlight.indexes(snapshot, environment: [:]))
+        #expect(!ChannelSpotlight.indexes(snapshot, bundleID: "dev.toybox.desktop", environment: [:]))
+    }
+
+    @Test func requestQueryAndOpenOnlyResolveTheOriginalWaitingResult() async throws {
+        let host = TestHost(api: try ChannelAPI(serverURL: "https://server.test"))
+        let item = MenuBarStatus.Item(id: "studio", name: "Studio", subtitle: "Lead needs your reply",
+                                     agent: .init(id: "lead", name: "Lead"), sequence: 8, quote: "Ship the layout?")
+        let entry = try #require(WaitingRequestEntry(item: item, serverURL: "https://server.test"))
+        let otherServer = try #require(WaitingRequestEntry(item: item, serverURL: "https://other.test"))
+        host.waitingRequests = [entry]
+        let context = host.context
+        var query = WaitingRequestQuery()
+        query.context = context
+        #expect(try await query.entities(for: [entry.id, otherServer.id]).map(\.id) == [entry.id])
+        #expect(try await query.entities(matching: "layout").map(\.id) == [entry.id])
+        #expect(try await query.suggestedEntities().map(\.id) == [entry.id])
+        #expect(try await query.allEntities().map(\.id) == [entry.id])
+        var intent = OpenRequestIntent(target: WaitingRequestEntity(entry))
+        intent.context = context
+        _ = try await intent.perform()
+        #expect(host.revealedRequests == ["studio:8"] && host.acquired.isEmpty)
+        host.waitingRequests = []
+        #expect(try await query.entities(for: [entry.id]).isEmpty)
+        await #expect(throws: ChannelIntentError.requestNotWaiting) { try await intent.perform() }
+        #expect(host.revealedRequests.count == 1)
     }
 
     @Test func spotlightKeepsAnEarlierLaunchsChannelsUntilTheCatalogReplacesThem() {
@@ -565,6 +590,37 @@ extension IntentsTests {
             #expect(host.confirmations.count == 1 && host.acquired.isEmpty)
             #expect(!RequestRecorder.requests.contains { $0.hasPrefix("POST ") })
         }
+
+        /// Run alone against a fresh private demo, before any other fixture replies.
+        @Test(.enabled(if: demoURL != nil))
+        func spotlightReplyConfirmsAndAnswersTheOriginalRequestWithoutOpeningOrMarkingRead() async throws {
+            let host = try TestHost.demo()
+            let api = try #require(host.api)
+            let context = host.context
+            _ = try await context.catchUp(channelID: "studio-demo")
+            let before = try #require(host.store("studio-demo")?.state)
+            let request = try #require(before.request)
+            let agent = try #require(([before.lead] + before.members).first { $0.id == request.sender.agentId })
+            let item = MenuBarStatus.Item(id: before.channel.id, name: before.channel.name, subtitle: "",
+                                         agent: agent, sequence: request.sequence,
+                                         quote: NotificationText.plainText(request.text))
+            let entry = try #require(WaitingRequestEntry(item: item, serverURL: api.baseURL.absoluteString))
+            let text = "Spotlight reply fixture \(UUID().uuidString.prefix(8))"
+            var intent = ReplyToRequestIntent(request: WaitingRequestEntity(entry), message: "  \(text)\n")
+            intent.context = context
+            RequestRecorder.reset()
+            _ = try await intent.perform()
+            let writes = RequestRecorder.requests.filter { !$0.hasPrefix("GET ") }
+            #expect(writes == ["POST /api/v1/channels/studio-demo/messages"])
+            #expect(host.confirmations == [.init(channel: before.channel.name, message: text, recipient: agent.name)])
+            var stream = api.observe(channelId: before.channel.id).makeAsyncIterator()
+            let after = try #require(try await stream.next()?.state)
+            #expect(after.channel.requestSequence == nil)
+            #expect(after.channel.seenThrough == before.channel.seenThrough)
+            #expect(after.messages.filter { $0.id == intent.sendID }.map(\.text) == ["@\(agentHandleFromName(agent.name)) \(text)"])
+            #expect(host.opened.isEmpty && host.store("studio-demo")?.sendAttempts.isEmpty == true)
+            print("Spotlight request reply: confirmed \(agent.name) in \(before.channel.name), one POST, no read write, UUID \(intent.sendID)")
+        }
     }
 }
 
@@ -601,6 +657,8 @@ private final class TestHost {
     private(set) var opened: [String] = []
     private(set) var confirmations: [ChannelIntentsContext.SendConfirmation] = []
     var declines = false
+    var waitingRequests: [WaitingRequestEntry] = []
+    private(set) var revealedRequests: [String] = []
     /// Installs a context backed by this host, which intents use until the next is installed.
     var context: ChannelIntentsContext {
         let context = ChannelIntentsContext(host: .init(
@@ -615,7 +673,9 @@ private final class TestHost {
                 self.holds[store.id, default: 1] -= 1
                 if self.holds[store.id] == 0 { store.disconnect() }
             },
-            open: { self.opened.append($0) }
+            open: { self.opened.append($0) },
+            requests: { self.waitingRequests },
+            revealRequest: { self.revealedRequests.append("\($0):\($1)") }
         ), intelligence: UnavailableIntelligence(), summarizes: { false })
         context.confirmationOverride = { prompt in
             self.confirmations.append(prompt)

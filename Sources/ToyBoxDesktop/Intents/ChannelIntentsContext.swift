@@ -17,6 +17,8 @@ final class ChannelIntentsContext {
         var acquire: @MainActor (ChannelStore) -> Void
         var release: @MainActor (ChannelStore) -> Void
         var open: @MainActor (String) -> Void
+        var requests: @MainActor () async throws -> [WaitingRequestEntry] = { [] }
+        var revealRequest: @MainActor (String, Int) -> Void = { _, _ in }
     }
 
     private let host: Host
@@ -54,6 +56,7 @@ final class ChannelIntentsContext {
 
     /// Spotlight's channels, kept only for the server saved in Settings.
     private(set) var spotlight: ChannelSpotlight?
+    private(set) var requestSpotlight: RequestSpotlight?
 
     init(host: Host,
          intelligence: @autoclosure @escaping @MainActor () -> any ChannelIntelligenceService = LiveChannelIntelligence.shared,
@@ -92,6 +95,73 @@ final class ChannelIntentsContext {
     /// Spotlight asks again for every channel, or for the named ones.
     func reindexSpotlight(_ ids: [String]?) async {
         await spotlight?.reindex(ids)
+    }
+
+    func waitingRequests() async throws -> [WaitingRequestEntity] {
+        guard host.api() != nil else { throw ChannelIntentError.noServer }
+        return try await host.requests().map { entry in
+            requestSpotlight?.entity(entry) ?? WaitingRequestEntity(entry, thumbnail: RequestSpotlight.renderAvatar(entry.agent))
+        }
+    }
+
+    func reindexRequests(_ ids: [String]?) async {
+        await requestSpotlight?.reindex(ids)
+    }
+
+    func openRequest(_ request: WaitingRequestEntry) async throws {
+        try requireServer(request)
+        guard try await host.requests().contains(where: { $0.id == request.id }) else {
+            throw ChannelIntentError.requestNotWaiting
+        }
+        try requireServer(request)
+        host.revealRequest(request.link.channelID, request.link.sequence)
+    }
+
+    /// The entity can outlive its request. Validate before and after confirmation, including the
+    /// server and requester, so a stale Spotlight action never answers a replacement question.
+    func replyToRequest(_ request: WaitingRequestEntry, message: String, id: String,
+                        confirm: @Sendable (SendConfirmation) async throws -> Void) async throws {
+        let text = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { throw ChannelIntentError.emptyMessage }
+        try requireServer(request)
+        try await connected(request.link.channelID) { store in
+            let requester = try requireWaiting(request, in: store)
+            let name = store.state?.channel.name ?? request.channelName
+            if let attempt = store.sendAttempts.first(where: { $0.id == id }) {
+                switch attempt.phase {
+                case .confirmed: return
+                case .notSent: throw ChannelIntentError.waitingToSend(name)
+                case .sending, .deliveryNotConfirmed: throw ChannelIntentError.notConfirmed(name)
+                }
+            }
+            let prompt = SendConfirmation(channel: name, message: text, recipient: requester.name)
+            if let confirmationOverride { try await confirmationOverride(prompt) } else { try await confirm(prompt) }
+            try requireServer(request)
+            guard try requireWaiting(request, in: store).name == requester.name else {
+                throw ChannelIntentError.requestNotWaiting
+            }
+            let content = "@\(agentHandleFromName(requester.name)) \(text)"
+            try await post(content, id: id, channelName: name, store: store)
+            replies[request.link.channelID, default: []].insert(request.link.sequence)
+        }
+    }
+
+    private func requireServer(_ request: WaitingRequestEntry) throws {
+        guard let api = host.api() else { throw ChannelIntentError.noServer }
+        guard WaitingRequestEntry.normalizedServer(api.baseURL.absoluteString) == request.link.serverURL else {
+            throw ChannelIntentError.differentServer
+        }
+    }
+
+    private func requireWaiting(_ request: WaitingRequestEntry, in store: ChannelStore) throws -> ChannelAgent {
+        guard let state = store.state, state.channel.requestSequence == request.link.sequence,
+              let message = state.request?.sequence == request.link.sequence ? state.request
+                : state.messages.first(where: { $0.sequence == request.link.sequence }),
+              message.sender.type == "agent", message.sender.agentId == request.agent.id,
+              let requester = ([state.lead] + state.members).first(where: { $0.id == request.agent.id }) else {
+            throw ChannelIntentError.requestNotWaiting
+        }
+        return requester
     }
 
     // MARK: Catch Me Up
@@ -167,16 +237,19 @@ final class ChannelIntentsContext {
         if let confirmationOverride { try await confirmationOverride(prompt) } else { try await confirm(prompt) }
         let content = recipient.map { "@\(agentHandleFromName($0)) \(trimmed)" } ?? trimmed
         return try await connected(channelID) { store in
-            do {
-                try await store.post(id: id, content: content)
-                return channel.name
-            } catch {
-                if store.phase == .deleted { throw ChannelIntentError.channelDeleted(channel.name) }
-                switch store.sendAttempts.first(where: { $0.id == id })?.phase {
-                case .deliveryNotConfirmed: throw ChannelIntentError.notConfirmed(channel.name)
-                case .notSent: throw ChannelIntentError.waitingToSend(channel.name)
-                default: throw ChannelIntentError.notSent(channel.name)
-                }
+            try await post(content, id: id, channelName: channel.name, store: store)
+            return channel.name
+        }
+    }
+
+    private func post(_ content: String, id: String, channelName: String, store: ChannelStore) async throws {
+        do { try await store.post(id: id, content: content) }
+        catch {
+            if store.phase == .deleted { throw ChannelIntentError.channelDeleted(channelName) }
+            switch store.sendAttempts.first(where: { $0.id == id })?.phase {
+            case .deliveryNotConfirmed: throw ChannelIntentError.notConfirmed(channelName)
+            case .notSent: throw ChannelIntentError.waitingToSend(channelName)
+            default: throw ChannelIntentError.notSent(channelName)
             }
         }
     }
@@ -231,7 +304,20 @@ extension ChannelIntentsContext {
                 NSApplication.shared.activate()
                 model.navigationRequest = .init(channelID: id, sequence: nil)
                 if model.activeChannelID == nil { model.openChannelWindow?(id) }
-            }
+            },
+            requests: {
+                let deadline = ContinuousClock.now + .seconds(10)
+                while true {
+                    guard let catalog = model.catalog else { throw ChannelIntentError.noServer }
+                    let status = model.menuBarStatus
+                    if catalog.hasLoaded, status.waiting.allSatisfy({ $0.quote != nil && $0.agent != nil }) {
+                        return status.waiting.compactMap { WaitingRequestEntry(item: $0, serverURL: model.serverURL) }
+                    }
+                    guard ContinuousClock.now < deadline, catalog.error == nil else { throw ChannelIntentError.unreachable }
+                    try await Task.sleep(for: .milliseconds(50))
+                }
+            },
+            revealRequest: { model.activate(channelID: $0, sequence: $1) }
         ), summarizes: { TranscriptIntelligenceSettings.isOn(TranscriptIntelligenceSettings.summarizesNewMessages) })
     }
 
@@ -245,6 +331,9 @@ extension ChannelIntentsContext {
         let spotlight = ChannelSpotlight()
         context.spotlight = spotlight
         spotlight.observe(model)
+        let requests = RequestSpotlight()
+        context.requestSpotlight = requests
+        requests.observe(model)
     }
 }
 
@@ -275,6 +364,8 @@ enum ChannelIntentError: Error, Equatable, CustomLocalizedStringResourceConverti
     case notSent(String)
     case waitingToSend(String)
     case notConfirmed(String)
+    case requestNotWaiting
+    case differentServer
 
     var localizedStringResource: LocalizedStringResource {
         switch self {
@@ -286,6 +377,8 @@ enum ChannelIntentError: Error, Equatable, CustomLocalizedStringResourceConverti
         case .notSent(let name): "Your message to \(name) wasn't sent. Try again in a moment."
         case .waitingToSend(let name): "Your message to \(name) wasn't sent. It's waiting in the channel so you can send it again."
         case .notConfirmed(let name): "Your Toy Box server didn't confirm your message to \(name). Open the channel to see if it arrived before you send it again."
+        case .requestNotWaiting: "That request is no longer waiting for your reply. Open the channel to see what's new."
+        case .differentServer: "That request belongs to another Toy Box server. Switch servers in Settings to open or answer it."
         }
     }
 }

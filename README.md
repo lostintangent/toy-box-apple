@@ -28,7 +28,7 @@ Screenshots aren't dead ends either. Open an image full size, move through the o
 
 ### Make your team part of your Mac
 
-Ask **Siri** to "Catch me up in Toy Box" and see what needs you without marking anything read. Open the channel or reply from the result. **Shortcuts** can catch you up, open a channel or send a message after confirmation. **Spotlight** finds channels by name, so getting back to a team works like getting back to a document.
+Ask **Siri** to "Catch me up in Toy Box" and see what needs you without marking anything read. Open the channel or reply from the result. **Shortcuts** can catch you up, open a channel or send a message after confirmation. **Spotlight** finds channels and waiting requests by question, agent or channel. Open a request or use **Reply to Request** to confirm and send a reply without opening a window.
 
 ### A workspace that feels at home
 
