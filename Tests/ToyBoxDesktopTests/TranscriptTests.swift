@@ -683,8 +683,9 @@ struct TranscriptTests {
     @Test(arguments: [false, true])
     func openingAndClosingFindLeaveTheReadersMessagesInPlace(atBottom: Bool) async throws {
         let find = TranscriptFind()
-        let harness = try await TranscriptHarness(messages: (1...90).map(transcriptTestMessage), find: find)
+        let harness = try await TranscriptHarness(messages: transcriptFindTestMessages(1...90), find: find)
         defer { harness.close() }
+        try #require(harness.visibleWindowFrames()["m90"] != nil)
         if !atBottom {
             let clip = harness.scrollView.contentView
             clip.scroll(to: NSPoint(x: clip.bounds.minX, y: clip.bounds.minY - 600))
@@ -712,11 +713,7 @@ struct TranscriptTests {
     @Test(arguments: [false, true])
     func findProgressAndErrorsLeaveTheReadersMessagesInPlace(atBottom: Bool) async throws {
         let find = TranscriptFind()
-        let messages = (61...90).map { sequence in
-            var message = transcriptTestMessage(sequence)
-            if sequence.isMultiple(of: 2) { message.sender = .user }
-            return message
-        }
+        let messages = transcriptFindTestMessages(61...90)
         let harness = try await TranscriptHarness(messages: messages,
                                                   history: (1...60).map(transcriptTestMessage),
                                                   holdsHistory: true, find: find)
@@ -760,12 +757,13 @@ struct TranscriptTests {
     @MainActor
     @Test func findKeepsOwnershipOfTheReadingPositionWhenMessagesArrive() async throws {
         let find = TranscriptFind()
-        let harness = try await TranscriptHarness(messages: (1...90).map(transcriptTestMessage), find: find)
+        let harness = try await TranscriptHarness(messages: transcriptFindTestMessages(1...90), find: find)
         defer { harness.close() }
         harness.interaction.findInChannel()
         try await harness.waitUntil { find.isPresented && harness.findField != nil }
         try await harness.settled()
         let reading = harness.visibleWindowFrames()
+        try #require(reading["m90"] != nil)
         try #require(reading.count >= 3)
         harness.push(transcriptTestMessage(91), revision: 2)
         try await harness.waitUntil { harness.store.messages.last?.sequence == 91 }
@@ -808,8 +806,9 @@ struct TranscriptTests {
     @MainActor
     @Test func closingFindAtTheBottomRestoresFollowingButKeepsReadSuspended() async throws {
         let find = TranscriptFind()
-        let harness = try await TranscriptHarness(messages: (1...90).map(transcriptTestMessage), find: find)
+        let harness = try await TranscriptHarness(messages: transcriptFindTestMessages(1...90), find: find)
         defer { harness.close() }
+        try #require(harness.visibleWindowFrames()["m90"] != nil)
         harness.interaction.findInChannel()
         try await harness.waitUntil { find.isPresented && harness.findField != nil }
         find.close()
@@ -828,11 +827,7 @@ struct TranscriptTests {
                            sender: .system, content: .system(.init(type: "member_joined",
                                member: .init(id: "member\(sequence)", name: "Member \(sequence)"))))
         }
-        let messages = memberships + (9...30).map { sequence in
-            var message = transcriptTestMessage(sequence)
-            if sequence.isMultiple(of: 2) { message.sender = .user }
-            return message
-        }
+        let messages = memberships + transcriptFindTestMessages(9...30)
         let find = TranscriptFind()
         let harness = try await TranscriptHarness(messages: messages, find: find)
         defer { harness.close() }
@@ -2780,6 +2775,15 @@ func transcriptTestMessage(_ sequence: Int) -> ChannelMessage {
     ChannelMessage(id: "m\(sequence)", sequence: sequence, timestamp: "2026-10-22T12:00:00Z",
                    sender: .agent("lead"),
                    content: .text("Update \(sequence) has enough words to wrap onto a second line here."))
+}
+
+/// Separate lazy rows keep this fixture's initial window-space measurements independently settled.
+func transcriptFindTestMessages(_ sequences: ClosedRange<Int>) -> [ChannelMessage] {
+    sequences.map { sequence in
+        var message = transcriptTestMessage(sequence)
+        if sequence.isMultiple(of: 2) { message.sender = .user }
+        return message
+    }
 }
 
 /// Heights from 480 out by `count` steps and back again, like dragging the bottom edge and returning.
