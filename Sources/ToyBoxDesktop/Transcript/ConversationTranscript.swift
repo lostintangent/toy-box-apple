@@ -102,8 +102,9 @@ struct ConversationTranscript: View {
                     guard store.phase.isLive, !hasLanded else { return }
                     await land(using: proxy)
                 }
-                .task(id: interaction.revealRequest?.token) {
+                .task(id: interaction.revealRequestToken) {
                     guard let request = interaction.revealRequest else { return }
+                    interaction.consumeRevealRequest(request.token)
                     await reveal(sequence: request.sequence, using: proxy)
                 }
                 .task(id: visibleReadSequence) { await markVisibleRead() }
@@ -713,14 +714,20 @@ struct ConversationTranscript: View {
                 try? await Task.sleep(for: .milliseconds(16))
                 continue
             }
+            // A cold lazy stack can still report its old bottom before measuring the unread run.
+            // Target the row once even if those provisional frames appear to fit on the last screen.
+            if jumps == 0, opening.rowID == nil {
+                scrollPosition = nil
+                proxy.scrollTo(row.id, anchor: .top)
+                jumps += 1
+                continue
+            }
             if isInPlace(row) || jumps == 2 { break }
             jumps += 1
             jump(to: row.id, anchor: .top, using: proxy)
         }
-        // Until something scrolls it, the scroll view keeps its initial bottom anchor, so a card
-        // growing above the reader would push the rows up instead of down. Scrolling to where the
-        // transcript already is ends that.
-        guard !Task.isCancelled, jumps == 0, opening.seededRowID == nil, viewport.bottomGap < 1 else { return }
+        // A no-move jump leaves the initial bottom anchor active. End it before a summary grows.
+        guard !Task.isCancelled, opening.seededRowID == nil, viewport.bottomGap < 1 else { return }
         scrollToLatest(using: proxy)
         _ = await layoutTurns.settled()
     }
