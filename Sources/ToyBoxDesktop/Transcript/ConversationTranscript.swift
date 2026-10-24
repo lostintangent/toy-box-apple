@@ -45,9 +45,11 @@ struct ConversationTranscript: View {
     }
 
     private var viewport: TranscriptViewport { geometry.viewport }
-    private var frames: [String: TranscriptMessageFrame] {
+    private var frames: [String: TranscriptMessageFrame] { geometry.frames }
+
+    private var pagingFrames: [String: TranscriptMessageFrame] {
         let top = window.viewportTop ?? viewport.top
-        return geometry.frames.mapValues { TranscriptCoordinates.viewportFrame($0, top: top) }
+        return frames.mapValues { TranscriptCoordinates.viewportFrame($0, top: top) }
     }
 
     private var visibleReadSequence: Int? {
@@ -192,7 +194,7 @@ struct ConversationTranscript: View {
                                         && catchUp?.holdsLanding != true,
                                     isJumping: pendingJump != nil)
             geometry.viewport = new
-            followReaderWhilePaging(in: frames)
+            followReaderWhilePaging()
             publishVisibleSequence()
             pointer.contentDidMove()
             if isAtBottom != update.isAtBottom { isAtBottom = update.isAtBottom }
@@ -216,12 +218,10 @@ struct ConversationTranscript: View {
         }
         .onPreferenceChange(TranscriptMessageFrames.self) { new in
             layoutTurns.moved = true
-            let top = window.viewportTop ?? viewport.top
-            let new = new.mapValues { TranscriptCoordinates.viewportFrame($0, top: top) }
             holdReadingPlace(in: new)
             geometry.frames = new
             publishVisibleSequence()
-            followReaderWhilePaging(in: new)
+            followReaderWhilePaging()
             restorePagingAnchor(using: new)
         }
         .onScrollPhaseChange { _, phase in
@@ -229,7 +229,10 @@ struct ConversationTranscript: View {
             if isUserScrolling != scrolling { isUserScrolling = scrolling }
             if phase == .tracking || phase == .interacting { catchUp?.isPinned = false }
             // Before the page lands, the anchor follows the reader instead.
-            if (phase == .tracking || phase == .interacting) && pagingRestoreTarget != nil { pagingAnchor = nil }
+            if (phase == .tracking || phase == .interacting) && pagingRestoreTarget != nil {
+                pagingAnchor = nil
+                publishVisibleSequence()
+            }
         }
     }
 
@@ -328,7 +331,8 @@ struct ConversationTranscript: View {
     }
 
     private func publishVisibleSequence() {
-        let sequence = viewport.readSequence(in: frames)
+        guard pagingAnchor == nil else { return }
+        let sequence = viewport.readSequence(in: frames, nativeViewportTop: window.viewportTop ?? viewport.top)
         if sequence != visibleSequence { visibleSequence = sequence }
     }
 
@@ -549,8 +553,8 @@ struct ConversationTranscript: View {
             isRevealing = true
             proxy.scrollTo(first.id, anchor: .top)
             guard await waitForSnapshotLayout(until: {
-                viewport.topVisibleFrame(in: frames)?.frame.sequence == oldest
-            }), let anchor = viewport.topVisibleFrame(in: frames) else {
+                viewport.topVisibleFrame(in: pagingFrames)?.frame.sequence == oldest
+            }), let anchor = viewport.topVisibleFrame(in: pagingFrames) else {
                 snapshot.failState(name, message: "The oldest message did not enter the viewport.")
                 return
             }
@@ -574,9 +578,10 @@ struct ConversationTranscript: View {
                 snapshot.failState(name, message: "The anchored message left the measured layout.")
                 return
             }
-            let displacement = abs(restored.rect.maxY - anchor.frame.rect.maxY)
+            let positioned = TranscriptCoordinates.viewportFrame(restored, top: window.viewportTop ?? viewport.top)
+            let displacement = abs(positioned.rect.maxY - anchor.frame.rect.maxY)
             guard displacement <= 2 else {
-                let detail = "From \(anchor.frame.rect.maxY) to \(restored.rect.maxY)."
+                let detail = "From \(anchor.frame.rect.maxY) to \(positioned.rect.maxY)."
                 snapshot.failState(name, message: "Page \(page) moved \(anchor.id) by \(displacement) points. \(detail)")
                 return
             }
@@ -807,7 +812,7 @@ struct ConversationTranscript: View {
 
     private func loadOlder() async {
         guard !store.isLoadingOlder, store.hasOlderMessages, !isRevealing else { return }
-        if let top = viewport.topVisibleFrame(in: frames) {
+        if let top = viewport.topVisibleFrame(in: pagingFrames) {
             pagingAnchor = .init(id: top.id, bottom: top.frame.rect.maxY,
                                  oldestSequence: store.state?.messages.first?.sequence ?? 0)
         }
@@ -816,6 +821,7 @@ struct ConversationTranscript: View {
             await store.loadOlder()
             if store.historyError != nil || store.state?.messages.first?.sequence == before {
                 pagingAnchor = nil
+                publishVisibleSequence()
                 break
             }
         } while rows.isEmpty && store.hasOlderMessages && !Task.isCancelled
@@ -824,9 +830,9 @@ struct ConversationTranscript: View {
     /// Until the older page lands, the place to keep is wherever the reader is now. Scrolling during the
     /// load, including a scroll phase the triggering wheel notch reports after the load starts, moves
     /// that place rather than abandoning it.
-    private func followReaderWhilePaging(in frames: [String: TranscriptMessageFrame]) {
-        guard let anchor = pagingAnchor, pagingRestoreTarget == nil,
-              let top = viewport.topVisibleFrame(in: frames), top.frame.historyStart == anchor.oldestSequence
+    private func followReaderWhilePaging() {
+        guard let anchor = pagingAnchor, pagingRestoreTarget == nil else { return }
+        guard let top = viewport.topVisibleFrame(in: pagingFrames), top.frame.historyStart == anchor.oldestSequence
         else { return }
         let current = PagingAnchor(id: top.id, bottom: top.frame.rect.maxY, oldestSequence: anchor.oldestSequence)
         if current != anchor { pagingAnchor = current }
@@ -879,7 +885,8 @@ struct ConversationTranscript: View {
             guard await displayTurns.settled() else { return }
             if let frame = frames[anchor.id], frame.historyStart == target.oldestSequence {
                 let nativeIsAligned = restorePagingAnchor(using: frames)
-                if TranscriptCoordinates.isRestored(frame, bottom: anchor.bottom, nativeIsAligned: nativeIsAligned) {
+                let positioned = TranscriptCoordinates.viewportFrame(frame, top: window.viewportTop ?? viewport.top)
+                if TranscriptCoordinates.isRestored(positioned, bottom: anchor.bottom, nativeIsAligned: nativeIsAligned) {
                     // A reader still scrolling takes over as soon as their place is restored.
                     if isUserScrolling { break }
                     let since = alignedSince ?? .now
@@ -902,6 +909,7 @@ struct ConversationTranscript: View {
         }
         guard !Task.isCancelled, pagingRestoreTarget == target else { return }
         pagingAnchor = nil
+        publishVisibleSequence()
     }
 }
 
@@ -1090,12 +1098,16 @@ struct TranscriptViewport: Equatable {
         let resized = contentHeight != old.contentHeight || height != old.height
         return resized || bottomGap > old.bottomGap ? false : wasAtBottom
     }
-    func readSequence(in frames: [String: TranscriptMessageFrame]) -> Int? {
-        let visible = CGRect(x: 0, y: 0, width: width, height: height)
+    func readSequence(in frames: [String: TranscriptMessageFrame], nativeViewportTop: CGFloat? = nil) -> Int? {
+        let top = nativeViewportTop.map { $0 - TranscriptCoordinates.contentTopPadding } ?? 0
+        let visible = CGRect(x: 0, y: top, width: width, height: height)
         guard width > 0, height > 0 else { return nil }
         return frames.values.filter {
-            $0.sequence > 0 && $0.rect.intersects(visible)
-                && $0.rect.intersection(visible).height >= min(24, $0.rect.height / 2)
+            var rect = $0.rect
+            // Read in content coordinates when native clipping has outpaced frame preferences.
+            if nativeViewportTop != nil { rect.origin.y = $0.contentTop }
+            return $0.sequence > 0 && rect.intersects(visible)
+                && rect.intersection(visible).height >= min(24, rect.height / 2)
         }.map(\.sequence).max()
     }
 

@@ -1378,6 +1378,40 @@ struct TranscriptPagingTests {
         #expect(restored(measured, bottom: 79.5))
         #expect(!restored(measured, bottom: 79.51))
     }
+
+    @Test func readMarkingUsesNativeContentBoundsWithoutReprojectingEveryFrame() {
+        let viewport = TranscriptViewport(width: 600, height: 400)
+        let measured = [
+            "visible": frame(top: 1000, height: 60, measuredY: 2000),
+            "below": TranscriptMessageFrame(sequence: 99, rect: CGRect(x: 68, y: 80, width: 400, height: 60),
+                                           historyStart: 31, contentTop: 1450),
+            "optimistic": TranscriptMessageFrame(sequence: 0, rect: CGRect(x: 68, y: 80, width: 400, height: 60),
+                                                historyStart: 31, contentTop: 1000)
+        ]
+        #expect(viewport.readSequence(in: measured) == 99)
+        #expect(viewport.readSequence(in: measured, nativeViewportTop: 1020) == 61)
+        #expect(viewport.readSequence(in: measured, nativeViewportTop: 1470) == 99)
+        #expect(viewport.readSequence(in: measured, nativeViewportTop: 2000) == nil)
+        #expect(TranscriptViewport().readSequence(in: measured, nativeViewportTop: 1020) == nil)
+    }
+
+    @Test(arguments: [CGFloat(0), 52, 2002, 2032])
+    func nativeReadBoundsKeepTheSameVisibilityThresholdsAsPositionedFrames(_ top: CGFloat) {
+        let viewport = TranscriptViewport(width: 600, height: 400)
+        for (relativeTop, height, x) in [
+            (CGFloat(-100), CGFloat(60), CGFloat(68)),
+            (-36, 60, 68), (-36.01, 60, 68), (80, 60, 68),
+            (376, 100, 68), (376.01, 100, 68), (390, 20, 68), (391, 20, 68),
+            (20, 40, 700)
+        ] {
+            var measured = frame(top: top - TranscriptCoordinates.contentTopPadding + relativeTop,
+                                 height: height, measuredY: 9999)
+            measured.rect.origin.x = x
+            let positioned = TranscriptCoordinates.viewportFrame(measured, top: top)
+            #expect(viewport.readSequence(in: ["message": measured], nativeViewportTop: top)
+                    == viewport.readSequence(in: ["message": positioned]))
+        }
+    }
 }
 
 @MainActor
