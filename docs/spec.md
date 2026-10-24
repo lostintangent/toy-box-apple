@@ -1065,6 +1065,49 @@ focus or activation reveals every reactor name. Do not make a reaction chip look
 the scrollable history. It has 20-point avatars, "Name is working" or "N agents are working", and status details on
 activation. Waiting belongs in the inspector, not this row.
 
+### In-channel message search
+
+Find belongs to the open channel, not the channel catalog. Edit > Find > Find… (`Cmd-F`)
+opens and focuses a native find bar at the top of the conversation column, directly below the
+window toolbar. It does not cover the sidebar or Overview. The bar uses the system control
+background, with no custom glass plate, 12-point horizontal and 6-point vertical insets. Its
+first row is a flexible 28-point native search field with the prompt "Search this channel", a
+secondary 11-point monospaced result position ("3 of 12"), previous/next chevrons and Done.
+Controls retain 28-point hit targets, and the field yields width before the controls truncate.
+At the narrow supported window size the count and all controls remain visible.
+
+Find Next (`Cmd-G` or Return in the search field) and Find Previous (`Shift-Cmd-G` or
+Shift-Return) move chronologically through matching messages and wrap at the ends. Each matching
+message is one result, even if its text contains the query more than once. Escape or Done closes
+the bar without moving the conversation or changing its draft. Reopening Find selects the
+current query for replacement. Switching channels cancels that channel's in-flight search and
+closes the bar, so an old response cannot navigate the newly selected channel.
+
+Match case- and diacritic-insensitively against the rendered message text: visible link labels,
+code contents and prose, not Markdown delimiters or invisible link destinations. Search loaded
+messages immediately, then read older pages through `ChannelAPI.history` into a separate search
+index. Fetching results never prepends them to the channel store or disturbs its scroll anchor.
+Use the existing reveal path and temporary message highlight to navigate to a selected result,
+loading the target only on navigation. If Your Messages hides the result, switch to All Messages.
+Keep the selected message stable when older results arrive, even when its position changes.
+Do not add a second results pane, replace message bubbles or introduce another highlight color.
+
+An empty query shows no count, fetches no pages and leaves the scroll position alone. While
+history remains incomplete, a second, compact secondary row says "Searching older messages…".
+A mini spinner may appear after 300 ms. The first-row count describes only the matches found so
+far, never a finished total. Only a completed search can show "No matches". A history failure
+keeps the query and partial results, replaces the progress row with "Couldn't search older
+messages" and Retry, and never reports a successful zero-result search. Changing the query,
+closing Find or switching server cancels obsolete work.
+
+Opening Find, fetching history and revealing results never mark messages read or answer a
+request. Read marking remains suspended after search navigation until the reader explicitly
+resumes normal scrolling or Jump to Latest. Closing the bar alone is not a read action.
+VoiceOver gets "Find in [channel]", named Previous Match and Next Match controls, the result
+position and one polite completed-result announcement, not an announcement for every older page.
+Use the same semantic colors in both appearances and the normal system focus ring. Reduce Motion
+uses the reveal path's nonmoving alternative.
+
 ### Composer and tray
 
 The composer floats over the conversation in a bottom `safeAreaBar`, as one glass surface
@@ -1455,6 +1498,7 @@ disabled whenever the updater's `canCheckForUpdates` is false, including in bund
 | File | Open Channel in New Window | `Cmd-Shift-N` |
 | File | Open in Toy Box | `Cmd-Shift-O` |
 | File | Open Folder in Finder (selected channel, only when its folder is openable) | `Cmd-Option-R` |
+| Edit > Find | Find… / Find Next / Find Previous (open channel) | `Cmd-F` / `Cmd-G` / `Shift-Cmd-G` |
 | Edit | Find Channel (reveals a hidden sidebar, then focuses its search) | `Cmd-Option-F` |
 | View | Show/Hide Sidebar | `Ctrl-Cmd-S` |
 | View | Show/Hide Overview | `Cmd-Option-0` |
@@ -1928,6 +1972,86 @@ Owners: Shell owns notifications, the menu bar extra and Settings (t94, t95). In
 model layer (t96), Siri and Shortcuts (t126) and Spotlight (t166). Transcript owns the catch-up
 card, descriptions in tiles and the viewer, and Live Text (t93, t97). Designer reviews each one in
 real-window captures, in light and dark, with VoiceOver and with Reduce Motion.
+
+### Morning digest
+
+One quiet morning notification helps the user return to the teams, rather than adding another
+live activity feed. It is enabled by default and scheduled for 8:00 AM in the Mac's local time.
+Include each channel with messages from others since the last successful digest, looking back
+at most 24 hours. Exclude the user's own messages and empty activity. If no channel qualifies,
+post nothing. Deliver a missed morning at the first opportunity before noon after wake or launch,
+at most once per local calendar day. Respect notification authorization and Focus. Enabling the
+default preference never prompts for permission on launch.
+
+The notification title is "Morning digest", with no subtitle or badge change and no added sound.
+Its body has one plain-text line per qualifying channel, busiest first:
+"Studio: Finished the layout and needs your review." Use the existing on-device catch-up path
+for short, factual summaries. No praise, invented urgency or claim that the user has read
+something. When Apple Intelligence is off, unavailable or fails, use the deterministic line
+"Studio: 12 new messages", with correct singular/plural forms. Do not manufacture a summary or
+make model availability a prerequisite for the digest. System notification truncation is allowed,
+but the authored content retains one line per qualifying channel.
+
+Activating the notification opens its busiest channel through the existing navigation path,
+with a deterministic tie-break when activity counts tie. It offers no Reply action and never
+posts, answers a request or marks a channel read in the background. Snapshot, benchmark and
+validation launches never schedule or post a digest. An explicit test-bundle-only trigger may
+present a demo banner for acceptance without changing the production daily-delivery record.
+
+Under Settings > Notifications, add a separate grouped section below the existing request and
+completion alerts. Its rows are an on-by-default "Morning digest" toggle and a native time-only
+picker labeled "Deliver at", initially 8:00 AM and formatted for the user's locale. The footer
+reads "A daily recap of activity from your teams. Made on this Mac. If your Mac is asleep, it
+arrives when you return before noon." Turning the digest off disables its time picker without
+discarding the chosen time. Existing notification authorization remains the master gate:
+denied permission uses the existing Open System Settings explanation, never repeated prompts.
+The new section fits in the native Settings window in both appearances, with no custom card or
+artificial fixed-height spacer.
+
+### Needs you widget
+
+The WidgetKit extension is a glanceable view of the same waiting requests as the menu bar inbox,
+not a second attention model. The host writes a small server-scoped snapshot from `MenuBarStatus`
+to its Team-ID-prefixed app group and requests a timeline reload when that snapshot changes.
+The widget does not connect to a server, send a reply or mark anything read. Its signed,
+sandboxed extension lives in `Contents/PlugIns`, shares the app's version/build and is omitted
+from isolated test, snapshot and benchmark bundles like the Share extension.
+
+Use system widget margins and `containerBackground`, never a custom glass surface, brand-colored
+plate, orange request card or continuous animation. A 13-point semibold "Needs you" header has the
+waiting count trailing in secondary monospaced digits. The count is channels awaiting a reply,
+not message volume. Requests follow the menu bar's newest-first ordering.
+
+| Family | Content |
+| --- | --- |
+| Small | Header/count and the first request. A 24-point agent avatar precedes the channel name, a two-line quote and secondary agent/age. A quiet "+N more" accounts for remaining requests |
+| Medium | Header/count and up to two compact request rows, with 8 points between rows and a single-line quote per row. Overflow uses "+N more" |
+| Large | Header/count and up to four request rows, with 12 points between rows. Overflow uses "+N more" |
+
+Each request row is one link. Use a 24-point avatar from the catalog profile, an 8-point gap to
+the text column, a 13-point semibold channel name, a 12-point plain-text quote (one line in Medium,
+up to two in Small and Large), then 11-point secondary "[Agent] · 12m ago". Age is based on the
+request timestamp, not the last widget refresh. Keep visible text free of Markdown syntax and preserve the full question in
+the link's accessibility label. A quote that is still resolving says "Needs your reply", rather
+than appearing blank. Agent identity uses the supplied mark and color with the shared contrast
+rules. System accented/tinted widget appearances may remap color, but never remove the mark or
+make the text depend on avatar color alone.
+
+The empty state uses `checkmark.bubble`, "Nothing needs you" and the secondary sentence
+"Your teams will appear here when they need a reply." Small may omit the explanatory sentence
+to preserve legibility. Cached requests after a known disconnect retain their content with
+"May be out of date". Medium and large share one secondary footer between overflow and
+"Updated [relative time]", so cached data does not imply continuous observation. Without a
+usable snapshot, say "Open Toy Box to connect" instead of claiming nothing needs attention.
+Do not expose requests from the previous server after a switch.
+
+Clicking a row opens Toy Box at that channel and request sequence through a validated URL route.
+The empty state, header and overflow open the main app. A stale link never redirects to a
+different channel or sends anything. Normal active-window read policy applies only after opening
+the app, not while WidgetKit renders the snapshot. Check small, medium and large layouts in light,
+dark and the system's accented appearance, plus long names, long quotes, empty and stale states.
+If Developer ID app-group access or widget registration cannot be established within the release
+timebox, defer this feature rather than shipping a widget that cannot receive data.
 
 ### App icon
 
