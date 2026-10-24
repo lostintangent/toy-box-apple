@@ -47,7 +47,7 @@ jobs:
         env:
           SCRATCH_PATH: ${{ runner.temp }}/toy-box-tests
         run: |
-          app="$(bun run run --no-open | tail -n 1)"
+          app="$(bun run app --no-open | tail -n 1)"
           actions="$app/Contents/Resources/Metadata.appintents/extract.actionsdata"
           for intent in CatchMeUpIntent OpenChannelIntent SendMessageIntent CatchUpSnippetIntent ReplyIntent; do
             grep -q "\"$intent\"" "$actions"

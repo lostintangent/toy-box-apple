@@ -20,9 +20,10 @@ view.
   commands. `scripts/dev/` owns local development, `scripts/release/` owns packaging and release
   checks, and `scripts/fixtures/` owns demo servers and fixture generation. `bun run typecheck`,
   `bun run test:release` and `bun run lint:workflows` validate the tooling.
-- Build only with Command Line Tools. Never use `xcodebuild`. `bun run run` runs Xcode's `appintentsmetadataprocessor` directly for
+- Use `bun run test` for Swift tests. Bare `bun test` only runs the TypeScript tooling tests.
+- Build only with Command Line Tools. Never use `xcodebuild`. `bun run app` runs Xcode's `appintentsmetadataprocessor` directly for
   Siri and Shortcuts, which needs Xcode installed but not its license.
-- Target macOS 27 or later on Apple Silicon with Swift tools 6.4 or later. `bun run run` stamps the real SDK
+- Target macOS 27 or later on Apple Silicon with Swift tools 6.4 or later. `bun run app` stamps the real SDK
   version before signing. Use its bundle for native visual checks, not SwiftPM's unstamped
   executable. `bun run validate` rejects bundles whose recorded SDK is below macOS 27.
 - Use your own scratch path so parallel builds never share `.build`:
@@ -30,7 +31,7 @@ view.
   - `SCRATCH_PATH=/tmp/tbm-<you> bun run test` runs the suite with the Command Line Tools
     Testing macro plugin path, which a bare `swift test` can't find. It also fails when a test
     run stops before printing its summary, which a bare `swift test` can report as success.
-  - `SCRATCH_PATH=/tmp/tbm-<you> bun run run` builds, bundles and opens a new app instance.
+  - `SCRATCH_PATH=/tmp/tbm-<you> bun run app` builds, bundles and opens a new app instance.
 - Point the app at a server with `TOY_BOX_SERVER_URL` or Settings. Use our Minecraft demo wrapper
   (`bun run demo` in this repository, port 3210) for write tests. It serves the required
   catalog lead profile without modifying the reference. The live server
@@ -46,6 +47,10 @@ view.
 - `TOY_BOX_REAL_DICTATION_TESTS=1 bun run test --filter ComposerTests/theRealTranscriberHearsARecordingThroughTheAudioSourceProtocol`
   opts into the real transcriber check. It needs the on-device English dictation model and uses
   synthesized audio, not microphone access. The normal suite never queries speech-model assets.
+- `TOY_BOX_TEST_LIVE_TEXT_INTERACTION=1 SCRATCH_PATH=/tmp/tbm-<you> bun run test --filter pressesOnTextReachLiveTextAndEverythingElseReachesTheViewer`
+  opts into native Live Text press/drag routing in an ordered off-screen window. WindowServer
+  events can stop the test runner's outer run loop. VisionKit analysis, selection-highlight
+  geometry and routing-policy checks remain in the default suite.
 - `SCRATCH_PATH=/tmp/tbm-<you> bun run benchmark [--summaries] [launch|switch|messages|paging|key|idle ...]` is the
   performance regression benchmark. It builds a release bundle as `dev.toybox.desktop.benchmark`,
   runs each scenario against a fresh `bun run perf-demo` fixture on 3292 (`TOY_BOX_PERF_PORT`),
@@ -91,7 +96,7 @@ view.
   `SCRATCH_PATH=/tmp/tbm-<you> bun run validate`, which always builds with `CONFIGURATION=release`,
   swaps that optimized build into both bundles without disturbing running instances, and launches
   the test bundle in the background against the demo. Judge feel with these optimized bundles.
-  Quick `bun run run` loops still default to debug.
+  Quick `bun run app` loops still default to debug.
 - Clicks only work while one instance has the test ID. If a click fails with "no perception
   baseline for this pid", another agent's test instance is running, so wait for it to quit.
   Reads still work, so call `list_apps` and pass your own `window`. Before acting, confirm the
@@ -142,13 +147,7 @@ view.
   Agents never run this setup or read the real key. The opt-in native appcast check in
   `scripts/release/tests/native.test.ts` uses a throwaway CryptoKit key file, never a Keychain item.
   Run it with `TOY_BOX_BUNDLE=<app> SPARKLE_TOOLS_DIR=<tools> bun test scripts/release/tests/native.test.ts`.
-- Before v0.1.1, the user-approved identity rename replaces the unshipped update key. Run
-  `bun run setup-update-secrets` again for `dev.toybox.desktop`. Only after it succeeds, the user
-  deletes the obsolete key with
-  `security delete-generic-password -s https://sparkle-project.org -a dev.toybox.channels.mac`.
-  Agents never run this deletion or access either real key. The old 0.1.0 app has no updater, so
-  this one-time rotation breaks no shipped update chain. Re-approve `dev.toybox.desktop.test` for
-  Computer Use. Notification and microphone permissions are separate for the renamed app.
+- The update signing key uses the `dev.toybox.desktop` Sparkle Keychain account.
 - Locally: `SPARKLE_ED_PUBLIC_KEY=... SIGNING_IDENTITY=SHA1 BUILD_NUMBER=N NOTARY_PROFILE=toy-box-channels-notary
   bun run release vX.Y.Z`. Without `NOTARY_PROFILE` the zip is named `SIGNED-UNNOTARIZED` and
   is never published. `PREVIOUS_APPCAST=path` enforces an increasing build number locally. CI always

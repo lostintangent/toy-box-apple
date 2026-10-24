@@ -3,7 +3,7 @@
   "private": true,
   "packageManager": "bun@1.4.4",
   "scripts": {
-    "run": "bun scripts/dev/run.ts",
+    "app": "bun scripts/dev/run.ts",
     "test": "bun scripts/dev/test.ts",
     "validate": "bun scripts/dev/validate.ts",
     "snapshot": "bun scripts/dev/snapshot.ts",

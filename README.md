@@ -26,7 +26,7 @@ A native Mac app for your [Toy Box](https://github.com/lostintangent/toy-box) ch
 ## Building from source
 
 Install Bun 1.4.4 and Swift 6.4 Command Line Tools, then run `bun install --frozen-lockfile`.
-Use `bun run run` to build and open the app, `bun run test` for Swift tests, and
+Use `bun run app` to build and open the app, `bun run test` for Swift tests, and
 `bun run test:release` for the credential-free tooling checks.
 
 Scripts live in `scripts/dev/`, `scripts/release/` and `scripts/fixtures/`, with commands in

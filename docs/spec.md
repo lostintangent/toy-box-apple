@@ -138,19 +138,10 @@ public repository variable, and removes the temporary export. Keep a secure back
 key. Existing installs trust its public half, so losing or casually rotating it breaks the update
 chain. Agents never run this setup with real credentials or read that key.
 
-Before v0.1.1, the user approved renaming the old `dev.toybox.channels.mac` identity and its
-unshipped Sparkle key. Rerun `bun run setup-update-secrets` to provision the new account and replace
-the repository's update signing configuration. Only after setup succeeds, the user removes the
-obsolete Keychain item with this exact command:
-
-```sh
-security delete-generic-password -s https://sparkle-project.org -a dev.toybox.channels.mac
-```
-
-Agents never execute this deletion or access the real keys. This rotation is safe only because
-0.1.0 shipped without Sparkle and no published app trusts the obsolete key. The Developer ID
-certificate and Apple ID app-specific password are unchanged. The renamed app needs new macOS
-notification and microphone grants, and Computer Use needs approval for `dev.toybox.desktop.test`.
+The user completed the one-time identity and unshipped update-key rotation before v0.1.1.
+The active Sparkle Keychain account is `dev.toybox.desktop`. The Developer ID certificate and
+Apple ID app-specific password are unchanged. The renamed app needs new macOS notification
+and microphone grants, and Computer Use needs approval for `dev.toybox.desktop.test`.
 
 After notarization and stapling, `bun run generate-appcast` uses Sparkle's checksum-pinned tools to
 sign the finished archive and the whole feed with Ed25519. The archive signature, length, URL,
@@ -1783,7 +1774,7 @@ no extra window opens. Activation or a shown window, from a reopen, Open Channel
 extra or a notification, makes it an ordinary app. Every other launch, Dock click and reopen is
 unchanged.
 
-`bun run run` generates `Contents/Resources/Metadata.appintents` by running Xcode's
+`bun run app` generates `Contents/Resources/Metadata.appintents` by running Xcode's
 `appintentsmetadataprocessor` directly over the const values SwiftPM already emits, so it needs
 Xcode installed but never `xcodebuild`. Titles, phrases and parameter names must stay literals.
 The system only indexes a bundle outside `/tmp` that has launched once, and parameterized phrases
