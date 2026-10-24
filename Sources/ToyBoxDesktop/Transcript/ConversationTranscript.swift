@@ -36,6 +36,12 @@ struct ConversationTranscript: View {
     @ViewState private var pointer = TranscriptPointer()
     @ViewState private var opening = TranscriptOpening()
     @ViewState private var layoutTurns = TranscriptLayoutTurns()
+    @ViewState private var find: TranscriptFind
+
+    init(store: ChannelStore, find: TranscriptFind = TranscriptFind()) {
+        self.store = store
+        _find = ViewState(wrappedValue: find)
+    }
 
     private var rows: [TranscriptRow] {
         guard let lead = store.roster.first else { return [] }
@@ -55,7 +61,8 @@ struct ConversationTranscript: View {
     private var visibleReadSequence: Int? {
         // The image viewer covers the transcript, so nothing beneath it counts as read.
         guard snapshot == nil, hasLanded, !isRevealing, pagingAnchor == nil, window.isKeyWindow,
-              scenePhase == .active, store.phase.isLive, viewer?.session == nil else { return nil }
+              scenePhase == .active, store.phase.isLive, viewer?.session == nil,
+              !find.blocksRead else { return nil }
         return visibleSequence
     }
 
@@ -102,7 +109,42 @@ struct ConversationTranscript: View {
     private var transcript: some View {
         ScrollViewReader { proxy in
             observedScroll(proxy: proxy)
+                .safeAreaBar(edge: .top, spacing: 0) {
+                    if find.isPresented {
+                        TranscriptFindBar(find: find, channelName: store.state?.channel.name ?? store.id,
+                                          focusRequest: interaction.findRequest,
+                                          navigate: { find.move($0) }, close: closeFind)
+                    }
+                }
                 .safeAreaBar(edge: .bottom, spacing: 0) { floatingControls }
+                .onChange(of: interaction.findRequest) {
+                    prepareFind()
+                    find.present()
+                }
+                .onChange(of: interaction.findNavigation?.token) {
+                    prepareFind()
+                    find.present()
+                    find.move(interaction.findNavigation?.direction ?? 1)
+                }
+                .onChange(of: store.messages) { if find.isPresented { prepareFind() } }
+                .task(id: find.work) {
+                    guard find.isPresented else { return }
+                    prepareFind()
+                    await find.searchOlder {
+                        try await store.api.history(channelId: store.id, before: $0).messages
+                    }
+                    if !Task.isCancelled, find.isPresented, find.error == nil,
+                       !find.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        window.announce(find.matches.count == 1 ? "1 matching message"
+                                        : "\(find.matches.count) matching messages")
+                    }
+                }
+                .onChange(of: find.revealRequest?.token) {
+                    if find.isPresented, let request = find.revealRequest {
+                        interaction.reveal(sequence: request.sequence)
+                    }
+                }
+                .onDisappear { find.close() }
                 .task(id: store.phase.isLive) {
                     guard store.phase.isLive, !hasLanded else { return }
                     await land(using: proxy)
@@ -126,6 +168,8 @@ struct ConversationTranscript: View {
         scrollViewport(proxy: proxy)
             .onChange(of: followsLatest, initial: true) { window.pinsToBottom = followsLatest }
             .onChange(of: interaction.jumpToLatestRequest) {
+                find.close()
+                find.resumeReading()
                 catchUp?.isPinned = false
                 pagingAnchor = nil
                 isAtBottom = true
@@ -228,6 +272,7 @@ struct ConversationTranscript: View {
             let scrolling = phase == .tracking || phase == .interacting || phase == .decelerating
             if isUserScrolling != scrolling { isUserScrolling = scrolling }
             if phase == .tracking || phase == .interacting { catchUp?.isPinned = false }
+            if phase == .tracking || phase == .interacting { find.resumeReading() }
             // Before the page lands, the anchor follows the reader instead.
             if (phase == .tracking || phase == .interacting) && pagingRestoreTarget != nil {
                 pagingAnchor = nil
@@ -334,6 +379,16 @@ struct ConversationTranscript: View {
         guard pagingAnchor == nil else { return }
         let sequence = viewport.readSequence(in: frames, nativeViewportTop: window.viewportTop ?? viewport.top)
         if sequence != visibleSequence { visibleSequence = sequence }
+    }
+
+    private func prepareFind() {
+        find.prepare(messages: store.messages.filter { !store.optimisticMessageIds.contains($0.id) },
+                     agents: store.roster, hasOlder: store.hasOlderMessages)
+    }
+
+    private func closeFind() {
+        find.close()
+        interaction.focusComposer()
     }
 
     private var showsJumpToLatest: Bool { !isAtBottom && hasLanded }
@@ -445,6 +500,11 @@ struct ConversationTranscript: View {
             return
         }
         switch name {
+        case "transcript-find":
+            prepareFind()
+            find.present()
+            find.query = "the"
+            _ = await waitForSnapshotLayout { !find.isSearching }
         case "transcript-start":
             guard let first = rows.first else { break }
             jump(to: first.id, anchor: .top, using: proxy)
@@ -787,6 +847,7 @@ struct ConversationTranscript: View {
         if !rows.contains(where: { $0.messages.contains { $0.id == message.id } }) {
             interaction.messageView = .all
         }
+        if find.isPresented { expandedMessageIds.insert(message.id) }
         await Task.yield()
         let row = rows.first { $0.messages.contains { $0.id == message.id } }
         scrollPosition = nil

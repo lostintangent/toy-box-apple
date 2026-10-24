@@ -646,6 +646,35 @@ struct TranscriptTests {
     }
 
     @MainActor
+    @Test func findingOlderMessagesDoesNotPageTheTranscriptUntilNavigation() async throws {
+        var history = (1...60).map(transcriptTestMessage)
+        history[1].content = .text("An older-only targetneedle for Find.")
+        history[1].sender = .agent("helper")
+        let find = TranscriptFind()
+        let harness = try await TranscriptHarness(messages: (61...90).map(transcriptTestMessage),
+                                                  history: history, find: find)
+        defer { harness.close() }
+        harness.interaction.messageView = .yours
+        harness.interaction.findInChannel()
+        func searchField(in view: NSView) -> NSSearchField? {
+            view as? NSSearchField ?? view.subviews.lazy.compactMap(searchField(in:)).first
+        }
+        try await harness.waitUntil { harness.scrollView.window?.contentView.flatMap(searchField(in:)) != nil }
+        let field = try #require(harness.scrollView.window?.contentView.flatMap(searchField(in:)))
+        field.stringValue = "targetneedle"
+        NSApp.sendAction(try #require(field.action), to: field.target, from: field)
+        try await harness.waitUntil { !find.isSearching && find.countLabel == "1 of 1" }
+        try await harness.settled()
+        #expect(harness.store.messages.map(\.sequence) == Array(61...90))
+        #expect(harness.readRequests == 0)
+
+        harness.interaction.findNext(1)
+        try await harness.waitUntil { harness.store.messages.first?.sequence == 1 && harness.isVisible("m2") }
+        #expect(harness.interaction.messageView == .all)
+        #expect(harness.readRequests == 0)
+    }
+
+    @MainActor
     @Test(.enabled(if: transcriptTimingTestsEnabled))
     func scrollingIntoOlderHistoryKeepsTheReaderInPlace() async throws {
         let harness = try await TranscriptHarness(messages: (61...90).map(transcriptTestMessage),
@@ -2570,6 +2599,7 @@ private final class TranscriptHarness {
          seenThrough: Int? = nil, height: CGFloat = 480, resizable: Bool = false, warm: Bool = false,
          legacyScrollers: Bool = false,
          intelligence: any ChannelIntelligenceService = LiveChannelIntelligence.shared,
+         find: TranscriptFind = TranscriptFind(),
          onTurn: (@MainActor (TranscriptHarness) -> Void)? = nil) async throws {
         let host = "transcript-\(UUID().uuidString.lowercased()).invalid"
         let latest = messages.last?.sequence ?? 0
@@ -2596,7 +2626,7 @@ private final class TranscriptHarness {
             }
             try #require(store.isLoaded && store.phase.isLive)
         }
-        let view = NSHostingView(rootView: ConversationTranscript(store: store)
+        let view = NSHostingView(rootView: ConversationTranscript(store: store, find: find)
             .onPreferenceChange(TranscriptMessageFrames.self) { capture.frames = $0 }
             .onPreferenceChange(TranscriptLanded.self) { capture.hasLanded = $0 }
             .onPreferenceChange(TranscriptRestoringHistory.self) { capture.isRestoringHistory = $0 }

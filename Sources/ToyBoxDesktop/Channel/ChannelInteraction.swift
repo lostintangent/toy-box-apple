@@ -22,6 +22,8 @@ final class ChannelInteraction {
     /// Consuming the request must not cancel the task handling it.
     private(set) var revealRequestToken = UUID()
     private(set) var jumpToLatestRequest = UUID()
+    private(set) var findRequest = UUID()
+    private(set) var findNavigation: (direction: Int, token: UUID)?
 
     func reply(to agent: ChannelAgent) {
         guard agent.deleted != true else { return }
@@ -39,4 +41,6 @@ final class ChannelInteraction {
         if revealRequest?.token == token { revealRequest = nil }
     }
     func jumpToLatest() { jumpToLatestRequest = UUID() }
+    func findInChannel() { findRequest = UUID() }
+    func findNext(_ direction: Int) { findNavigation = (direction, UUID()) }
 }

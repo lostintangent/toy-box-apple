@@ -69,6 +69,9 @@ struct TranscriptRowContent: View, @MainActor Equatable {
             case .user(let message):
                 TranscriptUserMessage(message: message, agents: context.agents, api: context.api,
                                       statusReactions: statusReactions[message.sequence] ?? [])
+                    .background(highlightedSequence == message.sequence
+                                ? Color.accentColor.opacity(0.09) : .clear,
+                                in: RoundedRectangle(cornerRadius: 12))
                     .transcriptMessageFrame(id: message.id, sequence: message.sequence,
                                             historyStart: context.historyStart)
                     .id(message.id)
@@ -97,6 +100,9 @@ struct TranscriptRowContent: View, @MainActor Equatable {
                 TranscriptSystemMessages(messages: messages, channelID: context.channelID,
                                          historyStart: context.historyStart, agents: context.agents,
                                          api: context.api)
+                    .background(messages.contains { $0.sequence == highlightedSequence }
+                                ? Color.accentColor.opacity(0.09) : .clear,
+                                in: RoundedRectangle(cornerRadius: 6))
                     .transcriptMessageFrame(id: messages.first?.system?.type == "artifact_shared"
                                             ? "system-group-\(row.id)" : row.id,
                                             sequence: messages.first?.system?.type == "artifact_shared"

@@ -205,7 +205,9 @@ struct RootView: View {
             jumpToLatest: { interaction.jumpToLatest() },
             revealRequest: {
                 if let sequence = store?.requestSequence { interaction.reveal(sequence: sequence) }
-            }
+            },
+            findInChannel: { interaction.findInChannel() },
+            findNext: { interaction.findNext($0) }
         )
     }
 

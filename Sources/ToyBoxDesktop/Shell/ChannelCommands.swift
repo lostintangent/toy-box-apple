@@ -35,6 +35,8 @@ struct WindowCommandActions {
     var focusComposer: () -> Void
     var jumpToLatest: () -> Void
     var revealRequest: () -> Void
+    var findInChannel: () -> Void = {}
+    var findNext: (Int) -> Void = { _ in }
 }
 
 private struct ChannelCommandsKey: FocusedValueKey {
@@ -82,6 +84,17 @@ struct ChannelCommands: Commands {
                 .disabled(actions?.openFolder == nil)
         }
         CommandGroup(after: .textEditing) {
+            Menu("Find") {
+                Button("Find…") { actions?.findInChannel() }
+                    .keyboardShortcut("f")
+                    .disabled(!hasConversation)
+                Button("Find Next") { actions?.findNext(1) }
+                    .keyboardShortcut("g")
+                    .disabled(!hasConversation)
+                Button("Find Previous") { actions?.findNext(-1) }
+                    .keyboardShortcut("g", modifiers: [.command, .shift])
+                    .disabled(!hasConversation)
+            }
             Button("Find Channel") { actions?.findChannel() }
                 .keyboardShortcut("f", modifiers: [.command, .option])
                 .disabled(actions == nil)
