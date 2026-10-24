@@ -321,6 +321,11 @@ messages loaded and again with every older page loaded. It times the main run lo
 
 Launch and idle report the same figures with no budget.
 
+For historical comparisons, `bun run benchmark --app "/path/to/Toy Box Desktop.app" scroll`
+skips the build and copies that prebuilt release bundle into the same isolated benchmark
+identity. The source bundle stays unchanged. Fixture, settings, locking, signing and cleanup
+are identical to a normal run, so alternate versions under one harness.
+
 ## Design
 
 ### Direction and reference

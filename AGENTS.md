@@ -65,6 +65,9 @@ view.
   up. Warn the user before running it.
   Catch-up summaries stay off so the card can't land mid-measurement. `--summaries` leaves them on.
   Only one benchmark runs at a time on this Mac. Others wait for it, so never poll for one yourself.
+  Add `--app "/path/to/Toy Box Desktop.app"` to skip building and measure a prebuilt release
+  bundle with the same harness. It copies and re-signs the benchmark identity without changing
+  the source bundle, and keeps the same fixture, lock, preferences and process cleanup.
 - `bun run generate-cron-fixtures ../toy-box` regenerates the cron fixtures from the
   reference without touching it.
 - Quit the instances you launch when you are done.

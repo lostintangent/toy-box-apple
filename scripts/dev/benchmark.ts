@@ -1,9 +1,9 @@
 import { dlopen, FFIType, read } from "bun:ffi";
 import { closeSync, openSync } from "node:fs";
 import { mkdir, realpath, rm } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
-import { bundleIdentity, command, main, plist, required, root, temporary } from "../lib.ts";
+import { bundleIdentity, command, executable, isMissing, main, plist, required, root, temporary } from "../lib.ts";
 import { pidsFor } from "./validate.ts";
 
 async function benchmarkLock() {
@@ -37,9 +37,25 @@ async function reachable(url: string, successful = false) {
     }
 }
 
+export async function prebuiltBenchmarkApp(path: string, destination: string) {
+    const source = await realpath(resolve(path));
+    const target = await realpath(destination).catch(async error => {
+        if (isMissing(error)) return join(await realpath(dirname(destination)), basename(destination));
+        throw error;
+    });
+    if (source === target || source.startsWith(`${target}/`) || target.startsWith(`${source}/`)) {
+        throw new Error("The prebuilt app must be separate from the benchmark copy.");
+    }
+    if (!await Bun.file(join(source, "Contents/Info.plist")).exists()
+        || !await executable(join(source, "Contents/MacOS/ToyBoxDesktop"))) {
+        throw new Error(`Not a runnable Toy Box app bundle: ${source}`);
+    }
+    return source;
+}
+
 if (import.meta.main) await main(async () => {
     const { values, positionals } = parseArgs({ allowPositionals: true,
-        options: { summaries: { type: "boolean", default: false } } });
+        options: { summaries: { type: "boolean", default: false }, app: { type: "string" } } });
     const scenarios = positionals.length ? positionals : ["launch", "switch", "messages", "paging", "scroll"];
     for (const scenario of scenarios) {
         if (!["launch", "switch", "messages", "paging", "scroll", "key", "idle"].includes(scenario)) {
@@ -80,15 +96,20 @@ if (import.meta.main) await main(async () => {
             process.once("SIGINT", interrupt);
             process.once("SIGTERM", interrupt);
             try {
-                console.log(`Building a release bundle in ${build}`);
-                const result = await command([process.execPath, join(root, "scripts/dev/run.ts"), "--no-open"],
-                    { env: { CONFIGURATION: "release", SCRATCH_PATH: build }, quiet: true, allowFailure: true });
-                await Bun.write(join(logs, "build.log"), Buffer.concat([result.stdout, result.stderr]));
-                if (result.exitCode) {
-                    throw new Error((result.stdout.toString() + result.stderr.toString()).split("\n").slice(-40).join("\n"));
+                const source = values.app ? await prebuiltBenchmarkApp(values.app, app) : join(build, "Toy Box Desktop.app");
+                if (values.app) {
+                    console.log(`Using prebuilt bundle ${source}`);
+                } else {
+                    console.log(`Building a release bundle in ${build}`);
+                    const result = await command([process.execPath, join(root, "scripts/dev/run.ts"), "--no-open"],
+                        { env: { CONFIGURATION: "release", SCRATCH_PATH: build }, quiet: true, allowFailure: true });
+                    await Bun.write(join(logs, "build.log"), Buffer.concat([result.stdout, result.stderr]));
+                    if (result.exitCode) {
+                        throw new Error((result.stdout.toString() + result.stderr.toString()).split("\n").slice(-40).join("\n"));
+                    }
                 }
                 await rm(app, { recursive: true, force: true });
-                await command(["ditto", join(build, "Toy Box Desktop.app"), app]);
+                await command(["ditto", source, app]);
                 await plist(join(app, "Contents/Info.plist"), [`Set :CFBundleIdentifier ${identity}`,
                     `Set :CFBundleName ${name}`, `Set :CFBundleDisplayName ${name}`]);
                 await command(["codesign", "--force", "--sign", "-", app], { quiet: true });

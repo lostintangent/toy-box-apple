@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { chmod, lstat, mkdir, rm, symlink } from "node:fs/promises";
+import { chmod, lstat, mkdir, realpath, rm, symlink } from "node:fs/promises";
 import { join } from "node:path";
 import { bundleIdentity, root } from "../../lib.ts";
 import { checkVersion } from "../check-update-version.ts";
 import { FakeHarness, workflowBody } from "./helpers.ts";
 import { checkTestCompletion } from "../../dev/test.ts";
+import { prebuiltBenchmarkApp } from "../../dev/benchmark.ts";
 
 describe("Sparkle packaging without credentials", () => {
     let fake: FakeHarness;
@@ -187,6 +188,27 @@ test("test-run completion guards reject partial Swift Testing and XCTest runs", 
     checkTestCompletion("Test Suite 'All tests' started\nTest Suite 'All tests' passed");
     expect(() => checkTestCompletion("Test run started.")).toThrow("remaining tests never ran");
     expect(() => checkTestCompletion("Test Suite 'Selected tests' started")).toThrow("remaining tests never ran");
+});
+
+test("prebuilt benchmarks require a runnable source and never overwrite it", async () => {
+    const fake = await FakeHarness.create();
+    try {
+        const app = join(fake.directory, "Historical Toy Box.app");
+        const binary = join(app, "Contents/MacOS/ToyBoxDesktop");
+        const destination = join(fake.directory, "Toy Box Desktop Benchmark.app");
+        const alias = join(fake.directory, "source.app");
+        await mkdir(join(app, "Contents/MacOS"), { recursive: true });
+        await Bun.write(join(app, "Contents/Info.plist"), "historical plist");
+        await Bun.write(binary, "historical executable");
+        await chmod(binary, 0o755);
+        await symlink(app, alias);
+        expect(await prebuiltBenchmarkApp(alias, destination)).toBe(await realpath(app));
+        await expect(prebuiltBenchmarkApp(app, alias)).rejects.toThrow("separate from the benchmark copy");
+        await expect(prebuiltBenchmarkApp(app, join(app, "copy.app"))).rejects.toThrow("separate from the benchmark copy");
+        await chmod(binary, 0o644);
+        await expect(prebuiltBenchmarkApp(app, destination)).rejects.toThrow("Not a runnable Toy Box app bundle");
+        expect(await Bun.file(join(app, "Contents/Info.plist")).text()).toBe("historical plist");
+    } finally { await fake.dispose(); }
 });
 
 test("the Bun test entrypoint preserves nonzero Swift exits and rejects success without a summary", async () => {
