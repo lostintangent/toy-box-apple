@@ -1627,7 +1627,7 @@ message. IME and mention completion consume Return first. Escape closes completi
 before stopping dictation, then hides the panel. Command-W, another global shortcut press or a
 click away also hide it, preserving the draft. Owned sheets and popovers are not outside clicks.
 Images and dictation reuse the main composer's validation and permission handling. Opening Quick
-Ask never requests microphone permission, reads the clipboard or marks messages read.
+Send never requests microphone permission, reads the general clipboard or marks messages read.
 
 Both auxiliary editors use the channel's shared outbox and one caller-owned message UUID.
 Sending is read-only and makes one attempt. Hiding does not cancel or retry delivery.
@@ -1644,6 +1644,24 @@ the existing binding. A failed replacement restores it without changing the save
 Escape cancels recording, unmodified Delete clears it, and a separate Clear control is available.
 Clearing keeps both menu commands usable. Global registration uses Carbon without Accessibility
 permission, and snapshot and benchmark launches never register or present these surfaces.
+
+**Send to Toy Box.** The explicit Services action, system Share action and Dock file drops open
+the same Quick Send panel, not another editor. They prefill content for review, never send,
+answer a request or mark messages read automatically. Shared text and URLs append after a blank
+line to the selected draft. Images append to its existing attachments. Neither replaces text,
+images or an unresolved send's message UUID.
+
+While no channel is selected or the current send is immutable, incoming content is saved in a
+separate server-scoped staging draft. Append it to the target only when that draft is editable.
+Multiple invocations preserve all incoming content rather than replacing an earlier payload,
+and consumption happens once so reopening the panel cannot duplicate it.
+
+Images use the existing attachment validation. Other regular files become visible plain path
+text only when the server has a loopback host, so agents on this Mac can open them. Those paths
+are text for the person to review before sending, not uploads or pretend attachments. A remote
+server rejects non-image files with "Only images can be attached" and preserves the existing
+draft. The Share extension has no editor or networking of its own; it hands the explicitly shared
+content to the host's same prefill path.
 
 For native validation only, `--validate-quick-send trace` logs panel visibility, key state,
 geometry and accessibility role. `hold` additionally suppresses resign-key dismissal, not Escape,
