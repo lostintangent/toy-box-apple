@@ -11,7 +11,6 @@ struct QuickAskView: View {
     @Environment(\.openSettings) private var openSettings
     @AppStorage("textScale") private var textScale = 1.0
     @ViewState private var history: QuickAskTargetHistory?
-    @ViewState private var selectedID: String?
     @ViewState private var sessions: [String: AuxiliaryComposerSession] = [:]
     @ViewState private var heldStore: ChannelStore?
     @ViewState private var showsChooser = false
@@ -21,6 +20,7 @@ struct QuickAskView: View {
     @ViewState private var catalogConnectingLong = false
 
     private var channels: [Channel] { model.catalog?.channels ?? [] }
+    private var selectedID: String? { history?.selectedID }
     private var session: AuxiliaryComposerSession? { selectedID.flatMap { sessions[$0] } }
     private var showsHeader: Bool { session != nil || !channels.isEmpty }
     private var channelName: String {
@@ -79,7 +79,6 @@ struct QuickAskView: View {
             model.quickAsk.dismiss()
             endPresentation()
             sessions = [:]
-            selectedID = nil
             history = nil
         }
         .onDisappear { endPresentation() }
@@ -140,7 +139,7 @@ struct QuickAskView: View {
             .popover(isPresented: $showsChooser, arrowEdge: .bottom) {
                 QuickAskChannelChooser(channels: history?.choices(channels: channels, query: "") ?? channels,
                                        history: history, selectedID: selectedID) { channel in
-                    select(channel, explicitly: true)
+                    select(channel)
                     showsChooser = false
                 }
             }
@@ -171,28 +170,21 @@ struct QuickAskView: View {
     }
 
     private func chooseInitialTarget() {
-        if let selectedID {
-            installSession(channelID: selectedID)
-            return
-        }
         guard let api = model.api else { showsChooser = false; return }
-        let target = history?.initialTarget(channels: channels,
-                                           lastUsedID: model.activeChannelID ?? lastUsedChannel(),
-                                           catalogLoaded: model.catalog?.hasLoaded == true) {
+        history?.restoreTarget(channels: channels, lastUsedID: model.activeChannelID ?? lastUsedChannel(),
+                               catalogLoaded: model.catalog?.hasLoaded == true) {
             ComposerDraft.shared(serverURL: api.baseURL, channelID: $0, scope: .quickAsk).hasContent
         }
-        if let target {
-            selectedID = target
-            installSession(channelID: target)
+        if let selectedID {
+            installSession(channelID: selectedID)
         } else {
             showsChooser = model.catalog?.hasLoaded == true && !channels.isEmpty
         }
     }
 
-    private func select(_ channel: Channel, explicitly: Bool) {
+    private func select(_ channel: Channel) {
         confirmationDismissal?.cancel()
-        if explicitly { history?.choose(channel) }
-        selectedID = channel.id
+        history?.choose(channel)
         installSession(channelID: channel.id)
         trackDraft()
         holdSelectedStore()

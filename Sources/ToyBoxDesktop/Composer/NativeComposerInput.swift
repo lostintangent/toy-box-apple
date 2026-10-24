@@ -59,6 +59,7 @@ struct NativeComposerInput: NSViewRepresentable {
     var isEditable = true
     var minimumHeight: CGFloat = 0
     var maximumLineCount = 3
+    var startsAtEnd = false
     var onSendAndOpen: (() -> Void)? = nil
     var onEscape: (() -> Void)? = nil
     var onChooseChannel: (() -> Void)? = nil
@@ -100,6 +101,7 @@ struct NativeComposerInput: NSViewRepresentable {
         context.coordinator.input = input
         input.string = text
         configure(input)
+        if startsAtEnd { input.setSelectedRange(NSRange(location: text.utf16.count, length: 0)) }
         dictation?.target = context.coordinator
         return scroll
     }
@@ -148,12 +150,10 @@ struct NativeComposerInput: NSViewRepresentable {
     }
 
     static func dismantleNSView(_ nsView: NSScrollView, coordinator: Coordinator) {
+        coordinator.leaveDocument()
         if let dictation = coordinator.parent.dictation {
-            // Words already spoken belong to this composer's draft, even as it goes away.
-            dictation.commitNow()
             if dictation.target === coordinator { dictation.target = nil }
         }
-        coordinator.dismissCompletion()
         (nsView.documentView as? ComposerTextView)?.delegate = nil
     }
 

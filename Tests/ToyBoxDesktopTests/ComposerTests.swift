@@ -188,6 +188,11 @@ struct ComposerTests {
                                       hasDraft: { _ in false }) == "beta")
         #expect(history.initialTarget(channels: [beta, alpha], lastUsedID: "alpha", hasDraft: { _ in false }) == "beta")
         history.trackDraft(channelID: "alpha", name: "Alpha", hasContent: true)
+        history.choose(beta)
+        #expect(history.selectedID == "beta")
+        history.restoreTarget(channels: [alpha, beta], lastUsedID: "beta", catalogLoaded: true,
+                              hasDraft: { $0 == "alpha" })
+        #expect(history.selectedID == "alpha")
         let restored = QuickAskTargetHistory(serverURL: server, defaults: defaults)
         #expect(restored.initialTarget(channels: [beta], lastUsedID: "beta", hasDraft: { $0 == "alpha" }) == "alpha")
         #expect(restored.choices(channels: [alpha, beta], query: "").map(\.id) == ["beta", "alpha"])
@@ -448,6 +453,16 @@ struct ComposerTests {
         coordinator.parent.isEditable = false
         #expect(try coordinator.handle(key("\r", code: 36, in: window, modifiers: .command)))
         #expect(sendsAndOpen == 1)
+        coordinator.parent.isEditable = true
+        input.setMarkedText("\u{5019}\u{88dc}", selectedRange: .init(location: 2, length: 0),
+                            replacementRange: .init(location: NSNotFound, length: 0))
+        #expect(input.hasMarkedText())
+        let scroll = NSScrollView()
+        scroll.documentView = input
+        NativeComposerInput.dismantleNSView(scroll, coordinator: coordinator)
+        #expect(!input.hasMarkedText())
+        #expect(text == input.string)
+        #expect(text.contains("\u{5019}\u{88dc}"))
     }
 
     @Test func pasteboardImagesAndFilesUseTheSameImportCallbacks() throws {

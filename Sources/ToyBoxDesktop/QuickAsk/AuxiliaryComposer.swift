@@ -119,6 +119,7 @@ struct AuxiliaryComposer: View {
                 onCreate: { _ in throw AuxiliaryEditingError.managementUnavailable }, onEdit: { _ in },
                 dictation: dictation, allowsAgentManagement: false, isEditable: canEdit,
                 minimumHeight: style == .quickAsk ? 100 : 84, maximumLineCount: style == .quickAsk ? 10 : 3,
+                startsAtEnd: true,
                 onSendAndOpen: { send(opensChannel: true) }, onEscape: dismissOrStopDictation,
                 onChooseChannel: onChooseChannel
             )
