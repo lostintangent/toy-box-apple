@@ -671,14 +671,14 @@ struct TranscriptTests {
                 harness.store.state?.messages.first?.sequence == oldest && !harness.store.isLoadingOlder
             }
             try await harness.waitUntil {
-                reading.allSatisfy { id, rect in
-                    guard let restored = harness.capture.frames[id], restored.historyStart == oldest else { return false }
+                !harness.capture.isRestoringHistory && reading.allSatisfy { id, rect in
+                    guard let restored = harness.frames[id], restored.historyStart == oldest else { return false }
                     return abs(restored.rect.maxY - rect.maxY) < 1
                 }
             }
             try await harness.settled()
             for (id, rect) in reading {
-                let after = harness.capture.frames[id]?.rect ?? .null
+                let after = harness.frames[id]?.rect ?? .null
                 #expect(abs(after.maxY - rect.maxY) < 1, "Page from \(oldest): \(id) moved from \(rect) to \(after)")
                 if id == "m\(oldest + 30)" {
                     // The page's last message has the same sender, so this row joins its run and drops
@@ -1298,6 +1298,85 @@ struct TranscriptLandingTests {
         #expect(step(top: 500, jumps: 1) == .correctPosition)
         #expect(step(top: 500, jumps: 2) == .settled)
         #expect(step(top: 500, jumps: 2, hasPendingJump: true) == .waitForJump)
+    }
+}
+
+@Suite("Transcript paging coordinates")
+struct TranscriptPagingTests {
+    private func frame(top: CGFloat, height: CGFloat, measuredY: CGFloat) -> TranscriptMessageFrame {
+        .init(sequence: 61, rect: CGRect(x: 68, y: measuredY, width: 400, height: height),
+              historyStart: 31, contentTop: top)
+    }
+
+    @Test func replayingAFrameCannotAddItsCorrectionAgain() {
+        let measured = frame(top: 1455, height: 37, measuredY: 1392)
+        var offset: CGFloat = 83
+        for _ in 0..<4 {
+            offset = TranscriptCoordinates.targetOffset(for: measured, bottom: 79, topInset: 0)
+            #expect(offset == 1433)
+        }
+    }
+
+    @Test func scrollingReprojectsACachedFrameInsteadOfWaitingForAnotherPreference() {
+        let cached = frame(top: 2055, height: 57, measuredY: 2023)
+        let positioned = TranscriptCoordinates.viewportFrame(cached, top: 2002)
+        #expect(positioned.rect == CGRect(x: 68, y: 73, width: 400, height: 57))
+        #expect(positioned.rect.maxY == 130)
+        #expect(positioned.contentTop == cached.contentTop)
+        #expect(positioned.historyStart == cached.historyStart)
+        #expect(positioned.sequence == cached.sequence)
+        #expect(TranscriptCoordinates.viewportFrame(positioned, top: 2032).rect.maxY == 100)
+    }
+
+    @Test func continuedScrollingMovesThePlaceToKeepBeforeTheOlderPageArrives() {
+        let cached = frame(top: 84, height: 58, measuredY: 81)
+        let first = TranscriptCoordinates.viewportFrame(cached, top: 23)
+        let later = TranscriptCoordinates.viewportFrame(cached, top: 83)
+        #expect(first.rect.maxY == 139)
+        #expect(later.rect.maxY == 79)
+        let loaded = frame(top: 1455, height: 37, measuredY: 1392)
+        #expect(TranscriptCoordinates.targetOffset(for: loaded, bottom: later.rect.maxY,
+                                                   topInset: 0) == 1433)
+    }
+
+    @Test func theToolbarInsetIsRemovedOnlyFromTheNativeOffset() {
+        let measured = frame(top: 2055, height: 57, measuredY: 2023)
+        #expect(TranscriptCoordinates.targetOffset(for: measured, bottom: 130, topInset: 52) == 1950)
+        #expect(TranscriptCoordinates.targetOffset(for: measured, bottom: 130, topInset: 76) == 1926)
+    }
+
+    @Test func joiningARunKeepsTheMessagesBottomWhenItsRepeatedHeaderDisappears() {
+        let before = frame(top: 84, height: 58, measuredY: 21)
+        let joined = frame(top: 1465, height: 37, measuredY: 1381)
+        let oldOffset = TranscriptCoordinates.targetOffset(for: before, bottom: 79, topInset: 0)
+        let newOffset = TranscriptCoordinates.targetOffset(for: joined, bottom: 79, topInset: 0)
+        #expect(oldOffset == 83)
+        #expect(newOffset == 1443)
+        #expect(newOffset - oldOffset == 1360)
+    }
+
+    @Test func scrollingDoesNotChangeTheTargetButALazyHeightCorrectionDoes() {
+        for y: CGFloat in [-963, 21, 1381] {
+            let measured = frame(top: 1465, height: 37, measuredY: y)
+            #expect(TranscriptCoordinates.targetOffset(for: measured, bottom: 79,
+                                                       topInset: 0) == 1443)
+        }
+        let corrected = frame(top: 1455, height: 37, measuredY: 21)
+        #expect(TranscriptCoordinates.targetOffset(for: corrected, bottom: 79,
+                                                   topInset: 0) == 1433)
+    }
+
+    @Test func restorationWaitsUntilBothNativeScrollingAndItsMeasuredFrameAgree() {
+        let stale = frame(top: 1455, height: 37, measuredY: 1392)
+        let measured = frame(top: 1455, height: 37, measuredY: 42)
+        func restored(_ frame: TranscriptMessageFrame, bottom: CGFloat = 79, nativeIsAligned: Bool = true) -> Bool {
+            TranscriptCoordinates.isRestored(frame, bottom: bottom, nativeIsAligned: nativeIsAligned)
+        }
+        #expect(!restored(stale))
+        #expect(!restored(measured, nativeIsAligned: false))
+        #expect(restored(measured))
+        #expect(restored(measured, bottom: 79.5))
+        #expect(!restored(measured, bottom: 79.51))
     }
 }
 
@@ -2089,6 +2168,7 @@ private final class TranscriptLayoutCapture {
     var viewport = TranscriptViewport()
     var proxy: ScrollViewProxy?
     var hasLanded = false
+    var isRestoringHistory = false
 }
 
 @MainActor
@@ -2485,6 +2565,7 @@ private final class TranscriptHarness {
         let view = NSHostingView(rootView: ConversationTranscript(store: store)
             .onPreferenceChange(TranscriptMessageFrames.self) { capture.frames = $0 }
             .onPreferenceChange(TranscriptLanded.self) { capture.hasLanded = $0 }
+            .onPreferenceChange(TranscriptRestoringHistory.self) { capture.isRestoringHistory = $0 }
             .safeAreaBar(edge: .bottom, spacing: 0) { Color.clear.frame(height: 100) }
             .environment(interaction)
             .environment(ArtifactOpener())
@@ -2534,15 +2615,24 @@ private final class TranscriptHarness {
         TranscriptServerProtocol.fixtures.withLock { $0[host]?.requests.filter { $0.hasSuffix("/read") }.count ?? 0 }
     }
 
+    var frames: [String: TranscriptMessageFrame] {
+        let top = scrollView.contentView.bounds.minY + scrollView.contentInsets.top
+        return capture.frames.mapValues { TranscriptCoordinates.viewportFrame($0, top: top) }
+    }
+
     func isVisible(_ id: String) -> Bool {
-        guard let rect = capture.frames[id]?.rect else { return false }
+        guard let rect = frames[id]?.rect else { return false }
+        return isVisible(rect)
+    }
+
+    private func isVisible(_ rect: CGRect) -> Bool {
         return rect.minY >= 0 && rect.maxY <= scrollView.contentView.bounds.height - scrollView.contentInsets.bottom
     }
 
     /// Frames of the messages wholly inside the unobscured viewport. Dividers come and go as pages join runs.
     func visibleFrames() -> [String: CGRect] {
-        capture.frames.reduce(into: [:]) { result, entry in
-            if entry.value.sequence > 0, isVisible(entry.key) { result[entry.key] = entry.value.rect }
+        frames.reduce(into: [:]) { result, entry in
+            if entry.value.sequence > 0, isVisible(entry.value.rect) { result[entry.key] = entry.value.rect }
         }
     }
 
