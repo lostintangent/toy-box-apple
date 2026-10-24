@@ -180,6 +180,36 @@ struct SVGAttachmentTests {
         #expect(viewer.frame(at: 0, in: try #require(viewer.layout)) == frame)
     }
 
+    @MainActor @Test func aFailedRerasterPreservesTheImageAndARetryRecovers() async throws {
+        let source = Self.picture + "\n<!-- reraster recovery -->"
+        let attachment = ChannelAttachment(name: "recovery.svg", mimeType: "image/svg+xml",
+                                           base64: Data(source.utf8).base64EncodedString())
+        let api = try ChannelAPI(serverURL: "http://localhost:3210")
+        let viewer = ImageViewer()
+        viewer.layout = .init(size: CGSize(width: 1000, height: 800), topInset: 52)
+        viewer.open(images: [attachment], at: 0,
+                    source: .init(messageID: "svg-recovery", sender: "Core", timestamp: "2026-10-24T23:00:00Z"),
+                    api: api)
+        defer {
+            viewer.close(animated: false)
+            if let cached = TranscriptAttachmentCache.cachedFile(for: attachment, api: api) {
+                try? FileManager.default.removeItem(at: cached)
+            }
+        }
+        try await waitFor { viewer.items[0]?.bitmap != nil || viewer.items[0]?.failure != nil }
+        let original = try #require(viewer.items[0]?.bitmap)
+        try FileManager.default.removeItem(at: try #require(viewer.items[0]?.file))
+        for _ in 0..<12 { viewer.zoomIn() }
+        try await waitFor { viewer.items[0]?.failure != nil }
+        #expect(viewer.items[0]?.bitmap === original)
+        #expect(viewer.items[0]?.pixelSize == CGSize(width: 800, height: 400))
+        viewer.retry()
+        try await waitFor { (viewer.items[0]?.bitmap?.width ?? 0) >= 6400 || viewer.items[0]?.failure != nil }
+        #expect(viewer.items[0]?.failure == nil)
+        #expect(viewer.items[0]?.bitmap?.width == 6400)
+        #expect(viewer.items[0]?.pixelSize == CGSize(width: 800, height: 400))
+    }
+
     private static let picture = """
         <svg xmlns="http://www.w3.org/2000/svg" width="800" height="400" viewBox="0 0 800 400">
           <rect width="800" height="400" fill="#327785"/>

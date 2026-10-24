@@ -3,6 +3,7 @@ import ChannelClient
 import ChannelIntelligence
 import ChannelKit
 import ImageIO
+import OSLog
 import SwiftUI
 import UniformTypeIdentifiers
 import VisionKit
@@ -93,6 +94,7 @@ final class ImageViewer {
     static let toolbarMargin: CGFloat = 16
     /// 16 above the capsule, the 48-point capsule and 16 below it.
     static let capsuleReserve: CGFloat = 80
+    private static let logger = Logger(subsystem: "dev.toybox.desktop", category: "ImageViewer")
 
     private(set) var session: Session?
     private(set) var index = 0
@@ -670,6 +672,7 @@ final class ImageViewer {
                 return
             } catch {
                 guard !Task.isCancelled, let self, self.session?.id == id, self.index == position else { return }
+                Self.logger.warning("Could not increase SVG image resolution: \(error.localizedDescription, privacy: .public)")
                 self.items[position]?.failure = error.localizedDescription
                 self.vectorRasterTask = nil
                 self.vectorRasterPixels = 0
