@@ -191,6 +191,30 @@ struct OpenAtLoginTests {
             login: false, backgroundIntent: true, receivedContent: false, hasMainWindow: false))
     }
 
+    @Test func theActualURLDelegateMarksAHandledLaunchBeforeOpeningItsOnlyTarget() throws {
+        let originalHandler = AppDelegate.widgetURLHandler
+        let originalReceivedOpenEvent = AppDelegate.receivedOpenEvent
+        defer {
+            AppDelegate.widgetURLHandler = originalHandler
+            AppDelegate.receivedOpenEvent = originalReceivedOpenEvent
+        }
+        AppDelegate.receivedOpenEvent = false
+        var opened: [URL] = []
+        var wasMarkedBeforeOpening = false
+        AppDelegate.widgetURLHandler = { url in
+            wasMarkedBeforeOpening = AppDelegate.receivedOpenEvent
+            opened.append(url)
+            return true
+        }
+        let url = try #require(URL(string: "toybox-desktop://quick-send"))
+        AppDelegate().application(NSApplication.shared, open: [url])
+        #expect(wasMarkedBeforeOpening)
+        #expect(opened == [url])
+        #expect(!AppLoginLaunch.shouldOpenStartupWindow(
+            login: false, backgroundIntent: false,
+            receivedContent: AppDelegate.receivedOpenEvent, hasMainWindow: false))
+    }
+
     private func event(eventClass: AEEventClass = AEEventClass(kCoreEventClass),
                        id: AEEventID = AEEventID(kAEOpenApplication),
                        property: OSType? = nil) -> NSAppleEventDescriptor {
