@@ -104,6 +104,20 @@ final class ChannelIntentsContext {
         }
     }
 
+    static func resolveWaitingRequests(
+        timeout: Duration = .seconds(10),
+        snapshot: () throws -> (server: String, hasLoaded: Bool, waiting: [MenuBarStatus.Item])
+    ) async throws -> [WaitingRequestEntry] {
+        let deadline = ContinuousClock.now + timeout
+        while true {
+            let current = try snapshot()
+            if (current.hasLoaded && current.waiting.allSatisfy({ $0.quote != nil })) || ContinuousClock.now >= deadline {
+                return current.waiting.compactMap { WaitingRequestEntry(item: $0, serverURL: current.server) }
+            }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+    }
+
     func reindexRequests(_ ids: [String]?) async {
         await requestSpotlight?.reindex(ids)
     }
@@ -306,15 +320,10 @@ extension ChannelIntentsContext {
                 if model.activeChannelID == nil { model.openChannelWindow?(id) }
             },
             requests: {
-                let deadline = ContinuousClock.now + .seconds(10)
-                while true {
+                try await Self.resolveWaitingRequests {
                     guard let catalog = model.catalog else { throw ChannelIntentError.noServer }
-                    let status = model.menuBarStatus
-                    if catalog.hasLoaded, status.waiting.allSatisfy({ $0.quote != nil && $0.agent != nil }) {
-                        return status.waiting.compactMap { WaitingRequestEntry(item: $0, serverURL: model.serverURL) }
-                    }
-                    guard ContinuousClock.now < deadline, catalog.error == nil else { throw ChannelIntentError.unreachable }
-                    try await Task.sleep(for: .milliseconds(50))
+                    guard catalog.error == nil else { throw ChannelIntentError.unreachable }
+                    return (model.serverURL, catalog.hasLoaded, model.menuBarStatus.waiting)
                 }
             },
             revealRequest: { model.activate(channelID: $0, sequence: $1) }

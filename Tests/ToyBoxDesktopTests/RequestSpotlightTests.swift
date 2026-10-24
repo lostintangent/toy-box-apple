@@ -42,6 +42,34 @@ struct RequestSpotlightTests {
         #expect(WaitingRequestEntry(item: item, serverURL: "https://server.test") == nil)
     }
 
+    @Test func resolvedAgentlessRequestsDoNotDelayHealthyResults() async throws {
+        let healthy = item()
+        var removedRequester = item(sequence: 9)
+        removedRequester.agent = nil
+        var polls = 0
+        let resolved = try await ChannelIntentsContext.resolveWaitingRequests {
+            polls += 1
+            return ("https://server.test", true, [healthy, removedRequester])
+        }
+        let expectedID = try entry().id
+        #expect(polls == 1 && resolved.map(\.id) == [expectedID])
+    }
+
+    @Test func aFailedHistoryLookupReturnsTheHealthySubsetAtTheDeadline() async throws {
+        let healthy = item()
+        var unresolved = item(sequence: 9)
+        unresolved.quote = nil
+        let resolved = try await ChannelIntentsContext.resolveWaitingRequests(timeout: .zero) {
+            ("https://server.test", true, [healthy, unresolved])
+        }
+        #expect(resolved.map(\.id) == [try entry().id])
+        await #expect(throws: ChannelIntentError.unreachable) {
+            try await ChannelIntentsContext.resolveWaitingRequests(timeout: .zero) {
+                throw ChannelIntentError.unreachable
+            }
+        }
+    }
+
     @Test func answeredAndReplacedRequestsLeaveTheIndexAndServerSwitchClearsIt() async throws {
         let fake = FakeRequestIndex()
         let spotlight = RequestSpotlight(index: fake.index, icon: { _ in Data([1]) })
