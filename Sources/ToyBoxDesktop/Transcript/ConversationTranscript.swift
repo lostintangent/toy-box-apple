@@ -732,6 +732,13 @@ struct ConversationTranscript: View {
         _ = await layoutTurns.settled()
     }
 
+    private func settleLatestLanding(using proxy: ScrollViewProxy) async {
+        // A cold transcript can start its task before its lazy rows have measured the end.
+        guard await layoutTurns.settled() else { return }
+        scrollToLatest(using: proxy)
+        _ = await layoutTurns.settled()
+    }
+
     private func land(using proxy: ScrollViewProxy) async {
         guard !isRevealing else { return }
         if !capturedArrivalBoundary {
@@ -748,10 +755,11 @@ struct ConversationTranscript: View {
             if let first = rows.first(where: { $0.messages.contains { $0.sequence > unread } }) {
                 await settleLanding(on: first, using: proxy)
                 guard !Task.isCancelled, !isRevealing else { return }
-            } else { scrollToLatest(using: proxy) }
+            } else { await settleLatestLanding(using: proxy) }
         } else {
-            scrollToLatest(using: proxy)
+            await settleLatestLanding(using: proxy)
         }
+        guard !Task.isCancelled, !isRevealing else { return }
         await Task.yield()
         hasLanded = true
     }

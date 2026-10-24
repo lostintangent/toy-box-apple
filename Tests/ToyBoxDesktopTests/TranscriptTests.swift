@@ -490,9 +490,16 @@ struct TranscriptTests {
     @MainActor
     @Test(arguments: [false, true])
     func arrivalsFollowAtTheBottomAndJumpingBackFollowsASend(legacyScrollers: Bool) async throws {
+        let openingGaps = TranscriptGapLog()
         let harness = try await TranscriptHarness(messages: (1...30).map(transcriptTestMessage),
-                                                  legacyScrollers: legacyScrollers)
+                                                  legacyScrollers: legacyScrollers) { harness in
+            if harness.capture.hasLanded, harness.scrollView.documentView != nil {
+                openingGaps.values.append(harness.bottomGap)
+            }
+        }
         defer { harness.close() }
+        try #require(!openingGaps.values.isEmpty)
+        #expect(openingGaps.values.allSatisfy { abs($0) < 2 }, "Opening gaps: \(openingGaps.values)")
 
         harness.push(transcriptTestMessage(31), revision: 2)
         try await harness.waitUntil { harness.capture.frames["m31"] != nil }
