@@ -1,4 +1,5 @@
 import AppKit
+import Carbon
 import ChannelKit
 import ChannelClient
 import ChannelIntelligence
@@ -7,6 +8,141 @@ import SwiftUI
 import Synchronization
 import Testing
 @testable import ToyBoxDesktop
+
+@Suite("Quick Ask host and shortcut")
+@MainActor
+final class QuickAskShellTests {
+    private let suite = "quick-ask-\(UUID().uuidString)"
+    private var defaults: UserDefaults { UserDefaults(suiteName: suite)! }
+
+    deinit { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+
+    @Test func theDefaultRegistersAndClearingSurvivesTheNextLaunch() throws {
+        let hotKey = FakeQuickAskHotKey()
+        let controller = QuickAskController(defaults: defaults, hotKey: hotKey)
+        #expect(controller.shortcut == .defaultValue)
+        #expect(hotKey.registered == .defaultValue)
+        #expect(controller.shortcut?.displayName == "⌃⇧Space")
+        #expect(controller.shortcut?.keyboardShortcut?.key == .space)
+        controller.setShortcut(nil)
+        #expect(hotKey.registered == nil)
+        #expect(controller.shortcut == nil)
+        let next = FakeQuickAskHotKey()
+        let relaunched = QuickAskController(defaults: defaults, hotKey: next)
+        #expect(relaunched.shortcut == nil)
+        #expect(next.calls.isEmpty)
+    }
+
+    @Test func recordingSuspendsTheOldShortcutAndPersistsTheNewPhysicalKey() throws {
+        let hotKey = FakeQuickAskHotKey()
+        let controller = QuickAskController(defaults: defaults, hotKey: hotKey)
+        controller.setRecording(true)
+        #expect(hotKey.registered == nil)
+        let chosen = QuickAskShortcut(keyCode: UInt16(kVK_ANSI_K), flags: [.control, .shift, .capsLock])
+        controller.setShortcut(chosen)
+        controller.setRecording(false)
+        #expect(chosen.modifiers == UInt32(controlKey | shiftKey))
+        #expect(hotKey.registered == chosen)
+        #expect(controller.error == nil)
+        let restored = QuickAskController(defaults: defaults, hotKey: FakeQuickAskHotKey())
+        #expect(restored.shortcut == chosen)
+    }
+
+    @Test func aConflictPreservesThePreviousPreferenceAndRestoresItsRegistration() {
+        let hotKey = FakeQuickAskHotKey()
+        let controller = QuickAskController(defaults: defaults, hotKey: hotKey)
+        controller.setRecording(true)
+        hotKey.rejected = QuickAskShortcut(keyCode: UInt32(kVK_ANSI_K), modifiers: UInt32(cmdKey | shiftKey))
+        controller.setShortcut(hotKey.rejected)
+        controller.setRecording(false)
+        #expect(controller.shortcut == .defaultValue)
+        #expect(hotKey.registered == .defaultValue)
+        #expect(controller.error?.contains("already in use") == true)
+        #expect(defaults.object(forKey: QuickAskShortcut.preferenceKey) == nil)
+    }
+
+    @Test func cancellingRecordingReinstallsTheOriginalWithoutChangingPreferences() {
+        let hotKey = FakeQuickAskHotKey()
+        let controller = QuickAskController(defaults: defaults, hotKey: hotKey)
+        controller.setRecording(true)
+        controller.setRecording(false)
+        #expect(hotKey.calls == [.defaultValue, nil, .defaultValue])
+        #expect(defaults.object(forKey: QuickAskShortcut.preferenceKey) == nil)
+    }
+
+    @Test func malformedSavedShortcutsShowAnErrorWithoutTakingAnotherShortcut() throws {
+        defaults.set(Data("broken".utf8), forKey: QuickAskShortcut.preferenceKey)
+        let hotKey = FakeQuickAskHotKey()
+        let controller = QuickAskController(defaults: defaults, hotKey: hotKey)
+        #expect(controller.error != nil)
+        #expect(controller.shortcut == nil)
+        #expect(hotKey.calls.isEmpty)
+        controller.setShortcut(.defaultValue)
+        #expect(controller.error == nil)
+        #expect(hotKey.registered == .defaultValue)
+    }
+
+    @Test func typingAndReservedShortcutsAreRejectedBeforeRegistration() {
+        let plain = QuickAskShortcut(keyCode: UInt16(kVK_ANSI_A), flags: [])
+        let shifted = QuickAskShortcut(keyCode: UInt16(kVK_ANSI_A), flags: [.shift])
+        let spotlight = QuickAskShortcut(keyCode: UInt16(kVK_Space), flags: [.command])
+        let voiceOver = QuickAskShortcut(keyCode: UInt16(kVK_Space), flags: [.control, .option])
+        let escape = QuickAskShortcut(keyCode: UInt16(kVK_Escape), flags: [.control])
+        #expect([plain, shifted, spotlight, voiceOver, escape].allSatisfy { $0.validationError != nil })
+        #expect(QuickAskShortcut.defaultValue.validationError == nil)
+        let hotKey = FakeQuickAskHotKey()
+        let controller = QuickAskController(defaults: defaults, hotKey: hotKey)
+        controller.setShortcut(plain)
+        #expect(controller.shortcut == .defaultValue)
+        #expect(hotKey.calls == [.defaultValue])
+        #expect(controller.error != nil)
+    }
+
+    @Test func snapshotsAndBothBenchmarksNeverRegisterOrPresent() {
+        var snapshot = LaunchOptions()
+        snapshot.snapshotURL = URL(fileURLWithPath: "/tmp/quick-ask-test.png")
+        var benchmark = LaunchOptions()
+        benchmark.benchmark = .scroll
+        var resize = LaunchOptions()
+        resize.resizeBenchmark = .width
+        for options in [snapshot, benchmark, resize] {
+            let hotKey = FakeQuickAskHotKey()
+            let controller = QuickAskController(options: options, defaults: defaults, hotKey: hotKey)
+            controller.present()
+            controller.setShortcut(nil)
+            #expect(!controller.isEnabled)
+            #expect(!controller.isPresented)
+            #expect(hotKey.calls.isEmpty)
+            #expect(defaults.object(forKey: QuickAskShortcut.preferenceKey) == nil)
+        }
+    }
+
+    @Test func placementUsesThePointersScreenAndKeepsTwentyFourPointEdges() {
+        let screen = CGRect(x: -1440, y: 100, width: 1440, height: 900)
+        let frame = QuickAskController.frame(size: CGSize(width: 560, height: 220), in: screen)
+        #expect(frame.midX == screen.midX)
+        #expect(frame.maxY == screen.maxY - screen.height * 0.22)
+        #expect(screen.insetBy(dx: 24, dy: 24).contains(frame))
+        let small = CGRect(x: 0, y: 0, width: 600, height: 400)
+        #expect(small.insetBy(dx: 24, dy: 24).contains(
+            QuickAskController.frame(size: CGSize(width: 560, height: 420), in: small)))
+    }
+}
+
+@MainActor
+private final class FakeQuickAskHotKey: QuickAskHotKeyRegistering {
+    var calls: [QuickAskShortcut?] = []
+    var registered: QuickAskShortcut?
+    var rejected: QuickAskShortcut?
+
+    func replace(with shortcut: QuickAskShortcut?, onPress: @escaping @MainActor () -> Void) throws {
+        if let rejected, shortcut == rejected {
+            throw QuickAskHotKeyError(operation: "register", status: OSStatus(eventHotKeyExistsErr))
+        }
+        calls.append(shortcut)
+        registered = shortcut
+    }
+}
 
 @Suite("Shell launch configuration")
 struct ShellTests {
