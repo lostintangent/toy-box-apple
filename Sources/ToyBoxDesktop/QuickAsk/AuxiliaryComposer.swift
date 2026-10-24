@@ -17,6 +17,13 @@ struct AuxiliaryComposer: View {
     var onDismiss: () -> Void
     var onChooseChannel: (() -> Void)? = nil
     var onDraggingChanged: ((Bool) -> Void)? = nil
+    var focusID: UUID? = nil
+
+    private struct ConnectionWait: Equatable {
+        let phase: ChannelConnectionPhase
+        let presentationID: UUID
+        let isPresented: Bool
+    }
 
     @Environment(\.channelTextScale) private var textScale
     @ViewState private var inputHeight: CGFloat = 84
@@ -86,6 +93,9 @@ struct AuxiliaryComposer: View {
         .onAppear { updatePresentation() }
         .onChange(of: presentationID) { _, _ in updatePresentation() }
         .onChange(of: isPresented) { _, _ in updatePresentation() }
+        .onChange(of: focusID) { _, _ in
+            if isPresented { focusRequest = UUID() }
+        }
         .onChange(of: dragging) { _, value in onDraggingChanged?(value) }
         .onChange(of: draft.revision) { _, revision in
             registerDraft()
@@ -98,7 +108,10 @@ struct AuxiliaryComposer: View {
             }
         }
         .onDisappear { dictation.deactivate() }
-        .task(id: store.phase) { await connectGrace.watch(store.phase, for: draftID) }
+        .task(id: ConnectionWait(phase: store.phase, presentationID: presentationID, isPresented: isPresented)) {
+            if isPresented { await connectGrace.watch(store.phase, for: draftID) }
+            else { connectGrace.reset() }
+        }
     }
 
     private var editor: some View {
