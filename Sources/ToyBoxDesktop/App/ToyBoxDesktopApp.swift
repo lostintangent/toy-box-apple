@@ -34,6 +34,10 @@ struct ToyBoxDesktopApp: App {
             model.quickSend.setContent(
                 QuickSendView(lastUsedChannel: { model.lastUsedChannelID }).environment(model)
             )
+            AppDelegate.quickSendIntake = model.quickSend.isEnabled ? QuickSendIntake { prefill in
+                guard model.quickSend.isEnabled else { throw QuickSendIntake.IntakeError.unavailable }
+                model.quickSend.present(prefill: prefill)
+            } : nil
             ChannelIntentsContext.register(model)
             _model = ViewState(wrappedValue: model)
         } catch {
@@ -64,6 +68,7 @@ struct ToyBoxDesktopApp: App {
             guard !didCheckStartupWindow || phase == .active else { return }
             didCheckStartupWindow = true
             DispatchQueue.main.async {
+                guard AppDelegate.quickSendIntake?.hasReceivedContent != true else { return }
                 if !NSApp.windows.contains(where: { ($0.isVisible || $0.isMiniaturized) && $0.canBecomeMain }) {
                     openWindow(id: "channels")
                 }
@@ -119,6 +124,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// such as Catch Me Up or Send Message. Until something brings it forward, it opens no window
     /// and stays out of the Dock, so the system quits it once the intent finishes.
     static var launchedInBackground = false
+    static var quickSendIntake: QuickSendIntake?
     private var cameForward = false
     var isInBackground: Bool { Self.launchedInBackground && !cameForward }
     var openChannelWindow: (() -> Void)?
@@ -127,6 +133,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // An accessory app stays out of the Dock but can still be activated, so a reopen, the menu
         // bar extra or a notification can bring it forward.
         NSApplication.shared.setActivationPolicy(isInBackground ? .accessory : .regular)
+        NSApplication.shared.servicesProvider = Self.quickSendIntake
+    }
+
+    func applicationShouldOpenUntitledFile(_ sender: NSApplication) -> Bool {
+        Self.quickSendIntake?.hasReceivedContent != true
+    }
+
+    func application(_ sender: NSApplication, openFiles filenames: [String]) {
+        do {
+            guard let intake = Self.quickSendIntake else { throw QuickSendIntake.IntakeError.unavailable }
+            try intake.openFiles(filenames)
+            sender.reply(toOpenOrPrint: .success)
+        } catch {
+            sender.reply(toOpenOrPrint: .failure)
+            sender.presentError(error)
+        }
+    }
+
+    func application(_ application: NSApplication, open urls: [URL]) {
+        for url in urls {
+            do {
+                guard let intake = Self.quickSendIntake else { throw QuickSendIntake.IntakeError.unavailable }
+                try intake.openSharedURL(url)
+            } catch {
+                application.presentError(error)
+            }
+        }
     }
 
     func applicationWillBecomeActive(_ notification: Notification) {

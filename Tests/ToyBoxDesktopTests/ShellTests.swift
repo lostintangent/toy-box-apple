@@ -155,6 +155,151 @@ private final class FakeQuickSendHotKey: QuickSendHotKeyRegistering {
     }
 }
 
+@Suite("Quick Send Services and Dock intake")
+@MainActor
+struct QuickSendIntakeTests {
+    @Test func servicesCopyTextAndURLsWithoutSendingOrClearingTheSource() throws {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let text = NSPasteboardItem()
+        text.setString("Selected text", forType: .string)
+        let link = NSPasteboardItem()
+        link.setString("https://example.test/page", forType: .URL)
+        #expect(pasteboard.writeObjects([text, link]))
+        var received: [QuickSendPrefill] = []
+        let intake = QuickSendIntake { received.append($0) }
+        var error: NSString?
+        intake.sendToToyBox(pasteboard, userData: nil, error: &error)
+        #expect(error == nil)
+        #expect(received.count == 1)
+        #expect(received.first?.text == "Selected text\n\nhttps://example.test/page")
+        #expect(received.first?.fileURLs.isEmpty == true)
+        #expect(pasteboard.pasteboardItems?.count == 2)
+        #expect(intake.hasReceivedContent)
+        #expect(intake.responds(to: NSSelectorFromString("sendToToyBox:userData:error:")))
+    }
+
+    @Test func fileRenditionsBecomeFileURLsRatherThanDuplicatePathText() throws {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let item = NSPasteboardItem()
+        let file = URL(fileURLWithPath: "/tmp/selected image.png")
+        item.setString(file.absoluteString, forType: .fileURL)
+        item.setString(file.path, forType: .string)
+        #expect(pasteboard.writeObjects([item]))
+        let result = try QuickSendIntake.read(pasteboard)
+        #expect(result.fileURLs == [file])
+        #expect(result.text.isEmpty)
+        #expect(result.images.isEmpty)
+    }
+
+    @Test func servicesPreferSupportedImageBytesAndConvertTIFFOnlySelections() throws {
+        let bitmap = try #require(NSBitmapImageRep(
+            bitmapDataPlanes: nil, pixelsWide: 2, pixelsHigh: 2, bitsPerSample: 8,
+            samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+            colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0))
+        bitmap.setColor(.red, atX: 0, y: 0)
+        let png = try #require(bitmap.representation(using: .png, properties: [:]))
+        let tiff = try #require(bitmap.representation(using: .tiff, properties: [:]))
+        for offersPNG in [false, true] {
+            let pasteboard = NSPasteboard.withUniqueName()
+            defer { pasteboard.releaseGlobally() }
+            let item = NSPasteboardItem()
+            item.setData(tiff, forType: .tiff)
+            if offersPNG { item.setData(png, forType: .png) }
+            #expect(pasteboard.writeObjects([item]))
+            let result = try QuickSendIntake.read(pasteboard)
+            let image = try #require(result.images.first)
+            #expect(image.mimeType == "image/png")
+            #expect(image.image != nil)
+            if offersPNG { #expect(image.data == png) }
+        }
+    }
+
+    @Test func emptySelectionsReportAnErrorAndNeverOpenQuickSend() {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        var count = 0
+        let intake = QuickSendIntake { _ in count += 1 }
+        var error: NSString?
+        intake.sendToToyBox(pasteboard, userData: nil, error: &error)
+        #expect(error != nil)
+        #expect(count == 0)
+        #expect(!intake.hasReceivedContent)
+    }
+
+    @Test func dockDropsKeepEveryExplicitFileURLForTheDraftPolicy() throws {
+        var received: QuickSendPrefill?
+        let intake = QuickSendIntake { received = $0 }
+        try intake.openFiles(["/tmp/a.png", "/tmp/a document.pdf"])
+        #expect(received?.fileURLs.map(\.path) == ["/tmp/a.png", "/tmp/a document.pdf"])
+        #expect(received?.text.isEmpty == true)
+    }
+
+    @Test func pendingInvocationsAppendAndAnOldConsumerCannotEraseTheNewerPayload() throws {
+        let suite = "quick-send-intake-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        var options = LaunchOptions()
+        options.snapshotURL = URL(fileURLWithPath: "/tmp/no-window.png")
+        let controller = QuickSendController(options: options, defaults: defaults, hotKey: FakeQuickSendHotKey())
+        let first = QuickSendPrefill(text: "First", fileURLs: [URL(fileURLWithPath: "/tmp/a.png")])
+        controller.present(prefill: first)
+        controller.present(prefill: .init(text: "Second", fileURLs: [URL(fileURLWithPath: "/tmp/b.png")]))
+        let combined = try #require(controller.pendingPrefill)
+        #expect(combined.id != first.id)
+        #expect(combined.text == "First\n\nSecond")
+        #expect(combined.fileURLs.count == 2)
+        controller.consumePrefill(id: first.id)
+        #expect(controller.pendingPrefill?.id == combined.id)
+        controller.consumePrefill(id: combined.id)
+        #expect(controller.pendingPrefill == nil)
+        #expect(!controller.isPresented)
+    }
+
+    @Test func shareHandoffsAcceptOnlyTheUniquePrivateNamespaceAndClearItAfterCopying() throws {
+        let name = "dev.toybox.desktop.share.\(UUID().uuidString)"
+        let pasteboard = NSPasteboard(name: .init(name))
+        pasteboard.setString("Shared selection", forType: .string)
+        let url = try #require(URL(string: "toybox-desktop://quick-send?pasteboard=\(name)"))
+        #expect(try QuickSendIntake.sharedPasteboardName(in: url) == name)
+        var received: QuickSendPrefill?
+        try QuickSendIntake { received = $0 }.openSharedURL(url)
+        #expect(received?.text == "Shared selection")
+        #expect(pasteboard.string(forType: .string) == nil)
+    }
+
+    @Test(arguments: [
+        "toybox-desktop://quick-send?pasteboard=NSGeneralPboard",
+        "toybox-desktop://quick-send?pasteboard=dev.toybox.desktop.share.not-a-uuid",
+        "toybox-desktop://quick-send?pasteboard=",
+        "toybox-desktop://quick-send?pasteboard=NSGeneralPboard&pasteboard=other",
+        "toybox-desktop://other?pasteboard=NSGeneralPboard",
+        "https://quick-send?pasteboard=NSGeneralPboard"
+    ])
+    func unrelatedPasteboardsAndMalformedRoutesAreRejected(_ value: String) throws {
+        let url = try #require(URL(string: value))
+        #expect(throws: QuickSendIntake.IntakeError.self) {
+            try QuickSendIntake.sharedPasteboardName(in: url)
+        }
+    }
+
+    @Test func bundleDeclaresServicesAndDockDropWithoutClaimingDefaultFileHandling() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
+        let data = try Data(contentsOf: root.appendingPathComponent("Resources/Info.plist"))
+        let info = try #require(PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any])
+        let services = try #require(info["NSServices"] as? [[String: Any]])
+        #expect(services.first?["NSMessage"] as? String == "sendToToyBox")
+        let types = try #require(services.first?["NSSendTypes"] as? [String])
+        #expect(types.contains("public.utf8-plain-text") && types.contains("public.file-url"))
+        let documents = try #require(info["CFBundleDocumentTypes"] as? [[String: Any]])
+        #expect(documents.allSatisfy { $0["LSHandlerRank"] as? String == "None" })
+        let schemes = try #require(info["CFBundleURLTypes"] as? [[String: Any]])
+        #expect(schemes.first?["CFBundleURLSchemes"] as? [String] == ["toybox-desktop"])
+    }
+}
+
 @Suite("Shell launch configuration")
 struct ShellTests {
     @Test func ordinaryLaunchKeepsNativeDefaults() throws {

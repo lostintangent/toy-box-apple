@@ -12,6 +12,7 @@ final class QuickSendController: NSObject, NSWindowDelegate {
     private(set) var presentationID = UUID()
     private(set) var isRecording = false
     private(set) var isRegistered = false
+    private(set) var pendingPrefill: QuickSendPrefill?
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let hotKey: any QuickSendHotKeyRegistering
     @ObservationIgnored private var panel: QuickSendPanel?
@@ -143,6 +144,19 @@ final class QuickSendController: NSObject, NSWindowDelegate {
             tracePanel("presented")
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in self?.tracePanel("settled") }
         }
+    }
+
+    func present(prefill: QuickSendPrefill) {
+        if let pending = pendingPrefill {
+            pendingPrefill = pending.appending(prefill)
+        } else {
+            pendingPrefill = prefill
+        }
+        present()
+    }
+
+    func consumePrefill(id: UUID) {
+        if pendingPrefill?.id == id { pendingPrefill = nil }
     }
 
     private func tracePanel(_ phase: String) {

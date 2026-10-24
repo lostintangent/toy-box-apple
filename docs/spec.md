@@ -1690,6 +1690,19 @@ values for a test bundle launched through Launch Services. The command-line valu
 The mode is recorded only in the volatile argument domain, never saved as a preference, and
 cannot be combined with snapshots or benchmarks. Normal launches leave it unset.
 
+**Send to Toy Box.** The Services command accepts an explicitly supplied selection of text,
+URLs, images or file URLs and opens Quick Send with it. Dropping files on the Dock icon uses
+the same intake. The document declaration has `LSHandlerRank` None, so Toy Box never claims to
+be a default file handler. Images attach normally. Other files become visible path text only
+for a loopback server. Remote servers reject them with "Only images can be attached" while
+preserving the existing draft. Nothing sends automatically.
+
+Incoming content appends rather than replacing a draft. Multiple invocations before the editor
+consumes them are combined, and consumption clears only the matching payload ID. The Share
+extension's `toybox-desktop://quick-send?pasteboard=<name>` route accepts only
+`dev.toybox.desktop.share.<UUID>` names. The host copies that named pasteboard and clears it,
+including on failure. Services never read or clear the general clipboard.
+
 **Catch-up summary.** When you return to a busy channel, a short on-device summary sits above the
 New divider. Each line points at the messages it came from.
 
