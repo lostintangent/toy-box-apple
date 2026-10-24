@@ -1093,7 +1093,9 @@ At the narrow supported window size the count and all controls remain visible.
 Find Next (`Cmd-G` or Return in the search field) and Find Previous (`Shift-Cmd-G` or
 Shift-Return) move chronologically through matching messages and wrap at the ends. Each matching
 message is one result, even if its text contains the query more than once. Escape or Done closes
-the bar without moving the conversation or changing its draft. Reopening Find selects the
+the bar without moving the conversation or changing its draft. Opening and closing both preserve
+the visible message anchor at the same pixel-aligned screen position after layout, with no bounce.
+Changes to the progress or error row preserve that anchor too. Reopening Find selects the
 current query for replacement. Switching channels cancels that channel's in-flight search and
 closes the bar, so an old response cannot navigate the newly selected channel.
 
@@ -1101,10 +1103,18 @@ Match case- and diacritic-insensitively against the rendered message text: visib
 code contents and prose, not Markdown delimiters or invisible link destinations. Search loaded
 messages immediately, then read older pages through `ChannelAPI.history` into a separate search
 index. Fetching results never prepends them to the channel store or disturbs its scroll anchor.
-Use the existing reveal path and temporary message highlight to navigate to a selected result,
-loading the target only on navigation. If Your Messages hides the result, switch to All Messages.
+Use the existing reveal path to navigate to a selected result, loading the target only on
+navigation. While Find is open, persistently highlight every rendered occurrence of the query
+with the system find highlight color. Give occurrences in the current result message stronger
+emphasis than matches in other messages, without changing the one-result-per-message count.
+The highlights and result index use the same case- and diacritic-insensitive matching, including
+Markdown prose, code, visible link labels and mention-stripped agent text. Preserve text
+selection, link actions and readable foreground contrast in both appearances. Closing Find or
+clearing its query removes every find highlight. Only matching messages should rerender as the
+query changes, and the normal scrolling and paging budgets still apply.
+If Your Messages hides the result, switch to All Messages.
 Keep the selected message stable when older results arrive, even when its position changes.
-Do not add a second results pane, replace message bubbles or introduce another highlight color.
+Do not add a second results pane, replace message bubbles or use custom highlight colors.
 
 An empty query shows no count, fetches no pages and leaves the scroll position alone. While
 history remains incomplete, a second, compact secondary row says "Searching older messages…".
