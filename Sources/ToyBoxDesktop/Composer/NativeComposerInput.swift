@@ -531,6 +531,20 @@ struct NativeComposerInput: NSViewRepresentable {
             mentionRange = nil
         }
 
+        func canAcceptPasteboard(_ pasteboard: NSPasteboard) -> Bool {
+            pasteboard.types?.contains(.fileURL) == true || !imageTypes(in: pasteboard).isEmpty
+        }
+
+        private func imageTypes(in pasteboard: NSPasteboard) -> [NSPasteboard.PasteboardType] {
+            let types = pasteboard.types ?? []
+            guard let imageIndex = types.firstIndex(where: { UTType($0.rawValue)?.conforms(to: .image) == true })
+            else { return [] }
+            if let textIndex = types.firstIndex(where: {
+                [.string, .rtf, .rtfd, .html].contains($0) || UTType($0.rawValue)?.conforms(to: .text) == true
+            }), textIndex < imageIndex { return [] }
+            return types.filter { UTType($0.rawValue)?.conforms(to: .image) == true }
+        }
+
         func acceptPasteboard(_ pasteboard: NSPasteboard) -> Bool {
             guard parent.isEditable else { return false }
             if let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: [
@@ -539,12 +553,26 @@ struct NativeComposerInput: NSViewRepresentable {
                 parent.onFiles(urls)
                 return true
             }
-            for type in pasteboard.types ?? [] {
-                guard let uniform = UTType(type.rawValue), uniform.conforms(to: .image),
-                      let data = pasteboard.data(forType: type) else { continue }
-                let mime = uniform.preferredMIMEType ?? "image/png"
+            let imageTypes = imageTypes(in: pasteboard)
+            let supported: [UTType] = [.png, .jpeg, .gif, .webP]
+            for uniform in supported {
+                guard let type = imageTypes.first(where: { UTType($0.rawValue)?.conforms(to: uniform) == true }),
+                      let data = pasteboard.data(forType: type), NSBitmapImageRep(data: data) != nil,
+                      let mime = uniform.preferredMIMEType else { continue }
                 parent.onImage(.init(name: "Pasted image.\(uniform.preferredFilenameExtension ?? "png")",
                                      mimeType: mime, data: data))
+                return true
+            }
+            // AppKit commonly offers only TIFF. Convert it instead of sending an unsupported MIME type.
+            for type in imageTypes {
+                guard let data = pasteboard.data(forType: type),
+                      let bitmap = NSBitmapImageRep(data: data),
+                      let png = bitmap.representation(using: .png, properties: [:]) else { continue }
+                parent.onImage(.init(name: "Pasted image.png", mimeType: "image/png", data: png))
+                return true
+            }
+            if !imageTypes.isEmpty {
+                parent.onError("The clipboard image could not be read. Copy it again or attach the original file.")
                 return true
             }
             return false
@@ -702,6 +730,7 @@ extension NativeComposerInput.Coordinator: DictationTextTarget {
 
 @MainActor final class ComposerTextView: NSTextView {
     weak var coordinator: NativeComposerInput.Coordinator?
+    var attachmentPasteboard: NSPasteboard = .general
     /// Mirrors the coordinator's dictation session for `responds(to:)`, which AppKit may call from any context.
     nonisolated(unsafe) var isDictating = false
 
@@ -777,6 +806,10 @@ extension NativeComposerInput.Coordinator: DictationTextTarget {
     }
 
     override func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if menuItem.action == #selector(paste(_:)) {
+            guard isEditable else { return false }
+            if coordinator?.canAcceptPasteboard(attachmentPasteboard) == true { return true }
+        }
         if menuItem.action == #selector(undoDictation(_:)) {
             let hasWords = coordinator?.parent.dictation?.hasWords == true
             menuItem.title = hasWords ? "Undo Dictation" : (undoManager?.undoMenuItemTitle ?? "Undo")
@@ -790,8 +823,9 @@ extension NativeComposerInput.Coordinator: DictationTextTarget {
     }
 
     override func paste(_ sender: Any?) {
+        guard isEditable else { return }
         coordinator?.parent.dictation?.commitNow()
-        if coordinator?.acceptPasteboard(.general) == true { return }
+        if coordinator?.acceptPasteboard(attachmentPasteboard) == true { return }
         super.pasteAsPlainText(sender)
     }
 
