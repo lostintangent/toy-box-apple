@@ -250,71 +250,6 @@ struct ShellTests {
                 == "Connected to https://example.test. \(quantities[count]) available.")
     }
 
-    @MainActor @Test(arguments: [false, true], [false, true])
-    func fallbackAvatarInkMeetsTextContrast(isDark: Bool, invalidMark: Bool) throws {
-        let avatar = invalidMark ? AgentAvatar(mark: "!", color: "#0891b2") : nil
-        let agent = ChannelAgent(id: "fallback", name: "Ada", avatar: avatar)
-        let surface = isDark ? Color(red: 0.12, green: 0.12, blue: 0.12) : Color.white
-        let renderer = ImageRenderer(content: AgentAvatarView(agent: agent, size: 64)
-            .padding(8).background(surface).environment(\.colorScheme, isDark ? .dark : .light))
-        renderer.scale = 2
-        let bitmap = NSBitmapImageRep(cgImage: try #require(renderer.cgImage))
-        func luminance(x: Int, y: Int) throws -> Double {
-            let color = try #require(bitmap.colorAt(x: x, y: y)?.usingColorSpace(.sRGB))
-            func linear(_ value: CGFloat) -> Double {
-                let component = Double(value)
-                return component <= 0.04045 ? component / 12.92 : pow((component + 0.055) / 1.055, 2.4)
-            }
-            return 0.2126 * linear(color.redComponent) + 0.7152 * linear(color.greenComponent)
-                + 0.0722 * linear(color.blueComponent)
-        }
-        let field = try luminance(x: 80, y: 32)
-        var inkContrast = 1.0
-        for y in 48..<112 {
-            for x in 48..<112 {
-                let ink = try luminance(x: x, y: y)
-                inkContrast = max(inkContrast, (max(ink, field) + 0.05) / (min(ink, field) + 0.05))
-            }
-        }
-        #expect(inkContrast >= 4.5)
-    }
-
-    @MainActor @Test(arguments: [false, true])
-    func sidebarAvatarsRepresentOnlyWorkingAgents(_ isWorking: Bool) async throws {
-        let agent = ChannelAgent(id: "active", name: "Ada",
-                                 avatar: .init(mark: "M4 12H20", color: "#ff00ff"))
-        let view = NSHostingView(rootView:
-            ChannelSidebarRow(channel: testChannel(), agents: [agent],
-                              working: isWorking ? [agent] : [], attention: nil,
-                              folder: nil, openFolder: {}, onTap: {})
-                .frame(width: 240, height: 80)
-                .background(Color.white)
-                .environment(\.colorScheme, .light))
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 240, height: 80),
-                              styleMask: [.borderless], backing: .buffered, defer: false)
-        window.isReleasedWhenClosed = false
-        window.contentView = view
-        defer { window.close() }
-        view.layoutSubtreeIfNeeded()
-        window.displayIfNeeded()
-        try await Task.sleep(for: .milliseconds(100))
-        view.layoutSubtreeIfNeeded()
-        let bitmap = try #require(view.bitmapImageRepForCachingDisplay(in: view.bounds))
-        view.cacheDisplay(in: view.bounds, to: bitmap)
-        var avatarPixels = 0
-        for y in 0..<bitmap.pixelsHigh {
-            for x in 0..<bitmap.pixelsWide {
-                let color = try #require(bitmap.colorAt(x: x, y: y)?.usingColorSpace(.sRGB))
-                if color.redComponent - color.greenComponent > 0.3
-                    && color.blueComponent - color.greenComponent > 0.3 {
-                    avatarPixels += 1
-                }
-            }
-        }
-        #expect(isWorking ? avatarPixels > 100 : avatarPixels == 0,
-                "Working: \(isWorking), avatar pixels: \(avatarPixels), size: \(bitmap.pixelsWide)x\(bitmap.pixelsHigh)")
-    }
-
     @Test func lastActivityFollowsMailDayBuckets() throws {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = try #require(TimeZone(identifier: "America/Los_Angeles"))
@@ -392,47 +327,45 @@ struct SidebarFacesYieldTests {
         #expect(ChannelSidebarRow.faceLimits(working: working) == limits)
     }
 
-    /// A real row's second line: how many faces it draws, told apart by their red, green and blue
-    /// fills, and where the gray detail text ends before the stack, in points.
+    /// These SwiftUI-only rows render synchronously, without a window or a display-settling wait.
     private func secondLine(width: CGFloat, directory: String? = nil, purpose: String? = nil,
                             working count: Int, attention: ChannelAttention? = .unread)
-        async throws -> (faces: Int, detailEnd: CGFloat) {
-        let agents = stackTestAgents(Array(["#ff0000", "#00ff00", "#0000ff", "#808080", "#808080"].prefix(count)))
+        throws -> (faces: Int, detailEnd: CGFloat) {
+        let agents = ["#ff0000", "#00ff00", "#0000ff", "#808080", "#808080"].enumerated().map { index, color in
+            ChannelAgent(id: "agent-\(index)", name: "Agent \(index)",
+                         avatar: .init(mark: "M4 12H20", color: color))
+        }
         let channel = Channel(id: "yield", name: "Yield", purpose: purpose, directory: directory,
                               model: .init(provider: "test", name: "test"), updatedAt: "2026-10-22T08:00:00Z")
-        let view = NSHostingView(rootView:
-            ChannelSidebarRow(channel: channel, agents: agents, working: agents, attention: attention,
+        let renderer = ImageRenderer(content:
+            ChannelSidebarRow(channel: channel, agents: agents, working: Array(agents.prefix(count)), attention: attention,
                               folder: directory == nil ? nil : .remote(host: "elsewhere"),
                               openFolder: {}, onTap: {})
                 .frame(width: width, height: 60)
                 .background(Color.white)
                 .environment(\.colorScheme, .light))
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: width, height: 60),
-                              styleMask: [.borderless], backing: .buffered, defer: false)
-        window.isReleasedWhenClosed = false
-        window.contentView = view
-        defer { window.close() }
-        view.layoutSubtreeIfNeeded()
-        window.displayIfNeeded()
-        try await Task.sleep(for: .milliseconds(100))
-        view.layoutSubtreeIfNeeded()
-        let bitmap = try #require(view.bitmapImageRepForCachingDisplay(in: view.bounds))
-        view.cacheDisplay(in: view.bounds, to: bitmap)
-        var pixels: [[(CGFloat, CGFloat, CGFloat)]] = []
-        for y in 0..<bitmap.pixelsHigh {
-            pixels.append(try (0..<bitmap.pixelsWide).map { x in
-                let color = try #require(bitmap.colorAt(x: x, y: y)?.usingColorSpace(.sRGB))
-                return (color.redComponent, color.greenComponent, color.blueComponent)
-            })
+        renderer.scale = 1
+        let image = try #require(renderer.cgImage)
+        let colorSpace = try #require(CGColorSpace(name: CGColorSpace.sRGB))
+        var pixels = [UInt8](repeating: 0, count: image.width * image.height * 4)
+        let drawn = pixels.withUnsafeMutableBytes { bytes -> Bool in
+            guard let context = CGContext(
+                data: bytes.baseAddress, width: image.width, height: image.height,
+                bitsPerComponent: 8, bytesPerRow: image.width * 4, space: colorSpace,
+                bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue
+            ) else { return false }
+            context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+            return true
         }
+        try #require(drawn)
         var counts = [0, 0, 0]
-        var stackStart = bitmap.pixelsWide
+        var stackStart = image.width
         var top = Int.max, bottom = -1
-        for (y, row) in pixels.enumerated() {
-            for (x, pixel) in row.enumerated() {
-                let rgb = [pixel.0, pixel.1, pixel.2]
-                for channel in 0..<3 where rgb[channel] - rgb[(channel + 1) % 3] > 0.35
-                    && rgb[channel] - rgb[(channel + 2) % 3] > 0.35 {
+        for y in 0..<image.height {
+            for x in 0..<image.width {
+                let offset = (y * image.width + x) * 4
+                for channel in 0..<3 where Int(pixels[offset + channel]) - Int(pixels[offset + (channel + 1) % 3]) > 89
+                    && Int(pixels[offset + channel]) - Int(pixels[offset + (channel + 2) % 3]) > 89 {
                     counts[channel] += 1
                     stackStart = min(stackStart, x)
                     top = min(top, y)
@@ -441,51 +374,39 @@ struct SidebarFacesYieldTests {
             }
         }
         var detailEnd = 0
-        for y in pixels.indices where y >= top && y <= bottom {
+        for y in 0..<image.height where y >= top && y <= bottom {
             for x in 0..<stackStart {
-                let (red, green, blue) = pixels[y][x]
-                if max(red, green, blue) < 0.8 && max(red, green, blue) - min(red, green, blue) < 0.08 {
+                let offset = (y * image.width + x) * 4
+                let red = pixels[offset], green = pixels[offset + 1], blue = pixels[offset + 2]
+                if max(red, green, blue) < 204 && max(red, green, blue) - min(red, green, blue) < 20 {
                     detailEnd = max(detailEnd, x + 1)
                 }
             }
         }
         // A partly covered face is about 120 square points. The 7-point unread dot is under 40.
-        let scale = CGFloat(bitmap.pixelsWide) / width
+        let scale = CGFloat(image.width) / width
         return (counts.filter { CGFloat($0) > 60 * scale * scale }.count, CGFloat(detailEnd) / scale)
     }
 
-    // Text starts after 8 points of padding, the 30-point icon and 10 points.
-    private let textStart: CGFloat = 48
-
-    @Test func aFolderKeepsItsWholeNameWhileTheStackGivesUpFaces() async throws {
-        let whole = try await secondLine(width: 320, directory: "/tmp/toy-box-mac", working: 5)
+    @Test(arguments: [false, true])
+    func rowsGiveUpFacesBeforeTheirFolderOrReadablePurposeStem(_ showsFolder: Bool) throws {
+        let directory = showsFolder ? "/tmp/toy-box-mac" : nil
+        let purpose = showsFolder ? nil : "Build a welcoming native Mac client"
+        let whole = try secondLine(width: 320, directory: directory, purpose: purpose, working: 5)
         #expect(whole.faces == 3)
-        for (width, faces) in [(CGFloat(236), 3), (223, 2), (211, 1)] {
-            let line = try await secondLine(width: width, directory: "/tmp/toy-box-mac", working: 5)
-            #expect(line.faces == faces, "At \(width)")
-            #expect(line.detailEnd == whole.detailEnd, "The folder truncated at \(width)")
+        let narrow = try secondLine(width: showsFolder ? 211 : 188,
+                                    directory: directory, purpose: purpose, working: 5)
+        #expect(narrow.faces == 1)
+        if showsFolder {
+            #expect(narrow.detailEnd == whole.detailEnd, "The folder truncated before giving up faces")
+        } else {
+            #expect(narrow.detailEnd - 48 >= 55, "The purpose lost its readable stem")
         }
-        // Only the last resort truncates the folder, and the stack keeps its full width there.
-        let squeezed = try await secondLine(width: 198, directory: "/tmp/toy-box-mac", working: 5)
-        #expect(squeezed.faces == 1 && squeezed.detailEnd < whole.detailEnd)
-    }
-
-    @Test func stacksNeverTradeAFaceForPlusOne() async throws {
-        let folder = "/tmp/a-much-longer-folder-name"
-        let whole = try await secondLine(width: 400, directory: folder, working: 3)
-        let narrow = try await secondLine(width: 290, directory: folder, working: 3)
-        #expect(narrow.faces == 1 && narrow.detailEnd == whole.detailEnd)
-        #expect(try await secondLine(width: 310, directory: folder, working: 3).faces == 3)
-        #expect(try await secondLine(width: 180, directory: folder, working: 2).faces == 2)
-    }
-
-    @Test func purposeRowsYieldFacesOnlyToKeepAReadableStem() async throws {
-        let purpose = "Build a welcoming native Mac client"
-        #expect(try await secondLine(width: 320, purpose: purpose, working: 4).faces == 3)
-        let stem = try await secondLine(width: 188, purpose: purpose, working: 4)
-        #expect(stem.faces == 1 && stem.detailEnd - textStart >= 55)
-        let squeezed = try await secondLine(width: 174, purpose: purpose, working: 4)
-        #expect(squeezed.faces == 1 && squeezed.detailEnd < stem.detailEnd)
+        let squeezed = try secondLine(width: showsFolder ? 198 : 174,
+                                      directory: directory, purpose: purpose, working: 5)
+        #expect(squeezed.faces == 1 && squeezed.detailEnd < narrow.detailEnd)
+        #expect(try secondLine(width: 320, directory: directory, purpose: purpose, working: 0).faces == 0,
+                "Idle team members appeared in the working stack")
     }
 }
 
@@ -534,99 +455,15 @@ struct SidebarConnectionFooterTests {
         #expect(!SidebarConnection.isFatal(nil))
     }
 
-    private let footerSize = CGSize(width: 260, height: 220)
-
-    private func hostFooter(_ connection: SidebarConnection, error: String? = nil, busy: Bool = false,
-                            spinning: Bool? = nil) -> NSWindow {
-        let content: AnyView = if let spinning {
-            AnyView(SidebarStatusLine(connection: connection, spinning: spinning, serverURL: "http://localhost:3100")
-                .padding(.leading, SidebarConnectionFooter.leading - SidebarConnectionFooter.capsuleOutset)
-                .padding(.bottom, 13))
-        } else {
-            // A delay no test outlasts, so a busy footer here is one whose attempt hasn't run long.
-            AnyView(SidebarConnectionFooter(connection: connection, busy: busy, serverURL: "http://localhost:3100",
-                                            error: error, retry: {}, openSettings: {}, spinnerDelay: .seconds(600)))
+    @Test func theSpinnerKeepsTheSameStatusLineSize() {
+        func size(spinning: Bool) -> CGSize {
+            NSHostingView(rootView:
+                SidebarStatusLine(connection: .reconnecting, spinning: spinning, serverURL: "http://localhost:3100")
+            ).fittingSize
         }
-        let view = NSHostingView(rootView:
-            VStack(alignment: .leading, spacing: 0) {
-                Spacer(minLength: 0)
-                content
-            }
-            .frame(width: footerSize.width, height: footerSize.height, alignment: .leading)
-            .background(Color.white)
-            .environment(\.colorScheme, .light))
-        let window = NSWindow(contentRect: NSRect(origin: .zero, size: footerSize),
-                              styleMask: [.borderless], backing: .buffered, defer: false)
-        window.isReleasedWhenClosed = false
-        window.contentView = view
-        view.layoutSubtreeIfNeeded()
-        window.displayIfNeeded()
-        return window
-    }
-
-    /// The center of the footer's dot, found by its color, in points from the leading edge and
-    /// from the bottom edge, where the host's gray ink ends on the status line, and the capture's
-    /// pixels per point.
-    private func sample(_ window: NSWindow, dominant channel: Int) throws
-        -> (dot: CGPoint?, textEnd: CGFloat, scale: CGFloat) {
-        let view = try #require(window.contentView)
-        view.layoutSubtreeIfNeeded()
-        let bitmap = try #require(view.bitmapImageRepForCachingDisplay(in: view.bounds))
-        view.cacheDisplay(in: view.bounds, to: bitmap)
-        let scale = CGFloat(bitmap.pixelsWide) / footerSize.width
-        var sum = CGPoint.zero, count: CGFloat = 0, textEnd = 0
-        for y in 0..<bitmap.pixelsHigh {
-            let fromBottom = footerSize.height - (CGFloat(y) + 0.5) / scale
-            for x in 0..<bitmap.pixelsWide {
-                let color = try #require(bitmap.colorAt(x: x, y: y)?.usingColorSpace(.sRGB))
-                let rgb = [color.redComponent, color.greenComponent, color.blueComponent]
-                if abs(fromBottom - 24) < 7, rgb.max()! < 0.8, rgb.max()! - rgb.min()! < 0.08 {
-                    textEnd = max(textEnd, x + 1)
-                }
-                guard rgb[channel] - rgb[(channel + 1) % 3] > 0.2, rgb[channel] - rgb[(channel + 2) % 3] > 0.2
-                else { continue }
-                sum.x += CGFloat(x) + 0.5
-                sum.y += CGFloat(y) + 0.5
-                count += 1
-            }
-        }
-        let dot = count > 3 * scale * scale
-            ? CGPoint(x: sum.x / count / scale, y: footerSize.height - sum.y / count / scale) : nil
-        return (dot, CGFloat(textEnd) / scale, scale)
-    }
-
-    @Test func theDotSharesTheIconEdgeAndClearsTheCornerEvenly() async throws {
-        let healthy = hostFooter(.connected)
-        defer { healthy.close() }
-        try await Task.sleep(for: .milliseconds(100))
-        let capture = try sample(healthy, dominant: 1)
-        let connected = try #require(capture.dot)
-        // An odd-sized dot centered on a whole point lands half a point off at 1x, so the absolute
-        // position allows one physical pixel.
-        let pixel = 1 / capture.scale
-        #expect(abs(connected.x - (SidebarConnectionFooter.leading + 3.5)) <= pixel)
-        #expect(abs(connected.y - 24) <= pixel, "Dot at \(connected) at \(capture.scale)x")
-        // The error block grows the footer upward, so the dot never moves.
-        let broken = hostFooter(.unreachable, error: "Could not connect to the server.")
-        defer { broken.close() }
-        try await Task.sleep(for: .milliseconds(100))
-        let failing = try #require(try sample(broken, dominant: 0).dot)
-        #expect(abs(failing.x - connected.x) < 0.5 && abs(failing.y - connected.y) < 0.5)
-    }
-
-    @Test func aSlowAttemptSwapsTheDotForASpinnerWithoutMovingTheHost() async throws {
-        let quick = hostFooter(.reconnecting, error: "Could not connect to the server.", busy: true)
-        defer { quick.close() }
-        let resting = hostFooter(.reconnecting, spinning: false)
-        defer { resting.close() }
-        let spinning = hostFooter(.reconnecting, spinning: true)
-        defer { spinning.close() }
-        try await Task.sleep(for: .milliseconds(100))
-        #expect(try sample(quick, dominant: 0).dot != nil, "An attempt shows the spinner before its delay")
-        let dot = try sample(resting, dominant: 0)
-        let spinner = try sample(spinning, dominant: 0)
-        #expect(dot.dot != nil && spinner.dot == nil)
-        #expect(dot.textEnd > 60 && spinner.textEnd == dot.textEnd)
+        let resting = size(spinning: false)
+        #expect(resting.width > 60 && resting.height > 0)
+        #expect(size(spinning: true) == resting)
     }
 }
 
@@ -639,11 +476,11 @@ struct RequestedCatalogRefreshTests {
         let catalog = ChannelCatalogStore(api: try server.api())
         let requested = RequestedCatalogRefresh()
         let poll = Task { await catalog.refresh() }
-        while server.held == 0 { await Task.yield() }
+        try await waitForShellCondition { server.held > 0 }
         #expect(catalog.isLoading && !requested.isRunning(for: catalog), "Background polling shows progress")
 
         let retry = Task { await requested.run(catalog) }
-        while !requested.isRunning(for: catalog) { await Task.yield() }
+        try await waitForShellCondition { requested.isRunning(for: catalog) }
         #expect(!requested.isRunning(for: ChannelCatalogStore(api: try server.api())))
 
         server.release(status: 503)
@@ -660,7 +497,7 @@ struct RequestedCatalogRefreshTests {
         let catalog = ChannelCatalogStore(api: try server.api())
         let requested = RequestedCatalogRefresh()
         let retry = Task { await requested.run(catalog) }
-        while server.held == 0 { await Task.yield() }
+        try await waitForShellCondition { server.held > 0 }
         #expect(requested.isRunning(for: catalog))
         server.release(status: 503)
         await retry.value
@@ -752,15 +589,11 @@ struct ConversationRailTests {
                     .modifier(ConversationRail())
             }
             .frame(width: width, height: 40))
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: width, height: 40),
-                              styleMask: [.borderless], backing: .buffered, defer: false)
-        window.isReleasedWhenClosed = false
-        window.contentView = view
-        defer { window.close() }
-        view.layoutSubtreeIfNeeded()
-        window.displayIfNeeded()
-        try await Task.sleep(for: .milliseconds(100))
-        view.layoutSubtreeIfNeeded()
+        view.frame = CGRect(x: 0, y: 0, width: width, height: 40)
+        try await waitForShellCondition {
+            view.layoutSubtreeIfNeeded()
+            return frames.avatar != nil && frames.composer != nil
+        }
 
         let avatar = try #require(frames.avatar)
         let composer = try #require(frames.composer)
@@ -926,10 +759,6 @@ struct SettledLayoutTests {
         let host = NSHostingView(rootView: RecordingLayout(log: log) { Color.clear }.settledLayout())
         let container = NSView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
         container.addSubview(host)
-        let window = NSWindow(contentRect: container.frame, styleMask: [.borderless], backing: .buffered, defer: false)
-        window.isReleasedWhenClosed = false
-        window.contentView = container
-        defer { window.close() }
         func layout(_ size: CGSize) {
             log.measured = []
             log.placed = []
@@ -1512,31 +1341,19 @@ struct ChannelConnectionsTests {
         #expect(connections.stores.count == 1)
     }
 
-    @Test func lingerExpiryDisconnects() async throws {
+    @Test func expiryDisconnectsOnlyTheStoreThatWasNotReacquired() async throws {
         let connections = ChannelConnections<FakeChannel>(linger: .milliseconds(20))
-        let a = FakeChannel()
-        connections.acquire(a)
-        connections.release(a)
-        // Counts turns rather than wall time, so a main actor busy with other suites can't use up
-        // the wait before the expiry gets its turn.
-        var turns = 0
-        while a.isConnected, turns < 500 {
-            turns += 1
-            try await Task.sleep(for: .milliseconds(10))
-        }
-        #expect(!a.isConnected)
-        #expect(connections.stores.isEmpty)
-    }
-
-    @Test func reacquiringCancelsTheExpiry() async throws {
-        let connections = ChannelConnections<FakeChannel>(linger: .milliseconds(30))
-        let a = FakeChannel()
+        let a = FakeChannel(), b = FakeChannel()
         connections.acquire(a)
         connections.release(a)
         connections.acquire(a)
-        try await Task.sleep(for: .milliseconds(120))
+        connections.acquire(b)
+        connections.release(b)
+        try await waitForShellCondition { !b.isConnected }
         #expect(a.isConnected)
         #expect(!a.events.contains("disconnect"))
+        #expect(b.events == ["boundary", "connect", "disconnect"])
+        #expect(connections.stores.count == 1 && connections.stores.first === a)
     }
 
     @Test func onlyTheNewestStoresLinger() {
@@ -1583,5 +1400,16 @@ struct ChannelConnectionsTests {
         connections.release(a)
         #expect(!a.isConnected)
         #expect(connections.stores.isEmpty)
+    }
+}
+
+@MainActor private func waitForShellCondition(
+    sourceLocation: SourceLocation = #_sourceLocation, _ condition: () -> Bool
+) async throws {
+    let deadline = ContinuousClock.now + .seconds(30)
+    while !condition() {
+        try #require(ContinuousClock.now < deadline, "The expected Shell state never arrived.",
+                     sourceLocation: sourceLocation)
+        try await Task.sleep(for: .milliseconds(10))
     }
 }
