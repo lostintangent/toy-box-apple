@@ -74,6 +74,49 @@ struct PolicyTests {
         #expect(unassignChannelTasks(tasks, agentId: "ada")[0].children?[0].ownerId == nil)
     }
 
+    @Test func taskTimingFloorsElapsedCeilsCheckInAndHandlesAbsentOrInvalidDates() throws {
+        let now = try #require(ChannelDates.date("2026-10-24T11:26:59Z"))
+        var task = ChannelTask(id: "task", title: "Task", status: "in_progress",
+                               startedAt: "2026-10-24T10:00:00Z", checkInAt: "2026-10-24T11:57:00Z")
+        #expect(channelTaskTiming(task, now: now) == .init(elapsedMinutes: 86, checkInMinutes: 31))
+        #expect(channelTaskTiming(task, now: now.addingTimeInterval(1))
+                == .init(elapsedMinutes: 87, checkInMinutes: 30))
+        task.checkInAt = "2026-10-24T11:26:59Z"
+        #expect(channelTaskTiming(task, now: now)?.checkInMinutes == 0)
+        task.checkInAt = "2026-10-24T11:00:00Z"
+        #expect(channelTaskTiming(task, now: now)?.checkInMinutes == 0)
+        for status in ["pending", "blocked", "done"] {
+            task.status = status
+            #expect(channelTaskTiming(task, now: now) == .init(elapsedMinutes: 86))
+        }
+        task.status = "in_progress"
+        task.checkInAt = "invalid"
+        #expect(channelTaskTiming(task, now: now) == .init(elapsedMinutes: 86))
+        task.startedAt = "2026-10-24T12:00:00Z"
+        #expect(channelTaskTiming(task, now: now)?.elapsedMinutes == 0)
+        task.startedAt = "invalid"
+        #expect(channelTaskTiming(task, now: now) == nil)
+        task.checkInAt = "2026-10-24T12:00:00Z"
+        task.startedAt = nil
+        #expect(channelTaskTiming(task, now: now) == nil)
+    }
+
+    @Test func artifactsAreNewestFirstWithStableTiesAndUndatedItemsLast() {
+        func artifact(_ id: String, sharedAt: String? = nil) -> ChannelArtifact {
+            ChannelArtifact(id: id, file: .init(kind: "machine", path: "/\(id)"), title: id, sharedAt: sharedAt)
+        }
+        let artifacts = [
+            artifact("undated"),
+            artifact("older", sharedAt: "2026-10-24T08:00:00Z"),
+            artifact("newer", sharedAt: "2026-10-24T11:00:00+02:00"),
+            artifact("same-time", sharedAt: "2026-10-24T09:00:00.000Z"),
+            artifact("invalid", sharedAt: "not-a-date")
+        ]
+        #expect(channelArtifactsNewestFirst(artifacts).map(\.id)
+                == ["newer", "same-time", "older", "undated", "invalid"])
+        #expect(channelArtifactsNewestFirst([]).isEmpty)
+    }
+
     @Test func attentionAndPresence() {
         var channel = Channel(id: "test", name: "Test", model: .init(provider: "test", name: "test"),
                               latestSequence: 10, seenThrough: 4, completedSequence: 7,

@@ -148,7 +148,7 @@ private struct OverviewArtifactsSection: View {
     @ViewState private var slots = OverviewSlots()
 
     var body: some View {
-        let artifacts = store.artifacts
+        let artifacts = channelArtifactsNewestFirst(store.artifacts)
         OverviewSection(id: .artifacts, count: "\(artifacts.count)", collapsed: $collapsed) {
             if artifacts.isEmpty {
                 OverviewEmptyText("Nothing shared yet")

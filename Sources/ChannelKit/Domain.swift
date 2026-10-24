@@ -92,9 +92,12 @@ public struct ChannelTask: Codable, Equatable, Identifiable, Sendable {
     public var artifactId: String?
     public var diff: DiffStats?
     public var children: [ChannelTask]?
+    public var startedAt: String?
+    public var checkInAt: String?
 
     public init(id: String, title: String, status: String = "pending", ownerId: String? = nil,
-                artifactId: String? = nil, diff: DiffStats? = nil, children: [ChannelTask]? = nil) {
+                artifactId: String? = nil, diff: DiffStats? = nil, children: [ChannelTask]? = nil,
+                startedAt: String? = nil, checkInAt: String? = nil) {
         self.id = id
         self.title = title
         self.status = status
@@ -102,6 +105,8 @@ public struct ChannelTask: Codable, Equatable, Identifiable, Sendable {
         self.artifactId = artifactId
         self.diff = diff
         self.children = children
+        self.startedAt = startedAt
+        self.checkInAt = checkInAt
     }
 }
 

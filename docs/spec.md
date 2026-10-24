@@ -1284,8 +1284,8 @@ applies in the Composer's Tasks popover, which shares these rows.
 
 Rows have 5 points of vertical padding. The first line is the title (13 regular, wrapping, done
 titles in secondary, never struck through) with the owner's 16-point avatar at the trailing
-edge, centered on the first line and at least 8 points from the title. A second line, 3 points
-below and aligned with the title, appears only when there is a diff or artifact, with 10 points
+edge, centered on the first line and at least 8 points from the title. An additional metadata line,
+3 points below the preceding line and aligned with the title, appears when there is a diff or artifact, with 10 points
 between items: the diff ("+1.5K −114", 11 medium tabular,
 in the adaptive green and red tokens) and the task's artifact as an 11-point link ("Workshop
 plan" after `doc.text`, 3 points apart) that opens only that artifact and never toggles
@@ -1300,13 +1300,24 @@ actions. A parent row is a button whose value is "Expanded" or "Collapsed" and w
 toggles it, so VoiceOver reads "Build the workshop, …, collapsed, button". A leaf row is static
 text. Neither may surface as an unknown element, matching the routine rows. A missing referenced artifact keeps a disabled link labeled "Artifact unavailable".
 
+Tasks with a valid server-owned `startedAt` show an 11-point secondary timing line below the
+title: a small `clock` before "1h 26m", with monospaced digits. Use "59m" below an hour,
+"1h" at an exact hour, and keep hours beyond 24. An in-progress task with a valid `checkInAt`
+adds a `bell` before its remaining time, 10 points later. At zero keep "0m", without warning
+color. Hover spells out "Elapsed: 1 hour 26 minutes", "Check-in in 31 minutes" or "Check-in
+due". Elapsed time rounds down and remaining time rounds up, both clamped at zero. Retain
+any diff and artifact on the following line. Update once a minute only while the timed row
+is visible. VoiceOver uses expanded units, with no live announcements. These rules apply
+to the shared tray rows too.
+
 **Artifacts.** Rows are at least 40 high: the file's real Finder icon at 28 points
 (`NSWorkspace.shared.icon(for:)` with the UTType from its extension), a 10-point gap, the title
 in 13 regular on one line, and an 11-point secondary line, "Kit · 3 hr. ago", with the full date
 in help. Format the time with `RelativeDateTimeFormatter`, `.named` and `.short` ("3 hr. ago",
 "yesterday"). The sharer is the actor of the latest matching `artifact_shared` event. Until Core
-projects it, show the localized type ("Markdown") instead. Keep canonical order. The tray is
-explicitly newest-first. Clicking opens the artifact, and Space on a focused row shows Quick
+projects it, show the localized type ("Markdown") instead. Sort by `sharedAt` newest first,
+with undated items last and existing order preserved for equal dates. The tray is also
+newest-first. Clicking opens the artifact, and Space on a focused row shows Quick
 Look. The context menu offers Open, Quick Look, Show in Transcript (reveals the share event) and
 Copy Link. Markdown opens a native reader sheet or window with a selectable body, title, path,
 Open in Toy Box and Share or Copy Link. Other supported types use Quick Look or the default
