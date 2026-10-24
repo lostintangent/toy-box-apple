@@ -26,6 +26,7 @@ struct TranscriptRowContent: View, @MainActor Equatable {
     var statusReactions: [Int: [ChannelReaction]] = [:]
     /// The highlighted sequence, when it's one of this row's messages.
     var highlightedSequence: Int?
+    var findHighlights: [Int: TranscriptFindHighlight] = [:]
     /// The catch-up summary, for the row under the New divider that shows it.
     var catchUp: TranscriptCatchUp?
     let store: ChannelStore
@@ -36,7 +37,8 @@ struct TranscriptRowContent: View, @MainActor Equatable {
 
     init(row: TranscriptRow, context: TranscriptRowContext, statusReactions: [Int: [ChannelReaction]],
          highlightedSequence: Int?, catchUp: TranscriptCatchUp?, store: ChannelStore,
-         expandedMessageIds: Set<String>, onSetExpanded: @escaping (String, Bool) -> Void) {
+         expandedMessageIds: Set<String>, findHighlights: [Int: TranscriptFindHighlight] = [:],
+         onSetExpanded: @escaping (String, Bool) -> Void) {
         let messages = row.messages
         self.row = row
         self.context = context
@@ -44,6 +46,9 @@ struct TranscriptRowContent: View, @MainActor Equatable {
             reactions[message.sequence] = statusReactions[message.sequence]
         }
         self.highlightedSequence = messages.contains { $0.sequence == highlightedSequence } ? highlightedSequence : nil
+        self.findHighlights = messages.reduce(into: [:]) { result, message in
+            result[message.sequence] = findHighlights[message.sequence]
+        }
         self.catchUp = row.divider?.unread == true ? catchUp : nil
         self.store = store
         self.expandedMessageIds = expandedMessageIds.isEmpty ? [] : expandedMessageIds.filter { id in
@@ -56,6 +61,7 @@ struct TranscriptRowContent: View, @MainActor Equatable {
         lhs.row == rhs.row && lhs.context == rhs.context && lhs.statusReactions == rhs.statusReactions
             && lhs.highlightedSequence == rhs.highlightedSequence && lhs.catchUp === rhs.catchUp
             && lhs.store === rhs.store && lhs.expandedMessageIds == rhs.expandedMessageIds
+            && lhs.findHighlights == rhs.findHighlights
     }
 
     var body: some View {
@@ -68,7 +74,8 @@ struct TranscriptRowContent: View, @MainActor Equatable {
             switch row.content {
             case .user(let message):
                 TranscriptUserMessage(message: message, agents: context.agents, api: context.api,
-                                      statusReactions: statusReactions[message.sequence] ?? [])
+                                      statusReactions: statusReactions[message.sequence] ?? [],
+                                      findHighlight: findHighlights[message.sequence])
                     .background(highlightedSequence == message.sequence
                                 ? Color.accentColor.opacity(0.09) : .clear,
                                 in: RoundedRectangle(cornerRadius: 12))
@@ -85,7 +92,9 @@ struct TranscriptRowContent: View, @MainActor Equatable {
                                                    api: context.api, interaction: interaction,
                                                    statusReactions: statusReactions[entry.message.sequence] ?? [],
                                                    expanded: expandedMessageIds.contains(entry.id),
+                                                   findHighlight: findHighlights[entry.message.sequence],
                                                    onSetExpanded: onSetExpanded)
+                                .equatable()
                                 .background(highlightedSequence == entry.message.sequence
                                             ? Color.accentColor.opacity(0.09) : .clear,
                                             in: RoundedRectangle(cornerRadius: 12))
@@ -97,16 +106,18 @@ struct TranscriptRowContent: View, @MainActor Equatable {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
             case .system(let messages):
+                let expandsMembership = messages.count > 1 && !expandedMessageIds.isEmpty
+                    && (messages.first?.system?.type == "member_joined" || messages.first?.system?.type == "member_left")
+                let individualMessages = messages.first?.system?.type == "artifact_shared" || expandsMembership
                 TranscriptSystemMessages(messages: messages, channelID: context.channelID,
                                          historyStart: context.historyStart, agents: context.agents,
-                                         api: context.api)
+                                         api: context.api, findHighlights: findHighlights,
+                                         expandsMembership: expandsMembership)
                     .background(messages.contains { $0.sequence == highlightedSequence }
                                 ? Color.accentColor.opacity(0.09) : .clear,
                                 in: RoundedRectangle(cornerRadius: 6))
-                    .transcriptMessageFrame(id: messages.first?.system?.type == "artifact_shared"
-                                            ? "system-group-\(row.id)" : row.id,
-                                            sequence: messages.first?.system?.type == "artifact_shared"
-                                            ? 0 : messages.map(\.sequence).max() ?? 0,
+                    .transcriptMessageFrame(id: individualMessages ? "system-group-\(row.id)" : row.id,
+                                            sequence: individualMessages ? 0 : messages.map(\.sequence).max() ?? 0,
                                             historyStart: context.historyStart)
                     .id(row.id)
             }
@@ -190,6 +201,7 @@ struct TranscriptUserMessage: View {
     let api: ChannelAPI
     var deliveryLabel: String?
     var statusReactions: [ChannelReaction] = []
+    var findHighlight: TranscriptFindHighlight?
     @Environment(\.channelTextScale) private var textScale
     @Environment(\.transcriptPointer) private var pointer
     @ViewState private var selectsText = false
@@ -206,7 +218,7 @@ struct TranscriptUserMessage: View {
                 .accessibilityHidden(true)
                 if !message.text.isEmpty {
                     TranscriptMarkdown(content: message.text, agents: agents, baseURL: api.baseURL,
-                                       selectable: selectsText)
+                                       selectable: selectsText, findHighlight: findHighlight)
                         .environment(\.transcriptSurface, .user)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 10)
@@ -243,7 +255,7 @@ struct TranscriptUserMessage: View {
     }
 }
 
-private struct TranscriptAgentMessage: View {
+struct TranscriptAgentMessage: View, @MainActor Equatable {
     let entry: AgentRunEntry
     let agent: ChannelAgent
     let agents: [ChannelAgent]
@@ -251,6 +263,7 @@ private struct TranscriptAgentMessage: View {
     let interaction: ChannelInteraction
     let statusReactions: [ChannelReaction]
     let expanded: Bool
+    var findHighlight: TranscriptFindHighlight?
     var onSetExpanded: (String, Bool) -> Void
     @Environment(\.channelTextScale) private var textScale
     @Environment(\.transcriptPointer) private var pointer
@@ -264,6 +277,13 @@ private struct TranscriptAgentMessage: View {
 
     private static let clampHeight: CGFloat = 160
     private var isClamped: Bool { entry.collapsible && !expanded && overflows }
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.entry == rhs.entry && lhs.agent == rhs.agent && lhs.agents == rhs.agents
+            && lhs.api.baseURL == rhs.api.baseURL && lhs.interaction === rhs.interaction
+            && lhs.statusReactions == rhs.statusReactions && lhs.expanded == rhs.expanded
+            && lhs.findHighlight == rhs.findHighlight
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -363,7 +383,8 @@ private struct TranscriptAgentMessage: View {
     }
 
     private var markdown: some View {
-        TranscriptMarkdown(content: entry.body, agents: agents, baseURL: api.baseURL, selectable: selectsText)
+        TranscriptMarkdown(content: entry.body, agents: agents, baseURL: api.baseURL, selectable: selectsText,
+                           findHighlight: findHighlight)
             .environment(\.transcriptSurface, surface)
             .fixedSize(horizontal: false, vertical: true)
     }

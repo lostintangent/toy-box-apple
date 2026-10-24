@@ -59,10 +59,10 @@ struct ConversationTranscript: View {
     }
 
     private var visibleReadSequence: Int? {
-        // The image viewer covers the transcript, so nothing beneath it counts as read.
+        // A viewer covers the transcript, so nothing beneath it counts as read.
         guard snapshot == nil, hasLanded, !isRevealing, pagingAnchor == nil, window.isKeyWindow,
               scenePhase == .active, store.phase.isLive, viewer?.session == nil,
-              !find.blocksRead else { return nil }
+              !interaction.isArtifactViewerPresented, !find.blocksRead else { return nil }
         return visibleSequence
     }
 
@@ -109,8 +109,8 @@ struct ConversationTranscript: View {
     private var transcript: some View {
         ScrollViewReader { proxy in
             observedScroll(proxy: proxy)
-                .safeAreaBar(edge: .top, spacing: 0) {
-                    if find.isPresented {
+                .overlay(alignment: .top) {
+                    if find.isPresented && !interaction.isArtifactViewerPresented {
                         TranscriptFindBar(find: find, channelName: store.state?.channel.name ?? store.id,
                                           focusRequest: interaction.findRequest,
                                           navigate: { find.move($0) }, close: closeFind)
@@ -118,17 +118,22 @@ struct ConversationTranscript: View {
                 }
                 .safeAreaBar(edge: .bottom, spacing: 0) { floatingControls }
                 .onChange(of: interaction.findRequest) {
+                    guard !interaction.isArtifactViewerPresented else { return }
                     prepareFind()
                     find.present()
                 }
                 .onChange(of: interaction.findNavigation?.token) {
+                    guard !interaction.isArtifactViewerPresented else { return }
                     prepareFind()
                     find.present()
                     find.move(interaction.findNavigation?.direction ?? 1)
                 }
+                .onChange(of: interaction.isArtifactViewerPresented) {
+                    if interaction.isArtifactViewerPresented { find.close() }
+                }
                 .onChange(of: store.messages) { if find.isPresented { prepareFind() } }
                 .task(id: find.work) {
-                    guard find.isPresented else { return }
+                    guard find.isPresented, !interaction.isArtifactViewerPresented else { return }
                     prepareFind()
                     await find.searchOlder {
                         try await store.api.history(channelId: store.id, before: $0).messages
@@ -140,7 +145,7 @@ struct ConversationTranscript: View {
                     }
                 }
                 .onChange(of: find.revealRequest?.token) {
-                    if find.isPresented, let request = find.revealRequest {
+                    if find.isPresented, !interaction.isArtifactViewerPresented, let request = find.revealRequest {
                         interaction.reveal(sequence: request.sequence)
                     }
                 }
@@ -149,8 +154,8 @@ struct ConversationTranscript: View {
                     guard store.phase.isLive, !hasLanded else { return }
                     await land(using: proxy)
                 }
-                .task(id: interaction.revealRequestToken) {
-                    guard let request = interaction.revealRequest else { return }
+                .task(id: interaction.isArtifactViewerPresented ? nil : interaction.revealRequestToken) {
+                    guard !interaction.isArtifactViewerPresented, let request = interaction.revealRequest else { return }
                     interaction.consumeRevealRequest(request.token)
                     await reveal(sequence: request.sequence, using: proxy)
                 }
@@ -182,14 +187,14 @@ struct ConversationTranscript: View {
                 if rows.isEmpty && store.hasOlderMessages { Task { await loadOlder() } }
             }
             .onChange(of: store.messages.last?.id) {
-                guard hasLanded, pagingAnchor == nil, !isRevealing else { return }
+                guard hasLanded, pagingAnchor == nil, !isRevealing, !find.blocksRead else { return }
                 if isAtBottom {
                     catchUp?.isPinned = false
                     scrollToLatest(using: proxy)
                 }
             }
             .onChange(of: store.sendAttempts.map(\.id)) { old, new in
-                if isAtBottom && new.count > old.count { scrollToLatest(using: proxy) }
+                if isAtBottom && !find.blocksRead && new.count > old.count { scrollToLatest(using: proxy) }
             }
             .onChange(of: store.requestSequence, initial: true) { _, sequence in
                 let eligible = snapshot == nil && hasLanded && window.isKeyWindow
@@ -235,7 +240,7 @@ struct ConversationTranscript: View {
             }
             let update = new.update(after: old, wasAtBottom: isAtBottom,
                                     canFollow: hasLanded && pagingAnchor == nil && !isRevealing && !isUserScrolling
-                                        && catchUp?.holdsLanding != true,
+                                        && catchUp?.holdsLanding != true && !find.blocksRead,
                                     isJumping: pendingJump != nil)
             geometry.viewport = new
             followReaderWhilePaging()
@@ -287,6 +292,7 @@ struct ConversationTranscript: View {
         let context = TranscriptRowContext(agents: store.roster, channelID: store.id,
                                            historyStart: store.messages.first?.sequence ?? 0, api: store.api)
         let statusReactions = statusReactions
+        let findHighlights = find.highlights
         let catchUp = interaction.messageView == .all ? catchUp : nil
         return LazyVStack(alignment: .leading, spacing: 0) {
             historyHeader
@@ -304,6 +310,7 @@ struct ConversationTranscript: View {
                 TranscriptRowContent(row: row, context: context, statusReactions: statusReactions,
                                      highlightedSequence: highlightedSequence, catchUp: catchUp, store: store,
                                      expandedMessageIds: expandedMessageIds,
+                                     findHighlights: findHighlights,
                                      onSetExpanded: { id, expands in
                                          // The message changes height below its own top, even when
                                          // that top is above the viewport.
@@ -384,6 +391,9 @@ struct ConversationTranscript: View {
     private func prepareFind() {
         find.prepare(messages: store.messages.filter { !store.optimisticMessageIds.contains($0.id) },
                      agents: store.roster, hasOlder: store.hasOlderMessages)
+        expandedMessageIds.formUnion(find.matches.filter {
+            $0.system?.type == "member_joined" || $0.system?.type == "member_left"
+        }.map(\.id))
     }
 
     private func closeFind() {
@@ -396,7 +406,7 @@ struct ConversationTranscript: View {
     /// When a resize should keep the newest message in place, as the geometry action's follow does.
     private var followsLatest: Bool {
         isAtBottom && hasLanded && pagingAnchor == nil && !isRevealing && !isUserScrolling && pendingJump == nil
-            && catchUp?.holdsLanding != true
+            && catchUp?.holdsLanding != true && !find.blocksRead
     }
 
     private var floatingControls: some View {
@@ -839,7 +849,7 @@ struct ConversationTranscript: View {
         pagingAnchor = nil
         defer { isRevealing = false }
         await loadHistory(through: sequence)
-        guard !Task.isCancelled else { return }
+        guard !Task.isCancelled, !interaction.isArtifactViewerPresented else { return }
         guard let message = store.state?.messages.first(where: { $0.sequence == sequence }) else {
             revealError = store.historyError ?? "This message is no longer available."
             return
@@ -849,11 +859,16 @@ struct ConversationTranscript: View {
         }
         if find.isPresented { expandedMessageIds.insert(message.id) }
         await Task.yield()
+        guard !Task.isCancelled, !interaction.isArtifactViewerPresented else { return }
         let row = rows.first { $0.messages.contains { $0.id == message.id } }
+        let membership = message.system?.type == "member_joined" || message.system?.type == "member_left"
+        let individualSystem = message.system?.type == "artifact_shared"
+            || (membership && row?.messages.contains(where: { expandedMessageIds.contains($0.id) }) == true)
         scrollPosition = nil
-        proxy.scrollTo(message.isSystem ? row?.id ?? message.id : message.id, anchor: .center)
-        highlightedSequence = sequence
+        proxy.scrollTo(message.isSystem && !individualSystem ? row?.id ?? message.id : message.id, anchor: .center)
+        highlightedSequence = find.isPresented ? nil : sequence
         hasLanded = true
+        guard !find.isPresented else { return }
         do { try await Task.sleep(for: .seconds(2)) }
         catch { return }
         if highlightedSequence == sequence { highlightedSequence = nil }

@@ -184,6 +184,7 @@ struct TranscriptMessageFrame: Equatable {
     var historyStart: Int
     /// The top in the content, which only layout changes move. Scrolling moves only `rect`.
     var contentTop: CGFloat = 0
+    var windowRect: CGRect = .zero
 }
 
 struct TranscriptMessageFrames: PreferenceKey {
@@ -202,7 +203,8 @@ extension View {
                 Color.clear.preference(key: TranscriptMessageFrames.self, value: [
                     id: .init(sequence: sequence, rect: geometry.frame(in: .named("transcript-viewport")),
                               historyStart: historyStart,
-                              contentTop: geometry.frame(in: .named("transcript-content")).minY)
+                              contentTop: geometry.frame(in: .named("transcript-content")).minY,
+                              windowRect: geometry.frame(in: .global))
                 ])
             }
         }

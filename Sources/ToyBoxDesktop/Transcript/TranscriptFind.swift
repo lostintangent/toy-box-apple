@@ -27,6 +27,12 @@ final class TranscriptFind {
     @ObservationIgnored private var generation = UUID()
 
     var blocksRead: Bool { isPresented || ownsReadingPosition }
+    var highlights: [Int: TranscriptFindHighlight] {
+        guard isPresented else { return [:] }
+        return Dictionary(uniqueKeysWithValues: matches.map {
+            ($0.sequence, TranscriptFindHighlight(query: query, isCurrent: $0.sequence == selectedSequence))
+        })
+    }
     var selectedIndex: Int? { matches.firstIndex { $0.sequence == selectedSequence } }
     var countLabel: String {
         if let selectedIndex { return "\(selectedIndex + 1) of \(matches.count)" }
@@ -145,8 +151,7 @@ final class TranscriptFind {
                 text = Self.renderedText(message, agents: agents)
                 rendered[message.id] = text
             }
-            return text.range(of: needle, options: [.caseInsensitive, .diacriticInsensitive],
-                              locale: Locale(identifier: "en_US_POSIX")) != nil
+            return !TranscriptFindPattern(needle).ranges(in: text).isEmpty
         }.sorted { $0.sequence < $1.sequence }
         if !matches.contains(where: { $0.sequence == selectedSequence }) {
             selectedSequence = matches.first?.sequence
@@ -157,7 +162,7 @@ final class TranscriptFind {
         guard let system = message.system else {
             let body = message.sender.type == "agent"
                 ? withoutLeadingMentions(message.text, agents: agents) : message.text
-            return NotificationText.plainText(body)
+            return TranscriptMarkdownText(MarkdownBlock.parse(body)).text
         }
         func event(_ phrase: String, _ value: String?) -> String {
             value.map { phrase + " " + transcriptSystemValue($0) } ?? phrase
@@ -186,8 +191,57 @@ final class TranscriptFind {
         case "routine_edited": return event("Routine edited", system.routine?.title ?? "Routine")
         case "routine_deleted": return event("Routine deleted", system.routine?.title ?? "Routine")
         default:
-            return event("Channel updated", system.unknownFields?["description"]?.string)
+            return system.unknownFields?["description"]?.string.map { "Channel updated\n\($0)" } ?? "Channel updated"
         }
+    }
+}
+
+struct TranscriptFindPattern {
+    let query: String
+
+    init(_ query: String) {
+        self.query = query.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    func ranges(in text: String) -> [Range<Int>] {
+        guard !query.isEmpty else { return [] }
+        var result: [Range<Int>] = []
+        var start = text.startIndex
+        while start < text.endIndex,
+              let range = text.range(of: query, options: [.caseInsensitive, .diacriticInsensitive],
+                                     range: start..<text.endIndex, locale: Locale(identifier: "en_US_POSIX")) {
+            guard !range.isEmpty else {
+                start = text.index(after: start)
+                continue
+            }
+            let utf16 = NSRange(range, in: text)
+            result.append(utf16.location..<(utf16.location + utf16.length))
+            start = range.upperBound
+        }
+        return result
+    }
+}
+
+struct TranscriptFindHighlight: Equatable {
+    let query: String
+    let isCurrent: Bool
+
+    func applying(to value: AttributedString, ranges: [Range<Int>]? = nil, offset: Int = 0) -> AttributedString {
+        let plain = String(value.characters)
+        let occurrences = ranges ?? TranscriptFindPattern(query).ranges(in: plain)
+        let bounds = offset..<(offset + plain.utf16.count)
+        var result = value
+        for occurrence in occurrences {
+            let lower = max(bounds.lowerBound, occurrence.lowerBound)
+            let upper = min(bounds.upperBound, occurrence.upperBound)
+            guard lower < upper,
+                  let range = Range(NSRange(location: lower - offset, length: upper - lower), in: plain),
+                  let start = AttributedString.Index(range.lowerBound, within: result),
+                  let end = AttributedString.Index(range.upperBound, within: result) else { continue }
+            result[start..<end].backgroundColor = Color(nsColor: .findHighlightColor).opacity(isCurrent ? 1 : 0.45)
+            result[start..<end].foregroundColor = Color(nsColor: .black)
+        }
+        return result
     }
 }
 
@@ -208,21 +262,11 @@ struct TranscriptFindBar: View {
                     .foregroundStyle(.secondary)
                     .fixedSize()
                     .accessibilityLabel("Matching messages: \(find.countLabel)")
-                HStack(spacing: 0) {
-                    Button { navigate(-1) } label: {
-                        Image(systemName: "chevron.up").frame(width: 28, height: 28).contentShape(.rect)
-                    }
-                        .help("Previous Match (Shift-Command-G)")
-                        .accessibilityLabel("Previous Match")
-                    Button { navigate(1) } label: {
-                        Image(systemName: "chevron.down").frame(width: 28, height: 28).contentShape(.rect)
-                    }
-                        .help("Next Match (Command-G)")
-                        .accessibilityLabel("Next Match")
-                }
-                .buttonStyle(.plain)
-                .disabled(find.matches.isEmpty)
+                TranscriptFindNavigation(isEnabled: !find.matches.isEmpty, navigate: navigate)
+                    .frame(width: 60, height: 28)
                 Button("Done", action: close).frame(minHeight: 28)
+                .help("Close Find")
+                .accessibilityLabel("Close Find")
             }
             if let error = find.error {
                 HStack {
@@ -240,6 +284,39 @@ struct TranscriptFindBar: View {
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Find in \(channelName)")
         .onExitCommand(perform: close)
+    }
+}
+
+private struct TranscriptFindNavigation: NSViewRepresentable {
+    let isEnabled: Bool
+    var navigate: (Int) -> Void
+
+    func makeNSView(context: Context) -> NSSegmentedControl {
+        let control = NSSegmentedControl(images: [
+            NSImage(systemSymbolName: "chevron.left", accessibilityDescription: "Previous Match")!,
+            NSImage(systemSymbolName: "chevron.right", accessibilityDescription: "Next Match")!
+        ], trackingMode: .momentary, target: context.coordinator, action: #selector(Coordinator.navigate(_:)))
+        for segment in 0..<2 { control.setWidth(28, forSegment: segment) }
+        control.setToolTip("Previous Match (Shift-Command-G)", forSegment: 0)
+        control.setToolTip("Next Match (Command-G)", forSegment: 1)
+        control.setAccessibilityIdentifier("channel-find-navigation")
+        return control
+    }
+
+    func updateNSView(_ control: NSSegmentedControl, context: Context) {
+        context.coordinator.parent = self
+        control.isEnabled = isEnabled
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    final class Coordinator: NSObject {
+        var parent: TranscriptFindNavigation
+        init(_ parent: TranscriptFindNavigation) { self.parent = parent }
+
+        @objc func navigate(_ control: NSSegmentedControl) {
+            parent.navigate(control.selectedSegment == 0 ? -1 : 1)
+        }
     }
 }
 

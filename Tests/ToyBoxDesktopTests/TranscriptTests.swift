@@ -26,6 +26,22 @@ struct TranscriptTests {
         #expect(blocks.map(\.id) == [0, 1])
     }
 
+    @MainActor
+    @Test(arguments: [0.9, 1, 1.2])
+    func markdownSizingKeepsTranscriptDefaultsAndScalesArtifactCode(_ scale: CGFloat) throws {
+        let normal = TranscriptMarkdown(content: "Body and `code`")
+        #expect(normal.bodySize == 14 && normal.codeSize == 12 && normal.lineSpacing == 3)
+        let artifact = TranscriptMarkdown(content: "Body and `code`", bodySize: 15, codeSize: 13, lineSpacing: 4)
+        #expect(artifact.bodySize == 15 && artifact.codeSize == 13 && artifact.lineSpacing == 4)
+        let original = transcriptInlineMarkdown("`code` @lead", agents: [.lead(id: "lead")], textScale: scale)
+        let resized = transcriptInlineMarkdown("`code` @lead", agents: [.lead(id: "lead")], textScale: scale,
+                                               fontSize: artifact.bodySize, codeSize: artifact.codeSize)
+        #expect(original.runs.first?.font == .system(size: 12 * scale, design: .monospaced))
+        #expect(resized.runs.first?.font == .system(size: 13 * scale, design: .monospaced))
+        let mention = try #require(resized.range(of: "@lead"))
+        #expect(resized[mention].runs.first?.font == .system(size: 15 * scale, weight: .semibold))
+    }
+
     @Test func headingsQuotesAndListsHaveDistinctBlocks() {
         let source = """
         # Direction
@@ -642,6 +658,168 @@ struct TranscriptTests {
         let worst = gaps.max { max(abs($0.drawn), abs($0.nextFrame)) < max(abs($1.drawn), abs($1.nextFrame)) }
         #expect(gaps.allSatisfy { abs($0.drawn) < 1 && abs($0.nextFrame) < 1 },
                 "Worst step: \(String(describing: worst))")
+        #expect(harness.readRequests == 0)
+    }
+
+    @MainActor
+    @Test(arguments: [false, true])
+    func openingAndClosingFindLeaveTheReadersMessagesInPlace(atBottom: Bool) async throws {
+        let find = TranscriptFind()
+        let harness = try await TranscriptHarness(messages: (1...90).map(transcriptTestMessage), find: find)
+        defer { harness.close() }
+        if !atBottom {
+            let clip = harness.scrollView.contentView
+            clip.scroll(to: NSPoint(x: clip.bounds.minX, y: clip.bounds.minY - 600))
+            harness.scrollView.reflectScrolledClipView(clip)
+            try await harness.settled()
+        }
+        let reading = harness.visibleWindowFrames()
+        try #require(reading.count >= 3)
+        harness.interaction.findInChannel()
+        try await harness.waitUntil { find.isPresented && harness.findField != nil }
+        try await harness.settled()
+        for (id, rect) in reading {
+            let after = harness.windowFrames[id] ?? .null
+            #expect(abs(after.minY - rect.minY) < 0.5, "Opening moved \(id) from \(rect) to \(after)")
+        }
+        find.close()
+        try await harness.settled()
+        for (id, rect) in reading {
+            let after = harness.windowFrames[id] ?? .null
+            #expect(abs(after.minY - rect.minY) < 0.5, "Closing moved \(id) from \(rect) to \(after)")
+        }
+    }
+
+    @MainActor
+    @Test(arguments: [false, true])
+    func findProgressAndErrorsLeaveTheReadersMessagesInPlace(atBottom: Bool) async throws {
+        let find = TranscriptFind()
+        let messages = (61...90).map { sequence in
+            var message = transcriptTestMessage(sequence)
+            if sequence.isMultiple(of: 2) { message.sender = .user }
+            return message
+        }
+        let harness = try await TranscriptHarness(messages: messages,
+                                                  history: (1...60).map(transcriptTestMessage),
+                                                  holdsHistory: true, find: find)
+        defer { harness.close() }
+        if !atBottom {
+            let clip = harness.scrollView.contentView
+            clip.scroll(to: NSPoint(x: clip.bounds.minX, y: clip.bounds.minY - 600))
+            harness.scrollView.reflectScrolledClipView(clip)
+            try await harness.settled()
+        }
+        try #require(harness.visibleWindowFrames().count >= 3)
+        harness.interaction.findInChannel()
+        try await harness.waitUntil { find.isPresented && harness.findField != nil }
+        try await harness.settled()
+        let reading = harness.visibleWindowFrames()
+        try #require(reading.count >= 3)
+
+        find.query = "unmatched-find-progress"
+        try await harness.waitUntil { find.isSearching }
+        try await harness.settled()
+        for (id, rect) in reading {
+            let after = harness.windowFrames[id] ?? .null
+            #expect(abs(after.minY - rect.minY) < 0.5, "Progress moved \(id) from \(rect) to \(after)")
+        }
+        await find.searchOlder { _ in throw ChannelAPIError.http(status: 503, message: "Unavailable") }
+        try #require(find.error != nil)
+        try await harness.settled()
+        for (id, rect) in reading {
+            let after = harness.windowFrames[id] ?? .null
+            #expect(abs(after.minY - rect.minY) < 0.5, "Error moved \(id) from \(rect) to \(after)")
+        }
+        find.query = ""
+        try await harness.settled()
+        for (id, rect) in reading {
+            let after = harness.windowFrames[id] ?? .null
+            #expect(abs(after.minY - rect.minY) < 0.5, "Clearing moved \(id) from \(rect) to \(after)")
+        }
+        #expect(harness.readRequests == 0)
+    }
+
+    @MainActor
+    @Test func findKeepsOwnershipOfTheReadingPositionWhenMessagesArrive() async throws {
+        let find = TranscriptFind()
+        let harness = try await TranscriptHarness(messages: (1...90).map(transcriptTestMessage), find: find)
+        defer { harness.close() }
+        harness.interaction.findInChannel()
+        try await harness.waitUntil { find.isPresented && harness.findField != nil }
+        try await harness.settled()
+        let reading = harness.visibleWindowFrames()
+        try #require(reading.count >= 3)
+        harness.push(transcriptTestMessage(91), revision: 2)
+        try await harness.waitUntil { harness.store.messages.last?.sequence == 91 }
+        try await harness.settled()
+        for (id, rect) in reading {
+            let after = harness.windowFrames[id] ?? .null
+            #expect(abs(after.minY - rect.minY) < 0.5, "Arrival moved \(id) from \(rect) to \(after)")
+        }
+        #expect(harness.readRequests == 0)
+        harness.interaction.jumpToLatest()
+        try await harness.waitUntil { !find.blocksRead && abs(harness.bottomGap) < 2 }
+    }
+
+    @MainActor
+    @Test(arguments: [false, true])
+    func artifactViewerSuppressesFindUntilTheTranscriptIsVisible(startsOpen: Bool) async throws {
+        let find = TranscriptFind()
+        let harness = try await TranscriptHarness(messages: (1...30).map(transcriptTestMessage), find: find)
+        defer { harness.close() }
+        if startsOpen {
+            harness.interaction.findInChannel()
+            try await harness.waitUntil { find.isPresented && harness.findField != nil }
+        }
+        try await harness.settled()
+        let revealToken = harness.interaction.revealRequestToken
+        harness.interaction.isArtifactViewerPresented = true
+        try await harness.waitUntil { !find.isPresented && harness.findField == nil }
+        harness.interaction.findInChannel()
+        harness.interaction.findNext(1)
+        try await harness.settled()
+        #expect(!find.isPresented && harness.findField == nil)
+        #expect(harness.interaction.revealRequestToken == revealToken)
+        #expect(harness.readRequests == 0)
+
+        harness.interaction.isArtifactViewerPresented = false
+        harness.interaction.findInChannel()
+        try await harness.waitUntil { find.isPresented && harness.findField != nil }
+    }
+
+    @MainActor
+    @Test(arguments: [false, true])
+    func clearingFindKeepsRevealedMembershipLinesAndTheReadersPlace(closes: Bool) async throws {
+        let memberships = (1...8).map { sequence in
+            ChannelMessage(id: "m\(sequence)", sequence: sequence, timestamp: "2026-10-22T12:00:00Z",
+                           sender: .system, content: .system(.init(type: "member_joined",
+                               member: .init(id: "member\(sequence)", name: "Member \(sequence)"))))
+        }
+        let messages = memberships + (9...30).map { sequence in
+            var message = transcriptTestMessage(sequence)
+            if sequence.isMultiple(of: 2) { message.sender = .user }
+            return message
+        }
+        let find = TranscriptFind()
+        let harness = try await TranscriptHarness(messages: messages, find: find)
+        defer { harness.close() }
+        harness.interaction.findInChannel()
+        try await harness.waitUntil { find.isPresented && harness.findField != nil }
+        find.query = "joined"
+        try await harness.waitUntil { memberships.allSatisfy { harness.capture.frames[$0.id]?.sequence == $0.sequence } }
+        try await harness.settled()
+        let reading = harness.visibleWindowFrames()
+        try #require(reading.count >= 3)
+        let first = try #require(harness.windowFrames["m1"])
+        #expect(first.minY >= 57, "The oldest matching line is hidden beneath Find's status row: \(first)")
+        if closes { find.close() } else { find.query = "" }
+        try await harness.settled()
+        for (id, rect) in reading {
+            let after = harness.windowFrames[id] ?? .null
+            #expect(abs(after.minY - rect.minY) < 0.5, "Clearing Find moved \(id) from \(rect) to \(after)")
+        }
+        #expect(find.highlights.isEmpty)
+        #expect(memberships.allSatisfy { harness.capture.frames[$0.id]?.sequence == $0.sequence })
         #expect(harness.readRequests == 0)
     }
 
@@ -2682,6 +2860,23 @@ private final class TranscriptHarness {
     var frames: [String: TranscriptMessageFrame] {
         let top = scrollView.contentView.bounds.minY + scrollView.contentInsets.top
         return capture.frames.mapValues { TranscriptCoordinates.viewportFrame($0, top: top) }
+    }
+
+    var windowFrames: [String: CGRect] {
+        capture.frames.mapValues(\.windowRect)
+    }
+
+    var findField: NSSearchField? {
+        func find(in view: NSView) -> NSSearchField? {
+            view as? NSSearchField ?? view.subviews.lazy.compactMap(find(in:)).first
+        }
+        return window.contentView.flatMap(find(in:))
+    }
+
+    func visibleWindowFrames() -> [String: CGRect] {
+        windowFrames.filter { id, rect in
+            capture.frames[id]?.sequence ?? 0 > 0 && rect.minY >= 0 && rect.maxY <= window.contentLayoutRect.height - 100
+        }
     }
 
     func isVisible(_ id: String) -> Bool {

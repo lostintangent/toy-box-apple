@@ -10,6 +10,10 @@ struct TranscriptMarkdown: View {
     /// message costs to scroll into view, so transcript rows turn this on when the pointer first
     /// reaches them.
     var selectable = true
+    var findHighlight: TranscriptFindHighlight?
+    var bodySize: CGFloat = 14
+    var codeSize: CGFloat = 12
+    var lineSpacing: CGFloat = 3
     @Environment(\.channelTextScale) private var textScale
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.colorSchemeContrast) private var contrast
@@ -17,20 +21,21 @@ struct TranscriptMarkdown: View {
 
     var body: some View {
         let blocks = MarkdownBlock.parse(content)
+        let highlights = findHighlight.map { TranscriptMarkdownHighlights(blocks: blocks, highlight: $0) }
         Group {
             // Most messages are one paragraph, so they skip the block stack.
             if blocks.count == 1, case .paragraph(let text) = blocks[0].kind {
-                blockView(.paragraph(text))
+                blockView(.init(id: 0, kind: .paragraph(text)), highlights: highlights)
             } else {
                 VStack(alignment: .leading, spacing: 10 * textScale) {
                     ForEach(blocks) { block in
-                        blockView(block.kind)
+                        blockView(block, highlights: highlights)
                     }
                 }
             }
         }
-        .font(.system(size: 14 * textScale))
-        .lineSpacing(3 * textScale)
+        .font(.system(size: bodySize * textScale))
+        .lineSpacing(lineSpacing * textScale)
         .modifier(TranscriptTextSelection(enabled: selectable))
         .environment(\.openURL, OpenURLAction { url in
             let resolved = url.scheme == nil ? url.absoluteURL(relativeTo: baseURL) : url
@@ -42,28 +47,30 @@ struct TranscriptMarkdown: View {
     }
 
     @ViewBuilder
-    private func blockView(_ kind: MarkdownBlock.Kind) -> some View {
-        switch kind {
+    private func blockView(_ block: MarkdownBlock, highlights: TranscriptMarkdownHighlights?) -> some View {
+        switch block.kind {
         case .paragraph(let text):
-            Text(inline(text))
+            Text(inline(text, fragment: .init(block: block.id), highlights: highlights))
                 .fixedSize(horizontal: false, vertical: true)
         case .heading(let level, let text):
             let size: CGFloat = level == 1 ? 23 : level == 2 ? 19 : 16
-            Text(inline(text, size: size))
+            Text(inline(text, size: size, fragment: .init(block: block.id), highlights: highlights))
                 .font(.system(size: size * textScale, weight: .semibold))
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityAddTraits(.isHeader)
         case .listItem(let marker, let text, let depth):
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(marker).foregroundStyle(.secondary).textSelection(.disabled)
+                Text(highlights?.applying(to: AttributedString(marker), fragment: .init(block: block.id))
+                     ?? AttributedString(marker)).foregroundStyle(.secondary).textSelection(.disabled)
                     .frame(minWidth: 14, alignment: .trailing)
-                Text(inline(text)).fixedSize(horizontal: false, vertical: true)
+                Text(inline(text, fragment: .init(block: block.id, column: 1), highlights: highlights))
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .padding(.leading, CGFloat(depth) * 16)
         case .quote(let text):
             HStack(alignment: .top, spacing: 10) {
                 RoundedRectangle(cornerRadius: 2).fill(.tertiary).frame(width: 3)
-                Text(inline(text)).foregroundStyle(.secondary)
+                Text(inline(text, fragment: .init(block: block.id), highlights: highlights)).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
             .fixedSize(horizontal: false, vertical: true)
@@ -82,9 +89,10 @@ struct TranscriptMarkdown: View {
                 .font(.system(size: 11 * textScale))
                 // A nested scroll view is costly to build, so only a block too wide to fit gets one.
                 ViewThatFits(in: .horizontal) {
-                    codeText(code)
+                    codeText(code, block: block.id, highlights: highlights)
                     ScrollView(.horizontal) {
-                        codeText(code).frame(maxWidth: .infinity, alignment: .leading)
+                        codeText(code, block: block.id, highlights: highlights)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
             }
@@ -96,7 +104,9 @@ struct TranscriptMarkdown: View {
                     ForEach(rows.indices, id: \.self) { row in
                         GridRow {
                             ForEach(0..<(rows.map(\.count).max() ?? 0), id: \.self) { column in
-                                Text(inline(column < rows[row].count ? rows[row][column] : "", size: 13))
+                                Text(inline(column < rows[row].count ? rows[row][column] : "", size: 13,
+                                            fragment: .init(block: block.id, row: row, column: column),
+                                            highlights: highlights))
                                     .font(.system(size: 13 * textScale,
                                                   weight: row == 0 ? .semibold : .regular))
                                     .frame(minWidth: 64, maxWidth: 280, alignment: .leading)
@@ -118,16 +128,83 @@ struct TranscriptMarkdown: View {
         }
     }
 
-    private func codeText(_ code: String) -> some View {
-        Text(verbatim: code)
-            .font(.system(size: 12 * textScale, design: .monospaced))
+    private func codeText(_ code: String, block: Int, highlights: TranscriptMarkdownHighlights?) -> some View {
+        let text = highlights.map { Text($0.applying(to: AttributedString(code), fragment: .init(block: block))) }
+            ?? Text(verbatim: code)
+        return text
+            .font(.system(size: codeSize * textScale, design: .monospaced))
             .fixedSize(horizontal: true, vertical: true)
     }
 
-    private func inline(_ text: String, size: CGFloat = 14) -> AttributedString {
-        transcriptInlineMarkdown(text, agents: agents, textScale: textScale, fontSize: size,
-                                 mentions: .init(surface: surface, isDark: colorScheme == .dark,
-                                                 isContrastIncreased: contrast == .increased))
+    private func inline(_ text: String, size: CGFloat? = nil, fragment: TranscriptMarkdownText.Fragment,
+                        highlights: TranscriptMarkdownHighlights?) -> AttributedString {
+        let result = transcriptInlineMarkdown(text, agents: agents, textScale: textScale,
+                                              fontSize: size ?? bodySize, codeSize: codeSize,
+                                              mentions: .init(surface: surface, isDark: colorScheme == .dark,
+                                                              isContrastIncreased: contrast == .increased))
+        return highlights?.applying(to: result, fragment: fragment) ?? result
+    }
+}
+
+/// One rendered stream with offsets into each independently laid-out Text, including table cells.
+struct TranscriptMarkdownText {
+    struct Fragment: Hashable {
+        var block: Int
+        var row = 0
+        var column = 0
+    }
+
+    private(set) var text = ""
+    private(set) var offsets: [Fragment: Int] = [:]
+
+    init(_ blocks: [MarkdownBlock]) {
+        for block in blocks {
+            if case .rule = block.kind { continue }
+            if !text.isEmpty { text += "\n" }
+            switch block.kind {
+            case .paragraph(let value), .heading(_, let value), .quote(let value):
+                append(parsedTranscriptInlineMarkdown(value), fragment: .init(block: block.id))
+            case .listItem(let marker, let value, _):
+                append(AttributedString(marker), fragment: .init(block: block.id))
+                text += " "
+                append(parsedTranscriptInlineMarkdown(value), fragment: .init(block: block.id, column: 1))
+            case .code(_, let code):
+                append(AttributedString(code), fragment: .init(block: block.id))
+            case .table(let rows):
+                for (row, cells) in rows.enumerated() {
+                    if row > 0 { text += "\n" }
+                    for (column, cell) in cells.enumerated() {
+                        if column > 0 { text += "  " }
+                        append(parsedTranscriptInlineMarkdown(cell),
+                               fragment: .init(block: block.id, row: row, column: column))
+                    }
+                }
+            case .rule:
+                break
+            }
+        }
+    }
+
+    private mutating func append(_ value: AttributedString, fragment: Fragment) {
+        offsets[fragment] = text.utf16.count
+        text += String(value.characters)
+    }
+}
+
+struct TranscriptMarkdownHighlights {
+    let highlight: TranscriptFindHighlight
+    let document: TranscriptMarkdownText
+    let ranges: [Range<Int>]
+
+    init(blocks: [MarkdownBlock], highlight: TranscriptFindHighlight) {
+        self.highlight = highlight
+        document = TranscriptMarkdownText(blocks)
+        ranges = TranscriptFindPattern(highlight.query).ranges(in: document.text)
+    }
+
+    func applying(to value: AttributedString, fragment: TranscriptMarkdownText.Fragment) -> AttributedString {
+        guard let offset = document.offsets[fragment] else { return value }
+        return highlight.applying(to: value, ranges: ranges, offset: offset)
     }
 }
 
@@ -321,12 +398,12 @@ private extension NSRegularExpression {
 }
 
 func transcriptInlineMarkdown(_ text: String, agents: [ChannelAgent], textScale: CGFloat = 1,
-                              fontSize: CGFloat = 14, mentions: TranscriptMentionInk = .init()) -> AttributedString {
-    var result = (try? AttributedString(markdown: text, options: .init(
-        interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(text)
+                              fontSize: CGFloat = 14, codeSize: CGFloat = 12,
+                              mentions: TranscriptMentionInk = .init()) -> AttributedString {
+    var result = parsedTranscriptInlineMarkdown(text)
     for run in result.runs {
         if run.inlinePresentationIntent?.contains(.code) == true {
-            result[run.range].font = .system(size: 12 * textScale, design: .monospaced)
+            result[run.range].font = .system(size: codeSize * textScale, design: .monospaced)
             result[run.range].backgroundColor = .primary.opacity(0.06)
         }
     }
@@ -351,6 +428,11 @@ func transcriptInlineMarkdown(_ text: String, agents: [ChannelAgent], textScale:
         }
     }
     return result
+}
+
+private func parsedTranscriptInlineMarkdown(_ text: String) -> AttributedString {
+    (try? AttributedString(markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
+        ?? AttributedString(text)
 }
 
 struct MarkdownBlock: Identifiable, Equatable {
