@@ -27,6 +27,9 @@ struct ToyBoxDesktopApp: App {
                 UserDefaults.standard.setVolatileDomain(arguments, forName: UserDefaults.argumentDomain)
             }
             let model = AppModel(launchOptions: options)
+            model.quickAsk.setContent(
+                QuickAskView(lastUsedChannel: { model.lastUsedChannelID }).environment(model)
+            )
             ChannelIntentsContext.register(model)
             _model = ViewState(wrappedValue: model)
         } catch {

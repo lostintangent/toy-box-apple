@@ -46,7 +46,13 @@ struct MenuBarInbox: View {
             }
         }
         .onChange(of: status) { _, status in
-            if isPresented { inbox.update(status) }
+            guard isPresented else { return }
+            inbox.update(status)
+            if let session = replySession,
+               let request = inbox.requests.first(where: { $0.id == session.store.id }),
+               request.state == .answered || request.state == .newerRequest {
+                session.invalidateRequest()
+            }
         }
         .onChange(of: model.serverURL) { _, _ in
             replySession?.cancelOpenOnConfirmation()
