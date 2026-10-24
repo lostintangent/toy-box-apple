@@ -1981,7 +1981,8 @@ General Settings adds "Open at Login", off by default, with the secondary descri
 `SMAppService.mainApp` status, not a separately saved Boolean, and refresh it when Settings
 becomes active. Enabling registers the main app and disabling unregisters it. A pending request
 for approval must visibly say "Approval Required", followed by "Allow Toy Box in System Settings
-to open at login." and "Open Login Items…". It must remain possible to cancel the registration.
+to open at login." and "Open Login Items…". Keep the toggle off until enabled, with a secondary
+"Cancel Request" action to unregister the pending request.
 Never claim a pending or failed registration is enabled. Unavailable registration and failed
 changes show an actionable inline explanation rather than silently resetting a checkmark.
 
@@ -2001,7 +2002,7 @@ canonical request sequence. The menu never fetches history, changes selection or
 
 | Order | Content |
 | --- | --- |
-| Waiting requests | One item per waiting channel: "[Channel]: [plain-text question]". Collapse whitespace in the quote and shorten at a word boundary with an ellipsis when needed. Keep the complete quote, channel and requester in the item's help. While resolving the quote, use "[Channel]: Needs your reply" |
+| Waiting requests | One item per waiting channel: "[Channel]: [plain-text question]". Collapse whitespace and shorten the title at a word boundary to about 60 characters, including an ellipsis. Keep the complete quote, channel and requester in the item's help. While resolving the quote, use "[Channel]: Needs your reply" |
 | No requests | A disabled "Nothing needs you" row instead of an empty region |
 | Cached offline content | Keep cached request items, preceded by a disabled "May be out of date". Without usable content, show "Connect to Toy Box", not "Nothing needs you" |
 | Commands | One separator, then "Quick Send…" and "New Channel…". These open the existing panel and `ManagementPresenter` flow |
@@ -2098,7 +2099,7 @@ not message volume. Requests follow the menu bar's newest-first ordering.
 | --- | --- |
 | Small | Header/count and the first request. A 24-point agent avatar precedes the channel name, a two-line quote and secondary agent/age. A quiet "+N more" accounts for remaining requests |
 | Medium | Header/count and up to two compact request rows, with 8 points between rows and a single-line quote per row. Overflow uses "+N more" |
-| Large | Header/count and up to four request rows, with 12 points between rows and a single-line quote per row. Overflow uses "+N more" |
+| Large | Header/count and up to five request rows, with 12 points between rows and a single-line quote per row. Overflow uses "+N more", based on the number of rows actually available in the snapshot |
 
 In Medium and Large, each request's content is one Open link, with a separate trailing Reply
 target. WidgetKit gives Small one target for the whole tile, which opens its top request, with
