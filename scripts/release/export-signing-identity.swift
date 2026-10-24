@@ -16,7 +16,7 @@ func check(_ status: OSStatus, operation: String) {
 
 guard CommandLine.arguments.count == 3,
       let password = ProcessInfo.processInfo.environment["P12_PASSWORD"], !password.isEmpty else {
-    fail("Use setup-release-secrets to export a pinned signing identity.")
+    fail("Use bun run setup-release-secrets to export a pinned signing identity.")
 }
 let fingerprint = CommandLine.arguments[1].uppercased()
 let destination = URL(fileURLWithPath: CommandLine.arguments[2])

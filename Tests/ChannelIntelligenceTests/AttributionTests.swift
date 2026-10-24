@@ -18,7 +18,7 @@ struct AttributionTests {
             T.message(2, from: "ada-engineer", "@moss Read positions now only move forward, so an older tab can't lower them."),
             T.message(3, from: "moss-reviewer", "@lead All four review changes are in 4c1d9e0, pushed to main, and all 245 tests pass."),
             T.message(4, "Done. The repository is public. Iris also confirmed the app builds as a universal binary."),
-            T.message(5, "I changed script/validate to also build a test copy with its own bundle ID."),
+            T.message(5, "I changed bun run validate to also build a test copy with its own bundle ID."),
             T.message(6, "@iris the user decided the app requires macOS 27 and Apple Silicon only. Please switch the package first."),
             T.message(7, from: "ada-engineer", "Moss, I changed only the spec's platform line. Its history paragraphs still need your pass."),
             T.message(8, from: "moss-reviewer", "Verified again on a clean checkout: all 245 tests pass on main."),
@@ -140,17 +140,17 @@ struct AttributionTests {
 
     @Test func theReaderNeverOpensAChange() throws {
         let assembly = try assemble([
-            ("You changed script/validate to build a test copy.", [5]),
+            ("You changed bun run validate to build a test copy.", [5]),
             ("The user decided the app requires macOS 27.", [6]),
-            ("Lead changed script/validate to build a test copy with its own bundle ID.", [5]),
+            ("Lead changed bun run validate to build a test copy with its own bundle ID.", [5]),
         ])
-        #expect(assembly.result.catchUp?.changes.map(\.text) == ["Lead changed script/validate to build a test copy with its own bundle ID."])
+        #expect(assembly.result.catchUp?.changes.map(\.text) == ["Lead changed bun run validate to build a test copy with its own bundle ID."])
         #expect(assembly.rejected.map(\.reason) == [.misattributed, .misattributed])
     }
 
     @Test func firstPersonMeansCopied() throws {
-        let assembly = try assemble([("I changed script/validate to build a test copy.", [5])])
-        #expect(assembly.rejected == [CatchUpRejection(text: "I changed script/validate to build a test copy.", reason: .copied)])
+        let assembly = try assemble([("I changed bun run validate to build a test copy.", [5])])
+        #expect(assembly.rejected == [CatchUpRejection(text: "I changed bun run validate to build a test copy.", reason: .copied)])
         #expect(Grounding.isFirstPerson("We checked the real window."))
         #expect(Grounding.isFirstPerson("Lead said our build is green."))
         #expect(!Grounding.isFirstPerson("Iris moved the US English strings."))

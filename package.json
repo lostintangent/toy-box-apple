@@ -1,0 +1,32 @@
+{
+  "name": "toy-box-apple",
+  "private": true,
+  "packageManager": "bun@1.4.4",
+  "scripts": {
+    "run": "bun scripts/dev/run.ts",
+    "test": "bun scripts/dev/test.ts",
+    "validate": "bun scripts/dev/validate.ts",
+    "snapshot": "bun scripts/dev/snapshot.ts",
+    "benchmark": "bun scripts/dev/benchmark.ts",
+    "icon": "bun scripts/dev/icon.ts",
+    "demo": "bun scripts/fixtures/demo.ts",
+    "history-demo": "bun scripts/fixtures/history-demo.ts",
+    "perf-demo": "bun scripts/fixtures/perf-demo.ts",
+    "generate-cron-fixtures": "bun scripts/fixtures/generate-cron-fixtures.ts",
+    "release": "bun scripts/release/release.ts",
+    "sign-app": "bun scripts/release/sign-app.ts",
+    "embed-sparkle": "bun scripts/release/embed-sparkle.ts",
+    "sparkle-tools": "bun scripts/release/sparkle-tools.ts",
+    "generate-appcast": "bun scripts/release/generate-appcast.ts",
+    "check-update-version": "bun scripts/release/check-update-version.ts",
+    "setup-release-secrets": "bun scripts/release/setup-release-secrets.ts",
+    "setup-update-secrets": "bun scripts/release/setup-update-secrets.ts",
+    "test:release": "bun test scripts/release",
+    "lint:workflows": "go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/bun": "1.4.4",
+    "typescript": "6.0.2"
+  }
+}

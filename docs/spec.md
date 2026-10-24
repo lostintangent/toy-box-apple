@@ -89,7 +89,7 @@ isolated from the user's app.
 Only the certificate owner runs the one-time setup:
 
 ```sh
-./script/setup-release-secrets SHA1 APPLE_ID TEAM_ID
+bun run setup-release-secrets SHA1 APPLE_ID TEAM_ID
 ```
 
 It uses an Apple ID and an app-specific password from account.apple.com. Its silent prompt reads
@@ -106,13 +106,13 @@ in sync with the setup arguments when rotating identities. CI stores the notariz
 temporary keychain profile. Missing or rejected credentials fail the release explicitly.
 
 Agents never run setup with real credentials or read signing keys and passwords. The credential-free
-regression suite, `python3 script/test-release-secrets.py`, replaces every credential, signing and
+regression suite, `bun run test:release`, replaces every credential, signing and
 network command with a fake and runs in CI. For a local release, set `SIGNING_IDENTITY=SHA1`,
-`BUILD_NUMBER=N` and `NOTARY_PROFILE=toy-box-channels-notary` when invoking `script/release vX.Y.Z`.
+`BUILD_NUMBER=N` and `NOTARY_PROFILE=toy-box-channels-notary` when invoking `bun run release vX.Y.Z`.
 Without a notary profile, the archive is named `SIGNED-UNNOTARIZED` and is never published.
-Notarization response tests also run macOS's real `plutil` against notarytool-shaped JSON, including
-accepted, rejected, malformed and missing-status responses. The release script validates JSON by
-extracting its status, not by treating it as a property list with `plutil -lint`.
+Notarization response tests parse notarytool-shaped JSON, including accepted, rejected, malformed
+and missing-status responses. The release script uses Bun's native JSON parser and requires a
+string status before accepting a response.
 
 ### In-place updates
 
@@ -124,14 +124,14 @@ app, verifying each component strictly and never using `--deep`. Developer ID re
 runtime and secure timestamps throughout. Ad-hoc development signing does not enable hardened
 runtime, because library validation cannot match Team IDs between ad-hoc-signed binaries.
 
-Only `script/release` adds the production `SUFeedURL` and `SUPublicEDKey`. The stable feed is
+Only `bun run release` adds the production `SUFeedURL` and `SUPublicEDKey`. The stable feed is
 `https://github.com/lostintangent/toy-box-apple/releases/latest/download/appcast.xml`, and every
 enclosure points at that version's GitHub release asset URL. Development, validation,
 snapshot and test bundles have no feed or verification key and never start an updater. Release
 bundles enable automatic checking without Sparkle's permission prompt, but leave automatic
 installation off by default. Both choices remain user-configurable through Sparkle.
 
-The user runs `./script/setup-update-secrets [OWNER/REPO]` once. Sparkle generates or reuses the
+The user runs `bun run setup-update-secrets [OWNER/REPO]` once. Sparkle generates or reuses the
 app-specific `dev.toybox.desktop` Keychain account, without touching its global default key.
 Setup uploads the exported key as `SPARKLE_ED_PRIVATE_KEY`, configures `SPARKLE_ED_PUBLIC_KEY` as a
 public repository variable, and removes the temporary export. Keep a secure backup of the Keychain
@@ -139,7 +139,7 @@ key. Existing installs trust its public half, so losing or casually rotating it 
 chain. Agents never run this setup with real credentials or read that key.
 
 Before v0.1.1, the user approved renaming the old `dev.toybox.channels.mac` identity and its
-unshipped Sparkle key. Rerun `./script/setup-update-secrets` to provision the new account and replace
+unshipped Sparkle key. Rerun `bun run setup-update-secrets` to provision the new account and replace
 the repository's update signing configuration. Only after setup succeeds, the user removes the
 obsolete Keychain item with this exact command:
 
@@ -152,7 +152,7 @@ Agents never execute this deletion or access the real keys. This rotation is saf
 certificate and Apple ID app-specific password are unchanged. The renamed app needs new macOS
 notification and microphone grants, and Computer Use needs approval for `dev.toybox.desktop.test`.
 
-After notarization and stapling, `script/generate-appcast` uses Sparkle's checksum-pinned tools to
+After notarization and stapling, `bun run generate-appcast` uses Sparkle's checksum-pinned tools to
 sign the finished archive and the whole feed with Ed25519. The archive signature, length, URL,
 machine and human-readable versions, and minimum macOS version are checked before publishing.
 The feed signature is independently verified with `sign_update`. Archive verification is required
@@ -166,11 +166,18 @@ malformed prior metadata fails the release instead of allowing a downgrade. The 
 release bootstraps from 0.1.0, which has no feed and must be upgraded manually. Local releases can
 set `PREVIOUS_APPCAST` to apply the same monotonicity guard.
 
-`script/test-sparkle.py` exercises packaging, inside-out signing, key setup, failure propagation
+`bun run test:release` exercises packaging, inside-out signing, key setup, failure propagation
 and numeric build ordering without real credentials. Its macOS native checks verify the bundled
 architectures and signatures. A real `generate_appcast`/`sign_update` round trip uses an isolated
 throwaway CryptoKit key file and verifies rejection of a modified archive and feed, never accessing the
 default Sparkle Keychain entry.
+
+Tooling is grouped under `scripts/dev/`, `scripts/release/` and `scripts/fixtures/`, with every
+entry point exposed by the root `package.json`. Bun 1.4.4 is pinned in the package metadata and CI,
+and setup-bun is commit-pinned on both runner platforms. Scripts use TypeScript, Bun Shell, native
+file and XML APIs, and `bun test`. The sole `.sh` helper uses Bash's silent `read -rs` for the
+user-only credential prompt. Native Swift helpers retain Security-framework identity export and
+AppKit icon rendering. Local builds remain Command Line Tools only.
 
 ## Protocol (v1)
 
@@ -303,7 +310,7 @@ keeps no copy of it.
 
 ## Performance budgets
 
-`script/benchmark` checks these on a release build against `script/perf-demo.mjs`, with 100
+`bun run benchmark` checks these on a release build against `bun run perf-demo`, with 100
 messages loaded and again with every older page loaded. It times the main run loop three ways:
 
 - **Busy**: every pass from waking until the loop is about to sleep, added up.
@@ -404,7 +411,7 @@ displacement at 1280 x 840 and 760 x 560 in both appearances.
 Builds before 2026-10-22 were linked with an SDK stamp of 15.0, so macOS 27 drew them in
 compatibility mode without Liquid Glass. That, plus the opaque unified toolbar band added during
 the visual pass, is why the app read as dated. The app now requires macOS 27 on Apple Silicon,
-links against the installed SDK, and `script/validate` fails when the bundle's SDK stamp is below
+links against the installed SDK, and `bun run validate` fails when the bundle's SDK stamp is below
 27. There is no fallback appearance and no availability branching in views.
 
 **Layers.** Content is one opaque layer made of the sidebar list, the conversation and the
@@ -1776,7 +1783,7 @@ no extra window opens. Activation or a shown window, from a reopen, Open Channel
 extra or a notification, makes it an ordinary app. Every other launch, Dock click and reopen is
 unchanged.
 
-`script/run` generates `Contents/Resources/Metadata.appintents` by running Xcode's
+`bun run run` generates `Contents/Resources/Metadata.appintents` by running Xcode's
 `appintentsmetadataprocessor` directly over the const values SwiftPM already emits, so it needs
 Xcode installed but never `xcodebuild`. Titles, phrases and parameter names must stay literals.
 The system only indexes a bundle outside `/tmp` that has launched once, and parameterized phrases
@@ -1816,11 +1823,11 @@ antenna for one warm accent, and it never shows text or a hash mark.
 | Background | Vertical linear gradient `#1C4090` to `#071937`. The dark specialization is `#122656` to `#040B1A` |
 | Head group (back) | Speech bubble body x 193...831, y 305.2...778.2, corner radius 187, with its tail to x 261.2, y 879.4 at the lower left. The body is centered on x 512, and the whole robot, antenna to tail, on y 512. Antenna stem 39.6 x 121 at x 492.2, y 210.6. Fill `#F3EFE6`, `#E6E2DA` in dark. Glass on, translucency 0.3, neutral shadow 0.5 |
 | Face group (front) | Visor 492.8 x 277.2 at x 265.6, y 402, radius 138.6, `#0A1530`, not glass. Eyes 61.6 x 110 capsules at x 391 and 571.4, y 468. Smile is a radius-66 arc from x 465.8 to 558.2 at y 617.6 with a 26.4 pt round stroke. Eyes and smile are `#67E8F9`. Antenna ball radius 50.6 at 512, 195.2 in gold `#FACC15`, glass |
-| Shipped artwork | `Resources/AppIcon.icns`, committed. `script/icon` renders the Default appearance with Icon Composer's `ictool` and places it on Apple's grid: an 824 pt body inset 100 pt, with a black 22% shadow offset 10 pt down and blurred 34 pt. That matches Apple's own `.icns` files within a pixel. Output is byte-identical across runs |
+| Shipped artwork | `Resources/AppIcon.icns`, committed. `bun run icon` renders the Default appearance with Icon Composer's `ictool` and places it on Apple's grid: an 824 pt body inset 100 pt, with a black 22% shadow offset 10 pt down and blurred 34 pt. That matches Apple's own `.icns` files within a pixel. Output is byte-identical across runs |
 | Builds | Local and GitHub bundles copy the same `.icns` and set `CFBundleIconFile`. No build renders the icon, so neither needs Icon Composer or `actool`. macOS 27 shows it at the system size with no gray plate |
 | Not shipped yet | The source also defines Dark, Clear and Tinted appearances. They apply only to a compiled `Assets.car`, which needs `actool`. Adding one later must ship in both local and GitHub builds, never in only one |
 
-Change the artwork only in the `.icon`, then run `script/icon` and commit both files together.
+Change the artwork only in the `.icon`, then run `bun run icon` and commit both files together.
 Check 16 and 32 px on light and dark before accepting a change. The 16 px icon must still read as a
 navy tile with a white speech-bubble head.
 
@@ -1865,7 +1872,7 @@ have not been independently verified by Designer.
 | Menu names | Overview, Shell | Lead activated Channel Actions and the title-bearing member/routine menus in the rebuilt window. A native Settings read confirms the notifications toggle, "Requests for your response" and "Completed tasks", with the two subordinate toggles dimmed while notifications are off. That toggle has since been renamed "Allow notifications" in source, and the new label has not had a native read. Spoken VoiceOver traversal remains unverified |
 | Missing-profile avatar | Shell | Closed. The fallback initial uses primary ink on its cyan field. Rendered regressions pass the 4.5:1 floor for missing and invalid-mark profiles in both appearances. Supplied marks retain contrasting black/white ink |
 
-Designer independently passed the selected regressions using `script/test` with the filters
+Designer independently passed the selected regressions using `bun run test` with the filters
 `'TranscriptTests|ManagementTests'`, `'ComposerTests|ShellTests'` and
 `'SendAttemptTests|ComposerTests'`.
 This verifies the implemented source/test remedies above, not spoken VoiceOver output or

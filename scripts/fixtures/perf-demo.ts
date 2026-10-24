@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-// The benchmark fixture that script/benchmark starts for each scenario. It serves studio-demo, the
+// The benchmark fixture that bun run benchmark starts for each scenario. It serves studio-demo, the
 // 480-message history-demo and the 300 long messages of scroll-demo on one port, through the
 // reference demo server imported read-only, and adds two routes the benchmark drives:
 //
@@ -16,27 +16,26 @@
 // What these routes stream stays out of the reference server's history, so a reconnect drops it.
 // Each benchmark launch starts a fresh fixture.
 //
-// Usage: bun script/perf-demo.mjs [path to toy-box-Minecraft]. TOY_BOX_PERF_PORT sets the port (3292).
-import { readFileSync } from "node:fs";
+// Usage: bun run perf-demo [path to toy-box-Minecraft]. TOY_BOX_PERF_PORT sets the port (3292).
 import http from "node:http";
 import { resolve } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
-import { createHistoryFixture, historyChannelID, writeHistoryPage } from "./history-fixture.mjs";
-import { createScrollFixture, scrollChannelID, writeScrollImage } from "./scroll-fixture.mjs";
+import { createHistoryFixture, historyChannelID, writeHistoryPage } from "./history-fixture.ts";
+import { createScrollFixture, scrollChannelID, writeScrollImage } from "./scroll-fixture.ts";
+import { root } from "../lib.ts";
+import { referenceFactory, type Agent, type Message, type Response, type Snapshot, type Status } from "./types.ts";
 
-const root = fileURLToPath(new URL("..", import.meta.url));
 const reference = resolve(process.argv[2] ?? resolve(root, "../toy-box-Minecraft"));
-const { createDemoServer } = await import(pathToFileURL(resolve(reference, "tools/demo-server.ts")).href);
-const source = JSON.parse(readFileSync(resolve(reference, "fixtures/channel-snapshot.json"), "utf8"));
+const createDemoServer = await referenceFactory(reference);
+const source: Snapshot = await Bun.file(resolve(reference, "fixtures/channel-snapshot.json")).json();
 const port = Number(process.env.TOY_BOX_PERF_PORT ?? 3292);
 if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("Invalid TOY_BOX_PERF_PORT.");
 const now = Date.now();
 const origin = `http://127.0.0.1:${port}`;
 const { snapshot: historySnapshot, history } = createHistoryFixture(source, { now, origin });
 const { snapshot: scrollSnapshot, history: scrollHistory } = createScrollFixture(source, { now, origin });
-const histories = { [historyChannelID]: history, [scrollChannelID]: scrollHistory };
+const histories: Record<string, Message[]> = { [historyChannelID]: history, [scrollChannelID]: scrollHistory };
 
-const demos = {
+const demos: Record<string, ReturnType<typeof createDemoServer>> = {
     "studio-demo": createDemoServer(source, now), [historyChannelID]: createDemoServer(historySnapshot, now),
     [scrollChannelID]: createDemoServer(scrollSnapshot, now),
 };
@@ -45,29 +44,29 @@ const handlers = Object.fromEntries(Object.entries(demos).map(([id, demo]) => {
     if (listeners.length !== 1) throw new Error("Expected the reference demo server's single HTTP handler.");
     return [id, listeners[0]];
 }));
-const streams = Object.fromEntries(Object.keys(demos).map(id => [id, new Set()]));
+const streams = Object.fromEntries(Object.keys(demos).map(id => [id, new Set<Response>()]));
 const injected = Object.fromEntries(Object.keys(demos).map(id => [id, 0]));
 const revisions = Object.fromEntries(Object.keys(demos).map(id => [id, 0]));
-const added = Object.fromEntries(Object.keys(demos).map(id => [id, []]));
+const added = Object.fromEntries(Object.keys(demos).map(id => [id, [] as Agent[]]));
 
 // Plain prose, a list, a mention and a code block, so new rows exercise each kind of formatting.
-const bodies = [
+const bodies: ((n: number, handle: string) => string)[] = [
     (n) => `Update ${n}: the transcript keeps up while several agents report at once.`,
     (n) => `Pass ${n}\n\n- Checked the **message flow** end to end\n- Kept read receipts monotonic\n- Left the request open for the user`,
     (n, handle) => `@${handle} pass ${n} is ready for review. The shelf now sits beside the team desks, and the entrance stays clear for visitors.`,
     (n) => `Pass ${n} result:\n\n\`\`\`swift\nlet total = messages.reduce(0) { $0 + $1.count }\n\`\`\`\n\nThe count matches the server.`,
 ];
 
-function json(response, status, value) {
+function json(response: Response, status: number, value: unknown) {
     response.writeHead(status, { "Content-Type": "application/json", "Cache-Control": "no-store" });
     response.end(JSON.stringify(value));
 }
 
-function streamMessages(response, url) {
+function streamMessages(response: Response, url: URL) {
     const channel = url.searchParams.get("channel");
     const count = Number(url.searchParams.get("count") ?? 1);
     const interval = Number(url.searchParams.get("interval") ?? 0);
-    if (!(channel in demos) || !Number.isInteger(count) || count < 1 || count > 500
+    if (!channel || !(channel in demos) || !Number.isInteger(count) || count < 1 || count > 500
         || !Number.isInteger(interval) || interval < 0 || interval > 5000) {
         json(response, 400, { error: "Expected a fixture channel, a count from 1 to 500 and an interval up to 5000 ms." });
         return;
@@ -102,15 +101,15 @@ function streamMessages(response, url) {
     }, interval);
 }
 
-function broadcast(channel, event) {
+function broadcast(channel: string, event: { revision?: number; [key: string]: unknown }) {
     const id = event.revision === undefined ? "" : `id: ${event.revision}\n`;
     for (const stream of streams[channel]) stream.write(`${id}data: ${JSON.stringify(event)}\n\n`);
 }
 
-function setWorking(response, url) {
+function setWorking(response: Response, url: URL) {
     const channel = url.searchParams.get("channel");
     const count = Number(url.searchParams.get("count") ?? 1);
-    if (!(channel in demos) || !Number.isInteger(count) || count < 0 || count > 100) {
+    if (!channel || !(channel in demos) || !Number.isInteger(count) || count < 0 || count > 100) {
         json(response, 400, { error: "Expected a fixture channel and a count up to 100." });
         return;
     }
@@ -120,7 +119,7 @@ function setWorking(response, url) {
     }
     const base = demos[channel].snapshot();
     const agents = [base.lead, ...base.members, ...added[channel]];
-    const statuses = new Map();
+    const statuses = new Map<number, Status>();
     for (let index = 0; index < Math.max(count, agents.length); index++) {
         statuses.set(index, index < count ? { state: "working", text: `Checking pass ${index + 1}` } : { state: "idle" });
     }
@@ -187,4 +186,4 @@ server.on("error", error => { console.error(error); process.exit(1); });
 server.listen(port, "127.0.0.1", () => {
     console.log(`Benchmark fixture: ${origin} · channels ${Object.keys(demos).join(", ")}`);
 });
-for (const signal of ["SIGINT", "SIGTERM"]) process.once(signal, () => process.exit(0));
+for (const signal of ["SIGINT", "SIGTERM"] as const) process.once(signal, () => process.exit(0));

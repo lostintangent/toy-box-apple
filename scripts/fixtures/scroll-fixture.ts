@@ -1,26 +1,17 @@
-// The scroll-demo channel that script/perf-demo.mjs serves for the scroll benchmark: 300 long
+// The scroll-demo channel that the performance fixture serves for the scroll benchmark: 300 long
 // messages, the kind a busy channel accumulates, with headings, lists, quotes, code blocks and
 // screenshot-sized images. The latest 100 are in the snapshot and the rest in canonical
 // 100-message older pages, which writeHistoryPage serves.
 import { deflateSync } from "node:zlib";
+import { remapChannel, type Response, type Snapshot } from "./types.ts";
 
 export const scrollChannelID = "scroll-demo";
 export const scrollMessageCount = 300;
 const pageSize = 100;
 
-function remap(value) {
-    if (value === "studio-demo") return scrollChannelID;
-    if (Array.isArray(value)) return value.map(remap);
-    if (value && typeof value === "object") {
-        return Object.fromEntries(Object.entries(value).map(([key, child]) =>
-            [key === "studio-demo" ? scrollChannelID : key, remap(child)]));
-    }
-    return value;
-}
-
 const topics = ["transcript", "composer", "sidebar", "inspector", "catalog", "reducer", "stream", "release"];
 
-const code = [
+const code: ((n: number) => string)[] = [
     (n) => "```swift\n"
         + `struct Pass${n}: Equatable {\n    var sequence: Int\n    var rows: [String]\n\n`
         + "    mutating func merge(_ other: Self) {\n        guard other.sequence > sequence else { return }\n"
@@ -36,11 +27,11 @@ const code = [
         + `{\n  "pass": ${n},\n  "channels": ["studio-demo", "history-demo"],\n  "budgets": { "message": 16, "olderPage": 250, "warmSwitch": 150 },\n`
         + '  "checks": [\n    { "name": "scroll", "frames": 300, "dropped": 0 },\n    { "name": "resize", "frames": 120, "dropped": 2 }\n  ]\n}\n```',
     (n) => "```sh\n"
-        + `SCRATCH_PATH=/tmp/tbm-pass-${n} ./script/test\nSCRATCH_PATH=/tmp/tbm-pass-${n} ./script/benchmark scroll\n`
+        + `SCRATCH_PATH=/tmp/tbm-pass-${n} bun run test\nSCRATCH_PATH=/tmp/tbm-pass-${n} bun run benchmark scroll\n`
         + "git --no-pager log --oneline -5\ngit push origin HEAD:main\n```",
 ];
 
-const bodies = [
+const bodies: ((n: number, topic: string) => string)[] = [
     (n, topic) => `## Pass ${n}: ${topic}\n\nI went through the ${topic} end to end and wrote down what I found. Most of it holds up, `
         + `but two things need a decision before the next pass.\n\n- The **${topic}** keeps its state in one place, so a reconnect `
         + `resumes cleanly\n- Read receipts stay monotonic across pages\n- \`latestSequence\` only moves forward\n- Requests stay open `
@@ -64,7 +55,7 @@ const bodies = [
 ];
 
 // Messages 2 and 4 of every 5 carry screenshots, and every tenth carries two.
-function attachments(sequence) {
+function attachments(sequence: number) {
     const kind = sequence % bodies.length;
     if (kind !== 2 && kind !== 4) return undefined;
     const count = sequence % 10 === 2 ? 2 : 1;
@@ -74,8 +65,8 @@ function attachments(sequence) {
     }));
 }
 
-export function createScrollFixture(source, { now, origin }) {
-    const snapshot = remap(source);
+export function createScrollFixture(source: Snapshot, { now, origin }: { now: number; origin: string }) {
+    const snapshot = remapChannel(source, scrollChannelID);
     const agents = [snapshot.lead, ...snapshot.members];
     const history = Array.from({ length: scrollMessageCount }, (_, index) => {
         const sequence = index + 1;
@@ -104,12 +95,12 @@ const crcTable = Array.from({ length: 256 }, (_, n) => {
     for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
     return c >>> 0;
 });
-function crc32(buffer) {
+function crc32(buffer: Uint8Array) {
     let c = 0xffffffff;
     for (const byte of buffer) c = crcTable[(c ^ byte) & 0xff] ^ (c >>> 8);
     return (c ^ 0xffffffff) >>> 0;
 }
-function chunk(type, data) {
+function chunk(type: string, data: Uint8Array) {
     const length = Buffer.alloc(4);
     length.writeUInt32BE(data.length);
     const body = Buffer.concat([Buffer.from(type, "ascii"), data]);
@@ -117,7 +108,7 @@ function chunk(type, data) {
     crc.writeUInt32BE(crc32(body));
     return Buffer.concat([length, body, crc]);
 }
-function screenshot(seed, width = 1440, height = 900) {
+function screenshot(seed: number, width = 1440, height = 900) {
     const row = width * 3 + 1;
     const pixels = Buffer.alloc(row * height);
     for (let y = 0; y < height; y++) {
@@ -146,7 +137,7 @@ function screenshot(seed, width = 1440, height = 900) {
 const screenshots = Array.from({ length: 4 }, (_, seed) => screenshot(seed));
 
 // Answers the GET for one of the channel's screenshots, and returns whether the path was one.
-export function writeScrollImage(response, pathname) {
+export function writeScrollImage(response: Response, pathname: string) {
     const match = pathname.match(/^\/api\/serve\/machine\/scroll-demo\/pass-(\d+)-(\d+)\.png$/);
     if (!match) return false;
     const image = screenshots[(Number(match[1]) + Number(match[2])) % screenshots.length];

@@ -1,16 +1,15 @@
 #!/usr/bin/env bun
-import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { root } from "../lib.ts";
+import { referenceFactory, type Snapshot } from "./types.ts";
 
-const root = fileURLToPath(new URL("..", import.meta.url));
 const reference = resolve(process.argv[2] ?? resolve(root, "../toy-box-Minecraft"));
-const { createDemoServer } = await import(pathToFileURL(resolve(reference, "tools/demo-server.ts")).href);
+const createDemoServer = await referenceFactory(reference);
 const port = Number(process.env.TOY_BOX_DEMO_PORT ?? 3210);
 if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("Invalid TOY_BOX_DEMO_PORT.");
 
 const snapshotPath = process.env.TOY_BOX_DEMO_SNAPSHOT;
-const initial = snapshotPath ? JSON.parse(readFileSync(snapshotPath, "utf8")) : undefined;
+const initial: Snapshot | undefined = snapshotPath ? await Bun.file(snapshotPath).json() : undefined;
 const demo = createDemoServer(initial);
 // The reference factory makes dates recent. Restore an exported snapshot without that adjustment.
 if (initial) demo.replace(initial);
@@ -36,7 +35,7 @@ demo.server.listen(port, "127.0.0.1", () => {
     console.log(`Toy Box fixture: http://127.0.0.1:${port} · channel studio-demo`);
     console.log("The catalog serves the fixture's lead profile. No agents or models run.");
 });
-for (const signal of ["SIGINT", "SIGTERM"]) {
+for (const signal of ["SIGINT", "SIGTERM"] as const) {
     process.once(signal, () => {
         void demo.close().catch(error => { console.error(error); process.exitCode = 1; });
     });

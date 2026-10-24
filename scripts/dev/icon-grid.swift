@@ -1,40 +1,3 @@
-#!/bin/bash
-# Regenerates Resources/AppIcon.icns from the Icon Composer source Resources/AppIcon.icon.
-# Builds never run this: local and GitHub bundles copy the committed .icns, so they always match.
-# Run it after editing the .icon (in Icon Composer or by hand) and commit both together.
-set -euo pipefail
-
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-export DEVELOPER_DIR="${DEVELOPER_DIR:-/Library/Developer/CommandLineTools}"
-SOURCE="$ROOT/Resources/AppIcon.icon"
-OUTPUT="$ROOT/Resources/AppIcon.icns"
-[[ -f "$SOURCE/icon.json" ]] || { echo "error: AppIcon.icon source is missing." >&2; exit 1; }
-
-# ictool ships inside Icon Composer, which comes with Xcode or as a standalone download.
-if [[ -z "${ICTOOL:-}" ]]; then
-    for candidate in \
-        "/Applications/Xcode.app/Contents/Applications/Icon Composer.app/Contents/Executables/ictool" \
-        "/Applications/Icon Composer.app/Contents/Executables/ictool"; do
-        if [[ -x "$candidate" ]]; then
-            ICTOOL="$candidate"
-            break
-        fi
-    done
-fi
-if [[ ! -x "${ICTOOL:-}" ]]; then
-    echo "error: ictool not found. Install Icon Composer or set ICTOOL." >&2
-    exit 1
-fi
-
-WORK="$(mktemp -d)"
-trap 'rm -rf "$WORK"' EXIT
-
-"$ICTOOL" "$SOURCE" --export-image --output-file "$WORK/master.png" \
-    --platform macOS --rendition Default --width 1024 --height 1024 --scale 1 >/dev/null
-
-# ictool exports the full-bleed shape. Place it on Apple's macOS grid (an 824 pt body inset
-# 100 pt on a 1024 pt canvas) with the system's soft drop shadow, as Apple's own .icns files are.
-cat > "$WORK/grid.swift" <<'SWIFT'
 import AppKit
 
 func fail(_ message: String) -> Never {
@@ -73,10 +36,3 @@ for (name, pixels) in renditions {
     do { try png.write(to: iconset.appendingPathComponent("icon_\(name).png")) }
     catch { fail("error: Writing the \(name) icon rendition failed: \(error.localizedDescription)") }
 }
-SWIFT
-
-mkdir "$WORK/AppIcon.iconset"
-xcrun swiftc -O "$WORK/grid.swift" -o "$WORK/grid"
-"$WORK/grid" "$WORK/master.png" "$WORK/AppIcon.iconset"
-iconutil -c icns -o "$OUTPUT" "$WORK/AppIcon.iconset"
-echo "$OUTPUT"

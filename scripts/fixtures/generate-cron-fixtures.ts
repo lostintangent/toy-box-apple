@@ -1,17 +1,17 @@
 import { createRequire } from "node:module";
-import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { root } from "../lib.ts";
 
 const reference = resolve(process.argv[2] ?? "../toy-box");
 const require = createRequire(resolve(reference, "package.json"));
 const { CronExpressionParser } = require("cron-parser");
-const { version } = JSON.parse(readFileSync(require.resolve("cron-parser/package.json"), "utf8"));
-const fixtures = [];
+const { version } = await Bun.file(require.resolve("cron-parser/package.json")).json();
+type Fixture = { expression: string; from: string; timeZone: string; hashSeed?: string; next?: string[]; error?: string };
+const fixtures: Fixture[] = [];
 const utc = "2026-01-31T23:59:58.125Z";
 
-function add(expression, from = utc, timeZone = "UTC", count = 4, hashSeed) {
-    const fixture = { expression, from, timeZone };
+function add(expression: string, from = utc, timeZone = "UTC", count = 4, hashSeed?: string) {
+    const fixture: Fixture = { expression, from, timeZone };
     if (hashSeed !== undefined) fixture.hashSeed = hashSeed;
     try {
         let current = new Date(from);
@@ -56,12 +56,12 @@ for (const [timeZone, from, expressions] of [
     ["Australia/Lord_Howe", "2026-04-04T14:25:00Z", ["45 1 * * *", "0 * * * *"]],
     ["Pacific/Apia", "2011-12-29T09:55:00Z", ["0 0 * * *", "0 12 * * *"]],
     ["America/Santiago", "2026-09-06T03:55:00Z", ["30 0 * * *", "0 0 * * *"]],
-]) {
+] as [string, string, string[]][]) {
     for (const expression of expressions) add(expression, from, timeZone, 5);
 }
 
 let sampleSeed = 0x20261022;
-function pick(values) {
+function pick<T>(values: T[]) {
     sampleSeed = (Math.imul(sampleSeed, 1664525) + 1013904223) >>> 0;
     return values[Math.floor(sampleSeed / 4294967296 * values.length)];
 }
@@ -94,7 +94,6 @@ for (const expression of [
     "0 ".repeat(513),
 ]) add(expression, utc, "UTC", 1, "invalid-fixture");
 
-const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const output = resolve(root, "Tests/ChannelKitTests/Fixtures/cron-occurrences.json");
-writeFileSync(output, JSON.stringify({ parser: `cron-parser@${version}`, fixtures }, null, 2) + "\n");
+await Bun.write(output, JSON.stringify({ parser: `cron-parser@${version}`, fixtures }, null, 2) + "\n");
 console.log(`${fixtures.length} fixtures from cron-parser@${version}: ${output}`);

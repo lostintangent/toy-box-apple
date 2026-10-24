@@ -1,14 +1,13 @@
 #!/usr/bin/env bun
-import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
 import { createHistoryFixture, historyChannelID, historyMessageCount, historyPageSize, writeHistoryPage }
-    from "./history-fixture.mjs";
+    from "./history-fixture.ts";
+import { root } from "../lib.ts";
+import { referenceFactory, type Snapshot } from "./types.ts";
 
-const root = fileURLToPath(new URL("..", import.meta.url));
 const reference = resolve(process.argv[2] ?? resolve(root, "../toy-box-Minecraft"));
-const { createDemoServer } = await import(pathToFileURL(resolve(reference, "tools/demo-server.ts")).href);
-const source = JSON.parse(readFileSync(resolve(reference, "fixtures/channel-snapshot.json"), "utf8"));
+const createDemoServer = await referenceFactory(reference);
+const source: Snapshot = await Bun.file(resolve(reference, "fixtures/channel-snapshot.json")).json();
 const port = 3211;
 const now = Date.now();
 const { snapshot, history } = createHistoryFixture(source, { now, origin: `http://127.0.0.1:${port}` });
@@ -47,7 +46,7 @@ demo.server.listen(port, "127.0.0.1", () => {
     console.log(`${historyMessageCount} messages, ${historyPageSize} per page, seen through 450, pending request ${historyMessageCount}.`);
     console.log("Read receipts are isolated here. The studio-demo server on 3210 is untouched.");
 });
-for (const signal of ["SIGINT", "SIGTERM"]) {
+for (const signal of ["SIGINT", "SIGTERM"] as const) {
     process.once(signal, () => {
         void demo.close().catch(error => { console.error(error); process.exitCode = 1; });
     });

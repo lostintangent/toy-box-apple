@@ -35,25 +35,26 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.4
+      - run: bun install --frozen-lockfile --ignore-scripts
       - name: Test
         env:
           SCRATCH_PATH: ${{ runner.temp }}/toy-box-tests
-        run: ./script/test
-      - name: Test notarization JSON with system plutil
-        run: python3 script/test-release-secrets.py NotaryResponseTests
+        run: bun run test
       - name: Bundle with Siri and Shortcuts metadata
         env:
           SCRATCH_PATH: ${{ runner.temp }}/toy-box-tests
         run: |
-          app="$(./script/run --no-open | tail -n 1)"
+          app="$(bun run run --no-open | tail -n 1)"
           actions="$app/Contents/Resources/Metadata.appintents/extract.actionsdata"
           for intent in CatchMeUpIntent OpenChannelIntent SendMessageIntent CatchUpSnippetIntent ReplyIntent; do
             grep -q "\"$intent\"" "$actions"
           done
           grep -q '"com.apple.appintents.entity.Indexed"' "$actions"
-          TOY_BOX_BUNDLE="$app" python3 script/test-sparkle.py NativeBundleTests
-          tools="$(./script/sparkle-tools)"
-          TOY_BOX_BUNDLE="$app" SPARKLE_TOOLS_DIR="$tools" python3 script/test-sparkle.py NativeAppcastTests
+          tools="$(bun run sparkle-tools)"
+          TOY_BOX_BUNDLE="$app" SPARKLE_TOOLS_DIR="$tools" bun test scripts/release/tests/native.test.ts
       - name: Wait for crash reports
         if: failure()
         run: |
@@ -76,12 +77,16 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.4
+      - run: bun install --frozen-lockfile --ignore-scripts
+      - name: Typecheck tooling
+        run: bun run typecheck
       - name: Lint workflows
-        run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
-      - name: Test release credential setup with fake commands
-        run: python3 script/test-release-secrets.py
-      - name: Test Sparkle packaging with fake commands
-        run: python3 script/test-sparkle.py
+        run: bun run lint:workflows
+      - name: Test release tooling with fake commands
+        run: bun run test:release
 
   release:
     needs: [test, release-checks]
@@ -109,6 +114,10 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.4
+      - run: bun install --frozen-lockfile --ignore-scripts
       - name: Check update signing configuration and build number
         env:
           SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
@@ -134,7 +143,7 @@ jobs:
             fi
             echo "Bootstrapping updates from v0.1.0, which shipped without Sparkle."
           fi
-          python3 script/check-update-version.py "${args[@]}"
+          bun run check-update-version "${args[@]}"
       - name: Import the signing identity and notarization credentials
         env:
           CERTIFICATE: ${{ secrets.MACOS_SIGNING_CERTIFICATE }}
@@ -180,11 +189,11 @@ jobs:
       - name: Build, sign and notarize
         env:
           SCRATCH_PATH: ${{ runner.temp }}/toy-box-release
-        run: ./script/release "$RELEASE_TAG"
+        run: bun run release "$RELEASE_TAG"
       - name: Generate and verify the signed update feed
         env:
           SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
-        run: ./script/generate-appcast "$RELEASE_TAG"
+        run: bun run generate-appcast "$RELEASE_TAG"
       - name: Remove the temporary keychain and signing material
         if: always()
         run: |

@@ -1,23 +1,16 @@
-// The history-demo channel that script/history-demo.mjs and script/perf-demo.mjs serve: the
+// The history-demo channel that the history and performance fixture servers serve: the
 // reference snapshot stretched to 480 messages, with the latest 100 in the snapshot and the rest in
 // canonical 100-message older pages.
+import { remapChannel, type Message, type Response, type Snapshot } from "./types.ts";
+
 export const historyChannelID = "history-demo";
 export const historyPageSize = 100;
 export const historyMessageCount = 480;
 
-function remap(value) {
-    if (value === "studio-demo") return historyChannelID;
-    if (Array.isArray(value)) return value.map(remap);
-    if (value && typeof value === "object") {
-        return Object.fromEntries(Object.entries(value).map(([key, child]) =>
-            [key === "studio-demo" ? historyChannelID : key, remap(child)]));
-    }
-    return value;
-}
-
 // Builds the channel's snapshot and full history from the reference fixture's snapshot.
-export function createHistoryFixture(source, { now, origin }) {
-    const snapshot = remap(source);
+export function createHistoryFixture(source: Snapshot, { now, origin }: { now: number; origin: string }) {
+    const snapshot = remapChannel(source, historyChannelID);
+    if (!snapshot.request) throw new Error("The history fixture requires the reference request message.");
     const agents = [snapshot.lead, ...snapshot.members];
     const history = Array.from({ length: historyMessageCount }, (_, index) => {
         const sequence = index + 1;
@@ -51,7 +44,7 @@ export function createHistoryFixture(source, { now, origin }) {
 
 // Answers `GET /api/v1/channels/history-demo/messages?before=N` the way getChannelHistoryResponse
 // and listMessagesBefore do, without loading the live database.
-export function writeHistoryPage(response, url, history, revision) {
+export function writeHistoryPage(response: Response, url: URL, history: Message[], revision: number) {
     const before = Number(url.searchParams.get("before"));
     const valid = Number.isSafeInteger(before) && before > 0;
     response.writeHead(valid ? 200 : 400, {

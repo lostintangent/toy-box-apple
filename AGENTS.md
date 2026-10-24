@@ -16,36 +16,39 @@ view.
 
 ## Build and run
 
-- Build only with Command Line Tools. Never use `xcodebuild`, because the Xcode license is not
-  accepted on this machine. `script/run` runs Xcode's `appintentsmetadataprocessor` directly for
+- Tooling uses Bun 1.4.4. Run `bun install --frozen-lockfile` once, then use the root `package.json`
+  commands. `scripts/dev/` owns local development, `scripts/release/` owns packaging and release
+  checks, and `scripts/fixtures/` owns demo servers and fixture generation. `bun run typecheck`,
+  `bun run test:release` and `bun run lint:workflows` validate the tooling.
+- Build only with Command Line Tools. Never use `xcodebuild`. `bun run run` runs Xcode's `appintentsmetadataprocessor` directly for
   Siri and Shortcuts, which needs Xcode installed but not its license.
-- Target macOS 27 or later on Apple Silicon with Swift tools 6.4 or later. `script/run` stamps the real SDK
+- Target macOS 27 or later on Apple Silicon with Swift tools 6.4 or later. `bun run run` stamps the real SDK
   version before signing. Use its bundle for native visual checks, not SwiftPM's unstamped
-  executable. `script/validate` rejects bundles whose recorded SDK is below macOS 27.
+  executable. `bun run validate` rejects bundles whose recorded SDK is below macOS 27.
 - Use your own scratch path so parallel builds never share `.build`:
   - `DEVELOPER_DIR=/Library/Developer/CommandLineTools swift build --scratch-path /tmp/tbm-<you>`
-  - `SCRATCH_PATH=/tmp/tbm-<you> ./script/test` runs the suite with the Command Line Tools
+  - `SCRATCH_PATH=/tmp/tbm-<you> bun run test` runs the suite with the Command Line Tools
     Testing macro plugin path, which a bare `swift test` can't find. It also fails when a test
     run stops before printing its summary, which a bare `swift test` can report as success.
-  - `SCRATCH_PATH=/tmp/tbm-<you> ./script/run` builds, bundles and opens a new app instance.
+  - `SCRATCH_PATH=/tmp/tbm-<you> bun run run` builds, bundles and opens a new app instance.
 - Point the app at a server with `TOY_BOX_SERVER_URL` or Settings. Use our Minecraft demo wrapper
-  (`bun script/demo.mjs` in this repository, port 3210) for write tests. It serves the required
+  (`bun run demo` in this repository, port 3210) for write tests. It serves the required
   catalog lead profile without modifying the reference. The live server
   on port 3100 hosts real channels: read it freely, but never post or mutate there without the
   lead's approval of a specific scratch channel.
   Leave its current process running.
-- `bun script/history-demo.mjs` imports that reference factory read-only and serves `history-demo`
+- `bun run history-demo` imports that reference factory read-only and serves `history-demo`
   on 3211 with 480 messages, canonical 100-message older pages and isolated read receipts. Use it
   for paging and key-window read checks without disturbing the shared 3210 screenshot baseline.
-- Integration tests are opt-in: `TOY_BOX_DEMO_URL=http://127.0.0.1:3210 ./script/test`, and
-  `TOY_BOX_HISTORY_DEMO_URL=http://127.0.0.1:3211 ./script/test --filter HistoryFixtureTests`
+- Integration tests are opt-in: `TOY_BOX_DEMO_URL=http://127.0.0.1:3210 bun run test`, and
+  `TOY_BOX_HISTORY_DEMO_URL=http://127.0.0.1:3211 bun run test --filter HistoryFixtureTests`
   against a freshly started history demo.
-- `TOY_BOX_REAL_DICTATION_TESTS=1 ./script/test --filter ComposerTests/theRealTranscriberHearsARecordingThroughTheAudioSourceProtocol`
+- `TOY_BOX_REAL_DICTATION_TESTS=1 bun run test --filter ComposerTests/theRealTranscriberHearsARecordingThroughTheAudioSourceProtocol`
   opts into the real transcriber check. It needs the on-device English dictation model and uses
   synthesized audio, not microphone access. The normal suite never queries speech-model assets.
-- `SCRATCH_PATH=/tmp/tbm-<you> ./script/benchmark [--summaries] [launch|switch|messages|paging|key|idle ...]` is the
+- `SCRATCH_PATH=/tmp/tbm-<you> bun run benchmark [--summaries] [launch|switch|messages|paging|key|idle ...]` is the
   performance regression benchmark. It builds a release bundle as `dev.toybox.desktop.benchmark`,
-  runs each scenario against a fresh `script/perf-demo.mjs` fixture on 3292 (`TOY_BOX_PERF_PORT`),
+  runs each scenario against a fresh `bun run perf-demo` fixture on 3292 (`TOY_BOX_PERF_PORT`),
   prints each result beside its budget and exits 1 when one is over. The spec's Performance budgets
   section defines the budgets and how busy time, saturated spans and frame gaps differ. Leave its
   window uncovered. `key` runs only when named, because it takes focus for about 45 seconds to
@@ -53,7 +56,7 @@ view.
   up. Warn the user before running it.
   Catch-up summaries stay off so the card can't land mid-measurement. `--summaries` leaves them on.
   Only one benchmark runs at a time on this Mac. Others wait for it, so never poll for one yourself.
-- `node script/generate-cron-fixtures.mjs ../toy-box` regenerates the cron fixtures from the
+- `bun run generate-cron-fixtures ../toy-box` regenerates the cron fixtures from the
   reference without touching it.
 - Quit the instances you launch when you are done.
 - Attach channel images from your own session `files/` folder, never `/tmp`. Toy Box serves
@@ -61,7 +64,7 @@ view.
 
 ## Validating the running app
 
-- Snapshots: `SCRATCH_PATH=/tmp/tbm-<you> ./script/snapshot --server http://127.0.0.1:3210
+- Snapshots: `SCRATCH_PATH=/tmp/tbm-<you> bun run snapshot --server http://127.0.0.1:3210
   --channel studio-demo --appearance light|dark --size 1280x840 --snapshot <file.png>
   [--state <name>]`. Snapshot mode never marks read, saves settings or posts notifications.
   It opens the normal SwiftUI scene, disables restoration only in the process's volatile
@@ -72,9 +75,9 @@ view.
   them for layout evidence only. Verify materials, selection and scroll-edge effects in a real window.
 - Computer Use approves apps by bundle ID. A path is refused. The user's copy is
   `dev.toybox.desktop`. Agents test as `dev.toybox.desktop.test` ("Toy Box Desktop
-  Test" in `.build/agents`), which `script/validate` builds and launches. Instances that share a
+  Test" in `.build/agents`), which `bun run validate` builds and launches. Instances that share a
   bundle ID can be read but not clicked, so the separate ID is what lets you interact while the
-  user's app is open. Until the user approves the test ID, `script/validate` falls back to the
+  user's app is open. Until the user approves the test ID, `bun run validate` falls back to the
   shared bundle and says so.
 - Launch your own build in the background against the demo:
   `open -n -g "/tmp/tbm-<you>/Toy Box Desktop.app" --args --server http://127.0.0.1:3210 -ApplePersistenceIgnoreState YES`.
@@ -85,10 +88,10 @@ view.
   though the normal launch fallback now handles a restored zero-window state.
 - A Computer Use session binds to the first bundle path it inspects and then rejects windows from
   other paths ("no longer belongs to the approved app"). Keep using that one path. Run
-  `SCRATCH_PATH=/tmp/tbm-<you> ./script/validate`, which always builds with `CONFIGURATION=release`,
+  `SCRATCH_PATH=/tmp/tbm-<you> bun run validate`, which always builds with `CONFIGURATION=release`,
   swaps that optimized build into both bundles without disturbing running instances, and launches
   the test bundle in the background against the demo. Judge feel with these optimized bundles.
-  Quick `script/run` loops still default to debug.
+  Quick `bun run run` loops still default to debug.
 - Clicks only work while one instance has the test ID. If a click fails with "no perception
   baseline for this pid", another agent's test instance is running, so wait for it to quit.
   Reads still work, so call `list_apps` and pass your own `window`. Before acting, confirm the
@@ -123,47 +126,50 @@ view.
   notarizes, staples and publishes the zip, its checksum and a signed `appcast.xml`. Running the
   workflow by hand on `main` is a dry run that keeps all three as artifacts.
 - One-time setup, by the certificate owner only:
-  `./script/setup-release-secrets SHA1 APPLE_ID TEAM_ID`, using an Apple ID app-specific password
+  `bun run setup-release-secrets SHA1 APPLE_ID TEAM_ID`, using an Apple ID app-specific password
   entered at the silent prompt or piped on stdin, never as a script argument. This configures the
   local `toy-box-channels-notary` profile and three GitHub secrets: `MACOS_SIGNING_CERTIFICATE`,
   `MACOS_SIGNING_PASSWORD` and `NOTARY_APP_PASSWORD`. The workflow pins the public certificate SHA-1,
   Apple ID and Team ID directly. Keep them in sync with the setup arguments when rotating identities.
   Agents never run setup with real credentials, create
-  secrets or read keys and passwords. `python3 script/test-release-secrets.py` uses fake commands only.
-- Update signing setup, by the user only: `./script/setup-update-secrets [OWNER/REPO]`. It reuses
+  secrets or read keys and passwords. `bun run test:release` uses fake commands only unless the
+  native checks are explicitly enabled. The only shell helper is `read-password.sh`, whose
+  `read -rs` handles terminal echo and piped input without a custom terminal implementation.
+- Update signing setup, by the user only: `bun run setup-update-secrets [OWNER/REPO]`. It reuses
   or creates the `dev.toybox.desktop` Sparkle Keychain account, uploads `SPARKLE_ED_PRIVATE_KEY`
   as a secret and `SPARKLE_ED_PUBLIC_KEY` as a public repository variable, then deletes its temporary
   export. Back up that Keychain key. Do not replace it casually, since existing installs trust it.
-  Agents never run this setup or read the real key. `python3 script/test-sparkle.py` uses fake commands.
-  Its opt-in macOS `NativeAppcastTests` uses a throwaway CryptoKit key file, never a Keychain item.
+  Agents never run this setup or read the real key. The opt-in native appcast check in
+  `scripts/release/tests/native.test.ts` uses a throwaway CryptoKit key file, never a Keychain item.
+  Run it with `TOY_BOX_BUNDLE=<app> SPARKLE_TOOLS_DIR=<tools> bun test scripts/release/tests/native.test.ts`.
 - Before v0.1.1, the user-approved identity rename replaces the unshipped update key. Run
-  `./script/setup-update-secrets` again for `dev.toybox.desktop`. Only after it succeeds, the user
+  `bun run setup-update-secrets` again for `dev.toybox.desktop`. Only after it succeeds, the user
   deletes the obsolete key with
   `security delete-generic-password -s https://sparkle-project.org -a dev.toybox.channels.mac`.
   Agents never run this deletion or access either real key. The old 0.1.0 app has no updater, so
   this one-time rotation breaks no shipped update chain. Re-approve `dev.toybox.desktop.test` for
   Computer Use. Notification and microphone permissions are separate for the renamed app.
 - Locally: `SPARKLE_ED_PUBLIC_KEY=... SIGNING_IDENTITY=SHA1 BUILD_NUMBER=N NOTARY_PROFILE=toy-box-channels-notary
-  ./script/release vX.Y.Z`. Without `NOTARY_PROFILE` the zip is named `SIGNED-UNNOTARIZED` and
+  bun run release vX.Y.Z`. Without `NOTARY_PROFILE` the zip is named `SIGNED-UNNOTARIZED` and
   is never published. `PREVIOUS_APPCAST=path` enforces an increasing build number locally. CI always
   compares against the latest published feed and serializes release workflows. Its build number is
   `github.run_number.github.run_attempt`, so reruns advance too.
 - Hardened runtime, a secure timestamp and only the audio-input entitlement. Never `--deep`.
   Local builds use Command Line Tools, and CI uses the runner's selected Xcode 27 on `xcode-27`.
 - Sparkle is pinned to 2.10.0 in SwiftPM. Every bundle embeds its arm64-only framework, installer
-  and updater, without sandbox XPC services or development headers. `script/sign-app` signs those
+  and updater, without sandbox XPC services or development headers. `bun run sign-app` signs those
   components inside out before signing the app. Keep Sparkle's license in the bundle.
 - Only release bundles receive `SUFeedURL` and `SUPublicEDKey`. All other bundles have no updater,
   even if the user previously enabled it in preferences. The release feed is
   `https://github.com/lostintangent/toy-box-apple/releases/latest/download/appcast.xml`.
   Automatic checking defaults on without a permission prompt. Installation remains opt-in.
-  `script/generate-appcast` runs after notarization and verifies both the archive and feed signatures.
+  `bun run generate-appcast` runs after notarization and verifies both the archive and feed signatures.
   It accepts the private key on stdin from `SPARKLE_ED_PRIVATE_KEY`, or an explicit
   `SPARKLE_ED_KEY_FILE` for isolated testing. It never falls back to a default Keychain key.
 - The Developer ID certificate and its G1 intermediate expire February 1, 2027. Before then, move
   to a G2 certificate, rerun the setup, and update the workflow's intermediate URL and SHA-256.
 - The app icon's only source is `Resources/AppIcon.icon` (Designer). After changing it, run
-  `script/icon` and commit both it and `Resources/AppIcon.icns`.
+  `bun run icon` and commit both it and `Resources/AppIcon.icns`.
 - Never alter the user's installed validation bundle or microphone permission state to test a
   release.
 
@@ -171,7 +177,7 @@ view.
 
 | Path | Owner |
 | --- | --- |
-| `Sources/ChannelKit/`, `Sources/ChannelClient/`, `Tests/` (except below), `script/`, `Package.swift` | Core |
+| `Sources/ChannelKit/`, `Sources/ChannelClient/`, `Tests/` (except below), `scripts/`, `Package.swift`, `package.json` | Core |
 | `Sources/ToyBoxDesktop/App`, `Shell`, `Sidebar`, `Settings`, `Shared`, `Channel/ChannelDetailView.swift` | Shell |
 | `Sources/ToyBoxDesktop/Transcript`, `Tests/ToyBoxDesktopTests/TranscriptTests.swift` | Transcript |
 | `Sources/ToyBoxDesktop/Composer` (composer and tray), `Tests/ToyBoxDesktopTests/ComposerTests.swift` | Composer |

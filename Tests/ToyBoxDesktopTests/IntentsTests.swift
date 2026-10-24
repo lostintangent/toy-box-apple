@@ -435,8 +435,8 @@ struct IntentsTests {
 
 extension IntentsTests {
     /// Calls each intent's `perform()` against a demo server, ideally a private one:
-    /// `TOY_BOX_DEMO_PORT=3260 bun script/demo.mjs`, then
-    /// `TOY_BOX_DEMO_URL=http://127.0.0.1:3260 ./script/test --filter IntentsTests`.
+    /// `TOY_BOX_DEMO_PORT=3260 bun run demo`, then
+    /// `TOY_BOX_DEMO_URL=http://127.0.0.1:3260 bun run test --filter IntentsTests`.
     @MainActor @Suite(.timeLimit(.minutes(1)))
     struct Demo {
         nonisolated static var demoURL: String? { ProcessInfo.processInfo.environment["TOY_BOX_DEMO_URL"] }
