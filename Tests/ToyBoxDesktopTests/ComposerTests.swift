@@ -325,6 +325,9 @@ struct ComposerTests {
         #expect(create?.name == "New Person")
         #expect(MentionChoice.items(query: "ada", agents: agents).first?.isMember == true)
         #expect(MentionChoice.items(query: "lead", agents: agents).first?.isMember == false)
+        #expect(MentionChoice.items(query: "new-person", agents: agents, allowsCreation: false).isEmpty)
+        #expect(MentionChoice.items(query: "", agents: agents, allowsCreation: false).map(\.name)
+                == ["Everyone", "Lead", "Ada", "Pixel", "Zebra"])
     }
 
     @Test func importingImagesRejectsUnsupportedAndUnreadableFilesExplicitly() async throws {
@@ -541,6 +544,7 @@ struct ComposerTests {
 
     @Test func tabLeavesTheComposerLikeATextareaUnlessItAcceptsAMention() async throws {
         let draft = ComposerDraft()
+        draft.text = "@lead "
         // AppKit neighbors keep these focus moves out of SwiftUI's focus state, which tests running
         // alongside this one rely on to focus their own fields.
         let before = NSTextField(frame: NSRect(x: 0, y: 190, width: 400, height: 22))
@@ -550,7 +554,7 @@ struct ComposerTests {
         // Fixed frames, with no sizing constraints from the host. In an autolayout container, each
         // move of the host invalidated its safe area, and CI's display cycle looped on that until
         // AppKit threw.
-        let host = NSHostingView(rootView: ComposerInputTestHost(draft: draft))
+        let host = NSHostingView(rootView: ComposerInputTestHost(draft: draft, startsAtEnd: true))
         host.sizingOptions = []
         host.frame = NSRect(x: 0, y: 40, width: 400, height: 140)
         let container = NSView(frame: NSRect(x: 0, y: 0, width: 400, height: 220))
@@ -569,6 +573,7 @@ struct ComposerTests {
         }
         try await waitForUpdate(of: container, "the composer mounts") { composerInput(in: container) != nil }
         let input = try #require(composerInput(in: container))
+        #expect(input.selectedRange() == NSRange(location: draft.text.utf16.count, length: 0))
         func press(_ keyCode: UInt16, _ characters: String, _ modifiers: NSEvent.ModifierFlags = []) throws {
             input.keyDown(with: try key(characters, code: keyCode, in: window, modifiers: modifiers))
         }
@@ -1234,6 +1239,7 @@ struct ComposerTests {
     private struct ComposerInputTestHost: View {
         @Bindable var draft: ComposerDraft
         var dictation: ComposerDictation? = nil
+        var startsAtEnd = false
         @ViewState private var height: CGFloat = 44
         @ViewState private var focused = false
         @ViewState private var dragging = false
@@ -1244,7 +1250,8 @@ struct ComposerTests {
                 text: $draft.text, document: ObjectIdentifier(draft), height: $height, focused: $focused,
                 dragging: $dragging, fontSize: 14, focusRequest: focusRequest, agents: [.lead(id: "lead")],
                 canManage: false, onSend: {}, onFiles: { _ in }, onImage: { _ in }, onError: { _ in },
-                onCreate: { .init(id: "created", name: $0) }, onEdit: { _ in }, dictation: dictation
+                onCreate: { .init(id: "created", name: $0) }, onEdit: { _ in }, dictation: dictation,
+                startsAtEnd: startsAtEnd
             )
             .frame(height: height)
         }
