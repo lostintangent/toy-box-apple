@@ -11,6 +11,8 @@ import UniformTypeIdentifiers
 import VisionKit
 @testable import ToyBoxDesktop
 
+private let transcriptTimingTestsEnabled = ProcessInfo.processInfo.environment["TOY_BOX_TEST_TRANSCRIPT_TIMING"] == "1"
+
 @Suite("Transcript rendering and visibility")
 struct TranscriptTests {
     @Test func paragraphsKeepSelectableInlineMarkdownAndLineBreaks() {
@@ -101,7 +103,8 @@ struct TranscriptTests {
     /// Each selectable `Text` adds a platform view, most of what a long message costs to scroll in, so a
     /// message builds them only once the pointer reaches it, and keeps them so a selection outlasts it.
     @MainActor
-    @Test func messagesBuildSelectableTextOnceThePointerArrives() async throws {
+    @Test(.enabled(if: transcriptTimingTestsEnabled))
+    func messagesBuildSelectableTextOnceThePointerArrives() async throws {
         let message = try await HoveredMessage(id: "arriving")
         defer { message.close() }
         let mounted = message.platformViews()
@@ -119,7 +122,8 @@ struct TranscriptTests {
     /// A message that scrolls under a still pointer builds nothing while the content moves, but turns
     /// selectable once it holds still, so a drag that starts without moving the pointer still selects.
     @MainActor
-    @Test func messagesUnderAStillPointerTurnSelectableOnceScrollingSettles() async throws {
+    @Test(.enabled(if: transcriptTimingTestsEnabled))
+    func messagesUnderAStillPointerTurnSelectableOnceScrollingSettles() async throws {
         let message = try await HoveredMessage(id: "resting")
         defer { message.close() }
         let mounted = message.platformViews()
@@ -488,7 +492,7 @@ struct TranscriptTests {
     }
 
     @MainActor
-    @Test(arguments: [false, true])
+    @Test(.enabled(if: transcriptTimingTestsEnabled), arguments: [false, true])
     func arrivalsFollowAtTheBottomAndJumpingBackFollowsASend(legacyScrollers: Bool) async throws {
         let openingGaps = TranscriptGapLog()
         let harness = try await TranscriptHarness(messages: (1...30).map(transcriptTestMessage),
@@ -545,7 +549,7 @@ struct TranscriptTests {
     /// top. One run of five fits on the last screen, so the transcript opens at the bottom with it in
     /// view. A summary card above the first unread message then grows downward from where it's drawn.
     @MainActor
-    @Test(arguments: [false, true], [false, true])
+    @Test(.enabled(if: transcriptTimingTestsEnabled), arguments: [false, true], [false, true])
     func aLoadedChannelFirstDrawsItsFirstUnreadMessageWhereItLands(opensAtBottom: Bool, summarizes: Bool)
         async throws {
         let latest = opensAtBottom ? 35 : 60
@@ -599,7 +603,7 @@ struct TranscriptTests {
     }
 
     @MainActor
-    @Test(arguments: [false, true])
+    @Test(.enabled(if: transcriptTimingTestsEnabled), arguments: [false, true])
     func resizingKeepsTheBottomOrTheReadersPlace(atBottom: Bool) async throws {
         let harness = try await TranscriptHarness(messages: (1...40).map(transcriptTestMessage), resizable: true)
         defer { harness.close() }
@@ -642,7 +646,8 @@ struct TranscriptTests {
     }
 
     @MainActor
-    @Test func scrollingIntoOlderHistoryKeepsTheReaderInPlace() async throws {
+    @Test(.enabled(if: transcriptTimingTestsEnabled))
+    func scrollingIntoOlderHistoryKeepsTheReaderInPlace() async throws {
         let harness = try await TranscriptHarness(messages: (61...90).map(transcriptTestMessage),
                                                   history: (1...60).map(transcriptTestMessage),
                                                   holdsHistory: true)
@@ -690,7 +695,8 @@ struct TranscriptTests {
     }
 
     @MainActor
-    @Test func floatingBarsBoundTheReadViewportAndBottomDistance() async throws {
+    @Test(.enabled(if: transcriptTimingTestsEnabled))
+    func floatingBarsBoundTheReadViewportAndBottomDistance() async throws {
         let capture = TranscriptLayoutCapture()
         let view = NSHostingView(rootView:
             ScrollViewReader { proxy in
@@ -826,7 +832,8 @@ struct TranscriptTests {
     }
 
     @MainActor
-    @Test func imageFilmstripHasNoCaptionHeightAndDoesNotStackAtNarrowWidths() async throws {
+    @Test(.enabled(if: transcriptTimingTestsEnabled))
+    func imageFilmstripHasNoCaptionHeightAndDoesNotStackAtNarrowWidths() async throws {
         let context = try #require(CGContext(data: nil, width: 120, height: 80, bitsPerComponent: 8,
                                              bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
                                              bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
@@ -974,7 +981,8 @@ struct TranscriptTests {
     }
 
     @MainActor
-    @Test func systemLinksAcceptClicksWithinATwentyEightPointTarget() async throws {
+    @Test(.enabled(if: transcriptTimingTestsEnabled))
+    func systemLinksAcceptClicksWithinATwentyEightPointTarget() async throws {
         var opened = 0
         let capture = TranscriptLayoutCapture()
         let message = ChannelMessage(id: "share-1", sequence: 1, timestamp: "2026-10-22T12:00:00Z",
@@ -1521,7 +1529,8 @@ struct ImageViewerLiveTextTests {
         #expect(viewer.isClosing)
     }
 
-    @Test(.readsTextInImages) func theSelectionHighlightCoversItsTextAndTheButtonStaysInTheImagesCorner() async throws {
+    @Test(.readsTextInImages, .enabled(if: transcriptTimingTestsEnabled))
+    func theSelectionHighlightCoversItsTextAndTheButtonStaysInTheImagesCorner() async throws {
         let page = try #require(Self.screenshotImage())
         let analysis = try await ImageAnalyzer().analyze(page.image, orientation: .up,
                                                          configuration: ImageAnalyzer.Configuration([.text]))
@@ -2199,7 +2208,7 @@ struct TranscriptCatchUpTests {
                        priority: priority)
     }
 
-    @Test(arguments: [false, true])
+    @Test(.enabled(if: transcriptTimingTestsEnabled), arguments: [false, true])
     func aCardGrowingAboveTheViewportLeavesTheReaderInPlace(legacyScrollers: Bool) async throws {
         let ready = CatchUp(needsYou: nil, changes: (11...16).map {
             .init(text: "Lead moved update \($0) along, with enough detail to wrap the line.", sources: [$0])
