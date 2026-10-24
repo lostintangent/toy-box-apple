@@ -22,11 +22,9 @@
     "setup-release-secrets": "bun scripts/release/setup-release-secrets.ts",
     "setup-update-secrets": "bun scripts/release/setup-update-secrets.ts",
     "test:release": "bun test scripts/release",
-    "lint:workflows": "go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12",
-    "typecheck": "tsc --noEmit"
+    "lint:workflows": "go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12"
   },
   "devDependencies": {
-    "@types/bun": "1.4.4",
-    "typescript": "6.0.2"
+    "@types/bun": "1.4.4"
   }
 }

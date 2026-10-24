@@ -18,8 +18,9 @@ view.
 
 - Tooling uses Bun 1.4.4. Run `bun install --frozen-lockfile` once, then use the root `package.json`
   commands. `scripts/dev/` owns local development, `scripts/release/` owns packaging and release
-  checks, and `scripts/fixtures/` owns demo servers and fixture generation. `bun run typecheck`,
-  `bun run test:release` and `bun run lint:workflows` validate the tooling.
+  checks, and `scripts/fixtures/` owns demo servers and fixture generation. Use Bun's native
+  `bun check` directly, without installing TypeScript. `bun run test:release` and
+  `bun run lint:workflows` cover release behavior and workflows.
 - Use `bun run test` for Swift tests. Bare `bun test` only runs the TypeScript tooling tests.
 - Build only with Command Line Tools. Never use `xcodebuild`. `bun run app` runs Xcode's `appintentsmetadataprocessor` directly for
   Siri and Shortcuts, which needs Xcode installed but not its license.

@@ -82,7 +82,7 @@ jobs:
           bun-version: 1.4.4
       - run: bun install --frozen-lockfile --ignore-scripts
       - name: Typecheck tooling
-        run: bun run typecheck
+        run: bun check
       - name: Lint workflows
         run: bun run lint:workflows
       - name: Test release tooling with fake commands
