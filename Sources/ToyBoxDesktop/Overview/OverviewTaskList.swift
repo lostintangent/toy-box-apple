@@ -74,6 +74,7 @@ struct OverviewTaskRow: View {
     let artifacts: [ChannelArtifact]
     let onArtifactOpen: (ChannelArtifact) -> Void
     @ViewState private var disclosure: OverviewItemState<Bool?>
+    @ViewState private var isTimingVisible = false
 
     init(task: ChannelTask, key: String, agents: [ChannelAgent], artifacts: [ChannelArtifact],
          onArtifactOpen: @escaping (ChannelArtifact) -> Void) {
@@ -112,43 +113,7 @@ struct OverviewTaskRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .top, spacing: Self.titleGap) {
-                OverviewTaskStatusIcon(status: task.status)
-                VStack(alignment: .leading, spacing: 3) {
-                    HStack(alignment: .top, spacing: 8) {
-                        firstLine
-                            .fixedSize(horizontal: false, vertical: true)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        if let owner {
-                            AgentAvatarView(agent: owner, size: 16)
-                                .help("Owned by \(owner.name)")
-                        }
-                    }
-                    if diff != nil || linkedArtifact != nil {
-                        metadata
-                    }
-                }
-            }
-            .padding(.vertical, 5)
-            // The whole parent row is the disclosure target, as in the pane, so its inline chevron
-            // needs no hit area. The artifact link keeps its own action, and leaves stay inert.
-            .contentShape(Rectangle())
-            .onTapGesture { if !children.isEmpty { toggle() } }
-            .focusable(!children.isEmpty, interactions: focusInteractions)
-            .onKeyPress(.rightArrow) { setExpanded(true) }
-            .onKeyPress(.leftArrow) { setExpanded(false) }
-            .onKeyPress(.space) { setExpanded(!isExpanded) }
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(accessibilityLabel)
-            .modifier(OverviewTaskRowRole(isParent: !children.isEmpty, isExpanded: isExpanded, toggle: toggle))
-            .accessibilityActions {
-                if let linkedArtifact, let artifact = linkedArtifact.artifact {
-                    Button("Open Artifact") { onArtifactOpen(artifact) }
-                }
-                if !children.isEmpty {
-                    Button(isExpanded ? "Collapse" : "Expand", action: toggle)
-                }
-            }
+            timedHeader
             if isExpanded, !children.isEmpty {
                 VStack(alignment: .leading, spacing: 0) {
                     ForEach(children) { child in
@@ -171,6 +136,72 @@ struct OverviewTaskRow: View {
         .onChange(of: key) {
             guard !children.isEmpty else { return }
             disclosure[key] = Self.isExpandedByDefault(status: task.status)
+        }
+    }
+
+    @ViewBuilder
+    private var timedHeader: some View {
+        if task.startedAt.flatMap(ChannelDates.date) != nil {
+            TimelineView(OverviewTaskMinuteSchedule(isVisible: isTimingVisible)) { context in
+                header(timing: channelTaskTiming(task, now: context.date))
+            }
+            .onScrollVisibilityChange(threshold: 0.01) { isTimingVisible = $0 }
+        } else {
+            header(timing: nil)
+        }
+    }
+
+    private func header(timing: ChannelTaskTiming?) -> some View {
+        HStack(alignment: .top, spacing: Self.titleGap) {
+            OverviewTaskStatusIcon(status: task.status)
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(alignment: .top, spacing: 8) {
+                    firstLine
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    if let owner {
+                        AgentAvatarView(agent: owner, size: 16)
+                            .help("Owned by \(owner.name)")
+                    }
+                }
+                if let timing {
+                    let presentation = OverviewTaskTimingPresentation(timing: timing)
+                    HStack(spacing: 10) {
+                        Label(presentation.elapsedText, systemImage: "clock")
+                            .help(presentation.elapsedHelp)
+                        if let checkIn = presentation.checkInText {
+                            Label(checkIn, systemImage: "bell")
+                                .help(presentation.checkInHelp ?? "")
+                        }
+                    }
+                    .font(.system(size: 11 * textScale))
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                }
+                if diff != nil || linkedArtifact != nil {
+                    metadata
+                }
+            }
+        }
+        .padding(.vertical, 5)
+        // The whole parent row is the disclosure target. Its artifact link keeps its own action.
+        .contentShape(Rectangle())
+        .onTapGesture { if !children.isEmpty { toggle() } }
+        .focusable(!children.isEmpty, interactions: focusInteractions)
+        .onKeyPress(.rightArrow) { setExpanded(true) }
+        .onKeyPress(.leftArrow) { setExpanded(false) }
+        .onKeyPress(.space) { setExpanded(!isExpanded) }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilityLabel(timing: timing))
+        .modifier(OverviewTaskRowRole(isParent: !children.isEmpty, isExpanded: isExpanded, toggle: toggle))
+        .accessibilityActions {
+            if let linkedArtifact, let artifact = linkedArtifact.artifact {
+                Button("Open Artifact") { onArtifactOpen(artifact) }
+            }
+            if !children.isEmpty {
+                Button(isExpanded ? "Collapse" : "Expand", action: toggle)
+            }
         }
     }
 
@@ -221,8 +252,9 @@ struct OverviewTaskRow: View {
         return .handled
     }
 
-    private var accessibilityLabel: String {
+    private func accessibilityLabel(timing: ChannelTaskTiming?) -> String {
         var parts = [task.title, OverviewTaskStatusIcon.spoken(task.status)]
+        if let timing { parts.append(OverviewTaskTimingPresentation(timing: timing).spoken) }
         if let progress {
             parts.append("\(progress.done) of \(progress.total) subtasks done")
         }
@@ -232,6 +264,45 @@ struct OverviewTaskRow: View {
             parts.append(linkedArtifact.artifact.map { "artifact \($0.title)" } ?? "artifact unavailable")
         }
         return parts.joined(separator: ", ")
+    }
+}
+
+struct OverviewTaskMinuteSchedule: TimelineSchedule {
+    let isVisible: Bool
+
+    func entries(from startDate: Date, mode: Mode) -> AnySequence<Date> {
+        isVisible
+            ? AnySequence(EveryMinuteTimelineSchedule().entries(from: startDate, mode: mode))
+            : AnySequence([startDate])
+    }
+}
+
+struct OverviewTaskTimingPresentation {
+    let timing: ChannelTaskTiming
+
+    var elapsedText: String { Self.duration(timing.elapsedMinutes) }
+    var checkInText: String? { timing.checkInMinutes.map { Self.duration($0) } }
+    var elapsedHelp: String { "Elapsed: \(Self.duration(timing.elapsedMinutes, spoken: true))" }
+    var checkInHelp: String? {
+        timing.checkInMinutes.map {
+            $0 == 0 ? "Check-in due" : "Check-in in \(Self.duration($0, spoken: true))"
+        }
+    }
+
+    var spoken: String {
+        let elapsed = "\(Self.duration(timing.elapsedMinutes, spoken: true)) elapsed"
+        guard let remaining = timing.checkInMinutes else { return elapsed }
+        return elapsed + (remaining == 0 ? ", check-in due" : ", check-in in \(Self.duration(remaining, spoken: true))")
+    }
+
+    private static func duration(_ minutes: Int, spoken: Bool = false) -> String {
+        let hours = minutes / 60, remainder = minutes % 60
+        var parts: [String] = []
+        if hours > 0 { parts.append(spoken ? "\(hours) \(hours == 1 ? "hour" : "hours")" : "\(hours)h") }
+        if remainder > 0 || hours == 0 {
+            parts.append(spoken ? "\(remainder) \(remainder == 1 ? "minute" : "minutes")" : "\(remainder)m")
+        }
+        return parts.joined(separator: " ")
     }
 }
 

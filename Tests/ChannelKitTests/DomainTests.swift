@@ -53,6 +53,24 @@ struct DomainTests {
         }
     }
 
+    @Test func taskTimingDecodesRecursivelyAndRemainsOptional() throws {
+        let data = Data("""
+        {"id":"parent","title":"Parent","status":"in_progress","startedAt":"2026-10-24T10:00:00Z",
+         "checkInAt":"2026-10-24T11:00:00Z","children":[
+           {"id":"child","title":"Child","status":"blocked","startedAt":"2026-10-24T10:15:00Z"},
+           {"id":"legacy","title":"Legacy","status":"pending"}
+         ]}
+        """.utf8)
+        let task = try JSONDecoder().decode(ChannelTask.self, from: data)
+        #expect(task.startedAt == "2026-10-24T10:00:00Z")
+        #expect(task.checkInAt == "2026-10-24T11:00:00Z")
+        #expect(task.children?.first?.startedAt == "2026-10-24T10:15:00Z")
+        #expect(task.children?.first?.checkInAt == nil)
+        #expect(task.children?.last?.startedAt == nil)
+        #expect(task.children?.last?.checkInAt == nil)
+        #expect(try JSONDecoder().decode(ChannelTask.self, from: JSONEncoder().encode(task)) == task)
+    }
+
     @Test func forwardCompatibleSystemContent() throws {
         let data = Data("""
         {"id":"new","sequence":1,"timestamp":"2026-10-01T00:00:00Z",
