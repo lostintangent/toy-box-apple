@@ -187,14 +187,14 @@ struct ConversationTranscript: View {
                 if rows.isEmpty && store.hasOlderMessages { Task { await loadOlder() } }
             }
             .onChange(of: store.messages.last?.id) {
-                guard hasLanded, pagingAnchor == nil, !isRevealing, !find.blocksRead else { return }
+                guard hasLanded, pagingAnchor == nil, !isRevealing, !find.isPresented else { return }
                 if isAtBottom {
                     catchUp?.isPinned = false
                     scrollToLatest(using: proxy)
                 }
             }
             .onChange(of: store.sendAttempts.map(\.id)) { old, new in
-                if isAtBottom && !find.blocksRead && new.count > old.count { scrollToLatest(using: proxy) }
+                if isAtBottom && !find.isPresented && new.count > old.count { scrollToLatest(using: proxy) }
             }
             .onChange(of: store.requestSequence, initial: true) { _, sequence in
                 let eligible = snapshot == nil && hasLanded && window.isKeyWindow
@@ -240,7 +240,7 @@ struct ConversationTranscript: View {
             }
             let update = new.update(after: old, wasAtBottom: isAtBottom,
                                     canFollow: hasLanded && pagingAnchor == nil && !isRevealing && !isUserScrolling
-                                        && catchUp?.holdsLanding != true && !find.blocksRead,
+                                        && catchUp?.holdsLanding != true && !find.isPresented,
                                     isJumping: pendingJump != nil)
             geometry.viewport = new
             followReaderWhilePaging()
@@ -406,7 +406,7 @@ struct ConversationTranscript: View {
     /// When a resize should keep the newest message in place, as the geometry action's follow does.
     private var followsLatest: Bool {
         isAtBottom && hasLanded && pagingAnchor == nil && !isRevealing && !isUserScrolling && pendingJump == nil
-            && catchUp?.holdsLanding != true && !find.blocksRead
+            && catchUp?.holdsLanding != true && !find.isPresented
     }
 
     private var floatingControls: some View {

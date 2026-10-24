@@ -806,6 +806,21 @@ struct TranscriptTests {
     }
 
     @MainActor
+    @Test func closingFindAtTheBottomRestoresFollowingButKeepsReadSuspended() async throws {
+        let find = TranscriptFind()
+        let harness = try await TranscriptHarness(messages: (1...90).map(transcriptTestMessage), find: find)
+        defer { harness.close() }
+        harness.interaction.findInChannel()
+        try await harness.waitUntil { find.isPresented && harness.findField != nil }
+        find.close()
+        try await harness.settled()
+        #expect(find.blocksRead && !find.isPresented)
+        harness.push(transcriptTestMessage(91), revision: 2)
+        try await harness.waitUntil { harness.store.messages.last?.sequence == 91 && abs(harness.bottomGap) < 2 }
+        #expect(find.blocksRead && harness.readRequests == 0)
+    }
+
+    @MainActor
     @Test(arguments: [false, true])
     func clearingFindKeepsRevealedMembershipLinesAndTheReadersPlace(closes: Bool) async throws {
         let memberships = (1...8).map { sequence in
