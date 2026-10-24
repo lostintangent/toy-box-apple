@@ -2027,12 +2027,12 @@ not message volume. Requests follow the menu bar's newest-first ordering.
 | --- | --- |
 | Small | Header/count and the first request. A 24-point agent avatar precedes the channel name, a two-line quote and secondary agent/age. A quiet "+N more" accounts for remaining requests |
 | Medium | Header/count and up to two compact request rows, with 8 points between rows and a single-line quote per row. Overflow uses "+N more" |
-| Large | Header/count and up to four request rows, with 12 points between rows. Overflow uses "+N more" |
+| Large | Header/count and up to four request rows, with 12 points between rows and a single-line quote per row. Overflow uses "+N more" |
 
 In Medium and Large, each request row is one link. WidgetKit gives Small one target for the
 whole tile, which opens its top request. Use a 24-point avatar from the catalog profile, an 8-point gap to
-the text column, a 13-point semibold channel name, a 12-point plain-text quote (one line in Medium,
-up to two in Small and Large), then 11-point secondary "[Agent] · 12m ago". Age is based on the
+the text column, a 13-point semibold channel name, a 12-point plain-text quote (one line in Medium
+and Large, up to two in Small), then 11-point secondary "[Agent] · 12m ago". Age is based on the
 request timestamp, not the last widget refresh. Keep visible text free of Markdown syntax and preserve the full question in
 the link's accessibility label. A quote that is still resolving says "Needs your reply", rather
 than appearing blank. Agent identity uses the supplied mark and color with the shared contrast
@@ -2042,8 +2042,10 @@ make the text depend on avatar color alone.
 The empty state uses `checkmark.bubble`, "Nothing needs you" and the secondary sentence
 "Your teams will appear here when they need a reply." Small may omit the explanatory sentence
 to preserve legibility. Cached requests after a known disconnect retain their content with
-"May be out of date". Medium and large share one secondary footer between overflow and
-"Updated [relative time]", so cached data does not imply continuous observation. Without a
+"May be out of date". Small hides "+N more" while offline so the full warning fits without
+truncation. The header count still conveys the additional requests. Medium and Large share one
+secondary footer between overflow and an update age such as "Updated 5m ago", so cached data
+does not imply continuous observation. Without a
 usable snapshot, say "Open Toy Box to connect" instead of claiming nothing needs attention.
 Do not expose requests from the previous server after a switch.
 
