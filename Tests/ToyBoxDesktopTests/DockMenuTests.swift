@@ -56,7 +56,9 @@ struct DockMenuTests {
                                 hasCatalog: true,
                                 quickSendEnabled: true, canCreateChannel: true,
                                 open: { _ in }, quickSend: {}, newChannel: {})
-        #expect(menu.items[0].title.count <= DockMenu.titleLimit)
+        #expect(DockMenu.titleLimit == 60)
+        #expect(menu.items[0].title.count <= 60)
+        #expect(menu.items[0].title.hasSuffix("\u{2026}"))
         #expect(!menu.items[0].title.contains("\n"))
         #expect(menu.items[0].toolTip == "Core: " + quote.replacingOccurrences(of: "\n", with: " "))
         #expect(menu.items[1].title == "unknown: Needs your reply")

@@ -3,7 +3,7 @@ import Foundation
 
 @MainActor
 enum DockMenu {
-    static let titleLimit = 120
+    static let titleLimit = 60
 
     static func make(status: MenuBarStatus, hasCatalog: Bool, quickSendEnabled: Bool, canCreateChannel: Bool,
                      open: @escaping (MenuBarStatus.Item) -> Void,
