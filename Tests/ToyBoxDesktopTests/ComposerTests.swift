@@ -295,6 +295,38 @@ struct ComposerTests {
             != ComposerDraft.storageKey(serverURL: server, channelID: "", scope: .quickSend))
     }
 
+    @Test func aWidgetReplyKeepsTheInboxDraftAndNeverRetargetsAChangedRequest() async throws {
+        try await withDraft { draft, _ in
+            let store = ChannelStore(id: "test", api: try ChannelAPI(serverURL: "http://localhost:3210"),
+                                     sendJournal: nil)
+            var channel = Channel(id: "test", name: "Test", model: .init(provider: "test", name: "test"),
+                                  requestSequence: 12, updatedAt: "2026-10-24T22:00:00Z")
+            _ = try store.apply(.init(type: "snapshot", state: .init(revision: 1, channel: channel,
+                                                                     lead: .lead(id: "lead"))))
+            let requester = ChannelAgent(id: "ada", name: "Ada Lovelace")
+            let session = AuxiliaryComposerSession(store: store, scope: .inboxReply(sequence: 12), draft: draft)
+            session.seedRequesterIfNew(requester)
+            #expect(draft.text == "@ada-lovelace ")
+            draft.text += "My existing inbox reply"
+            session.seedRequesterIfNew(.init(id: "different", name: "Other agent"))
+            #expect(draft.text == "@ada-lovelace My existing inbox reply")
+            let reopened = AuxiliaryComposerSession(store: store, scope: .inboxReply(sequence: 12),
+                                                    requester: requester, draft: draft)
+            #expect(reopened.draft === session.draft)
+            #expect(reopened.requestSequence == 12)
+            channel.requestSequence = 14
+            _ = try store.apply(.init(type: "snapshot", state: .init(revision: 2, channel: channel,
+                                                                     lead: .lead(id: "lead"))))
+            #expect(reopened.requestChanged)
+            #expect(!reopened.canSend)
+            await reopened.send()
+            #expect(store.sendAttempts.isEmpty)
+            #expect(draft.sendAttemptID == nil)
+            #expect(store.state?.channel.seenThrough == 0)
+            #expect(draft.text == "@ada-lovelace My existing inbox reply")
+        }
+    }
+
     @Test func quickSendRestoresDraftTargetsBeforeRecentsAndNeverGuessesAmongChannels() throws {
         let suite = "ComposerQuickSend-\(UUID())"
         let defaults = try #require(UserDefaults(suiteName: suite))

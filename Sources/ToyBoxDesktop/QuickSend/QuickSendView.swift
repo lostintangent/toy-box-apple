@@ -13,6 +13,7 @@ struct QuickSendView: View {
     @ViewState private var history: QuickSendTargetHistory?
     @ViewState private var incoming: QuickSendPrefillInbox?
     @ViewState private var sessions: [String: AuxiliaryComposerSession] = [:]
+    @ViewState private var replySession: AuxiliaryComposerSession?
     @ViewState private var heldStore: ChannelStore?
     @ViewState private var showsChooser = false
     @ViewState private var focusID = UUID()
@@ -21,8 +22,14 @@ struct QuickSendView: View {
     @ViewState private var catalogConnectingLong = false
 
     private var channels: [Channel] { model.catalog?.channels ?? [] }
-    private var selectedID: String? { history?.selectedID }
-    private var session: AuxiliaryComposerSession? { selectedID.flatMap { sessions[$0] } }
+    private var selectedID: String? { model.quickSend.replyTarget?.channelID ?? history?.selectedID }
+    private var session: AuxiliaryComposerSession? {
+        model.quickSend.replyTarget == nil ? selectedID.flatMap { sessions[$0] } : replySession
+    }
+    private var replyItem: MenuBarStatus.Item? {
+        guard let target = model.quickSend.replyTarget else { return nil }
+        return model.menuBarStatus.waiting.first { $0.id == target.channelID }
+    }
     private var showsHeader: Bool { session != nil || !channels.isEmpty }
     private var channelName: String {
         guard let selectedID else { return "Choose Channel" }
@@ -40,7 +47,7 @@ struct QuickSendView: View {
                     presentationID: model.quickSend.presentationID, onConfirmed: { confirmed($0, session: session) },
                     onOpenChannel: { open(session) }, onDismiss: model.quickSend.dismiss,
                     onChooseChannel: { showsChooser = true }, onDraggingChanged: { isDragging = $0 },
-                    focusID: focusID, incomingContentNotice: incomingContentNotice
+                    focusID: focusID, incomingContentNotice: requestContextNotice ?? incomingContentNotice
                 )
                 .id(ObjectIdentifier(session))
             } else {
@@ -77,13 +84,22 @@ struct QuickSendView: View {
         }
         .onChange(of: model.quickSend.presentationID) { _, _ in
             focusID = UUID()
+            chooseInitialTarget()
             receivePendingPrefill()
+        }
+        .onChange(of: model.quickSend.replyTarget) { _, target in
+            if target != nil { installReplySession(); holdSelectedStore() }
+        }
+        .onChange(of: replyItem) { _, _ in
+            if model.quickSend.replyTarget != nil { installReplySession() }
         }
         .onChange(of: model.quickSend.pendingPrefill?.id) { _, _ in receivePendingPrefill() }
         .onChange(of: model.catalog?.hasLoaded) { _, loaded in
-            if loaded == true, model.quickSend.isPresented, selectedID == nil { chooseInitialTarget() }
+            if loaded == true, model.quickSend.isPresented,
+               selectedID == nil || model.quickSend.replyTarget != nil { chooseInitialTarget() }
         }
         .onChange(of: selectedID) { _, _ in holdSelectedStore(); applyIncoming() }
+        .onChange(of: session.map(ObjectIdentifier.init)) { _, _ in holdSelectedStore() }
         .onChange(of: session?.draft.revision) { _, _ in trackDraft() }
         .onChange(of: session?.isReadOnly) { _, _ in applyIncoming() }
         .onChange(of: session?.confirmation?.id) { _, _ in applyIncoming() }
@@ -95,6 +111,7 @@ struct QuickSendView: View {
             model.quickSend.dismiss()
             endPresentation()
             sessions = [:]
+            replySession = nil
             history = nil
             incoming = nil
         }
@@ -106,6 +123,13 @@ struct QuickSendView: View {
             catch { return }
             catalogConnectingLong = true
         }
+    }
+
+    private var requestContextNotice: String? {
+        guard let target = model.quickSend.replyTarget, session?.requestChanged == false,
+              let item = replyItem, item.sequence == target.sequence else { return nil }
+        let title = item.agent.map { "Reply to \($0.name)" } ?? "Reply to request"
+        return item.quote.map { "\(title): \($0)" } ?? title
     }
 
     private var incomingContentNotice: String? {
@@ -135,6 +159,21 @@ struct QuickSendView: View {
                     model.quickSend.dismiss()
                     NSApplication.shared.activate()
                     openSettings()
+                }
+            } else if let target = model.quickSend.replyTarget {
+                let unavailable = model.catalog?.error != nil || replyItem?.quote != nil
+                Text(unavailable ? "Request preview unavailable" : "Loading request...")
+                    .font(.system(size: 15, weight: .semibold))
+                Text(model.catalog?.error ?? (unavailable
+                    ? "The requester is no longer available. Open the channel to review this request."
+                    : "The original request is being checked before you reply."))
+                    .foregroundStyle(.secondary)
+                HStack {
+                    Button("Retry") { model.retryMenuBarRequest(channelID: target.channelID) }
+                    Button("Open Channel") {
+                        model.quickSend.dismiss()
+                        model.activate(channelID: target.channelID, sequence: target.sequence)
+                    }
                 }
             } else if model.catalog?.hasLoaded == true, channels.isEmpty {
                 Text("No channels yet").font(.system(size: 15, weight: .semibold))
@@ -220,7 +259,7 @@ struct QuickSendView: View {
     }
 
     private func applyIncoming() {
-        guard let session, model.api?.baseURL == session.store.api.baseURL,
+        guard model.quickSend.replyTarget == nil, let session, model.api?.baseURL == session.store.api.baseURL,
               model.catalog?.hasLoaded != true || channels.contains(where: { $0.id == session.store.id }),
               incoming?.apply(to: session) == true else { return }
         trackDraft()
@@ -228,6 +267,11 @@ struct QuickSendView: View {
     }
 
     private func chooseInitialTarget() {
+        if model.quickSend.replyTarget != nil {
+            showsChooser = false
+            installReplySession()
+            return
+        }
         guard let api = model.api else { showsChooser = false; return }
         history?.restoreTarget(channels: channels, lastUsedID: model.activeChannelID ?? lastUsedChannel(),
                                catalogLoaded: model.catalog?.hasLoaded == true) {
@@ -242,11 +286,36 @@ struct QuickSendView: View {
 
     private func select(_ channel: Channel) {
         confirmationDismissal?.cancel()
+        model.quickSend.leaveReply()
         history?.choose(channel)
         installSession(channelID: channel.id)
         applyIncoming()
         trackDraft()
         holdSelectedStore()
+    }
+
+    private func installReplySession() {
+        guard let target = model.quickSend.replyTarget, target.serverURL == model.serverURL,
+              let catalog = model.catalog else { return }
+        let requester = replyItem.flatMap { $0.sequence == target.sequence ? $0.agent : nil }
+        if replySession?.store.id != target.channelID || replySession?.requestSequence != target.sequence {
+            let draft = ComposerDraft.shared(serverURL: catalog.api.baseURL, channelID: target.channelID,
+                                             scope: .inboxReply(sequence: target.sequence))
+            let knownChanged = catalog.hasLoaded
+                && channels.first(where: { $0.id == target.channelID })?.requestSequence != target.sequence
+            guard requester != nil || !draft.isNew || draft.hasContent || knownChanged else {
+                replySession = nil
+                return
+            }
+            replySession = AuxiliaryComposerSession(store: catalog.channel(id: target.channelID),
+                scope: .inboxReply(sequence: target.sequence), requester: requester, draft: draft)
+        } else if let requester {
+            replySession?.seedRequesterIfNew(requester)
+        }
+        if catalog.hasLoaded {
+            let current = channels.first { $0.id == target.channelID }?.requestSequence
+            if current != target.sequence { replySession?.invalidateRequest(replacementSequence: current) }
+        }
     }
 
     private func installSession(channelID: String) {
@@ -263,7 +332,7 @@ struct QuickSendView: View {
     }
 
     private func trackDraft() {
-        guard let selectedID, let session else { return }
+        guard model.quickSend.replyTarget == nil, let selectedID, let session else { return }
         history?.trackDraft(channelID: selectedID, name: session.store.details?.name,
                             hasContent: session.draft.hasContent || session.draft.sendAttemptID != nil)
     }
@@ -294,7 +363,7 @@ struct QuickSendView: View {
             do { try await Task.sleep(for: .milliseconds(700)) }
             catch { return }
             guard model.quickSend.presentationID == presentation, self.session === session else { return }
-            if incoming?.hasPendingContent == true {
+            if model.quickSend.replyTarget == nil, incoming?.hasPendingContent == true {
                 session.beginPresentation()
                 applyIncoming()
                 return

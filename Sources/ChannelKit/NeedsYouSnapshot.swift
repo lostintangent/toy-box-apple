@@ -65,8 +65,16 @@ public struct NeedsYouRequestLink: Equatable, Sendable {
     }
 
     public init?(url: URL) {
+        self.init(url: url, action: "request")
+    }
+
+    public init?(replyURL: URL) {
+        self.init(url: replyURL, action: "reply")
+    }
+
+    private init?(url: URL, action: String) {
         guard let parts = URLComponents(url: url, resolvingAgainstBaseURL: false),
-              parts.scheme == "toybox-desktop", parts.host == "request",
+              parts.scheme == "toybox-desktop", parts.host == action,
               parts.path.isEmpty, parts.user == nil, parts.password == nil,
               parts.port == nil, parts.fragment == nil,
               let items = parts.queryItems, items.count == 3,
@@ -83,9 +91,17 @@ public struct NeedsYouRequestLink: Equatable, Sendable {
     }
 
     public var url: URL? {
+        url(action: "request")
+    }
+
+    public var replyURL: URL? {
+        url(action: "reply")
+    }
+
+    private func url(action: String) -> URL? {
         var parts = URLComponents()
         parts.scheme = "toybox-desktop"
-        parts.host = "request"
+        parts.host = action
         parts.queryItems = [
             .init(name: "server", value: serverURL),
             .init(name: "channel", value: channelID),

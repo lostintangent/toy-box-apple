@@ -8,6 +8,9 @@ import SwiftUI
 @MainActor @Observable
 final class MenuBarPresence {
     private(set) var isInserted = false
+    private(set) var presentationRequest: UUID?
+    @ObservationIgnored private var explicitPresentation = false
+    @ObservationIgnored private var explicitWasPresented = false
     @ObservationIgnored var visibility: MenuBarVisibility = .whenActive {
         didSet { if visibility != oldValue { settle() } }
     }
@@ -56,6 +59,27 @@ final class MenuBarPresence {
 
     func popoverVisibilityChanged(_ visible: Bool) {
         isPopoverOpen = visible
+        if visible && explicitPresentation { explicitWasPresented = true }
+        if !visible && explicitWasPresented {
+            explicitPresentation = false
+            explicitWasPresented = false
+            presentationRequest = nil
+        }
+        settle()
+    }
+
+    func requestPresentation() {
+        guard !isPopoverOpen else { return }
+        explicitPresentation = true
+        presentationRequest = UUID()
+        settle()
+    }
+
+    func presentationFailed(id: UUID) {
+        guard presentationRequest == id else { return }
+        explicitPresentation = false
+        explicitWasPresented = false
+        presentationRequest = nil
         settle()
     }
 
@@ -65,7 +89,8 @@ final class MenuBarPresence {
         case .never: false
         case .whenActive: isActive || lingers || (isInserted && (isMenuOpen || isPopoverOpen))
         }
-        if inserted != isInserted { isInserted = inserted }
+        let next = inserted || explicitPresentation
+        if next != isInserted { isInserted = next }
     }
 }
 
@@ -85,6 +110,17 @@ struct MenuBarLabel: View {
         }
         .contentTransition(reduceMotion ? .identity : .symbolEffect(.replace))
         .task(id: status.accessibilityValue) { await MenuBarAccessibility.apply(status.accessibilityValue) }
+        .task(id: model.menuBar.presentationRequest) {
+            guard let id = model.menuBar.presentationRequest else { return }
+            do {
+                try await MenuBarAccessibility.presentInbox()
+            } catch is CancellationError {
+                model.menuBar.presentationFailed(id: id)
+            } catch {
+                model.menuBar.presentationFailed(id: id)
+                NSApp.presentError(error)
+            }
+        }
     }
 }
 
@@ -94,6 +130,23 @@ struct MenuBarLabel: View {
 @MainActor
 enum MenuBarAccessibility {
     static let title = "Toy Box"
+
+    static func presentInbox() async throws {
+        for _ in 0..<20 {
+            try Task.checkCancellation()
+            if let button = statusButtons().first {
+                button.performClick(nil)
+                return
+            }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        throw InboxError.unavailable
+    }
+
+    private enum InboxError: LocalizedError {
+        case unavailable
+        var errorDescription: String? { "Toy Box couldn't open the inbox. Try its menu bar icon again." }
+    }
 
     static func apply(_ value: String) async {
         // The scene inserts the button just after the label first renders.

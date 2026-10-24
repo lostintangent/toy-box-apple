@@ -60,7 +60,7 @@ final class WidgetSnapshotPublisher {
         NeedsYouSnapshot(
             serverURL: serverURL, updatedAt: now, isOffline: status.unreachableHost != nil,
             isAvailable: hasCatalog, waitingCount: status.waiting.count,
-            requests: status.waiting.prefix(4).compactMap { item in
+            requests: status.waiting.prefix(5).compactMap { item in
                 guard let sequence = item.sequence, sequence > 0 else { return nil }
                 return .init(channelID: item.id, channelName: item.name, sequence: sequence,
                              quote: item.quote ?? MenuBarStatus.needsReply, agentName: item.agent?.name,
@@ -95,15 +95,48 @@ enum WidgetSnapshotError: LocalizedError {
     }
 }
 
+enum WidgetActionLink: Equatable {
+    case main, quickSend, inbox
+    case open(NeedsYouRequestLink), reply(NeedsYouRequestLink)
+
+    init?(url: URL) {
+        if url == URL(string: "toybox-desktop://quick-send") {
+            self = .quickSend
+        } else if url == URL(string: "toybox-desktop://inbox") {
+            self = .inbox
+        } else if url == NeedsYouSnapshot.mainURL {
+            self = .main
+        } else if let request = NeedsYouRequestLink(url: url) {
+            self = .open(request)
+        } else if let request = NeedsYouRequestLink(replyURL: url) {
+            self = .reply(request)
+        } else {
+            return nil
+        }
+    }
+}
+
 extension AppModel {
     func openWidgetURL(_ url: URL) throws -> Bool {
-        if url == NeedsYouSnapshot.mainURL {
+        guard let action = WidgetActionLink(url: url) else { return false }
+        switch action {
+        case .main:
             activate(channelID: nil)
-            return true
+        case .quickSend:
+            guard quickSend.isEnabled else { throw QuickSendIntake.IntakeError.unavailable }
+            quickSend.present()
+        case .inbox:
+            guard quickSend.isEnabled else { throw QuickSendIntake.IntakeError.unavailable }
+            quickSend.dismiss()
+            menuBar.requestPresentation()
+        case .open(let request):
+            guard request.serverURL == serverURL else { throw WidgetSnapshotError.differentServer }
+            activate(channelID: request.channelID, sequence: request.sequence)
+        case .reply(let request):
+            guard request.serverURL == serverURL else { throw WidgetSnapshotError.differentServer }
+            guard quickSend.isEnabled else { throw QuickSendIntake.IntakeError.unavailable }
+            quickSend.present(replyTo: request)
         }
-        guard let link = NeedsYouRequestLink(url: url) else { return false }
-        guard link.serverURL == serverURL else { throw WidgetSnapshotError.differentServer }
-        activate(channelID: link.channelID, sequence: link.sequence)
         return true
     }
 }

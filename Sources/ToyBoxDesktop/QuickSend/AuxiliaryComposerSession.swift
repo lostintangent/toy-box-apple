@@ -40,9 +40,7 @@ final class AuxiliaryComposerSession {
         self.draft = draft ?? .shared(serverURL: store.api.baseURL, channelID: store.id, scope: scope)
         if case .inboxReply(let sequence) = scope { requestSequence = sequence }
         else { requestSequence = nil }
-        if let requester, self.draft.isNew, !self.draft.hasContent {
-            self.draft.text = "@\(agentHandleFromName(requester.name)) "
-        }
+        if let requester { seedRequesterIfNew(requester) }
         if let id = self.draft.sendAttemptID {
             submission = .init(id: id, revision: self.draft.revision, content: self.draft.text,
                                attachments: self.draft.images.map(\.attachment), opensChannel: false)
@@ -57,6 +55,11 @@ final class AuxiliaryComposerSession {
 
     var requestChanged: Bool {
         requestSequence.map { requestInvalidated || (store.isLoaded && store.requestSequence != $0) } ?? false
+    }
+
+    func seedRequesterIfNew(_ requester: ChannelAgent) {
+        guard draft.isNew, !draft.hasContent, requestSequence != nil else { return }
+        draft.text = "@\(agentHandleFromName(requester.name)) "
     }
 
     func invalidateRequest(replacementSequence: Int? = nil) {

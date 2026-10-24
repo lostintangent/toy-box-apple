@@ -1,4 +1,5 @@
 import AppKit
+import ChannelKit
 import Observation
 import OSLog
 import SwiftUI
@@ -13,6 +14,7 @@ final class QuickSendController: NSObject, NSWindowDelegate {
     private(set) var isRecording = false
     private(set) var isRegistered = false
     private(set) var pendingPrefill: QuickSendPrefill?
+    private(set) var replyTarget: NeedsYouRequestLink?
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let hotKey: any QuickSendHotKeyRegistering
     @ObservationIgnored private var panel: QuickSendPanel?
@@ -106,6 +108,18 @@ final class QuickSendController: NSObject, NSWindowDelegate {
     }
 
     func present() {
+        replyTarget = nil
+        show()
+    }
+
+    func present(replyTo request: NeedsYouRequestLink) {
+        replyTarget = request
+        show()
+    }
+
+    func leaveReply() { replyTarget = nil }
+
+    private func show() {
         guard isEnabled else { return }
         if panel == nil {
             let panel = QuickSendPanel(contentRect: NSRect(x: 0, y: 0, width: 560, height: 220),

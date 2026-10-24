@@ -11,15 +11,16 @@ struct NeedsYouEntry: TimelineEntry {
 struct NeedsYouWidgetContent: View {
     let entry: NeedsYouEntry
     let family: WidgetFamily
+    @Environment(\.widgetRenderingMode) private var renderingMode
 
-    private var limit: Int { family == .systemSmall ? 1 : family == .systemMedium ? 2 : 4 }
+    private var limit: Int { family == .systemSmall ? 1 : family == .systemMedium ? 2 : 5 }
     private var snapshot: NeedsYouSnapshot? { entry.snapshot.flatMap { $0.isAvailable ? $0 : nil } }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Link(destination: NeedsYouSnapshot.mainURL) {
-                    Text("Needs you").font(.system(size: 13, weight: .semibold))
+                    Text("Needs you").font(.system(size: 13, weight: .semibold)).widgetAccentable()
                 }
                 Spacer()
                 if let snapshot {
@@ -37,8 +38,23 @@ struct NeedsYouWidgetContent: View {
                         ForEach(Array(snapshot.requests.prefix(limit))) { request in
                             if let url = NeedsYouRequestLink(serverURL: snapshot.serverURL,
                                 channelID: request.channelID, sequence: request.sequence).url {
-                                Link(destination: url) { requestRow(request) }
-                                    .accessibilityLabel("\(request.channelName): \(request.quote)")
+                                HStack(alignment: .center, spacing: 8) {
+                                    Link(destination: url) { requestRow(request) }
+                                        .accessibilityLabel("\(request.channelName): \(request.quote)")
+                                    if family != .systemSmall, let replyURL = NeedsYouRequestLink(
+                                        serverURL: snapshot.serverURL, channelID: request.channelID,
+                                        sequence: request.sequence).replyURL {
+                                        Link(destination: replyURL) {
+                                            Image(systemName: "arrowshape.turn.up.left")
+                                                .font(.system(size: 13, weight: .medium))
+                                                .frame(width: 28, height: 28)
+                                                .contentShape(Rectangle())
+                                        }
+                                        .widgetAccentable()
+                                        .accessibilityLabel("Reply to \(request.agentName ?? "request") in \(request.channelName)")
+                                        .help("Reply to \(request.agentName ?? "request") in \(request.channelName)")
+                                    }
+                                }
                             }
                         }
                     }
@@ -77,7 +93,9 @@ struct NeedsYouWidgetContent: View {
     private func requestRow(_ request: NeedsYouSnapshot.Request) -> some View {
         HStack(alignment: .top, spacing: 8) {
             if let data = request.avatarPNG, let image = NSImage(data: data) {
-                Image(nsImage: image).resizable().widgetAccentedRenderingMode(.fullColor)
+                Image(nsImage: image).resizable()
+                    .widgetAccentedRenderingMode(renderingMode == .fullColor ? .fullColor
+                        : renderingMode == .accented ? .accentedDesaturated : .desaturated)
                     .frame(width: 24, height: 24).accessibilityHidden(true)
             } else {
                 Image(systemName: "questionmark.bubble")
@@ -103,9 +121,10 @@ struct NeedsYouWidgetContent: View {
 
     private func footer(_ snapshot: NeedsYouSnapshot) -> some View {
         let isStale = snapshot.isStale(at: entry.date)
+        let displayedCount = min(limit, snapshot.requests.count)
         return HStack {
-            if snapshot.waitingCount > limit && (family != .systemSmall || !isStale) {
-                Text("+\(snapshot.waitingCount - limit) more")
+            if snapshot.waitingCount > displayedCount && (family != .systemSmall || !isStale) {
+                Text("+\(snapshot.waitingCount - displayedCount) more")
             }
             Spacer(minLength: 2)
             if isStale {
