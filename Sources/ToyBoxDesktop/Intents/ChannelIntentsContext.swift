@@ -278,7 +278,7 @@ enum ChannelIntentError: Error, Equatable, CustomLocalizedStringResourceConverti
 
     var localizedStringResource: LocalizedStringResource {
         switch self {
-        case .noServer: "Toy Box Desktop isn't connected to a server. Choose one in Settings."
+        case .noServer: "Toy Box isn't connected to a server. Choose one in Settings."
         case .unreachable: "Can't connect to your Toy Box server. Check that it's running, then try again."
         case .channelNotFound: "That channel isn't on your Toy Box server anymore."
         case .channelDeleted(let name): "\(name) was deleted, so your message wasn't sent."

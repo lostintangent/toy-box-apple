@@ -138,8 +138,8 @@ struct QuickSendView: View {
                 }
             } else if model.catalog?.hasLoaded == true, channels.isEmpty {
                 Text("No channels yet").font(.system(size: 15, weight: .semibold))
-                Text("Open Toy Box Desktop to create one.").foregroundStyle(.secondary)
-                Button("Open Toy Box Desktop") {
+                Text("Open Toy Box to create one.").foregroundStyle(.secondary)
+                Button("Open Toy Box") {
                     model.quickSend.dismiss()
                     model.activate(channelID: nil)
                 }

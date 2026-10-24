@@ -99,7 +99,7 @@ struct MenuBarInbox: View {
                     if model.catalog?.hasLoaded == false && status.unreachableHost == nil {
                         Text("Connecting…").font(.system(size: 13)).foregroundStyle(.secondary)
                     } else if model.catalog?.channels.isEmpty == true && status.unreachableHost == nil {
-                        empty(title: "No channels yet", detail: "Open Toy Box Desktop to create one.")
+                        empty(title: "No channels yet", detail: "Open Toy Box to create one.")
                     } else if status.unreachableHost == nil {
                         Text("Your Team").font(.system(size: 15, weight: .semibold))
                         empty(title: "All caught up", detail: "No requests waiting. No agents are working.")
@@ -251,7 +251,7 @@ struct MenuBarInbox: View {
             }
             .buttonStyle(.plain)
             HStack {
-                Button("Open Toy Box Desktop") { closeThen { model.activate(channelID: nil) } }
+                Button("Open Toy Box") { closeThen { model.activate(channelID: nil) } }
                     .buttonStyle(.plain)
                     .frame(height: 32)
                 Spacer()

@@ -85,8 +85,8 @@ enum DictationAccess: Equatable {
 
     var explanation: String {
         self == .microphone
-            ? "Allow Toy Box Desktop to use the microphone in Privacy & Security settings. The Dictation key still works."
-            : "Allow Toy Box Desktop to use speech recognition in Privacy & Security settings. The Dictation key still works."
+            ? "Allow Toy Box to use the microphone in Privacy & Security settings. The Dictation key still works."
+            : "Allow Toy Box to use speech recognition in Privacy & Security settings. The Dictation key still works."
     }
 
     var settingsURL: URL? {

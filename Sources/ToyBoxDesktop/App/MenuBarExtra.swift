@@ -93,7 +93,7 @@ struct MenuBarLabel: View {
 /// button instead.
 @MainActor
 enum MenuBarAccessibility {
-    static let title = "Toy Box Desktop"
+    static let title = "Toy Box"
 
     static func apply(_ value: String) async {
         // The scene inserts the button just after the label first renders.

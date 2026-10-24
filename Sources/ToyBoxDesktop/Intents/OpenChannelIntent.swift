@@ -2,7 +2,7 @@ import AppIntents
 
 struct OpenChannelIntent: OpenIntent {
     static let title: LocalizedStringResource = "Open Channel"
-    static let description = IntentDescription("Opens a channel in Toy Box Desktop.")
+    static let description = IntentDescription("Opens a channel in Toy Box.")
     static let supportedModes: IntentModes = .foreground(.immediate)
 
     @Parameter(title: "Channel", requestValueDialog: "Which channel?")
