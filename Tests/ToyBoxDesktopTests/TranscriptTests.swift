@@ -488,8 +488,10 @@ struct TranscriptTests {
     }
 
     @MainActor
-    @Test func arrivalsFollowAtTheBottomAndJumpingBackFollowsASend() async throws {
-        let harness = try await TranscriptHarness(messages: (1...30).map(transcriptTestMessage))
+    @Test(arguments: [false, true])
+    func arrivalsFollowAtTheBottomAndJumpingBackFollowsASend(legacyScrollers: Bool) async throws {
+        let harness = try await TranscriptHarness(messages: (1...30).map(transcriptTestMessage),
+                                                  legacyScrollers: legacyScrollers)
         defer { harness.close() }
 
         harness.push(transcriptTestMessage(31), revision: 2)
@@ -1982,13 +1984,14 @@ private func transcriptFrame(in view: NSView) async throws {
 
 @MainActor
 private func transcriptUntil(in view: NSView? = nil, sourceLocation: SourceLocation = #_sourceLocation,
+                             failure: () -> String = { "The transcript did not reach the expected state" },
                              _ condition: () -> Bool) async throws {
     let deadline = ContinuousClock.now + .seconds(60)
     while !condition(), ContinuousClock.now < deadline {
         if let view { try await transcriptFrame(in: view) }
         else { try await Task.sleep(for: .milliseconds(20)) }
     }
-    try #require(condition(), "The transcript did not reach the expected state", sourceLocation: sourceLocation)
+    try #require(condition(), Comment(rawValue: failure()), sourceLocation: sourceLocation)
 }
 
 /// Waits for three unchanged display frames instead of assuming layout finishes in a fixed interval.
@@ -2439,7 +2442,11 @@ private final class TranscriptHarness {
 
     /// Waits up to a deadline rather than a count of cycles, since a starved runner stretches each cycle.
     func waitUntil(sourceLocation: SourceLocation = #_sourceLocation, _ condition: () -> Bool) async throws {
-        try await transcriptUntil(in: window.contentView, sourceLocation: sourceLocation, condition)
+        try await transcriptUntil(in: window.contentView, sourceLocation: sourceLocation, failure: {
+            "Transcript landed: \(self.capture.hasLanded), gap: \(self.bottomGap), "
+                + "clip: \(self.scrollView.contentView.bounds), "
+                + "document: \(String(describing: self.scrollView.documentView?.bounds))"
+        }, condition)
     }
 
     func frame() async throws {
