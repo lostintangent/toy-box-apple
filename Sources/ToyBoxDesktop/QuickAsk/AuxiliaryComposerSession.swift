@@ -28,6 +28,7 @@ final class AuxiliaryComposerSession {
     private(set) var error: String?
     private(set) var editedUnconfirmedMessage = false
     private var submission: Submission?
+    private var requestInvalidated = false
     @ObservationIgnored private var observation = UUID()
 
     init(store: ChannelStore, scope: ComposerDraft.Scope, requester: ChannelAgent? = nil,
@@ -52,8 +53,10 @@ final class AuxiliaryComposerSession {
     }
 
     var requestChanged: Bool {
-        requestSequence.map { store.isLoaded && store.requestSequence != $0 } ?? false
+        requestSequence.map { requestInvalidated || (store.isLoaded && store.requestSequence != $0) } ?? false
     }
+
+    func invalidateRequest() { requestInvalidated = true }
 
     var isReadOnly: Bool { submission != nil && draft.sendAttemptID == submission?.id }
 

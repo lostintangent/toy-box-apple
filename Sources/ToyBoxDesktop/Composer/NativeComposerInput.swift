@@ -57,7 +57,7 @@ struct NativeComposerInput: NSViewRepresentable {
     var dictation: ComposerDictation? = nil
     var allowsAgentManagement = true
     var isEditable = true
-    var minimumHeight: CGFloat = 44
+    var minimumHeight: CGFloat = 0
     var maximumLineCount = 3
     var onSendAndOpen: (() -> Void)? = nil
     var onEscape: (() -> Void)? = nil

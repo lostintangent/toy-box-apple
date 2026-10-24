@@ -5,6 +5,7 @@ import ChannelKit
 import Foundation
 import Speech
 import SwiftUI
+import Synchronization
 import Testing
 import UniformTypeIdentifiers
 @testable import ToyBoxDesktop
@@ -142,6 +143,9 @@ struct ComposerTests {
             #expect(session.canSend)
             #expect(!session.requestChanged)
             #expect(store.state?.channel.seenThrough == 0)
+            session.invalidateRequest()
+            #expect(session.requestChanged)
+            #expect(!session.canSend)
             draft.text = ""
             let restored = ComposerDraft(fileURL: url)
             let reopened = AuxiliaryComposerSession(store: store, scope: .inboxReply(sequence: 8),
@@ -160,6 +164,79 @@ struct ComposerTests {
             #expect(store.sendAttempts.isEmpty)
             #expect(session.error?.contains("request changed") == true)
             #expect(store.state?.channel.seenThrough == 0)
+        }
+    }
+
+    @Test func quickAskRestoresDraftTargetsBeforeRecentsAndNeverGuessesAmongChannels() throws {
+        let suite = "ComposerQuickAsk-\(UUID())"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let server = try #require(URL(string: "http://localhost:3210"))
+        let alpha = Channel(id: "alpha", name: "Alpha", purpose: "Build the launch",
+                            model: .init(provider: "test", name: "test"), updatedAt: "2026-10-24T00:00:00Z")
+        var beta = alpha
+        beta.id = "beta"; beta.name = "Beta"; beta.purpose = "Sketch the entrance"
+        let history = QuickAskTargetHistory(serverURL: server, defaults: defaults)
+        #expect(history.initialTarget(channels: [beta, alpha], lastUsedID: nil, hasDraft: { _ in false }) == nil)
+        #expect(history.initialTarget(channels: [beta, alpha], lastUsedID: "alpha", hasDraft: { _ in false }) == "alpha")
+        #expect(history.initialTarget(channels: [beta], lastUsedID: nil, hasDraft: { _ in false }) == "beta")
+        history.choose(beta)
+        #expect(history.initialTarget(channels: [beta, alpha], lastUsedID: "alpha", hasDraft: { _ in false }) == "beta")
+        history.trackDraft(channelID: "alpha", name: "Alpha", hasContent: true)
+        let restored = QuickAskTargetHistory(serverURL: server, defaults: defaults)
+        #expect(restored.initialTarget(channels: [beta], lastUsedID: "beta", hasDraft: { $0 == "alpha" }) == "alpha")
+        #expect(restored.choices(channels: [alpha, beta], query: "").map(\.id) == ["beta", "alpha"])
+        #expect(restored.choices(channels: [alpha, beta], query: "entrance").map(\.id) == ["beta"])
+        #expect(restored.choices(channels: [alpha, beta], query: "LAUNCH").map(\.id) == ["alpha"])
+        restored.trackDraft(channelID: "alpha", name: nil, hasContent: false)
+        #expect(restored.initialTarget(channels: [alpha], lastUsedID: "alpha", hasDraft: { _ in false }) == nil)
+        let otherServer = QuickAskTargetHistory(serverURL: try #require(URL(string: "http://localhost:3211")),
+                                               defaults: defaults)
+        #expect(otherServer.initialTarget(channels: [alpha, beta], lastUsedID: nil, hasDraft: { _ in false }) == nil)
+    }
+
+    @Test(arguments: [422, 503])
+    func auxiliarySendAgainUsesTheSharedOutboxAndOriginalImmutableMessage(status: Int) async throws {
+        try await withDraft { draft, _ in
+            let host = UUID().uuidString.lowercased() + ".invalid"
+            AuxiliaryPostProtocol.fixtures.withLock { $0[host] = .init(statuses: [status, 201]) }
+            let configuration = URLSessionConfiguration.ephemeral
+            configuration.protocolClasses = [AuxiliaryPostProtocol.self]
+            let transport = URLSession(configuration: configuration)
+            defer {
+                transport.invalidateAndCancel()
+                AuxiliaryPostProtocol.fixtures.withLock { _ = $0.removeValue(forKey: host) }
+            }
+            let store = ChannelStore(id: "test", api: try ChannelAPI(serverURL: "http://\(host)", session: transport),
+                                     sendJournal: nil)
+            let channel = Channel(id: "test", name: "Test", model: .init(provider: "test", name: "test"),
+                                  updatedAt: "2026-10-24T00:00:00Z")
+            _ = try store.apply(.init(type: "snapshot", state: .init(revision: 1, channel: channel,
+                                                                    lead: .lead(id: "lead"))))
+            draft.text = "Original message"
+            draft.append(try sampleImage())
+            let session = AuxiliaryComposerSession(store: store, scope: .quickAsk, draft: draft)
+            await session.send(opensChannel: true)
+            let originalID = try #require(draft.sendAttemptID)
+            #expect(session.confirmation == nil)
+            #expect(session.isReadOnly)
+            #expect(session.attempt?.phase == (status == 422 ? .notSent : .deliveryNotConfirmed))
+            #expect(session.deliveryNotice?.contains(status == 422 ? "Rejected" : "It may have arrived") == true)
+            #expect(draft.text == "Original message")
+            #expect(draft.images.count == 1)
+            #expect(AuxiliaryPostProtocol.fixtures.withLock { $0[host]?.posts.count } == 1)
+            await session.send()
+            #expect(session.confirmation?.id == originalID)
+            #expect(session.confirmation?.sequence == 7)
+            #expect(session.confirmation?.opensChannel == false)
+            #expect(!draft.hasContent)
+            #expect(store.sendAttempts.isEmpty)
+            #expect(store.state?.channel.seenThrough == 0)
+            let posts = AuxiliaryPostProtocol.fixtures.withLock { $0[host]?.posts ?? [] }
+            #expect(posts.count == 2)
+            #expect(posts.first == posts.last)
+            #expect(posts.first?.id == originalID)
+            #expect(posts.first?.attachments?.count == 1)
         }
     }
 
@@ -1191,6 +1268,73 @@ struct ComposerTests {
         do { try FileManager.default.removeItem(at: url) }
         catch { Issue.record("Composer test cleanup failed: \(error.localizedDescription)") }
     }
+}
+
+private final class AuxiliaryPostProtocol: URLProtocol, @unchecked Sendable {
+    struct Posted: Codable, Equatable, Sendable {
+        let id: String
+        let content: String
+        let attachments: [ChannelAttachment]?
+    }
+    struct Fixture: Sendable {
+        var statuses: [Int]
+        var posts: [Posted] = []
+    }
+    private struct Envelope: Encodable {
+        let version = 1
+        let message: ChannelMessage
+    }
+    static let fixtures = Mutex<[String: Fixture]>([:])
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        do {
+            let url = try #require(request.url)
+            let host = try #require(url.host)
+            let post = try JSONDecoder().decode(Posted.self, from: body())
+            let status = try Self.fixtures.withLock { fixtures in
+                var fixture = try #require(fixtures[host])
+                let status = try #require(fixture.statuses.first)
+                fixture.statuses.removeFirst()
+                fixture.posts.append(post)
+                fixtures[host] = fixture
+                return status
+            }
+            let data: Data
+            if status == 201 {
+                let message = ChannelMessage(id: post.id, sequence: 7, timestamp: "2026-10-24T00:00:00Z",
+                                             sender: .user, content: .text(post.content), attachments: post.attachments)
+                data = try JSONEncoder().encode(Envelope(message: message))
+            } else {
+                data = Data(#"{"error":"Rejected"}"#.utf8)
+            }
+            let response = try #require(HTTPURLResponse(url: url, statusCode: status, httpVersion: "HTTP/1.1",
+                                                       headerFields: ["Content-Type": "application/json"]))
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: data)
+            client?.urlProtocolDidFinishLoading(self)
+        } catch { client?.urlProtocol(self, didFailWithError: error) }
+    }
+
+    private func body() throws -> Data {
+        if let data = request.httpBody { return data }
+        let stream = try #require(request.httpBodyStream)
+        stream.open()
+        defer { stream.close() }
+        var data = Data()
+        var buffer = [UInt8](repeating: 0, count: 4096)
+        while stream.hasBytesAvailable {
+            let count = stream.read(&buffer, maxLength: buffer.count)
+            guard count >= 0 else { throw ChannelAPIError.invalidResponse }
+            if count == 0 { break }
+            data.append(contentsOf: buffer.prefix(count))
+        }
+        return data
+    }
+
+    override func stopLoading() {}
 }
 
 /// The draft a test window shows, which changes like the selected channel.

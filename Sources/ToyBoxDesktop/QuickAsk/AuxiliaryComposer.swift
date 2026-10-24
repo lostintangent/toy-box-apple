@@ -16,6 +16,7 @@ struct AuxiliaryComposer: View {
     var onOpenChannel: () -> Void
     var onDismiss: () -> Void
     var onChooseChannel: (() -> Void)? = nil
+    var onDraggingChanged: ((Bool) -> Void)? = nil
 
     @Environment(\.channelTextScale) private var textScale
     @ViewState private var inputHeight: CGFloat = 84
@@ -27,6 +28,7 @@ struct AuxiliaryComposer: View {
     @ViewState private var finalizing = false
     @ViewState private var connectGrace = ConnectGrace()
     @ViewState private var noticeHeight: CGFloat = 0
+    @ViewState private var imageHeight: CGFloat = 92
 
     private var draft: ComposerDraft { session.draft }
     private var store: ChannelStore { session.store }
@@ -57,6 +59,7 @@ struct AuxiliaryComposer: View {
             } else {
                 if !draft.images.isEmpty {
                     ComposerImageStrip(draft: draft).disabled(!canEdit)
+                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { imageHeight = $0 }
                 }
                 editor
                 ScrollView {
@@ -80,6 +83,7 @@ struct AuxiliaryComposer: View {
         .onAppear { updatePresentation() }
         .onChange(of: presentationID) { _, _ in updatePresentation() }
         .onChange(of: isPresented) { _, _ in updatePresentation() }
+        .onChange(of: dragging) { _, value in onDraggingChanged?(value) }
         .onChange(of: draft.revision) { _, revision in
             registerDraft()
             dictation.draftChanged(to: revision)
@@ -111,8 +115,8 @@ struct AuxiliaryComposer: View {
             )
             .frame(height: style == .quickAsk
                    ? min(inputHeight, max(100, 300 - min(noticeHeight, 100)
-                                          - (draft.images.isEmpty ? 0 : 92)))
-                   : 84 * textScale)
+                                          - (draft.images.isEmpty ? 0 : imageHeight)))
+                   : 60 * textScale + 24)
         }
         .background(style == .reply ? Color.primary.opacity(0.05) : .clear,
                     in: RoundedRectangle(cornerRadius: 10, style: .continuous))
