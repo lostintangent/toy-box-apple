@@ -125,7 +125,7 @@ runtime and secure timestamps throughout. Ad-hoc development signing does not en
 runtime, because library validation cannot match Team IDs between ad-hoc-signed binaries.
 
 Only `script/release` adds the production `SUFeedURL` and `SUPublicEDKey`. The stable feed is
-`https://github.com/lostintangent/toy-box-desktop/releases/latest/download/appcast.xml`, and every
+`https://github.com/lostintangent/toy-box-apple/releases/latest/download/appcast.xml`, and every
 enclosure points at that version's GitHub release asset URL. Development, validation,
 snapshot and test bundles have no feed or verification key and never start an updater. Release
 bundles enable automatic checking without Sparkle's permission prompt, but leave automatic

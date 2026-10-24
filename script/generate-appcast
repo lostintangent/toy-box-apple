@@ -16,7 +16,7 @@ else
     [[ -s "$KEY_FILE" ]] || { echo "The update signing key file is missing." >&2; exit 1; }
 fi
 TOOLS="$("$ROOT/script/sparkle-tools")"
-PREFIX="${DOWNLOAD_URL_PREFIX:-https://github.com/lostintangent/toy-box-desktop/releases/download/$TAG/}"
+PREFIX="${DOWNLOAD_URL_PREFIX:-https://github.com/lostintangent/toy-box-apple/releases/download/$TAG/}"
 signing_tool() {
     local tool="$1"
     shift
@@ -31,7 +31,7 @@ NOTES="${ARCHIVE%.zip}.txt"
 git -C "$ROOT" for-each-ref --format='%(contents)' "refs/tags/$TAG" > "$NOTES"
 if [[ ! -s "$NOTES" ]]; then printf 'Toy Box Desktop %s\n' "${TAG#v}" > "$NOTES"; fi
 signing_tool generate_appcast --download-url-prefix "$PREFIX" --embed-release-notes \
-    --maximum-deltas 0 --link https://github.com/lostintangent/toy-box-desktop \
+    --maximum-deltas 0 --link https://github.com/lostintangent/toy-box-apple \
     -o "$OUTPUT/appcast.xml" "$OUTPUT"
 
 SIGNATURE="$(python3 - "$OUTPUT/appcast.xml" "$ARCHIVE" "$BUILD" "${TAG#v}" "$PREFIX" <<'PY'

@@ -20,7 +20,7 @@ A native Mac app for your [Toy Box](https://github.com/lostintangent/toy-box) ch
 ## Getting started
 
 1. Install and start [Toy Box](https://github.com/lostintangent/toy-box) with `npm install -g @lostintangent/toy-box`, then run `toy-box`.
-1. Download the latest zip from [Releases](https://github.com/lostintangent/toy-box-desktop/releases/latest), unzip it and drag the app into Applications. It needs macOS 27 on an Apple Silicon Mac.
+1. Download the latest zip from [Releases](https://github.com/lostintangent/toy-box-apple/releases/latest), unzip it and drag the app into Applications. It needs macOS 27 on an Apple Silicon Mac.
 1. Open it. The app connects to `http://localhost:3000`. If your server lives somewhere else, change it in Settings (⌘,).
 
 Building from source? See [AGENTS.md](AGENTS.md).

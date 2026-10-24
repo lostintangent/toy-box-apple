@@ -155,7 +155,7 @@ view.
   components inside out before signing the app. Keep Sparkle's license in the bundle.
 - Only release bundles receive `SUFeedURL` and `SUPublicEDKey`. All other bundles have no updater,
   even if the user previously enabled it in preferences. The release feed is
-  `https://github.com/lostintangent/toy-box-desktop/releases/latest/download/appcast.xml`.
+  `https://github.com/lostintangent/toy-box-apple/releases/latest/download/appcast.xml`.
   Automatic checking defaults on without a permission prompt. Installation remains opt-in.
   `script/generate-appcast` runs after notarization and verifies both the archive and feed signatures.
   It accepts the private key on stdin from `SPARKLE_ED_PRIVATE_KEY`, or an explicit
