@@ -5,6 +5,7 @@ import { buildApp } from "../dev/run.ts";
 import { checkVersion } from "./check-update-version.ts";
 import { signApp } from "./sign-app.ts";
 import { validateShareExtension } from "./share-extension.ts";
+import { validateWidgetExtension } from "./widget-extension.ts";
 
 export function parseNotaryResponse(response: string, status: number) {
     let parsed: unknown;
@@ -62,6 +63,7 @@ if (import.meta.main) await main(async () => {
     console.log("Signing with the pinned identity. If a keychain prompt appears, allow codesign to use that key.");
     await signApp(app, signArgs);
     await validateShareExtension(app);
+    await validateWidgetExtension(app);
     await command(["codesign", "--verify", "--strict", "--verbose=2", app]);
     const display = await command(["codesign", "--display", "--verbose=4", app], { quiet: true });
     if (!/flags=.*runtime/.test(display.stdout.toString() + display.stderr.toString())) {

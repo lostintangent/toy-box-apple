@@ -174,10 +174,16 @@ view.
   is never published. `PREVIOUS_APPCAST=path` enforces an increasing build number locally. CI always
   compares against the latest published feed and serializes release workflows. Its build number is
   `github.run_number.github.run_attempt`, so reruns advance too.
-- Hardened runtime and a secure timestamp throughout. The app has only audio-input permission.
+- Hardened runtime and a secure timestamp throughout. The app has audio-input permission and,
+  when Developer ID signed with its widget, the `RHFNBL7EG4.dev.toybox.desktop` app group.
   `Contents/PlugIns/ToyBoxShare.appex` has only App Sandbox, no network or file-access entitlement.
   Its identity is the app's ID plus `.share`, with matching version/build, signed before the app.
   Never `--deep`. Validation checks its arm64 architecture, SDK stamp, signature and sandbox.
+- `Contents/PlugIns/ToyBoxWidget.appex` has App Sandbox and the same Team-ID-prefixed app group,
+  with no networking. Its ID is the app's ID plus `.widget`, and versions/builds match.
+  Ad-hoc builds have no app-group entitlement or snapshot publishing. Isolated validation,
+  snapshot and benchmark copies remove the widget and group metadata. Register the containing
+  app with LaunchServices before probing WidgetKit registration.
   Local builds use Command Line Tools, and CI uses the runner's selected Xcode 27 on `xcode-27`.
 - The Share extension is built by SwiftPM with `_NSExtensionMain`, without Xcode or a storyboard.
   It loads only explicitly shared items, writes `dev.toybox.desktop.share.<UUID>` pasteboards,

@@ -18,6 +18,7 @@ final class AppModel {
     let performanceBenchmark: PerformanceBenchmark?
     let updates: AppUpdates
     let quickSend: QuickSendController
+    let widgetSnapshots: WidgetSnapshotPublisher
     private(set) var serverURL: String
     private(set) var catalog: ChannelCatalogStore?
     private(set) var configurationError: String?
@@ -48,6 +49,10 @@ final class AppModel {
         self.launchOptions = launchOptions
         updates = AppUpdates(isSnapshot: launchOptions.isSnapshot)
         quickSend = QuickSendController(options: launchOptions)
+        widgetSnapshots = WidgetSnapshotPublisher(enabled:
+            !launchOptions.isSnapshot && launchOptions.benchmark == nil && launchOptions.resizeBenchmark == nil
+            && launchOptions.serverURL == nil && launchOptions.quickSendValidation == nil
+            && ProcessInfo.processInfo.environment["TOY_BOX_SERVER_URL"] == nil)
         snapshot = launchOptions.isSnapshot ? WindowSnapshot(options: launchOptions) : nil
         resizeBenchmark = launchOptions.resizeBenchmark.flatMap { mode in
             launchOptions.channelID.map { ResizeBenchmark(mode: mode, channelID: $0) }
@@ -126,6 +131,7 @@ final class AppModel {
             observeCatalog(generation: catalogGeneration)
             catalog?.setActive(NSApplication.shared.isActive)
             catalog?.startPolling()
+            widgetSnapshots.update(status: menuBarStatus, serverURL: self.serverURL, hasCatalog: false)
         } catch {
             configurationError = error.localizedDescription
         }
@@ -274,6 +280,7 @@ final class AppModel {
     /// Looks up each new request's message once, so the menu can quote it before it opens.
     private func resolveMenuBarRequests() {
         guard let catalog, showsMenuBarExtra,
+              widgetSnapshots.isEnabled ||
               MenuBarVisibility(rawValue: UserDefaults.standard.string(forKey: MenuBarVisibility.key) ?? "") != .never
         else { return }
         let pending = Dictionary(catalog.channels.compactMap { channel in channel.requestSequence.map { (channel.id, $0) } },
@@ -305,10 +312,11 @@ final class AppModel {
 
     /// Keeps the status item in step with activity, including an open channel's live presence.
     private func observeMenuBarActivity() {
-        let isActive = withObservationTracking { menuBarStatus.isActive } onChange: { [weak self] in
+        let status = withObservationTracking { menuBarStatus } onChange: { [weak self] in
             Task { @MainActor in self?.observeMenuBarActivity() }
         }
-        menuBar.update(isActive: isActive)
+        menuBar.update(isActive: status.isActive)
+        widgetSnapshots.update(status: status, serverURL: serverURL, hasCatalog: catalog?.state != nil)
     }
 
     /// A channel as the sidebar shows it: an open channel's live details and request over its catalog

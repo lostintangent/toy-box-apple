@@ -4,6 +4,7 @@ import { bundleIdentity, command, isMissing, main, plist, required, root, text }
 import { signApp } from "../release/sign-app.ts";
 import { validateShareExtension } from "../release/share-extension.ts";
 import { isolateIntegrations } from "./isolate-integrations.ts";
+import { validateWidgetExtension } from "../release/widget-extension.ts";
 
 const lsregister = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister";
 
@@ -65,6 +66,7 @@ if (import.meta.main) await main(async () => {
         throw new Error(`Validation requires a bundle stamped with macOS SDK 27 or later.\n${buildVersion}`);
     }
     await validateShareExtension(join(scratch, "Toy Box.app"));
+    await validateWidgetExtension(join(scratch, "Toy Box.app"));
     for (const [destination, test] of [[app, false], [testApp, true]] as const) {
         await mkdir(dirname(destination), { recursive: true });
         const stage = await mkdtemp(join(dirname(destination), ".stage."));

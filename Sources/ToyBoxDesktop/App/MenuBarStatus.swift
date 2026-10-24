@@ -35,6 +35,7 @@ struct MenuBarStatus: Equatable {
         /// The request a waiting item reveals.
         var sequence: Int?
         var quote: String? = nil
+        var requestedAt: Date? = nil
         var agents: [ChannelAgent] = []
     }
 
@@ -86,7 +87,8 @@ struct MenuBarStatus: Equatable {
                 return Item(id: input.channel.id, name: input.channel.name,
                             subtitle: requester.map { NotificationText.subtitle(requester: $0.name) } ?? Self.needsReply,
                             agent: requester, sequence: input.channel.requestSequence,
-                            quote: request.map(Self.quote))
+                            quote: request.map(Self.quote),
+                            requestedAt: request.flatMap { ChannelDates.date($0.message.timestamp) })
             }
         working = inputs.filter { !$0.isWaiting && !$0.working.isEmpty }
             .map { input in (input, date(input.channel.updatedAt)) }

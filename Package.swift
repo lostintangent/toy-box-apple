@@ -10,6 +10,7 @@ let package = Package(
         .library(name: "ChannelIntelligence", targets: ["ChannelIntelligence"]),
         .executable(name: "ToyBoxDesktop", targets: ["ToyBoxDesktop"]),
         .executable(name: "ToyBoxShare", targets: ["ToyBoxShare"]),
+        .executable(name: "ToyBoxWidget", targets: ["ToyBoxWidget"]),
     ],
     dependencies: [
         .package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.10.0"),
@@ -22,6 +23,11 @@ let package = Package(
             name: "ToyBoxShare",
             swiftSettings: [.unsafeFlags(["-application-extension"])],
             linkerSettings: [.unsafeFlags(["-Xlinker", "-e", "-Xlinker", "_NSExtensionMain"])]
+        ),
+        .executableTarget(
+            name: "ToyBoxWidget",
+            dependencies: ["ChannelKit"],
+            swiftSettings: [.unsafeFlags(["-application-extension"])]
         ),
         .executableTarget(
             name: "ToyBoxDesktop",

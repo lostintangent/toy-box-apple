@@ -5,6 +5,7 @@ import { embedSparkle } from "../release/embed-sparkle.ts";
 import { signApp } from "../release/sign-app.ts";
 import { embedAppIcon } from "./icon.ts";
 import { embedShareExtension } from "../release/share-extension.ts";
+import { embedWidgetExtension } from "../release/widget-extension.ts";
 
 export async function buildApp(configuration = process.env.CONFIGURATION || "debug", scratch = scratchPath()) {
     const sdk = process.env.SDKROOT || await text(["xcrun", "--sdk", "macosx", "--show-sdk-path"]);
@@ -30,6 +31,7 @@ export async function buildApp(configuration = process.env.CONFIGURATION || "deb
         "-replace", "-output", binary, binary]);
     await embedSparkle(join(bin, "Sparkle.framework"), app, join(scratch, "checkouts/Sparkle/LICENSE"));
     await embedShareExtension(bin, app, sdkVersion, minimumOS);
+    await embedWidgetExtension(bin, app, sdkVersion, minimumOS);
 
     let processor = process.env.APP_INTENTS_PROCESSOR;
     if (!processor) {

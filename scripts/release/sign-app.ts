@@ -1,8 +1,19 @@
 import { join } from "node:path";
 import { command, main, root } from "../lib.ts";
 import { configureShareExtension, shareExtension } from "./share-extension.ts";
+import { configureWidgetExtension, widgetExtension } from "./widget-extension.ts";
 
 export async function signApp(app: string, options = ["--force", "--timestamp=none", "--sign", "-"]) {
+    const widget = widgetExtension(app);
+    const hasWidget = await Bun.file(join(widget, "Contents/Info.plist")).exists();
+    const productionWidget = hasWidget && options[options.indexOf("--sign") + 1] !== "-";
+    if (hasWidget) {
+        await configureWidgetExtension(app, productionWidget);
+        const widgetOptions = options.includes("--options") ? options : [...options, "--options", "runtime"];
+        await command(["codesign", ...widgetOptions, "--entitlements",
+            join(root, productionWidget ? "Resources/WidgetExtension.entitlements" : "Resources/ShareExtension.entitlements"), widget]);
+        await command(["codesign", "--verify", "--strict", widget]);
+    }
     const extension = shareExtension(app);
     if (await Bun.file(join(extension, "Contents/Info.plist")).exists()) {
         await configureShareExtension(app);
@@ -18,7 +29,8 @@ export async function signApp(app: string, options = ["--force", "--timestamp=no
         await command(["codesign", ...options, component]);
         await command(["codesign", "--verify", "--strict", component]);
     }
-    await command(["codesign", ...options, "--entitlements", join(root, "Resources/Release.entitlements"), app]);
+    await command(["codesign", ...options, "--entitlements",
+        join(root, productionWidget ? "Resources/WidgetHost.entitlements" : "Resources/Release.entitlements"), app]);
     await command(["codesign", "--verify", "--strict", app]);
 }
 

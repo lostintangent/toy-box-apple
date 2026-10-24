@@ -8,6 +8,7 @@ import { checkTestCompletion } from "../../dev/test.ts";
 import { configureShareExtension } from "../share-extension.ts";
 import { releaseNotes } from "../generate-appcast.ts";
 import { legacyTestBundles } from "../../dev/validate.ts";
+import { configureWidgetExtension, widgetAppGroup, widgetExtension } from "../widget-extension.ts";
 
 describe("Sparkle packaging without credentials", () => {
     let fake: FakeHarness;
@@ -98,6 +99,45 @@ describe("Sparkle packaging without credentials", () => {
         expect(result).toContain("<string>dev.toybox.desktop.test.share</string>");
         expect(result).toContain("<string>0.1.2</string>");
         expect(result).toContain("<string>400.2</string>");
+    });
+    test("widget signing grants the shared group only to production host and widget", async () => {
+        const widget = widgetExtension(app);
+        await mkdir(join(widget, "Contents"), { recursive: true });
+        await Bun.write(join(widget, "Contents/Info.plist"),
+            await Bun.file(join(root, "Resources/WidgetExtension-Info.plist")).text());
+        const options = ["--force", "--options", "runtime", "--timestamp", "--sign", "FAKE_IDENTITY"];
+        expect((await fake.script("release/sign-app.ts", [app, ...options])).code).toBe(0);
+        let signed = (await fake.calls("codesign")).filter(call => !call.args.includes("--verify"));
+        expect(signed[0].args.at(-1)).toBe(widget);
+        expect(signed[0].args).toContain(join(root, "Resources/WidgetExtension.entitlements"));
+        expect(signed.at(-1)?.args).toContain(join(root, "Resources/WidgetHost.entitlements"));
+        for (const bundle of [app, widget]) {
+            expect(await Bun.file(join(bundle, "Contents/Info.plist")).text()).toContain(`<string>${widgetAppGroup}</string>`);
+        }
+        await rm(fake.log);
+        expect((await fake.script("release/sign-app.ts", [app])).code).toBe(0);
+        signed = (await fake.calls("codesign")).filter(call => !call.args.includes("--verify"));
+        expect(signed[0].args).toContain(join(root, "Resources/ShareExtension.entitlements"));
+        expect(signed.at(-1)?.args).toContain(join(root, "Resources/Release.entitlements"));
+        for (const bundle of [app, widget]) {
+            expect(await Bun.file(join(bundle, "Contents/Info.plist")).text()).not.toContain(widgetAppGroup);
+        }
+    });
+    test("widget versions and identity follow the container", async () => {
+        const widget = widgetExtension(app);
+        await mkdir(join(widget, "Contents"), { recursive: true });
+        await Bun.write(join(widget, "Contents/Info.plist"),
+            await Bun.file(join(root, "Resources/WidgetExtension-Info.plist")).text());
+        await configureWidgetExtension(app, true);
+        const info = await Bun.file(join(widget, "Contents/Info.plist")).text();
+        expect(info).toContain("<string>dev.toybox.desktop.widget</string>");
+        expect(info).toContain("<string>0.1.0</string>");
+        expect(info).toContain("<string>1</string>");
+        const swift = await Bun.file(join(root, "Sources/ChannelKit/NeedsYouSnapshot.swift")).text();
+        expect(swift).toContain(`"${widgetAppGroup}"`);
+        for (const name of ["WidgetHost", "WidgetExtension"]) {
+            expect(await Bun.file(join(root, `Resources/${name}.entitlements`)).text()).toContain(widgetAppGroup);
+        }
     });
 });
 

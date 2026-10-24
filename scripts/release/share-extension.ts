@@ -16,14 +16,18 @@ export async function embedShareExtension(bin: string, app: string, sdkVersion: 
 }
 
 export async function configureShareExtension(app: string) {
+    await configureExtension(app, shareExtension(app), ".share");
+}
+
+export async function configureExtension(app: string, extension: string, suffix: string) {
     const appNode = Bun.XML.parse(await Bun.file(join(app, "Contents/Info.plist")).text(), { compact: false });
-    const path = join(shareExtension(app), "Contents/Info.plist");
+    const path = join(extension, "Contents/Info.plist");
     const extensionNode = Bun.XML.parse(await Bun.file(path).text(), { compact: false });
     const children = (node: Bun.XML.Node) => node.children.filter((child): child is Bun.XML.Node =>
         typeof child !== "string" && "name" in child);
     const dictionary = (node: Bun.XML.Node) => {
         const dict = children(node).find(child => child.name === "dict");
-        if (!dict) throw new Error("The app and Share extension require plist dictionaries.");
+        if (!dict) throw new Error("The app and extension require plist dictionaries.");
         return children(dict);
     };
     const appKeys = dictionary(appNode), extensionKeys = dictionary(extensionNode);
@@ -31,7 +35,7 @@ export async function configureShareExtension(app: string) {
         const source = appKeys[appKeys.findIndex(node => node.name === "key" && node.children.join("") === key) + 1];
         const target = extensionKeys[extensionKeys.findIndex(node => node.name === "key" && node.children.join("") === key) + 1];
         if (source?.name !== "string" || target?.name !== "string") throw new Error(`Missing bundle metadata: ${key}.`);
-        target.children = [source.children.join("") + (key === "CFBundleIdentifier" ? ".share" : "")];
+        target.children = [source.children.join("") + (key === "CFBundleIdentifier" ? suffix : "")];
     }
     await Bun.write(path, `<?xml version="1.0" encoding="UTF-8"?>\n${Bun.XML.stringify(extensionNode)}\n`);
 }

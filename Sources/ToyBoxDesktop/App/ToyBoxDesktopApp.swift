@@ -39,6 +39,7 @@ struct ToyBoxDesktopApp: App {
                 model.quickSend.present(prefill: prefill)
             } : nil
             ChannelIntentsContext.register(model)
+            AppDelegate.widgetURLHandler = { try model.openWidgetURL($0) }
             _model = ViewState(wrappedValue: model)
         } catch {
             FileHandle.standardError.write(Data("Invalid launch arguments: \(error.localizedDescription)\n".utf8))
@@ -125,6 +126,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// and stays out of the Dock, so the system quits it once the intent finishes.
     static var launchedInBackground = false
     static var quickSendIntake: QuickSendIntake?
+    static var widgetURLHandler: ((URL) throws -> Bool)?
     private var cameForward = false
     var isInBackground: Bool { Self.launchedInBackground && !cameForward }
     var openChannelWindow: (() -> Void)?
@@ -154,6 +156,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func application(_ application: NSApplication, open urls: [URL]) {
         for url in urls {
             do {
+                if try Self.widgetURLHandler?(url) == true { continue }
                 guard let intake = Self.quickSendIntake else { throw QuickSendIntake.IntakeError.unavailable }
                 try intake.openSharedURL(url)
             } catch {
