@@ -85,6 +85,30 @@ struct SettingsView: View {
                 .pickerStyle(.segmented)
             }
             Section {
+                HStack {
+                    Text("Quick Ask shortcut")
+                    Spacer()
+                    QuickAskShortcutRecorder(controller: model.quickAsk)
+                        .fixedSize()
+                        .disabled(!model.quickAsk.isEnabled)
+                    Button {
+                        model.quickAsk.setShortcut(nil)
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel("Clear Quick Ask shortcut")
+                    .help("Clear Quick Ask shortcut")
+                    .disabled(model.quickAsk.shortcut == nil)
+                }
+                if let error = model.quickAsk.error {
+                    errorLabel(error)
+                }
+            } footer: {
+                footer("Send a message from any app. Click to record a shortcut, or clear it to turn the global shortcut off.")
+            }
+            Section {
                 Picker("Show in menu bar", selection: $menuBarVisibility) {
                     ForEach(MenuBarVisibility.allCases) { value in Text(value.title).tag(value) }
                 }

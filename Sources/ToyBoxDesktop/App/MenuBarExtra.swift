@@ -128,6 +128,7 @@ struct MenuBarMenu: View {
         section("Waiting for You", status.waitingSection, revealsRequest: true)
         section("Working", status.workingSection, revealsRequest: false)
         Divider()
+        QuickAskMenuButton(controller: model.quickAsk)
         Button("Open Toy Box Desktop") { model.activate(channelID: nil) }
         Button("Settings\u{2026}") {
             NSApplication.shared.activate()
