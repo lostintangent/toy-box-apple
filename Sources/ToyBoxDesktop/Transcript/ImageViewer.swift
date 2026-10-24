@@ -67,6 +67,7 @@ final class ImageViewer {
         var cornerTone: ImageViewerCornerTone?
         /// The oriented pixel size, known from the image header before the full decode lands.
         var pixelSize: CGSize?
+        var isVector = false
         var failure: String?
         var export: URL?
     }
@@ -105,7 +106,9 @@ final class ImageViewer {
     private(set) var pan: CGSize = .zero
     /// Set when the viewer closes so the current image's thumbnail takes focus back.
     private(set) var focusReturn: FocusReturn?
-    var layout: Layout?
+    var layout: Layout? {
+        didSet { if layout != oldValue { refreshVectorRaster() } }
+    }
     /// The height of the window's toolbar over the canvas, measured from AppKit because the
     /// overlay's safe area doesn't carry it.
     var toolbarInset: CGFloat = 0
@@ -113,6 +116,8 @@ final class ImageViewer {
     @ObservationIgnored weak var anchorView: NSView?
     @ObservationIgnored private var canvases = 0
     @ObservationIgnored private var loads: [Int: Task<Void, Never>] = [:]
+    @ObservationIgnored private var vectorRasterTask: Task<Void, Never>?
+    @ObservationIgnored private var vectorRasterPixels = 0
     /// The Live Text view over the presented image, which holds its text selection.
     @ObservationIgnored weak var liveTextView: ImageAnalysisOverlayView?
     @ObservationIgnored private var analysisTask: Task<Void, Never>?
@@ -197,12 +202,14 @@ final class ImageViewer {
     func show(_ newIndex: Int) {
         guard let session, !isClosing, newIndex != index, session.images.indices.contains(newIndex) else { return }
         liveTextView?.resetSelection()
+        cancelVectorRaster()
         withAnimation(reducesMotion ? .easeInOut(duration: 0.2) : .smooth(duration: 0.3)) {
             index = newIndex
             zoom = nil
             pan = .zero
         }
         loadAround(newIndex)
+        refreshVectorRaster()
         analyzeCurrent()
     }
 
@@ -218,6 +225,7 @@ final class ImageViewer {
     func close(animated: Bool = true) {
         guard let session else { return }
         cancelAnalysis()
+        cancelVectorRaster()
         liveTextView?.resetSelection()
         if animated && canvases > 0 {
             closingFrame = layout.flatMap(closingTileFrame(in:))
@@ -372,6 +380,7 @@ final class ImageViewer {
         let anchored = anchoredPan(base.pan, at: point, by: target / base.scale, in: layout)
         zoom = target <= fit * 1.001 ? nil : target
         pan = zoom == nil ? .zero : clampedPan(anchored, scale: target, in: layout)
+        refreshVectorRaster()
     }
 
     func pan(by delta: CGSize) {
@@ -412,6 +421,7 @@ final class ImageViewer {
         } else {
             change()
         }
+        refreshVectorRaster()
     }
 
     /// Keeps the image point under `point` in place when the scale changes by `factor`.
@@ -541,6 +551,7 @@ final class ImageViewer {
     private func load(_ position: Int, reload: Bool = false) {
         guard let session, session.images.indices.contains(position) else { return }
         if !reload && (loads[position] != nil || items[position]?.image != nil) { return }
+        if reload && position == index { cancelVectorRaster() }
         loads[position]?.cancel()
         items[position, default: Item()].failure = nil
         let attachment = session.images[position]
@@ -548,32 +559,39 @@ final class ImageViewer {
         let api = session.api
         let id = session.id
         let pixelsPerPoint = max(1, layout?.displayScale ?? 2)
+        let rasterPixels = desiredVectorPixels(at: position)
         loads[position] = Task { [weak self] in
-            let result: Result<(URL, CGImage, ImageViewerCornerTone?), any Error>
+            let result: Result<(URL, CGImage, ImageViewerCornerTone?, CGSize?), any Error>
             do {
                 let file = try await TranscriptAttachmentCache.shared.file(for: attachment, api: api, reload: reload)
-                let (image, tone) = try await Task.detached(priority: .userInitiated) {
-                    let image = try ImageViewer.decode(file)
-                    return (image, ImageViewerCornerTone(image, pixelsPerPoint: pixelsPerPoint))
+                let (image, tone, vectorSize) = try await Task.detached(priority: .userInitiated) {
+                    let decoded = try ImageViewer.decoded(file, maximumPixelSize: rasterPixels)
+                    let image = decoded.image
+                    let vectorSize = decoded.vectorSize
+                    return (image, ImageViewerCornerTone(image, pixelsPerPoint: pixelsPerPoint), vectorSize)
                 }.value
-                result = .success((file, image, tone))
+                result = .success((file, image, tone, vectorSize))
             } catch {
                 result = .failure(error)
             }
             guard let self, self.session?.id == id else { return }
             self.loads[position] = nil
             switch result {
-            case .success(let (file, image, tone)):
+            case .success(let (file, image, tone, vectorSize)):
                 var item = self.items[position] ?? Item()
                 item.file = file
                 item.image = NSImage(cgImage: image, size: .zero)
                 item.bitmap = image
                 item.cornerTone = tone
-                item.pixelSize = item.pixelSize ?? CGSize(width: image.width, height: image.height)
+                item.pixelSize = vectorSize ?? item.pixelSize ?? CGSize(width: image.width, height: image.height)
+                item.isVector = vectorSize != nil
                 item.export = Self.export(file, named: name, replacing: reload)
                 item.failure = nil
                 self.items[position] = item
-                if position == self.index { self.analyzeCurrent() }
+                if position == self.index {
+                    self.refreshVectorRaster()
+                    self.analyzeCurrent()
+                }
             case .failure(let error):
                 guard !(error is CancellationError) else { return }
                 self.items[position, default: Item()].failure = error.localizedDescription
@@ -582,6 +600,7 @@ final class ImageViewer {
     }
 
     private func cancelLoads() {
+        cancelVectorRaster()
         for task in loads.values { task.cancel() }
         loads = [:]
     }
@@ -592,21 +611,70 @@ final class ImageViewer {
     }
 
     /// Decodes the full image, oriented, off the main actor. Very large images cap at 8192 pixels.
-    nonisolated static func decode(_ file: URL) throws -> CGImage {
-        guard let source = CGImageSourceCreateWithURL(file as CFURL, nil),
-              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
-              let size = TranscriptThumbnails.orientedPixelSize(properties) else {
-            throw AttachmentError.invalidImage
-        }
-        guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+    nonisolated static func decode(_ file: URL, maximumPixelSize: Int = 8192) throws -> CGImage {
+        try decoded(file, maximumPixelSize: maximumPixelSize).image
+    }
+
+    private nonisolated static func decoded(_ file: URL, maximumPixelSize: Int) throws
+        -> (image: CGImage, vectorSize: CGSize?) {
+        if let source = CGImageSourceCreateWithURL(file as CFURL, nil),
+           let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+           let size = TranscriptThumbnails.orientedPixelSize(properties),
+           let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
             kCGImageSourceThumbnailMaxPixelSize: min(8192, max(size.width, size.height)),
             kCGImageSourceCreateThumbnailWithTransform: true,
             kCGImageSourceShouldCacheImmediately: true,
-        ] as CFDictionary) else {
-            throw AttachmentError.invalidImage
+        ] as CFDictionary) { return (image, nil) }
+        let decoded = try TranscriptSVGImage.decode(file, maximumPixelSize: maximumPixelSize)
+        return (decoded.image, decoded.pixelSize)
+    }
+
+    private func desiredVectorPixels(at position: Int) -> Int {
+        guard let layout, items[position]?.pixelSize != nil else { return 2048 }
+        let frame = frame(at: position, in: layout)
+        let edge = max(frame.width, frame.height) * max(1, layout.displayScale)
+        guard edge.isFinite else { return TranscriptSVGImage.maximumPixelSize }
+        return min(TranscriptSVGImage.maximumPixelSize, max(1, Int(ceil(min(edge, 8192) / 256)) * 256))
+    }
+
+    private func cancelVectorRaster() {
+        vectorRasterTask?.cancel()
+        vectorRasterTask = nil
+        vectorRasterPixels = 0
+    }
+
+    private func refreshVectorRaster() {
+        guard let session, !isClosing, let item = items[index], item.isVector, let file = item.file,
+              let bitmap = item.bitmap else { return }
+        let pixels = desiredVectorPixels(at: index)
+        guard pixels > max(bitmap.width, bitmap.height), pixels != vectorRasterPixels else { return }
+        cancelVectorRaster()
+        vectorRasterPixels = pixels
+        let id = session.id, position = index
+        let pixelsPerPoint = max(1, layout?.displayScale ?? 2)
+        vectorRasterTask = Task { [weak self] in
+            do {
+                try await Task.sleep(for: .milliseconds(100))
+                let (image, tone) = try await Task.detached(priority: .userInitiated) {
+                    let image = try TranscriptSVGImage.decode(file, maximumPixelSize: pixels).image
+                    return (image, ImageViewerCornerTone(image, pixelsPerPoint: pixelsPerPoint))
+                }.value
+                guard !Task.isCancelled, let self, self.session?.id == id, self.index == position else { return }
+                self.items[position]?.image = NSImage(cgImage: image, size: .zero)
+                self.items[position]?.bitmap = image
+                self.items[position]?.cornerTone = tone
+                self.vectorRasterTask = nil
+                self.vectorRasterPixels = 0
+            } catch is CancellationError {
+                return
+            } catch {
+                guard !Task.isCancelled, let self, self.session?.id == id, self.index == position else { return }
+                self.items[position]?.failure = error.localizedDescription
+                self.vectorRasterTask = nil
+                self.vectorRasterPixels = 0
+            }
         }
-        return image
     }
 
     /// Links the cached file under the attachment's name, so Share, drag-out and Preview see it.

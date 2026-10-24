@@ -507,20 +507,29 @@ enum TranscriptThumbnails {
     static func image(at file: URL, for attachment: ChannelAttachment, api: ChannelAPI,
                       reload: Bool = false) async throws -> NSImage {
         if !reload, let image = remembered(for: attachment, api: api) { return image }
-        let image = try await Task.detached(priority: .userInitiated) { try decode(file) }.value
-        return remember(image, for: attachment, api: api)
+        let decoded = try await Task.detached(priority: .userInitiated) { try Self.decoded(file) }.value
+        if let identity = TranscriptAttachmentCache.identity(for: attachment, api: api) {
+            pixelSizes.setObject(NSValue(size: decoded.pixelSize), forKey: identity as NSString)
+        }
+        return remember(decoded.image, for: attachment, api: api)
     }
 
-    private nonisolated static func decode(_ file: URL) throws -> CGImage {
-        guard let source = CGImageSourceCreateWithURL(file as CFURL, nil),
-              let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+    nonisolated static func decode(_ file: URL) throws -> CGImage {
+        try decoded(file).image
+    }
+
+    private nonisolated static func decoded(_ file: URL) throws -> TranscriptSVGImage.Decoded {
+        if let source = CGImageSourceCreateWithURL(file as CFURL, nil),
+           let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [
                 kCGImageSourceCreateThumbnailFromImageAlways: true,
                 kCGImageSourceThumbnailMaxPixelSize: 640,
                 kCGImageSourceCreateThumbnailWithTransform: true
-              ] as CFDictionary) else {
-            throw AttachmentError.invalidImage
+              ] as CFDictionary) {
+            let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]
+            let size = properties.flatMap(orientedPixelSize) ?? CGSize(width: image.width, height: image.height)
+            return TranscriptSVGImage.Decoded(image: image, pixelSize: size)
         }
-        return image
+        return try TranscriptSVGImage.decode(file, maximumPixelSize: 640)
     }
 
     static func remember(_ image: CGImage, for attachment: ChannelAttachment, api: ChannelAPI) -> NSImage {
@@ -531,6 +540,41 @@ enum TranscriptThumbnails {
                             cost: image.bytesPerRow * image.height + identity.utf8.count)
         }
         return thumbnail
+    }
+}
+
+enum TranscriptSVGImage {
+    static let maximumPixelSize = 8192
+    struct Decoded {
+        let image: CGImage
+        let pixelSize: CGSize
+    }
+
+    static func decode(_ file: URL, maximumPixelSize: Int) throws -> Decoded {
+        let data = try Data(contentsOf: file)
+        guard let image = NSImage(data: data) else { throw AttachmentError.invalidImage }
+        let size = image.size
+        guard size.width.isFinite, size.height.isFinite, size.width > 0, size.height > 0 else {
+            throw AttachmentError.invalidImage
+        }
+        try Task.checkCancellation()
+        let edge = CGFloat(min(Self.maximumPixelSize, max(1, maximumPixelSize)))
+        let longest = max(size.width, size.height)
+        let width = max(1, Int(ceil(size.width / longest * edge)))
+        let height = max(1, Int(ceil(size.height / longest * edge)))
+        guard let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8,
+                                      bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else {
+            throw AttachmentError.invalidImage
+        }
+        let graphics = NSGraphicsContext(cgContext: context, flipped: false)
+        NSGraphicsContext.saveGraphicsState()
+        defer { NSGraphicsContext.restoreGraphicsState() }
+        NSGraphicsContext.current = graphics
+        image.draw(in: CGRect(x: 0, y: 0, width: width, height: height),
+                   from: .zero, operation: .copy, fraction: 1)
+        guard let bitmap = context.makeImage() else { throw AttachmentError.invalidImage }
+        return Decoded(image: bitmap, pixelSize: size)
     }
 }
 
