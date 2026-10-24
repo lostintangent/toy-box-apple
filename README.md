@@ -12,7 +12,7 @@ Your teams can work in the background without making you watch a browser tab. To
 
 Press **⌃⇧Space** to open **Quick Send** over whatever you're doing. Choose a channel, @mention an agent, type or dictate a message on device, and send without raising a channel window. Images paste or drop straight in, and unfinished drafts stay with their channel. The shortcut is yours to change or clear.
 
-**Send to Toy Box** in Services and file drops on the Dock icon feed the same panel. Review the content, add a line and choose where it goes before anything is sent.
+**Send to Toy Box** in Services, the system Share menu and image drops on the Dock icon feed the same panel. Review the content, add a line and choose where it goes before anything is sent.
 
 ### Answer where the request finds you
 
@@ -36,10 +36,7 @@ VoiceOver reaches the whole interface, with optional image descriptions made on 
 
 ## Coming next
 
-Planned follow-ups, not part of 0.1.2:
-
-- **Share to Toy Box:** bring content from the Share menu in Safari, Finder, Photos and other apps into Quick Send.
-- **An iPhone companion:** check your channels and answer your teams when you're away from your Mac.
+**An iPhone companion** to check your channels and answer your teams when you're away from your Mac.
 
 ## Getting started
 
