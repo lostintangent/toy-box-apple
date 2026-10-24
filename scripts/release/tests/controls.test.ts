@@ -60,6 +60,7 @@ test("native validation requires compiled controls, their bundle and the shared 
     ];
     const lines = names.map(name => `0000 S protocol conformance descriptor for ${name} in ToyBoxWidget`);
     expect(() => validateControlExports(lines.join("\n"), true)).not.toThrow();
+    expect(() => validateControlExports(lines.join("\n").replaceAll(" S ", " s "), true)).not.toThrow();
     expect(() => validateControlExports(lines[0], false)).not.toThrow();
     for (const missing of lines) {
         expect(() => validateControlExports(lines.filter(line => line !== missing).join("\n"), true))

@@ -107,7 +107,7 @@ export async function validateWidgetExtension(app: string) {
         validateControlMetadata(await Bun.file(join(bundle, "Contents/Resources/Metadata.appintents/extract.actionsdata")).text());
         const executable = bundle === app ? "ToyBoxDesktop" : "ToyBoxWidget";
         const symbols = await text(["xcrun", "swift-demangle"], {
-            input: await text(["xcrun", "nm", "-gU", join(bundle, "Contents/MacOS", executable)]),
+            input: await text(["xcrun", "nm", "-U", join(bundle, "Contents/MacOS", executable)]),
         });
         validateControlExports(symbols, bundle === extension);
     }
