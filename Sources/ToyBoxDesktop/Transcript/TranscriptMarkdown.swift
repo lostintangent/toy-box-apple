@@ -121,8 +121,8 @@ struct TranscriptMarkdown: View {
                     }
                 }
                 .fixedSize(horizontal: true, vertical: false)
+                .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(.separator, lineWidth: 0.5))
             }
-            .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(.separator, lineWidth: 0.5))
         case .rule:
             Divider().padding(.vertical, 4)
         }

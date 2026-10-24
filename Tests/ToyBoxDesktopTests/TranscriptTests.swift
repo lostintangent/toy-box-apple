@@ -164,6 +164,24 @@ struct TranscriptTests {
         #expect(message.pointer.restingID == nil)
     }
 
+    @MainActor
+    @Test func aMarkdownTablesBorderHugsItsColumnsInAWideLane() async throws {
+        let bitmap = try await renderedTranscriptBitmap(
+            TranscriptMarkdown(content: "| A | B |\n| --- | --- |\n| 1 | 2 |", selectable: false)
+                .background(Color.white),
+            size: CGSize(width: 720, height: 120), appearance: NSAppearance(named: .aqua))
+        func colors(at fraction: CGFloat) throws -> [NSColor] {
+            let x = Int(CGFloat(bitmap.pixelsWide) * fraction)
+            return try (0..<bitmap.pixelsHigh).map {
+                try #require(bitmap.colorAt(x: x, y: $0)?.usingColorSpace(.sRGB))
+            }
+        }
+        let table = try colors(at: 0.05)
+        let outside = try colors(at: 0.75)
+        #expect(table.contains { min($0.redComponent, $0.greenComponent, $0.blueComponent) < 0.99 })
+        #expect(outside.allSatisfy { min($0.redComponent, $0.greenComponent, $0.blueComponent) >= 0.99 })
+    }
+
     @Test func tablesKeepEscapedPipesAndInlineCodeTogether() {
         let source = """
         | Name | Value |
