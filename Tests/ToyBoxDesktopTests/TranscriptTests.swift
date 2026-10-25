@@ -127,6 +127,65 @@ struct TranscriptTableHeightTests {
         }
     }
 
+    @Test(.enabled(if: transcriptTimingTestsEnabled), arguments: [false, true])
+    func nativeDocumentKeepsSwiftUIScrollOwnershipAndRealRowHeights(landsOnUnread: Bool) async throws {
+        let setup = try setup()
+        let items = TranscriptTableItem.project(transcriptRows((1...24).map(transcriptTestMessage),
+                                                               lead: setup.lead, members: [],
+                                                               unreadAfter: landsOnUnread ? 12 : nil))
+        let content = content(items, setup: setup)
+        let bars = TableBars()
+        let host = NSHostingView(rootView: DocumentBarFixture(bars: bars, items: items, content: content)
+            .environment(\.self, setup.environment).frame(width: 400, height: 600))
+        let window = NSWindow(contentRect: NSRect(x: -6_000, y: -6_000, width: 400, height: 600),
+                              styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        window.orderBack(nil)
+        defer { window.close() }
+        func find(_ view: NSView) -> TranscriptTableDocument? {
+            if let document = view as? TranscriptTableDocument { return document }
+            return view.subviews.lazy.compactMap(find).first
+        }
+        try await transcriptUntil(in: host) {
+            guard let document = find(host), let scroll = document.enclosingScrollView else { return false }
+            return document.bounds.height > 0 && document.coordinator.table.numberOfRows == items.count + 2
+                && scroll.contentInsets.bottom == 100
+        }
+        let document = try #require(find(host))
+        let scroll = try #require(document.enclosingScrollView)
+        let hostingDocument = try #require(scroll.documentView)
+        let table = document.coordinator.table
+        #expect(hostingDocument !== document && hostingDocument !== table)
+        #expect(table.enclosingScrollView === scroll)
+        try await transcriptSettled(in: host) {
+            CGSize(width: scroll.contentView.bounds.minY, height: document.bounds.height)
+        }
+        if landsOnUnread {
+            let target = try #require(items.firstIndex { $0.row.divider?.unread == true })
+            let viewportTop = scroll.contentView.bounds.minY + scroll.contentInsets.top
+            #expect(abs(table.rect(ofRow: target + 1).minY - viewportTop) <= 0.5)
+        } else {
+            let lastMessageEnd = table.rect(ofRow: items.count).maxY
+            let viewportBottom = scroll.contentView.bounds.maxY - scroll.contentInsets.bottom
+            #expect(abs(viewportBottom - lastMessageEnd - 16) <= 0.5)
+        }
+        for bottom: CGFloat in [100, 176, 240, 100] {
+            bars.bottom = bottom
+            try await transcriptUntil(in: host) { scroll.contentInsets.bottom == bottom }
+            try await transcriptSettled(in: host) {
+                CGSize(width: document.bounds.width, height: document.bounds.height)
+            }
+            #expect(scroll.documentView === hostingDocument)
+            #expect(scroll.bounds.height == 600)
+            #expect(scroll.contentInsets.top == 50)
+            #expect(scroll.contentInsets.bottom == bottom)
+            #expect(abs(document.bounds.height - document.coordinator.documentHeight) <= 0.5)
+            #expect(abs(hostingDocument.bounds.height - document.bounds.height) <= 0.5)
+            #expect(abs(table.frame.height - document.bounds.height) <= 0.5)
+        }
+    }
+
     @Test(.enabled(if: transcriptTimingTestsEnabled))
     func tableHeightMeasurementReportsColdWarmAndAppendCost() throws {
         let setup = try setup()
@@ -185,6 +244,23 @@ struct TranscriptTableHeightTests {
                                          insets: geometry.safeAreaInsets)
                     .ignoresSafeArea(.container, edges: .vertical)
             }
+            .safeAreaBar(edge: .top, spacing: 0) { Color.clear.frame(height: 50) }
+            .safeAreaBar(edge: .bottom, spacing: 0) { Color.clear.frame(height: bars.bottom) }
+        }
+    }
+
+    private struct DocumentBarFixture: View {
+        let bars: TableBars
+        let items: [TranscriptTableItem]
+        let content: [TranscriptRowContent]
+
+        var body: some View {
+            ScrollView {
+                TranscriptDocumentPrototype(items: items, content: content,
+                                            header: AnyView(Color.clear.frame(height: 12)))
+            }
+            .scrollEdgeEffectStyle(.hard, for: .top)
+            .scrollEdgeEffectStyle(.soft, for: .bottom)
             .safeAreaBar(edge: .top, spacing: 0) { Color.clear.frame(height: 50) }
             .safeAreaBar(edge: .bottom, spacing: 0) { Color.clear.frame(height: bars.bottom) }
         }

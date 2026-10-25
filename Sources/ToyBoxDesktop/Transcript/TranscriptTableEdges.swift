@@ -2,6 +2,7 @@ import AppKit
 
 @MainActor
 final class TranscriptTableEdges: NSSplitViewController {
+    let scroll: NSScrollView
     let contentController: NSViewController
     let contentItem: NSSplitViewItem
     let topEdge = NSSplitViewItemAccessoryViewController()
@@ -10,8 +11,10 @@ final class TranscriptTableEdges: NSSplitViewController {
     private let bottomHeight: NSLayoutConstraint
     private var topInset: CGFloat = 0
     private var bottomInset: CGFloat = 0
+    private var edgeTrace: TranscriptEdgeTrace?
 
-    init(content: NSView) {
+    init(content: NSScrollView) {
+        scroll = content
         let controller = NSViewController()
         controller.view = content
         contentController = controller
@@ -50,6 +53,19 @@ final class TranscriptTableEdges: NSSplitViewController {
     override func viewWillLayout() {
         super.viewWillLayout()
         updateHeights()
+    }
+
+    override func viewDidLayout() {
+        super.viewDidLayout()
+        guard edgeTrace == nil, view.window != nil,
+              TranscriptEdgeTrace.mode == "record" || TranscriptEdgeTrace.mode == "step" else { return }
+        edgeTrace = TranscriptEdgeTrace(controller: self, scroll: scroll)
+        edgeTrace?.start()
+    }
+
+    func stopEdgeTrace() {
+        edgeTrace?.stop()
+        edgeTrace = nil
     }
 
     private func updateHeights() {

@@ -30,6 +30,10 @@ struct TranscriptTablePrototype: NSViewControllerRepresentable {
                                    environment: context.environment, insets: insets)
     }
 
+    static func dismantleNSViewController(_ controller: TranscriptTableEdges, coordinator: Coordinator) {
+        controller.stopEdgeTrace()
+    }
+
     @MainActor
     final class Coordinator: NSObject, NSTableViewDataSource, NSTableViewDelegate {
         private struct Configuration {
@@ -41,7 +45,8 @@ struct TranscriptTablePrototype: NSViewControllerRepresentable {
         }
 
         let table = TranscriptTableView()
-        private weak var scroll: TranscriptTableScrollView?
+        private weak var scroll: NSScrollView?
+        private var ownsDocument = true
         private let cache = TranscriptTableHeights()
         private var items: [TranscriptTableItem] = []
         private var content: [TranscriptRowContent] = []
@@ -55,10 +60,10 @@ struct TranscriptTablePrototype: NSViewControllerRepresentable {
         private var isLayingOut = false
         private var hasLanded = false
         private var configuration: Configuration?
+        private(set) var documentHeight: CGFloat = 0
 
-        func attach(_ scroll: TranscriptTableScrollView) {
-            self.scroll = scroll
-            scroll.coordinator = self
+        override init() {
+            super.init()
             table.headerView = nil
             table.style = .plain
             table.backgroundColor = .clear
@@ -77,7 +82,21 @@ struct TranscriptTablePrototype: NSViewControllerRepresentable {
             table.addTableColumn(column)
             table.dataSource = self
             table.delegate = self
-            scroll.documentView = table
+        }
+
+        func attach(_ scroll: NSScrollView, ownsDocument: Bool = true) {
+            self.scroll = scroll
+            self.ownsDocument = ownsDocument
+            if let native = scroll as? TranscriptTableScrollView { native.coordinator = self }
+            if ownsDocument { scroll.documentView = table }
+        }
+
+        func fittingHeight(items: [TranscriptTableItem], content: [TranscriptRowContent], header: AnyView,
+                           width: CGFloat, environment: EnvironmentValues) -> CGFloat {
+            let result = cache.resolve(items: items, content: content, width: width, environment: environment)
+            let headerHeight = 20 + cache.measureAccessory(header, width: width, environment: environment)
+            documentHeight = result.heights.reduce(headerHeight + 16, +)
+            return documentHeight
         }
 
         func update(items: [TranscriptTableItem], content: [TranscriptRowContent], header: AnyView,
@@ -96,9 +115,11 @@ struct TranscriptTablePrototype: NSViewControllerRepresentable {
             defer { isLayingOut = false }
             isDirty = false
             appliedWidth = width
-            // Reloading a table during layout can leave AppKit's automatic insets one bar change behind.
-            scroll.contentInsets = NSEdgeInsets(top: configuration.insets.top, left: 0,
-                                                bottom: configuration.insets.bottom, right: 0)
+            if ownsDocument {
+                // Reloading a table during layout can leave AppKit's automatic insets one bar change behind.
+                scroll.contentInsets = NSEdgeInsets(top: configuration.insets.top, left: 0,
+                                                    bottom: configuration.insets.bottom, right: 0)
+            }
             let result = cache.resolve(items: configuration.items, content: configuration.content, width: width,
                                        environment: configuration.environment)
             let headerHeight = 20 + cache.measureAccessory(configuration.header, width: width,
@@ -112,6 +133,7 @@ struct TranscriptTablePrototype: NSViewControllerRepresentable {
             heights = result.heights
             overflows = result.overflows
             self.headerHeight = headerHeight
+            documentHeight = result.heights.reduce(headerHeight + 16, +)
             table.reloadData()
             table.layoutSubtreeIfNeeded()
             if !hasLanded, !items.isEmpty {

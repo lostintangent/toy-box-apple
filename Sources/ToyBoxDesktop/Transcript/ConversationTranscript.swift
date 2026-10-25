@@ -101,7 +101,7 @@ struct ConversationTranscript: View {
             ContentUnavailableView("Channel Deleted", systemImage: "bubble.left",
                                    description: Text("This channel is no longer available."))
         } else if store.isLoaded {
-            if TranscriptTablePrototype.isEnabled {
+            if TranscriptTablePrototype.isEnabled || TranscriptDocumentPrototype.isEnabled {
                 tablePrototype
             } else {
                 transcript
@@ -133,11 +133,20 @@ struct ConversationTranscript: View {
                                      else { expandedMessageIds.remove(id) }
                                  })
         }
-        return GeometryReader { geometry in
-            TranscriptTablePrototype(items: items, content: content, header: AnyView(historyHeader),
-                                     insets: geometry.safeAreaInsets)
-                .environment(\.transcriptPointer, pointer)
-                .ignoresSafeArea(.container, edges: .vertical)
+        return Group {
+            if TranscriptDocumentPrototype.isEnabled {
+                ScrollView {
+                    TranscriptDocumentPrototype(items: items, content: content, header: AnyView(historyHeader))
+                        .environment(\.transcriptPointer, pointer)
+                }
+            } else {
+                GeometryReader { geometry in
+                    TranscriptTablePrototype(items: items, content: content, header: AnyView(historyHeader),
+                                             insets: geometry.safeAreaInsets)
+                        .environment(\.transcriptPointer, pointer)
+                        .ignoresSafeArea(.container, edges: .vertical)
+                }
+            }
         }
         .scrollEdgeEffectStyle(.hard, for: .top)
         .scrollEdgeEffectStyle(.soft, for: .bottom)
