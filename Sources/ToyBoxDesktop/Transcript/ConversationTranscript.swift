@@ -37,6 +37,8 @@ struct ConversationTranscript: View {
     @ViewState private var opening = TranscriptOpening()
     @ViewState private var layoutTurns = TranscriptLayoutTurns()
     @ViewState private var find: TranscriptFind
+    @ViewState private var documentState = TranscriptDocumentState()
+    @ViewState private var documentOpeningReady = false
 
     init(store: ChannelStore, find: TranscriptFind = TranscriptFind()) {
         self.store = store
@@ -72,6 +74,7 @@ struct ConversationTranscript: View {
         guard snapshot == nil, hasLanded, !isRevealing, pagingAnchor == nil, window.isKeyWindow,
               scenePhase == .active, store.phase.isLive, viewer?.session == nil,
               !interaction.isArtifactViewerPresented, !find.blocksRead else { return nil }
+        if TranscriptDocumentPrototype.isEnabled && store.isLoadingOlder { return nil }
         return visibleSequence
     }
 
@@ -126,19 +129,33 @@ struct ConversationTranscript: View {
         let statusReactions = statusReactions
         let content = items.map { item in
             TranscriptRowContent(row: item.row, context: context, statusReactions: statusReactions,
-                                 highlightedSequence: highlightedSequence, catchUp: nil, store: store,
-                                 expandedMessageIds: expandedMessageIds, showsAgentAvatar: item.showsAvatar,
+                                 highlightedSequence: highlightedSequence,
+                                 catchUp: interaction.messageView == .all ? catchUp : nil, store: store,
+                                 expandedMessageIds: expandedMessageIds, findHighlights: find.highlights,
+                                 showsAgentAvatar: item.showsAvatar,
                                  onSetExpanded: { id, expands in
+                                     if TranscriptDocumentPrototype.isEnabled {
+                                         documentState.send(.toggledExpansion(id, expanded: expands))
+                                     }
                                      if expands { expandedMessageIds.insert(id) }
                                      else { expandedMessageIds.remove(id) }
                                  })
         }
-        return Group {
+        return transcriptControls(Group {
             if TranscriptDocumentPrototype.isEnabled {
                 ScrollView {
-                    TranscriptDocumentPrototype(items: items, content: content, header: AnyView(historyHeader))
+                    TranscriptDocumentPrototype(items: items, content: content, header: AnyView(tableHeader),
+                                                footer: store.sendAttempts.isEmpty ? nil
+                                                    : AnyView(VStack(alignment: .leading, spacing: 0) {
+                                                        pendingSends(statusReactions: statusReactions)
+                                                    }),
+                                                state: documentState, windowObserver: window,
+                                                isReadyToLand: documentOpeningReady,
+                                                command: documentState.command, sizingPhase: catchUp?.phase,
+                                                holdsPosition: find.isPresented)
                         .environment(\.transcriptPointer, pointer)
                 }
+                .opacity(documentOpeningReady ? 1 : 0)
             } else {
                 GeometryReader { geometry in
                     TranscriptTablePrototype(items: items, content: content, header: AnyView(historyHeader),
@@ -149,54 +166,64 @@ struct ConversationTranscript: View {
             }
         }
         .scrollEdgeEffectStyle(.hard, for: .top)
-        .scrollEdgeEffectStyle(.soft, for: .bottom)
-        .safeAreaBar(edge: .bottom, spacing: 0) { floatingControls }
+        .scrollEdgeEffectStyle(.soft, for: .bottom))
+        .preference(key: TranscriptLanded.self, value: hasLanded)
+        .onChange(of: documentState.snapshot) { _, state in
+            hasLanded = state.hasLanded
+            isAtBottom = state.isAtBottom
+            visibleSequence = state.visibleSequence
+        }
+        .onChange(of: documentState.failure) {
+            if documentState.failure != nil { revealError = "This message is no longer available." }
+        }
+        .onChange(of: interaction.jumpToLatestRequest) {
+            find.close()
+            find.resumeReading()
+            catchUp?.isPinned = false
+            documentState.send(.jumpToLatest)
+        }
+        .onChange(of: interaction.messageView) {
+            catchUp?.isPinned = false
+            if rows.isEmpty && store.hasOlderMessages { Task { await loadOlder() } }
+        }
+        .onChange(of: store.sendAttempts.map(\.message.id)) { previous, current in
+            let remaining = Set(current)
+            let confirmed = Set(previous).subtracting(remaining)
+            if store.messages.contains(where: { confirmed.contains($0.id) && $0.sequence > 0 }) {
+                documentState.send(.ownPostConfirmed)
+            }
+        }
+        .task(id: store.phase.isLive) {
+            guard TranscriptDocumentPrototype.isEnabled, store.phase.isLive, !documentOpeningReady else { return }
+            await prepareDocumentOpening()
+        }
+        .task(id: visibleReadSequence) { await markVisibleRead() }
+        .task(id: catchUp?.generation) { await catchUp?.run(using: intelligence) }
+        .task(id: interaction.isArtifactViewerPresented ? nil : interaction.revealRequestToken) {
+            guard !interaction.isArtifactViewerPresented, let request = interaction.revealRequest else { return }
+            interaction.consumeRevealRequest(request.token)
+            await revealInDocument(sequence: request.sequence)
+        }
+    }
+
+    private func prepareDocumentOpening() async {
+        if !capturedArrivalBoundary {
+            arrivalUnreadAfter = opening.rowID == nil ? store.unreadAfter : opening.unreadAfter
+            capturedArrivalBoundary = true
+        }
+        if rows.isEmpty && store.hasOlderMessages { await loadOlder() }
+        if let unread = arrivalUnreadAfter {
+            await loadHistory(through: unread + 1)
+            guard !Task.isCancelled, !isRevealing else { return }
+            prepareCatchUp(unreadAfter: unread)
+        }
+        guard !Task.isCancelled, !isRevealing else { return }
+        documentOpeningReady = true
     }
 
     private var transcript: some View {
         ScrollViewReader { proxy in
-            observedScroll(proxy: proxy)
-                .overlay(alignment: .top) {
-                    if find.isPresented && !interaction.isArtifactViewerPresented {
-                        TranscriptFindBar(find: find, channelName: store.state?.channel.name ?? store.id,
-                                          focusRequest: interaction.findRequest,
-                                          navigate: { find.move($0) }, close: closeFind)
-                    }
-                }
-                .safeAreaBar(edge: .bottom, spacing: 0) { floatingControls }
-                .onChange(of: interaction.findRequest) {
-                    guard !interaction.isArtifactViewerPresented else { return }
-                    prepareFind()
-                    find.present()
-                }
-                .onChange(of: interaction.findNavigation?.token) {
-                    guard !interaction.isArtifactViewerPresented else { return }
-                    prepareFind()
-                    find.present()
-                    find.move(interaction.findNavigation?.direction ?? 1)
-                }
-                .onChange(of: interaction.isArtifactViewerPresented) {
-                    if interaction.isArtifactViewerPresented { find.close() }
-                }
-                .onChange(of: store.messages) { if find.isPresented { prepareFind() } }
-                .task(id: find.work) {
-                    guard find.isPresented, !interaction.isArtifactViewerPresented else { return }
-                    prepareFind()
-                    await find.searchOlder {
-                        try await store.api.history(channelId: store.id, before: $0).messages
-                    }
-                    if !Task.isCancelled, find.isPresented, find.error == nil,
-                       !find.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        window.announce(find.matches.count == 1 ? "1 matching message"
-                                        : "\(find.matches.count) matching messages")
-                    }
-                }
-                .onChange(of: find.revealRequest?.token) {
-                    if find.isPresented, !interaction.isArtifactViewerPresented, let request = find.revealRequest {
-                        interaction.reveal(sequence: request.sequence)
-                    }
-                }
-                .onDisappear { find.close() }
+            transcriptControls(observedScroll(proxy: proxy))
                 .task(id: store.phase.isLive) {
                     guard store.phase.isLive, !hasLanded else { return }
                     await land(using: proxy)
@@ -213,6 +240,64 @@ struct ConversationTranscript: View {
                 }
                 // Owned here rather than by the card, which the lazy stack drops when it scrolls away.
                 .task(id: catchUp?.generation) { await catchUp?.run(using: intelligence) }
+        }
+    }
+
+    private func transcriptControls<Content: View>(_ content: Content) -> some View {
+        content
+            .overlay(alignment: .top) {
+                if find.isPresented && !interaction.isArtifactViewerPresented {
+                    TranscriptFindBar(find: find, channelName: store.state?.channel.name ?? store.id,
+                                      focusRequest: interaction.findRequest,
+                                      navigate: { find.move($0) }, close: closeFind)
+                }
+            }
+            .safeAreaBar(edge: .bottom, spacing: 0) { floatingControls }
+            .onChange(of: interaction.findRequest) {
+                guard !interaction.isArtifactViewerPresented else { return }
+                prepareFind()
+                find.present()
+            }
+            .onChange(of: interaction.findNavigation?.token) {
+                guard !interaction.isArtifactViewerPresented else { return }
+                prepareFind()
+                find.present()
+                find.move(interaction.findNavigation?.direction ?? 1)
+            }
+            .onChange(of: interaction.isArtifactViewerPresented) {
+                if interaction.isArtifactViewerPresented { find.close() }
+            }
+            .onChange(of: store.messages) { if find.isPresented { prepareFind() } }
+            .task(id: find.work) {
+                guard find.isPresented, !interaction.isArtifactViewerPresented else { return }
+                prepareFind()
+                await find.searchOlder {
+                    try await store.api.history(channelId: store.id, before: $0).messages
+                }
+                if !Task.isCancelled, find.isPresented, find.error == nil,
+                   !find.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    window.announce(find.matches.count == 1 ? "1 matching message"
+                                    : "\(find.matches.count) matching messages")
+                }
+            }
+            .onChange(of: find.revealRequest?.token) {
+                if find.isPresented, !interaction.isArtifactViewerPresented, let request = find.revealRequest {
+                    interaction.reveal(sequence: request.sequence)
+                }
+            }
+            .onChange(of: store.requestSequence, initial: true) { _, sequence in announceRequest(sequence) }
+            .onDisappear { find.close() }
+    }
+
+    private func announceRequest(_ sequence: Int?) {
+        let eligible = snapshot == nil && hasLanded && window.isKeyWindow
+            && scenePhase == .active && store.phase.isLive
+        guard requestAnnouncements.receive(sequence, isEligible: eligible), let sequence else { return }
+        if let request = store.request, request.sequence == sequence, let agentID = request.sender.agentId {
+            let author = channelAgentIdentity(store.roster, id: agentID).name
+            window.announce("\(author) needs your reply.")
+        } else {
+            window.announce("Your team needs your reply.")
         }
     }
 
@@ -242,19 +327,6 @@ struct ConversationTranscript: View {
             }
             .onChange(of: store.sendAttempts.map(\.id)) { old, new in
                 if isAtBottom && !find.isPresented && new.count > old.count { scrollToLatest(using: proxy) }
-            }
-            .onChange(of: store.requestSequence, initial: true) { _, sequence in
-                let eligible = snapshot == nil && hasLanded && window.isKeyWindow
-                    && scenePhase == .active && store.phase.isLive
-                guard requestAnnouncements.receive(sequence, isEligible: eligible),
-                      let sequence else { return }
-                if let request = store.request, request.sequence == sequence,
-                   let agentID = request.sender.agentId {
-                    let author = channelAgentIdentity(store.roster, id: agentID).name
-                    window.announce("\(author) needs your reply.")
-                } else {
-                    window.announce("Your team needs your reply.")
-                }
             }
     }
 
@@ -345,14 +417,7 @@ struct ConversationTranscript: View {
         return LazyVStack(alignment: .leading, spacing: 0) {
             historyHeader
             if rows.isEmpty {
-                ContentUnavailableView(
-                    interaction.messageView == .yours && !store.messages.isEmpty
-                        ? "No Messages for You" : "A Place to Work Together",
-                    systemImage: "bubble.left.and.bubble.right",
-                    description: Text(interaction.messageView == .yours && !store.messages.isEmpty
-                        ? "Agent coordination is hidden. Choose All Messages to see it."
-                        : "Messages from you and your team will appear here."))
-                    .padding(.vertical, 40)
+                emptyTranscript
             }
             ForEach(rows) { row in
                 TranscriptRowContent(row: row, context: context, statusReactions: statusReactions,
@@ -378,15 +443,37 @@ struct ConversationTranscript: View {
                     .equatable()
                     .padding(.top, stacked.contains(row.id) ? 4 : 20)
             }
-            ForEach(store.sendAttempts) { attempt in
-                sendAttempt(attempt, statusReactions: statusReactions[attempt.message.sequence] ?? [])
-                    .padding(.top, 20)
-                    .id("attempt-\(attempt.id)")
-            }
+            pendingSends(statusReactions: statusReactions)
             Color.clear.frame(height: 16).id("transcript-end")
         }
         .scrollTargetLayout()
         .coordinateSpace(name: "transcript-content")
+    }
+
+    private var tableHeader: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            historyHeader
+            if rows.isEmpty { emptyTranscript.modifier(ConversationRail()) }
+        }
+    }
+
+    private var emptyTranscript: some View {
+        ContentUnavailableView(
+            interaction.messageView == .yours && !store.messages.isEmpty
+                ? "No Messages for You" : "A Place to Work Together",
+            systemImage: "bubble.left.and.bubble.right",
+            description: Text(interaction.messageView == .yours && !store.messages.isEmpty
+                ? "Agent coordination is hidden. Choose All Messages to see it."
+                : "Messages from you and your team will appear here."))
+            .padding(.vertical, 40)
+    }
+
+    private func pendingSends(statusReactions: [Int: [ChannelReaction]]) -> some View {
+        ForEach(store.sendAttempts) { attempt in
+            sendAttempt(attempt, statusReactions: statusReactions[attempt.message.sequence] ?? [])
+                .padding(.top, 20)
+                .id("attempt-\(attempt.id)")
+        }
     }
 
     /// The looking and working reactions by sequence. Roster leaves statuses out, so they're merged back.
@@ -898,20 +985,8 @@ struct ConversationTranscript: View {
         revealError = nil
         pagingAnchor = nil
         defer { if interaction.revealRequestToken == token { isRevealing = false } }
-        await loadHistory(through: sequence)
-        guard revealIsCurrent(token, findToken: findToken) else { return }
-        guard let message = store.state?.messages.first(where: { $0.sequence == sequence }) else {
-            revealError = store.historyError ?? "This message is no longer available."
-            return
-        }
-        if !rows.contains(where: { $0.messages.contains { $0.id == message.id } }) {
-            interaction.messageView = .all
-        }
-        if find.isPresented { expandedMessageIds.insert(message.id) }
-        guard let row = rows.first(where: { $0.messages.contains { $0.id == message.id } }) else {
-            revealError = "This message is no longer available."
-            return
-        }
+        guard let (message, row) = await prepareReveal(sequence: sequence, token: token,
+                                                     findToken: findToken) else { return }
         let membership = message.system?.type == "member_joined" || message.system?.type == "member_left"
         let individualSystem = message.system?.type == "artifact_shared"
             || (membership && row.messages.contains(where: { expandedMessageIds.contains($0.id) }))
@@ -924,6 +999,49 @@ struct ConversationTranscript: View {
         do { try await Task.sleep(for: .seconds(2)) }
         catch { return }
         if highlightedSequence == sequence { highlightedSequence = nil }
+    }
+
+    private func revealInDocument(sequence: Int) async {
+        let token = interaction.revealRequestToken
+        let findToken = find.isPresented && find.revealRequest?.sequence == sequence ? find.revealRequest?.token : nil
+        catchUp?.isPinned = false
+        isRevealing = true
+        revealError = nil
+        defer { if interaction.revealRequestToken == token { isRevealing = false } }
+        guard let (message, row) = await prepareReveal(sequence: sequence, token: token,
+                                                     findToken: findToken) else { return }
+        guard let item = TranscriptTableItem.project([row]).first(where: {
+            $0.row.messages.contains { $0.id == message.id }
+        }) else {
+            revealError = "This message is no longer available."
+            return
+        }
+        documentOpeningReady = true
+        documentState.send(.reveal(item.id))
+        highlightedSequence = find.isPresented ? nil : sequence
+        guard !find.isPresented else { return }
+        do { try await Task.sleep(for: .seconds(2)) }
+        catch { return }
+        if highlightedSequence == sequence { highlightedSequence = nil }
+    }
+
+    private func prepareReveal(sequence: Int, token: UUID,
+                               findToken: UUID?) async -> (ChannelMessage, TranscriptRow)? {
+        await loadHistory(through: sequence)
+        guard revealIsCurrent(token, findToken: findToken) else { return nil }
+        guard let message = store.messages.first(where: { $0.sequence == sequence }) else {
+            revealError = store.historyError ?? "This message is no longer available."
+            return nil
+        }
+        if !rows.contains(where: { $0.messages.contains { $0.id == message.id } }) {
+            interaction.messageView = .all
+        }
+        if find.isPresented { expandedMessageIds.insert(message.id) }
+        guard let row = rows.first(where: { $0.messages.contains { $0.id == message.id } }) else {
+            revealError = "This message is no longer available."
+            return nil
+        }
+        return (message, row)
     }
 
     private func revealIsCurrent(_ token: UUID, findToken: UUID?) -> Bool {
@@ -973,6 +1091,14 @@ struct ConversationTranscript: View {
 
     private func loadOlder() async {
         guard !store.isLoadingOlder, store.hasOlderMessages, !isRevealing else { return }
+        if TranscriptDocumentPrototype.isEnabled {
+            repeat {
+                let before = store.messages.first?.sequence
+                await store.loadOlder()
+                if store.historyError != nil || store.messages.first?.sequence == before { break }
+            } while rows.isEmpty && store.hasOlderMessages && !Task.isCancelled
+            return
+        }
         if let top = viewport.topVisibleFrame(in: pagingFrames) {
             pagingAnchor = .init(id: top.id, bottom: top.frame.rect.maxY,
                                  oldestSequence: store.state?.messages.first?.sequence ?? 0)

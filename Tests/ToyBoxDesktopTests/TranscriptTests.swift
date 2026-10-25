@@ -67,6 +67,76 @@ struct TranscriptTableHeightTests {
                                        environment: setup.environment) == 40)
     }
 
+    @Test func boundedHeightMeasurementLeavesExplicitEstimatesOutsideTheRequestedRows() throws {
+        let setup = try setup()
+        let items = TranscriptTableItem.project(transcriptRows((1...100).map(transcriptTestMessage),
+                                                               lead: setup.lead, members: []))
+        let content = content(items, setup: setup)
+        let cache = TranscriptTableHeights()
+        let tail = IndexSet(90..<100)
+        let initial = cache.resolve(items: items, content: content, width: 720,
+                                    environment: setup.environment, measuring: tail)
+        #expect(initial.measured == 10)
+        #expect(initial.exactIndexes == tail)
+        #expect(initial.heights.count == 100 && initial.heights.allSatisfy { $0 > 0 && $0.isFinite })
+        let warm = cache.resolve(items: items, content: content, width: 720,
+                                 environment: setup.environment, measuring: tail)
+        #expect(warm.measured == 0 && warm.heights == initial.heights)
+        let head = IndexSet(0..<10)
+        let front = cache.resolve(items: items, content: content, width: 720,
+                                  environment: setup.environment, measuring: head)
+        #expect(front.measured == 10 && front.exactIndexes == tail.union(head))
+        #expect(Array(front.heights[90..<100]) == Array(initial.heights[90..<100]))
+        let narrow = cache.resolve(items: items, content: content, width: 420,
+                                   environment: setup.environment, measuring: tail)
+        #expect(narrow.measured == 10 && narrow.exactIndexes == tail)
+        #expect(cache.measurementCount == 30)
+    }
+
+    @Test func liveHostMeasurementsKeepTheirExactContentAndEnvironmentIdentity() throws {
+        let setup = try setup()
+        let items = TranscriptTableItem.project(transcriptRows((1...5).map(transcriptTestMessage),
+                                                               lead: setup.lead, members: []))
+        let content = content(items, setup: setup)
+        let cache = TranscriptTableHeights()
+        cache.recordLiveHeight(320, item: items[3], content: content[3], width: 720,
+                               environment: setup.environment, overflows: nil)
+        let live = cache.resolve(items: items, content: content, width: 720,
+                                 environment: setup.environment, measuring: IndexSet())
+        #expect(live.exactIndexes == IndexSet(integer: 3))
+        #expect(live.heights[3] == 320 && live.measured == 0)
+        let changedWidth = cache.resolve(items: items, content: content, width: 420,
+                                         environment: setup.environment, measuring: IndexSet())
+        #expect(changedWidth.exactIndexes.isEmpty && changedWidth.heights[3] == 320)
+        let measured = cache.resolve(items: items, content: content, width: 420,
+                                     environment: setup.environment, measuring: IndexSet(integer: 3))
+        #expect(measured.measured == 1 && measured.heights[3] != 320)
+    }
+
+    @Test(.enabled(if: transcriptTimingTestsEnabled))
+    func liveHostingInvalidatesItsIntrinsicHeightWhenOnlyMountedStateChanges() async throws {
+        let data = HostedHeight()
+        let host = TranscriptTableHostingView(rootView: AnyView(HostedHeightFixture(data: data)))
+        host.sizingOptions = [.intrinsicContentSize]
+        host.safeAreaRegions = []
+        let window = NSWindow(contentRect: NSRect(x: -6_000, y: -6_000, width: 300, height: 400),
+                              styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        window.orderBack(nil)
+        defer { window.close() }
+        try await transcriptUntil(in: host) { host.intrinsicContentSize.height == 80 }
+        var invalidations = 0
+        host.onHeightInvalidated = { invalidations += 1 }
+        for height: CGFloat in [160, 48, 240, 80] {
+            let previous = invalidations
+            data.height = height
+            try await transcriptUntil(in: host) {
+                invalidations > previous && host.intrinsicContentSize.height == height
+            }
+        }
+    }
+
     @Test(.enabled(if: transcriptTimingTestsEnabled))
     func nativeTableReceivesTheBarsInsetsWhileExtendingUnderThem() async throws {
         let bars = TableBars()
@@ -141,7 +211,22 @@ struct TranscriptTableHeightTests {
         let content = content(items, setup: setup)
         let bars = TableBars()
         bars.leading = leading
-        let host = NSHostingView(rootView: DocumentBarFixture(bars: bars, items: items, content: content)
+        let draws = DocumentDraws()
+        let host = NSHostingView(rootView: DocumentBarFixture(bars: bars, items: items, content: content,
+                                                             onDraw: { document in
+            guard let scroll = document.enclosingScrollView,
+                  document.coordinator.table.numberOfRows == items.count + 1 else { return }
+            let table = document.coordinator.table
+            let error: CGFloat
+            if let target = items.firstIndex(where: { $0.row.divider?.unread == true }) {
+                error = table.rect(ofRow: target + 1).minY
+                    - scroll.contentView.bounds.minY - scroll.contentInsets.top
+            } else {
+                error = scroll.contentView.bounds.maxY - scroll.contentInsets.bottom
+                    - table.rect(ofRow: items.count).maxY - TranscriptScrollModel.endClearance
+            }
+            draws.errors.append(error)
+        })
             .environment(\.self, setup.environment).frame(width: 980, height: 600))
         let window = NSWindow(contentRect: NSRect(x: -6_000, y: -6_000, width: 980, height: 600),
                               styleMask: [.borderless], backing: .buffered, defer: false)
@@ -155,7 +240,7 @@ struct TranscriptTableHeightTests {
         }
         try await transcriptUntil(in: host) {
             guard let document = find(host), let scroll = document.enclosingScrollView else { return false }
-            return document.bounds.height > 0 && document.coordinator.table.numberOfRows == items.count + 2
+            return document.bounds.height > 0 && document.coordinator.table.numberOfRows == items.count + 1
                 && scroll.contentInsets.bottom == 100
         }
         let document = try #require(find(host))
@@ -166,6 +251,21 @@ struct TranscriptTableHeightTests {
         #expect(table.enclosingScrollView === scroll)
         try await transcriptSettled(in: host) {
             CGSize(width: scroll.contentView.bounds.minY, height: document.bounds.height)
+        }
+        try await transcriptUntil(in: host) {
+            document.coordinator.messageFrames.values.contains { $0.values.contains { $0.sequence > 0 } }
+        }
+        for (id, measured) in document.coordinator.messageFrames {
+            guard let index = items.firstIndex(where: { $0.id == id }) else { continue }
+            let row = table.rect(ofRow: index + 1)
+            guard row.intersects(table.visibleRect) else { continue }
+            for message in measured.values where message.sequence > 0 {
+                let local = CGRect(x: message.rect.minX, y: row.minY + message.contentTop,
+                                   width: message.rect.width, height: message.rect.height)
+                let expected = table.convert(local, to: host)
+                #expect(abs(message.windowRect.minX - expected.minX) <= 0.5)
+                #expect(abs(message.windowRect.minY - expected.minY) <= 0.5)
+            }
         }
         if landsOnUnread {
             let target = try #require(items.firstIndex { $0.row.divider?.unread == true })
@@ -178,6 +278,7 @@ struct TranscriptTableHeightTests {
         }
         for bottom: CGFloat in [100, 176, 240, 100] {
             bars.bottom = bottom
+            document.needsDisplay = true
             try await transcriptUntil(in: host) { scroll.contentInsets.bottom == bottom }
             try await transcriptSettled(in: host) {
                 CGSize(width: document.bounds.width, height: document.bounds.height)
@@ -195,7 +296,187 @@ struct TranscriptTableHeightTests {
             #expect(abs(document.bounds.height - document.coordinator.documentHeight) <= 0.5)
             #expect(abs(hostingDocument.bounds.height - document.bounds.height) <= 0.5)
             #expect(abs(table.frame.height - document.bounds.height) <= 0.5)
+            if landsOnUnread {
+                let target = try #require(items.firstIndex { $0.row.divider?.unread == true })
+                let viewportTop = scroll.contentView.bounds.minY + scroll.contentInsets.top
+                #expect(abs(table.rect(ofRow: target + 1).minY - viewportTop) <= 0.5)
+            } else {
+                let viewportBottom = scroll.contentView.bounds.maxY - scroll.contentInsets.bottom
+                #expect(abs(viewportBottom - table.rect(ofRow: items.count).maxY - 16) <= 0.5)
+            }
         }
+        #expect(!draws.errors.isEmpty)
+        #expect(draws.errors.allSatisfy { abs($0) <= 0.5 })
+    }
+
+    @Test(.enabled(if: transcriptTimingTestsEnabled))
+    func nativeDocumentKeepsTheReaderThroughAppendPrependReflowAndNoOpLayout() async throws {
+        let setup = try setup()
+        let bars = TableBars()
+        bars.leading = 248
+        var messages = (101...200).map(transcriptTestMessage)
+        for index in messages.indices {
+            messages[index].content = .text(String(repeating: "A paragraph that wraps when the lane narrows. ",
+                                                  count: 3 + index % 5))
+        }
+        let data = TableData()
+        func setMessages() {
+            data.items = TranscriptTableItem.project(transcriptRows(messages, lead: setup.lead, members: []))
+            data.content = content(data.items, setup: setup)
+        }
+        setMessages()
+        let state = TranscriptDocumentState()
+        let host = NSHostingView(rootView: MutableDocumentFixture(bars: bars, data: data, state: state)
+            .environment(\.self, setup.environment))
+        let window = NSWindow(contentRect: NSRect(x: -6_000, y: -6_000, width: 980, height: 600),
+                              styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        window.orderBack(nil)
+        defer { window.close() }
+        func find(_ view: NSView) -> TranscriptTableDocument? {
+            if let document = view as? TranscriptTableDocument { return document }
+            return view.subviews.lazy.compactMap(find).first
+        }
+        try await transcriptUntil(in: host) { state.snapshot.hasLanded && find(host) != nil }
+        let document = try #require(find(host))
+        let scroll = try #require(document.enclosingScrollView)
+        let table = document.coordinator.table
+        try await transcriptSettled(in: host) { scroll.contentView.bounds.origin }
+        #expect(document.coordinator.measurementCount < 50)
+        func readerMoves(to origin: CGFloat) {
+            scroll.contentView.scroll(to: NSPoint(x: scroll.contentView.bounds.minX, y: origin))
+            scroll.reflectScrolledClipView(scroll.contentView)
+            NotificationCenter.default.post(name: NSScrollView.didLiveScrollNotification, object: scroll)
+        }
+        readerMoves(to: table.rect(ofRow: 51).minY + 12 - scroll.contentInsets.top)
+        try await transcriptSettled(in: host) { scroll.contentView.bounds.origin }
+        guard case .reading(let anchor) = document.coordinator.scrollIntent else {
+            Issue.record("A recorded reader scroll did not produce a reading anchor.")
+            return
+        }
+        func anchorOffset() throws -> CGFloat {
+            let index = try #require(data.items.firstIndex { $0.id == anchor.row })
+            return table.rect(ofRow: index + 1).minY - scroll.contentView.bounds.minY - scroll.contentInsets.top
+        }
+        let offset = try anchorOffset()
+        #expect(!state.snapshot.isAtBottom)
+        messages.append(transcriptTestMessage(201))
+        setMessages()
+        try await transcriptUntil(in: host) { table.numberOfRows == data.items.count + 1 }
+        try await transcriptSettled(in: host) { scroll.contentView.bounds.origin }
+        #expect(abs(try anchorOffset() - offset) <= 0.5)
+        messages = (1...100).map(transcriptTestMessage) + messages
+        setMessages()
+        try await transcriptUntil(in: host) { table.numberOfRows == data.items.count + 1 }
+        try await transcriptSettled(in: host) { scroll.contentView.bounds.origin }
+        #expect(abs(try anchorOffset() - offset) <= 0.5)
+        for width: CGFloat in [760, 980, 760, 980] {
+            window.setContentSize(NSSize(width: width, height: 600))
+            try await transcriptUntil(in: host, failure: {
+                "Expected table width \(width - 248), got \(table.frame.width). Window \(window.frame),"
+                    + " host \(host.frame), scroll \(scroll.frame), clip \(scroll.contentView.frame),"
+                    + " document \(document.frame), insets \(scroll.contentInsets)."
+            }) { abs(table.frame.width - (width - 248)) <= 0.5 }
+            try await transcriptSettled(in: host) {
+                CGSize(width: table.frame.width, height: scroll.contentView.bounds.minY)
+            }
+            #expect(abs(try anchorOffset() - offset) <= 0.5)
+        }
+        #expect(document.coordinator.reusedCellCount > 0)
+        let target = data.items[150]
+        let sequence = try #require(target.row.messages.first?.sequence)
+        state.send(.reveal(target.id))
+        try await transcriptUntil(in: host) {
+            document.coordinator.messageFrames[target.id]?.values.contains { $0.sequence == sequence } == true
+        }
+        try await transcriptSettled(in: host) { scroll.contentView.bounds.origin }
+        func messageTop() throws -> CGFloat {
+            let index = try #require(data.items.firstIndex { $0.id == target.id })
+            let local = try #require(document.coordinator.messageFrames[target.id]?.values.first {
+                $0.sequence == sequence
+            })
+            #expect(local.rect.height > 48)
+            return table.rect(ofRow: index + 1).minY + local.contentTop
+        }
+        readerMoves(to: try messageTop() + 23 - scroll.contentView.bounds.height + scroll.contentInsets.bottom)
+        try await transcriptSettled(in: host) {
+            CGSize(width: scroll.contentView.bounds.minY, height: CGFloat(state.snapshot.visibleSequence ?? 0))
+        }
+        #expect((state.snapshot.visibleSequence ?? 0) < sequence)
+        readerMoves(to: try messageTop() + 25 - scroll.contentView.bounds.height + scroll.contentInsets.bottom)
+        try await transcriptSettled(in: host) {
+            CGSize(width: scroll.contentView.bounds.minY, height: CGFloat(state.snapshot.visibleSequence ?? 0))
+        }
+        #expect(state.snapshot.visibleSequence == sequence)
+        state.send(.jumpToLatest)
+        try await transcriptUntil(in: host) { state.snapshot.isAtBottom }
+        try await transcriptSettled(in: host) { scroll.contentView.bounds.origin }
+        let end = scroll.contentView.bounds.minY
+        readerMoves(to: end - 30)
+        try await transcriptSettled(in: host) { scroll.contentView.bounds.origin }
+        let nearEnd = scroll.contentView.bounds.minY
+        document.needsLayout = true
+        try await transcriptSettled(in: host) { scroll.contentView.bounds.origin }
+        #expect(abs(scroll.contentView.bounds.minY - nearEnd) <= 0.5)
+        data.holdsPosition = true
+        try await transcriptSettled(in: host) { scroll.contentView.bounds.origin }
+        guard case .reading = document.coordinator.scrollIntent else {
+            Issue.record("Find did not hold a near-end reading position.")
+            return
+        }
+        #expect(abs(scroll.contentView.bounds.minY - nearEnd) <= 0.5)
+        data.holdsPosition = false
+        try await transcriptSettled(in: host) { scroll.contentView.bounds.origin }
+        #expect(document.coordinator.scrollIntent == .following)
+        #expect(abs(scroll.contentView.bounds.minY - nearEnd) <= 0.5)
+        messages.append(transcriptTestMessage(202))
+        setMessages()
+        try await transcriptUntil(in: host) { table.numberOfRows == data.items.count + 1 }
+        try await transcriptSettled(in: host) { scroll.contentView.bounds.origin }
+        let bottom = scroll.contentView.bounds.maxY - scroll.contentInsets.bottom
+        #expect(abs(bottom - table.rect(ofRow: data.items.count).maxY - 16) <= 0.5)
+        data.holdsPosition = true
+        try await transcriptSettled(in: host) { scroll.contentView.bounds.origin }
+        guard case .reading(let held) = document.coordinator.scrollIntent else {
+            Issue.record("Find did not hold the end against incoming messages.")
+            return
+        }
+        func heldOffset() throws -> CGFloat {
+            let index = try #require(data.items.firstIndex { $0.id == held.row })
+            return table.rect(ofRow: index + 1).minY - scroll.contentView.bounds.minY - scroll.contentInsets.top
+        }
+        let heldAt = try heldOffset()
+        messages.append(transcriptTestMessage(203))
+        setMessages()
+        try await transcriptUntil(in: host) { table.numberOfRows == data.items.count + 1 }
+        try await transcriptSettled(in: host) { scroll.contentView.bounds.origin }
+        #expect(abs(try heldOffset() - heldAt) <= 0.5)
+        data.holdsPosition = false
+        try await transcriptSettled(in: host) { scroll.contentView.bounds.origin }
+        state.send(.ownPostConfirmed)
+        try await transcriptUntil(in: host) { state.snapshot.isAtBottom }
+        let earlier = Array(messages.prefix(50))
+        messages.removeFirst(50)
+        setMessages()
+        try await transcriptUntil(in: host) { table.numberOfRows == data.items.count + 1 }
+        try await transcriptSettled(in: host) { scroll.contentView.bounds.origin }
+        readerMoves(to: -scroll.contentInsets.top)
+        try await transcriptSettled(in: host) { scroll.contentView.bounds.origin }
+        guard case .reading(let first) = document.coordinator.scrollIntent else {
+            Issue.record("A reader at the history header did not anchor a message.")
+            return
+        }
+        #expect(first.row == data.items.first?.id)
+        let firstOffset = table.rect(ofRow: 1).minY - scroll.contentView.bounds.minY - scroll.contentInsets.top
+        messages = earlier + messages
+        setMessages()
+        try await transcriptUntil(in: host) { table.numberOfRows == data.items.count + 1 }
+        try await transcriptSettled(in: host) { scroll.contentView.bounds.origin }
+        let restoredIndex = try #require(data.items.firstIndex { $0.id == first.row })
+        let restored = table.rect(ofRow: restoredIndex + 1).minY
+            - scroll.contentView.bounds.minY - scroll.contentInsets.top
+        #expect(abs(restored - firstOffset) <= 0.5)
     }
 
     @Test(.enabled(if: transcriptTimingTestsEnabled))
@@ -235,6 +516,40 @@ struct TranscriptTableHeightTests {
         }
     }
 
+    @Test(.enabled(if: transcriptTimingTestsEnabled))
+    func boundedHeightMeasurementReportsColdReflowAndAppendCost() throws {
+        let setup = try setup()
+        for count in [100, 542] {
+            let messages = transcriptFindTestMessages(1...count)
+            let items = TranscriptTableItem.project(transcriptRows(messages, lead: setup.lead, members: []))
+            let content = content(items, setup: setup)
+            let cache = TranscriptTableHeights()
+            let clock = ContinuousClock()
+            let tail = IndexSet((items.count - 10)..<items.count)
+            let coldStart = clock.now
+            let cold = cache.resolve(items: items, content: content, width: 720,
+                                     environment: setup.environment, measuring: tail)
+            let coldDuration = coldStart.duration(to: clock.now)
+            let widthStart = clock.now
+            let narrow = cache.resolve(items: items, content: content, width: 420,
+                                       environment: setup.environment, measuring: tail)
+            let widthDuration = widthStart.duration(to: clock.now)
+            let appended = messages + [transcriptTestMessage(count + 1)]
+            let newItems = TranscriptTableItem.project(transcriptRows(appended, lead: setup.lead, members: []))
+            let newContent = self.content(newItems, setup: setup)
+            let appendStart = clock.now
+            let result = cache.resolve(items: newItems, content: newContent, width: 720,
+                                       environment: setup.environment,
+                                       measuring: IndexSet((newItems.count - 10)..<newItems.count))
+            let appendDuration = appendStart.duration(to: clock.now)
+            #expect(cold.measured == 10 && narrow.measured == 10 && result.measured == 1)
+            print("BOUNDED_TABLE_HEIGHTS count=\(count) cold_ms=\(milliseconds(coldDuration))"
+                  + " width_ms=\(milliseconds(widthDuration)) append_ms=\(milliseconds(appendDuration))"
+                  + " cold_measured=\(cold.measured) width_measured=\(narrow.measured)"
+                  + " append_measured=\(result.measured)")
+        }
+    }
+
     private struct Setup {
         let lead: ChannelAgent
         let store: ChannelStore
@@ -245,6 +560,50 @@ struct TranscriptTableHeightTests {
     fileprivate final class TableBars {
         var bottom: CGFloat = 100
         var leading: CGFloat = 0
+    }
+
+    @Observable
+    fileprivate final class TableData {
+        var items: [TranscriptTableItem] = []
+        var content: [TranscriptRowContent] = []
+        var holdsPosition = false
+    }
+
+    private final class DocumentDraws {
+        var errors: [CGFloat] = []
+    }
+
+    @Observable
+    fileprivate final class HostedHeight {
+        var height: CGFloat = 80
+    }
+
+    private struct HostedHeightFixture: View {
+        let data: HostedHeight
+
+        var body: some View {
+            Color.clear.frame(width: 300, height: data.height).fixedSize()
+        }
+    }
+
+    private struct MutableDocumentFixture: View {
+        let bars: TableBars
+        let data: TableData
+        let state: TranscriptDocumentState
+
+        var body: some View {
+            ScrollView {
+                TranscriptDocumentPrototype(items: data.items, content: data.content,
+                                            header: AnyView(Color.clear.frame(height: 12)), state: state,
+                                            command: state.command, holdsPosition: data.holdsPosition)
+            }
+            .scrollEdgeEffectStyle(.hard, for: .top)
+            .scrollEdgeEffectStyle(.soft, for: .bottom)
+            .safeAreaBar(edge: .top, spacing: 0) { Color.clear.frame(height: 50) }
+            .safeAreaBar(edge: .bottom, spacing: 0) { Color.clear.frame(height: bars.bottom) }
+            .safeAreaPadding(.leading, bars.leading)
+            .frame(height: 600)
+        }
     }
 
     private struct TableBarFixture: View {
@@ -266,11 +625,12 @@ struct TranscriptTableHeightTests {
         let bars: TableBars
         let items: [TranscriptTableItem]
         let content: [TranscriptRowContent]
+        var onDraw: ((TranscriptTableDocument) -> Void)? = nil
 
         var body: some View {
             ScrollView {
                 TranscriptDocumentPrototype(items: items, content: content,
-                                            header: AnyView(Color.clear.frame(height: 12)))
+                                            header: AnyView(Color.clear.frame(height: 12)), onDraw: onDraw)
             }
             .scrollEdgeEffectStyle(.hard, for: .top)
             .scrollEdgeEffectStyle(.soft, for: .bottom)

@@ -48,9 +48,10 @@ final class TranscriptTableHeights {
         let heights: [CGFloat]
         let overflows: [Bool?]
         let measured: Int
+        let exactIndexes: IndexSet
     }
 
-    private struct Environment: Equatable {
+    struct Environment: Equatable {
         let width: CGFloat
         let textScale: CGFloat
         let displayScale: CGFloat
@@ -91,12 +92,21 @@ final class TranscriptTableHeights {
         sizer.measure([view], width: width, environment: environment)[0]
     }
 
-    func resolve(items: [TranscriptTableItem], content: [TranscriptRowContent], width: CGFloat,
-                 environment: EnvironmentValues) -> Result {
-        precondition(width.isFinite && width > 0 && items.count == content.count)
+    func recordLiveHeight(_ height: CGFloat, item: TranscriptTableItem, content: TranscriptRowContent,
+                          width: CGFloat, environment: EnvironmentValues, overflows: Bool?) {
+        precondition(height.isFinite && height > 0 && width.isFinite && width > 0)
         let metrics = Environment(width: width, values: environment)
-        var heights = [CGFloat](repeating: 0, count: items.count)
+        store(height: height, item: item, content: content, metrics: metrics, overflows: overflows)
+    }
+
+    func resolve(items: [TranscriptTableItem], content: [TranscriptRowContent], width: CGFloat,
+                 environment: EnvironmentValues, measuring requested: IndexSet? = nil) -> Result {
+        precondition(width.isFinite && width > 0 && items.count == content.count)
+        precondition(requested?.allSatisfy { items.indices.contains($0) } ?? true)
+        let metrics = Environment(width: width, values: environment)
+        var heights = [CGFloat](repeating: 100 * metrics.textScale, count: items.count)
         var overflows = [Bool?](repeating: nil, count: items.count)
+        var exact = IndexSet()
         var missing: [Int] = []
         for index in items.indices {
             let item = items[index]
@@ -108,8 +118,10 @@ final class TranscriptTableHeights {
             }) {
                 heights[index] = cached.height
                 overflows[index] = cached.overflows
+                exact.insert(index)
             } else {
-                missing.append(index)
+                if let previous = entries[item.id]?.first { heights[index] = previous.height }
+                if requested?.contains(index) != false { missing.append(index) }
             }
         }
         let coordination = missing.filter { index in
@@ -146,19 +158,28 @@ final class TranscriptTableHeights {
                 let height = ceil(measured[offset] * metrics.displayScale) / metrics.displayScale
                 precondition(height.isFinite && height > 0, "A transcript table item must have an exact positive height.")
                 heights[index] = height
+                exact.insert(index)
                 let item = items[index]
-                let row = sizingIdentity(content[index])
-                let entry = Entry(item: item, content: row, environment: metrics, catchUpPhase: row.catchUp?.phase,
-                                  height: height, overflows: overflows[index])
-                var cached = entries[item.id, default: []]
-                cached.insert(entry, at: 0)
-                entries[item.id] = Array(cached.prefix(4))
+                store(height: height, item: item, content: content[index], metrics: metrics,
+                      overflows: overflows[index])
             }
             measurementCount += missing.count
         }
         let retained = Set(items.map(\.id))
         entries = entries.filter { retained.contains($0.key) }
-        return Result(heights: heights, overflows: overflows, measured: missing.count)
+        return Result(heights: heights, overflows: overflows, measured: missing.count, exactIndexes: exact)
+    }
+
+    private func store(height: CGFloat, item: TranscriptTableItem, content: TranscriptRowContent,
+                       metrics: Environment, overflows: Bool?) {
+        let row = sizingIdentity(content)
+        let entry = Entry(item: item, content: row, environment: metrics, catchUpPhase: row.catchUp?.phase,
+                          height: height, overflows: overflows)
+        var cached = entries[item.id, default: []]
+        cached.removeAll { $0.item == item && $0.content == row && $0.environment == metrics
+            && $0.catchUpPhase == row.catchUp?.phase }
+        cached.insert(entry, at: 0)
+        entries[item.id] = Array(cached.prefix(4))
     }
 
     private func sizingIdentity(_ content: TranscriptRowContent) -> TranscriptRowContent {

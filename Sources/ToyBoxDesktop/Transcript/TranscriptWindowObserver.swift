@@ -9,7 +9,7 @@ final class TranscriptWindowObserver {
     @ObservationIgnored private weak var window: NSWindow?
     @ObservationIgnored private var notifications: [NSObjectProtocol] = []
 
-    func attach(to view: NSView) {
+    func attach(to view: NSView, observesResizes: Bool = true) {
         let scroll = view.enclosingScrollView
         guard scroll !== scrollView || view.window !== window else { return }
         detach()
@@ -28,7 +28,7 @@ final class TranscriptWindowObserver {
             }
             notifications.append(token)
         }
-        if let scroll { observeResizes(of: scroll) }
+        if observesResizes, let scroll { observeResizes(of: scroll) }
     }
 
     /// The clip view's offset as AppKit has it, which can run ahead of SwiftUI's geometry after a clamp.
@@ -217,6 +217,7 @@ struct TranscriptMessageFrame: Equatable {
     /// The top in the content, which only layout changes move. Scrolling moves only `rect`.
     var contentTop: CGFloat = 0
     var windowRect: CGRect = .zero
+    var layoutGeneration = 0
 }
 
 struct TranscriptMessageFrames: PreferenceKey {
