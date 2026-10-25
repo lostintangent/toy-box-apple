@@ -354,11 +354,16 @@ the wheel deltas actually delivered to that window between them, not queued inpu
 scroll travel. On a row handoff it retains the previous first row, or uses the current first row
 if the previous row was recycled. Missing shared first-row geometry fails the measurement rather
 than reporting zero drift. Results include measured frame pairs, frames above 1 point, maximum
-drift and total absolute drift.
+drift and total absolute drift. Both directions stay 1,000 points from the content edges, so end
+clamping and rubber-banding are not mistaken for row drift. Posted and locally delivered wheel
+event counts and total deltas must match, including the gesture's end event.
 
 During the transcript replacement, `TOY_BOX_TRANSCRIPT=lazy|table bun run benchmark scroll`
 selects the container through `open --env`. The output names the requested transcript. This is
 a temporary benchmark option, not a product preference, and is removed with t259.
+`TOY_BOX_BENCHMARK_SCROLL_DRIFT=0` disables the geometry producer and sampling for paired probe
+overhead checks. It is also benchmark-only and temporary. Normal app launches install no geometry
+provider and add no row callbacks.
 
 ## Design
 

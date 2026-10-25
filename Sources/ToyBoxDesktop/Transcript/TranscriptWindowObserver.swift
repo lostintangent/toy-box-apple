@@ -146,15 +146,18 @@ final class TranscriptWindowObserver {
 
 struct TranscriptWindowProbe: NSViewRepresentable {
     let observer: TranscriptWindowObserver
+    var benchmarkGeometry: (@MainActor () -> BenchmarkScrollGeometry?)? = nil
 
     func makeNSView(context: Context) -> ProbeView {
         let view = ProbeView()
         view.observer = observer
+        view.benchmarkGeometry = benchmarkGeometry
         return view
     }
 
     func updateNSView(_ view: ProbeView, context: Context) {
         view.observer = observer
+        view.benchmarkGeometry = benchmarkGeometry
         Task { @MainActor [weak view] in
             guard let view else { return }
             observer.attach(to: view)
@@ -165,8 +168,11 @@ struct TranscriptWindowProbe: NSViewRepresentable {
         view.observer?.detach()
     }
 
-    final class ProbeView: NSView {
+    final class ProbeView: NSView, BenchmarkScrollGeometrySource {
         weak var observer: TranscriptWindowObserver?
+        var benchmarkGeometry: (@MainActor () -> BenchmarkScrollGeometry?)?
+
+        func benchmarkScrollGeometry() -> BenchmarkScrollGeometry? { benchmarkGeometry?() }
 
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
@@ -175,6 +181,30 @@ struct TranscriptWindowProbe: NSViewRepresentable {
                 observer?.attach(to: self)
             }
         }
+    }
+}
+
+extension BenchmarkScrollGeometry {
+    init?(messageFrames: [String: TranscriptMessageFrame], viewport: TranscriptViewport,
+          nativeTop: CGFloat?, historyStart: Int?) {
+        guard viewport.width.isFinite, viewport.height.isFinite,
+              viewport.width > 0, viewport.height > 0, let nativeTop, nativeTop.isFinite,
+              let historyStart else { return nil }
+        var tops: [String: CGFloat] = [:]
+        var first: (id: String, top: CGFloat)?
+        for (id, frame) in messageFrames where frame.sequence > 0 && frame.historyStart == historyStart {
+            let positioned = TranscriptCoordinates.viewportFrame(frame, top: nativeTop).rect
+            guard positioned.minY.isFinite, positioned.height.isFinite, positioned.height > 0,
+                  positioned.width.isFinite, positioned.width > 0,
+                  positioned.maxY > -viewport.height, positioned.minY < viewport.height * 2 else { continue }
+            tops[id] = positioned.minY
+            guard positioned.maxY > 0, positioned.minY < viewport.height else { continue }
+            if let first, first.top < positioned.minY
+                || (first.top == positioned.minY && first.id < id) { continue }
+            first = (id, positioned.minY)
+        }
+        guard let first else { return nil }
+        self.init(firstVisibleRow: first.id, rowTops: tops)
     }
 }
 

@@ -10,7 +10,8 @@ const options = {
 test.each(["table", "lazy", undefined])("open forwards transcript selection %s to the app", transcript => {
     const command = benchmarkLaunchCommand({ ...options, transcript });
     expect(command.slice(command.indexOf("--env"), command.indexOf("--stdout")))
-        .toEqual(["--env", `TOY_BOX_TRANSCRIPT=${transcript ?? "lazy"}`]);
+        .toEqual(["--env", `TOY_BOX_TRANSCRIPT=${transcript ?? "lazy"}`,
+            "--env", "TOY_BOX_BENCHMARK_SCROLL_DRIFT=1"]);
     expect(command.slice(command.indexOf(options.app))).toEqual([
         options.app, "--args", "--server", options.server, "--channel", options.channel,
         "--benchmark", "scroll", "-ApplePersistenceIgnoreState", "YES",
@@ -21,4 +22,10 @@ test.each(["table", "lazy", undefined])("open forwards transcript selection %s t
 
 test("only the key-window scenario takes focus", () => {
     expect(benchmarkLaunchCommand({ ...options, scenario: "key", transcript: "table" })).not.toContain("-g");
+});
+
+test("the probe overhead control is forwarded independently of transcript selection", () => {
+    const command = benchmarkLaunchCommand({ ...options, transcript: "lazy", scrollDrift: "0" });
+    expect(command).toContain("TOY_BOX_TRANSCRIPT=lazy");
+    expect(command).toContain("TOY_BOX_BENCHMARK_SCROLL_DRIFT=0");
 });
