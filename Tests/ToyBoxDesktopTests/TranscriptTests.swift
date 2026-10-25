@@ -15,53 +15,6 @@ private let transcriptTimingTestsEnabled = ProcessInfo.processInfo.environment["
 
 @Suite("Transcript rendering and visibility")
 struct TranscriptTests {
-    @MainActor
-    @Test func nativeDocumentClampsCannotTurnReadingBackIntoFollowing() throws {
-        let reader = TranscriptReader()
-        let rows = transcriptRows((1...100).map(transcriptTestMessage), lead: .lead(id: "lead"), members: [])
-        let viewport = TranscriptScrollModel.Viewport(width: 520, height: 480, topInset: 0, bottomInset: 100)
-        func native(_ origin: CGFloat, end: CGFloat = 7_676) -> TranscriptNativeLayout {
-            .init(viewport: viewport, origin: origin, documentEnd: end, documentWidth: 520)
-        }
-        func receive(_ next: TranscriptNativeLayout, frames: [String: TranscriptMessageFrame] = [:],
-                     written: Bool = false) {
-            reader.receive(next, frames: frames, canonicalRows: rows, expandedIDs: [], historyStart: 1,
-                           allowsReader: true, isTranscriptWrite: written)
-        }
-        receive(native(7_296))
-        receive(native(6_396))
-        #expect(!reader.isFollowing)
-        #expect(reader.intent == .following)
-        let frame = TranscriptMessageFrame(sequence: 74, rect: .init(x: 0, y: 37, width: 400, height: 45),
-                                            historyStart: 1, contentTop: 6_413)
-        receive(native(6_396), frames: ["m74": frame])
-        let reading = TranscriptScrollModel.Intent.reading(.init(row: "m74", order: 297, offset: 37))
-        #expect(reader.intent == reading)
-        // Native geometry can report the shorter document before its old origin is constrained.
-        receive(native(6_396, end: 4_568))
-        receive(native(4_188, end: 4_568))
-        receive(native(4_188, end: 6_520))
-        #expect(reader.intent == reading)
-        #expect(!reader.isFollowing)
-        receive(native(6_140, end: 6_520))
-        #expect(reader.isFollowing)
-        #expect(reader.intent == .following)
-    }
-
-    @MainActor
-    @Test func aNativeTranscriptWriteDoesNotBecomeReaderInput() {
-        let reader = TranscriptReader()
-        let rows = transcriptRows((1...100).map(transcriptTestMessage), lead: .lead(id: "lead"), members: [])
-        let viewport = TranscriptScrollModel.Viewport(width: 520, height: 480, topInset: 0, bottomInset: 100)
-        for (origin, written): (CGFloat, Bool) in [(7_296, false), (6_396, true)] {
-            reader.receive(.init(viewport: viewport, origin: origin, documentEnd: 7_676, documentWidth: 520),
-                           frames: [:], canonicalRows: rows, expandedIDs: [], historyStart: 1,
-                           allowsReader: true, isTranscriptWrite: written)
-        }
-        #expect(reader.isFollowing)
-        #expect(reader.intent == .following)
-    }
-
     @Test func lazyAgentRowsKeepCanonicalEntriesAndShowOneAvatarPerRun() throws {
         let messages = (1...100).map(transcriptTestMessage)
         let canonical = transcriptRows(messages, lead: .lead(id: "lead"), members: [])

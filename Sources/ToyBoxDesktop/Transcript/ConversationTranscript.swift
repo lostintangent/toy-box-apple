@@ -251,7 +251,6 @@ struct ConversationTranscript: View {
         .preference(key: TranscriptRestoringHistory.self, value: pagingAnchor != nil)
         .onScrollGeometryChange(for: TranscriptViewport.self) { TranscriptViewport($0) } action: { old, new in
             layoutTurns.moved = true
-            receiveReader(frames: frames)
             // Keyboard scrolling has no scroll phase, so any move the transcript didn't make releases the card.
             if catchUp?.isPinned == true, hasLanded, pendingJump == nil, abs(new.top - old.top) > 0.5,
                new.contentHeight == old.contentHeight, new.height == old.height {
@@ -266,6 +265,7 @@ struct ConversationTranscript: View {
             followReaderWhilePaging()
             publishVisibleSequence()
             pointer.contentDidMove()
+            if isAtBottom != update.isAtBottom { isAtBottom = update.isAtBottom }
             let jump = pendingJump
             if update.landsJump { pendingJump = nil }
             switch update.follow {
@@ -289,7 +289,6 @@ struct ConversationTranscript: View {
         }
         .onPreferenceChange(TranscriptMessageFrames.self) { new in
             layoutTurns.moved = true
-            receiveReader(frames: new)
             holdReadingPlace(in: new)
             geometry.frames = new
             publishVisibleSequence()
@@ -437,17 +436,6 @@ struct ConversationTranscript: View {
                               + " isAtBottom=\(isAtBottom) follows=\(followsLatest) pins=\(window.pinsToBottom)"
                               + " landed=\(hasLanded) scrolling=\(isUserScrolling)"
                               + " binding=\(String(describing: scrollPosition)) pending=\(String(describing: pendingJump))")
-    }
-
-    private func receiveReader(frames: [String: TranscriptMessageFrame]) {
-        guard let native = window.nativeLayout else { return }
-        geometry.reader.receive(native, frames: frames, canonicalRows: rows,
-                                expandedIDs: expandedMessageIds, historyStart: store.messages.first?.sequence ?? 0,
-                                allowsReader: hasLanded && pendingJump == nil && !isRevealing,
-                                isTranscriptWrite: window.consumeWrite(at: native.origin))
-        let following = geometry.reader.isFollowing
-        if isAtBottom != following { isAtBottom = following }
-        window.pinsToBottom = followsLatest
     }
 
     private var floatingControls: some View {
@@ -764,7 +752,6 @@ struct ConversationTranscript: View {
     /// user scroll would pull the viewport back toward it whenever content changes size.
     private func scrollToLatest(using proxy: ScrollViewProxy, animation: Animation? = nil) {
         traceScroll("scrollToLatest/proxy.end")
-        geometry.reader.followLatest()
         scrollPosition = nil
         pendingJump = nil
         withAnimation(animation) { proxy.scrollTo("transcript-end", anchor: .bottom) }
@@ -1170,7 +1157,6 @@ private func transcriptFrameIDs(of row: TranscriptRow) -> [String] {
 /// frame actually changes, like the visible message or reaching the bottom, is published as state.
 @MainActor
 private final class TranscriptScrollGeometry {
-    let reader = TranscriptReader()
     var viewport = TranscriptViewport()
     var frames: [String: TranscriptMessageFrame] = [:]
     var readingAnchor: TranscriptReadingAnchor?
