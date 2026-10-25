@@ -378,6 +378,12 @@ struct ArtifactViewerTests {
             opener.artifact?.id == plan.id && opener.canPageUsingKeys
                 && host.window.firstResponder != nil && host.window.firstResponder !== host.window
         }
+        for modifier: NSEvent.ModifierFlags in [.shift, .control, .option, .command, .capsLock] {
+            for key: KeyEquivalent in [.leftArrow, .rightArrow] {
+                try host.press(key, modifiers: [.numericPad, .function, modifier])
+                #expect(opener.artifact?.id == plan.id)
+            }
+        }
         try host.press(.rightArrow)
         try await wait { opener.artifact?.id == html.id }
         try host.press(.leftArrow)
@@ -406,11 +412,11 @@ struct ArtifactViewerTests {
             window.orderFrontRegardless()
             view.layoutSubtreeIfNeeded()
         }
-        func press(_ key: KeyEquivalent) throws {
+        func press(_ key: KeyEquivalent, modifiers: NSEvent.ModifierFlags = [.numericPad, .function]) throws {
             let isRight = key == .rightArrow
             let characters = String(UnicodeScalar(UInt16(isRight ? NSRightArrowFunctionKey : NSLeftArrowFunctionKey))!)
             window.sendEvent(try #require(NSEvent.keyEvent(
-                with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber,
+                with: .keyDown, location: .zero, modifierFlags: modifiers, timestamp: 0, windowNumber: window.windowNumber,
                 context: nil, characters: characters, charactersIgnoringModifiers: characters, isARepeat: false,
                 keyCode: isRight ? 124 : 123)))
         }
