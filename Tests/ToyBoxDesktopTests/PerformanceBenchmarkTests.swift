@@ -4,6 +4,24 @@ import Testing
 
 @Suite("Transcript benchmark scroll drift")
 struct PerformanceBenchmarkTests {
+    @Test func keyWindowMeasurementRejectsEveryNonDrawingOrInactiveState() {
+        let valid = BenchmarkKeyWindowState(active: true, hidden: false, key: true, visible: true,
+                                            miniaturized: false, exposed: true)
+        #expect(valid.canMeasure)
+        for (active, hidden, key, visible, miniaturized, exposed) in [
+            (false, false, true, true, false, true),
+            (true, true, true, true, false, true),
+            (true, false, false, true, false, true),
+            (true, false, true, false, false, true),
+            (true, false, true, true, true, true),
+            (true, false, true, true, false, false),
+        ] {
+            let invalid = BenchmarkKeyWindowState(active: active, hidden: hidden, key: key, visible: visible,
+                                                  miniaturized: miniaturized, exposed: exposed)
+            #expect(!invalid.canMeasure)
+        }
+    }
+
     @Test(arguments: [CGFloat(-40), 0, 40])
     func measuresMovementAgainstDeliveredWheelDelta(_ delta: CGFloat) {
         var drift = BenchmarkScrollDrift()

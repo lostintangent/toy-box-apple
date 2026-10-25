@@ -82,7 +82,6 @@ final class PerformanceBenchmark {
     private var meter: MainRunLoopMeter?
     private var appearance: NSObjectProtocol?
     private var task: Task<Void, Never>?
-    private var keyResigned = false
 
     init(scenario: Scenario, channelID: String) {
         self.scenario = scenario
@@ -608,15 +607,18 @@ final class PerformanceBenchmark {
         await load(channelID)
         guard let window, let store = store(channelID) else { return }
         // bun run benchmark opens this scenario in front, so the app may already be active.
+        info("Before key activation", keyWindowDiagnostics(window))
         NSApp.activate()
         window.makeKeyAndOrderFront(nil)
+        info("After key activation request", keyWindowDiagnostics(window))
         let deadline = CACurrentMediaTime() + 10
-        while !window.isKeyWindow {
+        while !BenchmarkKeyWindowState.capture(window).canMeasure {
             guard CACurrentMediaTime() < deadline else {
-                fail("the window didn't become key. Another app kept focus, so run key again while nobody is typing.")
+                fail("the key scenario needs an active, visible, uncovered window. \(keyWindowDiagnostics(window))")
             }
             try? await Task.sleep(for: .milliseconds(100))
         }
+        info("Key window ready", keyWindowDiagnostics(window))
         header()
         func working() -> Int {
             store.roster.count(where: { store.presence[$0.id]?.state == "working" })
@@ -627,31 +629,73 @@ final class PerformanceBenchmark {
         await measureKeyWindow(window, label: "Key window with \(working()) working agents")
     }
 
-    /// Measures the process's CPU while the window stays key.
+    /// Measures the process's CPU only while its active, key window remains exposed.
     private func measureKeyWindow(_ window: NSWindow, label: String) async {
         guard let meter else { return }
         // Work on every frame never settles, and that's what this measures, so it waits a fixed time
         // for anything that starts when the window becomes key or a row appears.
         try? await Task.sleep(for: .seconds(5))
-        keyResigned = false
-        let observer = NotificationCenter.default.addObserver(
-            forName: NSWindow.didResignKeyNotification, object: window, queue: .main
-        ) { [weak self] _ in MainActor.assumeIsolated { self?.keyResigned = true } }
-        defer { NotificationCenter.default.removeObserver(observer) }
+        requireMeasurableKeyWindow(window)
+        let validate: @Sendable (Notification) -> Void = { [weak self, weak window] note in
+            let closing = note.name == NSWindow.willCloseNotification
+            MainActor.assumeIsolated {
+                guard let self, let window else { return }
+                if closing { self.fail("the key scenario's window closed during measurement") }
+                self.requireMeasurableKeyWindow(window)
+            }
+        }
+        let notifications: [(Notification.Name, NSObject)] = [
+            (NSWindow.didResignKeyNotification, window),
+            (NSWindow.didChangeOcclusionStateNotification, window),
+            (NSWindow.didMiniaturizeNotification, window),
+            (NSWindow.willCloseNotification, window),
+            (NSApplication.didResignActiveNotification, NSApp),
+            (NSApplication.didHideNotification, NSApp),
+        ]
+        let observers = notifications.map { name, object in
+            NotificationCenter.default.addObserver(forName: name, object: object, queue: .main, using: validate)
+        }
+        defer { for observer in observers { NotificationCenter.default.removeObserver(observer) } }
         meter.reset()
         let start = CACurrentMediaTime()
         let process = Self.processCPU()
         let main = Self.mainThreadCPU()
         try? await Task.sleep(for: .seconds(Self.keyWindowSeconds))
         let seconds = CACurrentMediaTime() - start
-        guard !keyResigned, window.isKeyWindow else {
-            fail("the window stopped being key while it was measured, so run key again while nobody is typing.")
-        }
+        requireMeasurableKeyWindow(window)
         let percent = (Self.processCPU() - process) / seconds * 100
         check(label, String(format: "%.1f%% CPU, %.1f%% on the main thread, %.1f wakeups a second, over %.0f s",
                             percent, (Self.mainThreadCPU() - main) / seconds * 100, Double(meter.passes) / seconds,
                             seconds),
               value: percent, budget: Budget.keyWindowCPU, unit: "%")
+    }
+
+    private func requireMeasurableKeyWindow(_ window: NSWindow) {
+        guard BenchmarkKeyWindowState.capture(window).canMeasure else {
+            fail("the key scenario lost its active, visible, uncovered window. \(keyWindowDiagnostics(window))")
+        }
+    }
+
+    private func keyWindowDiagnostics(_ window: NSWindow) -> String {
+        let state = BenchmarkKeyWindowState.capture(window)
+        let policy = NSRunningApplication.current.activationPolicy.rawValue
+        let appWindows = NSApp.windows.map {
+            "\($0.windowNumber):\(BenchmarkKeyWindowState.capture($0))"
+        }.joined(separator: "; ")
+        let server: String
+        if let records = CGWindowListCopyWindowInfo(.optionAll, kCGNullWindowID) as? [[String: Any]] {
+            let own = records.filter { ($0[kCGWindowOwnerPID as String] as? Int) == Int(getpid()) }
+            server = own.isEmpty ? "no WindowServer records for pid \(getpid())" : own.map {
+                let number = String(describing: $0[kCGWindowNumber as String] ?? "unknown number")
+                let onscreen = String(describing: $0[kCGWindowIsOnscreen as String] ?? "unknown visibility")
+                let owner = String(describing: $0[kCGWindowOwnerName as String] ?? "unknown owner")
+                return "\(number):onscreen=\(onscreen), owner=\(owner)"
+            }.joined(separator: "; ")
+        } else {
+            server = "WindowServer list unavailable"
+        }
+        return "\(state), policy=\(policy), window=\(window.windowNumber), frame=\(window.frame), "
+            + "app windows=[\(appWindows)], WindowServer=[\(server)]"
     }
 
     /// Asks the fixture to make `count` agents working, adding members when the channel has fewer.
@@ -888,6 +932,28 @@ final class PerformanceBenchmark {
         sysctl(&mib, 4, &info, &size, nil, 0)
         let time = info.kp_proc.p_un.__p_starttime
         return Date(timeIntervalSince1970: TimeInterval(time.tv_sec) + TimeInterval(time.tv_usec) / 1_000_000)
+    }
+}
+
+struct BenchmarkKeyWindowState: Equatable, Sendable, CustomStringConvertible {
+    let active: Bool
+    let hidden: Bool
+    let key: Bool
+    let visible: Bool
+    let miniaturized: Bool
+    let exposed: Bool
+
+    var canMeasure: Bool { active && !hidden && key && visible && !miniaturized && exposed }
+    var description: String {
+        "active=\(active), hidden=\(hidden), key=\(key), visible=\(visible), "
+            + "miniaturized=\(miniaturized), exposed=\(exposed)"
+    }
+
+    @MainActor
+    static func capture(_ window: NSWindow) -> Self {
+        .init(active: NSApp.isActive, hidden: NSApp.isHidden, key: window.isKeyWindow,
+              visible: window.isVisible, miniaturized: window.isMiniaturized,
+              exposed: window.occlusionState.contains(.visible))
     }
 }
 
