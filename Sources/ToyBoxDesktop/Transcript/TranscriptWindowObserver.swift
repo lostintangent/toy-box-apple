@@ -8,6 +8,10 @@ final class TranscriptWindowObserver {
     @ObservationIgnored private weak var scrollView: NSScrollView?
     @ObservationIgnored private weak var window: NSWindow?
     @ObservationIgnored private var notifications: [NSObjectProtocol] = []
+    @ObservationIgnored private var readingMotion: TranscriptReadingMotion?
+    @ObservationIgnored private var readingToken: UUID?
+    @ObservationIgnored private var onReadingScroll: (@MainActor () -> Void)?
+    @ObservationIgnored private var isApplyingReadingScroll = false
 
     func attach(to view: NSView) {
         let scroll = view.enclosingScrollView
@@ -39,6 +43,40 @@ final class TranscriptWindowObserver {
         return scrollView.contentView.bounds.minY + scrollView.contentInsets.top
     }
 
+    var isLiveResizing: Bool { window?.inLiveResize == true }
+
+    private var readingLayout: TranscriptReadingMotion.Layout? {
+        guard let scrollView, let document = scrollView.documentView else { return nil }
+        return .init(viewportSize: scrollView.contentView.bounds.size, contentSize: document.bounds.size,
+                     topInset: scrollView.contentInsets.top, bottomInset: scrollView.contentInsets.bottom)
+    }
+
+    func beginReadingRestore(_ token: UUID, onScroll: @escaping @MainActor () -> Void) {
+        guard let offset = scrollOffset, let layout = readingLayout else { return }
+        readingMotion = .init(offset: offset, layout: layout)
+        readingToken = token
+        onReadingScroll = onScroll
+    }
+
+    func endReadingRestore(_ token: UUID) {
+        guard readingToken == token else { return }
+        readingMotion = nil
+        readingToken = nil
+        onReadingScroll = nil
+    }
+
+    private func nativeOffsetChanged() {
+        guard !isApplyingReadingScroll, var motion = readingMotion,
+              let offset = scrollOffset, let layout = readingLayout else { return }
+        let moved = motion.receive(offset: offset, layout: layout)
+        readingMotion = motion
+        if moved, let token = readingToken {
+            let onScroll = onReadingScroll
+            endReadingRestore(token)
+            onScroll?()
+        }
+    }
+
     /// Whether the transcript is following its newest message. A window resize then keeps the end of the
     /// content at the bottom of the viewport in the same layout pass that draws the new size. SwiftUI's
     /// follow lands a frame or more later, which a live resize shows as the newest message drifting.
@@ -48,6 +86,11 @@ final class TranscriptWindowObserver {
     private func observeResizes(of scroll: NSScrollView) {
         let clip = scroll.contentView
         clip.postsFrameChangedNotifications = true
+        clip.postsBoundsChangedNotifications = true
+        notifications.append(NotificationCenter.default.addObserver(
+            forName: NSView.boundsDidChangeNotification, object: clip, queue: nil) { [weak self] _ in
+            MainActor.assumeIsolated { self?.nativeOffsetChanged() }
+        })
         notifications.append(NotificationCenter.default.addObserver(
             forName: NSView.frameDidChangeNotification, object: clip, queue: nil) { [weak self] _ in
             MainActor.assumeIsolated { self?.containerResized() }
@@ -115,6 +158,13 @@ final class TranscriptWindowObserver {
         let minimum = -scrollView.contentInsets.top
         let maximum = max(minimum, document.bounds.height + scrollView.contentInsets.bottom - clip.bounds.height)
         let target = min(maximum, max(minimum, offset))
+        isApplyingReadingScroll = true
+        defer {
+            isApplyingReadingScroll = false
+            if readingToken != nil, let layout = readingLayout {
+                readingMotion = .init(offset: clip.bounds.minY, layout: layout)
+            }
+        }
         guard abs(clip.bounds.minY - target) > 0.25 else { return true }
         let previous = clip.bounds.minY
         clip.scroll(to: NSPoint(x: clip.bounds.minX, y: target))
@@ -141,6 +191,9 @@ final class TranscriptWindowObserver {
         window = nil
         isKeyWindow = false
         isResizing = false
+        readingMotion = nil
+        readingToken = nil
+        onReadingScroll = nil
     }
 }
 

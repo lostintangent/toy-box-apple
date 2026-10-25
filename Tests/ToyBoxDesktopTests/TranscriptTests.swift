@@ -82,6 +82,39 @@ struct TranscriptTests {
         #expect(TranscriptCoordinates.viewportFrame(rewrapped, top: offset).rect.minY == restore.top)
     }
 
+    @Test func nativeScrollingTakesOwnershipWithoutRequiringAScrollPhase() {
+        let narrow = TranscriptReadingMotion.Layout(viewportSize: CGSize(width: 503, height: 480),
+                                                     contentSize: CGSize(width: 503, height: 2_116),
+                                                     topInset: 0, bottomInset: 136)
+        let wide = TranscriptReadingMotion.Layout(viewportSize: CGSize(width: 520, height: 480),
+                                                   contentSize: CGSize(width: 520, height: 1_541),
+                                                   topInset: 0, bottomInset: 136)
+        var motion = TranscriptReadingMotion(offset: 1_346, layout: narrow)
+        let clampedByRewrapping = motion.receive(offset: 1_161, layout: wide)
+        #expect(!clampedByRewrapping)
+        motion = .init(offset: 946, layout: wide)
+        let ownAlignment = motion.receive(offset: 946, layout: wide)
+        let pageUp = motion.receive(offset: 646, layout: wide)
+        #expect(!ownAlignment && pageUp)
+    }
+
+    @Test func aSlowLiveResizeKeepsHoldingUntilItsLastWidthHasHadTimeToSettle() {
+        let start = ContinuousClock.now
+        var settling = TranscriptReadingSettling(size: CGSize(width: 503, height: 480), now: start)
+        for second in 1...5 {
+            let continues = settling.continues(size: CGSize(width: CGFloat(503 + second), height: 480),
+                                               isLiveResize: false, now: start + .seconds(second))
+            #expect(continues)
+        }
+        let stillDragging = settling.continues(size: CGSize(width: 508, height: 480),
+                                               isLiveResize: true, now: start + .seconds(10))
+        let justEnded = settling.continues(size: CGSize(width: 508, height: 480),
+                                           isLiveResize: false, now: start + .seconds(11))
+        let quietDeadline = settling.continues(size: CGSize(width: 508, height: 480),
+                                               isLiveResize: false, now: start + .seconds(13))
+        #expect(stillDragging && justEnded && !quietDeadline)
+    }
+
     @MainActor
     @Test(arguments: [0.9, 1, 1.2])
     func markdownSizingKeepsTranscriptDefaultsAndScalesArtifactCode(_ scale: CGFloat) throws {
@@ -662,6 +695,46 @@ struct TranscriptTests {
                 "\(anchor.key) moved from \(anchor.value) to \(after)")
         #expect(harness.bottomGap > 48)
         #expect(!harness.isVisible("m\(next)"))
+        #expect(harness.readRequests == 0)
+    }
+
+    @MainActor
+    @Test(.enabled(if: transcriptTimingTestsEnabled), arguments: [false, true])
+    func nativeReaderScrollingCancelsAnInFlightWidthRestoration(byScroller: Bool) async throws {
+        let action = TranscriptReaderAction()
+        let harness = try await TranscriptHarness(messages: transcriptFindTestMessages(1...90), resizable: true) { harness in
+            guard action.isArmed, action.after == nil, harness.capture.isRestoringReading else { return }
+            let clip = harness.scrollView.contentView
+            action.before = clip.bounds.minY
+            if byScroller {
+                NotificationCenter.default.post(name: NSScrollView.willStartLiveScrollNotification,
+                                                object: harness.scrollView)
+                clip.scroll(to: CGPoint(x: 0, y: clip.bounds.minY - 120))
+                harness.scrollView.reflectScrolledClipView(clip)
+                NotificationCenter.default.post(name: NSScrollView.didLiveScrollNotification,
+                                                object: harness.scrollView)
+                NotificationCenter.default.post(name: NSScrollView.didEndLiveScrollNotification,
+                                                object: harness.scrollView)
+            } else {
+                // Keyboard and accessibility scrolling have no live-scroll phase.
+                clip.scroll(to: CGPoint(x: 0, y: clip.bounds.minY - 300))
+                harness.scrollView.reflectScrolledClipView(clip)
+            }
+            action.after = clip.bounds.minY
+        }
+        defer { harness.close() }
+        harness.resize(width: 503)
+        try await harness.settled()
+        try await harness.scrollUp(byWheel: false) { harness.bottomGap > 400 }
+        action.isArmed = true
+        harness.resize(width: 520)
+        try await harness.waitUntil { action.after != nil }
+        try await harness.settled()
+        try await harness.waitUntil { !harness.capture.isRestoringReading }
+        let before = try #require(action.before)
+        let after = try #require(action.after)
+        #expect(after < before - 80)
+        #expect(harness.scrollView.contentView.bounds.minY <= after + 1)
         #expect(harness.readRequests == 0)
     }
 
@@ -2537,6 +2610,13 @@ private final class TranscriptLayoutCapture {
 @MainActor
 private final class TranscriptGapLog {
     var values: [CGFloat] = []
+}
+
+@MainActor
+private final class TranscriptReaderAction {
+    var isArmed = false
+    var before: CGFloat?
+    var after: CGFloat?
 }
 
 @MainActor

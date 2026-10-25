@@ -1,7 +1,10 @@
 import ChannelClient
 import ChannelIntelligence
 import ChannelKit
+import OSLog
 import SwiftUI
+
+private let transcriptScrollLogger = Logger(subsystem: "dev.toybox.desktop", category: "TranscriptScroll")
 
 struct ConversationTranscript: View {
     let store: ChannelStore
@@ -1014,18 +1017,36 @@ struct ConversationTranscript: View {
               pagingAnchor == nil, pendingJump == nil, let anchor = geometry.readingAnchor else { return }
         readingRestore = .init(anchor: anchor, viewport: viewport)
         scrollPosition = nil
+        guard let restore = readingRestore else { return }
+        let state = $readingRestore
+        let geometry = geometry
+        let observer = window
+        observer.beginReadingRestore(restore.token) { [weak observer] in
+            guard state.wrappedValue?.token == restore.token else { return }
+            state.wrappedValue = nil
+            geometry.viewport = geometry.viewport.positioned(atNativeTop: observer?.viewportTop)
+            geometry.readingAnchor = geometry.viewport.readingAnchor(
+                in: geometry.frames, nativeViewportTop: observer?.viewportTop)
+        }
     }
 
     private func settleReadingRestore(_ restore: TranscriptReadingRestore, using proxy: ScrollViewProxy) async {
         defer {
+            window.endReadingRestore(restore.token)
             if readingRestore == restore { readingRestore = nil }
         }
-        let deadline = ContinuousClock.now + .seconds(2)
+        var settling = TranscriptReadingSettling(size: CGSize(width: viewport.width, height: viewport.height),
+                                                 now: .now)
         let displayTurns = TranscriptLayoutTurns()
         var alignment = TranscriptAlignment()
         var materialized = false
-        while readingRestore == restore, ContinuousClock.now < deadline {
+        while readingRestore == restore {
             guard await displayTurns.settled(), !Task.isCancelled, readingRestore == restore else { return }
+            guard settling.continues(size: CGSize(width: viewport.width, height: viewport.height),
+                                     isLiveResize: window.isLiveResizing, now: .now) else {
+                transcriptScrollLogger.debug("Reading restoration reached its quiet-layout deadline.")
+                return
+            }
             guard let layout = TranscriptAlignment.Layout(frame: frames[restore.id],
                                                           historyStart: store.messages.first?.sequence,
                                                           viewport: viewport, nativeTop: window.viewportTop) else {
@@ -1040,13 +1061,11 @@ struct ConversationTranscript: View {
             }
             let aligned = window.restoreReadingBottom(restore.top + layout.frame.rect.height, of: layout.frame)
             if alignment.receive(layout, isAligned: aligned) {
+                if window.isLiveResizing { continue }
                 geometry.readingAnchor = viewport.readingAnchor(in: frames, nativeViewportTop: window.viewportTop)
                 isAtBottom = viewport.positioned(atNativeTop: window.viewportTop).bottomGap <= 48
                 return
             }
-        }
-        if !Task.isCancelled, readingRestore == restore {
-            revealError = "Couldn't keep your reading position."
         }
     }
 

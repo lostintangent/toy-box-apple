@@ -31,3 +31,46 @@ struct TranscriptAlignment {
         return settled
     }
 }
+
+struct TranscriptReadingMotion {
+    struct Layout: Equatable {
+        var viewportSize: CGSize
+        var contentSize: CGSize
+        var topInset: CGFloat
+        var bottomInset: CGFloat
+    }
+
+    private var expectedOffset: CGFloat
+    private var layout: Layout
+
+    init(offset: CGFloat, layout: Layout) {
+        expectedOffset = offset
+        self.layout = layout
+    }
+
+    /// Resizing can clamp the native offset. A move within unchanged bounds belongs to the reader.
+    mutating func receive(offset: CGFloat, layout: Layout) -> Bool {
+        let moved = self.layout == layout && abs(offset - expectedOffset) > 0.5
+        expectedOffset = offset
+        self.layout = layout
+        return moved
+    }
+}
+
+struct TranscriptReadingSettling {
+    private var size: CGSize
+    private var deadline: ContinuousClock.Instant
+
+    init(size: CGSize, now: ContinuousClock.Instant) {
+        self.size = size
+        deadline = now + .seconds(2)
+    }
+
+    mutating func continues(size: CGSize, isLiveResize: Bool, now: ContinuousClock.Instant) -> Bool {
+        if self.size != size || isLiveResize {
+            self.size = size
+            deadline = now + .seconds(2)
+        }
+        return now < deadline
+    }
+}
