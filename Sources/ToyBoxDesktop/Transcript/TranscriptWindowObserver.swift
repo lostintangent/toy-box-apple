@@ -47,6 +47,8 @@ final class TranscriptWindowObserver {
         return scrollView.contentView.bounds.minY + scrollView.contentInsets.top
     }
 
+    var nativeLayout: TranscriptNativeLayout? { scrollView.flatMap(TranscriptNativeLayout.init) }
+
     /// Whether the transcript is following its newest message. A window resize then keeps the end of the
     /// content at the bottom of the viewport in the same layout pass that draws the new size. SwiftUI's
     /// follow lands a frame or more later, which a live resize shows as the newest message drifting.
@@ -158,6 +160,17 @@ final class TranscriptWindowObserver {
     }
 }
 
+extension TranscriptNativeLayout {
+    init?(scrollView: NSScrollView) {
+        guard let document = scrollView.documentView, document.isFlipped else { return nil }
+        let bounds = scrollView.contentView.bounds
+        let insets = scrollView.contentInsets
+        self.init(viewport: .init(width: bounds.width, height: bounds.height,
+                                 topInset: max(0, insets.top), bottomInset: max(0, insets.bottom)),
+                  origin: bounds.minY, documentEnd: document.bounds.height, documentWidth: document.bounds.width)
+    }
+}
+
 struct TranscriptWindowProbe: NSViewRepresentable {
     let observer: TranscriptWindowObserver
     var benchmarkGeometry: (@MainActor () -> BenchmarkScrollGeometry?)? = nil
@@ -230,6 +243,7 @@ struct TranscriptMessageFrame: Equatable {
     var historyStart: Int
     /// The top in the content, which only layout changes move. Scrolling moves only `rect`.
     var contentTop: CGFloat = 0
+    var layoutSize: CGSize?
     var windowRect: CGRect = .zero
 }
 
@@ -250,6 +264,7 @@ extension View {
                     id: .init(sequence: sequence, rect: geometry.frame(in: .named("transcript-viewport")),
                               historyStart: historyStart,
                               contentTop: geometry.frame(in: .named("transcript-content")).minY,
+                              layoutSize: geometry.bounds(of: .named("transcript-content"))?.size,
                               windowRect: geometry.frame(in: .global))
                 ])
             }

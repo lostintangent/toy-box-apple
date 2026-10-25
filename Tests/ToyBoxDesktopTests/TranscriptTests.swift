@@ -15,6 +15,57 @@ private let transcriptTimingTestsEnabled = ProcessInfo.processInfo.environment["
 
 @Suite("Transcript rendering and visibility")
 struct TranscriptTests {
+    @MainActor
+    @Test func readingRowIntentSurvivesUnmeasuredWidthsAndKeepsTheMessageOffset() throws {
+        let scroll = TranscriptReadingScroll()
+        scroll.configure(rows: transcriptRows((1...100).map(transcriptTestMessage),
+                                              lead: .lead(id: "lead"), members: []), expandedIDs: [])
+        func native(width: CGFloat, origin: CGFloat, end: CGFloat) -> TranscriptNativeLayout {
+            .init(viewport: .init(width: width, height: 480, topInset: 0, bottomInset: 136),
+                  origin: origin, documentEnd: end, documentWidth: width)
+        }
+        func frame(_ sequence: Int, top: CGFloat, height: CGFloat, width: CGFloat,
+                   end: CGFloat) -> TranscriptMessageFrame {
+            .init(sequence: sequence, rect: CGRect(x: 0, y: 0, width: width, height: height), historyStart: 1,
+                  contentTop: top - TranscriptCoordinates.contentTopPadding,
+                  layoutSize: CGSize(width: width - 2 * ConversationRail.inset,
+                                     height: end - TranscriptCoordinates.contentTopPadding))
+        }
+        let initial = ["m74": frame(74, top: 6433, height: 52, width: 520, end: 9000),
+                       "scroll-row-m74": frame(0, top: 6425, height: 60, width: 520, end: 9000)]
+        #expect(scroll.receive(frames: initial, native: native(width: 520, origin: 6396, end: 9000),
+                               historyStart: 1) == nil)
+        let reading = TranscriptScrollModel.Intent.reading(.init(row: "m74", order: 297, offset: 37))
+        #expect(scroll.intent == reading)
+        // Frames at the old width cannot drive placement in the resized document.
+        #expect(scroll.receive(frames: initial, native: native(width: 360, origin: 2000, end: 3000),
+                               historyStart: 1) == nil)
+        #expect(scroll.intent == reading)
+        let partial = ["m99": frame(99, top: 2600, height: 72, width: 360, end: 3000)]
+        let materialize = try #require(scroll.receive(
+            frames: partial, native: native(width: 360, origin: 2000, end: 3000), historyStart: 1))
+        #expect(materialize.id == "m74")
+        #expect(materialize.anchor == .top)
+        #expect(scroll.intent == reading)
+
+        let measured = ["m74": frame(74, top: 2100, height: 72, width: 360, end: 3000),
+                        "scroll-row-m74": frame(0, top: 2092, height: 80, width: 360, end: 3000)]
+        let write = try #require(scroll.receive(
+            frames: measured, native: native(width: 360, origin: 2000, end: 3000), historyStart: 1))
+        #expect(write.id == "m74")
+        let writtenOrigin = 2092 - write.anchor.y * (344 - 80)
+        #expect(abs(2100 - writtenOrigin - 37) < 0.001)
+        #expect(scroll.receive(frames: measured, native: native(width: 360, origin: writtenOrigin, end: 3000),
+                               historyStart: 1) == nil)
+        #expect(scroll.intent == reading)
+
+        scroll.readerMoved()
+        let end = ["m100": frame(100, top: 2912, height: 72, width: 360, end: 3000)]
+        #expect(scroll.receive(frames: end, native: native(width: 360, origin: 2656, end: 3000),
+                               historyStart: 1) == nil)
+        #expect(scroll.intent == .following)
+    }
+
     @Test func lazyAgentRowsKeepCanonicalEntriesAndShowOneAvatarPerRun() throws {
         let messages = (1...100).map(transcriptTestMessage)
         let canonical = transcriptRows(messages, lead: .lead(id: "lead"), members: [])
@@ -669,6 +720,12 @@ struct TranscriptTests {
         let harness = try await TranscriptHarness(messages: (1...100).map(transcriptTestMessage),
                                                   resizable: true, legacyScrollers: legacyScrollers) { harness in
             guard let anchorID = drift.anchorID else { return }
+            if harness.bottomGap <= 1 {
+                drift.endClampSamples += 1
+                if harness.isVisible("m100"), harness.rowsOpacity > 0 {
+                    drift.endVisibleSamples += 1
+                }
+            }
             guard let frame = harness.frames[anchorID] else {
                 if drift.missing == 0 {
                     print("WIDTH_MISSING legacy=\(legacyScrollers)"
@@ -715,8 +772,10 @@ struct TranscriptTests {
         try await harness.settled()
         print("WIDTH_ANCHOR legacy=\(legacyScrollers) id=\(anchor.key) offset=\(drift.anchorTop)"
               + " samples=\(drift.values.count) missing=\(drift.missing)"
-              + " worst=\(drift.values.map(abs).max() ?? .infinity)")
+              + " worst=\(drift.values.map(abs).max() ?? .infinity)"
+              + " endClamps=\(drift.endClampSamples) endVisible=\(drift.endVisibleSamples)")
         #expect(drift.missing == 0)
+        #expect(drift.endVisibleSamples == 0, "The end was visible in a post-display sample while reading.")
         #expect(!drift.values.isEmpty && drift.values.allSatisfy { abs($0) <= 1 },
                 "Worst width drift: \(drift.values.map(abs).max() ?? .infinity)")
         #expect(harness.readRequests == 0)
@@ -2655,6 +2714,8 @@ private final class TranscriptWidthLog {
     var anchorTop: CGFloat = 0
     var missing = 0
     var values: [CGFloat] = []
+    var endClampSamples = 0
+    var endVisibleSamples = 0
 }
 
 @MainActor
