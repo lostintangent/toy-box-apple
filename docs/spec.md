@@ -1098,6 +1098,8 @@ geometry is not available, it retains the reader-input notification and suppress
 placement until it can reduce that input first. Expansion actions require the clicked row's
 measured frame. The model never invents an anchor offset or falls back to following merely
 because a known row is unmeasured.
+Violations of those live-input requirements assert in debug builds and leave the intent and
+position unchanged in release builds, never crashing a release app for delayed geometry.
 `layoutEvent(from:to:)` compares membership, measured geometry, viewport and document extent,
 not reader-only origin changes. Complete-frame entry points remain available and use the
 same reducer and placement logic.

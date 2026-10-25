@@ -164,15 +164,18 @@ public enum TranscriptScrollModel {
         switch event {
         case .readerScrolled(let y):
             precondition(y.isFinite)
-            precondition(y == layout.origin, "Reader input and layout must share the current native origin.")
-            return Placement(intent: intentForPosition(layout, allowsFollowing: true), origin: nil)
+            guard y == layout.origin else {
+                assertionFailure("Reader input and layout must share the current native origin.")
+                return Placement(intent: intent, origin: nil)
+            }
+            return Placement(intent: intentForPosition(layout, allowsFollowing: true) ?? intent, origin: nil)
         case .holdCurrentPosition:
             if !layout.rows.contains(where: \.isAnchorable) {
                 return Placement(intent: intent, origin: nil)
             }
-            return Placement(intent: intentForPosition(layout, allowsFollowing: false), origin: nil)
+            return Placement(intent: intentForPosition(layout, allowsFollowing: false) ?? intent, origin: nil)
         case .resumeFromCurrentPosition:
-            return Placement(intent: intentForPosition(layout, allowsFollowing: true), origin: nil)
+            return Placement(intent: intentForPosition(layout, allowsFollowing: true) ?? intent, origin: nil)
         case .land(let target):
             if case .row(let id, _) = target, anchorableIdentity(id, layout: layout) == nil {
                 return Placement(intent: intent, origin: nil, unavailableTarget: id)
@@ -190,7 +193,8 @@ public enum TranscriptScrollModel {
                 return Placement(intent: intent, origin: nil, unavailableTarget: id)
             }
             guard let row = layout.measurements[id] else {
-                preconditionFailure("Expansion requires the clicked row's measured frame.")
+                assertionFailure("Expansion requires the clicked row's measured frame.")
+                return Placement(intent: intent, origin: nil)
             }
             let offset = row.top - layout.origin - layout.viewport.topInset
             let anchor = Anchor(row: id, order: identity.order, offset: expanded ? offset : max(offset, 0))
@@ -267,7 +271,7 @@ public enum TranscriptScrollModel {
                frames: rows, viewport: viewport, origin: origin, documentEnd: end(rows))
     }
 
-    private static func intentForPosition(_ layout: Layout, allowsFollowing: Bool) -> Intent {
+    private static func intentForPosition(_ layout: Layout, allowsFollowing: Bool) -> Intent? {
         let distance = distanceToEnd(in: layout)
         if allowsFollowing && distance <= followingThreshold { return .following }
         let anchor = layout.measurements.count == layout.identities.count
@@ -276,8 +280,10 @@ public enum TranscriptScrollModel {
         if let anchor {
             return .reading(anchor)
         }
-        precondition(!layout.rows.contains(where: \.isAnchorable),
-                     "Reader capture requires current measured viewport geometry.")
+        guard !layout.rows.contains(where: \.isAnchorable) else {
+            assertionFailure("Reader capture requires current measured viewport geometry.")
+            return nil
+        }
         return .following
     }
 

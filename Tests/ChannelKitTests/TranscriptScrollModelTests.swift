@@ -122,6 +122,29 @@ struct TranscriptScrollModelTests {
         #expect(Model.visibleRows(in: measured) == ["m5", "m6"])
     }
 
+    #if !DEBUG
+    @Test func releaseAdapterGeometryFailuresLeaveTheIntentAndPositionUnchanged() {
+        let intent = Model.Intent.revealing("m5", order: 5)
+        let missing = layout([], origin: 700)
+        let mismatch = layout([frames()[8]], origin: 420)
+        let inputs: [(Model.Event, Model.Layout)] = [
+            (.readerScrolled(to: 700), missing),
+            (.readerScrolled(to: 700), mismatch),
+            (.holdCurrentPosition, missing),
+            (.resumeFromCurrentPosition, missing),
+            (.toggledExpansion("m5", expanded: true), missing),
+            (.toggledExpansion("m5", expanded: false), missing),
+        ]
+        for (event, layout) in inputs {
+            let placed = Model.reduce(intent, event, layout: layout)
+            #expect(placed.intent == intent)
+            #expect(placed.origin == nil)
+            #expect(placed.needsMeasurement == nil)
+            #expect(placed.unavailableTarget == nil)
+        }
+    }
+    #endif
+
     @Test(arguments: [
         Model.Intent.landing(.row("m5", order: 5)),
         .landing(.end),
