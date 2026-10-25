@@ -121,6 +121,104 @@ struct ArtifactViewerTests {
         }
     }
 
+    @Test(arguments: ["viewport", "content-height", "full-bleed"])
+    func iframeSizingKeepsViewportUnitsAndFixedHeadersHonest(route: String) async throws {
+        _ = NSApplication.shared
+        let scrollPadding = route == "full-bleed" ? "html{scroll-padding:66px 0 80px}" : ""
+        let source = """
+        <!doctype html><html><head><style>
+        html,body{margin:0;background:orange}\(scrollPadding)
+        </style></head><body>
+        <header id="fixed" style="position:fixed;top:0;height:24px">Fixed header</header>
+        <section id="vh" style="height:100vh">Viewport-sized section</section>
+        <section id="tail" style="height:600px">Tail</section>
+        <script>
+        function report() {
+            const style=getComputedStyle(document.documentElement);
+            parent.postMessage({
+                viewport:innerHeight, viewportUnitHeight:document.getElementById("vh").getBoundingClientRect().height,
+                documentHeight:document.documentElement.scrollHeight, scroll:scrollY,
+                fixedTop:document.getElementById("fixed").getBoundingClientRect().top,
+                last:document.getElementById("tail").getBoundingClientRect().bottom,
+                paddingTop:parseFloat(style.scrollPaddingTop)||0, paddingBottom:parseFloat(style.scrollPaddingBottom)||0
+            }, "*");
+        }
+        addEventListener("load",report);
+        addEventListener("resize",report);
+        addEventListener("scroll",report);
+        addEventListener("message",event=>{
+            if(event.data==="measure")report();
+            if(event.data==="bottom"){scrollTo(0,document.documentElement.scrollHeight);report();}
+        });
+        </script></body></html>
+        """
+        let directory = try #require(URL(string: "http://127.0.0.1:1/api/serve/test/"))
+        var document = ArtifactWebPolicy.document(source, directory: directory)
+        if route == "full-bleed" {
+            document = document.replacingOccurrences(of: "</head>", with: """
+                <style>iframe{position:fixed;top:0;left:0;height:400px}html,body{overflow:hidden}</style></head>
+                """)
+        }
+        let configuration = WKWebViewConfiguration()
+        configuration.websiteDataStore = .nonPersistent()
+        let web = WKWebView(frame: NSRect(x: 0, y: 0, width: 640, height: 400), configuration: configuration)
+        let probe = ArtifactWebProbe()
+        probe.attach(to: web)
+        let window = NSWindow(contentRect: NSRect(x: -10_000, y: -10_000, width: 640, height: 400),
+                              styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = web
+        window.orderFrontRegardless()
+        defer {
+            web.stopLoading()
+            web.configuration.userContentController.removeScriptMessageHandler(forName: "probe")
+            window.close()
+        }
+        web.obscuredContentInsets = NSEdgeInsets(top: 66, left: 0, bottom: 80, right: 0)
+        web.loadHTMLString(document, baseURL: nil)
+        try await wait { !web.isLoading && !probe.values.isEmpty }
+        var metrics = try #require(probe.values.last?["result"] as? [String: Any])
+        let viewport: Double = route == "full-bleed" ? 400 : 254
+        #expect(metrics["viewport"] as? Double == viewport)
+        #expect(metrics["viewportUnitHeight"] as? Double == viewport)
+        #expect(metrics["documentHeight"] as? Double == viewport + 600)
+        #expect(metrics["fixedTop"] as? Double == 0)
+        print("Iframe sizing \(route), initial: \(metrics)")
+        if route == "content-height" {
+            for round in 1...2 {
+                let height = try #require(metrics["documentHeight"] as? Double)
+                _ = try await web.evaluateJavaScript("document.querySelector('iframe').style.height='\(height)px'")
+                try await wait {
+                    (probe.values.last?["result"] as? [String: Any])?["viewport"] as? Double == height
+                }
+                metrics = try #require(probe.values.last?["result"] as? [String: Any])
+                #expect(metrics["viewportUnitHeight"] as? Double == height)
+                #expect(metrics["documentHeight"] as? Double == height + 600)
+                print("Iframe sizing content-height, round \(round): \(metrics)")
+            }
+            let result = try await web.evaluateJavaScript("""
+                window.scrollTo(0,100);
+                ({scroll:scrollY,frameTop:document.querySelector("iframe").getBoundingClientRect().top})
+                """)
+            let parent = try #require(result as? [String: Any])
+            #expect(parent["scroll"] as? Double == 100)
+            #expect(parent["frameTop"] as? Double == -100)
+            #expect(metrics["fixedTop"] as? Double == 0)
+            print("Iframe sizing content-height, parent scrolled: \(parent)")
+        } else if route == "full-bleed" {
+            _ = try await web.evaluateJavaScript("document.querySelector('iframe').contentWindow.postMessage('bottom','*')")
+            try await wait {
+                (probe.values.last?["result"] as? [String: Any])?["scroll"] as? Double == 600
+            }
+            metrics = try #require(probe.values.last?["result"] as? [String: Any])
+            #expect(metrics["paddingTop"] as? Double == 66)
+            #expect(metrics["paddingBottom"] as? Double == 80)
+            #expect(metrics["last"] as? Double == 400)
+            #expect(metrics["fixedTop"] as? Double == 0)
+            print("Iframe sizing full-bleed, scrolled to bottom: \(metrics)")
+        }
+    }
+
     @Test func topLevelSandboxRetainsTheFileOnlyNetworkBoundary() async throws {
         let fixture = try ArtifactHTTPFixture()
         try await fixture.start()
