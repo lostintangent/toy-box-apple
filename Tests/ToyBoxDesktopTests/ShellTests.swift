@@ -499,6 +499,22 @@ struct ShellTests {
         #expect(result.representation(using: .png, properties: [:]) != nil)
     }
 
+    @MainActor @Test func disabledNotificationsDoNotRequireAnApplicationBundle() async throws {
+        let notifications = ChannelNotifications(enabled: false)
+        await notifications.refreshAuthorization()
+        notifications.update(channels: [testChannel()], activeChannelID: nil, serverURL: "https://example.test")
+        #expect(notifications.authorization == .notDetermined)
+        #expect(await notifications.enable() == false)
+        #expect(notifications.error == "System notifications are disabled for this session.")
+        let digest = MorningDigest.Content(lines: [
+            .init(channelID: "studio", name: "Studio", count: 1, text: "One update")
+        ])
+        await #expect(throws: CocoaError.self) {
+            try await notifications.deliverMorningDigest(
+                digest, serverURL: "https://example.test", identifier: "disabled-test")
+        }
+    }
+
     @MainActor @Test func notificationBaselineAndMilestonesAreDeduplicated() {
         var policy = ChannelNotifications.Policy()
         var channel = testChannel()

@@ -34,7 +34,7 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
     @ObservationIgnored private var policy = Policy()
     @ObservationIgnored private var current: Current?
     @ObservationIgnored private var withdrawn: Current?
-    @ObservationIgnored private let center = UNUserNotificationCenter.current()
+    @ObservationIgnored private let center: UNUserNotificationCenter?
 
     /// What the catalog last said, which decides what's delivered and what's withdrawn.
     private struct Current {
@@ -53,8 +53,10 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
         }
     }
 
-    override init() {
+    init(enabled: Bool = true) {
+        center = enabled ? UNUserNotificationCenter.current() : nil
         super.init()
+        guard let center else { return }
         center.delegate = self
         let reply = UNTextInputNotificationAction(identifier: Self.replyAction, title: "Reply", options: [],
                                                   textInputButtonTitle: "Send", textInputPlaceholder: "Reply")
@@ -69,12 +71,14 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
     }
 
     func refreshAuthorization() async {
+        guard let center else { return }
         authorization = await center.notificationSettings().authorizationStatus
     }
 
     func enable() async -> Bool {
         error = nil
         do {
+            let center = try systemCenter()
             let granted = try await center.requestAuthorization(options: [.alert, .sound, .badge])
             await refreshAuthorization()
             return granted
@@ -151,13 +155,22 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
     }
 
     private func add(_ request: UNNotificationRequest) async {
-        do { try await center.add(request) }
+        do { try await systemCenter().add(request) }
         catch { self.error = error.localizedDescription }
     }
 
     func deliverMorningDigest(_ digest: MorningDigest.Content, serverURL: String, identifier: String) async throws {
         guard let content = Self.morningDigestContent(digest, serverURL: serverURL) else { return }
-        try await center.add(UNNotificationRequest(identifier: identifier, content: content, trigger: nil))
+        try await systemCenter().add(UNNotificationRequest(identifier: identifier, content: content, trigger: nil))
+    }
+
+    private func systemCenter() throws -> UNUserNotificationCenter {
+        guard let center else {
+            throw CocoaError(.featureUnsupported, userInfo: [
+                NSLocalizedDescriptionKey: "System notifications are disabled for this session."
+            ])
+        }
+        return center
     }
 
     static func morningDigestContent(_ digest: MorningDigest.Content, serverURL: String) -> UNNotificationContent? {
@@ -173,7 +186,7 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
     }
 
     private func withdrawStale(force: Bool = false) {
-        guard let current, force || !current.withdrawsLike(withdrawn) else { return }
+        guard let center, let current, force || !current.withdrawsLike(withdrawn) else { return }
         withdrawn = current
         Task {
             let delivered = await center.deliveredNotifications().compactMap(Self.delivered)

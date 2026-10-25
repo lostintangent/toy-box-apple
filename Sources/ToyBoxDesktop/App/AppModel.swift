@@ -27,7 +27,7 @@ final class AppModel {
     private(set) var configurationError: String?
     private(set) var openChannelIDs: Set<String> = []
     private(set) var activeChannelID: String?
-    let notifications = ChannelNotifications()
+    let notifications: ChannelNotifications
     private(set) var morningDigest: MorningDigest?
     let folders = ChannelFolders()
     let requestedRefresh = RequestedCatalogRefresh()
@@ -50,9 +50,11 @@ final class AppModel {
     @ObservationIgnored private var applicationObservers: [NSObjectProtocol] = []
     @ObservationIgnored private let session: URLSession
 
-    init(launchOptions: LaunchOptions = .init(), session: URLSession = .shared) {
+    init(launchOptions: LaunchOptions = .init(), session: URLSession = .shared,
+         notificationsEnabled: Bool = true) {
         self.launchOptions = launchOptions
         self.session = session
+        notifications = ChannelNotifications(enabled: notificationsEnabled)
         updates = AppUpdates(isSnapshot: launchOptions.isSnapshot)
         openAtLogin = OpenAtLogin(isAvailable: OpenAtLogin.isAllowed(
             launchOptions, bundleID: Bundle.main.bundleIdentifier))
