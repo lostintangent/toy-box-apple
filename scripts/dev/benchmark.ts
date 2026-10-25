@@ -40,12 +40,13 @@ async function reachable(url: string, successful = false) {
 
 export function benchmarkLaunchCommand(options: {
     app: string; scenario: string; out: string; err: string; server: string; channel: string;
-    transcript: string | undefined; scrollDrift?: string;
+    transcript: string | undefined; scrollDrift?: string; scrollTrace?: string;
 }) {
     const { app, scenario, out, err, server, channel, transcript } = options;
     return ["open", "-n", ...(scenario === "key" ? [] : ["-g"]), "-W",
         "--env", `TOY_BOX_TRANSCRIPT=${transcript ?? "lazy"}`,
         "--env", `TOY_BOX_BENCHMARK_SCROLL_DRIFT=${options.scrollDrift ?? "1"}`,
+        "--env", `TOY_BOX_BENCHMARK_SCROLL_TRACE=${options.scrollTrace ?? "0"}`,
         "--stdout", out, "--stderr", err, app, "--args", "--server", server, "--channel", channel,
         "--benchmark", scenario, "-ApplePersistenceIgnoreState", "YES"];
 }
@@ -135,7 +136,8 @@ if (import.meta.main) await main(async () => {
                     await Bun.write(out, ""); await Bun.write(err, "");
                     await command(benchmarkLaunchCommand({ app, scenario, out, err, server, channel,
                         transcript: process.env.TOY_BOX_TRANSCRIPT,
-                        scrollDrift: process.env.TOY_BOX_BENCHMARK_SCROLL_DRIFT }));
+                        scrollDrift: process.env.TOY_BOX_BENCHMARK_SCROLL_DRIFT,
+                        scrollTrace: process.env.TOY_BOX_BENCHMARK_SCROLL_TRACE }));
                     await stopFixture();
                     const stdout = await Bun.file(out).text(), stderr = await Bun.file(err).text();
                     for (const line of stdout.split("\n").filter(line => /^(Benchmark |  )/.test(line) && !line.startsWith("Benchmark failed"))) {

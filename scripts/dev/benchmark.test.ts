@@ -11,7 +11,8 @@ test.each(["table", "lazy", undefined])("open forwards transcript selection %s t
     const command = benchmarkLaunchCommand({ ...options, transcript });
     expect(command.slice(command.indexOf("--env"), command.indexOf("--stdout")))
         .toEqual(["--env", `TOY_BOX_TRANSCRIPT=${transcript ?? "lazy"}`,
-            "--env", "TOY_BOX_BENCHMARK_SCROLL_DRIFT=1"]);
+            "--env", "TOY_BOX_BENCHMARK_SCROLL_DRIFT=1",
+            "--env", "TOY_BOX_BENCHMARK_SCROLL_TRACE=0"]);
     expect(command.slice(command.indexOf(options.app))).toEqual([
         options.app, "--args", "--server", options.server, "--channel", options.channel,
         "--benchmark", "scroll", "-ApplePersistenceIgnoreState", "YES",
@@ -28,4 +29,9 @@ test("the probe overhead control is forwarded independently of transcript select
     const command = benchmarkLaunchCommand({ ...options, transcript: "lazy", scrollDrift: "0" });
     expect(command).toContain("TOY_BOX_TRANSCRIPT=lazy");
     expect(command).toContain("TOY_BOX_BENCHMARK_SCROLL_DRIFT=0");
+});
+
+test("signed frame tracing is explicitly opt-in", () => {
+    const command = benchmarkLaunchCommand({ ...options, transcript: "lazy", scrollTrace: "1" });
+    expect(command).toContain("TOY_BOX_BENCHMARK_SCROLL_TRACE=1");
 });
