@@ -11,6 +11,37 @@ struct TranscriptScrollModelTests {
         (0..<count).map { .init(id: "m\($0)", order: $0, top: CGFloat($0) * height + shift, height: height) }
     }
 
+    @Test(arguments: [
+        Model.Intent.landing(.row("m5", order: 5)),
+        .landing(.end),
+        .following,
+        .reading(.init(row: "m5", order: 5, offset: 30)),
+        .revealing("m5", order: 5),
+    ])
+    func projectingAnIntentMatchesReductionAcrossGeometry(_ intent: Model.Intent) {
+        let accessories = [
+            Model.RowFrame(id: "header", order: -1, top: 0, height: 180, isAnchorable: false),
+        ]
+        let geometries = [
+            frames(),
+            frames(height: 120),
+            frames().filter { $0.order != 5 && $0.order != 6 },
+            Array(frames().prefix(5)),
+            frames(2),
+            accessories + frames(shift: 180),
+            accessories,
+            [],
+        ]
+        let small = Model.Viewport(width: 400, height: 200, topInset: 50, bottomInset: 50)
+        for rows in geometries {
+            for viewport in [viewport, small] {
+                let projected = Model.placement(for: intent, rows: rows, viewport: viewport)
+                let reduced = Model.reduce(intent, .layoutChanged, rows: rows, viewport: viewport, origin: 400)
+                #expect(projected == reduced)
+            }
+        }
+    }
+
     @Test func landingIsAlreadyPlacedAndSurvivesLayoutUntilTheReaderMoves() {
         let landed = Model.reduce(.following, .land(.row("m5", order: 5)), rows: frames(), viewport: viewport, origin: 0)
         #expect(landed.intent == .landing(.row("m5", order: 5)))

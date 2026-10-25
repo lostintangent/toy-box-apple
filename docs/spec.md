@@ -1064,6 +1064,9 @@ continue paging even when a page contains no visible rows.
 `ChannelKit.TranscriptScrollModel` defines container-independent placement from ordered row frames
 and the viewport's width, height and glass insets. Its adapter sends `layoutChanged` only when
 `layoutEvent` detects changed geometry, never just because another native layout pass ran.
+The pure `placement(for:rows:viewport:)` function projects an existing intent against current
+frames for adapter-owned animation, using the same fallback, clamping and end clearance
+without inventing a layout event.
 Reader input updates intent without returning an origin. Opening Find uses `holdCurrentPosition`
 to capture reading even at the end without moving. With no anchorable rows it preserves the existing intent.
 After the Find bar's closing geometry settles, `resumeFromCurrentPosition` restores the normal
