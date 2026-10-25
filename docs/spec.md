@@ -367,6 +367,10 @@ provider and add no row callbacks.
 The native-table producer reads existing row rects without mounting cells or forcing layout.
 Scroll fixtures do not reorder rows during a gesture, so native row indices are stable for the
 measurement. A row-count change invalidates the sample instead of comparing different rows.
+`TOY_BOX_BENCHMARK_SCROLL_TRACE=1` retains signed per-frame samples in memory and prints them
+after each gesture's CPU measurement. The trace includes the tracked row and its two viewport
+positions, delivered wheel delta, signed residual, native top, document height and event counts.
+Use it to investigate cancelling spikes or sampling lag, not as a performance baseline.
 
 ## Design
 

@@ -51,6 +51,21 @@ struct PerformanceBenchmarkTests {
         #expect(drift.exceedingFrames == 1)
     }
 
+    @Test func signedSamplesKeepTheAnchorAndExposeCancellingSpikes() throws {
+        var drift = BenchmarkScrollDrift()
+        let seed = drift.sample(.init(firstVisibleRow: "a", rowTops: ["a": 0]), scrollDelta: 0)
+        #expect(seed == nil)
+        let firstSample = drift.sample(.init(firstVisibleRow: "a", rowTops: ["a": 0]), scrollDelta: 40)
+        let nextSample = drift.sample(.init(firstVisibleRow: "a", rowTops: ["a": 80]), scrollDelta: 40)
+        let first = try #require(firstSample)
+        let next = try #require(nextSample)
+        #expect(first.rowID == "a")
+        #expect(first.residual == -40)
+        #expect(next.residual == 40)
+        #expect(first.residual + next.residual == 0)
+        #expect(drift.exceedingFrames == 2)
+    }
+
     @Test func lackOfSharedFirstRowGeometryIsNotAZeroDriftPass() {
         var drift = BenchmarkScrollDrift()
         drift.sample(.init(firstVisibleRow: "a", rowTops: ["a": 0, "shared": 150]), scrollDelta: 0)

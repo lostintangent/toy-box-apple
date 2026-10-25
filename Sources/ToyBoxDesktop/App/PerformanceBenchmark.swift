@@ -416,6 +416,16 @@ final class PerformanceBenchmark {
             let frames = await gesture.run()
             let cpuMilliseconds = (Self.mainThreadCPU() - cpuStart) * 1000
             let busy = meter.busy
+            if !frames.trace.isEmpty {
+                do {
+                    let encoder = JSONEncoder()
+                    for frame in frames.trace {
+                        let data = try encoder.encode(frame)
+                        info("Scroll trace \(up ? "up" : "down") at \(loaded) loaded",
+                             String(decoding: data, as: UTF8.self))
+                    }
+                } catch { fail("couldn't encode the signed scroll trace: \(error.localizedDescription)") }
+            }
             guard frames.delivery.matches else {
                 fail("wheel delivery mismatch: \(frames.delivery.postedEvents) posted, "
                      + "\(frames.delivery.deliveredEvents) delivered; "
@@ -713,6 +723,9 @@ final class PerformanceBenchmark {
         if scenario == .scroll, !BenchmarkScrollGeometry.isEnabled {
             info("Frame drift", "disabled for the probe overhead control")
         }
+        if scenario == .scroll, BenchmarkScrollGeometry.traceEnabled {
+            info("Signed frame trace", "buffered during each gesture, printed after CPU measurement")
+        }
     }
 
     private func check(_ name: String, _ detail: String, value: Double, budget: Double, unit: String = " ms") {
@@ -775,6 +788,7 @@ final class PerformanceBenchmark {
 struct BenchmarkScrollGeometry: Equatable, Sendable {
     static let isEnabled = ProcessInfo.processInfo.arguments.contains("--benchmark")
         && ProcessInfo.processInfo.environment["TOY_BOX_BENCHMARK_SCROLL_DRIFT"] != "0"
+    static let traceEnabled = ProcessInfo.processInfo.environment["TOY_BOX_BENCHMARK_SCROLL_TRACE"] == "1"
 
     var firstVisibleRow: String
     var rowTops: [String: CGFloat]
@@ -835,6 +849,14 @@ final class BenchmarkTableScrollGeometry: BenchmarkScrollGeometrySource {
 }
 
 struct BenchmarkScrollDrift: Equatable, Sendable {
+    struct Sample: Equatable, Sendable, Encodable {
+        var rowID: String
+        var before: CGFloat
+        var after: CGFloat
+        var wheel: CGFloat
+        var residual: CGFloat
+    }
+
     private var previous: BenchmarkScrollGeometry?
     private var hasSampled = false
     private(set) var measuredFrames = 0
@@ -844,30 +866,33 @@ struct BenchmarkScrollDrift: Equatable, Sendable {
     private(set) var total = 0.0
 
     /// A positive wheel delta moves a row downward. Input still queued for delivery is not included.
-    mutating func sample(_ current: BenchmarkScrollGeometry?, scrollDelta: CGFloat) {
+    @discardableResult
+    mutating func sample(_ current: BenchmarkScrollGeometry?, scrollDelta: CGFloat) -> Sample? {
         defer {
             previous = current
             hasSampled = true
         }
-        guard hasSampled else { return }
+        guard hasSampled else { return nil }
         guard let previous, let current, scrollDelta.isFinite,
               previous.rowTops[previous.firstVisibleRow]?.isFinite == true,
               current.rowTops[current.firstVisibleRow]?.isFinite == true else {
             unmeasuredFrames += 1
-            return
+            return nil
         }
         let id = current.rowTops[previous.firstVisibleRow] != nil
             ? previous.firstVisibleRow : current.firstVisibleRow
         guard let before = previous.rowTops[id], let after = current.rowTops[id],
               before.isFinite, after.isFinite else {
             unmeasuredFrames += 1
-            return
+            return nil
         }
-        let drift = Double(abs(after - before - scrollDelta))
+        let residual = after - before - scrollDelta
+        let drift = Double(abs(residual))
         measuredFrames += 1
         if drift > PerformanceBenchmark.Budget.scrollDrift { exceedingFrames += 1 }
         maximum = max(maximum, drift)
         total += drift
+        return .init(rowID: id, before: before, after: after, wheel: scrollDelta, residual: residual)
     }
 }
 
@@ -876,6 +901,16 @@ struct BenchmarkScrollDrift: Equatable, Sendable {
 /// late frame scrolls further, as the coalesced events of a held-up gesture do.
 @MainActor
 private final class WheelGesture: NSObject {
+    struct Trace: Encodable {
+        var time: CFTimeInterval
+        var sample: BenchmarkScrollDrift.Sample?
+        var nativeTop: CGFloat?
+        var documentHeight: CGFloat?
+        var postedEvents: Int
+        var deliveredEvents: Int
+        var deliveredDelta: CGFloat
+    }
+
     struct Frames {
         /// Display frames the gesture spanned, including the ones it dropped.
         var count = 0
@@ -885,6 +920,7 @@ private final class WheelGesture: NSObject {
         var duration: CFTimeInterval = 1.0 / 60
         var drift = BenchmarkScrollDrift()
         var delivery = BenchmarkScrollDelivery()
+        var trace: [Trace] = []
     }
 
     private weak var window: NSWindow?
@@ -940,8 +976,17 @@ private final class WheelGesture: NSObject {
     @objc private func tick(_ link: CADisplayLink) {
         guard finished != nil else { return }
         if let geometry {
-            frames.drift.sample(geometry.benchmarkScrollGeometry(),
-                                scrollDelta: frames.delivery.deliveredDelta - sampledScroll)
+            let sample = frames.drift.sample(geometry.benchmarkScrollGeometry(),
+                                            scrollDelta: frames.delivery.deliveredDelta - sampledScroll)
+            if BenchmarkScrollGeometry.traceEnabled {
+                frames.trace.append(.init(
+                    time: link.timestamp - (first ?? link.timestamp), sample: sample,
+                    nativeTop: scroll.map { $0.contentView.bounds.minY + $0.contentInsets.top },
+                    documentHeight: scroll?.documentView?.frame.height,
+                    postedEvents: frames.delivery.postedEvents,
+                    deliveredEvents: frames.delivery.deliveredEvents,
+                    deliveredDelta: frames.delivery.deliveredDelta))
+            }
         }
         sampledScroll = frames.delivery.deliveredDelta
         let now = link.timestamp
