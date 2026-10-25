@@ -1,4 +1,4 @@
-import Foundation
+import AppKit
 import Testing
 @testable import ToyBoxDesktop
 
@@ -162,8 +162,58 @@ struct PerformanceBenchmarkTests {
                                         nativeTop: 0, historyStart: 1) == nil)
     }
 
+    @MainActor @Test func nativeTableProbeReadsUnobscuredRowGeometryWithoutMountingCells() throws {
+        let rows = BenchmarkTableRows()
+        let table = NSTableView(frame: CGRect(x: 0, y: 0, width: 600, height: 5_000))
+        table.headerView = nil
+        table.style = .plain
+        table.intercellSpacing = .zero
+        table.rowHeight = 100
+        table.addTableColumn(NSTableColumn(identifier: .init("message")))
+        table.dataSource = rows
+        table.delegate = rows
+        let scroll = NSScrollView(frame: CGRect(x: 0, y: 0, width: 600, height: 400))
+        scroll.automaticallyAdjustsContentInsets = false
+        scroll.contentInsets = NSEdgeInsets(top: 40, left: 0, bottom: 80, right: 0)
+        scroll.documentView = table
+        table.reloadData()
+        scroll.layoutSubtreeIfNeeded()
+        scroll.contentView.scroll(to: CGPoint(x: 0, y: 500))
+        let mounted = rows.mounted
+        let source = BenchmarkTableScrollGeometry(table: table, scroll: scroll)
+        let before = try #require(source.benchmarkScrollGeometry())
+        #expect(before.firstVisibleRow == "table-row-5")
+        #expect(before.rowTops["table-row-5"] == -40)
+        #expect(before.rowTops["table-row-6"] == 60)
+        #expect(before.rowTops["table-row-0"] == nil)
+        scroll.contentView.scroll(to: CGPoint(x: 0, y: 460))
+        let after = try #require(source.benchmarkScrollGeometry())
+        var drift = BenchmarkScrollDrift()
+        drift.sample(before, scrollDelta: 0)
+        drift.sample(after, scrollDelta: 40)
+        #expect(drift.maximum == 0)
+        #expect(drift.measuredFrames == 1)
+        #expect(rows.mounted == mounted)
+        rows.count += 1
+        table.reloadData()
+        #expect(source.benchmarkScrollGeometry() == nil)
+    }
+
     private func frame(top: CGFloat, sequence: Int = 1, history: Int = 1) -> TranscriptMessageFrame {
         .init(sequence: sequence, rect: CGRect(x: 0, y: 10_000, width: 600, height: 100),
               historyStart: history, contentTop: top)
+    }
+
+    @MainActor
+    private final class BenchmarkTableRows: NSObject, NSTableViewDataSource, NSTableViewDelegate {
+        var count = 50
+        var mounted = 0
+
+        func numberOfRows(in tableView: NSTableView) -> Int { count }
+
+        func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
+            mounted += 1
+            return NSView()
+        }
     }
 }
