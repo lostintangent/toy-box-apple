@@ -20,6 +20,7 @@ struct WindowCommandActions {
     /// Non-nil while the image viewer covers the conversation, which disables the commands that
     /// act on what's underneath.
     var imageZoom: ImageZoomActions? = nil
+    var isViewerPresented = false
     var newChannel: () -> Void
     var openNewWindow: () -> Void
     var openInToyBox: () -> Void
@@ -144,10 +145,12 @@ struct ChannelCommands: Commands {
                 .keyboardShortcut("j").disabled(!hasConversation)
             Button("Jump to Input Needed") { actions?.revealRequest() }
                 .keyboardShortcut("j", modifiers: [.command, .shift])
-                .disabled(actions?.hasRequest != true || actions?.imageZoom != nil)
+                .disabled(actions?.hasRequest != true || actions?.imageZoom != nil || actions?.isViewerPresented == true)
         }
     }
 
     /// A channel's conversation is on screen rather than under the image viewer.
-    private var hasConversation: Bool { actions?.hasChannel == true && actions?.imageZoom == nil }
+    private var hasConversation: Bool {
+        actions?.hasChannel == true && actions?.imageZoom == nil && actions?.isViewerPresented != true
+    }
 }

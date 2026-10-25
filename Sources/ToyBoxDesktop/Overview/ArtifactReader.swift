@@ -2,6 +2,7 @@ import AppKit
 import ChannelClient
 import ChannelKit
 import Observation
+import OSLog
 import UniformTypeIdentifiers
 import WebKit
 
@@ -17,6 +18,8 @@ final class ArtifactOpener {
     var previewFile: URL?
     private(set) var direction = 0
     private(set) var animates = true
+    private(set) var thumbnails: [String: NSImage] = [:]
+    var imageZoomRevision = 0
     @ObservationIgnored private var api: ChannelAPI?
     @ObservationIgnored private var channelID: String?
     @ObservationIgnored private var available: [ChannelArtifact] = []
@@ -24,11 +27,16 @@ final class ArtifactOpener {
     @ObservationIgnored private var cached: [String: ArtifactContent] = [:]
     @ObservationIgnored private var images: [String: NSImage] = [:]
     @ObservationIgnored private var loadTask: Task<Void, Never>?
+    @ObservationIgnored private var thumbnailTask: Task<Void, Never>?
+    @ObservationIgnored private var preparedFiles: [String: URL] = [:]
+    @ObservationIgnored private var thumbnailToken = UUID()
     @ObservationIgnored private var token = UUID()
     @ObservationIgnored private weak var interaction: ChannelInteraction?
     @ObservationIgnored private weak var imageViewer: ImageViewer?
     @ObservationIgnored private weak var invokingResponder: NSResponder?
     @ObservationIgnored private weak var invokingWindow: NSWindow?
+    @ObservationIgnored weak var window: NSWindow?
+    @ObservationIgnored weak var nativeImageView: ArtifactImageScrollView?
     @ObservationIgnored var webView: WKWebView?
     @ObservationIgnored var scrollOffsets: [String: CGFloat] = [:]
 
@@ -68,12 +76,25 @@ final class ArtifactOpener {
             image = nil
             isLoading = false
         }
+        prepareThumbnails()
     }
 
     func open(_ artifact: ChannelArtifact) {
         animates = true
-        invokingWindow = NSApp?.keyWindow
-        invokingResponder = NSApp?.keyWindow?.firstResponder
+        invokingWindow = window ?? NSApp?.keyWindow
+        invokingResponder = invokingWindow?.firstResponder
+        if let event = NSApp?.currentEvent, event.window === invokingWindow,
+           let contentView = invokingWindow?.contentView,
+           let hit = contentView.hitTest(contentView.convert(event.locationInWindow, from: nil)) {
+            var view: NSView? = hit
+            while let candidate = view {
+                if candidate is NSControl, candidate.acceptsFirstResponder {
+                    invokingResponder = candidate
+                    break
+                }
+                view = candidate.superview
+            }
+        }
         imageViewer?.close(animated: false)
         extra = available.contains(where: { $0.id == artifact.id }) ? nil : artifact
         pages = ArtifactPageList(artifacts: available, opening: artifact)
@@ -81,11 +102,13 @@ final class ArtifactOpener {
         self.artifact = artifact
         interaction?.isArtifactViewerPresented = true
         load()
+        prepareThumbnails()
     }
 
     func select(_ id: String) {
         guard id != artifact?.id else { return }
-        guard let previous = pages?.index, pages?.select(id) == true, let selected = pages?.selected else { return }
+        let previous = pages?.index ?? 0
+        guard pages?.select(id) == true, let selected = pages?.selected else { return }
         direction = (pages?.index ?? previous) > previous ? 1 : -1
         artifact = selected
         load()
@@ -99,6 +122,8 @@ final class ArtifactOpener {
     func close(animated: Bool = true) {
         animates = animated
         loadTask?.cancel()
+        thumbnailTask?.cancel()
+        thumbnailToken = UUID()
         token = UUID()
         webView?.stopLoading()
         webView = nil
@@ -108,6 +133,10 @@ final class ArtifactOpener {
         image = nil
         cached = [:]
         images = [:]
+        thumbnails = [:]
+        preparedFiles = [:]
+        nativeImageView?.stop()
+        nativeImageView = nil
         scrollOffsets = [:]
         loadError = nil
         actionError = nil
@@ -116,7 +145,9 @@ final class ArtifactOpener {
         interaction?.isArtifactViewerPresented = false
         if animated, let window = invokingWindow, let responder = invokingResponder {
             Task { @MainActor [weak self, weak window, weak responder] in
-                try? await Task.sleep(for: .milliseconds(220))
+                do { try await Task.sleep(for: .milliseconds(220)) }
+                catch is CancellationError { return }
+                catch { self?.actionError = error.localizedDescription; return }
                 guard self?.artifact == nil, let window, let responder else { return }
                 if let view = responder as? NSView, view.window !== window { return }
                 window.makeFirstResponder(responder)
@@ -125,7 +156,17 @@ final class ArtifactOpener {
     }
 
     func reload() { load(reloading: true) }
-    func thumbnail(for artifact: ChannelArtifact) -> NSImage? { images[artifact.id] }
+    func thumbnail(for artifact: ChannelArtifact) -> NSImage? { thumbnails[artifact.id] }
+
+    var zoomActions: ImageZoomActions? {
+        _ = imageZoomRevision
+        guard let view = nativeImageView, content?.file == view.file else { return nil }
+        return ImageZoomActions(canZoomIn: view.magnification < view.maxMagnification,
+                                canZoomOut: view.magnification > view.minMagnification,
+                                isActualSize: abs(view.magnification * view.fitScale - 1) < 0.01,
+                                zoomIn: { view.zoom(by: 1.5) }, zoomOut: { view.zoom(by: 1 / 1.5) },
+                                actualSize: { view.zoom(to: 1 / view.fitScale) })
+    }
 
     func copyLink() {
         guard let resource else { actionError = "The artifact's link is unavailable."; return }
@@ -149,7 +190,7 @@ final class ArtifactOpener {
     }
 
     var canPageUsingKeys: Bool {
-        guard let responder = NSApp?.keyWindow?.firstResponder else { return true }
+        guard let responder = (webView?.window ?? window ?? NSApp?.keyWindow)?.firstResponder else { return true }
         if responder is NSTextView { return false }
         if let view = responder as? NSView, let webView, view.isDescendant(of: webView) { return false }
         return true
@@ -178,25 +219,64 @@ final class ArtifactOpener {
         let token = token
         loadTask = Task { [weak self] in
             do {
-                let loaded = try await ArtifactContent.load(artifact, api: api)
-                let bitmap = loaded.kind == .image
-                    ? try await Task.detached(priority: .userInitiated) { try ImageViewer.decode(loaded.file) }.value : nil
+                let loaded = try await ArtifactContent.load(artifact, api: api,
+                                                           preparedFile: reloading ? nil : self?.preparedFiles[artifact.id])
                 try Task.checkCancellation()
                 guard let self, self.token == token else { return }
                 cached[artifact.id] = loaded
                 content = loaded
-                if let bitmap {
-                    let decoded = NSImage(cgImage: bitmap, size: .zero)
+                if let bitmap = loaded.bitmap {
+                    let decoded = NSImage(cgImage: bitmap, size: loaded.imageSize ?? .zero)
                     images[artifact.id] = decoded
                     image = decoded
                 }
                 isLoading = false
+                prepareThumbnails()
             } catch is CancellationError {
             } catch {
                 guard let self, self.token == token, !Task.isCancelled else { return }
                 isLoading = false
                 if content != nil { actionError = error.localizedDescription }
                 else { loadError = error.localizedDescription }
+            }
+        }
+
+        private func prepareThumbnails() {
+            thumbnailTask?.cancel()
+            thumbnailToken = UUID()
+            guard let pages, let api else { return }
+            let start = max(0, min((pages.index ?? 0) - 4, pages.artifacts.count - 9))
+            let candidates = pages.artifacts.dropFirst(start).prefix(9).filter {
+                let kind = ArtifactContentKind($0)
+                return (kind == .image || kind == .svg) && thumbnails[$0.id] == nil
+                    && ($0.id != artifact?.id || content != nil)
+            }
+            let token = thumbnailToken
+            thumbnailTask = Task { [weak self] in
+                for candidate in candidates {
+                    do {
+                        guard let self, token == thumbnailToken else { return }
+                        let file: URL
+                        if let prepared = cached[candidate.id]?.file ?? preparedFiles[candidate.id] { file = prepared }
+                        else {
+                            guard let resource = candidate.url.flatMap(api.resourceURL) else {
+                                throw ChannelAPIError.invalidMessage("The artifact thumbnail has no usable resource URL.")
+                            }
+                            file = try await ArtifactDownload.file(for: candidate, from: resource)
+                        }
+                        let bitmap = try await ArtifactContent.thumbnail(candidate, file: file)
+                        try Task.checkCancellation()
+                        guard token == thumbnailToken else { return }
+                        preparedFiles[candidate.id] = file
+                        thumbnails[candidate.id] = NSImage(cgImage: bitmap, size: .zero)
+                    } catch is CancellationError {
+                        return
+                    } catch {
+                        guard !Task.isCancelled else { return }
+                        Logger(subsystem: "dev.toybox.desktop", category: "Artifacts")
+                            .error("Artifact thumbnail failed: \(error.localizedDescription, privacy: .public)")
+                    }
+                }
             }
         }
     }

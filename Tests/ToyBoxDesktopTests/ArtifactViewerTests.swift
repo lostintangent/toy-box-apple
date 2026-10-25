@@ -146,13 +146,7 @@ struct ArtifactViewerTests {
         })
         defer { web.stop() }
         let probe = ArtifactWebProbe()
-        let controller = web.webView.configuration.userContentController
-        controller.add(probe, name: "probe")
-        controller.addUserScript(WKUserScript(source: """
-            window.addEventListener("message", event => {
-                window.webkit.messageHandlers.probe.postMessage({origin:event.origin,result:event.data});
-            });
-            """, injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        probe.attach(to: web.webView)
         let directory = fixture.url("/api/serve/test/documents/")
         let api = fixture.url("/api/v1/channels").absoluteString
         let alias = fixture.url("/api/v1/channels", host: "localhost").absoluteString
@@ -198,6 +192,44 @@ struct ArtifactViewerTests {
         #expect(requests.allSatisfy { !$0.headers.lowercased().contains(fakeCookie.name.lowercased()) })
     }
 
+    @Test func externalLinksOpenTheBrowserInsteadOfReplacingTheEmbeddedDocument() async throws {
+        let destination = try #require(URL(string: "https://artifact-viewer-test.invalid/review"))
+        var opened: [URL] = []
+        let web = ArtifactWebContent(kind: .html, openURL: { opened.append($0); return true })
+        defer { web.stop() }
+        let server = try #require(URL(string: "http://127.0.0.1:1"))
+        await web.load("""
+            <a id="external" href="\(destination.absoluteString)">Review</a>
+            <script>document.getElementById("external").click();</script>
+            """, directory: server.appendingPathComponent("api/serve/test/"), server: server)
+        try await wait { !opened.isEmpty || web.error != nil }
+        #expect(web.error == nil)
+        #expect(opened == [destination])
+        #expect(web.webView.url?.scheme == "about")
+    }
+
+    @Test func sameDocumentAnchorsScrollInsideTheOpaqueFrameWithoutOpeningTheBrowser() async throws {
+        var opened: [URL] = []
+        let web = ArtifactWebContent(kind: .html, openURL: { opened.append($0); return true })
+        defer { web.stop() }
+        web.webView.frame = NSRect(x: 0, y: 0, width: 640, height: 400)
+        let probe = ArtifactWebProbe()
+        probe.attach(to: web.webView)
+        let server = try #require(URL(string: "http://127.0.0.1:1"))
+        await web.load("""
+            <a id="jump" href="#target">Jump</a><div style="height:1200px"></div><h2 id="target">Target</h2>
+            <script>
+            window.addEventListener("scroll",()=>parent.postMessage({jump:scrollY}, "*"));
+            document.getElementById("jump").click();
+            </script>
+            """, directory: server.appendingPathComponent("api/serve/test/"), server: server)
+        try await wait { !probe.values.isEmpty || web.error != nil || !opened.isEmpty }
+        #expect(web.error == nil)
+        #expect(opened.isEmpty)
+        let result = try #require(probe.values.first?["result"] as? [String: Any])
+        #expect((result["jump"] as? Double ?? 0) > 500)
+    }
+
     @Test func prefixedAndEscapedServerAddressesCompileIntoRealWebKitRules() async throws {
         let server = try #require(URL(string: "http://127.0.0.1:3299/team%20space/"))
         let encoded = try ArtifactWebPolicy.blockingRules(server: server)
@@ -209,19 +241,69 @@ struct ArtifactViewerTests {
         #expect(compiled != nil)
     }
 
-    @Test func SVGDisablesBothWebPageJavaScriptAndSandboxScriptPermission() throws {
-        let web = ArtifactWebContent(kind: .svg)
-        #expect(!web.webView.configuration.defaultWebpagePreferences.allowsContentJavaScript)
-        #expect(!web.webView.configuration.websiteDataStore.isPersistent)
-        let directory = try #require(URL(string: "http://127.0.0.1:3210/api/serve/test/"))
-        let document = ArtifactWebPolicy.document("<svg/>", directory: directory, kind: .svg)
-        #expect(document.contains("sandbox=\"\""))
-        #expect(!document.contains("allow-same-origin"))
-        #expect(!document.contains("allow-scripts"))
+    @Test func HTMLUsesTheReferenceSandboxPermissionsWithoutSameOrigin() {
         #expect(Set(ArtifactWebPolicy.htmlPermissions) == [
             "allow-downloads", "allow-forms", "allow-modals", "allow-popups",
             "allow-scripts", "allow-top-navigation-by-user-activation",
         ])
+    }
+
+    @Test func nativeSVGActuallyRendersAtItsNaturalPointSizeWithoutExecutingScripts() async throws {
+        _ = NSApplication.shared
+        let fixture = try ArtifactHTTPFixture()
+        try await fixture.start()
+        defer { fixture.stop() }
+        let artifact = ChannelArtifact(file: .init(kind: "machine", path: "drawing.svg"), title: "Drawing",
+                                       url: "/api/serve/test/drawing.svg")
+        let loaded = try await ArtifactContent.load(artifact, api: ChannelAPI(baseURL: fixture.url))
+        let bitmap = try #require(loaded.bitmap)
+        #expect(loaded.imageSize == CGSize(width: 120, height: 80))
+        let view = ArtifactImageScrollView()
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 640, height: 400),
+                              styleMask: [], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = view
+        defer { view.stop(); window.contentView = nil; window.close() }
+        view.configure(image: NSImage(cgImage: bitmap, size: try #require(loaded.imageSize)),
+                       file: loaded.file, isSVG: true)
+        view.layoutSubtreeIfNeeded()
+        let imageView = view.imageView
+        let representation = try #require(imageView.bitmapImageRepForCachingDisplay(in: imageView.bounds))
+        imageView.cacheDisplay(in: imageView.bounds, to: representation)
+        let scale = CGFloat(representation.pixelsWide) / imageView.bounds.width
+        func isRed(_ x: CGFloat, _ y: CGFloat) throws -> Bool {
+            let color = try #require(representation.colorAt(x: Int((imageView.bounds.midX + x) * scale),
+                                                           y: Int((imageView.bounds.midY + y) * scale))?
+                                      .usingColorSpace(.deviceRGB))
+            return color.alphaComponent > 0.9 && color.redComponent > 0.9 && color.greenComponent < 0.1
+        }
+        #expect(try isRed(0, 0))
+        #expect(try isRed(59, 0))
+        #expect(try !isRed(61, 0))
+        #expect(try isRed(0, 39))
+        #expect(try !isRed(0, 41))
+        #expect(fixture.requests.withLock { $0.map(\.path) } == ["/api/serve/test/drawing.svg"])
+    }
+
+    @Test func unvisitedImageThumbnailsLoadAndTheirDownloadedFileIsReused() async throws {
+        let fixture = try ArtifactHTTPFixture()
+        try await fixture.start()
+        defer { fixture.stop() }
+        let plan = ChannelArtifact(file: .init(kind: "machine", path: "plan.md"), title: "Plan",
+                                   url: "/api/serve/test/plan.md")
+        let drawing = ChannelArtifact(file: .init(kind: "machine", path: "drawing.svg"), title: "Drawing",
+                                      url: "/api/serve/test/drawing.svg")
+        let opener = ArtifactOpener()
+        opener.configure(api: ChannelAPI(baseURL: fixture.url), channelID: "test", artifacts: [plan, drawing],
+                         interaction: ChannelInteraction(), imageViewer: ImageViewer())
+        defer { opener.close(animated: false) }
+        opener.open(plan)
+        try await wait { !opener.isLoading && opener.thumbnail(for: drawing) != nil }
+        #expect(opener.artifact?.id == plan.id)
+        opener.select(drawing.id)
+        try await wait { !opener.isLoading }
+        #expect(opener.image?.size == CGSize(width: 120, height: 80))
+        #expect(fixture.requests.withLock { $0.filter { $0.path.hasSuffix("drawing.svg") }.count } == 1)
     }
 
     private func artifact(_ path: String, shared: String? = nil) -> ChannelArtifact {
@@ -238,6 +320,16 @@ struct ArtifactViewerTests {
 @MainActor
 private final class ArtifactWebProbe: NSObject, WKScriptMessageHandler {
     var values: [[String: Any]] = []
+
+    func attach(to webView: WKWebView) {
+        let controller = webView.configuration.userContentController
+        controller.add(self, name: "probe")
+        controller.addUserScript(WKUserScript(source: """
+            window.addEventListener("message", event => {
+                window.webkit.messageHandlers.probe.postMessage({origin:event.origin,result:event.data});
+            });
+            """, injectionTime: .atDocumentStart, forMainFrameOnly: true))
+    }
 
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         #expect(message.frameInfo.isMainFrame)
@@ -321,7 +413,7 @@ private final class ArtifactHTTPFixture: @unchecked Sendable {
 
     private func respond(_ connection: NWConnection, path: String) {
         let body = path.hasSuffix(".svg")
-            ? #"<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"><rect width="1" height="1"/></svg>"#
+            ? #"<svg xmlns="http://www.w3.org/2000/svg" width="120" height="80"><rect id="marker" width="120" height="80" fill="red"/><script>document.getElementById("marker").setAttribute("fill","green");</script></svg>"#
             : #"{"mustNotBeRead":true}"#
         let type = path.hasSuffix(".svg") ? "image/svg+xml" : "application/json"
         let status = failures.withLock { $0.contains(path) } ? "500 Internal Server Error" : "200 OK"

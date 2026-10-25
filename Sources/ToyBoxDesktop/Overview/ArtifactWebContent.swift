@@ -11,7 +11,7 @@ enum ArtifactWebPolicy {
 
     static func document(_ content: String, directory: URL, kind: ArtifactContentKind) -> String {
         let svgStyle = kind == .svg
-            ? "<style>html,body{width:100%;height:100%;margin:0;background:transparent;overflow:hidden}svg{display:block;width:100%;height:100%}</style>"
+            ? "<style>html,body{width:100%;height:100%;margin:0;background:transparent;overflow:hidden}body{display:grid;place-items:center}svg{display:block;width:auto;height:auto;max-width:100%;max-height:100%}</style>"
             : ""
         let base = "<base data-toybox-file-base href=\"\(attribute(directory.absoluteString))\">" + svgStyle
         let prepared: String
@@ -86,6 +86,7 @@ final class ArtifactWebContent: NSObject, WKNavigationDelegate, WKUIDelegate {
     @ObservationIgnored private let kind: ArtifactContentKind
     @ObservationIgnored private var directory: URL?
     @ObservationIgnored private var resource: URL?
+    @ObservationIgnored private var installedRules: String?
     @ObservationIgnored private var generation = UUID()
 
     init(kind: ArtifactContentKind, openURL: @escaping (URL) -> Bool = { NSWorkspace.shared.open($0) }) {
@@ -116,8 +117,10 @@ final class ArtifactWebContent: NSObject, WKNavigationDelegate, WKUIDelegate {
             ) else { throw ArtifactWebError.missingRules }
             guard generation == token else { return }
             try Task.checkCancellation()
-            webView.configuration.userContentController.removeAllContentRuleLists()
-            webView.configuration.userContentController.add(compiled)
+            if installedRules != digest {
+                webView.configuration.userContentController.add(compiled)
+                installedRules = digest
+            }
             webView.loadHTMLString(ArtifactWebPolicy.document(content, directory: directory, kind: kind), baseURL: nil)
         } catch is CancellationError {
             if generation == token { isLoading = false }

@@ -71,6 +71,7 @@ struct RootView: View {
         .focusedSceneValue(\.channelCommands, commandActions)
         .background(WindowObserver(onAttach: { window in
             placement.window = window
+            artifactOpener.window = window
             model.snapshot?.attach(window: window, model: model)
             model.resizeBenchmark?.attach(window: window, model: model)
             model.performanceBenchmark?.attach(window: window, model: model) { selectedId = $0 }
@@ -190,9 +191,13 @@ struct RootView: View {
             sidebarVisible: columnVisibility != .detailOnly, inspectorVisible: isOverviewVisible,
             messageView: interaction.messageView,
             imageZoom: imageZoom,
+            isViewerPresented: artifactOpener.isPresented,
             newChannel: { management.present(.newChannel) },
             openNewWindow: { if let selectedId { openWindow(value: ChannelWindowValue(channelID: selectedId)) } },
-            openInToyBox: { if let selectedId { model.openInToyBox(channelID: selectedId) } },
+            openInToyBox: {
+                if artifactOpener.isPresented { artifactOpener.openInToyBox(app: model) }
+                else if let selectedId { model.openInToyBox(channelID: selectedId) }
+            },
             openFolder: openableFolder(store: store).map { path in { model.folders.open(path) } },
             findChannel: { columnVisibility = .all; searchFocusRequest = UUID() },
             toggleSidebar: { columnVisibility = columnVisibility == .detailOnly ? .all : .detailOnly },
@@ -212,6 +217,7 @@ struct RootView: View {
     }
 
     private var imageZoom: ImageZoomActions? {
+        if artifactOpener.isPresented { return artifactOpener.zoomActions }
         let viewer = imageViewer
         guard viewer.presentation != nil else { return nil }
         return ImageZoomActions(canZoomIn: viewer.canZoomIn, canZoomOut: viewer.canZoomOut,

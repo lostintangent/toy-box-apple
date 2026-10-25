@@ -132,14 +132,14 @@ private struct ArtifactViewerStage: View {
             switch content.kind {
             case .markdown:
                 ArtifactMarkdownPage(content: content, opener: opener, bottomInset: hasStrip ? 96 : 24)
-            case .html, .svg:
+            case .html:
                 ArtifactWebPage(content: content, opener: opener)
                     .padding(.horizontal, content.kind == .svg ? 24 : 0)
                     .padding(.top, content.kind == .svg ? 16 : 0)
                     .padding(.bottom, hasStrip ? 80 : content.kind == .svg ? 24 : 0)
-            case .image:
+            case .image, .svg:
                 if let image = opener.image {
-                    ArtifactNativeImage(image: image)
+                    ArtifactNativeImage(content: content, image: image, opener: opener)
                         .padding(.horizontal, 24)
                         .padding(.top, 16)
                         .padding(.bottom, hasStrip ? 80 : 24)
@@ -188,7 +188,15 @@ private struct ArtifactMarkdownPage: View {
 
     var body: some View {
         ScrollView {
-            TranscriptMarkdown(content: content.text ?? "", agents: [], baseURL: content.resource)
+            Group {
+                if let text = content.text {
+                    TranscriptMarkdown(content: text, agents: [], baseURL: content.resource,
+                                       bodySize: 15, codeSize: 13, lineSpacing: 4)
+                } else {
+                    ContentUnavailableView("Couldn't Load Artifact", systemImage: "doc.badge.ellipsis",
+                                           description: Text("The artifact's text is unavailable."))
+                }
+            }
                 .frame(maxWidth: 720, alignment: .leading)
                 .padding(.horizontal, 24)
                 .padding(.top, 32)
@@ -207,6 +215,7 @@ private struct ArtifactWebPage: View {
     let content: ArtifactContent
     let opener: ArtifactOpener
     @ViewState private var renderer: ArtifactWebContent
+    @ViewState private var showsSpinner = false
 
     init(content: ArtifactContent, opener: ArtifactOpener) {
         self.content = content
@@ -216,7 +225,13 @@ private struct ArtifactWebPage: View {
 
     var body: some View {
         ZStack {
-            ArtifactWebView(renderer: renderer)
+            if content.text != nil {
+                ArtifactWebView(renderer: renderer)
+            } else {
+                ContentUnavailableView("Couldn't Load Artifact", systemImage: "doc.badge.ellipsis",
+                                       description: Text("The artifact's text is unavailable."))
+            }
+            if showsSpinner { ProgressView("Loading artifact…").controlSize(.small) }
             if let error = renderer.error {
                 ContentUnavailableView {
                     Label("Couldn't Load Artifact", systemImage: "doc.badge.ellipsis")
@@ -229,9 +244,18 @@ private struct ArtifactWebPage: View {
             }
         }
         .task(id: content.file) {
+            guard let text = content.text else { return }
             opener.webView = renderer.webView
-            await renderer.load(content.text ?? "", directory: content.directory,
+            await renderer.load(text, directory: content.directory,
                                 server: content.server, resource: content.resource)
+        }
+        .task(id: renderer.isLoading) {
+            showsSpinner = false
+            guard renderer.isLoading else { return }
+            do { try await Task.sleep(for: .milliseconds(300)) }
+            catch is CancellationError { return }
+            catch { opener.actionError = error.localizedDescription; return }
+            if !Task.isCancelled { showsSpinner = true }
         }
         .onDisappear {
             renderer.stop()
@@ -253,21 +277,52 @@ private struct ArtifactWebView: NSViewRepresentable {
 }
 
 private struct ArtifactNativeImage: NSViewRepresentable {
+    let content: ArtifactContent
     let image: NSImage
+    let opener: ArtifactOpener
 
     func makeNSView(context: Context) -> ArtifactImageScrollView {
         let view = ArtifactImageScrollView()
-        view.imageView.image = image
+        configure(view)
         return view
     }
 
     func updateNSView(_ nsView: ArtifactImageScrollView, context: Context) {
-        nsView.imageView.image = image
+        configure(nsView)
+    }
+
+    private func configure(_ view: ArtifactImageScrollView) {
+        view.onZoomChange = { [weak opener] in opener?.imageZoomRevision += 1 }
+        view.onError = { [weak opener] in opener?.actionError = $0 }
+        view.configure(image: image, file: content.file, isSVG: content.kind == .svg)
+        opener.nativeImageView = view
+    }
+
+    static func dismantleNSView(_ nsView: ArtifactImageScrollView, coordinator: ()) {
+        nsView.stop()
     }
 }
 
-private final class ArtifactImageScrollView: NSScrollView {
+final class ArtifactImageScrollView: NSScrollView {
     let imageView = NSImageView()
+    private(set) var file: URL?
+    var onZoomChange: (() -> Void)?
+    var onError: ((String) -> Void)?
+    private var isSVG = false
+    private var renderedEdge = 0
+    private var rasterTask: Task<Void, Never>?
+
+    var fitScale: CGFloat {
+        guard let size = imageView.image?.size, size.width > 0, size.height > 0 else { return 1 }
+        return min(1, contentSize.width / size.width, contentSize.height / size.height)
+    }
+
+    override var magnification: CGFloat {
+        didSet {
+            onZoomChange?()
+            rerasterizeIfNeeded()
+        }
+    }
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -279,7 +334,7 @@ private final class ArtifactImageScrollView: NSScrollView {
         hasHorizontalScroller = true
         hasVerticalScroller = true
         autohidesScrollers = true
-        imageView.imageScaling = .scaleProportionallyUpOrDown
+        imageView.imageScaling = .scaleProportionallyDown
         imageView.imageAlignment = .alignCenter
         documentView = imageView
     }
@@ -288,7 +343,53 @@ private final class ArtifactImageScrollView: NSScrollView {
 
     override func layout() {
         super.layout()
-        if magnification == 1 { imageView.setFrameSize(contentSize) }
+        if magnification == 1 {
+            imageView.setFrameSize(contentSize)
+            maxMagnification = max(8, 1 / max(fitScale, 0.0001))
+        }
+    }
+
+    func configure(image: NSImage, file: URL, isSVG: Bool) {
+        guard self.file != file else { return }
+        stop()
+        self.file = file
+        self.isSVG = isSVG
+        imageView.image = image
+        renderedEdge = image.representations.map { max($0.pixelsWide, $0.pixelsHigh) }.max() ?? 0
+        magnification = 1
+        needsLayout = true
+    }
+
+    func zoom(by factor: CGFloat) { zoom(to: magnification * factor) }
+
+    func zoom(to value: CGFloat) {
+        setMagnification(min(maxMagnification, max(minMagnification, value)),
+                         centeredAt: CGPoint(x: documentVisibleRect.midX, y: documentVisibleRect.midY))
+    }
+
+    func stop() { rasterTask?.cancel(); rasterTask = nil }
+
+    private func rerasterizeIfNeeded() {
+        guard isSVG, let file, let size = imageView.image?.size else { return }
+        let edge = Int(min(8192, ceil(max(size.width, size.height) * fitScale * magnification
+                                     * (window?.backingScaleFactor ?? 2))))
+        guard edge > renderedEdge else { return }
+        rasterTask?.cancel()
+        rasterTask = Task { [weak self] in
+            do {
+                try await Task.sleep(for: .milliseconds(100))
+                let bitmap = try await Task.detached(priority: .userInitiated) {
+                    try TranscriptSVGImage.decode(file, maximumPixelSize: edge).image
+                }.value
+                try Task.checkCancellation()
+                guard let self, self.file == file else { return }
+                imageView.image = NSImage(cgImage: bitmap, size: size)
+                renderedEdge = edge
+            } catch is CancellationError {
+            } catch {
+                self?.onError?("The drawing is still visible, but its zoom detail could not be refreshed. \(error.localizedDescription)")
+            }
+        }
     }
 }
 

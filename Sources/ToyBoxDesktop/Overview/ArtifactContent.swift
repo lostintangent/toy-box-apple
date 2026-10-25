@@ -1,5 +1,6 @@
 import ChannelClient
 import ChannelKit
+import CoreGraphics
 import Foundation
 import UniformTypeIdentifiers
 
@@ -25,29 +26,61 @@ struct ArtifactContent: Sendable {
     let server: URL
     let file: URL
     let text: String?
+    let bitmap: CGImage?
+    let imageSize: CGSize?
 
     var directory: URL { resource.deletingLastPathComponent().appendingPathComponent("") }
 
-    static func load(_ artifact: ChannelArtifact, api: ChannelAPI) async throws -> ArtifactContent {
+    static func load(_ artifact: ChannelArtifact, api: ChannelAPI, preparedFile: URL? = nil) async throws -> ArtifactContent {
         guard let resource = artifact.url.flatMap(api.resourceURL) else {
             throw ChannelAPIError.invalidMessage("The server did not provide a usable resource URL for this artifact.")
         }
         let kind = ArtifactContentKind(artifact)
-        let file = try await ArtifactDownload.file(for: artifact, from: resource)
+        let file: URL
+        if let preparedFile { file = preparedFile }
+        else { file = try await ArtifactDownload.file(for: artifact, from: resource) }
         try Task.checkCancellation()
-        let text: String?
+        var text: String?
         switch kind {
-        case .markdown, .html, .svg:
+        case .markdown, .html:
             let data = try await Task.detached(priority: .userInitiated) { try Data(contentsOf: file) }.value
             guard let decoded = String(data: data, encoding: .utf8) else {
                 throw ChannelAPIError.invalidMessage("This artifact is not valid UTF-8 text.")
             }
             text = decoded
-        case .image, .file:
+        case .image, .svg, .file:
             text = nil
         }
+        let bitmap: CGImage?
+        let imageSize: CGSize?
+        switch kind {
+        case .image:
+            bitmap = try await Task.detached(priority: .userInitiated) { try ImageViewer.decode(file) }.value
+            imageSize = bitmap.map { CGSize(width: $0.width, height: $0.height) }
+        case .svg:
+            let decoded = try await Task.detached(priority: .userInitiated) {
+                let probe = try TranscriptSVGImage.decode(file, maximumPixelSize: 64)
+                let edge = Int(min(8192, max(64, ceil(max(probe.pixelSize.width, probe.pixelSize.height) * 2))))
+                return try TranscriptSVGImage.decode(file, maximumPixelSize: edge)
+            }.value
+            bitmap = decoded.image
+            imageSize = decoded.pixelSize
+        case .markdown, .html, .file:
+            bitmap = nil
+            imageSize = nil
+        }
         try Task.checkCancellation()
-        return ArtifactContent(artifact: artifact, kind: kind, resource: resource, server: api.baseURL, file: file, text: text)
+        return ArtifactContent(artifact: artifact, kind: kind, resource: resource, server: api.baseURL,
+                               file: file, text: text, bitmap: bitmap, imageSize: imageSize)
+    }
+
+    static func thumbnail(_ artifact: ChannelArtifact, file: URL) async throws -> CGImage {
+        try await Task.detached(priority: .utility) {
+            if ArtifactContentKind(artifact) == .svg {
+                return try TranscriptSVGImage.decode(file, maximumPixelSize: 64).image
+            }
+            return try ImageViewer.decode(file, maximumPixelSize: 64)
+        }.value
     }
 }
 
