@@ -17,7 +17,7 @@ struct ArtifactViewerCanvas: View {
     var body: some View {
         ZStack {
             if let artifact = opener.artifact {
-                ArtifactViewerStage(opener: opener, artifact: artifact, toolbarInset: images.toolbarInset)
+                ArtifactViewerStage(opener: opener, artifact: artifact)
                     .transition(.opacity)
             }
         }
@@ -44,7 +44,6 @@ struct ArtifactViewerCanvas: View {
 struct ArtifactViewerStage: View {
     @Bindable var opener: ArtifactOpener
     let artifact: ChannelArtifact
-    let toolbarInset: CGFloat
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @FocusState private var focused: Bool
     @ViewState private var showsSpinner = false
@@ -56,33 +55,33 @@ struct ArtifactViewerStage: View {
 
     var body: some View {
         ZStack {
-            background
-            VStack(spacing: 0) {
-                if let error = opener.actionError {
-                    HStack(spacing: 8) {
-                        Image(systemName: "exclamationmark.triangle")
-                        Text(error).textSelection(.enabled)
-                        Spacer(minLength: 8)
-                        Button("Dismiss", systemImage: "xmark") { opener.actionError = nil }
-                            .labelStyle(.iconOnly)
-                    }
-                    .font(.callout)
-                    .padding(12)
-                    .background(.background)
+            background.ignoresSafeArea()
+            page
+                .id(artifact.id)
+                .transition(pageTransition)
+        }
+        .safeAreaBar(edge: .top, spacing: 0) {
+            if let error = opener.actionError {
+                HStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle")
+                    Text(error).textSelection(.enabled)
+                    Spacer(minLength: 8)
+                    Button("Dismiss", systemImage: "xmark") { opener.actionError = nil }
+                        .labelStyle(.iconOnly)
                 }
-                page
-                    .id(artifact.id)
-                    .transition(pageTransition)
+                .font(.callout)
+                .padding(12)
+                .background(.background)
             }
-            .padding(.top, toolbarInset)
+        }
+        .safeAreaBar(edge: .bottom, spacing: 0) {
             if hasStrip {
                 ArtifactNavigationCapsule(opener: opener)
                     .padding(.horizontal, 16)
-                    .padding(.bottom, 16)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                    .padding(.vertical, 16)
+                    .frame(maxWidth: .infinity)
             }
         }
-        .clipped()
         .focusable()
         .focusEffectDisabled()
         .focused($focused)
@@ -134,18 +133,15 @@ struct ArtifactViewerStage: View {
         } else if let content = opener.content {
             switch content.kind {
             case .markdown:
-                ArtifactMarkdownPage(content: content, opener: opener, bottomInset: hasStrip ? 96 : 24)
+                ArtifactMarkdownPage(content: content, opener: opener, bottomInset: hasStrip ? 0 : 24)
             case .html:
                 ArtifactWebPage(content: content, opener: opener)
-                    .padding(.horizontal, content.kind == .svg ? 24 : 0)
-                    .padding(.top, content.kind == .svg ? 16 : 0)
-                    .padding(.bottom, hasStrip ? 80 : content.kind == .svg ? 24 : 0)
             case .image, .svg:
                 if let image = opener.image {
                     ArtifactNativeImage(content: content, image: image, opener: opener)
                         .padding(.horizontal, 24)
                         .padding(.top, 16)
-                        .padding(.bottom, hasStrip ? 80 : 24)
+                        .padding(.bottom, hasStrip ? 0 : 24)
                 }
             case .file:
                 unsupported
@@ -211,6 +207,7 @@ private struct ArtifactMarkdownPage: View {
             opener.scrollOffsets[content.artifact.id] = offset
         }
         .scrollEdgeEffectStyle(.hard, for: .top)
+        .scrollEdgeEffectStyle(.soft, for: .bottom)
     }
 }
 

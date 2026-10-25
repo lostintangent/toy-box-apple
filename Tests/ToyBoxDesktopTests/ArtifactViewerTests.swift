@@ -394,6 +394,119 @@ struct ArtifactViewerTests {
         #expect(composer.string == "Keep this unsent draft.")
     }
 
+    @Test(arguments: [CGSize(width: 760, height: 560), CGSize(width: 1280, height: 840)])
+    func markdownScrollsUnderTheNativeBarsAndRestoresItsReadingPosition(size: CGSize) async throws {
+        let fixture = try ArtifactHTTPFixture()
+        fixture.bodies.withLock {
+            $0["/api/serve/test/long.md"] = (1...120).map { "## Paragraph \($0)\n\nKeep this reading position.\n" }
+                .joined(separator: "\n")
+        }
+        try await fixture.start()
+        defer { fixture.stop() }
+        let plan = ChannelArtifact(file: .init(kind: "machine", path: "long.md"), title: "Plan",
+                                   sharedAt: "2026-10-24T22:00:00Z", url: "/api/serve/test/long.md")
+        let other = ChannelArtifact(file: .init(kind: "machine", path: "report.txt"), title: "Report",
+                                    sharedAt: "2026-10-24T21:00:00Z", url: "/api/serve/test/report.txt")
+        let opener = ArtifactOpener()
+        opener.configure(api: try ChannelAPI(baseURL: fixture.url("/")), channelID: "test",
+                         artifacts: [plan, other], interaction: ChannelInteraction(), imageViewer: ImageViewer())
+        let host = ArtifactKeyboardWindow(opener: opener, composer: NSTextView(), hasToolbar: true, size: size)
+        defer { opener.close(animated: false); host.window.close() }
+        opener.open(plan)
+        try await wait { !opener.isLoading && host.documentScrollView != nil }
+        let scroll = try #require(host.documentScrollView)
+        let content = try #require(host.window.contentView)
+        let canvas = content.convert(content.bounds, to: nil)
+        let frame = scroll.convert(scroll.bounds, to: nil)
+        #expect(abs(frame.maxY - canvas.maxY) < 1)
+        #expect(abs(frame.minY - canvas.minY) < 1)
+        #expect(abs(scroll.contentInsets.top - (canvas.maxY - host.window.contentLayoutRect.maxY)) < 1)
+        #expect(abs(scroll.contentInsets.bottom - 80) < 1)
+        scroll.contentView.scroll(to: NSPoint(x: 0, y: 900))
+        scroll.reflectScrolledClipView(scroll.contentView)
+        try await wait { (opener.scrollOffsets[plan.id] ?? 0) > 500 }
+        let offset = try #require(opener.scrollOffsets[plan.id])
+        opener.select(other.id)
+        try await wait { scroll.window == nil }
+        opener.select(plan.id)
+        try await wait {
+            guard let restored = host.documentScrollView else { return false }
+            return abs(restored.contentView.bounds.minY + restored.contentInsets.top - offset) < 1
+                && restored.convert(restored.bounds, to: nil) == frame
+        }
+        let restored = try #require(host.documentScrollView)
+        let topInset = restored.contentInsets.top
+        opener.actionError = "The document remains visible while this action error is shown."
+        try await wait { restored.contentInsets.top > topInset }
+        #expect(restored.convert(restored.bounds, to: nil) == frame)
+        #expect(restored.contentInsets.bottom == 80)
+        opener.actionError = nil
+        try await wait { abs(restored.contentInsets.top - topInset) < 1 }
+        let document = try #require(restored.documentView)
+        let end = document.frame.height - restored.contentView.bounds.height + restored.contentInsets.bottom
+        restored.contentView.scroll(to: NSPoint(x: 0, y: end))
+        restored.reflectScrolledClipView(restored.contentView)
+        try await wait { abs(restored.contentView.bounds.minY - end) < 1 }
+        let documentEnd = document.convert(NSPoint(x: document.bounds.midX, y: document.bounds.maxY), to: nil)
+        #expect(abs(documentEnd.y - 80) < 1)
+    }
+
+    @Test func nativeImageFitAndZoomRemainInsideTheToolbarAndPager() async throws {
+        let fixture = try ArtifactHTTPFixture()
+        try await fixture.start()
+        defer { fixture.stop() }
+        let drawing = ChannelArtifact(file: .init(kind: "machine", path: "drawing.svg"), title: "Drawing",
+                                      url: "/api/serve/test/drawing.svg")
+        let other = artifact("other.md")
+        let opener = ArtifactOpener()
+        opener.configure(api: try ChannelAPI(baseURL: fixture.url("/")), channelID: "test",
+                         artifacts: [drawing, other], interaction: ChannelInteraction(), imageViewer: ImageViewer())
+        let host = ArtifactKeyboardWindow(opener: opener, composer: NSTextView(), hasToolbar: true)
+        defer { opener.close(animated: false); host.window.close() }
+        opener.open(drawing)
+        try await wait { !opener.isLoading && opener.nativeImageView?.window != nil }
+        let image = try #require(opener.nativeImageView)
+        let frame = image.convert(image.bounds, to: nil)
+        #expect(abs(frame.maxY - (host.window.contentLayoutRect.maxY - 16)) < 1)
+        #expect(abs(frame.minY - 80) < 1)
+        #expect(frame.minX == 24)
+        #expect(frame.width == 592)
+        #expect(image.fitScale == 1)
+        #expect(image.magnification == 1)
+        let zoom = try #require(opener.zoomActions)
+        zoom.zoomIn()
+        #expect(image.magnification > 1)
+    }
+
+    @Test func HTMLKeepsItsViewportClearOfTheNativeBars() async throws {
+        let fixture = try ArtifactHTTPFixture()
+        fixture.bodies.withLock {
+            $0["/api/serve/test/prototype.html"] = "<!doctype html><body style='height:3000px;background:orange'>Long page</body>"
+        }
+        try await fixture.start()
+        defer { fixture.stop() }
+        let html = ChannelArtifact(file: .init(kind: "machine", path: "prototype.html"), title: "Prototype",
+                                   url: "/api/serve/test/prototype.html")
+        let other = artifact("other.md")
+        let opener = ArtifactOpener()
+        opener.configure(api: try ChannelAPI(baseURL: fixture.url("/")), channelID: "test",
+                         artifacts: [html, other], interaction: ChannelInteraction(), imageViewer: ImageViewer())
+        let host = ArtifactKeyboardWindow(opener: opener, composer: NSTextView(), hasToolbar: true)
+        defer { opener.close(animated: false); host.window.close() }
+        opener.open(html)
+        try await wait { opener.webView != nil && !opener.isLoading }
+        let web = try #require(opener.webView)
+        try await wait { web.url != nil && !web.isLoading }
+        let frame = web.convert(web.bounds, to: nil)
+        #expect(abs(frame.maxY - host.window.contentLayoutRect.maxY) < 1)
+        #expect(abs(frame.minY - 80) < 1)
+        opener.actionError = "The document remains visible while this action error is shown."
+        try await wait { web.convert(web.bounds, to: nil).maxY < frame.maxY - 1 }
+        #expect(web.convert(web.bounds, to: nil).minY == frame.minY)
+        opener.actionError = nil
+        try await wait { abs(web.convert(web.bounds, to: nil).maxY - frame.maxY) < 1 }
+    }
+
     @MainActor
     private struct ArtifactKeyboardWindow {
         // Match the task-disclosure harness without taking the user's key window.
@@ -404,17 +517,33 @@ struct ArtifactViewerTests {
 
         let window: NSWindow
 
-        init(opener: ArtifactOpener, composer: NSTextView) {
+        init(opener: ArtifactOpener, composer: NSTextView, hasToolbar: Bool = false,
+             size: CGSize = CGSize(width: 640, height: 400)) {
             _ = NSApplication.shared
             let view = NSHostingView(rootView: ArtifactKeyboardHost(opener: opener, composer: composer))
-            window = KeyWindow(contentRect: NSRect(x: -10_000, y: -10_000, width: 640, height: 400),
-                               styleMask: [.borderless], backing: .buffered, defer: false)
+            window = KeyWindow(contentRect: NSRect(origin: CGPoint(x: -10_000, y: -10_000), size: size),
+                               styleMask: hasToolbar ? [.titled, .fullSizeContentView] : [.borderless],
+                               backing: .buffered, defer: false)
             window.isReleasedWhenClosed = false
+            if hasToolbar { window.toolbar = NSToolbar(identifier: "ArtifactScrollTests") }
             window.contentView = view
             opener.window = window
             window.orderFrontRegardless()
             view.layoutSubtreeIfNeeded()
         }
+
+        var documentScrollView: NSScrollView? {
+            var pending = window.contentView.map { [$0] } ?? []
+            while let view = pending.popLast() {
+                if let scroll = view as? NSScrollView,
+                   let document = scroll.documentView, document.frame.height > scroll.contentSize.height + 1 {
+                    return scroll
+                }
+                pending.append(contentsOf: view.subviews)
+            }
+            return nil
+        }
+
         func press(_ key: KeyEquivalent, modifiers: NSEvent.ModifierFlags) throws {
             let isRight = key == .rightArrow
             let characters = String(UnicodeScalar(UInt16(isRight ? NSRightArrowFunctionKey : NSLeftArrowFunctionKey))!)
@@ -434,7 +563,7 @@ struct ArtifactViewerTests {
             ZStack {
                 ArtifactComposerControl(view: composer)
                 if let artifact = opener.artifact {
-                    ArtifactViewerStage(opener: opener, artifact: artifact, toolbarInset: 0)
+                    ArtifactViewerStage(opener: opener, artifact: artifact)
                 }
             }
         }
@@ -490,6 +619,7 @@ private final class ArtifactHTTPFixture: @unchecked Sendable {
     }
     let requests = Mutex<[Request]>([])
     let failures = Mutex<Set<String>>([])
+    let bodies = Mutex<[String: String]>([:])
     let heldPaths = Mutex<Set<String>>([])
     private let pending = Mutex<[String: NWConnection]>([:])
     private let listener: NWListener
@@ -557,9 +687,9 @@ private final class ArtifactHTTPFixture: @unchecked Sendable {
     }
 
     private func respond(_ connection: NWConnection, path: String) {
-        let body = path.hasSuffix(".svg")
+        let body = bodies.withLock { $0[path] } ?? (path.hasSuffix(".svg")
             ? #"<svg xmlns="http://www.w3.org/2000/svg" width="120" height="80"><rect id="marker" width="120" height="80" fill="red"/><script>document.getElementById("marker").setAttribute("fill","green");</script></svg>"#
-            : #"{"mustNotBeRead":true}"#
+            : #"{"mustNotBeRead":true}"#)
         let type = path.hasSuffix(".svg") ? "image/svg+xml" : "application/json"
         let status = failures.withLock { $0.contains(path) } ? "500 Internal Server Error" : "200 OK"
         let response = "HTTP/1.1 \(status)\r\nContent-Type: \(type)\r\nContent-Length: \(body.utf8.count)\r\n"
