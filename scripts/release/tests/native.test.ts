@@ -9,11 +9,18 @@ import { validateWidgetExtension, widgetExtension } from "../widget-extension.ts
 const hasBundle = process.platform === "darwin" && Boolean(process.env.TOY_BOX_BUNDLE);
 const hasTools = hasBundle && Boolean(process.env.SPARKLE_TOOLS_DIR);
 
-test.skipIf(!hasBundle)("native bundle: arm64-only, strictly signed and no development updater", async () => {
+// Independent native commands must not consume one shared five-second test deadline.
+test.skipIf(!hasBundle)("native bundle: share extension", async () => {
+    await validateShareExtension(process.env.TOY_BOX_BUNDLE!);
+});
+
+test.skipIf(!hasBundle)("native bundle: widget extension", async () => {
+    await validateWidgetExtension(process.env.TOY_BOX_BUNDLE!);
+});
+
+test.skipIf(!hasBundle)("native bundle: resources and no development updater", async () => {
     const app = process.env.TOY_BOX_BUNDLE!;
     const framework = join(app, "Contents/Frameworks/Sparkle.framework");
-    await validateShareExtension(app);
-    await validateWidgetExtension(app);
     const info: Record<string, unknown> = JSON.parse(await text(["plutil", "-convert", "json", "-o", "-", join(app, "Contents/Info.plist")]));
     expect(info.SUFeedURL).toBeUndefined(); expect(info.SUPublicEDKey).toBeUndefined();
     expect(info.CFBundleIconFile).toBe("AppIcon"); expect(info.CFBundleIconName).toBe("AppIcon");
@@ -29,16 +36,27 @@ test.skipIf(!hasBundle)("native bundle: arm64-only, strictly signed and no devel
         })).toBe(false);
         expect(await Bun.file(join(framework, "Versions/Current", component)).exists()).toBe(false);
     }
-    for (const path of [join(app, "Contents/MacOS/ToyBoxDesktop"),
-        join(shareExtension(app), "Contents/MacOS/ToyBoxShare"), join(framework, "Sparkle"),
-        join(widgetExtension(app), "Contents/MacOS/ToyBoxWidget"),
-        join(framework, "Autoupdate"), join(framework, "Updater.app/Contents/MacOS/Updater")]) {
-        expect(await text(["xcrun", "lipo", "-archs", path])).toBe("arm64");
-    }
-    for (const path of [join(framework, "Autoupdate"), join(framework, "Updater.app"), framework, app]) {
-        await command(["codesign", "--verify", "--strict", path]);
-    }
 });
+
+for (const relative of ["Contents/MacOS/ToyBoxDesktop",
+    join(shareExtension("."), "Contents/MacOS/ToyBoxShare"),
+    "Contents/Frameworks/Sparkle.framework/Sparkle",
+    join(widgetExtension("."), "Contents/MacOS/ToyBoxWidget"),
+    "Contents/Frameworks/Sparkle.framework/Autoupdate",
+    "Contents/Frameworks/Sparkle.framework/Updater.app/Contents/MacOS/Updater"]) {
+    test.skipIf(!hasBundle)(`native bundle architecture: ${relative}`, async () => {
+        const path = join(process.env.TOY_BOX_BUNDLE!, relative);
+        expect(await text(["xcrun", "lipo", "-archs", path])).toBe("arm64");
+    });
+}
+
+for (const relative of ["Contents/Frameworks/Sparkle.framework/Autoupdate",
+    "Contents/Frameworks/Sparkle.framework/Updater.app", "Contents/Frameworks/Sparkle.framework", "."]) {
+    test.skipIf(!hasBundle)(`native bundle strict signature: ${relative}`, async () => {
+        const path = join(process.env.TOY_BOX_BUNDLE!, relative);
+        await command(["codesign", "--verify", "--strict", path]);
+    });
+}
 
 test.skipIf(!hasTools)("native appcast: ephemeral file key signs archive/feed and rejects tampering", async () => {
     await temporary("toy-box-native-appcast.", async directory => {
