@@ -387,7 +387,8 @@ final class PerformanceBenchmark {
     private func measureScrolling(in store: ChannelStore) async {
         guard let meter, let window else { return }
         guard let scroll = transcriptScrollView() else { fail("there's no transcript scroll view") }
-        guard let geometry = transcriptGeometrySource(in: scroll) else {
+        let geometry = BenchmarkScrollGeometry.isEnabled ? transcriptGeometrySource(in: scroll) : nil
+        guard !BenchmarkScrollGeometry.isEnabled || geometry != nil else {
             fail("the transcript has no benchmark geometry source")
         }
         let loaded = store.messages.count
@@ -407,13 +408,23 @@ final class PerformanceBenchmark {
             let gesture = WheelGesture(window: window, over: scroll, geometry: geometry,
                                        speed: up ? Self.scrollSpeed : -Self.scrollSpeed, distance: distance) { [weak self] in
                 guard let self else { return true }
-                return up ? self.offsetFromTop(scroll) < Self.scrollMargin : self.gapToEnd(scroll) < 1
+                return up ? self.offsetFromTop(scroll) < Self.scrollMargin
+                    : self.gapToEnd(scroll) < Self.scrollMargin
             }
             meter.reset()
             let cpuStart = Self.mainThreadCPU()
             let frames = await gesture.run()
             let cpuMilliseconds = (Self.mainThreadCPU() - cpuStart) * 1000
             let busy = meter.busy
+            guard frames.delivery.matches else {
+                fail("wheel delivery mismatch: \(frames.delivery.postedEvents) posted, "
+                     + "\(frames.delivery.deliveredEvents) delivered; "
+                     + "\(frames.delivery.postedDelta) pt posted, \(frames.delivery.deliveredDelta) pt delivered; "
+                     + "\(frames.delivery.creationFailures) event creation failures")
+            }
+            info("Wheel delivery \(up ? "up" : "down") at \(loaded) loaded",
+                 "\(frames.delivery.deliveredEvents)/\(frames.delivery.postedEvents) events, "
+                 + "\(frames.delivery.deliveredDelta)/\(frames.delivery.postedDelta) pt")
             let moved = abs(offsetFromTop(scroll) - start)
             guard moved > gesture.scrolled / 4 else {
                 fail("the transcript moved \(Int(moved)) pt for \(Int(gesture.scrolled)) pt of wheel events")
@@ -426,6 +437,8 @@ final class PerformanceBenchmark {
                            hitches, busy / max(frames.seconds, 0.001) * 100,
                            cpuMilliseconds, Double(moved), cpuMilliseconds / Double(moved) * 1000),
                   value: hitches, budget: Budget.scrollHitches, unit: " ms/s")
+            distance = gesture.scrolled
+            guard geometry != nil else { continue }
             guard frames.drift.measuredFrames > 0, frames.drift.unmeasuredFrames == 0 else {
                 fail("scroll drift measured \(frames.drift.measuredFrames) frame pairs, "
                      + "with \(frames.drift.unmeasuredFrames) unmeasurable frame pairs")
@@ -435,7 +448,6 @@ final class PerformanceBenchmark {
                   + String(format: "%.3f pt maximum, %.3f pt total absolute drift",
                            frames.drift.maximum, frames.drift.total),
                   value: frames.drift.maximum, budget: Budget.scrollDrift, unit: " pt")
-            distance = gesture.scrolled
         }
     }
 
@@ -695,6 +707,9 @@ final class PerformanceBenchmark {
         let visible = window?.occlusionState.contains(.visible) == true
         emit("Benchmark \(scenario.rawValue) on \(channelID): \(rate) Hz display, window \(visible ? "visible" : "covered")")
         info("Transcript", ProcessInfo.processInfo.environment["TOY_BOX_TRANSCRIPT"] ?? "lazy")
+        if scenario == .scroll, !BenchmarkScrollGeometry.isEnabled {
+            info("Frame drift", "disabled for the probe overhead control")
+        }
     }
 
     private func check(_ name: String, _ detail: String, value: Double, budget: Double, unit: String = " ms") {
@@ -755,8 +770,24 @@ final class PerformanceBenchmark {
 
 /// Row tops in viewport coordinates, increasing downward, including nearby rows for handoffs.
 struct BenchmarkScrollGeometry: Equatable, Sendable {
+    static let isEnabled = ProcessInfo.processInfo.arguments.contains("--benchmark")
+        && ProcessInfo.processInfo.environment["TOY_BOX_BENCHMARK_SCROLL_DRIFT"] != "0"
+
     var firstVisibleRow: String
     var rowTops: [String: CGFloat]
+}
+
+struct BenchmarkScrollDelivery: Equatable, Sendable {
+    var postedEvents = 0
+    var deliveredEvents = 0
+    var postedDelta: CGFloat = 0
+    var deliveredDelta: CGFloat = 0
+    var creationFailures = 0
+
+    var matches: Bool {
+        creationFailures == 0 && postedEvents > 0 && postedEvents == deliveredEvents
+            && postedDelta.isFinite && postedDelta == deliveredDelta
+    }
 }
 
 @MainActor
@@ -814,11 +845,12 @@ private final class WheelGesture: NSObject {
         var seconds: CFTimeInterval = 0
         var duration: CFTimeInterval = 1.0 / 60
         var drift = BenchmarkScrollDrift()
+        var delivery = BenchmarkScrollDelivery()
     }
 
     private weak var window: NSWindow?
     private weak var scroll: NSScrollView?
-    private let geometry: any BenchmarkScrollGeometrySource
+    private let geometry: (any BenchmarkScrollGeometrySource)?
     /// Points a second. Positive scrolls toward the top.
     private let speed: Double
     private let distance: Double
@@ -830,10 +862,10 @@ private final class WheelGesture: NSObject {
     private var last: CFTimeInterval?
     private var carried = 0.0
     private var finished: CheckedContinuation<Void, Never>?
-    private var deliveredScroll: CGFloat = 0
     private var sampledScroll: CGFloat = 0
+    private var endedAt: CFTimeInterval?
 
-    init(window: NSWindow, over scroll: NSScrollView, geometry: any BenchmarkScrollGeometrySource,
+    init(window: NSWindow, over scroll: NSScrollView, geometry: (any BenchmarkScrollGeometrySource)?,
          speed: Double, distance: Double,
          stop: @escaping @MainActor () -> Bool) {
         self.window = window
@@ -848,7 +880,10 @@ private final class WheelGesture: NSObject {
         guard let scroll else { return frames }
         let monitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
             MainActor.assumeIsolated {
-                if let self, event.window === self.window { self.deliveredScroll += event.scrollingDeltaY }
+                if let self, event.window === self.window {
+                    self.frames.delivery.deliveredEvents += 1
+                    self.frames.delivery.deliveredDelta += event.scrollingDeltaY
+                }
             }
             return event
         }
@@ -865,8 +900,11 @@ private final class WheelGesture: NSObject {
 
     @objc private func tick(_ link: CADisplayLink) {
         guard finished != nil else { return }
-        frames.drift.sample(geometry.benchmarkScrollGeometry(), scrollDelta: deliveredScroll - sampledScroll)
-        sampledScroll = deliveredScroll
+        if let geometry {
+            frames.drift.sample(geometry.benchmarkScrollGeometry(),
+                                scrollDelta: frames.delivery.deliveredDelta - sampledScroll)
+        }
+        sampledScroll = frames.delivery.deliveredDelta
         let now = link.timestamp
         frames.duration = link.targetTimestamp - link.timestamp
         let elapsed = last.map { now - $0 } ?? frames.duration
@@ -881,10 +919,13 @@ private final class WheelGesture: NSObject {
         }
         let begins = last == nil
         last = now
+        if let endedAt {
+            if frames.delivery.matches || now - endedAt >= 1 { finish() }
+            return
+        }
         guard scrolled < distance, !stop() else {
             post(.ended, delta: 0)
-            finished?.resume()
-            finished = nil
+            endedAt = now
             return
         }
         let step = speed * elapsed + carried
@@ -892,6 +933,11 @@ private final class WheelGesture: NSObject {
         carried = step - whole * (speed < 0 ? -1 : 1)
         post(begins ? .began : .changed, delta: Int32(whole * (speed < 0 ? -1 : 1)))
         scrolled += whole
+    }
+
+    private func finish() {
+        finished?.resume()
+        finished = nil
     }
 
     /// Posts a trackpad scroll event over the scroll view's center. Quartz's scroll event can't name
@@ -905,12 +951,20 @@ private final class WheelGesture: NSObject {
                                                                               y: scroll.bounds.midY), to: nil),
                                              modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
                                              windowNumber: window.windowNumber, context: nil, eventNumber: 0,
-                                             clickCount: 0, pressure: 0)?.cgEvent else { return }
+                                             clickCount: 0, pressure: 0)?.cgEvent else {
+            frames.delivery.creationFailures += 1
+            return
+        }
         event.type = .scrollWheel
         for field in Self.integerFields { event.setIntegerValueField(field, value: wheel.getIntegerValueField(field)) }
         for field in Self.fractionalFields { event.setDoubleValueField(field, value: wheel.getDoubleValueField(field)) }
         event.setIntegerValueField(.scrollWheelEventScrollPhase, value: Int64(phase.rawValue))
-        guard let posted = NSEvent(cgEvent: event) else { return }
+        guard let posted = NSEvent(cgEvent: event) else {
+            frames.delivery.creationFailures += 1
+            return
+        }
+        frames.delivery.postedEvents += 1
+        frames.delivery.postedDelta += posted.scrollingDeltaY
         NSApp.postEvent(posted, atStart: false)
     }
 

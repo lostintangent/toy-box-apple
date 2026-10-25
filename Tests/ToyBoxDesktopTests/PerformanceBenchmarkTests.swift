@@ -95,4 +95,75 @@ struct PerformanceBenchmarkTests {
         #expect(drift.unmeasuredFrames == 1)
         #expect(drift.measuredFrames == 0)
     }
+
+    @Test func deliveryRequiresEveryPostedEventIncludingTheZeroDeltaEnd() {
+        var delivery = BenchmarkScrollDelivery()
+        #expect(!delivery.matches)
+        delivery.postedEvents = 3
+        delivery.postedDelta = 80
+        delivery.deliveredEvents = 2
+        delivery.deliveredDelta = 80
+        #expect(!delivery.matches)
+        delivery.deliveredEvents = 3
+        #expect(delivery.matches)
+        delivery.deliveredDelta = 40
+        #expect(!delivery.matches)
+    }
+
+    @Test func coalescingOrEventCreationFailureCannotMasqueradeAsCompleteDelivery() {
+        var delivery = BenchmarkScrollDelivery(postedEvents: 4, deliveredEvents: 3,
+                                                postedDelta: -120, deliveredDelta: -120)
+        #expect(!delivery.matches)
+        delivery.deliveredEvents = 4
+        #expect(delivery.matches)
+        delivery.creationFailures = 1
+        #expect(!delivery.matches)
+    }
+
+    @Test func nonFiniteWheelTotalsFailDeliveryValidation() {
+        let delivery = BenchmarkScrollDelivery(postedEvents: 2, deliveredEvents: 2,
+                                                postedDelta: .infinity, deliveredDelta: .infinity)
+        #expect(!delivery.matches)
+    }
+
+    @Test func lazyProbeUsesNativeClippingAndCurrentHistoryNotStaleViewportRects() throws {
+        let frames: [String: TranscriptMessageFrame] = [
+            "covering": frame(top: 450),
+            "next": frame(top: 560),
+            "nearby": frame(top: 300),
+            "far": frame(top: 2_000),
+            "stale": frame(top: 480, history: -1),
+            "divider": frame(top: 475, sequence: 0),
+        ]
+        let geometry = try #require(BenchmarkScrollGeometry(
+            messageFrames: frames, viewport: .init(width: 600, height: 400),
+            nativeTop: 500, historyStart: 1))
+        #expect(geometry.firstVisibleRow == "covering")
+        #expect(geometry.rowTops == ["covering": -30, "next": 80, "nearby": -180])
+    }
+
+    @Test func lazyProbeChoosesTheFirstRowAfterATopGap() throws {
+        let geometry = try #require(BenchmarkScrollGeometry(
+            messageFrames: ["b": frame(top: 580), "a": frame(top: 540)],
+            viewport: .init(width: 600, height: 400), nativeTop: 500, historyStart: 1))
+        #expect(geometry.firstVisibleRow == "a")
+    }
+
+    @Test func lazyProbeRejectsMissingNativeOrCurrentGenerationGeometry() {
+        let frames = ["a": frame(top: 0)]
+        let viewport = TranscriptViewport(width: 600, height: 400)
+        #expect(BenchmarkScrollGeometry(messageFrames: frames, viewport: viewport,
+                                        nativeTop: nil, historyStart: 1) == nil)
+        #expect(BenchmarkScrollGeometry(messageFrames: frames, viewport: viewport,
+                                        nativeTop: 0, historyStart: nil) == nil)
+        #expect(BenchmarkScrollGeometry(messageFrames: frames, viewport: viewport,
+                                        nativeTop: 0, historyStart: 2) == nil)
+        #expect(BenchmarkScrollGeometry(messageFrames: frames, viewport: .init(),
+                                        nativeTop: 0, historyStart: 1) == nil)
+    }
+
+    private func frame(top: CGFloat, sequence: Int = 1, history: Int = 1) -> TranscriptMessageFrame {
+        .init(sequence: sequence, rect: CGRect(x: 0, y: 10_000, width: 600, height: 100),
+              historyStart: history, contentTop: top)
+    }
 }

@@ -53,6 +53,15 @@ struct ConversationTranscript: View {
     private var viewport: TranscriptViewport { geometry.viewport }
     private var frames: [String: TranscriptMessageFrame] { geometry.frames }
 
+    private var benchmarkGeometry: (@MainActor () -> BenchmarkScrollGeometry?)? {
+        guard BenchmarkScrollGeometry.isEnabled else { return nil }
+        return { [geometry, weak store, weak window] in
+            BenchmarkScrollGeometry(messageFrames: geometry.frames, viewport: geometry.viewport,
+                                    nativeTop: window?.viewportTop,
+                                    historyStart: store?.messages.first?.sequence)
+        }
+    }
+
     private var pagingFrames: [String: TranscriptMessageFrame] {
         let top = window.viewportTop ?? viewport.top
         return frames.mapValues { TranscriptCoordinates.viewportFrame($0, top: top) }
@@ -215,7 +224,8 @@ struct ConversationTranscript: View {
         ScrollView {
             conversationRows(proxy: proxy)
                 .environment(\.transcriptPointer, pointer)
-                .background(TranscriptWindowProbe(observer: window).frame(width: 0, height: 0),
+                .background(TranscriptWindowProbe(observer: window, benchmarkGeometry: benchmarkGeometry)
+                    .frame(width: 0, height: 0),
                             alignment: .topLeading)
                 .padding(.top, TranscriptCoordinates.contentTopPadding)
                 .modifier(ConversationRail())
