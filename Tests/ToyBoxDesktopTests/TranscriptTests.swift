@@ -13,6 +13,159 @@ import VisionKit
 
 private let transcriptTimingTestsEnabled = ProcessInfo.processInfo.environment["TOY_BOX_TEST_TRANSCRIPT_TIMING"] == "1"
 
+@MainActor
+@Suite("Explicit transcript table heights", .serialized)
+struct TranscriptTableHeightTests {
+    @Test func tableItemsKeepCanonicalRunEntriesAndOnlyTheFirstAvatar() {
+        let lead = ChannelAgent.lead(id: "lead")
+        let messages = (1...5).map(transcriptTestMessage)
+        let rows = transcriptRows(messages, lead: lead, members: [])
+        let items = TranscriptTableItem.project(rows)
+        let canonical = rows.flatMap { row -> [AgentRunEntry] in
+            if case .agent(_, let entries) = row.content { return entries }
+            return []
+        }
+        let flattened = items.flatMap { item -> [AgentRunEntry] in
+            if case .agent(_, let entries) = item.row.content { return entries }
+            return []
+        }
+        #expect(flattened == canonical)
+        #expect(items.flatMap(\.row.messages) == messages)
+        #expect(items.map(\.id) == messages.map(\.id))
+        #expect(items.map(\.showsAvatar) == [true, false, false, false, false])
+        #expect(items.map(\.topSpacing) == [20, 8, 8, 8, 8])
+        #expect(items.dropFirst().allSatisfy { $0.row.divider == nil })
+    }
+
+    @Test func tableHeightsAreExactWidthDependentAndCachedByContent() throws {
+        let setup = try setup()
+        var messages = (1...2).map(transcriptTestMessage)
+        messages[1].content = .text(String(repeating: "A longer paragraph that must wrap at this exact width. ", count: 25))
+        let items = TranscriptTableItem.project(transcriptRows(messages, lead: setup.lead, members: []))
+        let content = content(items, setup: setup)
+        let cache = TranscriptTableHeights()
+        let wide = cache.resolve(items: items, content: content, width: 720, environment: setup.environment)
+        let narrow = cache.resolve(items: items, content: content, width: 420, environment: setup.environment)
+        let again = cache.resolve(items: items, content: content, width: 720, environment: setup.environment)
+        #expect(wide.measured == 2 && narrow.measured == 2 && again.measured == 0)
+        #expect(wide.heights == again.heights)
+        #expect(narrow.heights[1] > wide.heights[1])
+        #expect(wide.heights[1] > wide.heights[0])
+        messages[1].content = .text("Changed.")
+        let changedItems = TranscriptTableItem.project(transcriptRows(messages, lead: setup.lead, members: []))
+        let changed = self.content(changedItems, setup: setup)
+        let updated = cache.resolve(items: changedItems, content: changed, width: 720,
+                                    environment: setup.environment)
+        #expect(updated.measured == 1)
+    }
+
+    @Test func emptyAndVisibleAccessoriesKeepTheirMeasurementSlots() throws {
+        let setup = try setup()
+        let cache = TranscriptTableHeights()
+        #expect(cache.measureAccessory(AnyView(EmptyView()), width: 600, environment: setup.environment) == 0)
+        #expect(cache.measureAccessory(AnyView(Color.clear.frame(height: 40)), width: 600,
+                                       environment: setup.environment) == 40)
+    }
+
+    @Test(.enabled(if: transcriptTimingTestsEnabled))
+    func nativeTableReceivesTheBarsInsetsWhileExtendingUnderThem() async throws {
+        let host = NSHostingView(rootView:
+            GeometryReader { geometry in
+                TranscriptTablePrototype(items: [], content: [],
+                                         header: AnyView(Color.clear.frame(height: 12)),
+                                         insets: geometry.safeAreaInsets)
+                    .ignoresSafeArea(.container, edges: .vertical)
+            }
+            .safeAreaBar(edge: .top, spacing: 0) { Color.clear.frame(height: 50) }
+            .safeAreaBar(edge: .bottom, spacing: 0) { Color.clear.frame(height: 100) }
+            .frame(width: 400, height: 600))
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 600),
+                              styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        defer { window.close() }
+        func find(_ view: NSView) -> TranscriptTableScrollView? {
+            if let scroll = view as? TranscriptTableScrollView { return scroll }
+            return view.subviews.lazy.compactMap(find).first
+        }
+        try await transcriptUntil(in: host) { find(host) != nil }
+        let scroll = try #require(find(host))
+        try await transcriptSettled(in: host) {
+            CGSize(width: scroll.contentInsets.top, height: scroll.contentInsets.bottom)
+        }
+        #expect(scroll.contentInsets.top == 50)
+        #expect(scroll.contentInsets.bottom == 100)
+        #expect(scroll.bounds.height == 600)
+    }
+
+    @Test(.enabled(if: transcriptTimingTestsEnabled))
+    func tableHeightMeasurementReportsColdWarmAndAppendCost() throws {
+        let setup = try setup()
+        for count in [100, 542] {
+            for oneRun in [false, true] {
+                let messages = oneRun ? (1...count).map(transcriptTestMessage) : transcriptFindTestMessages(1...count)
+                let items = TranscriptTableItem.project(transcriptRows(messages, lead: setup.lead, members: []))
+                let content = content(items, setup: setup)
+                let cache = TranscriptTableHeights()
+                let clock = ContinuousClock()
+                let coldStart = clock.now
+                let cold = cache.resolve(items: items, content: content, width: 720, environment: setup.environment)
+                let coldDuration = coldStart.duration(to: clock.now)
+                let warmStart = clock.now
+                let warm = cache.resolve(items: items, content: content, width: 720, environment: setup.environment)
+                let warmDuration = warmStart.duration(to: clock.now)
+                let appended = messages + [transcriptTestMessage(count + 1)]
+                let newItems = TranscriptTableItem.project(transcriptRows(appended, lead: setup.lead, members: []))
+                let newContent = self.content(newItems, setup: setup)
+                let appendStart = clock.now
+                let result = cache.resolve(items: newItems, content: newContent, width: 720,
+                                           environment: setup.environment)
+                let appendDuration = appendStart.duration(to: clock.now)
+                #expect(cold.measured == count && warm.measured == 0 && result.measured == 1)
+                let widthStart = clock.now
+                let reflow = cache.resolve(items: newItems, content: newContent, width: 420,
+                                           environment: setup.environment)
+                let widthDuration = widthStart.duration(to: clock.now)
+                #expect(reflow.measured == count + 1)
+                print("TABLE_HEIGHTS count=\(count) one_run=\(oneRun) cold_ms=\(milliseconds(coldDuration))"
+                      + " warm_ms=\(milliseconds(warmDuration)) append_ms=\(milliseconds(appendDuration))"
+                      + " width_ms=\(milliseconds(widthDuration))"
+                      + " append_measured=\(result.measured)")
+            }
+        }
+    }
+
+    private struct Setup {
+        let lead: ChannelAgent
+        let store: ChannelStore
+        let environment: EnvironmentValues
+    }
+
+    private func setup() throws -> Setup {
+        let api = try ChannelAPI(serverURL: "https://table-heights.invalid")
+        let store = ChannelStore(id: "table-heights", api: api, sendJournal: nil)
+        var environment = EnvironmentValues()
+        environment[ChannelInteraction.self] = ChannelInteraction()
+        environment[ArtifactOpener.self] = ArtifactOpener()
+        return Setup(lead: .lead(id: "lead"), store: store, environment: environment)
+    }
+
+    private func content(_ items: [TranscriptTableItem], setup: Setup) -> [TranscriptRowContent] {
+        let context = TranscriptRowContext(agents: [setup.lead], channelID: setup.store.id,
+                                           historyStart: 1, api: setup.store.api)
+        return items.map { item in
+            TranscriptRowContent(row: item.row, context: context, statusReactions: [:], highlightedSequence: nil,
+                                 catchUp: nil, store: setup.store, expandedMessageIds: [],
+                                 showsAgentAvatar: item.showsAvatar, onSetExpanded: { _, _ in })
+        }
+    }
+
+    private func milliseconds(_ duration: Duration) -> String {
+        let parts = duration.components
+        return String(format: "%.2f", Double(parts.seconds) * 1_000 + Double(parts.attoseconds) / 1e15)
+    }
+}
+
 @Suite("Transcript rendering and visibility")
 struct TranscriptTests {
     @Test func paragraphsKeepSelectableInlineMarkdownAndLineBreaks() {
@@ -158,18 +311,17 @@ struct TranscriptTests {
     /// Each selectable `Text` adds a platform view, most of what a long message costs to scroll in, so a
     /// message builds them only once the pointer reaches it, and keeps them so a selection outlasts it.
     @MainActor
-    @Test(.enabled(if: transcriptTimingTestsEnabled))
-    func messagesBuildSelectableTextOnceThePointerArrives() async throws {
-        let message = try await HoveredMessage(id: "arriving")
+    @Test(.enabled(if: transcriptTimingTestsEnabled), arguments: [false, true])
+    func messagesBuildSelectableTextOnceThePointerArrives(table: Bool) async throws {
+        let message = try await HoveredMessage(id: "arriving", table: table)
         defer { message.close() }
         let mounted = message.platformViews()
 
-        message.host.mouseEntered(with: try message.hover())
-        message.host.mouseMoved(with: try message.hover())
+        try message.movePointer()
         try await message.waitUntil { message.platformViews() > mounted }
         try await message.settled()
 
-        message.host.mouseExited(with: try message.hover())
+        try message.leavePointer()
         try await message.settled()
         #expect(message.platformViews() > mounted)
     }
@@ -177,9 +329,9 @@ struct TranscriptTests {
     /// A message that scrolls under a still pointer builds nothing while the content moves, but turns
     /// selectable once it holds still, so a drag that starts without moving the pointer still selects.
     @MainActor
-    @Test(.enabled(if: transcriptTimingTestsEnabled))
-    func messagesUnderAStillPointerTurnSelectableOnceScrollingSettles() async throws {
-        let message = try await HoveredMessage(id: "resting")
+    @Test(.enabled(if: transcriptTimingTestsEnabled), arguments: [false, true])
+    func messagesUnderAStillPointerTurnSelectableOnceScrollingSettles(table: Bool) async throws {
+        let message = try await HoveredMessage(id: "resting", table: table)
         defer { message.close() }
         let mounted = message.platformViews()
         var now: TimeInterval = 1
@@ -191,8 +343,7 @@ struct TranscriptTests {
         message.pointer.settleDelay = 0.05
 
         message.pointer.contentDidMove()
-        message.host.mouseEntered(with: try message.hover())
-        message.host.mouseMoved(with: try message.hover(x: 140))
+        try message.movePointer(x: 140)
         try await message.waitUntil { message.pointer.restingID == "resting" }
         try #require(message.pointer.restingID == "resting")
         try await message.waitUntil { clockReads >= 4 }
@@ -201,6 +352,23 @@ struct TranscriptTests {
         now += 1
         try await message.waitUntil { message.platformViews() > mounted }
         #expect(message.pointer.restingID == nil)
+    }
+
+    @MainActor
+    @Test(.enabled(if: transcriptTimingTestsEnabled), arguments: [false, true])
+    func selectableMessageTextCanBecomeFirstResponder(table: Bool) async throws {
+        let message = try await HoveredMessage(id: "selecting", table: table)
+        defer { message.close() }
+        let mounted = message.platformViews()
+        try message.movePointer()
+        try await message.waitUntil { message.platformViews() > mounted }
+        try await message.settled()
+        let text = try message.textUnderPointer()
+        let acceptsFocus = text.acceptsFirstResponder
+        #expect(acceptsFocus, "The text under the pointer must accept focus, not \(type(of: text)).")
+        if let native = message.tableView {
+            #expect(native.validateProposedFirstResponder(text, for: try message.press()))
+        }
     }
 
     @MainActor
@@ -3199,8 +3367,10 @@ private final class HoveredMessage {
     /// Its own, as each transcript has, so another test's scrolling never holds this message back.
     let pointer = TranscriptPointer()
     private let window: NSWindow
+    private let tableCoordinator: TranscriptTablePrototype.Coordinator?
+    var tableView: NSTableView? { tableCoordinator?.table }
 
-    init(id: String) async throws {
+    init(id: String, table: Bool = false) async throws {
         pointer.location = { .zero }
         let lead = ChannelAgent.lead(id: "lead")
         let store = ChannelStore(id: "selection", api: try ChannelAPI(serverURL: "https://selection.invalid"),
@@ -3210,14 +3380,36 @@ private final class HoveredMessage {
                                          + "\n\nA second paragraph."))
         let row = try #require(transcriptRows([message], lead: lead, members: []).last)
         let context = TranscriptRowContext(agents: [lead], channelID: "selection", historyStart: 1, api: store.api)
-        host = NSHostingView(rootView:
-            TranscriptRowContent(row: row, context: context, statusReactions: [:], highlightedSequence: nil,
-                                 catchUp: nil, store: store, expandedMessageIds: [], onSetExpanded: { _, _ in })
-                .padding(20)
-                .frame(width: 600, height: 300, alignment: .topLeading)
-                .coordinateSpace(name: "transcript-viewport")
-                .environment(\.transcriptPointer, pointer)
-                .environment(ChannelInteraction()))
+        if table {
+            let coordinator = TranscriptTablePrototype.Coordinator()
+            tableCoordinator = coordinator
+            let scroll = TranscriptTableScrollView(frame: NSRect(x: 0, y: 0, width: 600, height: 300))
+            scroll.automaticallyAdjustsContentInsets = false
+            coordinator.attach(scroll)
+            var environment = EnvironmentValues()
+            environment[ChannelInteraction.self] = ChannelInteraction()
+            environment[ArtifactOpener.self] = ArtifactOpener()
+            environment.transcriptPointer = pointer
+            let items = TranscriptTableItem.project([row])
+            let content = items.map {
+                TranscriptRowContent(row: $0.row, context: context, statusReactions: [:], highlightedSequence: nil,
+                                     catchUp: nil, store: store, expandedMessageIds: [],
+                                     showsAgentAvatar: $0.showsAvatar, onSetExpanded: { _, _ in })
+            }
+            coordinator.update(items: items, content: content, header: AnyView(EmptyView()),
+                               environment: environment, insets: EdgeInsets())
+            host = scroll
+        } else {
+            tableCoordinator = nil
+            host = NSHostingView(rootView:
+                TranscriptRowContent(row: row, context: context, statusReactions: [:], highlightedSequence: nil,
+                                     catchUp: nil, store: store, expandedMessageIds: [], onSetExpanded: { _, _ in })
+                    .padding(20)
+                    .frame(width: 600, height: 300, alignment: .topLeading)
+                    .coordinateSpace(name: "transcript-viewport")
+                    .environment(\.transcriptPointer, pointer)
+                    .environment(ChannelInteraction()))
+        }
         window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 600, height: 300), styleMask: [.borderless],
                            backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
@@ -3239,11 +3431,43 @@ private final class HoveredMessage {
         try await transcriptSettled(in: host, reading: platformViews)
     }
 
+    func movePointer(x: CGFloat = 120) throws {
+        let target = try trackingHost()
+        target.mouseEntered(with: try hover(x: x))
+        target.mouseMoved(with: try hover(x: x))
+    }
+
+    func leavePointer() throws {
+        try trackingHost().mouseExited(with: hover())
+    }
+
+    private func trackingHost() throws -> NSView {
+        guard let tableView else { return host }
+        let cell = try #require(tableView.view(atColumn: 0, row: 1, makeIfNecessary: false))
+        return try #require(cell.subviews.first)
+    }
+
+    func textUnderPointer() throws -> NSView {
+        let event = try hover()
+        let point = host.superview?.convert(event.locationInWindow, from: nil) ?? event.locationInWindow
+        return try #require(host.hitTest(point))
+    }
+
     /// A pointer event over the message's text. Each move needs its own point, since SwiftUI ignores
     /// a hover that doesn't move.
     func hover(x: CGFloat = 120) throws -> NSEvent {
-        try #require(NSEvent.mouseEvent(
-            with: .mouseMoved, location: CGPoint(x: x, y: 300 - 92), modifierFlags: [],
+        try pointerEvent(.mouseMoved, x: x)
+    }
+
+    func press() throws -> NSEvent {
+        try pointerEvent(.leftMouseDown, x: 120)
+    }
+
+    private func pointerEvent(_ type: NSEvent.EventType, x: CGFloat) throws -> NSEvent {
+        let target = try trackingHost()
+        let local = CGPoint(x: x, y: target.isFlipped ? 92 : target.bounds.height - 92)
+        return try #require(NSEvent.mouseEvent(
+            with: type, location: target.convert(local, to: nil), modifierFlags: [],
             timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber, context: nil,
             eventNumber: 0, clickCount: 0, pressure: 0))
     }

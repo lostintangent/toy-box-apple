@@ -101,7 +101,11 @@ struct ConversationTranscript: View {
             ContentUnavailableView("Channel Deleted", systemImage: "bubble.left",
                                    description: Text("This channel is no longer available."))
         } else if store.isLoaded {
-            transcript
+            if TranscriptTablePrototype.isEnabled {
+                tablePrototype
+            } else {
+                transcript
+            }
         } else {
             VStack(spacing: 12) {
                 ProgressView("Connecting...")
@@ -113,6 +117,31 @@ struct ConversationTranscript: View {
             .padding(24)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+    }
+
+    private var tablePrototype: some View {
+        let items = TranscriptTableItem.project(rows)
+        let context = TranscriptRowContext(agents: store.roster, channelID: store.id,
+                                           historyStart: store.messages.first?.sequence ?? 0, api: store.api)
+        let statusReactions = statusReactions
+        let content = items.map { item in
+            TranscriptRowContent(row: item.row, context: context, statusReactions: statusReactions,
+                                 highlightedSequence: highlightedSequence, catchUp: nil, store: store,
+                                 expandedMessageIds: expandedMessageIds, showsAgentAvatar: item.showsAvatar,
+                                 onSetExpanded: { id, expands in
+                                     if expands { expandedMessageIds.insert(id) }
+                                     else { expandedMessageIds.remove(id) }
+                                 })
+        }
+        return GeometryReader { geometry in
+            TranscriptTablePrototype(items: items, content: content, header: AnyView(historyHeader),
+                                     insets: geometry.safeAreaInsets)
+                .environment(\.transcriptPointer, pointer)
+                .ignoresSafeArea(.container, edges: .vertical)
+        }
+        .scrollEdgeEffectStyle(.hard, for: .top)
+        .scrollEdgeEffectStyle(.soft, for: .bottom)
+        .safeAreaBar(edge: .bottom, spacing: 0) { floatingControls }
     }
 
     private var transcript: some View {

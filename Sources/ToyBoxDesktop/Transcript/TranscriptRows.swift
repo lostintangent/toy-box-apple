@@ -32,13 +32,14 @@ struct TranscriptRowContent: View, @MainActor Equatable {
     let store: ChannelStore
     /// This row's expanded messages.
     var expandedMessageIds: Set<String> = []
+    var showsAgentAvatar = true
     var onSetExpanded: (String, Bool) -> Void = { _, _ in }
     @Environment(ChannelInteraction.self) private var interaction
 
     init(row: TranscriptRow, context: TranscriptRowContext, statusReactions: [Int: [ChannelReaction]],
          highlightedSequence: Int?, catchUp: TranscriptCatchUp?, store: ChannelStore,
          expandedMessageIds: Set<String>, findHighlights: [Int: TranscriptFindHighlight] = [:],
-         onSetExpanded: @escaping (String, Bool) -> Void) {
+         showsAgentAvatar: Bool = true, onSetExpanded: @escaping (String, Bool) -> Void) {
         let messages = row.messages
         self.row = row
         self.context = context
@@ -55,6 +56,7 @@ struct TranscriptRowContent: View, @MainActor Equatable {
             messages.contains { $0.id == id }
         }
         self.onSetExpanded = onSetExpanded
+        self.showsAgentAvatar = showsAgentAvatar
     }
 
     static func == (lhs: Self, rhs: Self) -> Bool {
@@ -62,6 +64,7 @@ struct TranscriptRowContent: View, @MainActor Equatable {
             && lhs.highlightedSequence == rhs.highlightedSequence && lhs.catchUp === rhs.catchUp
             && lhs.store === rhs.store && lhs.expandedMessageIds == rhs.expandedMessageIds
             && lhs.findHighlights == rhs.findHighlights
+            && lhs.showsAgentAvatar == rhs.showsAgentAvatar
     }
 
     var body: some View {
@@ -85,7 +88,11 @@ struct TranscriptRowContent: View, @MainActor Equatable {
             case .agent(let agentId, let entries):
                 let agent = channelAgentIdentity(context.agents, id: agentId)
                 HStack(alignment: .top, spacing: 12) {
-                    AgentAvatarView(agent: agent, size: 32)
+                    if showsAgentAvatar {
+                        AgentAvatarView(agent: agent, size: 32)
+                    } else {
+                        Color.clear.frame(width: 32, height: 0).accessibilityHidden(true)
+                    }
                     VStack(alignment: .leading, spacing: 8) {
                         ForEach(entries) { entry in
                             TranscriptAgentMessage(entry: entry, agent: agent, agents: context.agents,
@@ -267,6 +274,7 @@ struct TranscriptAgentMessage: View, @MainActor Equatable {
     var onSetExpanded: (String, Bool) -> Void
     @Environment(\.channelTextScale) private var textScale
     @Environment(\.transcriptPointer) private var pointer
+    @Environment(\.transcriptTableCoordinationOverflow) private var tableOverflow
     /// Whether a collapsible message runs past the clamp. Others never measure, so a new message
     /// lays out once instead of again when its height arrives.
     @ViewState private var overflows = false
@@ -276,7 +284,8 @@ struct TranscriptAgentMessage: View, @MainActor Equatable {
     @FocusState private var isFocused: Bool
 
     private static let clampHeight: CGFloat = 160
-    private var isClamped: Bool { entry.collapsible && !expanded && overflows }
+    private var bodyOverflows: Bool { tableOverflow ?? overflows }
+    private var isClamped: Bool { entry.collapsible && !expanded && bodyOverflows }
 
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.entry == rhs.entry && lhs.agent == rhs.agent && lhs.agents == rhs.agents
@@ -291,10 +300,7 @@ struct TranscriptAgentMessage: View, @MainActor Equatable {
             if !entry.body.isEmpty {
                 VStack(alignment: .leading, spacing: 6) {
                     if entry.collapsible {
-                        markdown
-                            .onGeometryChange(for: Bool.self, of: { $0.size.height > Self.clampHeight }) {
-                                overflows = $0
-                            }
+                        measuredMarkdown
                             .frame(height: isClamped ? Self.clampHeight : nil, alignment: .top)
                             .clipped()
                             .mask(alignment: .bottom) {
@@ -309,7 +315,7 @@ struct TranscriptAgentMessage: View, @MainActor Equatable {
                     } else {
                         markdown
                     }
-                    if entry.collapsible && overflows {
+                    if entry.collapsible && bodyOverflows {
                         Button(expanded ? "Show Less" : "Show More") { onSetExpanded(entry.id, !expanded) }
                             .buttonStyle(.borderless)
                             .font(.system(size: 12 * textScale))
@@ -387,6 +393,16 @@ struct TranscriptAgentMessage: View, @MainActor Equatable {
                            findHighlight: findHighlight)
             .environment(\.transcriptSurface, surface)
             .fixedSize(horizontal: false, vertical: true)
+    }
+
+    @ViewBuilder private var measuredMarkdown: some View {
+        if tableOverflow != nil {
+            markdown
+        } else {
+            markdown.onGeometryChange(for: Bool.self, of: { $0.size.height > Self.clampHeight }) {
+                overflows = $0
+            }
+        }
     }
 
     private var header: some View {
