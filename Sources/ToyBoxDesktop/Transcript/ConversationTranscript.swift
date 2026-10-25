@@ -83,14 +83,7 @@ struct ConversationTranscript: View {
     }
 
     var body: some View {
-        resolveOpening()
-        readingScroll.configure(rows: rows, expandedIDs: expandedMessageIds)
-        return content
-            .onChange(of: showsViewerMessage) { shown, showing in
-                // A deleted message or channel closes the viewer at once. A pending send isn't in the
-                // history yet, so only a message that leaves the history closes it.
-                if shown && !showing { viewer?.close(animated: false) }
-            }
+        NativeTranscriptProbe(store: store)
     }
 
     private var showsViewerMessage: Bool {

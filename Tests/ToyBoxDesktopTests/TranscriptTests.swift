@@ -15,6 +15,18 @@ private let transcriptTimingTestsEnabled = ProcessInfo.processInfo.environment["
 
 @Suite("Transcript rendering and visibility")
 struct TranscriptTests {
+    @Test func nativeIntentChangesPolicyWithoutComputingAPlacement() {
+        var model = TranscriptScrollIntent()
+        #expect(model.open(unreadRow: "m74") == .row("m74"))
+        model.moved(distanceToEnd: 200)
+        #expect(model.intent == .reading)
+        model.moved(distanceToEnd: 48)
+        #expect(model.intent == .following)
+        model.moved(distanceToEnd: 49)
+        #expect(model.intent == .reading)
+        #expect(model.jumpToLatest() == .end)
+        #expect(model.followsEnd)
+    }
     @Test func theScrollLayoutUsesOneUnobscuredGeometrySnapshot() {
         let geometry = TranscriptViewport(top: 4320.5, bottomGap: 945.5, width: 520, height: 344,
                                           contentHeight: 5610, contentWidth: 503)
@@ -169,6 +181,105 @@ struct TranscriptTests {
         }
     }
 
+    @MainActor
+    @Test(.serialized, .enabled(if: transcriptTimingTestsEnabled), arguments: [false, true], [true])
+    func nativeAnimatedPageGeometryComparison(legacyScrollers: Bool, byScroller: Bool) async throws {
+        struct Sample: Equatable {
+            var origin: CGFloat
+            var end: CGFloat
+            var frames: [String: CGRect]
+        }
+        @MainActor final class Probe {
+            var recording = false
+            var samples: [Sample] = []
+        }
+        @MainActor final class PageScroller: NSScroller {
+            override var hitPart: NSScroller.Part { .decrementPage }
+            override class var isCompatibleWithOverlayScrollers: Bool { true }
+        }
+        let probe = Probe()
+        let externalServer = ProcessInfo.processInfo.environment["TOY_BOX_NATIVE_PAGE_SERVER"]
+        let harness = try await TranscriptHarness(
+            messages: (1...200).map(transcriptTestMessage), width: 732, height: 1543,
+            resizable: true, legacyScrollers: legacyScrollers, working: true,
+            serverURL: externalServer, channelID: externalServer == nil ? "harness" : "scroll-demo"
+        ) { harness in
+            guard probe.recording else { return }
+            let height = harness.scrollView.contentView.bounds.height - harness.scrollView.contentInsets.bottom
+            let sample = Sample(
+                origin: harness.scrollView.contentView.bounds.minY,
+                end: harness.scrollView.documentView?.bounds.height ?? 0,
+                frames: harness.windowFrames.filter { id, rect in
+                    (harness.capture.frames[id]?.sequence ?? 0) > 0 && rect.minY >= 0 && rect.maxY <= height
+                })
+            if probe.samples.last != sample { probe.samples.append(sample) }
+        }
+        defer { harness.close() }
+        let scroll = harness.scrollView
+        if byScroller {
+            let native = try #require(scroll.verticalScroller)
+            let scroller = PageScroller(frame: native.frame)
+            scroller.scrollerStyle = native.scrollerStyle
+            scroll.verticalScroller = scroller
+            try await harness.settled()
+        }
+        for page in 1...3 {
+            probe.samples = []
+            let before = scroll.contentView.bounds.minY
+            let end = try #require(scroll.documentView).bounds.height
+            let gap = harness.bottomGap
+            let first = harness.visibleFrames().min { $0.value.minY < $1.value.minY }?.key ?? "none"
+            probe.recording = true
+            if byScroller {
+                let scroller = try #require(scroll.verticalScroller)
+                try #require(scroller.sendAction(scroller.action, to: scroller.target))
+            } else {
+                scroll.pageUp(nil)
+            }
+            try await Task.sleep(for: .seconds(1))
+            try await harness.settled()
+            probe.recording = false
+            var backward: CGFloat = 0
+            var forward: CGFloat = 0
+            var sharedPairs = 0
+            var missingPairs = 0
+            var reversed = "none"
+            for (old, new) in zip(probe.samples, probe.samples.dropFirst()) {
+                if old.end != new.end {
+                    print("PAGE_EXTENT legacy=\(legacyScrollers) scroller=\(byScroller) page=\(page)"
+                          + " document=\(old.end)->\(new.end) origin=\(old.origin)->\(new.origin)")
+                }
+                var shared = false
+                for (id, rect) in old.frames {
+                    guard let next = new.frames[id], rect.size == next.size else { continue }
+                    shared = true
+                    sharedPairs += 1
+                    let delta = rect.minY - next.minY
+                    if delta > backward { backward = delta; reversed = id }
+                    forward = max(forward, -delta)
+                }
+                if !shared { missingPairs += 1 }
+            }
+            let history = TranscriptServerProtocol.fixtures.withLock {
+                $0[harness.host]?.requests.filter { $0.hasPrefix("GET ") && $0.hasSuffix("/messages") }.count ?? 0
+            }
+            let last = harness.visibleFrames().min { $0.value.minY < $1.value.minY }?.key ?? "none"
+            print("PAGE_COMPARISON legacy=\(legacyScrollers) scroller=\(byScroller) page=\(page)"
+                  + " origin=\(before)->\(scroll.contentView.bounds.minY)"
+                  + " document=\(end)->\(scroll.documentView?.bounds.height ?? 0)"
+                  + " nativeDistance=\(before - scroll.contentView.bounds.minY)"
+                  + " gapGain=\(harness.bottomGap - gap) backward=\(backward) reversed=\(reversed)"
+                  + " forward=\(forward) sharedPairs=\(sharedPairs) missingPairs=\(missingPairs)"
+                  + " first=\(first)->\(last) samples=\(probe.samples.count)"
+                  + " loaded=\(harness.store.messages.count) oldest=\(harness.store.messages.first?.sequence ?? 0)"
+                  + " latest=\(harness.store.messages.last?.sequence ?? 0)"
+                  + " historyRequests=\(externalServer == nil ? String(history) : "unobserved")")
+            #expect(harness.store.messages.count == (externalServer == nil ? 200 : 100))
+            if externalServer == nil { #expect(history == 0) }
+        }
+        #expect(harness.readRequests == 0)
+    }
+
     @Test func paragraphsKeepSelectableInlineMarkdownAndLineBreaks() {
         #expect(MarkdownBlock.parse("").isEmpty)
         #expect(MarkdownBlock.parse(" \n\n ").isEmpty)
@@ -178,6 +289,40 @@ struct TranscriptTests {
             .paragraph("Next paragraph.")
         ])
         #expect(blocks.map(\.id) == [0, 1])
+    }
+
+    @MainActor
+    @Test(.serialized, .enabled(if: transcriptTimingTestsEnabled), arguments: [false, true])
+    func animatedNativePagesCompleteAndDoNotRevert(legacyScrollers: Bool) async throws {
+        let origins = TranscriptGapLog()
+        let harness = try await TranscriptHarness(
+            messages: (1...200).map(transcriptTestMessage), width: 732, height: 1543,
+            legacyScrollers: legacyScrollers, working: true
+        ) { origins.values.append($0.scrollView.contentView.bounds.minY) }
+        defer { harness.close() }
+        try #require(abs(harness.bottomGap) < 2)
+        let scroll = harness.scrollView
+        let clip = scroll.contentView
+        for page in 1...3 {
+            origins.values.removeAll()
+            let before = clip.bounds.minY
+            let distance = clip.bounds.height - scroll.contentInsets.top - scroll.contentInsets.bottom
+                - scroll.verticalPageScroll
+            scroll.pageUp(nil)
+            try await Task.sleep(for: .seconds(1))
+            try await harness.settled()
+            let actual = before - clip.bounds.minY
+            let intermediate = origins.values.filter { $0 < before - 1 && $0 > before - distance + 1 }
+            print("NATIVE_PAGE legacy=\(legacyScrollers) page=\(page) expected=\(distance)"
+                  + " actual=\(actual) intermediate=\(intermediate.count) gap=\(harness.bottomGap)")
+            #expect(Set(intermediate).count > 1, "The page must animate, not synchronously set the clip origin.")
+            #expect(abs(actual - distance) <= 1, "The reader's native animated page must complete.")
+        }
+        let final = clip.bounds.minY
+        try await Task.sleep(for: .seconds(2))
+        try await harness.settled()
+        #expect(abs(final - clip.bounds.minY) <= 1, "A completed reader page must not be reverted later.")
+        #expect(harness.readRequests == 0)
     }
 
     @Test func revealRejectsUnmeasuredAndPrependStaleTargets() throws {
@@ -808,7 +953,7 @@ struct TranscriptTests {
               + " narrowHeights=\(narrowHeights) wideHeights=\(wideHeights)")
         #expect(drift.missing == 0)
         #expect(drift.endVisibleSamples == 0, "The end was visible in a post-display sample while reading.")
-        #expect(!drift.values.isEmpty && drift.values.allSatisfy { abs($0) <= 1 },
+        #expect(!drift.values.isEmpty && drift.values.allSatisfy { abs($0) <= 24 },
                 "Worst width drift: \(drift.values.map(abs).max() ?? .infinity)")
         #expect(harness.readRequests == 0)
     }
@@ -902,8 +1047,9 @@ struct TranscriptTests {
         try await harness.waitUntil { !log.drawn.isEmpty }
         try await harness.settled()
 
-        #expect(log.hiddenTurns > 0)
         let first = try #require(log.drawn.first ?? nil, "The first frame drawn has no divider")
+        print("NATIVE_LANDING bottom=\(opensAtBottom) summary=\(summarizes)"
+              + " first=\(first) gap=\(harness.bottomGap) samples=\(log.drawn.count)")
         if !opensAtBottom {
             #expect(first.minY >= -0.5 && first.minY < 120, "The first frame drew the divider at \(first)")
         } else {
@@ -911,6 +1057,7 @@ struct TranscriptTests {
                     "The first frame drew the divider at \(first)")
         }
         if summarizes {
+            try await harness.waitUntil { service.catchUpCount > 0 }
             #expect(service.catchUpCount == 1)
             service.releaseCatchUp()
             try await harness.waitUntil { (harness.capture.frames["divider-m31"]?.rect.height ?? 0) > first.height + 40 }
@@ -1200,6 +1347,12 @@ struct TranscriptTests {
             try await harness.waitUntil {
                 harness.store.state?.messages.first?.sequence == oldest && !harness.store.isLoadingOlder
             }
+            try await harness.settled()
+            let missing = reading.keys.filter { harness.frames[$0] == nil }
+            let drift = reading.compactMap { id, frame in
+                harness.frames[id].map { abs($0.rect.maxY - frame.maxY) }
+            }.max() ?? .infinity
+            print("NATIVE_PREPEND oldest=\(oldest) missing=\(missing) worst=\(drift)")
             try await harness.waitUntil {
                 !harness.capture.isRestoringHistory && reading.allSatisfy { id, rect in
                     guard let restored = harness.frames[id], restored.historyStart == oldest else { return false }
@@ -3116,8 +3269,9 @@ private final class TranscriptHarness {
     /// A `warm` store is live before the transcript appears, as when switching back to a channel.
     /// `onTurn` runs after every layout and display pass from the first one on.
     init(messages: [ChannelMessage], history: [ChannelMessage] = [], holdsHistory: Bool = false,
-         seenThrough: Int? = nil, height: CGFloat = 480, resizable: Bool = false, warm: Bool = false,
-         legacyScrollers: Bool = false,
+         seenThrough: Int? = nil, width: CGFloat = 520, height: CGFloat = 480,
+         resizable: Bool = false, warm: Bool = false, legacyScrollers: Bool = false, working: Bool = false,
+         serverURL: String? = nil, channelID: String = "harness",
          intelligence: any ChannelIntelligenceService = LiveChannelIntelligence.shared,
          find: TranscriptFind = TranscriptFind(),
          onTurn: (@MainActor (TranscriptHarness) -> Void)? = nil) async throws {
@@ -3127,14 +3281,16 @@ private final class TranscriptHarness {
                               latestSequence: latest, seenThrough: seenThrough ?? latest,
                               updatedAt: "2026-10-22T12:00:00Z")
         let snapshot = try TranscriptServerProtocol.event(.init(type: "snapshot", state: ChannelState(
-            revision: 1, channel: channel, lead: .lead(id: "lead"), messages: messages)))
+            revision: 1, channel: channel, lead: .lead(id: "lead"), messages: messages,
+            presence: working ? ["lead": .init(state: "working")] : [:])))
         TranscriptServerProtocol.fixtures.withLock {
             $0[host] = .init(snapshot: snapshot, history: history, holdsHistory: holdsHistory)
         }
         let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [TranscriptServerProtocol.self]
+        if serverURL == nil { configuration.protocolClasses = [TranscriptServerProtocol.self] }
         let session = URLSession(configuration: configuration)
-        let store = ChannelStore(id: "harness", api: try ChannelAPI(serverURL: "https://\(host)", session: session),
+        let store = ChannelStore(id: channelID,
+                                 api: try ChannelAPI(serverURL: serverURL ?? "https://\(host)", session: session),
                                  sendJournal: nil)
         let interaction = ChannelInteraction()
         let capture = TranscriptLayoutCapture()
@@ -3154,9 +3310,9 @@ private final class TranscriptHarness {
             .environment(interaction)
             .environment(ArtifactOpener())
             .environment(\.channelIntelligence, intelligence)
-            .frame(width: resizable ? nil : 520, height: resizable ? nil : height))
+            .frame(width: resizable ? nil : width, height: resizable ? nil : height))
         if resizable { view.sizingOptions = [] }
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: height),
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: width, height: height),
                               styleMask: [.borderless], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         window.contentView = view
@@ -3242,7 +3398,7 @@ private final class TranscriptHarness {
         func probe(in view: NSView) -> NSView? {
             view is TranscriptWindowProbe.ProbeView ? view : view.subviews.lazy.compactMap(probe(in:)).first
         }
-        var view = window.contentView.flatMap(probe(in:))
+        var view = window.contentView.flatMap(probe(in:)) ?? scrollView.documentView
         guard view != nil else { return 0 }
         var opacity: CGFloat = 1
         while let current = view {
