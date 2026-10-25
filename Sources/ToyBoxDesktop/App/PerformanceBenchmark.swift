@@ -33,7 +33,8 @@ import QuartzCore
 ///   The wheel events go through the app's event queue, one per display frame, as a person's do.
 ///   A frame the display link skips is a dropped frame. The budget is on hitch time, the dropped
 ///   frames' milliseconds per second of scrolling. Hover runs only while the pointer is over the
-///   transcript, which the results say.
+///   transcript, which the results say. Each displayed frame also compares the first visible row's
+///   movement with wheel deltas delivered since the preceding sample, with a 1-point drift budget.
 /// - `idle`: a minute of wakeups and busy time once the channel settles. No budget.
 /// - `key`: makes the window key, which a person's window is, and measures the whole process's CPU
 ///   while it sits there, first with the channel's own working agents and then with 20 working.
@@ -53,6 +54,7 @@ final class PerformanceBenchmark {
         static let warmSwitch = 150.0
         /// Milliseconds of dropped frames per second of scrolling. Under 5 reads as smooth.
         static let scrollHitches = 5.0
+        static let scrollDrift = 1.0
         /// Percent of one core, for a key window that's only showing working agents.
         static let keyWindowCPU = 3.0
     }
@@ -385,6 +387,9 @@ final class PerformanceBenchmark {
     private func measureScrolling(in store: ChannelStore) async {
         guard let meter, let window else { return }
         guard let scroll = transcriptScrollView() else { fail("there's no transcript scroll view") }
+        guard let geometry = transcriptGeometrySource(in: scroll) else {
+            fail("the transcript has no benchmark geometry source")
+        }
         let loaded = store.messages.count
         let reach = min(Self.scrollDistance, offsetFromTop(scroll) - Self.scrollMargin)
         guard reach >= Self.scrollDistance / 2 else {
@@ -399,8 +404,8 @@ final class PerformanceBenchmark {
             try? await Task.sleep(for: .milliseconds(300))
             _ = await settled()
             let start = offsetFromTop(scroll)
-            let gesture = WheelGesture(window: window, over: scroll, speed: up ? Self.scrollSpeed : -Self.scrollSpeed,
-                                       distance: distance) { [weak self] in
+            let gesture = WheelGesture(window: window, over: scroll, geometry: geometry,
+                                       speed: up ? Self.scrollSpeed : -Self.scrollSpeed, distance: distance) { [weak self] in
                 guard let self else { return true }
                 return up ? self.offsetFromTop(scroll) < Self.scrollMargin : self.gapToEnd(scroll) < 1
             }
@@ -421,6 +426,15 @@ final class PerformanceBenchmark {
                            hitches, busy / max(frames.seconds, 0.001) * 100,
                            cpuMilliseconds, Double(moved), cpuMilliseconds / Double(moved) * 1000),
                   value: hitches, budget: Budget.scrollHitches, unit: " ms/s")
+            guard frames.drift.measuredFrames > 0, frames.drift.unmeasuredFrames == 0 else {
+                fail("scroll drift measured \(frames.drift.measuredFrames) frame pairs, "
+                     + "with \(frames.drift.unmeasuredFrames) unmeasurable frame pairs")
+            }
+            check("Row drift \(up ? "up" : "down") at \(loaded) loaded",
+                  "\(frames.drift.measuredFrames) frame pairs, \(frames.drift.exceedingFrames) over 1 pt, "
+                  + String(format: "%.3f pt maximum, %.3f pt total absolute drift",
+                           frames.drift.maximum, frames.drift.total),
+                  value: frames.drift.maximum, budget: Budget.scrollDrift, unit: " pt")
             distance = gesture.scrolled
         }
     }
@@ -610,6 +624,14 @@ final class PerformanceBenchmark {
         return found.max { ($0.documentView?.frame.height ?? 0) < ($1.documentView?.frame.height ?? 0) }
     }
 
+    private func transcriptGeometrySource(in view: NSView) -> (any BenchmarkScrollGeometrySource)? {
+        if let source = view as? any BenchmarkScrollGeometrySource { return source }
+        for child in view.subviews {
+            if let source = transcriptGeometrySource(in: child) { return source }
+        }
+        return nil
+    }
+
     /// Moves the visible top `offset` points below the start of the content.
     private func move(_ scroll: NSScrollView, toTopOffset offset: Double) {
         guard let document = scroll.documentView else { return }
@@ -672,6 +694,7 @@ final class PerformanceBenchmark {
         let rate = window?.screen?.maximumFramesPerSecond ?? 60
         let visible = window?.occlusionState.contains(.visible) == true
         emit("Benchmark \(scenario.rawValue) on \(channelID): \(rate) Hz display, window \(visible ? "visible" : "covered")")
+        info("Transcript", ProcessInfo.processInfo.environment["TOY_BOX_TRANSCRIPT"] ?? "lazy")
     }
 
     private func check(_ name: String, _ detail: String, value: Double, budget: Double, unit: String = " ms") {
@@ -730,6 +753,54 @@ final class PerformanceBenchmark {
     }
 }
 
+/// Row tops in viewport coordinates, increasing downward, including nearby rows for handoffs.
+struct BenchmarkScrollGeometry: Equatable, Sendable {
+    var firstVisibleRow: String
+    var rowTops: [String: CGFloat]
+}
+
+@MainActor
+protocol BenchmarkScrollGeometrySource: AnyObject {
+    func benchmarkScrollGeometry() -> BenchmarkScrollGeometry?
+}
+
+struct BenchmarkScrollDrift: Equatable, Sendable {
+    private var previous: BenchmarkScrollGeometry?
+    private var hasSampled = false
+    private(set) var measuredFrames = 0
+    private(set) var unmeasuredFrames = 0
+    private(set) var exceedingFrames = 0
+    private(set) var maximum = 0.0
+    private(set) var total = 0.0
+
+    /// A positive wheel delta moves a row downward. Input still queued for delivery is not included.
+    mutating func sample(_ current: BenchmarkScrollGeometry?, scrollDelta: CGFloat) {
+        defer {
+            previous = current
+            hasSampled = true
+        }
+        guard hasSampled else { return }
+        guard let previous, let current, scrollDelta.isFinite,
+              previous.rowTops[previous.firstVisibleRow]?.isFinite == true,
+              current.rowTops[current.firstVisibleRow]?.isFinite == true else {
+            unmeasuredFrames += 1
+            return
+        }
+        let id = current.rowTops[previous.firstVisibleRow] != nil
+            ? previous.firstVisibleRow : current.firstVisibleRow
+        guard let before = previous.rowTops[id], let after = current.rowTops[id],
+              before.isFinite, after.isFinite else {
+            unmeasuredFrames += 1
+            return
+        }
+        let drift = Double(abs(after - before - scrollDelta))
+        measuredFrames += 1
+        if drift > PerformanceBenchmark.Budget.scrollDrift { exceedingFrames += 1 }
+        maximum = max(maximum, drift)
+        total += drift
+    }
+}
+
 /// One steady trackpad scroll over `scroll`, a step each display frame through the app's event
 /// queue, the way a person's gesture arrives. Each step covers the time since the last frame, so a
 /// late frame scrolls further, as the coalesced events of a held-up gesture do.
@@ -742,10 +813,12 @@ private final class WheelGesture: NSObject {
         var longest: CFTimeInterval = 0
         var seconds: CFTimeInterval = 0
         var duration: CFTimeInterval = 1.0 / 60
+        var drift = BenchmarkScrollDrift()
     }
 
     private weak var window: NSWindow?
     private weak var scroll: NSScrollView?
+    private let geometry: any BenchmarkScrollGeometrySource
     /// Points a second. Positive scrolls toward the top.
     private let speed: Double
     private let distance: Double
@@ -757,11 +830,15 @@ private final class WheelGesture: NSObject {
     private var last: CFTimeInterval?
     private var carried = 0.0
     private var finished: CheckedContinuation<Void, Never>?
+    private var deliveredScroll: CGFloat = 0
+    private var sampledScroll: CGFloat = 0
 
-    init(window: NSWindow, over scroll: NSScrollView, speed: Double, distance: Double,
+    init(window: NSWindow, over scroll: NSScrollView, geometry: any BenchmarkScrollGeometrySource,
+         speed: Double, distance: Double,
          stop: @escaping @MainActor () -> Bool) {
         self.window = window
         self.scroll = scroll
+        self.geometry = geometry
         self.speed = speed
         self.distance = distance
         self.stop = stop
@@ -769,6 +846,13 @@ private final class WheelGesture: NSObject {
 
     func run() async -> Frames {
         guard let scroll else { return frames }
+        let monitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
+            MainActor.assumeIsolated {
+                if let self, event.window === self.window { self.deliveredScroll += event.scrollingDeltaY }
+            }
+            return event
+        }
+        defer { if let monitor { NSEvent.removeMonitor(monitor) } }
         let link = scroll.displayLink(target: self, selector: #selector(tick(_:)))
         let rate = Float(scroll.window?.screen?.maximumFramesPerSecond ?? 60)
         link.preferredFrameRateRange = CAFrameRateRange(minimum: rate, maximum: rate, preferred: rate)
@@ -781,6 +865,8 @@ private final class WheelGesture: NSObject {
 
     @objc private func tick(_ link: CADisplayLink) {
         guard finished != nil else { return }
+        frames.drift.sample(geometry.benchmarkScrollGeometry(), scrollDelta: deliveredScroll - sampledScroll)
+        sampledScroll = deliveredScroll
         let now = link.timestamp
         frames.duration = link.targetTimestamp - link.timestamp
         let elapsed = last.map { now - $0 } ?? frames.duration
