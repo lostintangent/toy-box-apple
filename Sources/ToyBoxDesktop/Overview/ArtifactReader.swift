@@ -30,6 +30,7 @@ final class ArtifactOpener {
     @ObservationIgnored private var thumbnailTask: Task<Void, Never>?
     @ObservationIgnored private var preparedFiles: [String: URL] = [:]
     @ObservationIgnored private var thumbnailToken = UUID()
+    @ObservationIgnored private var thumbnailFailures: Set<String> = []
     @ObservationIgnored private var token = UUID()
     @ObservationIgnored private weak var interaction: ChannelInteraction?
     @ObservationIgnored private weak var imageViewer: ImageViewer?
@@ -123,6 +124,7 @@ final class ArtifactOpener {
         animates = animated
         loadTask?.cancel()
         thumbnailTask?.cancel()
+        thumbnailTask = nil
         thumbnailToken = UUID()
         token = UUID()
         webView?.stopLoading()
@@ -135,6 +137,7 @@ final class ArtifactOpener {
         images = [:]
         thumbnails = [:]
         preparedFiles = [:]
+        thumbnailFailures = []
         nativeImageView?.stop()
         nativeImageView = nil
         scrollOffsets = [:]
@@ -143,19 +146,29 @@ final class ArtifactOpener {
         previewFile = nil
         isLoading = false
         interaction?.isArtifactViewerPresented = false
+        let restoreToken = token
         if animated, let window = invokingWindow, let responder = invokingResponder {
             Task { @MainActor [weak self, weak window, weak responder] in
                 do { try await Task.sleep(for: .milliseconds(220)) }
                 catch is CancellationError { return }
                 catch { self?.actionError = error.localizedDescription; return }
-                guard self?.artifact == nil, let window, let responder else { return }
+                guard self?.artifact == nil, self?.token == restoreToken, let window, let responder else { return }
                 if let view = responder as? NSView, view.window !== window { return }
                 window.makeFirstResponder(responder)
             }
         }
     }
 
-    func reload() { load(reloading: true) }
+    func reload() {
+        thumbnailTask?.cancel()
+        thumbnailTask = nil
+        thumbnailToken = UUID()
+        if let artifact {
+            thumbnails[artifact.id] = nil
+            thumbnailFailures.remove(artifact.id)
+        }
+        load(reloading: true)
+    }
     func thumbnail(for artifact: ChannelArtifact) -> NSImage? { thumbnails[artifact.id] }
 
     var zoomActions: ImageZoomActions? {
@@ -224,6 +237,7 @@ final class ArtifactOpener {
                 try Task.checkCancellation()
                 guard let self, self.token == token else { return }
                 cached[artifact.id] = loaded
+                preparedFiles[artifact.id] = loaded.file
                 content = loaded
                 if let bitmap = loaded.bitmap {
                     let decoded = NSImage(cgImage: bitmap, size: loaded.imageSize ?? .zero)
@@ -241,43 +255,50 @@ final class ArtifactOpener {
             }
         }
 
-        private func prepareThumbnails() {
-            thumbnailTask?.cancel()
-            thumbnailToken = UUID()
-            guard let pages, let api else { return }
-            let start = max(0, min((pages.index ?? 0) - 4, pages.artifacts.count - 9))
-            let candidates = pages.artifacts.dropFirst(start).prefix(9).filter {
-                let kind = ArtifactContentKind($0)
-                return (kind == .image || kind == .svg) && thumbnails[$0.id] == nil
-                    && ($0.id != artifact?.id || content != nil)
-            }
-            let token = thumbnailToken
-            thumbnailTask = Task { [weak self] in
-                for candidate in candidates {
-                    do {
-                        guard let self, token == thumbnailToken else { return }
-                        let file: URL
-                        if let prepared = cached[candidate.id]?.file ?? preparedFiles[candidate.id] { file = prepared }
-                        else {
-                            guard let resource = candidate.url.flatMap(api.resourceURL) else {
-                                throw ChannelAPIError.invalidMessage("The artifact thumbnail has no usable resource URL.")
-                            }
-                            file = try await ArtifactDownload.file(for: candidate, from: resource)
+    }
+
+    private func prepareThumbnails() {
+        guard thumbnailTask == nil else { return }
+        guard let pages, let api else { return }
+        let start = max(0, min((pages.index ?? 0) - 4, pages.artifacts.count - 9))
+        let candidates = pages.artifacts.dropFirst(start).prefix(9).filter {
+            let kind = ArtifactContentKind($0)
+            return (kind == .image || kind == .svg) && thumbnails[$0.id] == nil
+                && !thumbnailFailures.contains($0.id)
+                && ($0.id != artifact?.id || content != nil)
+        }
+        guard !candidates.isEmpty else { return }
+        thumbnailToken = UUID()
+        let token = thumbnailToken
+        thumbnailTask = Task { [weak self] in
+            for candidate in candidates {
+                do {
+                    guard let self, token == thumbnailToken else { return }
+                    let file: URL
+                    if let prepared = cached[candidate.id]?.file ?? preparedFiles[candidate.id] { file = prepared }
+                    else {
+                        guard let resource = candidate.url.flatMap(api.resourceURL) else {
+                            throw ChannelAPIError.invalidMessage("The artifact thumbnail has no usable resource URL.")
                         }
-                        let bitmap = try await ArtifactContent.thumbnail(candidate, file: file)
-                        try Task.checkCancellation()
-                        guard token == thumbnailToken else { return }
-                        preparedFiles[candidate.id] = file
-                        thumbnails[candidate.id] = NSImage(cgImage: bitmap, size: .zero)
-                    } catch is CancellationError {
-                        return
-                    } catch {
-                        guard !Task.isCancelled else { return }
-                        Logger(subsystem: "dev.toybox.desktop", category: "Artifacts")
-                            .error("Artifact thumbnail failed: \(error.localizedDescription, privacy: .public)")
+                        file = try await ArtifactDownload.file(for: candidate, from: resource)
                     }
+                    let bitmap = try await ArtifactContent.thumbnail(candidate, file: file)
+                    try Task.checkCancellation()
+                    guard token == thumbnailToken else { return }
+                    preparedFiles[candidate.id] = file
+                    thumbnails[candidate.id] = NSImage(cgImage: bitmap, size: .zero)
+                } catch is CancellationError {
+                    return
+                } catch {
+                    guard !Task.isCancelled else { return }
+                    self?.thumbnailFailures.insert(candidate.id)
+                    Logger(subsystem: "dev.toybox.desktop", category: "Artifacts")
+                        .error("Artifact thumbnail failed: \(error.localizedDescription, privacy: .public)")
                 }
             }
+            guard let self, token == thumbnailToken else { return }
+            thumbnailTask = nil
+            prepareThumbnails()
         }
     }
 }

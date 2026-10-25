@@ -9,11 +9,8 @@ enum ArtifactWebPolicy {
         "allow-scripts", "allow-top-navigation-by-user-activation",
     ]
 
-    static func document(_ content: String, directory: URL, kind: ArtifactContentKind) -> String {
-        let svgStyle = kind == .svg
-            ? "<style>html,body{width:100%;height:100%;margin:0;background:transparent;overflow:hidden}body{display:grid;place-items:center}svg{display:block;width:auto;height:auto;max-width:100%;max-height:100%}</style>"
-            : ""
-        let base = "<base data-toybox-file-base href=\"\(attribute(directory.absoluteString))\">" + svgStyle
+    static func document(_ content: String, directory: URL) -> String {
+        let base = "<base data-toybox-file-base href=\"\(attribute(directory.absoluteString))\">"
         let prepared: String
         if let head = content.range(of: #"<head(?:\s[^>]*)?>"#, options: [.regularExpression, .caseInsensitive]) {
             prepared = String(content[..<head.upperBound]) + base + content[head.upperBound...]
@@ -22,7 +19,7 @@ enum ArtifactWebPolicy {
         } else {
             prepared = "<head>\(base)</head>" + content
         }
-        let permissions = kind == .html ? htmlPermissions.joined(separator: " ") : ""
+        let permissions = htmlPermissions.joined(separator: " ")
         return """
         <!doctype html><html><head><meta name="referrer" content="no-referrer">
         <style>html,body,iframe{width:100%;height:100%;margin:0;border:0}iframe{display:block}</style>
@@ -83,20 +80,18 @@ final class ArtifactWebContent: NSObject, WKNavigationDelegate, WKUIDelegate {
     private(set) var isLoading = false
     private(set) var error: String?
     @ObservationIgnored private let openURL: (URL) -> Bool
-    @ObservationIgnored private let kind: ArtifactContentKind
     @ObservationIgnored private var directory: URL?
     @ObservationIgnored private var resource: URL?
     @ObservationIgnored private var installedRules: String?
     @ObservationIgnored private var generation = UUID()
 
-    init(kind: ArtifactContentKind, openURL: @escaping (URL) -> Bool = { NSWorkspace.shared.open($0) }) {
+    init(openURL: @escaping (URL) -> Bool = { NSWorkspace.shared.open($0) }) {
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .nonPersistent()
-        configuration.defaultWebpagePreferences.allowsContentJavaScript = kind == .html
+        configuration.defaultWebpagePreferences.allowsContentJavaScript = true
         configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
         webView = WKWebView(frame: .zero, configuration: configuration)
         self.openURL = openURL
-        self.kind = kind
         super.init()
         webView.navigationDelegate = self
         webView.uiDelegate = self
@@ -121,7 +116,7 @@ final class ArtifactWebContent: NSObject, WKNavigationDelegate, WKUIDelegate {
                 webView.configuration.userContentController.add(compiled)
                 installedRules = digest
             }
-            webView.loadHTMLString(ArtifactWebPolicy.document(content, directory: directory, kind: kind), baseURL: nil)
+            webView.loadHTMLString(ArtifactWebPolicy.document(content, directory: directory), baseURL: nil)
         } catch is CancellationError {
             if generation == token { isLoading = false }
         } catch {
@@ -164,7 +159,7 @@ final class ArtifactWebContent: NSObject, WKNavigationDelegate, WKUIDelegate {
             return
         }
         if navigationAction.navigationType == .linkActivated, ["http", "https"].contains(scheme) {
-            if kind == .html, let fragment = url.fragment, isSameDocument(url) {
+            if let fragment = url.fragment, isSameDocument(url) {
                 decisionHandler(.cancel)
                 Task { @MainActor [weak self] in
                     do {

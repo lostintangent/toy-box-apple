@@ -102,7 +102,7 @@ struct ArtifactViewerTests {
         defer { opener.close(animated: false) }
         try await wait { !opener.isLoading }
         let loaded = try #require(opener.content?.file)
-        fixture.failures.withLock { $0.insert("/api/serve/test/plan.md") }
+        _ = fixture.failures.withLock { $0.insert("/api/serve/test/plan.md") }
         opener.reload()
         try await wait { !opener.isLoading }
         #expect(opener.content?.file == loaded)
@@ -116,7 +116,7 @@ struct ArtifactViewerTests {
         try await fixture.start()
         defer { fixture.stop() }
         let slowPath = "/api/serve/test/slow.md"
-        fixture.heldPaths.withLock { $0.insert(slowPath) }
+        _ = fixture.heldPaths.withLock { $0.insert(slowPath) }
         let slow = ChannelArtifact(file: .init(kind: "machine", path: "slow.md"), title: "Slow", url: slowPath)
         let next = ChannelArtifact(file: .init(kind: "machine", path: "next.md"), title: "Next",
                                    url: "/api/serve/test/next.md")
@@ -140,7 +140,7 @@ struct ArtifactViewerTests {
         let fixture = try ArtifactHTTPFixture()
         try await fixture.start()
         defer { fixture.stop() }
-        let web = ArtifactWebContent(kind: .html, openURL: { _ in
+        let web = ArtifactWebContent(openURL: { _ in
             Issue.record("The fixture must not open a browser.")
             return false
         })
@@ -195,7 +195,7 @@ struct ArtifactViewerTests {
     @Test func externalLinksOpenTheBrowserInsteadOfReplacingTheEmbeddedDocument() async throws {
         let destination = try #require(URL(string: "https://artifact-viewer-test.invalid/review"))
         var opened: [URL] = []
-        let web = ArtifactWebContent(kind: .html, openURL: { opened.append($0); return true })
+        let web = ArtifactWebContent(openURL: { opened.append($0); return true })
         defer { web.stop() }
         let server = try #require(URL(string: "http://127.0.0.1:1"))
         await web.load("""
@@ -210,7 +210,7 @@ struct ArtifactViewerTests {
 
     @Test func sameDocumentAnchorsScrollInsideTheOpaqueFrameWithoutOpeningTheBrowser() async throws {
         var opened: [URL] = []
-        let web = ArtifactWebContent(kind: .html, openURL: { opened.append($0); return true })
+        let web = ArtifactWebContent(openURL: { opened.append($0); return true })
         defer { web.stop() }
         web.webView.frame = NSRect(x: 0, y: 0, width: 640, height: 400)
         let probe = ArtifactWebProbe()
@@ -255,7 +255,7 @@ struct ArtifactViewerTests {
         defer { fixture.stop() }
         let artifact = ChannelArtifact(file: .init(kind: "machine", path: "drawing.svg"), title: "Drawing",
                                        url: "/api/serve/test/drawing.svg")
-        let loaded = try await ArtifactContent.load(artifact, api: ChannelAPI(baseURL: fixture.url))
+        let loaded = try await ArtifactContent.load(artifact, api: ChannelAPI(baseURL: fixture.url("/")))
         let bitmap = try #require(loaded.bitmap)
         #expect(loaded.imageSize == CGSize(width: 120, height: 80))
         let view = ArtifactImageScrollView()
@@ -274,8 +274,10 @@ struct ArtifactViewerTests {
         func isRed(_ x: CGFloat, _ y: CGFloat) throws -> Bool {
             let color = try #require(representation.colorAt(x: Int((imageView.bounds.midX + x) * scale),
                                                            y: Int((imageView.bounds.midY + y) * scale))?
-                                      .usingColorSpace(.deviceRGB))
-            return color.alphaComponent > 0.9 && color.redComponent > 0.9 && color.greenComponent < 0.1
+                                      .usingColorSpace(.sRGB))
+            return color.alphaComponent > 0.9 && color.redComponent > 0.8
+                && color.redComponent > color.greenComponent * 3
+                && color.redComponent > color.blueComponent * 3
         }
         #expect(try isRed(0, 0))
         #expect(try isRed(59, 0))
@@ -294,7 +296,7 @@ struct ArtifactViewerTests {
         let drawing = ChannelArtifact(file: .init(kind: "machine", path: "drawing.svg"), title: "Drawing",
                                       url: "/api/serve/test/drawing.svg")
         let opener = ArtifactOpener()
-        opener.configure(api: ChannelAPI(baseURL: fixture.url), channelID: "test", artifacts: [plan, drawing],
+        opener.configure(api: try ChannelAPI(baseURL: fixture.url("/")), channelID: "test", artifacts: [plan, drawing],
                          interaction: ChannelInteraction(), imageViewer: ImageViewer())
         defer { opener.close(animated: false) }
         opener.open(plan)
@@ -306,8 +308,46 @@ struct ArtifactViewerTests {
         #expect(fixture.requests.withLock { $0.filter { $0.path.hasSuffix("drawing.svg") }.count } == 1)
     }
 
+    @Test func closingRestoresTheInvokingWindowsResponderWithoutTakingAnotherWindowsFocus() async throws {
+        _ = NSApplication.shared
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 640, height: 400),
+                              styleMask: [], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        let control = ArtifactFocusTestView(frame: window.contentView!.bounds)
+        window.contentView = control
+        #expect(window.makeFirstResponder(control))
+        let opener = ArtifactOpener()
+        opener.window = window
+        opener.open(artifact("plan.md"))
+        #expect(window.makeFirstResponder(nil))
+        opener.close()
+        try await wait { window.firstResponder === control }
+        #expect(!window.isKeyWindow)
+    }
+
+    @Test func aWebViewOwningFocusKeepsArrowKeysForItsOwnControls() throws {
+        _ = NSApplication.shared
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 640, height: 400),
+                              styleMask: [], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        let web = ArtifactWebContent()
+        window.contentView = web.webView
+        defer { window.contentView = nil; window.close() }
+        #expect(window.makeFirstResponder(web.webView))
+        let opener = ArtifactOpener()
+        opener.window = window
+        opener.webView = web.webView
+        #expect(!opener.canPageUsingKeys)
+    }
+
     private func artifact(_ path: String, shared: String? = nil) -> ChannelArtifact {
         .init(file: .init(kind: "machine", path: path), title: path, sharedAt: shared)
+    }
+
+    @MainActor
+    private final class ArtifactFocusTestView: NSView {
+        override var acceptsFirstResponder: Bool { true }
     }
 
     private func wait(until condition: () -> Bool) async throws {

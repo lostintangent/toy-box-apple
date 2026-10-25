@@ -220,7 +220,7 @@ private struct ArtifactWebPage: View {
     init(content: ArtifactContent, opener: ArtifactOpener) {
         self.content = content
         self.opener = opener
-        _renderer = ViewState(initialValue: ArtifactWebContent(kind: content.kind))
+        _renderer = ViewState(initialValue: ArtifactWebContent())
     }
 
     var body: some View {
@@ -365,9 +365,17 @@ final class ArtifactImageScrollView: NSScrollView {
     func zoom(to value: CGFloat) {
         setMagnification(min(maxMagnification, max(minMagnification, value)),
                          centeredAt: CGPoint(x: documentVisibleRect.midX, y: documentVisibleRect.midY))
+        onZoomChange?()
+        rerasterizeIfNeeded()
     }
 
     func stop() { rasterTask?.cancel(); rasterTask = nil }
+
+    override func magnify(with event: NSEvent) {
+        super.magnify(with: event)
+        onZoomChange?()
+        rerasterizeIfNeeded()
+    }
 
     private func rerasterizeIfNeeded() {
         guard isSVG, let file, let size = imageView.image?.size else { return }
