@@ -15,6 +15,52 @@ private let transcriptTimingTestsEnabled = ProcessInfo.processInfo.environment["
 
 @Suite("Transcript rendering and visibility")
 struct TranscriptTests {
+    @MainActor @Test
+    func modelReaderKeepsItsPointOffsetAcrossWidthChanges() throws {
+        let adapter = TranscriptLazyScrollAdapter()
+        adapter.configure(rows: transcriptRows((1...3).map(transcriptTestMessage),
+                                               lead: .lead(id: "lead"), members: []),
+                          expandedMessageIds: [])
+        func sample(width: CGFloat, origin: CGFloat) -> TranscriptNativeLayout {
+            .init(viewport: .init(width: width, height: 400, topInset: 0, bottomInset: 100),
+                  origin: origin, documentEnd: 1_000)
+        }
+        func frame(_ sequence: Int, top: CGFloat) -> TranscriptMessageFrame {
+            .init(sequence: sequence, rect: CGRect(x: 0, y: 0, width: 300, height: 150),
+                  historyStart: 1, contentTop: top - TranscriptCoordinates.contentTopPadding)
+        }
+        let before = ["m1": frame(1, top: 0), "m2": frame(2, top: 200), "m3": frame(3, top: 400)]
+        adapter.readerScrolled(frames: before, native: sample(width: 520, origin: 100), historyStart: 1)
+        var narrowed = before
+        narrowed["m2"] = frame(2, top: 260)
+        narrowed["m3"] = frame(3, top: 480)
+        #expect(adapter.framesChanged(frames: narrowed, native: sample(width: 360, origin: 100),
+                                      historyStart: 1, holdsReading: true)?.origin == 160)
+        #expect(adapter.framesChanged(frames: before, native: sample(width: 520, origin: 160),
+                                      historyStart: 1, holdsReading: true)?.origin == 100)
+    }
+
+    @MainActor @Test
+    func modelReaderWaitsForMeasurementBeforeReplacingItsIntent() throws {
+        let adapter = TranscriptLazyScrollAdapter()
+        adapter.configure(rows: transcriptRows((1...3).map(transcriptTestMessage),
+                                               lead: .lead(id: "lead"), members: []),
+                          expandedMessageIds: [])
+        let native = TranscriptNativeLayout(
+            viewport: .init(width: 520, height: 400, topInset: 0, bottomInset: 100),
+            origin: 100, documentEnd: 1_000)
+        adapter.readerScrolled(frames: [:], native: native, historyStart: 1)
+        #expect(adapter.framesChanged(frames: [:], native: native, historyStart: 1,
+                                      holdsReading: true) == nil)
+        let frames: [String: TranscriptMessageFrame] = [
+            "m2": .init(sequence: 2, rect: CGRect(x: 0, y: 0, width: 300, height: 150),
+                        historyStart: 1, contentTop: 180)
+        ]
+        #expect(adapter.framesChanged(frames: frames, native: native, historyStart: 1,
+                                      holdsReading: true) == nil)
+        #expect(adapter.intent == .reading(.init(row: "m2", order: 9, offset: 100)))
+    }
+
     @Test func paragraphsKeepSelectableInlineMarkdownAndLineBreaks() {
         #expect(MarkdownBlock.parse("").isEmpty)
         #expect(MarkdownBlock.parse(" \n\n ").isEmpty)

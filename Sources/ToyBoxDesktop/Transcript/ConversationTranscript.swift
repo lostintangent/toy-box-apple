@@ -14,6 +14,7 @@ struct ConversationTranscript: View {
     @Environment(\.channelIntelligence) private var intelligence
     @ViewState private var window = TranscriptWindowObserver()
     @ViewState private var geometry = TranscriptScrollGeometry()
+    @ViewState private var scrollModel = TranscriptLazyScrollAdapter()
     /// The newest message a reader can see, published only when it changes rather than on every frame.
     @ViewState private var visibleSequence: Int?
     @ViewState private var hasLanded = false
@@ -83,6 +84,7 @@ struct ConversationTranscript: View {
 
     var body: some View {
         resolveOpening()
+        scrollModel.configure(rows: rows, expandedMessageIds: expandedMessageIds)
         return content
             .onChange(of: showsViewerMessage) { shown, showing in
                 // A deleted message or channel closes the viewer at once. A pending send isn't in the
@@ -180,6 +182,14 @@ struct ConversationTranscript: View {
 
     private func observedScroll(proxy: ScrollViewProxy) -> some View {
         scrollViewport(proxy: proxy)
+            .onAppear {
+                window.readerScrolled = {
+                    guard hasLanded, let native = window.nativeLayout else { return }
+                    scrollModel.readerScrolled(frames: frames, native: native,
+                                               historyStart: store.messages.first?.sequence ?? 0)
+                }
+            }
+            .onDisappear { window.readerScrolled = nil }
             .onChange(of: followsLatest, initial: true) { window.pinsToBottom = followsLatest }
             .onChange(of: interaction.jumpToLatestRequest) {
                 find.close()
@@ -277,7 +287,19 @@ struct ConversationTranscript: View {
         }
         .onPreferenceChange(TranscriptMessageFrames.self) { new in
             layoutTurns.moved = true
-            holdReadingPlace(in: new)
+            let holds = hasLanded && pagingAnchor == nil && pendingJump == nil && !isRevealing
+                && (!isAtBottom || catchUp?.holdsLanding == true)
+            if let native = window.nativeLayout,
+               let placement = scrollModel.framesChanged(
+                frames: new, native: native,
+                historyStart: store.messages.first?.sequence ?? 0, holdsReading: holds) {
+                if let id = placement.needsMeasurement {
+                    scrollPosition = scrollModel.materializationRow(for: id)
+                } else if let origin = placement.origin {
+                    scrollPosition = nil
+                    window.restoreReadingBottom(to: origin)
+                }
+            }
             geometry.frames = new
             publishVisibleSequence()
             followReaderWhilePaging()
@@ -322,20 +344,19 @@ struct ConversationTranscript: View {
                                      expandedMessageIds: expandedMessageIds,
                                      findHighlights: findHighlights,
                                      onSetExpanded: { id, expands in
-                                         // The message changes height below its own top, even when
-                                         // that top is above the viewport.
-                                         if let frame = frames[id] {
-                                             geometry.readingAnchor = .init(id: id, contentTop: frame.contentTop)
+                                         guard let native = window.nativeLayout,
+                                               scrollModel.captureExpansion(
+                                                id, expanded: expands, frames: frames, native: native,
+                                                historyStart: store.messages.first?.sequence ?? 0) else {
+                                             revealError = "Couldn't locate this message. Try again."
+                                             return
                                          }
+                                         isAtBottom = false
                                          if expands {
                                              expandedMessageIds.insert(id)
                                              return
                                          }
                                          expandedMessageIds.remove(id)
-                                         Task { @MainActor in
-                                             await Task.yield()
-                                             jump(to: id, anchor: .top, using: proxy)
-                                         }
                                      })
                     .equatable()
                     .padding(.top, stacked.contains(row.id) ? 4 : 20)
@@ -731,6 +752,7 @@ struct ConversationTranscript: View {
     /// Programmatic scrolls never update the scroll position binding, so an anchor left by an earlier
     /// user scroll would pull the viewport back toward it whenever content changes size.
     private func scrollToLatest(using proxy: ScrollViewProxy, animation: Animation? = nil) {
+        scrollModel.reset()
         scrollPosition = nil
         pendingJump = nil
         withAnimation(animation) { proxy.scrollTo("transcript-end", anchor: .bottom) }
@@ -741,6 +763,7 @@ struct ConversationTranscript: View {
     /// lands on the bottom anyway when the target is already on the last screen. A jump that never
     /// moves the viewport stops guarding once it has had time to apply.
     private func jump(to id: String, anchor: UnitPoint, using proxy: ScrollViewProxy) {
+        scrollModel.reset()
         let jump = TranscriptJump(id: id, anchor: anchor)
         pendingJump = jump
         scrollPosition = nil
@@ -961,31 +984,6 @@ struct ConversationTranscript: View {
         if current != anchor { pagingAnchor = current }
     }
 
-    /// LazyVStack estimates the heights of rows it hasn't built and corrects them as it builds rows
-    /// above the viewport, without moving the offset, so scrolling up moved the reader's rows by
-    /// hundreds of points at a time. In the same pass, the viewport now scrolls by however far the
-    /// first row starting in it moved through the content, so only scrolling moves what's on screen,
-    /// while rows starting in the viewport still grow downward. Each correction costs a second layout
-    /// pass, so a frame or two, but only while rows above change height.
-    private func holdReadingPlace(in frames: [String: TranscriptMessageFrame]) {
-        // Anything else that moves the scroll position owns it outright, so the hold stands down while
-        // following the bottom, landing, paging, jumping or revealing. New code that scrolls the
-        // transcript needs to switch it off here too.
-        let holds = hasLanded && pagingAnchor == nil && pendingJump == nil && !isRevealing
-            && (!isAtBottom || catchUp?.holdsLanding == true)
-        var shift: CGFloat = 0
-        if holds, let anchor = geometry.readingAnchor, let frame = frames[anchor.id] {
-            shift = frame.contentTop - anchor.contentTop
-        } else if holds, geometry.readingAnchor != nil,
-                  let common = viewport.readingAnchor(in: frames.filter { geometry.frames[$0.key] != nil }),
-                  let previous = geometry.frames[common.id] {
-            // The pass that moved the anchor out of the built rows still moved the rows that stayed.
-            shift = common.contentTop - previous.contentTop
-        }
-        if abs(shift) > 0.25 { window.scroll(by: shift) } else { shift = 0 }
-        geometry.readingAnchor = holds ? viewport.readingAnchor(in: frames, scrolledBy: shift) : nil
-    }
-
     @discardableResult
     private func restorePagingAnchor(using frames: [String: TranscriptMessageFrame]) -> Bool {
         guard let anchor = pagingAnchor, !store.isLoadingOlder,
@@ -1129,7 +1127,6 @@ private func transcriptFrameIDs(of row: TranscriptRow) -> [String] {
 private final class TranscriptScrollGeometry {
     var viewport = TranscriptViewport()
     var frames: [String: TranscriptMessageFrame] = [:]
-    var readingAnchor: TranscriptReadingAnchor?
 }
 
 /// A row whose place on screen the reader keeps, by where its top sits in the content.

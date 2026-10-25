@@ -8,6 +8,8 @@ final class TranscriptWindowObserver {
     @ObservationIgnored private weak var scrollView: NSScrollView?
     @ObservationIgnored private weak var window: NSWindow?
     @ObservationIgnored private var notifications: [NSObjectProtocol] = []
+    @ObservationIgnored private var keyMonitor: Any?
+    @ObservationIgnored var readerScrolled: (@MainActor () -> Void)?
 
     func attach(to view: NSView) {
         let scroll = view.enclosingScrollView
@@ -29,6 +31,26 @@ final class TranscriptWindowObserver {
             notifications.append(token)
         }
         if let scroll { observeResizes(of: scroll) }
+        if let scroll {
+            notifications.append(NotificationCenter.default.addObserver(
+                forName: NSScrollView.didLiveScrollNotification, object: scroll, queue: nil
+            ) { [weak self] _ in
+                MainActor.assumeIsolated { self?.readerScrolled?() }
+            })
+        }
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            MainActor.assumeIsolated {
+                guard let self, event.window === self.window,
+                      [UInt16(115), 116, 119, 121, 125, 126].contains(event.keyCode),
+                      let scroll = self.scrollView,
+                      let responder = self.window?.firstResponder as? NSView,
+                      responder === scroll || responder.isDescendant(of: scroll) else { return }
+                RunLoop.main.perform { [weak self] in
+                    MainActor.assumeIsolated { self?.readerScrolled?() }
+                }
+            }
+            return event
+        }
     }
 
     /// The clip view's offset as AppKit has it, which can run ahead of SwiftUI's geometry after a clamp.
@@ -38,6 +60,8 @@ final class TranscriptWindowObserver {
         guard let scrollView else { return nil }
         return scrollView.contentView.bounds.minY + scrollView.contentInsets.top
     }
+
+    var nativeLayout: TranscriptNativeLayout? { scrollView.flatMap(TranscriptNativeLayout.init) }
 
     /// Whether the transcript is following its newest message. A window resize then keeps the end of the
     /// content at the bottom of the viewport in the same layout pass that draws the new size. SwiftUI's
@@ -89,11 +113,8 @@ final class TranscriptWindowObserver {
     }
 
     private func pinToBottom() {
-        guard pinsToBottom, let scrollView, let bottom = bottomOffset else { return }
-        let clip = scrollView.contentView
-        guard abs(clip.bounds.minY - bottom) > 0.25 else { return }
-        clip.scroll(to: NSPoint(x: clip.bounds.minX, y: bottom))
-        scrollView.reflectScrolledClipView(clip)
+        guard pinsToBottom, let bottom = bottomOffset else { return }
+        restoreReadingBottom(to: bottom)
     }
 
     func scroll(by delta: CGFloat) {
@@ -102,26 +123,31 @@ final class TranscriptWindowObserver {
         let maximum = max(0, document.bounds.height - clip.bounds.height)
         let target = CGPoint(x: clip.bounds.origin.x,
                              y: min(maximum, max(0, clip.bounds.origin.y + (document.isFlipped ? delta : -delta))))
-        clip.scroll(to: target)
-        scrollView.reflectScrolledClipView(clip)
+        restoreReadingBottom(to: target.y)
     }
 
     func restoreReadingBottom(_ bottom: CGFloat, of frame: TranscriptMessageFrame) -> Bool {
+        guard let scrollView else { return false }
+        let offset = TranscriptCoordinates.targetOffset(
+            for: frame, bottom: bottom, topInset: scrollView.contentInsets.top)
+        return restoreReadingBottom(to: offset)
+    }
+
+    @discardableResult
+    func restoreReadingBottom(to origin: CGFloat) -> Bool {
+        precondition(origin.isFinite)
         guard let scrollView, let document = scrollView.documentView,
               document.isFlipped else { return false }
         let clip = scrollView.contentView
-        let offset = TranscriptCoordinates.targetOffset(
-            for: frame, bottom: bottom, topInset: scrollView.contentInsets.top)
         let minimum = -scrollView.contentInsets.top
         let maximum = max(minimum, document.bounds.height + scrollView.contentInsets.bottom - clip.bounds.height)
-        let target = min(maximum, max(minimum, offset))
+        let target = min(maximum, max(minimum, origin))
         guard abs(clip.bounds.minY - target) > 0.25 else { return true }
         let previous = clip.bounds.minY
         clip.scroll(to: NSPoint(x: clip.bounds.minX, y: target))
         scrollView.reflectScrolledClipView(clip)
         if ProcessInfo.processInfo.environment["TOY_BOX_TEST_PAGING_TRACE"] == "1" {
-            let line = "Transcript paging m\(frame.sequence): native \(previous) -> \(clip.bounds.minY), "
-                + "target \(target), content top \(frame.contentTop), saved bottom \(bottom)\n"
+            let line = "Transcript position: native \(previous) -> \(clip.bounds.minY), target \(target)\n"
             FileHandle.standardError.write(Data(line.utf8))
         }
         return false
@@ -135,6 +161,8 @@ final class TranscriptWindowObserver {
     }
 
     func detach() {
+        if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
+        keyMonitor = nil
         notifications.forEach(NotificationCenter.default.removeObserver)
         notifications.removeAll()
         scrollView = nil
