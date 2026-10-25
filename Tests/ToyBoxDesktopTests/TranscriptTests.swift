@@ -30,16 +30,16 @@ struct TranscriptTests {
         let viewport = TranscriptViewport(top: 1_890, width: 503, height: 380, contentHeight: 5_148)
         let stale = TranscriptMessageFrame(sequence: 2, rect: CGRect(x: 0, y: -1_800, width: 400, height: 57),
                                            historyStart: 61, contentTop: 70)
-        #expect(TranscriptReveal.Layout(frame: nil, historyStart: 1, viewport: viewport, nativeTop: 1_890) == nil)
-        #expect(TranscriptReveal.Layout(frame: stale, historyStart: 1, viewport: viewport, nativeTop: 1_890) == nil)
+        #expect(TranscriptAlignment.Layout(frame: nil, historyStart: 1, viewport: viewport, nativeTop: 1_890) == nil)
+        #expect(TranscriptAlignment.Layout(frame: stale, historyStart: 1, viewport: viewport, nativeTop: 1_890) == nil)
         var current = stale
         current.historyStart = 1
         current.rect.origin.y = 100
-        let layout = try #require(TranscriptReveal.Layout(
+        let layout = try #require(TranscriptAlignment.Layout(
             frame: current, historyStart: 1, viewport: viewport, nativeTop: 1_890))
-        #expect(TranscriptCoordinates.targetOffset(for: current, bottom: layout.bottom, topInset: 0) == -71.5)
-        #expect(TranscriptReveal.Layout(frame: current, historyStart: 1, viewport: .init(), nativeTop: 0) == nil)
-        var reveal = TranscriptReveal()
+        #expect(TranscriptCoordinates.targetOffset(for: current, bottom: layout.centeredBottom, topInset: 0) == -71.5)
+        #expect(TranscriptAlignment.Layout(frame: current, historyStart: 1, viewport: .init(), nativeTop: 0) == nil)
+        var reveal = TranscriptAlignment()
         let first = reveal.receive(layout, isAligned: false)
         let next = reveal.receive(layout, isAligned: false)
         #expect(!first && !next)
@@ -49,10 +49,10 @@ struct TranscriptTests {
         let viewport = TranscriptViewport(top: 1_890, width: 503, height: 380, contentHeight: 5_148)
         let frame = TranscriptMessageFrame(sequence: 2, rect: CGRect(x: 0, y: -1_800, width: 400, height: 57),
                                            historyStart: 1, contentTop: 70)
-        let layout = try #require(TranscriptReveal.Layout(
+        let layout = try #require(TranscriptAlignment.Layout(
             frame: frame, historyStart: 1, viewport: viewport, nativeTop: 1_890))
-        #expect(layout.bottom == 218.5)
-        var reveal = TranscriptReveal()
+        #expect(layout.centeredBottom == 218.5)
+        var reveal = TranscriptAlignment()
         var completions = [reveal.receive(layout, isAligned: true)]
         var corrected = layout
         corrected.frame.contentTop += 120
@@ -63,6 +63,23 @@ struct TranscriptTests {
         completions.append(reveal.receive(corrected, isAligned: true))
         completions.append(reveal.receive(corrected, isAligned: true))
         #expect(completions == [false, false, false, false, false, true])
+    }
+
+    @Test func aWidthChangeRestoresTheReadingTopInsteadOfFollowingAClampedBottom() {
+        let narrow = TranscriptViewport(top: 1_346, bottomGap: 426, width: 503, height: 344, contentHeight: 2_116)
+        let restore = TranscriptReadingRestore(anchor: .init(id: "m21", contentTop: 1_373), viewport: narrow)
+        #expect(restore.id == "m21" && restore.top == 47)
+        let rewrapped = TranscriptMessageFrame(sequence: 21, rect: CGRect(x: 68, y: -168, width: 422.5, height: 37),
+                                               historyStart: 1, contentTop: 973)
+        let offset = TranscriptCoordinates.targetOffset(for: rewrapped, bottom: restore.top + rewrapped.rect.height,
+                                                        topInset: 0)
+        #expect(offset == 946)
+        let wide = TranscriptViewport(top: 1_161, bottomGap: 0, width: 520, height: 344, contentHeight: 1_541)
+            .positioned(atNativeTop: offset)
+        #expect(wide.top == 946 && wide.bottomGap == 251)
+        #expect(!wide.update(after: narrow, wasAtBottom: false, canFollow: false, isJumping: false).isAtBottom)
+        #expect(wide.readingAnchor(in: ["m21": rewrapped], nativeViewportTop: offset)?.id == "m21")
+        #expect(TranscriptCoordinates.viewportFrame(rewrapped, top: offset).rect.minY == restore.top)
     }
 
     @MainActor
@@ -583,15 +600,21 @@ struct TranscriptTests {
         try await harness.settled()
         #expect(abs(harness.bottomGap) < 2)
         #expect(harness.isVisible("m31"))
+        if legacyScrollers { #expect(harness.scrollView.scrollerStyle == .legacy) }
 
         // A reader who scrolled up keeps their place while the conversation continues below.
-        try await harness.scrollUp(byWheel: TranscriptHarness.wheelEventsApply) { harness.bottomGap > 400 }
+        // The legacy variant exercises its persistent scroller. The default style keeps wheel coverage.
+        try await harness.scrollUp(byWheel: !legacyScrollers && TranscriptHarness.wheelEventsApply) {
+            harness.bottomGap > 400
+        }
+        if legacyScrollers { #expect(harness.scrollView.scrollerStyle == .legacy) }
         let origin = harness.scrollView.contentView.bounds.minY
         let reading = harness.visibleFrames()
         try #require(reading.count >= 3)
         harness.push(transcriptTestMessage(32), revision: 3)
         try await harness.waitUntil { harness.store.state?.messages.last?.sequence == 32 }
         try await harness.settled()
+        if legacyScrollers { #expect(harness.scrollView.scrollerStyle == .legacy) }
         #expect(abs(harness.scrollView.contentView.bounds.minY - origin) < 1)
         for (id, rect) in reading {
             let after = harness.capture.frames[id]?.rect ?? .null
@@ -615,6 +638,30 @@ struct TranscriptTests {
         let landed = try #require(gaps.values.firstIndex { abs($0) < 2 })
         #expect(gaps.values[landed...].allSatisfy { $0 <= 48 }, "Gaps after the jump: \(gaps.values[landed...])")
         #expect(abs(harness.bottomGap) < 2)
+        #expect(harness.readRequests == 0)
+    }
+
+    @MainActor
+    @Test(.enabled(if: transcriptTimingTestsEnabled), arguments: [false, true], [false, true])
+    func rewrappingWhileReadingPreservesTheAnchorThroughAnArrival(narrows: Bool, independentRows: Bool) async throws {
+        let messages = independentRows ? transcriptFindTestMessages(1...90) : (1...31).map(transcriptTestMessage)
+        let next = messages.count + 1
+        let harness = try await TranscriptHarness(messages: messages, resizable: true)
+        defer { harness.close() }
+        harness.resize(width: narrows ? 520 : 503)
+        try await harness.settled()
+        try await harness.scrollUp(byWheel: false) { harness.bottomGap > 400 }
+        let anchor = try #require(harness.visibleFrames().min { $0.value.minY < $1.value.minY })
+        harness.resize(width: narrows ? 503 : 520)
+        harness.push(transcriptTestMessage(next), revision: 2)
+        try await harness.waitUntil { harness.store.state?.messages.last?.sequence == next }
+        try await harness.settled()
+        try await harness.waitUntil { !harness.capture.isRestoringReading }
+        let after = try #require(harness.frames[anchor.key]?.rect)
+        #expect(abs(after.minY - anchor.value.minY) < 1,
+                "\(anchor.key) moved from \(anchor.value) to \(after)")
+        #expect(harness.bottomGap > 48)
+        #expect(!harness.isVisible("m\(next)"))
         #expect(harness.readRequests == 0)
     }
 
@@ -2484,6 +2531,7 @@ private final class TranscriptLayoutCapture {
     var proxy: ScrollViewProxy?
     var hasLanded = false
     var isRestoringHistory = false
+    var isRestoringReading = false
 }
 
 @MainActor
@@ -2850,6 +2898,7 @@ private final class TranscriptHarness {
     private let session: URLSession
     private let window: NSWindow
     private var turnObserver: CFRunLoopObserver?
+    private var scrollerStyleObservation: NSKeyValueObservation?
     private var onTurn: (@MainActor (TranscriptHarness) -> Void)?
 
     /// Lands at the bottom unless `seenThrough` leaves messages unread, in which case it lands at the first.
@@ -2891,6 +2940,7 @@ private final class TranscriptHarness {
             .onPreferenceChange(TranscriptMessageFrames.self) { capture.frames = $0 }
             .onPreferenceChange(TranscriptLanded.self) { capture.hasLanded = $0 }
             .onPreferenceChange(TranscriptRestoringHistory.self) { capture.isRestoringHistory = $0 }
+            .onPreferenceChange(TranscriptRestoringReading.self) { capture.isRestoringReading = $0 }
             .safeAreaBar(edge: .bottom, spacing: 0) { Color.clear.frame(height: 100) }
             .environment(interaction)
             .environment(ArtifactOpener())
@@ -2919,7 +2969,14 @@ private final class TranscriptHarness {
         if !warm { store.connect() }
         if legacyScrollers {
             try await waitUntil { findScrollView(in: view) != nil }
-            try #require(findScrollView(in: view)).scrollerStyle = .legacy
+            let scroll = try #require(findScrollView(in: view))
+            // SwiftUI reapplies the system preference during updates. Keep this override local to the fixture.
+            scrollerStyleObservation = scroll.observe(\.scrollerStyle) { scroll, _ in
+                MainActor.assumeIsolated {
+                    if scroll.scrollerStyle != .legacy { scroll.scrollerStyle = .legacy }
+                }
+            }
+            scroll.scrollerStyle = .legacy
         }
         try await waitUntil { findScrollView(in: view)?.documentView.map { $0.bounds.height > 800 } == true }
         scrollView = try #require(findScrollView(in: view))
@@ -3082,6 +3139,8 @@ private final class TranscriptHarness {
     }
 
     func close() {
+        scrollerStyleObservation?.invalidate()
+        scrollerStyleObservation = nil
         if let turnObserver { CFRunLoopRemoveObserver(CFRunLoopGetMain(), turnObserver, .commonModes) }
         turnObserver = nil
         store.disconnect()

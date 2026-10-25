@@ -23,6 +23,7 @@ struct ConversationTranscript: View {
     @ViewState private var revealError: String?
     @ViewState private var sendActionError: String?
     @ViewState private var isRevealing = false
+    @ViewState private var readingRestore: TranscriptReadingRestore?
     @ViewState private var lastMarkedRead = 0
     @ViewState private var expandedMessageIds: Set<String> = []
     @ViewState private var scrollPosition: String?
@@ -60,7 +61,7 @@ struct ConversationTranscript: View {
 
     private var visibleReadSequence: Int? {
         // A viewer covers the transcript, so nothing beneath it counts as read.
-        guard snapshot == nil, hasLanded, !isRevealing, pagingAnchor == nil, window.isKeyWindow,
+        guard snapshot == nil, hasLanded, !isRevealing, readingRestore == nil, pagingAnchor == nil, window.isKeyWindow,
               scenePhase == .active, store.phase.isLive, viewer?.session == nil,
               !interaction.isArtifactViewerPresented, !find.blocksRead else { return nil }
         return visibleSequence
@@ -149,7 +150,13 @@ struct ConversationTranscript: View {
                         interaction.reveal(sequence: request.sequence)
                     }
                 }
-                .onDisappear { find.close() }
+                .onDisappear {
+                    find.close()
+                    readingRestore = nil
+                }
+                .task(id: readingRestore?.token) {
+                    if let restore = readingRestore { await settleReadingRestore(restore, using: proxy) }
+                }
                 .task(id: store.phase.isLive) {
                     guard store.phase.isLive, !hasLanded else { return }
                     await land(using: proxy)
@@ -173,6 +180,7 @@ struct ConversationTranscript: View {
         scrollViewport(proxy: proxy)
             .onChange(of: followsLatest, initial: true) { window.pinsToBottom = followsLatest }
             .onChange(of: interaction.jumpToLatestRequest) {
+                readingRestore = nil
                 find.close()
                 find.resumeReading()
                 catchUp?.isPinned = false
@@ -181,13 +189,15 @@ struct ConversationTranscript: View {
                 scrollToLatest(using: proxy)
             }
             .onChange(of: interaction.messageView) {
+                readingRestore = nil
                 catchUp?.isPinned = false
                 pagingAnchor = nil
                 if isAtBottom && !isRevealing { scrollToLatest(using: proxy) }
                 if rows.isEmpty && store.hasOlderMessages { Task { await loadOlder() } }
             }
             .onChange(of: store.messages.last?.id) {
-                guard hasLanded, pagingAnchor == nil, !isRevealing, !find.isPresented else { return }
+                guard hasLanded, pagingAnchor == nil, !isRevealing, readingRestore == nil,
+                      !find.isPresented else { return }
                 if isAtBottom {
                     catchUp?.isPinned = false
                     scrollToLatest(using: proxy)
@@ -231,7 +241,11 @@ struct ConversationTranscript: View {
         } set: { scrollPosition = $0 }, anchor: .top)
         .preference(key: TranscriptLanded.self, value: hasLanded)
         .preference(key: TranscriptRestoringHistory.self, value: pagingAnchor != nil)
-        .onScrollGeometryChange(for: TranscriptViewport.self) { TranscriptViewport($0) } action: { old, new in
+        .preference(key: TranscriptRestoringReading.self, value: readingRestore != nil)
+        .onScrollGeometryChange(for: TranscriptViewport.self) { TranscriptViewport($0) } action: { _, measured in
+            let old = viewport
+            let new = measured.positioned(atNativeTop: window.viewportTop)
+            if new.width != old.width { beginReadingRestore() }
             layoutTurns.moved = true
             // Keyboard scrolling has no scroll phase, so any move the transcript didn't make releases the card.
             if catchUp?.isPinned == true, hasLanded, pendingJump == nil, abs(new.top - old.top) > 0.5,
@@ -240,13 +254,14 @@ struct ConversationTranscript: View {
             }
             let update = new.update(after: old, wasAtBottom: isAtBottom,
                                     canFollow: hasLanded && pagingAnchor == nil && !isRevealing && !isUserScrolling
+                                        && readingRestore == nil
                                         && catchUp?.holdsLanding != true && !find.isPresented,
                                     isJumping: pendingJump != nil)
             geometry.viewport = new
             followReaderWhilePaging()
             publishVisibleSequence()
             pointer.contentDidMove()
-            if isAtBottom != update.isAtBottom { isAtBottom = update.isAtBottom }
+            if readingRestore == nil, isAtBottom != update.isAtBottom { isAtBottom = update.isAtBottom }
             let jump = pendingJump
             if update.landsJump { pendingJump = nil }
             switch update.follow {
@@ -261,7 +276,7 @@ struct ConversationTranscript: View {
             case nil:
                 break
             }
-            if hasLanded && new.top < 32 && old.top >= 32 && !isRevealing {
+            if hasLanded && new.top < 32 && old.top >= 32 && !isRevealing && readingRestore == nil {
                 Task { await loadOlder() }
             }
         }
@@ -277,6 +292,7 @@ struct ConversationTranscript: View {
             let scrolling = phase == .tracking || phase == .interacting || phase == .decelerating
             if isUserScrolling != scrolling { isUserScrolling = scrolling }
             if phase == .tracking || phase == .interacting { catchUp?.isPinned = false }
+            if phase == .tracking || phase == .interacting { readingRestore = nil }
             if phase == .tracking || phase == .interacting { find.resumeReading() }
             // Before the page lands, the anchor follows the reader instead.
             if (phase == .tracking || phase == .interacting) && pagingRestoreTarget != nil {
@@ -731,6 +747,7 @@ struct ConversationTranscript: View {
     /// lands on the bottom anyway when the target is already on the last screen. A jump that never
     /// moves the viewport stops guarding once it has had time to apply.
     private func jump(to id: String, anchor: UnitPoint, using proxy: ScrollViewProxy) {
+        readingRestore = nil
         let jump = TranscriptJump(id: id, anchor: anchor)
         pendingJump = jump
         scrollPosition = nil
@@ -843,6 +860,7 @@ struct ConversationTranscript: View {
     }
 
     private func reveal(sequence: Int, using proxy: ScrollViewProxy) async {
+        readingRestore = nil
         let token = interaction.revealRequestToken
         let findToken = find.isPresented && find.revealRequest?.sequence == sequence ? find.revealRequest?.token : nil
         catchUp?.isPinned = false
@@ -888,12 +906,12 @@ struct ConversationTranscript: View {
                               findToken: UUID?, using proxy: ScrollViewProxy) async -> Bool {
         let turns = TranscriptLayoutTurns()
         let deadline = ContinuousClock.now + .seconds(2)
-        var reveal = TranscriptReveal()
+        var reveal = TranscriptAlignment()
         var materialized = false
         scrollPosition = nil
         while ContinuousClock.now < deadline {
             guard await turns.settled(), revealIsCurrent(token, findToken: findToken) else { return false }
-            guard let layout = TranscriptReveal.Layout(
+            guard let layout = TranscriptAlignment.Layout(
                 frame: frames[targetID], historyStart: store.messages.first?.sequence,
                 viewport: viewport, nativeTop: window.viewportTop) else {
                 _ = reveal.receive(nil, isAligned: false)
@@ -903,7 +921,7 @@ struct ConversationTranscript: View {
                 }
                 continue
             }
-            let aligned = window.restoreReadingBottom(layout.bottom, of: layout.frame)
+            let aligned = window.restoreReadingBottom(layout.centeredBottom, of: layout.frame)
             if reveal.receive(layout, isAligned: aligned) { return true }
         }
         guard revealIsCurrent(token, findToken: findToken) else { return false }
@@ -924,7 +942,7 @@ struct ConversationTranscript: View {
     }
 
     private func loadOlder() async {
-        guard !store.isLoadingOlder, store.hasOlderMessages, !isRevealing else { return }
+        guard !store.isLoadingOlder, store.hasOlderMessages, !isRevealing, readingRestore == nil else { return }
         if let top = viewport.topVisibleFrame(in: pagingFrames) {
             pagingAnchor = .init(id: top.id, bottom: top.frame.rect.maxY,
                                  oldestSequence: store.state?.messages.first?.sequence ?? 0)
@@ -963,17 +981,73 @@ struct ConversationTranscript: View {
         // transcript needs to switch it off here too.
         let holds = hasLanded && pagingAnchor == nil && pendingJump == nil && !isRevealing
             && (!isAtBottom || catchUp?.holdsLanding == true)
+        if let restore = readingRestore {
+            if let frame = frames[restore.id] {
+                _ = window.restoreReadingBottom(restore.top + frame.rect.height, of: frame)
+            }
+            return
+        }
         var shift: CGFloat = 0
         if holds, let anchor = geometry.readingAnchor, let frame = frames[anchor.id] {
             shift = frame.contentTop - anchor.contentTop
         } else if holds, geometry.readingAnchor != nil,
-                  let common = viewport.readingAnchor(in: frames.filter { geometry.frames[$0.key] != nil }),
+                  let common = viewport.readingAnchor(in: frames.filter { geometry.frames[$0.key] != nil },
+                                                     nativeViewportTop: window.viewportTop),
                   let previous = geometry.frames[common.id] {
             // The pass that moved the anchor out of the built rows still moved the rows that stayed.
             shift = common.contentTop - previous.contentTop
         }
-        if abs(shift) > 0.25 { window.scroll(by: shift) } else { shift = 0 }
-        geometry.readingAnchor = holds ? viewport.readingAnchor(in: frames, scrolledBy: shift) : nil
+        if abs(shift) > 0.25 {
+            beginReadingRestore()
+            if let restore = readingRestore, let frame = frames[restore.id] {
+                _ = window.restoreReadingBottom(restore.top + frame.rect.height, of: frame)
+                return
+            }
+            window.scroll(by: shift)
+        }
+        geometry.readingAnchor = holds ? viewport.readingAnchor(in: frames, nativeViewportTop: window.viewportTop) : nil
+    }
+
+    /// Keeps the original screen top until deferred rewrapping and native offset clamps settle.
+    private func beginReadingRestore() {
+        guard readingRestore == nil, hasLanded, !isAtBottom, !isUserScrolling, !isRevealing,
+              pagingAnchor == nil, pendingJump == nil, let anchor = geometry.readingAnchor else { return }
+        readingRestore = .init(anchor: anchor, viewport: viewport)
+        scrollPosition = nil
+    }
+
+    private func settleReadingRestore(_ restore: TranscriptReadingRestore, using proxy: ScrollViewProxy) async {
+        defer {
+            if readingRestore == restore { readingRestore = nil }
+        }
+        let deadline = ContinuousClock.now + .seconds(2)
+        let displayTurns = TranscriptLayoutTurns()
+        var alignment = TranscriptAlignment()
+        var materialized = false
+        while readingRestore == restore, ContinuousClock.now < deadline {
+            guard await displayTurns.settled(), !Task.isCancelled, readingRestore == restore else { return }
+            guard let layout = TranscriptAlignment.Layout(frame: frames[restore.id],
+                                                          historyStart: store.messages.first?.sequence,
+                                                          viewport: viewport, nativeTop: window.viewportTop) else {
+                _ = alignment.receive(nil, isAligned: false)
+                if !materialized, let row = rows.first(where: {
+                    transcriptFrameIDs(of: $0).contains(restore.id) || "divider-\($0.id)" == restore.id
+                }) {
+                    proxy.scrollTo(row.id, anchor: .top)
+                    materialized = true
+                }
+                continue
+            }
+            let aligned = window.restoreReadingBottom(restore.top + layout.frame.rect.height, of: layout.frame)
+            if alignment.receive(layout, isAligned: aligned) {
+                geometry.readingAnchor = viewport.readingAnchor(in: frames, nativeViewportTop: window.viewportTop)
+                isAtBottom = viewport.positioned(atNativeTop: window.viewportTop).bottomGap <= 48
+                return
+            }
+        }
+        if !Task.isCancelled, readingRestore == restore {
+            revealError = "Couldn't keep your reading position."
+        }
     }
 
     @discardableResult
@@ -1107,6 +1181,11 @@ struct TranscriptRestoringHistory: PreferenceKey {
     static func reduce(value: inout Bool, nextValue: () -> Bool) { value = value || nextValue() }
 }
 
+struct TranscriptRestoringReading: PreferenceKey {
+    static let defaultValue = false
+    static func reduce(value: inout Bool, nextValue: () -> Bool) { value = value || nextValue() }
+}
+
 /// The keys a row's messages measure their frames under.
 private func transcriptFrameIDs(of row: TranscriptRow) -> [String] {
     row.messages.map(\.id) + [row.id, "system-group-\(row.id)"]
@@ -1126,6 +1205,17 @@ private final class TranscriptScrollGeometry {
 struct TranscriptReadingAnchor: Equatable {
     var id: String
     var contentTop: CGFloat
+}
+
+struct TranscriptReadingRestore: Equatable {
+    var id: String
+    var top: CGFloat
+    var token = UUID()
+
+    init(anchor: TranscriptReadingAnchor, viewport: TranscriptViewport) {
+        id = anchor.id
+        top = TranscriptCoordinates.contentTopPadding + anchor.contentTop - viewport.top
+    }
 }
 
 private struct PagingAnchor: Equatable {
@@ -1183,6 +1273,15 @@ struct TranscriptViewport: Equatable {
                   contentHeight: geometry.contentSize.height)
     }
 
+    /// Scroll geometry can still report the offset from before a native reading-place correction.
+    func positioned(atNativeTop nativeTop: CGFloat?) -> Self {
+        guard let nativeTop else { return self }
+        var result = self
+        result.top = nativeTop
+        result.bottomGap = max(0, contentHeight - nativeTop - height)
+        return result
+    }
+
     enum Follow: Equatable { case latest, jump }
 
     struct Update: Equatable {
@@ -1226,12 +1325,14 @@ struct TranscriptViewport: Equatable {
 
     /// The first frame starting in the viewport or, when one row fills it, the frame spanning its top.
     /// Rows above it change height out of the reader's sight. `shift` is a scroll made since `frames`.
-    func readingAnchor(in frames: [String: TranscriptMessageFrame], scrolledBy shift: CGFloat = 0)
+    func readingAnchor(in frames: [String: TranscriptMessageFrame], scrolledBy shift: CGFloat = 0,
+                       nativeViewportTop: CGFloat? = nil)
         -> TranscriptReadingAnchor? {
         guard width > 0, height > 0 else { return nil }
         var starting: (id: String, frame: TranscriptMessageFrame)?
         var spanning: (id: String, frame: TranscriptMessageFrame)?
-        for (id, frame) in frames {
+        for (id, measured) in frames {
+            let frame = nativeViewportTop.map { TranscriptCoordinates.viewportFrame(measured, top: $0) } ?? measured
             let top = frame.rect.minY - shift
             guard top < height, frame.rect.maxY - shift > 0 else { continue }
             if top >= -0.5 {
