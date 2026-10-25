@@ -94,12 +94,12 @@ struct ChannelDetailView: View {
             .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).maxX } action: {
                 titleFit.update(windowWidth: $0)
             }
-            // The toolbar draws its own backdrop over any container that keeps it in its top safe
-            // area, so the canvas reaches under the glass toolbar only when its mount ignores it.
+            // The image gallery manages its own toolbar clearance. Artifact pages inherit the
+            // toolbar safe area so their scroll containers receive its inset.
             // The open viewer is modal, which takes the conversation and Overview out of the
             // accessibility tree.
             .overlay { ImageViewerCanvas().ignoresSafeArea(edges: .top) }
-            .overlay { ArtifactViewerCanvas(store: store).ignoresSafeArea(edges: .top) }
+            .overlay { ArtifactViewerCanvas(store: store) }
             .sheet(isPresented: narrowInspector) {
                 overviewSheet.frame(minWidth: 360, idealWidth: 360, maxWidth: 360, minHeight: 420,
                                     idealHeight: min(640, windowHeight - 100), maxHeight: max(420, windowHeight - 100))
