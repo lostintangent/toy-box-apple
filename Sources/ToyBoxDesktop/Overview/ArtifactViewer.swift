@@ -41,7 +41,7 @@ struct ArtifactViewerCanvas: View {
     }
 }
 
-private struct ArtifactViewerStage: View {
+struct ArtifactViewerStage: View {
     @Bindable var opener: ArtifactOpener
     let artifact: ChannelArtifact
     let toolbarInset: CGFloat
@@ -87,6 +87,7 @@ private struct ArtifactViewerStage: View {
         .focusEffectDisabled()
         .focused($focused)
         .onAppear { focused = true }
+        .onChange(of: artifact.id) { focused = true }
         .onExitCommand { opener.close() }
         .onKeyPress(keys: [.leftArrow, .rightArrow], phases: [.down, .repeat]) { press in
             guard press.modifiers.isEmpty, opener.canPageUsingKeys else { return .ignored }

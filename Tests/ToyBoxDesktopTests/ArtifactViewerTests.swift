@@ -2,6 +2,7 @@ import AppKit
 import ChannelClient
 import ChannelKit
 import Network
+import SwiftUI
 import Synchronization
 import Testing
 import WebKit
@@ -339,6 +340,101 @@ struct ArtifactViewerTests {
         opener.window = window
         opener.webView = web.webView
         #expect(!opener.canPageUsingKeys)
+    }
+
+    @Test(arguments: [false, true])
+    func pagingOwnsFocusAfterOpeningFromTheComposerAndAfterLeavingHTML(leavingHTML: Bool) async throws {
+        let fixture = try ArtifactHTTPFixture()
+        try await fixture.start()
+        defer { fixture.stop() }
+        let plan = ChannelArtifact(file: .init(kind: "machine", path: "plan.md"), title: "Plan",
+                                   sharedAt: "2026-10-24T22:00:00Z", url: "/api/serve/test/plan.md")
+        let html = ChannelArtifact(file: .init(kind: "machine", path: "prototype.html"), title: "Prototype",
+                                   sharedAt: "2026-10-24T21:00:00Z", url: "/api/serve/test/prototype.html")
+        let opener = ArtifactOpener()
+        let interaction = ChannelInteraction()
+        let images = ImageViewer()
+        opener.configure(api: try ChannelAPI(baseURL: fixture.url("/")), channelID: "test",
+                         artifacts: [plan, html], interaction: interaction, imageViewer: images)
+        let composer = NSTextView()
+        composer.string = "Keep this unsent draft."
+        let host = ArtifactKeyboardWindow(opener: opener, composer: composer)
+        defer { opener.close(animated: false); host.window.close() }
+        #expect(host.window.makeFirstResponder(composer))
+        opener.open(leavingHTML ? html : plan)
+        try await wait { !opener.isLoading }
+        if leavingHTML {
+            try await wait { opener.webView != nil }
+            let web = try #require(opener.webView)
+            #expect(host.window.makeFirstResponder(web))
+            #expect(!opener.canPageUsingKeys)
+            try host.press(.rightArrow)
+            #expect(opener.artifact?.id == html.id)
+            // A disappearing native web responder can leave the window itself holding focus.
+            #expect(host.window.makeFirstResponder(nil))
+            opener.select(plan.id)
+        }
+        try await wait {
+            opener.artifact?.id == plan.id && opener.canPageUsingKeys
+                && host.window.firstResponder != nil && host.window.firstResponder !== host.window
+        }
+        try host.press(.rightArrow)
+        try await wait { opener.artifact?.id == html.id }
+        try host.press(.leftArrow)
+        try await wait { opener.artifact?.id == plan.id }
+        #expect(composer.string == "Keep this unsent draft.")
+    }
+
+    @MainActor
+    private struct ArtifactKeyboardWindow {
+        // Match the task-disclosure harness without taking the user's key window.
+        private final class KeyWindow: NSWindow {
+            override var isKeyWindow: Bool { true }
+            override var canBecomeKey: Bool { true }
+        }
+
+        let window: NSWindow
+
+        init(opener: ArtifactOpener, composer: NSTextView) {
+            _ = NSApplication.shared
+            let view = NSHostingView(rootView: ArtifactKeyboardHost(opener: opener, composer: composer))
+            window = KeyWindow(contentRect: NSRect(x: -10_000, y: -10_000, width: 640, height: 400),
+                               styleMask: [.borderless], backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            window.contentView = view
+            opener.window = window
+            window.orderFrontRegardless()
+            view.layoutSubtreeIfNeeded()
+        }
+        func press(_ key: KeyEquivalent) throws {
+            let isRight = key == .rightArrow
+            let characters = String(UnicodeScalar(UInt16(isRight ? NSRightArrowFunctionKey : NSLeftArrowFunctionKey))!)
+            window.sendEvent(try #require(NSEvent.keyEvent(
+                with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber,
+                context: nil, characters: characters, charactersIgnoringModifiers: characters, isARepeat: false,
+                keyCode: isRight ? 124 : 123)))
+        }
+
+    }
+
+    private struct ArtifactKeyboardHost: View {
+        let opener: ArtifactOpener
+        let composer: NSTextView
+
+        var body: some View {
+            ZStack {
+                ArtifactComposerControl(view: composer)
+                if let artifact = opener.artifact {
+                    ArtifactViewerStage(opener: opener, artifact: artifact, toolbarInset: 0)
+                }
+            }
+        }
+    }
+
+    private struct ArtifactComposerControl: NSViewRepresentable {
+        let view: NSTextView
+        func makeNSView(context: Context) -> NSTextView { view }
+        func updateNSView(_ nsView: NSTextView, context: Context) {}
     }
 
     private func artifact(_ path: String, shared: String? = nil) -> ChannelArtifact {
