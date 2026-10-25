@@ -1052,8 +1052,9 @@ the user reads. This boundary is not an extra synthetic message. Reference rende
 the New divider, system rows and both request states: `docs/transcript-events.png`.
 
 Opening uses only the latest 100 messages supplied by the snapshot and never fetches older pages.
-Land on the first loaded unread row, otherwise the end. If the first unread predates the snapshot,
-land on its oldest loaded message with the New divider. Catch-up summarizes only loaded messages.
+Land on the first unread row when its boundary is in the loaded page, otherwise the end. If the
+first unread predates the snapshot and older history exists, show no synthetic New divider or
+catch-up summary. Scrolling up loads the real unread boundary in its original place.
 When a catch-up summary is eligible, land on its card instead (see Mac features beyond the pane).
 Older pages load only through reader paging, Find navigation or Reveal.
 Follow incoming messages only while within

@@ -686,16 +686,15 @@ struct TranscriptTests {
             service.releaseCatchUp()
             harness.close()
         }
-        try await harness.waitUntil { service.catchUpCount > 0 }
         try await harness.settled()
         #expect(harness.historyRequests == 0)
         #expect(harness.store.messages.count == 100)
         #expect(harness.store.messages.first?.sequence == 381)
-        let divider = try #require(harness.frames["divider-m381"]?.rect)
-        #expect(divider.minY >= -0.5 && divider.minY < 120,
-                "Opening left the oldest loaded unread divider at \(divider)")
-        #expect(divider.height > 40, "The loaded unread messages should produce a catch-up card.")
-        #expect(harness.isVisible("m381"))
+        #expect(abs(harness.bottomGap) < 2)
+        #expect(harness.isVisible("m480"))
+        #expect(service.catchUpCount == 0)
+        let rows = transcriptRows(harness.store.messages, lead: .lead(id: "lead"), members: [], unreadAfter: 180)
+        #expect(rows.allSatisfy { $0.divider?.unread != true })
         #expect(harness.readRequests == 0)
     }
 
@@ -1534,20 +1533,29 @@ struct TranscriptLandingTests {
         #expect(TranscriptLanding.target(unreadAfter: 5, rows: run) == .unread(unread.id))
     }
 
-    @Test func aWarmOpeningUsesTheFirstLoadedUnreadRow() {
+    @Test func aWarmOpeningRequiresTheUnreadBoundaryToBeLoaded() {
         let rows = rows(31...50)
-        #expect(TranscriptLanding.opening(unreadAfter: nil, rows: rows) == nil)
-        #expect(TranscriptLanding.opening(unreadAfter: 30, rows: []) == nil)
-        #expect(TranscriptLanding.opening(unreadAfter: 20, rows: rows)?.rowID == rows[0].id)
-        #expect(TranscriptLanding.opening(unreadAfter: 30, rows: rows)?.rowID == rows[0].id)
-        #expect(TranscriptLanding.opening(unreadAfter: 50, rows: rows) == nil)
+        #expect(TranscriptLanding.opening(unreadAfter: nil, oldestSequence: 31,
+                                         hasOlderMessages: true, rows: rows) == nil)
+        #expect(TranscriptLanding.opening(unreadAfter: 30, oldestSequence: nil,
+                                         hasOlderMessages: true, rows: rows) == nil)
+        #expect(TranscriptLanding.opening(unreadAfter: 20, oldestSequence: 31,
+                                         hasOlderMessages: true, rows: rows) == nil)
+        #expect(TranscriptLanding.opening(unreadAfter: 30, oldestSequence: 31,
+                                         hasOlderMessages: true, rows: rows)?.rowID == rows[0].id)
+        #expect(TranscriptLanding.opening(unreadAfter: 20, oldestSequence: 31,
+                                         hasOlderMessages: false, rows: rows)?.rowID == rows[0].id)
+        #expect(TranscriptLanding.opening(unreadAfter: 50, oldestSequence: 31,
+                                         hasOlderMessages: false, rows: rows) == nil)
     }
 
     @Test func aWarmOpeningSeedsOnlyTailsLongerThanEightRows() throws {
         let rows = rows()
-        let short = try #require(TranscriptLanding.opening(unreadAfter: 12, rows: rows))
+        let short = try #require(TranscriptLanding.opening(unreadAfter: 12, oldestSequence: 1,
+                                                         hasOlderMessages: false, rows: rows))
         #expect(short == .init(rowID: rows[12].id, unreadAfter: 12, seeds: false))
-        let long = try #require(TranscriptLanding.opening(unreadAfter: 11, rows: rows))
+        let long = try #require(TranscriptLanding.opening(unreadAfter: 11, oldestSequence: 1,
+                                                        hasOlderMessages: false, rows: rows))
         #expect(long == .init(rowID: rows[11].id, unreadAfter: 11, seeds: true))
     }
 

@@ -769,7 +769,9 @@ struct ConversationTranscript: View {
         guard !opening.isResolved else { return }
         opening.isResolved = true
         guard snapshot == nil, store.isLoaded, store.phase.isLive else { return }
-        opening.plan = TranscriptLanding.opening(unreadAfter: store.unreadAfter, rows: rows)
+        opening.plan = TranscriptLanding.opening(
+            unreadAfter: store.unreadAfter, oldestSequence: store.messages.first?.sequence,
+            hasOlderMessages: store.hasOlderMessages, rows: rows)
     }
 
     /// Lands on the row, moving only if it isn't in place already. A jump converges over several
@@ -819,11 +821,12 @@ struct ConversationTranscript: View {
             capturedArrivalBoundary = true
         }
         await Task.yield()
-        if let unread = arrivalUnreadAfter {
+        if let plan = TranscriptLanding.opening(
+            unreadAfter: arrivalUnreadAfter, oldestSequence: store.messages.first?.sequence,
+            hasOlderMessages: store.hasOlderMessages, rows: rows) {
             guard !Task.isCancelled, !isRevealing else { return }
-            prepareCatchUp(unreadAfter: unread)
-            if case .unread(let id) = TranscriptLanding.target(unreadAfter: unread, rows: rows),
-               let first = rows.first(where: { $0.id == id }) {
+            prepareCatchUp(unreadAfter: plan.unreadAfter)
+            if let first = rows.first(where: { $0.id == plan.rowID }) {
                 await settleLanding(on: first, using: proxy)
                 guard !Task.isCancelled, !isRevealing else { return }
             } else { await settleLatestLanding(using: proxy) }

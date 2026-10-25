@@ -57,8 +57,6 @@ struct TranscriptTests {
         #expect(rows[1].divider?.unread == true)
         let firstUnread = transcriptRows([message(2)], lead: lead, members: [], unreadAfter: 1)
         #expect(firstUnread[0].divider?.unread == false)
-        let unloadedUnread = transcriptRows([message(301)], lead: lead, members: [], unreadAfter: 1)
-        #expect(unloadedUnread[0].divider?.unread == true)
     }
 
     @Test func yoursViewBuildsRunsAfterFiltering() {

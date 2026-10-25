@@ -166,7 +166,7 @@ public final class TranscriptRowBuilder {
             let startsDay = previous == nil || differentDay
             let unread = previous.map { prior in
                 settings.unreadAfter.map { prior.sequence <= $0 && message.sequence > $0 } ?? false
-            } ?? (settings.unreadAfter.map { $0 < message.sequence - 1 } ?? false)
+            } ?? false
             let divider: TranscriptDivider? = startsDay || unread
                 ? .init(day: startsDay ? info.date : nil, unread: unread) : nil
             var extended = false
