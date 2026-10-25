@@ -337,6 +337,8 @@ messages loaded and again with every older page loaded. It times the main run lo
 | 50 messages 20 ms apart | 100 ms longest frame gap. The saturated span and busy time are reported beside it |
 | Each older page | 250 ms busy |
 | Warm switch | 150 ms median longest saturated span. A switch that lands over several frames feels as slow as one long frame, so it isn't budgeted on frame gaps |
+| Steady scrolling up and down | 5 ms/s hitch time, from dropped display frames |
+| First visible row during scrolling | At most 1 point of frame drift, in each direction and at each loaded count |
 | Key window with 4, then 20, working agents | 3% process CPU over 15 s, so a continuous animation that updates views every frame fails it |
 
 Launch and idle report the same figures with no budget.
@@ -345,6 +347,18 @@ Scroll also reports actual main-thread CPU ms per 1,000 native points, and pagin
 per older page. These are informational, not new budgets. Compare CPU work when the Mac is
 loaded, since run-loop wall time includes scheduling delays. Judge hitches only on a quiet
 machine, with the same gesture, distance, loaded count and hover state in both builds.
+
+Frame drift is the largest distance the first visible row moves away from that frame's scroll.
+Each display callback compares the same row's viewport position across consecutive samples with
+the wheel deltas actually delivered to that window between them, not queued input or total native
+scroll travel. On a row handoff it retains the previous first row, or uses the current first row
+if the previous row was recycled. Missing shared first-row geometry fails the measurement rather
+than reporting zero drift. Results include measured frame pairs, frames above 1 point, maximum
+drift and total absolute drift.
+
+During the transcript replacement, `TOY_BOX_TRANSCRIPT=lazy|table bun run benchmark scroll`
+selects the container through `open --env`. The output names the requested transcript. This is
+a temporary benchmark option, not a product preference, and is removed with t259.
 
 ## Design
 

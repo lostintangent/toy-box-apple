@@ -38,6 +38,17 @@ async function reachable(url: string, successful = false) {
     }
 }
 
+export function benchmarkLaunchCommand(options: {
+    app: string; scenario: string; out: string; err: string; server: string; channel: string;
+    transcript: string | undefined;
+}) {
+    const { app, scenario, out, err, server, channel, transcript } = options;
+    return ["open", "-n", ...(scenario === "key" ? [] : ["-g"]), "-W",
+        "--env", `TOY_BOX_TRANSCRIPT=${transcript ?? "lazy"}`,
+        "--stdout", out, "--stderr", err, app, "--args", "--server", server, "--channel", channel,
+        "--benchmark", scenario, "-ApplePersistenceIgnoreState", "YES"];
+}
+
 if (import.meta.main) await main(async () => {
     const { values, positionals } = parseArgs({ allowPositionals: true,
         options: { summaries: { type: "boolean", default: false } } });
@@ -121,9 +132,8 @@ if (import.meta.main) await main(async () => {
                     }
                     const out = join(logs, `${scenario}.out`), err = join(logs, `${scenario}.err`);
                     await Bun.write(out, ""); await Bun.write(err, "");
-                    await command(["open", "-n", ...(scenario === "key" ? [] : ["-g"]), "-W",
-                        "--stdout", out, "--stderr", err, app, "--args", "--server", server, "--channel", channel,
-                        "--benchmark", scenario, "-ApplePersistenceIgnoreState", "YES"]);
+                    await command(benchmarkLaunchCommand({ app, scenario, out, err, server, channel,
+                        transcript: process.env.TOY_BOX_TRANSCRIPT }));
                     await stopFixture();
                     const stdout = await Bun.file(out).text(), stderr = await Bun.file(err).text();
                     for (const line of stdout.split("\n").filter(line => /^(Benchmark |  )/.test(line) && !line.startsWith("Benchmark failed"))) {
