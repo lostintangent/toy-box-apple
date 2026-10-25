@@ -23,7 +23,8 @@ struct TranscriptDocumentPrototype: NSViewRepresentable {
 
     func sizeThatFits(_ proposal: ProposedViewSize, nsView: TranscriptTableDocument,
                       context: Context) -> CGSize? {
-        let width = proposal.width ?? nsView.bounds.width
+        let proposedWidth = nsView.enclosingScrollView?.contentSize.width ?? proposal.width ?? nsView.bounds.width
+        let width = context.coordinator.layoutWidth(proposed: proposedWidth)
         guard width > 0, width.isFinite else { return nil }
         let height = context.coordinator.fittingHeight(items: items, content: content, header: header,
                                                        width: width, environment: context.environment)
@@ -38,7 +39,6 @@ struct TranscriptDocumentPrototype: NSViewRepresentable {
 
 final class TranscriptTableDocument: NSView {
     let coordinator: TranscriptTablePrototype.Coordinator
-    private weak var scroll: NSScrollView?
     private var edgeTrace: TranscriptEdgeTrace?
 
     override var isFlipped: Bool { true }
@@ -58,10 +58,10 @@ final class TranscriptTableDocument: NSView {
         super.viewDidMoveToWindow()
         stopEdgeTrace()
         guard let enclosing = enclosingScrollView else { return }
-        scroll = enclosing
         coordinator.attach(enclosing, ownsDocument: false)
+        invalidateIntrinsicContentSize()
         needsLayout = true
-        if TranscriptEdgeTrace.mode != nil {
+        if TranscriptEdgeTrace.mode == "record" || TranscriptEdgeTrace.mode == "step" {
             let trace = TranscriptEdgeTrace(view: self, scroll: enclosing)
             edgeTrace = trace
             trace.start()
@@ -70,7 +70,8 @@ final class TranscriptTableDocument: NSView {
 
     override func layout() {
         super.layout()
-        coordinator.table.frame = bounds
+        let width = coordinator.layoutWidth(proposed: enclosingScrollView?.contentSize.width ?? bounds.width)
+        coordinator.table.frame = NSRect(x: 0, y: 0, width: width, height: bounds.height)
         let oldHeight = coordinator.documentHeight
         coordinator.layoutContent()
         if coordinator.documentHeight != oldHeight { invalidateIntrinsicContentSize() }

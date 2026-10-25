@@ -127,17 +127,23 @@ struct TranscriptTableHeightTests {
         }
     }
 
-    @Test(.enabled(if: transcriptTimingTestsEnabled), arguments: [false, true])
-    func nativeDocumentKeepsSwiftUIScrollOwnershipAndRealRowHeights(landsOnUnread: Bool) async throws {
+    @Test(.enabled(if: transcriptTimingTestsEnabled), arguments: [false, true], [CGFloat(0), 248])
+    func nativeDocumentKeepsSwiftUIScrollOwnershipAndRealRowHeights(landsOnUnread: Bool,
+                                                                   leading: CGFloat) async throws {
         let setup = try setup()
-        let items = TranscriptTableItem.project(transcriptRows((1...24).map(transcriptTestMessage),
+        var messages = (1...24).map(transcriptTestMessage)
+        messages[23].sender = .user
+        messages[23].content = .text(String(repeating: "A right-aligned message that wraps inside the visible lane. ",
+                                            count: 12))
+        let items = TranscriptTableItem.project(transcriptRows(messages,
                                                                lead: setup.lead, members: [],
                                                                unreadAfter: landsOnUnread ? 12 : nil))
         let content = content(items, setup: setup)
         let bars = TableBars()
+        bars.leading = leading
         let host = NSHostingView(rootView: DocumentBarFixture(bars: bars, items: items, content: content)
-            .environment(\.self, setup.environment).frame(width: 400, height: 600))
-        let window = NSWindow(contentRect: NSRect(x: -6_000, y: -6_000, width: 400, height: 600),
+            .environment(\.self, setup.environment).frame(width: 980, height: 600))
+        let window = NSWindow(contentRect: NSRect(x: -6_000, y: -6_000, width: 980, height: 600),
                               styleMask: [.borderless], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         window.contentView = host
@@ -178,8 +184,14 @@ struct TranscriptTableHeightTests {
             }
             #expect(scroll.documentView === hostingDocument)
             #expect(scroll.bounds.height == 600)
+            #expect(scroll.bounds.width == 980)
             #expect(scroll.contentInsets.top == 50)
+            #expect(scroll.contentInsets.left == leading)
             #expect(scroll.contentInsets.bottom == bottom)
+            #expect(abs(table.frame.width - (980 - leading)) <= 0.5)
+            let tableLeft = table.convert(.zero, to: nil).x
+            let viewportLeft = scroll.convert(CGPoint(x: leading, y: 0), to: nil).x
+            #expect(abs(tableLeft - viewportLeft) <= 0.5)
             #expect(abs(document.bounds.height - document.coordinator.documentHeight) <= 0.5)
             #expect(abs(hostingDocument.bounds.height - document.bounds.height) <= 0.5)
             #expect(abs(table.frame.height - document.bounds.height) <= 0.5)
@@ -232,6 +244,7 @@ struct TranscriptTableHeightTests {
     @Observable
     fileprivate final class TableBars {
         var bottom: CGFloat = 100
+        var leading: CGFloat = 0
     }
 
     private struct TableBarFixture: View {
@@ -263,6 +276,7 @@ struct TranscriptTableHeightTests {
             .scrollEdgeEffectStyle(.soft, for: .bottom)
             .safeAreaBar(edge: .top, spacing: 0) { Color.clear.frame(height: 50) }
             .safeAreaBar(edge: .bottom, spacing: 0) { Color.clear.frame(height: bars.bottom) }
+            .safeAreaPadding(.leading, bars.leading)
         }
     }
 

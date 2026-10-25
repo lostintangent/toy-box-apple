@@ -99,6 +99,11 @@ struct TranscriptTablePrototype: NSViewControllerRepresentable {
             return documentHeight
         }
 
+        func layoutWidth(proposed: CGFloat) -> CGFloat {
+            guard !ownsDocument, let scroll else { return proposed }
+            return max(0, proposed - scroll.contentInsets.left - scroll.contentInsets.right)
+        }
+
         func update(items: [TranscriptTableItem], content: [TranscriptRowContent], header: AnyView,
                     environment: EnvironmentValues, insets: EdgeInsets) {
             configuration = Configuration(items: items, content: content, header: header,
@@ -109,7 +114,7 @@ struct TranscriptTablePrototype: NSViewControllerRepresentable {
 
         func layoutContent() {
             guard let scroll, let configuration, !isLayingOut else { return }
-            let width = scroll.contentSize.width
+            let width = layoutWidth(proposed: scroll.contentSize.width)
             guard width > 0, isDirty || appliedWidth != width else { return }
             isLayingOut = true
             defer { isLayingOut = false }
