@@ -214,7 +214,10 @@ struct ConversationTranscript: View {
         .coordinateSpace(name: "transcript-viewport")
         .scrollEdgeEffectStyle(.soft, for: .bottom)
         .scrollEdgeEffectStyle(.hard, for: .top)
-        .scrollPosition($position)
+        .scrollPosition(Binding {
+            if !hasLanded, let openingRow { return ScrollPosition(id: openingRow, anchor: .top) }
+            return position
+        } set: { position = $0 })
         .defaultScrollAnchor(openingRow == nil ? .bottom : .top, for: .initialOffset)
         .defaultScrollAnchor(followsEnd ? .bottom : nil, for: .sizeChanges)
         .preference(key: TranscriptLanded.self, value: hasLanded)

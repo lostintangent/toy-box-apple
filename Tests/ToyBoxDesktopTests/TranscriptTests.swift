@@ -838,6 +838,24 @@ struct TranscriptTests {
     }
 
     @MainActor
+    @Test(arguments: [false, true])
+    func unreadLandingSurvivesTheRealAppSurroundings(warm: Bool) async throws {
+        let harness = try await TranscriptHarness(
+            messages: transcriptFindTestMessages(381...480), history: transcriptFindTestMessages(1...380),
+            seenThrough: 450, width: 1280, height: 840, warm: warm, appScene: true,
+            intelligence: StubChannelIntelligence(availability: .unavailable(.deviceNotEligible)))
+        defer { harness.close() }
+        try await harness.waitUntil { harness.hasAppSurroundings }
+        try await harness.settled()
+
+        let divider = try #require(harness.frames["divider-m451"]?.rect)
+        #expect(divider.minY >= -0.5 && divider.minY < 120, "App landing left the divider at \(divider)")
+        #expect(harness.isVisible("m451"))
+        #expect(harness.bottomGap > 200)
+        #expect(harness.readRequests == 0)
+    }
+
+    @MainActor
     @Test func nativeClipJumpsToTheTopAndEndStayAfterLayout() async throws {
         let harness = try await TranscriptHarness(
             messages: transcriptFindTestMessages(381...480), history: transcriptFindTestMessages(1...380),
@@ -2988,6 +3006,7 @@ private final class TranscriptHarness {
     private(set) var scrollView = NSScrollView()
     private let session: URLSession
     private let window: NSWindow
+    private let appModel: AppModel?
     private var turnObserver: CFRunLoopObserver?
     private var onTurn: (@MainActor (TranscriptHarness) -> Void)?
 
@@ -2998,6 +3017,7 @@ private final class TranscriptHarness {
     init(messages: [ChannelMessage], history: [ChannelMessage] = [], holdsHistory: Bool = false,
          seenThrough: Int? = nil, width: CGFloat = 520, height: CGFloat = 480,
          resizable: Bool = false, warm: Bool = false, legacyScrollers: Bool = false, working: Bool = false,
+         appScene: Bool = false,
          serverURL: String? = nil, channelID: String = "harness",
          intelligence: any ChannelIntelligenceService = LiveChannelIntelligence.shared,
          find: TranscriptFind = TranscriptFind(),
@@ -3010,15 +3030,26 @@ private final class TranscriptHarness {
         let snapshot = try TranscriptServerProtocol.event(.init(type: "snapshot", state: ChannelState(
             revision: 1, channel: channel, lead: .lead(id: "lead"), messages: messages,
             presence: working ? ["lead": .init(state: "working")] : [:])))
+        let catalog = try JSONEncoder().encode(ChannelCatalog(
+            lead: .init(name: "Lead", role: "Lead", avatar: .init(mark: "M4 12H20", color: "#123456")),
+            channels: [channel]))
         TranscriptServerProtocol.fixtures.withLock {
-            $0[host] = .init(snapshot: snapshot, history: history, holdsHistory: holdsHistory)
+            $0[host] = .init(snapshot: snapshot, history: history, holdsHistory: holdsHistory, catalog: catalog)
         }
         let configuration = URLSessionConfiguration.ephemeral
         if serverURL == nil { configuration.protocolClasses = [TranscriptServerProtocol.self] }
         let session = URLSession(configuration: configuration)
-        let store = ChannelStore(id: channelID,
+        let appModel = appScene ? AppModel(
+            launchOptions: .init(serverURL: "https://\(host)", width: Int(width), height: Int(height)),
+            session: session, notificationsEnabled: false) : nil
+        let store: ChannelStore
+        if let appModel {
+            store = try #require(appModel.catalog).channel(id: channelID)
+        } else {
+            store = ChannelStore(id: channelID,
                                  api: try ChannelAPI(serverURL: serverURL ?? "https://\(host)", session: session),
                                  sendJournal: nil)
+        }
         let interaction = ChannelInteraction()
         let capture = TranscriptLayoutCapture()
         if warm {
@@ -3029,22 +3060,39 @@ private final class TranscriptHarness {
             }
             try #require(store.isLoaded && store.phase.isLive)
         }
-        let view = NSHostingView(rootView: ConversationTranscript(store: store, find: find)
+        let content = Group {
+            if let appModel {
+                RootView(initialChannelID: channelID).environment(appModel)
+            } else {
+                ConversationTranscript(store: store, find: find)
+                    .safeAreaBar(edge: .bottom, spacing: 0) { Color.clear.frame(height: 100) }
+            }
+        }
             .onPreferenceChange(TranscriptMessageFrames.self) { capture.frames = $0 }
             .onPreferenceChange(TranscriptLanded.self) { capture.hasLanded = $0 }
             .onPreferenceChange(TranscriptRestoringHistory.self) { capture.isRestoringHistory = $0 }
-            .safeAreaBar(edge: .bottom, spacing: 0) { Color.clear.frame(height: 100) }
             .environment(interaction)
             .environment(ArtifactOpener())
             .environment(\.channelIntelligence, intelligence)
-            .frame(width: resizable ? nil : width, height: resizable ? nil : height))
-        if resizable { view.sizingOptions = [] }
+            .frame(width: resizable || appScene ? nil : width, height: resizable || appScene ? nil : height)
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: width, height: height),
-                              styleMask: [.borderless], backing: .buffered, defer: false)
+                              styleMask: appScene ? [.titled, .closable, .resizable, .fullSizeContentView] : [.borderless],
+                              backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
-        window.contentView = view
+        let view: NSView
+        if appScene {
+            let controller = NSHostingController(rootView: content)
+            controller.sizingOptions = []
+            window.contentViewController = controller
+            view = controller.view
+        } else {
+            let host = NSHostingView(rootView: content)
+            if resizable { host.sizingOptions = [] }
+            window.contentView = host
+            view = host
+        }
         (self.host, self.store, self.interaction, self.capture) = (host, store, interaction, capture)
-        (self.session, self.window) = (session, window)
+        (self.session, self.window, self.appModel) = (session, window, appModel)
         if let onTurn {
             self.onTurn = onTurn
             // After Core Animation's commit, so it sees each pass as drawn.
@@ -3056,7 +3104,9 @@ private final class TranscriptHarness {
             CFRunLoopAddObserver(CFRunLoopGetMain(), observer, .commonModes)
         }
         func findScrollView(in view: NSView) -> NSScrollView? {
-            view as? NSScrollView ?? view.subviews.lazy.compactMap(findScrollView(in:)).first
+            let candidates = view.subviews.compactMap(findScrollView(in:))
+                + ((view as? NSScrollView).map { [$0] } ?? [])
+            return candidates.max { ($0.documentView?.bounds.height ?? 0) < ($1.documentView?.bounds.height ?? 0) }
         }
         if !warm { store.connect() }
         if legacyScrollers {
@@ -3096,6 +3146,13 @@ private final class TranscriptHarness {
             view as? NSSearchField ?? view.subviews.lazy.compactMap(find(in:)).first
         }
         return window.contentView.flatMap(find(in:))
+    }
+
+    var hasAppSurroundings: Bool {
+        func containsComposer(_ view: NSView) -> Bool {
+            view is ComposerTextView || view.subviews.contains(where: containsComposer)
+        }
+        return window.toolbar != nil && window.contentView.map(containsComposer) == true
     }
 
     func visibleWindowFrames() -> [String: CGRect] {
@@ -3227,6 +3284,8 @@ private final class TranscriptHarness {
         if let turnObserver { CFRunLoopRemoveObserver(CFRunLoopGetMain(), turnObserver, .commonModes) }
         turnObserver = nil
         store.disconnect()
+        appModel?.catalog?.stopPolling()
+        appModel?.connections.disconnectAll()
         window.close()
         session.invalidateAndCancel()
         TranscriptServerProtocol.fixtures.withLock { _ = $0.removeValue(forKey: host) }
@@ -3245,6 +3304,7 @@ private final class TranscriptServerProtocol: URLProtocol, @unchecked Sendable {
         var snapshot: Data
         var history: [ChannelMessage]
         var holdsHistory: Bool
+        var catalog: Data?
         var stream: TranscriptServerProtocol?
         var held: [HeldResponse] = []
         var requests: [String] = []
@@ -3285,6 +3345,9 @@ private final class TranscriptServerProtocol: URLProtocol, @unchecked Sendable {
             if streaming {
                 fixture.stream = self
                 return .stream(fixture.snapshot)
+            }
+            if method == "GET", url.path == "/api/v1/channels", let catalog = fixture.catalog {
+                return .page(catalog)
             }
             guard method == "GET", url.lastPathComponent == "messages", let page else { return .unavailable }
             guard fixture.holdsHistory else { return .page(page) }

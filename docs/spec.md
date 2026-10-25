@@ -1069,8 +1069,8 @@ size-change anchor while following. Width, window and scroller changes keep the 
 within one line of the top, rather than preserving an exact offset inside reflowed text.
 
 Landing, Jump to Latest, confirmed own posts, Reveal, filter changes and Show Less produce one
-row-or-end command. One view function applies it with `ScrollPosition.scrollTo`, without seeding
-the binding with an opening row ID before the command. Reader geometry only classifies
+row-or-end command. The binding seeds the opening row before the first native layout, and one view
+function applies commands with `ScrollPosition.scrollTo`. Reader geometry only classifies
 the 48-point following threshold and never produces a placement. No native clip writes, resize
 pins, correction loops, materialization acknowledgements or scroll watchdogs remain. Prepending,
 growing rows and returning from a viewer leave position to the native scroll view.

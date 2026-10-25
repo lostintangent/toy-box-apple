@@ -96,8 +96,8 @@ final class PerformanceBenchmark {
         self.model = model
         self.select = select
         window.isRestorable = false
-        // A covered window skips drawing, so the benchmark's window comes forward without focus.
-        window.orderFrontRegardless()
+        // Launch observes normal window presentation. Other scenarios need an uncovered window.
+        if scenario != .launch { window.orderFrontRegardless() }
         let meter = MainRunLoopMeter()
         self.meter = meter
         // Launch watches for the catalog and the channel before either can arrive.
@@ -204,6 +204,22 @@ final class PerformanceBenchmark {
         info("Settled", "\(since(settled)), after \(format(Self.mainThreadCPU() * 1000)) of main-thread CPU, with a "
              + "\(format(meter.longestGap * 1000)) longest frame gap and \(format(meter.longestSpan * 1000)) longest "
              + "saturated span after the window opened")
+        guard let store = store(channelID), let scroll = transcriptScrollView() else {
+            fail("the launch has no transcript")
+        }
+        if let unread = store.unreadAfter, let message = store.messages.first(where: { $0.sequence > unread }) {
+            let geometry = BenchmarkScrollGeometry.source(in: scroll)?.benchmarkScrollGeometry()
+            let top = geometry?.rowTops[message.id]
+            guard let top, top >= -1, top < scroll.contentView.bounds.height - scroll.contentInsets.bottom else {
+                fail("first unread message \(message.sequence) is not visible after launch "
+                     + "(top \(String(describing: top)), native offset \(offsetFromTop(scroll)))")
+            }
+            info("Landing", "first unread message \(message.sequence) is visible at \(top) pt")
+        } else {
+            let gap = gapToEnd(scroll)
+            guard abs(gap) < 2 else { fail("launch left \(gap) pt below the transcript") }
+            info("Landing", "the end is visible")
+        }
     }
 
     private func switching() async {
