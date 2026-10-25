@@ -265,6 +265,11 @@ struct ConversationTranscript: View {
             publishVisibleSequence()
             pointer.contentDidMove()
             if readingRestore == nil, isAtBottom != update.isAtBottom { isAtBottom = update.isAtBottom }
+            if hasLanded, !isAtBottom, readingRestore == nil, pagingAnchor == nil, pendingJump == nil, !isRevealing,
+               new.width == old.width, new.height == old.height, new.contentHeight == old.contentHeight,
+               abs(new.top - old.top) > 0.5 {
+                geometry.readingAnchor = new.readingAnchor(in: frames, nativeViewportTop: new.top)
+            }
             let jump = pendingJump
             if update.landsJump { pendingJump = nil }
             switch update.follow {
@@ -334,7 +339,10 @@ struct ConversationTranscript: View {
                                          // The message changes height below its own top, even when
                                          // that top is above the viewport.
                                          if let frame = frames[id] {
-                                             geometry.readingAnchor = .init(id: id, contentTop: frame.contentTop)
+                                             let positioned = TranscriptCoordinates.viewportFrame(
+                                                 frame, top: window.viewportTop ?? viewport.top)
+                                             geometry.readingAnchor = .init(
+                                                 id: id, contentTop: frame.contentTop, top: positioned.rect.minY)
                                          }
                                          if expands {
                                              expandedMessageIds.insert(id)
@@ -1015,7 +1023,12 @@ struct ConversationTranscript: View {
     private func beginReadingRestore() {
         guard readingRestore == nil, hasLanded, !isAtBottom, !isUserScrolling, !isRevealing,
               pagingAnchor == nil, pendingJump == nil, let anchor = geometry.readingAnchor else { return }
-        readingRestore = .init(anchor: anchor, viewport: viewport)
+        readingRestore = .init(anchor: anchor)
+        if ProcessInfo.processInfo.environment["TOY_BOX_TEST_PAGING_TRACE"] == "1" {
+            let line = "Transcript reading \(anchor.id): content top \(anchor.contentTop), saved top \(anchor.top), "
+                + "cached viewport \(viewport.top), native \(String(describing: window.viewportTop))\n"
+            FileHandle.standardError.write(Data(line.utf8))
+        }
         scrollPosition = nil
         guard let restore = readingRestore else { return }
         let state = $readingRestore
@@ -1062,8 +1075,9 @@ struct ConversationTranscript: View {
             let aligned = window.restoreReadingBottom(restore.top + layout.frame.rect.height, of: layout.frame)
             if alignment.receive(layout, isAligned: aligned) {
                 if window.isLiveResizing { continue }
+                geometry.viewport = viewport.positioned(atNativeTop: window.viewportTop)
                 geometry.readingAnchor = viewport.readingAnchor(in: frames, nativeViewportTop: window.viewportTop)
-                isAtBottom = viewport.positioned(atNativeTop: window.viewportTop).bottomGap <= 48
+                isAtBottom = viewport.bottomGap <= 48
                 return
             }
         }
@@ -1224,6 +1238,8 @@ private final class TranscriptScrollGeometry {
 struct TranscriptReadingAnchor: Equatable {
     var id: String
     var contentTop: CGFloat
+    /// Captured with the frame, before a later scroll-geometry callback can replace its offset.
+    var top: CGFloat
 }
 
 struct TranscriptReadingRestore: Equatable {
@@ -1231,9 +1247,9 @@ struct TranscriptReadingRestore: Equatable {
     var top: CGFloat
     var token = UUID()
 
-    init(anchor: TranscriptReadingAnchor, viewport: TranscriptViewport) {
+    init(anchor: TranscriptReadingAnchor) {
         id = anchor.id
-        top = TranscriptCoordinates.contentTopPadding + anchor.contentTop - viewport.top
+        top = anchor.top
     }
 }
 
@@ -1360,7 +1376,9 @@ struct TranscriptViewport: Equatable {
                 spanning = (id, frame)
             }
         }
-        return (starting ?? spanning).map { .init(id: $0.id, contentTop: $0.frame.contentTop) }
+        return (starting ?? spanning).map {
+            .init(id: $0.id, contentTop: $0.frame.contentTop, top: $0.frame.rect.minY - shift)
+        }
     }
 
     func topVisibleFrame(in frames: [String: TranscriptMessageFrame])

@@ -65,9 +65,12 @@ struct TranscriptTests {
         #expect(completions == [false, false, false, false, false, true])
     }
 
-    @Test func aWidthChangeRestoresTheReadingTopInsteadOfFollowingAClampedBottom() {
+    @Test func aWidthChangeRestoresTheReadingTopInsteadOfFollowingAClampedBottom() throws {
         let narrow = TranscriptViewport(top: 1_346, bottomGap: 426, width: 503, height: 344, contentHeight: 2_116)
-        let restore = TranscriptReadingRestore(anchor: .init(id: "m21", contentTop: 1_373), viewport: narrow)
+        let original = TranscriptMessageFrame(sequence: 21, rect: CGRect(x: 68, y: 47, width: 405.5, height: 57),
+                                              historyStart: 1, contentTop: 1_373)
+        let anchor = try #require(narrow.readingAnchor(in: ["m21": original], nativeViewportTop: narrow.top))
+        let restore = TranscriptReadingRestore(anchor: anchor)
         #expect(restore.id == "m21" && restore.top == 47)
         let rewrapped = TranscriptMessageFrame(sequence: 21, rect: CGRect(x: 68, y: -168, width: 422.5, height: 37),
                                                historyStart: 1, contentTop: 973)
@@ -80,6 +83,37 @@ struct TranscriptTests {
         #expect(!wide.update(after: narrow, wasAtBottom: false, canFollow: false, isJumping: false).isAtBottom)
         #expect(wide.readingAnchor(in: ["m21": rewrapped], nativeViewportTop: offset)?.id == "m21")
         #expect(TranscriptCoordinates.viewportFrame(rewrapped, top: offset).rect.minY == restore.top)
+    }
+
+    @Test(arguments: [false, true])
+    func wideningKeepsTheCapturedTopWhenScrollGeometryLags(unreadDivider: Bool) throws {
+        let id = unreadDivider ? "divider-m451" : "m452"
+        let top: CGFloat = unreadDivider ? 20 : 130
+        let adjustment: CGFloat = unreadDivider ? 0 : 110
+        let narrow = TranscriptViewport(top: 6_454, width: 741, height: 632, contentHeight: 9_742)
+        let before = TranscriptMessageFrame(sequence: unreadDivider ? 0 : 452,
+                                            rect: CGRect(x: 24, y: top, width: 693, height: unreadDivider ? 16 : 78),
+                                            historyStart: 381, contentTop: 6_454 + adjustment)
+        let anchor = try #require(narrow.readingAnchor(in: [id: before], nativeViewportTop: narrow.top))
+        let restore = TranscriptReadingRestore(anchor: anchor)
+        #expect(restore.top == top)
+        let after = TranscriptMessageFrame(sequence: unreadDivider ? 0 : 452,
+                                           rect: CGRect(x: 24, y: top, width: 1005, height: unreadDivider ? 16 : 58),
+                                           historyStart: 381, contentTop: 6_163 + adjustment)
+        var offset = TranscriptCoordinates.targetOffset(for: after, bottom: restore.top + after.rect.height,
+                                                        topInset: 52)
+        #expect(offset == 6_111)
+        var tops: [CGFloat] = []
+        for _ in 0..<3 {
+            let nativeTop = offset + 52
+            let stale = TranscriptViewport(top: nativeTop - 20, width: 1053, height: 632, contentHeight: 7_933)
+            let next = try #require(stale.readingAnchor(in: [id: after], nativeViewportTop: nativeTop))
+            let captured = TranscriptReadingRestore(anchor: next)
+            offset = TranscriptCoordinates.targetOffset(for: after, bottom: captured.top + after.rect.height,
+                                                        topInset: 52)
+            tops.append(TranscriptCoordinates.viewportFrame(after, top: offset + 52).rect.minY)
+        }
+        #expect(tops == [top, top, top])
     }
 
     @Test func nativeScrollingTakesOwnershipWithoutRequiringAScrollPhase() {
@@ -556,11 +590,12 @@ struct TranscriptTests {
         }
         let frames = ["spanning": row(-100, 150, top: 900), "first": row(50, 150, top: 1050),
                       "second": row(200, 300, top: 1200), "below": row(420, 80, top: 1420)]
-        #expect(viewport.readingAnchor(in: frames) == .init(id: "first", contentTop: 1050))
+        #expect(viewport.readingAnchor(in: frames) == .init(id: "first", contentTop: 1050, top: 50))
         // After a scroll down by 60, the first row spans the top and the next one starts in view.
-        #expect(viewport.readingAnchor(in: frames, scrolledBy: 60) == .init(id: "second", contentTop: 1200))
+        #expect(viewport.readingAnchor(in: frames, scrolledBy: 60) == .init(id: "second", contentTop: 1200, top: 140))
         // A row taller than the viewport is the anchor while it fills it.
-        #expect(viewport.readingAnchor(in: ["tall": row(-300, 900, top: 600)]) == .init(id: "tall", contentTop: 600))
+        #expect(viewport.readingAnchor(in: ["tall": row(-300, 900, top: 600)])
+                == .init(id: "tall", contentTop: 600, top: -300))
         #expect(TranscriptViewport().readingAnchor(in: frames) == nil)
     }
 
