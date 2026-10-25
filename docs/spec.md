@@ -343,6 +343,11 @@ messages loaded and again with every older page loaded. It times the main run lo
 
 Launch and idle report the same figures with no budget.
 
+The key-window CPU measurement requires an active app and a visible, uncovered, non-minimized key
+window. It fails before or during measurement if that state is lost, rather than reporting a low CPU
+result from a window that is not drawing. Activation diagnostics include the native state and the
+window's WindowServer registration.
+
 Scroll also reports actual main-thread CPU ms per 1,000 native points, and paging reports CPU ms
 per older page. These are informational, not new budgets. Compare CPU work when the Mac is
 loaded, since run-loop wall time includes scheduling delays. Judge hitches only on a quiet
