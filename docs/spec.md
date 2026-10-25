@@ -364,6 +364,9 @@ a temporary benchmark option, not a product preference, and is removed with t259
 `TOY_BOX_BENCHMARK_SCROLL_DRIFT=0` disables the geometry producer and sampling for paired probe
 overhead checks. It is also benchmark-only and temporary. Normal app launches install no geometry
 provider and add no row callbacks.
+The native-table producer reads existing row rects without mounting cells or forcing layout.
+Scroll fixtures do not reorder rows during a gesture, so native row indices are stable for the
+measurement. A row-count change invalidates the sample instead of comparing different rows.
 
 ## Design
 

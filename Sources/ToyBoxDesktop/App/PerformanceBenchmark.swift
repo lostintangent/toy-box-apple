@@ -638,6 +638,9 @@ final class PerformanceBenchmark {
 
     private func transcriptGeometrySource(in view: NSView) -> (any BenchmarkScrollGeometrySource)? {
         if let source = view as? any BenchmarkScrollGeometrySource { return source }
+        if let scroll = view as? NSScrollView, let table = scroll.documentView as? NSTableView {
+            return BenchmarkTableScrollGeometry(table: table, scroll: scroll)
+        }
         for child in view.subviews {
             if let source = transcriptGeometrySource(in: child) { return source }
         }
@@ -793,6 +796,42 @@ struct BenchmarkScrollDelivery: Equatable, Sendable {
 @MainActor
 protocol BenchmarkScrollGeometrySource: AnyObject {
     func benchmarkScrollGeometry() -> BenchmarkScrollGeometry?
+}
+
+@MainActor
+final class BenchmarkTableScrollGeometry: BenchmarkScrollGeometrySource {
+    private weak var table: NSTableView?
+    private weak var scroll: NSScrollView?
+    private let rowCount: Int
+
+    init(table: NSTableView, scroll: NSScrollView) {
+        self.table = table
+        self.scroll = scroll
+        rowCount = table.numberOfRows
+    }
+
+    func benchmarkScrollGeometry() -> BenchmarkScrollGeometry? {
+        // Scroll fixtures never reorder rows. A structural change invalidates their native indices.
+        guard let table, let scroll, table.isFlipped, table.numberOfRows == rowCount else { return nil }
+        let clip = table.convert(scroll.contentView.bounds, from: scroll.contentView)
+        let top = clip.minY + scroll.contentInsets.top
+        let height = clip.height - scroll.contentInsets.top - scroll.contentInsets.bottom
+        guard top.isFinite, height.isFinite, height > 0 else { return nil }
+        let nearby = CGRect(x: 0, y: top - height, width: table.bounds.width, height: height * 3)
+        let range = table.rows(in: nearby)
+        guard range.location != NSNotFound, range.length > 0 else { return nil }
+        var tops: [String: CGFloat] = [:]
+        var first: String?
+        for row in range.location..<min(rowCount, range.upperBound) {
+            let rect = table.rect(ofRow: row)
+            guard rect.minY.isFinite, rect.height.isFinite, rect.height > 0 else { return nil }
+            let id = "table-row-\(row)"
+            tops[id] = rect.minY - top
+            if first == nil, rect.maxY > top, rect.minY < top + height { first = id }
+        }
+        guard let first else { return nil }
+        return .init(firstVisibleRow: first, rowTops: tops)
+    }
 }
 
 struct BenchmarkScrollDrift: Equatable, Sendable {
