@@ -1229,36 +1229,6 @@ struct TranscriptTests {
     }
 
     @MainActor
-    @Test func closingFindAtTheBottomRestoresFollowingButKeepsReadSuspended() async throws {
-        let find = TranscriptFind()
-        let harness = try await TranscriptHarness(messages: transcriptFindTestMessages(1...90), find: find)
-        defer { harness.close() }
-        try #require(harness.visibleWindowFrames()["m90"] != nil)
-        harness.interaction.findInChannel()
-        try await harness.waitUntil { find.isPresented && harness.findField != nil }
-        find.close()
-        try await harness.settled()
-        #expect(find.blocksRead && !find.isPresented)
-        harness.push(transcriptTestMessage(91), revision: 2)
-        try await harness.waitUntil { harness.store.messages.last?.sequence == 91 && abs(harness.bottomGap) < 2 }
-        #expect(find.blocksRead && harness.readRequests == 0)
-    }
-
-    @MainActor
-    @Test(arguments: [false, true])
-    func clearingFindKeepsRevealedMembershipLinesAndTheReadersPlace(closes: Bool) async throws {
-        let memberships = (1...8).map { sequence in
-            ChannelMessage(id: "m\(sequence)", sequence: sequence, timestamp: "2026-10-22T12:00:00Z",
-                           sender: .system, content: .system(.init(type: "member_joined",
-                               member: .init(id: "member\(sequence)", name: "Member \(sequence)"))))
-        }
-        let messages = memberships + transcriptFindTestMessages(9...30)
-        let find = TranscriptFind()
-        let harness = try await TranscriptHarness(messages: messages, find: find)
-        defer { harness.close() }
-        harness.interaction.findInChannel()
-        try await harness.waitUntil { find.isPresented && harness.findField != nil }
-    @MainActor
     @Test func ownSubmissionAndSendAgainFollowWithFindOpenWithoutReleasingItsReadLatch() async throws {
         let find = TranscriptFind()
         let harness = try await TranscriptHarness(messages: transcriptFindTestMessages(1...90), find: find)
@@ -1305,6 +1275,36 @@ struct TranscriptTests {
         #expect(harness.readRequests == 0)
     }
 
+    @MainActor
+    @Test func closingFindAtTheBottomRestoresFollowingButKeepsReadSuspended() async throws {
+        let find = TranscriptFind()
+        let harness = try await TranscriptHarness(messages: transcriptFindTestMessages(1...90), find: find)
+        defer { harness.close() }
+        try #require(harness.visibleWindowFrames()["m90"] != nil)
+        harness.interaction.findInChannel()
+        try await harness.waitUntil { find.isPresented && harness.findField != nil }
+        find.close()
+        try await harness.settled()
+        #expect(find.blocksRead && !find.isPresented)
+        harness.push(transcriptTestMessage(91), revision: 2)
+        try await harness.waitUntil { harness.store.messages.last?.sequence == 91 && abs(harness.bottomGap) < 2 }
+        #expect(find.blocksRead && harness.readRequests == 0)
+    }
+
+    @MainActor
+    @Test(arguments: [false, true])
+    func clearingFindKeepsRevealedMembershipLinesAndTheReadersPlace(closes: Bool) async throws {
+        let memberships = (1...8).map { sequence in
+            ChannelMessage(id: "m\(sequence)", sequence: sequence, timestamp: "2026-10-22T12:00:00Z",
+                           sender: .system, content: .system(.init(type: "member_joined",
+                               member: .init(id: "member\(sequence)", name: "Member \(sequence)"))))
+        }
+        let messages = memberships + transcriptFindTestMessages(9...30)
+        let find = TranscriptFind()
+        let harness = try await TranscriptHarness(messages: messages, find: find)
+        defer { harness.close() }
+        harness.interaction.findInChannel()
+        try await harness.waitUntil { find.isPresented && harness.findField != nil }
         find.query = "joined"
         try await harness.waitUntil { memberships.allSatisfy { harness.capture.frames[$0.id]?.sequence == $0.sequence } }
         try await harness.settled()
