@@ -5,6 +5,7 @@ import SwiftUI
 @MainActor @Observable
 final class TranscriptWindowObserver {
     private(set) var isKeyWindow = false
+    private(set) var isAttached = false
     @ObservationIgnored private weak var scrollView: NSScrollView?
     @ObservationIgnored private weak var window: NSWindow?
     @ObservationIgnored private var notifications: [NSObjectProtocol] = []
@@ -15,6 +16,7 @@ final class TranscriptWindowObserver {
         detach()
         scrollView = scroll
         window = view.window
+        isAttached = scroll != nil && view.window != nil
         isKeyWindow = view.window?.isKeyWindow == true && view.window?.isVisible == true
         for name in [NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification,
                      NSWindow.didMiniaturizeNotification, NSWindow.didDeminiaturizeNotification] {
@@ -36,6 +38,18 @@ final class TranscriptWindowObserver {
     var viewportTop: CGFloat? {
         guard let scrollView else { return nil }
         return scrollView.contentView.bounds.minY + scrollView.contentInsets.top
+    }
+
+    var viewportWidth: CGFloat? {
+        guard let scrollView else { return nil }
+        return scrollView.contentView.bounds.width - scrollView.contentInsets.left - scrollView.contentInsets.right
+    }
+
+    /// Rejects provisional SwiftUI sizing passes before this scroll view owns their layout.
+    func containsLayout(_ viewport: TranscriptViewport) -> Bool {
+        guard let scrollView, let window, scrollView.window === window else { return false }
+        guard let viewportWidth else { return false }
+        return abs(viewportWidth - viewport.width) < 0.5
     }
 
     /// Compensates measured height changes above a reader, without replacing native reader input.
@@ -62,6 +76,7 @@ final class TranscriptWindowObserver {
         scrollView = nil
         window = nil
         isKeyWindow = false
+        isAttached = false
     }
 }
 

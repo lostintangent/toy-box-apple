@@ -234,8 +234,10 @@ struct ConversationTranscript: View {
         .onPreferenceChange(TranscriptMessageFrames.self) { new in
             holdReadingPlace(in: new)
             geometry.frames = new
+            landIfReady()
             publishVisibleSequence()
         }
+        .onChange(of: window.isAttached) { landIfReady() }
         .onScrollPhaseChange { _, phase in
             if phase == .tracking || phase == .interacting { resumeReading() }
         }
@@ -384,7 +386,11 @@ struct ConversationTranscript: View {
 
     private func landIfReady() {
         guard !hasLanded, let command = openingScroll,
-              viewport.width > 0, viewport.height > 0, viewport.contentHeight > 0 else { return }
+              window.containsLayout(viewport),
+              viewport.width > 0, viewport.height > 0, viewport.contentHeight > 0,
+              (rows.isEmpty || frames.values.contains(where: {
+                  $0.sequence > 0 && $0.historyStart == store.messages.first?.sequence
+              })) else { return }
         openingScroll = nil
         // The native initial anchor already places an opening at the end.
         if case .row = command { perform(command) }

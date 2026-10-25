@@ -672,6 +672,34 @@ struct TranscriptTests {
         #expect(TranscriptViewport().readSequence(in: ["unmeasured": frame(sequence: 8, y: 0, height: 40)]) == nil)
     }
 
+    @MainActor
+    @Test func openingRequiresTheNativeScrollViewsUnobscuredLayout() {
+        let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 1280, height: 840),
+                              styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        let scroll = NSScrollView(frame: window.contentLayoutRect)
+        scroll.automaticallyAdjustsContentInsets = false
+        scroll.contentInsets = NSEdgeInsets(top: 64, left: 248, bottom: 149, right: 312)
+        let probe = NSView(frame: CGRect(x: 0, y: 0, width: 1280, height: 10_000))
+        scroll.documentView = probe
+        window.contentView = scroll
+        let observer = TranscriptWindowObserver()
+        defer {
+            observer.detach()
+            window.close()
+        }
+        let current = TranscriptViewport(width: 720, height: 627, contentHeight: 10_000)
+        let provisional = TranscriptViewport(width: 172, height: 64.5, contentHeight: 25_418)
+        #expect(!observer.containsLayout(current))
+        observer.attach(to: probe)
+        #expect(observer.isAttached)
+        #expect(observer.containsLayout(current))
+        #expect(!observer.containsLayout(provisional))
+        observer.detach()
+        #expect(!observer.isAttached)
+        #expect(!observer.containsLayout(current))
+    }
+
     @Test func readingAnchorUsesTheFirstStartingRowAfterAMeasuredHeightCorrection() {
         let viewport = TranscriptViewport(width: 520, height: 400)
         let frames: [String: TranscriptMessageFrame] = [

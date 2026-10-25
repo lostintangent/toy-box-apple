@@ -1069,8 +1069,9 @@ size-change anchor while following. Width, window and scroller changes keep the 
 within one line of the top, rather than preserving an exact offset inside reflowed text.
 
 Landing, Jump to Latest, confirmed own posts, Reveal, filter changes and Show Less produce one
-row-or-end command. Opening waits for the native container's first nonempty geometry, and one view
-function applies commands with `ScrollPosition.scrollTo`. Reader geometry classifies the 48-point
+row-or-end command. Opening waits until current-history rows belong to the attached native scroll
+view's unobscured layout, rather than a provisional SwiftUI sizing pass. One view function applies
+commands with `ScrollPosition.scrollTo`. Reader geometry classifies the 48-point
 following threshold. One reading-only native clip delta compensates measured height changes above
 the visible anchor, including lazy estimate corrections. It uses changes in content-space row
 frames, not changes caused by scrolling, and stands down for following and explicit commands.
