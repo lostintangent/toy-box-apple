@@ -87,6 +87,8 @@ jobs:
         run: bun check
       - name: Lint workflows
         run: bun run lint:workflows
+      - name: Test development tooling
+        run: bun test scripts/dev
       - name: Test release tooling with fake commands
         run: bun run test:release
 
