@@ -18,6 +18,7 @@ struct ConversationTranscript: View {
     @ViewState private var pointer = TranscriptPointer()
     @ViewState private var model = TranscriptScrollIntent()
     @ViewState private var position = ScrollPosition(idType: String.self)
+    @ViewState private var openingScroll: TranscriptScrollIntent.Scroll?
     @ViewState private var hasLanded = false
     @ViewState private var arrivalUnreadAfter: Int?
     @ViewState private var visibleSequence: Int?
@@ -214,17 +215,16 @@ struct ConversationTranscript: View {
         .coordinateSpace(name: "transcript-viewport")
         .scrollEdgeEffectStyle(.soft, for: .bottom)
         .scrollEdgeEffectStyle(.hard, for: .top)
-        .scrollPosition(Binding {
-            if !hasLanded, let openingRow { return ScrollPosition(id: openingRow, anchor: .top) }
-            return position
-        } set: { position = $0 })
+        .scrollPosition($position)
         .defaultScrollAnchor(openingRow == nil ? .bottom : .top, for: .initialOffset)
         .defaultScrollAnchor(followsEnd ? .bottom : nil, for: .sizeChanges)
         .preference(key: TranscriptLanded.self, value: hasLanded)
         .preference(key: TranscriptRestoringHistory.self, value: false)
         .onScrollGeometryChange(for: TranscriptViewport.self) { TranscriptViewport($0) } action: { old, new in
+            let wasLanded = hasLanded
             geometry.viewport = new
-            if hasLanded && !find.blocksRead && !isRevealing { model.moved(distanceToEnd: new.bottomGap) }
+            landIfReady()
+            if wasLanded && !find.blocksRead && !isRevealing { model.moved(distanceToEnd: new.bottomGap) }
             publishVisibleSequence()
             pointer.contentDidMove()
             if hasLanded, new.top < 32, old.top >= 32, !isRevealing {
@@ -232,6 +232,7 @@ struct ConversationTranscript: View {
             }
         }
         .onPreferenceChange(TranscriptMessageFrames.self) { new in
+            holdReadingPlace(in: new)
             geometry.frames = new
             publishVisibleSequence()
         }
@@ -360,6 +361,7 @@ struct ConversationTranscript: View {
             anchor = .bottom
             animated = animates && !reduceMotion
         }
+        geometry.readingAnchor = nil
         withAnimation(animated ? .easeOut(duration: 0.2) : nil) {
             position.scrollTo(id: id, anchor: anchor)
         }
@@ -376,10 +378,32 @@ struct ConversationTranscript: View {
                 view: interaction.messageView, availability: intelligence.availability,
                 isOn: TranscriptIntelligenceSettings.isOn(TranscriptIntelligenceSettings.summarizesNewMessages))
         }
-        let command = model.open(unreadRow: openingRow)
+        openingScroll = model.open(unreadRow: openingRow)
+        landIfReady()
+    }
+
+    private func landIfReady() {
+        guard !hasLanded, let command = openingScroll,
+              viewport.width > 0, viewport.height > 0, viewport.contentHeight > 0 else { return }
+        openingScroll = nil
         // The native initial anchor already places an opening at the end.
         if case .row = command { perform(command) }
         hasLanded = true
+    }
+
+    private func holdReadingPlace(in new: [String: TranscriptMessageFrame]) {
+        let historyChanged = geometry.frames.values.first?.historyStart != new.values.first?.historyStart
+        let holds = hasLanded && !isRevealing && !followsEnd && !historyChanged
+        var shift: CGFloat = 0
+        if holds, let anchor = geometry.readingAnchor, let frame = new[anchor.id] {
+            shift = frame.contentTop - anchor.contentTop
+        } else if holds, geometry.readingAnchor != nil,
+                  let common = viewport.readingAnchor(in: new.filter { geometry.frames[$0.key] != nil }),
+                  let previous = geometry.frames[common.id] {
+            shift = common.contentTop - previous.contentTop
+        }
+        if abs(shift) > 0.25 { window.scroll(by: shift) } else { shift = 0 }
+        geometry.readingAnchor = holds ? viewport.readingAnchor(in: new, scrolledBy: shift) : nil
     }
 
     private func setExpanded(_ id: String, _ expands: Bool) {
@@ -657,6 +681,12 @@ struct TranscriptRestoringHistory: PreferenceKey {
 private final class TranscriptScrollGeometry {
     var viewport = TranscriptViewport()
     var frames: [String: TranscriptMessageFrame] = [:]
+    var readingAnchor: TranscriptReadingAnchor?
+}
+
+struct TranscriptReadingAnchor: Equatable {
+    var id: String
+    var contentTop: CGFloat
 }
 
 private struct TranscriptNotice<Message: View, Action: View>: View {
@@ -715,6 +745,23 @@ struct TranscriptViewport: Equatable {
         guard width > 0, height > 0 else { return nil }
         return frames.filter { $0.value.sequence > 0 && $0.value.rect.intersects(visible) }
             .min { $0.value.rect.minY < $1.value.rect.minY }.map { (id: $0.key, frame: $0.value) }
+    }
+
+    func readingAnchor(in frames: [String: TranscriptMessageFrame], scrolledBy shift: CGFloat = 0)
+        -> TranscriptReadingAnchor? {
+        guard width > 0, height > 0 else { return nil }
+        var starting: (id: String, frame: TranscriptMessageFrame)?
+        var spanning: (id: String, frame: TranscriptMessageFrame)?
+        for (id, frame) in frames {
+            let top = frame.rect.minY - shift
+            guard top < height, frame.rect.maxY - shift > 0 else { continue }
+            if top >= -0.5 {
+                if starting.map({ top < $0.frame.rect.minY - shift }) ?? true { starting = (id, frame) }
+            } else if spanning.map({ top > $0.frame.rect.minY - shift }) ?? true {
+                spanning = (id, frame)
+            }
+        }
+        return (starting ?? spanning).map { .init(id: $0.id, contentTop: $0.frame.contentTop) }
     }
 }
 

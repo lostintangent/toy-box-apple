@@ -1069,11 +1069,13 @@ size-change anchor while following. Width, window and scroller changes keep the 
 within one line of the top, rather than preserving an exact offset inside reflowed text.
 
 Landing, Jump to Latest, confirmed own posts, Reveal, filter changes and Show Less produce one
-row-or-end command. The binding seeds the opening row before the first native layout, and one view
-function applies commands with `ScrollPosition.scrollTo`. Reader geometry only classifies
-the 48-point following threshold and never produces a placement. No native clip writes, resize
-pins, correction loops, materialization acknowledgements or scroll watchdogs remain. Prepending,
-growing rows and returning from a viewer leave position to the native scroll view.
+row-or-end command. Opening waits for the native container's first nonempty geometry, and one view
+function applies commands with `ScrollPosition.scrollTo`. Reader geometry classifies the 48-point
+following threshold. One reading-only native clip delta compensates measured height changes above
+the visible anchor, including lazy estimate corrections. It uses changes in content-space row
+frames, not changes caused by scrolling, and stands down for following and explicit commands.
+No resize pins, correction loops, materialization acknowledgements or scroll watchdogs remain.
+Returning from a viewer never moves the transcript.
 
 Reveal loads the target's history first, switches a hiding filter to All Messages and expands Find
 results before issuing its one centered command. An unavailable target shows the existing error
@@ -1081,7 +1083,7 @@ without moving. A filter change while reading chooses the first remaining messag
 the old visible sequence, then the last earlier message. Following stays at the end. Show Less
 targets its entry's top only when that top was above the viewport.
 
-Measured row frames serve visibility and benchmark observation, never placement. The pure
+Measured row frames serve visibility, benchmark observation and the bounded reading hold. The pure
 `visibleRows` helper counts only committed rows with at least `min(24, height / 2)` unobscured
 points between the toolbar and floating controls. Find and either viewer suspend read marking.
 Opening or closing a viewer never issues a scroll command. Concurrent older-history callers

@@ -672,6 +672,27 @@ struct TranscriptTests {
         #expect(TranscriptViewport().readSequence(in: ["unmeasured": frame(sequence: 8, y: 0, height: 40)]) == nil)
     }
 
+    @Test func readingAnchorUsesTheFirstStartingRowAfterAMeasuredHeightCorrection() {
+        let viewport = TranscriptViewport(width: 520, height: 400)
+        let frames: [String: TranscriptMessageFrame] = [
+            "spanning": .init(sequence: 1, rect: CGRect(x: 0, y: -30, width: 520, height: 50),
+                              historyStart: 1, contentTop: 970),
+            "starting": .init(sequence: 2, rect: CGRect(x: 0, y: 40, width: 520, height: 80),
+                              historyStart: 1, contentTop: 1040),
+        ]
+        #expect(viewport.readingAnchor(in: frames) == .init(id: "starting", contentTop: 1040))
+        let corrected = frames.mapValues {
+            var frame = $0
+            frame.rect.origin.y -= 599
+            frame.contentTop -= 599
+            return frame
+        }
+        #expect(viewport.readingAnchor(in: corrected, scrolledBy: -599)
+                == .init(id: "starting", contentTop: 441))
+        #expect(viewport.readingAnchor(in: ["spanning": frames["spanning"]!])
+                == .init(id: "spanning", contentTop: 970))
+    }
+
     @Test func pagingAnchorsUseOnlyVisibleCommittedFrames() {
         let viewport = TranscriptViewport(width: 600, height: 400)
         let frames: [String: TranscriptMessageFrame] = [
@@ -852,6 +873,66 @@ struct TranscriptTests {
         #expect(divider.minY >= -0.5 && divider.minY < 120, "App landing left the divider at \(divider)")
         #expect(harness.isVisible("m451"))
         #expect(harness.bottomGap > 200)
+        #expect(harness.readRequests == 0)
+    }
+
+    @MainActor
+    @Test(arguments: [false, true])
+    func unreadAppLandingIncludesTheCatchUpBeforeAndAfterGeneration(warm: Bool) async throws {
+        let summary = CatchUp(needsYou: nil, changes: [
+            .init(text: "The launch checklist moved forward.", sources: [451]),
+            .init(text: "The team verified the reconnect fix.", sources: [453]),
+            .init(text: "The release review is ready.", sources: [455]),
+        ], through: 480)
+        let service = StubChannelIntelligence(results: [.ready(summary)], holdsCatchUp: true)
+        func messages(_ range: ClosedRange<Int>) -> [ChannelMessage] {
+            range.map { catchUpTestMessage($0, sender: $0.isMultiple(of: 2) ? .user : .agent("lead"), repeats: 2) }
+        }
+        let harness = try await TranscriptHarness(
+            messages: messages(381...480), history: messages(1...380),
+            seenThrough: 450, width: 1280, height: 840, warm: warm, appScene: true,
+            intelligence: service)
+        defer {
+            service.releaseCatchUp()
+            harness.close()
+        }
+        try #require(TranscriptIntelligenceSettings.isOn(TranscriptIntelligenceSettings.summarizesNewMessages))
+        let state = try #require(harness.store.state)
+        try #require(CatchUpRequest(server: harness.store.api.baseURL, state: state, unreadAfter: 450) != nil)
+        try await harness.waitUntil { harness.hasAppSurroundings && service.catchUpCount > 0 }
+        try await harness.settled()
+        let loading = try #require(harness.frames["divider-m451"]?.rect)
+        #expect(loading.height > 40)
+        #expect(loading.minY >= -0.5 && loading.minY < 120, "Loading catch-up landed at \(loading)")
+
+        service.releaseCatchUp()
+        try await harness.waitUntil { harness.frames["divider-m451"]?.rect.height != loading.height }
+        try await harness.settled()
+        let ready = try #require(harness.frames["divider-m451"]?.rect)
+        #expect(ready.minY >= -0.5 && ready.minY < 120, "Ready catch-up landed at \(ready)")
+        #expect(harness.readRequests == 0)
+    }
+
+    @MainActor
+    @Test func prependingOneCommittedPageKeepsTheVisibleMessages() async throws {
+        let harness = try await TranscriptHarness(messages: (61...90).map(transcriptTestMessage),
+                                                  history: (1...60).map(transcriptTestMessage))
+        defer { harness.close() }
+        let scroll = harness.scrollView
+        let clip = scroll.contentView
+        clip.scroll(to: NSPoint(x: clip.bounds.minX, y: 120 - scroll.contentInsets.top))
+        scroll.reflectScrolledClipView(clip)
+        try await harness.settled()
+        let reading = harness.visibleFrames()
+        try #require(reading.count >= 3)
+
+        await harness.store.loadOlder()
+        try await harness.settled()
+        #expect(harness.store.messages.first?.sequence == 31)
+        for (id, before) in reading {
+            let after = try #require(harness.frames[id]?.rect)
+            #expect(abs(after.minY - before.minY) < 1, "Prepending moved \(id) from \(before) to \(after)")
+        }
         #expect(harness.readRequests == 0)
     }
 
@@ -3093,6 +3174,10 @@ private final class TranscriptHarness {
         }
         (self.host, self.store, self.interaction, self.capture) = (host, store, interaction, capture)
         (self.session, self.window, self.appModel) = (session, window, appModel)
+        if appScene {
+            window.setFrameOrigin(NSPoint(x: -10_000, y: -10_000))
+            window.orderBack(nil)
+        }
         if let onTurn {
             self.onTurn = onTurn
             // After Core Animation's commit, so it sees each pass as drawn.

@@ -38,6 +38,17 @@ final class TranscriptWindowObserver {
         return scrollView.contentView.bounds.minY + scrollView.contentInsets.top
     }
 
+    /// Compensates measured height changes above a reader, without replacing native reader input.
+    func scroll(by delta: CGFloat) {
+        guard let scrollView, let document = scrollView.documentView, delta.isFinite else { return }
+        let clip = scrollView.contentView
+        let maximum = max(0, document.bounds.height - clip.bounds.height)
+        let target = CGPoint(x: clip.bounds.origin.x,
+                             y: min(maximum, max(0, clip.bounds.origin.y + (document.isFlipped ? delta : -delta))))
+        clip.scroll(to: target)
+        scrollView.reflectScrolledClipView(clip)
+    }
+
     func announce(_ message: String) {
         guard let window, window.isKeyWindow, window.isVisible, !window.isMiniaturized else { return }
         NSAccessibility.post(element: NSApplication.shared, notification: .announcementRequested,
