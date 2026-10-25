@@ -565,6 +565,43 @@ struct TranscriptTests {
     }
 
     @MainActor
+    @Test(.serialized, .enabled(if: transcriptTimingTestsEnabled), arguments: [false, true])
+    func readingWidthChangesAfterAnUnphasedNativePageKeepTheVisibleAnchor(legacyScrollers: Bool) async throws {
+        let drift = TranscriptWidthLog()
+        let harness = try await TranscriptHarness(messages: (1...100).map(transcriptTestMessage),
+                                                  resizable: true, legacyScrollers: legacyScrollers) { harness in
+            guard let anchorID = drift.anchorID else { return }
+            guard let frame = harness.frames[anchorID] else {
+                drift.missing += 1
+                return
+            }
+            drift.values.append(frame.rect.minY - drift.anchorTop)
+        }
+        defer { harness.close() }
+        let clip = harness.scrollView.contentView
+        clip.scroll(to: NSPoint(x: clip.bounds.minX, y: clip.bounds.minY - 900))
+        harness.scrollView.reflectScrolledClipView(clip)
+        try await harness.settled()
+        let anchor = try #require(harness.visibleFrames().min { $0.value.minY < $1.value.minY })
+        drift.anchorID = anchor.key
+        drift.anchorTop = anchor.value.minY
+        for _ in 0..<3 {
+            for width: CGFloat in [360, 520] {
+                harness.resize(width: width)
+                try await harness.frame()
+            }
+        }
+        try await harness.settled()
+        print("WIDTH_ANCHOR legacy=\(legacyScrollers) id=\(anchor.key) offset=\(drift.anchorTop)"
+              + " samples=\(drift.values.count) missing=\(drift.missing)"
+              + " worst=\(drift.values.map(abs).max() ?? .infinity)")
+        #expect(drift.missing == 0)
+        #expect(!drift.values.isEmpty && drift.values.allSatisfy { abs($0) <= 1 },
+                "Worst width drift: \(drift.values.map(abs).max() ?? .infinity)")
+        #expect(harness.readRequests == 0)
+    }
+
+    @MainActor
     @Test(.enabled(if: transcriptTimingTestsEnabled), arguments: [false, true])
     func arrivalsFollowAtTheBottomAndJumpingBackFollowsASend(legacyScrollers: Bool) async throws {
         let openingGaps = TranscriptGapLog()
@@ -2488,6 +2525,14 @@ private final class TranscriptLayoutCapture {
 
 @MainActor
 private final class TranscriptGapLog {
+    var values: [CGFloat] = []
+}
+
+@MainActor
+private final class TranscriptWidthLog {
+    var anchorID: String?
+    var anchorTop: CGFloat = 0
+    var missing = 0
     var values: [CGFloat] = []
 }
 

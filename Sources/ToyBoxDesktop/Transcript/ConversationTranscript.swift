@@ -14,6 +14,7 @@ struct ConversationTranscript: View {
     @Environment(\.channelIntelligence) private var intelligence
     @ViewState private var window = TranscriptWindowObserver()
     @ViewState private var geometry = TranscriptScrollGeometry()
+    @ViewState private var readingScroll = TranscriptReadingScroll()
     /// The newest message a reader can see, published only when it changes rather than on every frame.
     @ViewState private var visibleSequence: Int?
     @ViewState private var hasLanded = false
@@ -25,7 +26,7 @@ struct ConversationTranscript: View {
     @ViewState private var isRevealing = false
     @ViewState private var lastMarkedRead = 0
     @ViewState private var expandedMessageIds: Set<String> = []
-    @ViewState private var scrollPosition: String?
+    @ViewState private var scrollPosition = ScrollPosition(idType: String.self)
     @ViewState private var arrivalUnreadAfter: Int?
     @ViewState private var capturedArrivalBoundary = false
     @ViewState private var isUserScrolling = false
@@ -83,6 +84,7 @@ struct ConversationTranscript: View {
 
     var body: some View {
         resolveOpening()
+        readingScroll.configure(rows: rows, expandedIDs: expandedMessageIds)
         return content
             .onChange(of: showsViewerMessage) { shown, showing in
                 // A deleted message or channel closes the viewer at once. A pending send isn't in the
@@ -235,28 +237,40 @@ struct ConversationTranscript: View {
         .scrollEdgeEffectStyle(.hard, for: .top)
         .coordinateSpace(name: "transcript-viewport")
         .defaultScrollAnchor(opening.seededRowID == nil ? .bottom : .top, for: .initialOffset)
-        .scrollPosition(id: Binding {
-            // The seed holds the first unread row at the top until it lands, as the card appears above it.
-            scrollPosition ?? (hasLanded || isRevealing ? nil : opening.seededRowID)
-        } set: { scrollPosition = $0 }, anchor: .top)
+        .scrollPosition(Binding {
+            if !hasLanded, !isRevealing, scrollPosition.viewID(type: String.self) == nil,
+               let id = opening.seededRowID {
+                return ScrollPosition(id: id, anchor: .top)
+            }
+            return scrollPosition
+        } set: {
+            scrollPosition = $0
+            if $0.isPositionedByUser { readingScroll.readerMoved() }
+        }, anchor: .top)
         .preference(key: TranscriptLanded.self, value: hasLanded)
         .preference(key: TranscriptRestoringHistory.self, value: pagingAnchor != nil)
         .onScrollGeometryChange(for: TranscriptViewport.self) { TranscriptViewport($0) } action: { old, new in
             layoutTurns.moved = true
+            if scrollPosition.isPositionedByUser, new.width == old.width, new.height == old.height,
+               new.contentHeight == old.contentHeight, abs(new.top - old.top) > 0.5 {
+                readingScroll.readerMoved()
+            }
             // Keyboard scrolling has no scroll phase, so any move the transcript didn't make releases the card.
             if catchUp?.isPinned == true, hasLanded, pendingJump == nil, abs(new.top - old.top) > 0.5,
                new.contentHeight == old.contentHeight, new.height == old.height {
                 catchUp?.isPinned = false
             }
-            let update = new.update(after: old, wasAtBottom: isAtBottom,
+            let update = new.update(after: old, wasAtBottom: isAtBottom && !readingScroll.isReading,
                                     canFollow: hasLanded && pagingAnchor == nil && !isRevealing && !isUserScrolling
                                         && catchUp?.holdsLanding != true && !find.isPresented,
                                     isJumping: pendingJump != nil)
             geometry.viewport = new
+            holdReadingPlace(in: frames, using: proxy)
             followReaderWhilePaging()
             publishVisibleSequence()
             pointer.contentDidMove()
-            if isAtBottom != update.isAtBottom { isAtBottom = update.isAtBottom }
+            let atBottom = !readingScroll.isReading && update.isAtBottom
+            if isAtBottom != atBottom { isAtBottom = atBottom }
             let jump = pendingJump
             if update.landsJump { pendingJump = nil }
             switch update.follow {
@@ -277,7 +291,7 @@ struct ConversationTranscript: View {
         }
         .onPreferenceChange(TranscriptMessageFrames.self) { new in
             layoutTurns.moved = true
-            holdReadingPlace(in: new)
+            holdReadingPlace(in: new, using: proxy)
             geometry.frames = new
             publishVisibleSequence()
             followReaderWhilePaging()
@@ -286,6 +300,7 @@ struct ConversationTranscript: View {
         .onScrollPhaseChange { _, phase in
             let scrolling = phase == .tracking || phase == .interacting || phase == .decelerating
             if isUserScrolling != scrolling { isUserScrolling = scrolling }
+            if phase == .tracking || phase == .interacting { readingScroll.readerMoved() }
             if phase == .tracking || phase == .interacting { catchUp?.isPinned = false }
             if phase == .tracking || phase == .interacting { find.resumeReading() }
             // Before the page lands, the anchor follows the reader instead.
@@ -731,7 +746,7 @@ struct ConversationTranscript: View {
     /// Programmatic scrolls never update the scroll position binding, so an anchor left by an earlier
     /// user scroll would pull the viewport back toward it whenever content changes size.
     private func scrollToLatest(using proxy: ScrollViewProxy, animation: Animation? = nil) {
-        scrollPosition = nil
+        scrollPosition = .init(idType: String.self)
         pendingJump = nil
         withAnimation(animation) { proxy.scrollTo("transcript-end", anchor: .bottom) }
     }
@@ -743,7 +758,7 @@ struct ConversationTranscript: View {
     private func jump(to id: String, anchor: UnitPoint, using proxy: ScrollViewProxy) {
         let jump = TranscriptJump(id: id, anchor: anchor)
         pendingJump = jump
-        scrollPosition = nil
+        scrollPosition = .init(idType: String.self)
         proxy.scrollTo(id, anchor: anchor)
         Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(500))
@@ -790,7 +805,7 @@ struct ConversationTranscript: View {
                 try? await Task.sleep(for: .milliseconds(16))
             case .placeColdOpening:
                 // Cold lazy rows can report their old bottom before measuring the unread run.
-                scrollPosition = nil
+                scrollPosition = .init(idType: String.self)
                 proxy.scrollTo(row.id, anchor: .top)
                 jumps += 1
             case .correctPosition:
@@ -900,7 +915,7 @@ struct ConversationTranscript: View {
         let deadline = ContinuousClock.now + .seconds(2)
         var reveal = TranscriptReveal()
         var materialized = false
-        scrollPosition = nil
+        scrollPosition = .init(idType: String.self)
         while ContinuousClock.now < deadline {
             guard await turns.settled(), revealIsCurrent(token, findToken: findToken) else { return false }
             guard let layout = TranscriptReveal.Layout(
@@ -961,29 +976,17 @@ struct ConversationTranscript: View {
         if current != anchor { pagingAnchor = current }
     }
 
-    /// LazyVStack estimates the heights of rows it hasn't built and corrects them as it builds rows
-    /// above the viewport, without moving the offset, so scrolling up moved the reader's rows by
-    /// hundreds of points at a time. In the same pass, the viewport now scrolls by however far the
-    /// first row starting in it moved through the content, so only scrolling moves what's on screen,
-    /// while rows starting in the viewport still grow downward. Each correction costs a second layout
-    /// pass, so a frame or two, but only while rows above change height.
-    private func holdReadingPlace(in frames: [String: TranscriptMessageFrame]) {
-        // Anything else that moves the scroll position owns it outright, so the hold stands down while
-        // following the bottom, landing, paging, jumping or revealing. New code that scrolls the
-        // transcript needs to switch it off here too.
+    private func holdReadingPlace(in frames: [String: TranscriptMessageFrame], using proxy: ScrollViewProxy) {
         let holds = hasLanded && pagingAnchor == nil && pendingJump == nil && !isRevealing
-            && (!isAtBottom || catchUp?.holdsLanding == true)
-        var shift: CGFloat = 0
-        if holds, let anchor = geometry.readingAnchor, let frame = frames[anchor.id] {
-            shift = frame.contentTop - anchor.contentTop
-        } else if holds, geometry.readingAnchor != nil,
-                  let common = viewport.readingAnchor(in: frames.filter { geometry.frames[$0.key] != nil }),
-                  let previous = geometry.frames[common.id] {
-            // The pass that moved the anchor out of the built rows still moved the rows that stayed.
-            shift = common.contentTop - previous.contentTop
+            && (readingScroll.isReading || !isAtBottom || catchUp?.holdsLanding == true)
+        guard holds else {
+            readingScroll.release()
+            return
         }
-        if abs(shift) > 0.25 { window.scroll(by: shift) } else { shift = 0 }
-        geometry.readingAnchor = holds ? viewport.readingAnchor(in: frames, scrolledBy: shift) : nil
+        guard let native = window.nativeLayout,
+              let placement = readingScroll.receive(
+                frames: frames, native: native, historyStart: store.messages.first?.sequence ?? 0) else { return }
+        proxy.scrollTo(placement.id, anchor: placement.anchor)
     }
 
     @discardableResult
