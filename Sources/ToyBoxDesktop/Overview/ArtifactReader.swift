@@ -39,6 +39,8 @@ final class ArtifactOpener {
     @ObservationIgnored weak var window: NSWindow?
     @ObservationIgnored weak var nativeImageView: ArtifactImageScrollView?
     @ObservationIgnored var webView: WKWebView?
+    @ObservationIgnored weak var webRenderer: ArtifactWebContent?
+    @ObservationIgnored var webReadingStates: [String: ArtifactWebReadingState] = [:]
     @ObservationIgnored var scrollOffsets: [String: CGFloat] = [:]
 
     var isPresented: Bool { artifact != nil }
@@ -81,6 +83,7 @@ final class ArtifactOpener {
     }
 
     func open(_ artifact: ChannelArtifact) {
+        rememberWebReadingState()
         animates = true
         invokingWindow = window ?? NSApp?.keyWindow
         invokingResponder = invokingWindow?.firstResponder
@@ -110,6 +113,7 @@ final class ArtifactOpener {
         guard id != artifact?.id else { return }
         let previous = pages?.index ?? 0
         guard pages?.select(id) == true, let selected = pages?.selected else { return }
+        rememberWebReadingState()
         direction = (pages?.index ?? previous) > previous ? 1 : -1
         artifact = selected
         load()
@@ -129,6 +133,9 @@ final class ArtifactOpener {
         token = UUID()
         webView?.stopLoading()
         webView = nil
+        webRenderer = nil
+        for state in webReadingStates.values { state.position.cancel() }
+        webReadingStates = [:]
         artifact = nil
         pages = nil
         content = nil
@@ -166,6 +173,8 @@ final class ArtifactOpener {
         if let artifact {
             thumbnails[artifact.id] = nil
             thumbnailFailures.remove(artifact.id)
+            webReadingStates[artifact.id]?.position.cancel()
+            webReadingStates[artifact.id] = nil
         }
         load(reloading: true)
     }
@@ -214,6 +223,7 @@ final class ArtifactOpener {
         if !reloading {
             webView?.stopLoading()
             webView = nil
+            webRenderer = nil
             image = nil
             content = nil
         }
@@ -255,6 +265,12 @@ final class ArtifactOpener {
             }
         }
 
+    }
+
+    private func rememberWebReadingState() {
+        guard let artifact, let state = webRenderer?.readingState else { return }
+        webReadingStates[artifact.id]?.position.cancel()
+        webReadingStates[artifact.id] = state
     }
 
     private func prepareThumbnails() {

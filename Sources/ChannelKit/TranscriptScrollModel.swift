@@ -138,6 +138,11 @@ public enum TranscriptScrollModel {
         }
     }
 
+    /// Projects an existing intent onto current geometry without reducing an event.
+    public static func placement(for intent: Intent, rows: [RowFrame], viewport: Viewport) -> Placement {
+        place(intent, rows: rows, viewport: viewport)
+    }
+
     /// Repeated native layout passes and content-only changes must not undo a reader's position.
     public static func layoutEvent(from oldRows: [RowFrame], viewport oldViewport: Viewport,
                                    to rows: [RowFrame], viewport: Viewport) -> Event? {

@@ -135,7 +135,7 @@ struct ArtifactViewerStage: View {
             case .markdown:
                 ArtifactMarkdownPage(content: content, opener: opener, bottomInset: hasStrip ? 0 : 24)
             case .html:
-                ArtifactWebPage(content: content, opener: opener)
+                ArtifactWebPage(content: content, opener: opener, bottomInset: hasStrip ? 0 : 24)
             case .image, .svg:
                 if let image = opener.image {
                     ArtifactNativeImage(content: content, image: image, opener: opener)
@@ -214,19 +214,26 @@ private struct ArtifactMarkdownPage: View {
 private struct ArtifactWebPage: View {
     let content: ArtifactContent
     let opener: ArtifactOpener
+    let bottomInset: CGFloat
     @ViewState private var renderer: ArtifactWebContent
     @ViewState private var showsSpinner = false
 
-    init(content: ArtifactContent, opener: ArtifactOpener) {
+    init(content: ArtifactContent, opener: ArtifactOpener, bottomInset: CGFloat) {
         self.content = content
         self.opener = opener
+        self.bottomInset = bottomInset
         _renderer = ViewState(initialValue: ArtifactWebContent())
     }
 
     var body: some View {
         ZStack {
             if content.text != nil {
-                ArtifactWebView(renderer: renderer)
+                GeometryReader { geometry in
+                    ArtifactWebView(renderer: renderer, obscuredInsets: geometry.safeAreaInsets,
+                                    bottomInset: bottomInset)
+                        .ignoresSafeArea(edges: .vertical)
+                }
+                .scrollEdgeEffectStyle(.hard, for: .top)
             } else {
                 ContentUnavailableView("Couldn't Load Artifact", systemImage: "doc.badge.ellipsis",
                                        description: Text("The artifact's text is unavailable."))
@@ -246,8 +253,10 @@ private struct ArtifactWebPage: View {
         .task(id: content.file) {
             guard let text = content.text else { return }
             opener.webView = renderer.webView
+            opener.webRenderer = renderer
             await renderer.load(text, directory: content.directory,
-                                server: content.server, resource: content.resource)
+                                server: content.server, resource: content.resource,
+                                state: opener.webReadingStates[content.artifact.id])
         }
         .task(id: renderer.isLoading) {
             showsSpinner = false
@@ -260,20 +269,35 @@ private struct ArtifactWebPage: View {
         .onDisappear {
             renderer.stop()
             if opener.webView === renderer.webView { opener.webView = nil }
+            if opener.webRenderer === renderer { opener.webRenderer = nil }
         }
     }
 }
 
 private struct ArtifactWebView: NSViewRepresentable {
     let renderer: ArtifactWebContent
+    let obscuredInsets: EdgeInsets
+    let bottomInset: CGFloat
 
     func makeNSView(context: Context) -> WKWebView {
         renderer.webView.allowsMagnification = true
         renderer.webView.underPageBackgroundColor = .clear
+        updateInsets(renderer.webView)
         return renderer.webView
     }
 
-    func updateNSView(_ nsView: WKWebView, context: Context) {}
+    func updateNSView(_ nsView: WKWebView, context: Context) {
+        updateInsets(nsView)
+    }
+
+    private func updateInsets(_ webView: WKWebView) {
+        let next = NSEdgeInsets(top: obscuredInsets.top, left: 0,
+                               bottom: obscuredInsets.bottom + bottomInset, right: 0)
+        let current = webView.obscuredContentInsets
+        if current.top != next.top || current.bottom != next.bottom || current.left != 0 || current.right != 0 {
+            webView.obscuredContentInsets = next
+        }
+    }
 }
 
 private struct ArtifactNativeImage: NSViewRepresentable {
