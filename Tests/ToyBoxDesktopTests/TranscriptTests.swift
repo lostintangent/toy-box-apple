@@ -727,7 +727,6 @@ struct TranscriptTests {
                   + " gap=\(bottomGap())"
                   + " documentWidth=\(harness.scrollView.documentView?.bounds.width ?? 0)"
                   + " m74Rect=\(String(describing: harness.frames["m74"]?.rect))"
-                  + " m74Source=\(String(describing: harness.capture.frames["m74"]?.layoutSize))"
                   + " nativeRow=\(String(describing: harness.frames["scroll-row-m74"]?.rect))"
                   + " measured=\(harness.frames.count) visible=\(visible)")
         }
@@ -819,6 +818,60 @@ struct TranscriptTests {
         let landed = try #require(gaps.values.firstIndex { abs($0) < 2 })
         #expect(gaps.values[landed...].allSatisfy { $0 <= 48 }, "Gaps after the jump: \(gaps.values[landed...])")
         #expect(abs(harness.bottomGap) < 2)
+        #expect(harness.readRequests == 0)
+    }
+
+    @MainActor
+    @Test(arguments: [false, true])
+    func unreadLandingReachesTheRequestedRow(warm: Bool) async throws {
+        let harness = try await TranscriptHarness(
+            messages: transcriptFindTestMessages(381...480), seenThrough: 450, warm: warm,
+            intelligence: StubChannelIntelligence(availability: .unavailable(.deviceNotEligible)))
+        defer { harness.close() }
+        try await harness.settled()
+
+        let divider = try #require(harness.frames["divider-m451"]?.rect)
+        #expect(divider.minY >= -0.5 && divider.minY < 120, "Unread landing left the divider at \(divider)")
+        #expect(harness.isVisible("m451"))
+        #expect(harness.bottomGap > 200)
+        #expect(harness.readRequests == 0)
+    }
+
+    @MainActor
+    @Test func nativeClipJumpsToTheTopAndEndStayAfterLayout() async throws {
+        let harness = try await TranscriptHarness(
+            messages: transcriptFindTestMessages(381...480), history: transcriptFindTestMessages(1...380),
+            seenThrough: 450,
+            intelligence: StubChannelIntelligence(availability: .unavailable(.deviceNotEligible)))
+        defer { harness.close() }
+        for atEnd in [false, true, false] {
+            let scroll = harness.scrollView
+            let clip = scroll.contentView
+            let document = try #require(scroll.documentView)
+            let top = atEnd ? document.bounds.height - clip.bounds.height + scroll.contentInsets.bottom
+                : 120 - scroll.contentInsets.top
+            clip.scroll(to: NSPoint(x: clip.bounds.minX, y: top))
+            scroll.reflectScrolledClipView(clip)
+            try await harness.settled()
+            if atEnd {
+                #expect(abs(harness.bottomGap) < 2)
+            } else {
+                #expect(abs(clip.bounds.minY + scroll.contentInsets.top - 120) < 2)
+            }
+        }
+        #expect(harness.readRequests == 0)
+    }
+
+    @MainActor
+    @Test func nativePageUpIsNotReassertedAfterLayout() async throws {
+        let harness = try await TranscriptHarness(messages: transcriptFindTestMessages(1...90))
+        defer { harness.close() }
+        for _ in 0..<3 {
+            let previous = harness.scrollView.contentView.bounds.minY
+            harness.scrollView.pageUp(nil)
+            try await harness.settled()
+            #expect(harness.scrollView.contentView.bounds.minY < previous - 100)
+        }
         #expect(harness.readRequests == 0)
     }
 

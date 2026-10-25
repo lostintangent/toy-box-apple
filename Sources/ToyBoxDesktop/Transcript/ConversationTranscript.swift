@@ -17,8 +17,7 @@ struct ConversationTranscript: View {
     @ViewState private var rowBuilder = TranscriptRowBuilder()
     @ViewState private var pointer = TranscriptPointer()
     @ViewState private var model = TranscriptScrollIntent()
-    @ViewState private var position: String?
-    @ViewState private var positionAnchor = UnitPoint.top
+    @ViewState private var position = ScrollPosition(idType: String.self)
     @ViewState private var hasLanded = false
     @ViewState private var arrivalUnreadAfter: Int?
     @ViewState private var visibleSequence: Int?
@@ -215,10 +214,7 @@ struct ConversationTranscript: View {
         .coordinateSpace(name: "transcript-viewport")
         .scrollEdgeEffectStyle(.soft, for: .bottom)
         .scrollEdgeEffectStyle(.hard, for: .top)
-        .scrollPosition(id: Binding {
-            if !hasLanded, let id = openingRow { return id }
-            return position
-        } set: { position = $0 }, anchor: positionAnchor)
+        .scrollPosition($position)
         .defaultScrollAnchor(openingRow == nil ? .bottom : .top, for: .initialOffset)
         .defaultScrollAnchor(followsEnd ? .bottom : nil, for: .sizeChanges)
         .preference(key: TranscriptLanded.self, value: hasLanded)
@@ -362,8 +358,7 @@ struct ConversationTranscript: View {
             animated = animates && !reduceMotion
         }
         withAnimation(animated ? .easeOut(duration: 0.2) : nil) {
-            positionAnchor = anchor
-            position = id
+            position.scrollTo(id: id, anchor: anchor)
         }
     }
 

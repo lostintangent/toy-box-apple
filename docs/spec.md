@@ -1064,12 +1064,13 @@ continue paging even when a page contains no visible rows.
 `ChannelKit.TranscriptScrollIntent` owns only landing, following and reading intent. It never
 computes an origin or treats the lazy stack's height estimates as stable coordinates. Each agent
 message is a separate native lazy row, with grouping kept visually and the canonical projection
-unchanged. SwiftUI owns the position through `scrollPosition`, `scrollTargetLayout` and a bottom
+unchanged. SwiftUI owns the position through `ScrollPosition`, `scrollTargetLayout` and a bottom
 size-change anchor while following. Width, window and scroller changes keep the reading message
 within one line of the top, rather than preserving an exact offset inside reflowed text.
 
 Landing, Jump to Latest, confirmed own posts, Reveal, filter changes and Show Less produce one
-row-or-end command. One view function applies it through SwiftUI. Reader geometry only classifies
+row-or-end command. One view function applies it with `ScrollPosition.scrollTo`, without seeding
+the binding with an opening row ID before the command. Reader geometry only classifies
 the 48-point following threshold and never produces a placement. No native clip writes, resize
 pins, correction loops, materialization acknowledgements or scroll watchdogs remain. Prepending,
 growing rows and returning from a viewer leave position to the native scroll view.

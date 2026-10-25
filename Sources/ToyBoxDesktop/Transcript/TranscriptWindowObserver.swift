@@ -126,7 +126,6 @@ struct TranscriptMessageFrame: Equatable {
     var historyStart: Int
     /// The top in the content, which only layout changes move. Scrolling moves only `rect`.
     var contentTop: CGFloat = 0
-    var layoutSize: CGSize?
     var windowRect: CGRect = .zero
 }
 
@@ -147,7 +146,6 @@ extension View {
                     id: .init(sequence: sequence, rect: geometry.frame(in: .named("transcript-viewport")),
                               historyStart: historyStart,
                               contentTop: geometry.frame(in: .named("transcript-content")).minY,
-                              layoutSize: geometry.bounds(of: .named("transcript-content"))?.size,
                               windowRect: geometry.frame(in: .global))
                 ])
             }
