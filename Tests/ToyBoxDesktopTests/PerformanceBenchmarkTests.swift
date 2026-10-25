@@ -243,7 +243,7 @@ struct PerformanceBenchmarkTests {
         scroll.layoutSubtreeIfNeeded()
         scroll.contentView.scroll(to: CGPoint(x: 0, y: 500))
         let mounted = rows.mounted
-        let source = BenchmarkTableScrollGeometry(table: table, scroll: scroll)
+        let source = try #require(BenchmarkScrollGeometry.source(in: scroll))
         let before = try #require(source.benchmarkScrollGeometry())
         #expect(before.firstVisibleRow == "table-row-5")
         #expect(before.rowTops["table-row-5"] == -40)
@@ -260,6 +260,58 @@ struct PerformanceBenchmarkTests {
         rows.count += 1
         table.reloadData()
         #expect(source.benchmarkScrollGeometry() == nil)
+    }
+
+    @MainActor @Test func hostedTableProbeUsesTheOuterClipViewWithoutMountingCells() throws {
+        let rows = BenchmarkTableRows()
+        let table = NSTableView(frame: CGRect(x: 0, y: 240, width: 600, height: 5_000))
+        table.headerView = nil
+        table.style = .plain
+        table.intercellSpacing = .zero
+        table.rowHeight = 100
+        table.addTableColumn(NSTableColumn(identifier: .init("message")))
+        table.dataSource = rows
+        table.delegate = rows
+        let document = BenchmarkFlippedDocument(frame: CGRect(x: 0, y: 0, width: 600, height: 5_240))
+        document.addSubview(table)
+        let scroll = NSScrollView(frame: CGRect(x: 0, y: 0, width: 600, height: 400))
+        scroll.automaticallyAdjustsContentInsets = false
+        scroll.contentInsets = NSEdgeInsets(top: 40, left: 0, bottom: 80, right: 0)
+        scroll.documentView = document
+        table.reloadData()
+        scroll.layoutSubtreeIfNeeded()
+        scroll.contentView.scroll(to: CGPoint(x: 0, y: 500))
+        let mounted = rows.mounted
+        let source = try #require(BenchmarkScrollGeometry.source(in: scroll))
+        let before = try #require(source.benchmarkScrollGeometry())
+        #expect(before.firstVisibleRow == "table-row-3")
+        #expect(before.rowTops["table-row-3"] == 0)
+        #expect(before.rowTops["table-row-4"] == 100)
+        #expect(rows.mounted == mounted)
+        scroll.contentView.scroll(to: CGPoint(x: 0, y: 460))
+        let mountedAfterScroll = rows.mounted
+        let after = try #require(source.benchmarkScrollGeometry())
+        var drift = BenchmarkScrollDrift()
+        drift.sample(before, scrollDelta: 0)
+        drift.sample(after, scrollDelta: 40)
+        #expect(drift.maximum == 0)
+        #expect(drift.measuredFrames == 1)
+        #expect(rows.mounted == mountedAfterScroll)
+    }
+
+    @MainActor @Test func geometryDiscoveryExcludesIndependentNestedScrollViews() {
+        let outer = NSScrollView(frame: CGRect(x: 0, y: 0, width: 600, height: 400))
+        let document = BenchmarkFlippedDocument(frame: CGRect(x: 0, y: 0, width: 600, height: 5_000))
+        outer.documentView = document
+        let inner = NSScrollView(frame: CGRect(x: 0, y: 0, width: 600, height: 200))
+        inner.documentView = NSTableView(frame: CGRect(x: 0, y: 0, width: 600, height: 1_000))
+        document.addSubview(inner)
+        #expect(BenchmarkScrollGeometry.source(in: outer) == nil)
+    }
+
+    @MainActor
+    private final class BenchmarkFlippedDocument: NSView {
+        override var isFlipped: Bool { true }
     }
 
     private func frame(top: CGFloat, sequence: Int = 1, history: Int = 1) -> TranscriptMessageFrame {
