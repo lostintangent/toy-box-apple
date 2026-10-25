@@ -1081,6 +1081,27 @@ they still contribute document height, but are never reading anchors, fallback t
 candidates. Explicit row-target actions reject accessories. With only accessory geometry remaining,
 a layout-time target loss falls back to the document end.
 
+Lazy containers use the model's `Layout` entry points. A layout separates all canonical
+`RowIdentity` values in conversation order from the subset of measured `RowFrame` values,
+and supplies the viewport, native origin and native `documentEnd`. That extent already
+includes the existing 16-point clearance. Following, threshold classification and clamping
+use it without adding clearance or inferring an end from the last measured row.
+A known target without a frame returns `needsMeasurement` and no origin, retaining its intent.
+Only canonical absence triggers unavailable-target errors or layout-time survivor fallback.
+The adapter materializes the requested ID, then submits a new measured layout.
+
+The adapter builds each `Layout` from one layout callback, never mixing old frames with a
+new native viewport, origin or document extent. Identities and measured frames have unique
+IDs, and frame identity metadata must match canonical membership. Before capturing reader
+input or Find's position, the adapter requires current measured viewport geometry. If that
+geometry is not available, it retains the reader-input notification and suppresses programmatic
+placement until it can reduce that input first. Expansion actions require the clicked row's
+measured frame. The model never invents an anchor offset or falls back to following merely
+because a known row is unmeasured.
+`layoutEvent(from:to:)` compares membership, measured geometry, viewport and document extent,
+not reader-only origin changes. Complete-frame entry points remain available and use the
+same reducer and placement logic.
+
 Long histories must stay as fast as short ones. Build rows incrementally: derive each message's
 audience, display text and reactions once, and when messages only append, rebuild from the last
 row rather than from the start. Give each row only the values it renders and compare rows, so a new
