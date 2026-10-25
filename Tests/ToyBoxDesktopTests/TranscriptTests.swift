@@ -69,16 +69,8 @@ struct TranscriptTableHeightTests {
 
     @Test(.enabled(if: transcriptTimingTestsEnabled))
     func nativeTableReceivesTheBarsInsetsWhileExtendingUnderThem() async throws {
-        let host = NSHostingView(rootView:
-            GeometryReader { geometry in
-                TranscriptTablePrototype(items: [], content: [],
-                                         header: AnyView(Color.clear.frame(height: 12)),
-                                         insets: geometry.safeAreaInsets)
-                    .ignoresSafeArea(.container, edges: .vertical)
-            }
-            .safeAreaBar(edge: .top, spacing: 0) { Color.clear.frame(height: 50) }
-            .safeAreaBar(edge: .bottom, spacing: 0) { Color.clear.frame(height: 100) }
-            .frame(width: 400, height: 600))
+        let bars = TableBars()
+        let host = NSHostingView(rootView: TableBarFixture(bars: bars).frame(width: 400, height: 600))
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 600),
                               styleMask: [.borderless], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
@@ -90,12 +82,49 @@ struct TranscriptTableHeightTests {
         }
         try await transcriptUntil(in: host) { find(host) != nil }
         let scroll = try #require(find(host))
-        try await transcriptSettled(in: host) {
-            CGSize(width: scroll.contentInsets.top, height: scroll.contentInsets.bottom)
+        for bottom: CGFloat in [100, 176, 240, 100] {
+            bars.bottom = bottom
+            try await transcriptUntil(in: host, failure: {
+                "Expected bottom \(bottom), got \(scroll.contentInsets), bounds \(scroll.bounds),"
+                    + " safe area \(scroll.safeAreaInsets), still mounted \(find(host) === scroll)."
+            }) { scroll.contentInsets.bottom == bottom }
+            try await transcriptSettled(in: host) {
+                CGSize(width: scroll.contentInsets.top, height: scroll.contentInsets.bottom)
+            }
+            #expect(scroll.automaticallyAdjustsContentInsets)
+            #expect(scroll.contentInsets.top == 50)
+            #expect(scroll.contentInsets.bottom == bottom)
+            #expect(scroll.bounds.height == 600)
         }
-        #expect(scroll.contentInsets.top == 50)
-        #expect(scroll.contentInsets.bottom == 100)
-        #expect(scroll.bounds.height == 600)
+    }
+
+    @Test(.enabled(if: transcriptTimingTestsEnabled))
+    func nativeTableAccessoriesDoNotCountTheWindowToolbarTwice() async throws {
+        let scroll = NSScrollView()
+        scroll.automaticallyAdjustsContentInsets = true
+        scroll.documentView = NSView(frame: NSRect(x: 0, y: 0, width: 720, height: 2_000))
+        let controller = TranscriptTableEdges(content: scroll)
+        let window = NSWindow(contentRect: NSRect(x: -6_000, y: -6_000, width: 720, height: 840),
+                              styleMask: [.titled, .fullSizeContentView], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.toolbar = NSToolbar(identifier: "transcript-edge-fixture")
+        window.contentViewController = controller
+        window.setContentSize(NSSize(width: 720, height: 840))
+        defer { window.close() }
+        let top = controller.view.bounds.maxY - window.contentLayoutRect.maxY
+        #expect(top > 0)
+        for bottom: CGFloat in [100, 176, 240, 100] {
+            controller.update(top: top, bottom: bottom)
+            try await transcriptUntil(in: controller.view) { scroll.contentInsets.bottom == bottom }
+            try await transcriptSettled(in: controller.view) {
+                CGSize(width: scroll.contentInsets.top, height: scroll.contentInsets.bottom)
+            }
+            #expect(scroll.frame == controller.view.bounds)
+            #expect(scroll.contentInsets.top == top)
+            #expect(scroll.contentInsets.bottom == bottom)
+            #expect(controller.topEdge.view.bounds.height == 0)
+            #expect(controller.bottomEdge.view.bounds.height == bottom)
+        }
     }
 
     @Test(.enabled(if: transcriptTimingTestsEnabled))
@@ -139,6 +168,26 @@ struct TranscriptTableHeightTests {
         let lead: ChannelAgent
         let store: ChannelStore
         let environment: EnvironmentValues
+    }
+
+    @Observable
+    fileprivate final class TableBars {
+        var bottom: CGFloat = 100
+    }
+
+    private struct TableBarFixture: View {
+        let bars: TableBars
+
+        var body: some View {
+            GeometryReader { geometry in
+                TranscriptTablePrototype(items: [], content: [],
+                                         header: AnyView(Color.clear.frame(height: 12)),
+                                         insets: geometry.safeAreaInsets)
+                    .ignoresSafeArea(.container, edges: .vertical)
+            }
+            .safeAreaBar(edge: .top, spacing: 0) { Color.clear.frame(height: 50) }
+            .safeAreaBar(edge: .bottom, spacing: 0) { Color.clear.frame(height: bars.bottom) }
+        }
     }
 
     private func setup() throws -> Setup {

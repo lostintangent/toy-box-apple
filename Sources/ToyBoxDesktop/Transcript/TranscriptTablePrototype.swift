@@ -2,7 +2,7 @@ import AppKit
 import ChannelKit
 import SwiftUI
 
-struct TranscriptTablePrototype: NSViewRepresentable {
+struct TranscriptTablePrototype: NSViewControllerRepresentable {
     static let isEnabled = ProcessInfo.processInfo.environment["TOY_BOX_TRANSCRIPT"] == "table"
 
     let items: [TranscriptTableItem]
@@ -12,19 +12,20 @@ struct TranscriptTablePrototype: NSViewRepresentable {
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
-    func makeNSView(context: Context) -> TranscriptTableScrollView {
+    func makeNSViewController(context: Context) -> TranscriptTableEdges {
         let scroll = TranscriptTableScrollView()
         scroll.drawsBackground = false
         scroll.hasVerticalScroller = true
         scroll.hasHorizontalScroller = false
         scroll.autohidesScrollers = true
         scroll.horizontalScrollElasticity = .none
-        scroll.automaticallyAdjustsContentInsets = false
+        scroll.automaticallyAdjustsContentInsets = true
         context.coordinator.attach(scroll)
-        return scroll
+        return TranscriptTableEdges(content: scroll)
     }
 
-    func updateNSView(_ scroll: TranscriptTableScrollView, context: Context) {
+    func updateNSViewController(_ controller: TranscriptTableEdges, context: Context) {
+        controller.update(top: insets.top, bottom: insets.bottom)
         context.coordinator.update(items: items, content: content, header: header,
                                    environment: context.environment, insets: insets)
     }
@@ -85,7 +86,6 @@ struct TranscriptTablePrototype: NSViewRepresentable {
                                           environment: environment, insets: insets)
             isDirty = true
             scroll?.needsLayout = true
-            layoutContent()
         }
 
         func layoutContent() {
@@ -96,8 +96,9 @@ struct TranscriptTablePrototype: NSViewRepresentable {
             defer { isLayingOut = false }
             isDirty = false
             appliedWidth = width
+            // Reloading a table during layout can leave AppKit's automatic insets one bar change behind.
             scroll.contentInsets = NSEdgeInsets(top: configuration.insets.top, left: 0,
-                                                 bottom: configuration.insets.bottom, right: 0)
+                                                bottom: configuration.insets.bottom, right: 0)
             let result = cache.resolve(items: configuration.items, content: configuration.content, width: width,
                                        environment: configuration.environment)
             let headerHeight = 20 + cache.measureAccessory(configuration.header, width: width,
