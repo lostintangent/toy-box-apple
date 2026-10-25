@@ -499,7 +499,7 @@ final class PerformanceBenchmark {
     private func measureScrolling(in store: ChannelStore) async {
         guard let meter, let window else { return }
         guard let scroll = transcriptScrollView() else { fail("there's no transcript scroll view") }
-        let geometry = BenchmarkScrollGeometry.isEnabled ? transcriptGeometrySource(in: scroll) : nil
+        let geometry = BenchmarkScrollGeometry.isEnabled ? BenchmarkScrollGeometry.source(in: scroll) : nil
         guard !BenchmarkScrollGeometry.isEnabled || geometry != nil else {
             fail("the transcript has no benchmark geometry source")
         }
@@ -764,17 +764,6 @@ final class PerformanceBenchmark {
         return found.max { ($0.documentView?.frame.height ?? 0) < ($1.documentView?.frame.height ?? 0) }
     }
 
-    private func transcriptGeometrySource(in view: NSView) -> (any BenchmarkScrollGeometrySource)? {
-        if let source = view as? any BenchmarkScrollGeometrySource { return source }
-        if let scroll = view as? NSScrollView, let table = scroll.documentView as? NSTableView {
-            return BenchmarkTableScrollGeometry(table: table, scroll: scroll)
-        }
-        for child in view.subviews {
-            if let source = transcriptGeometrySource(in: child) { return source }
-        }
-        return nil
-    }
-
     /// Moves the visible top `offset` points below the start of the content.
     private func move(_ scroll: NSScrollView, toTopOffset offset: Double) {
         guard let document = scroll.documentView else { return }
@@ -911,6 +900,22 @@ struct BenchmarkScrollGeometry: Equatable, Sendable {
     var firstVisibleRow: String
     var rowTops: [String: CGFloat]
     var reportedTops: [String: CGFloat] = [:]
+
+    @MainActor
+    static func source(in scroll: NSScrollView) -> (any BenchmarkScrollGeometrySource)? {
+        func find(in view: NSView) -> (any BenchmarkScrollGeometrySource)? {
+            guard view === scroll || !(view is NSScrollView) else { return nil }
+            if let source = view as? any BenchmarkScrollGeometrySource { return source }
+            if let table = view as? NSTableView {
+                return BenchmarkTableScrollGeometry(table: table, scroll: scroll)
+            }
+            for child in view.subviews {
+                if let source = find(in: child) { return source }
+            }
+            return nil
+        }
+        return find(in: scroll)
+    }
 }
 
 struct BenchmarkScrollDelivery: Equatable, Sendable {

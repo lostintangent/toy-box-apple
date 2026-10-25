@@ -379,9 +379,12 @@ The check reports native travel after a one-second end drain. AppKit's interpola
 content beyond the raw delivered delta, so this is not a deterministic wheel baseline or a raw
 wheel-relative row-drift gate.
 
-During the transcript replacement, `TOY_BOX_TRANSCRIPT=lazy|table bun run benchmark scroll`
+During the transcript replacement, `TOY_BOX_TRANSCRIPT=lazy|document|table bun run benchmark scroll`
 selects the container through `open --env`. The output names the requested transcript. This is
 a temporary benchmark option, not a product preference, and is removed with t259.
+Hosted native tables are sampled relative to that outer scroll view's clip coordinates, including
+the table's offset within the SwiftUI document. Discovery excludes independent nested scroll views
+and never mounts cells to obtain row frames.
 `TOY_BOX_BENCHMARK_SCROLL_DRIFT=0` disables the geometry producer and sampling for paired probe
 overhead checks. It is also benchmark-only and temporary. Normal app launches install no geometry
 provider and add no row callbacks.
