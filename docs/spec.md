@@ -1051,8 +1051,12 @@ messages". Capture the unread boundary only after snapshot or replay completes, 
 the user reads. This boundary is not an extra synthetic message. Reference renders of day labels,
 the New divider, system rows and both request states: `docs/transcript-events.png`.
 
-Land on the first unread row, otherwise the end. When a catch-up summary is eligible, land on its
-card instead (see Mac features beyond the pane). Follow incoming messages only while within
+Opening uses only the latest 100 messages supplied by the snapshot and never fetches older pages.
+Land on the first loaded unread row, otherwise the end. If the first unread predates the snapshot,
+land on its oldest loaded message with the New divider. Catch-up summarizes only loaded messages.
+When a catch-up summary is eligible, land on its card instead (see Mac features beyond the pane).
+Older pages load only through reader paging, Find navigation or Reveal.
+Follow incoming messages only while within
 48 points of the end, or immediately after the user's own successful post. If scrolled away, a
 small glass Jump to Latest capsule appears in the floating activity row above the composer.
 It shares that row with the working summary when present. Preserve the visible top message and its offset while prepending history. While reading above the end, rows only move when the reader scrolls: when a row above the viewport changes height, or the lazy stack corrects its estimate for rows it hasn't built yet, the first row starting in the viewport keeps its place, and a row starting in the viewport grows downward. Following the end, landing, jumps, reveals and paging own the position instead. At the top,

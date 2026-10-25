@@ -763,15 +763,13 @@ struct ConversationTranscript: View {
     }
 
     /// Resolved by the first body. A transcript that's already loaded opens directly on its first
-    /// unread row, which the scroll view's first layout places. One that has to connect or page
-    /// history first opens at the bottom and lands with a jump.
+    /// unread row, which the scroll view's first layout places. One that has to connect first
+    /// opens at the bottom and lands with a jump.
     private func resolveOpening() {
         guard !opening.isResolved else { return }
         opening.isResolved = true
         guard snapshot == nil, store.isLoaded, store.phase.isLive else { return }
-        opening.plan = TranscriptLanding.opening(
-            unreadAfter: store.unreadAfter, oldestSequence: store.state?.messages.first?.sequence,
-            hasOlderMessages: store.hasOlderMessages, rows: rows)
+        opening.plan = TranscriptLanding.opening(unreadAfter: store.unreadAfter, rows: rows)
     }
 
     /// Lands on the row, moving only if it isn't in place already. A jump converges over several
@@ -821,9 +819,7 @@ struct ConversationTranscript: View {
             capturedArrivalBoundary = true
         }
         await Task.yield()
-        if rows.isEmpty && store.hasOlderMessages { await loadOlder() }
         if let unread = arrivalUnreadAfter {
-            await loadHistory(through: unread + 1)
             guard !Task.isCancelled, !isRevealing else { return }
             prepareCatchUp(unreadAfter: unread)
             if case .unread(let id) = TranscriptLanding.target(unreadAfter: unread, rows: rows),

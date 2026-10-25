@@ -25,11 +25,8 @@ enum TranscriptLanding {
         return .unread(rows[index].id)
     }
 
-    static func opening(unreadAfter: Int?, oldestSequence: Int?, hasOlderMessages: Bool,
-                        rows: [TranscriptRow]) -> Opening? {
-        guard let unreadAfter, let oldestSequence,
-              oldestSequence <= unreadAfter + 1 || !hasOlderMessages,
-              let index = unreadIndex(after: unreadAfter, in: rows) else { return nil }
+    static func opening(unreadAfter: Int?, rows: [TranscriptRow]) -> Opening? {
+        guard let unreadAfter, let index = unreadIndex(after: unreadAfter, in: rows) else { return nil }
         // A short tail opens at the bottom, where its first unread row is already on the last screen.
         return Opening(rowID: rows[index].id, unreadAfter: unreadAfter, seeds: rows.count - index > 8)
     }
