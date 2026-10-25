@@ -406,7 +406,7 @@ final class PerformanceBenchmark {
         }
         control.window.orderFrontRegardless()
         guard let scroll = transcriptScrollView(),
-              let geometry = transcriptGeometrySource(in: scroll) else {
+              let geometry = BenchmarkScrollGeometry.source(in: scroll) else {
             fail("the plain-table wheel driver control has no geometry")
         }
         move(scroll, toTopOffset: Self.scrollDistance + Self.scrollMargin * 2)
