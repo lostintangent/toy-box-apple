@@ -45,6 +45,35 @@ func transcriptLazyRowID(containing messageID: String, in row: TranscriptRow) ->
     return row.id
 }
 
+func transcriptScrollIdentities(_ rows: [TranscriptRow], expandedMessageIds: Set<String>)
+    -> [TranscriptScrollModel.RowIdentity] {
+    var identities: [TranscriptScrollModel.RowIdentity] = []
+    for row in rows {
+        guard let first = row.messages.first else { continue }
+        if row.divider != nil {
+            identities.append(.init(id: "divider-\(row.id)", order: first.sequence * 4))
+        }
+        switch row.content {
+        case .user(let message):
+            identities.append(.init(id: message.id, order: message.sequence * 4 + 1))
+        case .agent(_, let entries):
+            identities.append(contentsOf: entries.map { .init(id: $0.id, order: $0.message.sequence * 4 + 1) })
+        case .system(let messages):
+            let membership = first.system?.type == "member_joined" || first.system?.type == "member_left"
+            let individual = first.system?.type == "artifact_shared"
+                || (membership && messages.contains { expandedMessageIds.contains($0.id) })
+            if individual {
+                identities.append(.init(id: "system-group-\(row.id)", order: first.sequence * 4 + 1,
+                                        isAnchorable: false))
+                identities.append(contentsOf: messages.map { .init(id: $0.id, order: $0.sequence * 4 + 2) })
+            } else {
+                identities.append(.init(id: row.id, order: first.sequence * 4 + 1))
+            }
+        }
+    }
+    return identities
+}
+
 /// One transcript row. It compares only what it renders, so the rows a new message doesn't touch
 /// skip their bodies, and its actions are ignored since they only call back into the transcript.
 struct TranscriptRowContent: View, @MainActor Equatable {

@@ -16,6 +16,7 @@ final class TranscriptWindowObserver {
     @ObservationIgnored private weak var scrollView: NSScrollView?
     @ObservationIgnored private weak var window: NSWindow?
     @ObservationIgnored private var notifications: [NSObjectProtocol] = []
+    @ObservationIgnored private var writtenOrigin: CGFloat?
 
     func attach(to view: NSView) {
         let scroll = view.enclosingScrollView
@@ -41,6 +42,13 @@ final class TranscriptWindowObserver {
 
     /// The clip view's offset as AppKit has it, which can run ahead of SwiftUI's geometry after a clamp.
     var scrollOffset: CGFloat? { scrollView?.contentView.bounds.minY }
+
+    var nativeLayout: TranscriptNativeLayout? { scrollView.flatMap(TranscriptNativeLayout.init(scrollView:)) }
+
+    func consumeWrite(at origin: CGFloat) -> Bool {
+        defer { writtenOrigin = nil }
+        return writtenOrigin.map { abs($0 - origin) <= 0.5 } ?? false
+    }
 
     var viewportTop: CGFloat? {
         guard let scrollView else { return nil }
@@ -103,6 +111,7 @@ final class TranscriptWindowObserver {
         transcriptScrollTrace("native.pinToBottom origin=\(clip.bounds.minY) target=\(bottom)"
                               + " pins=\(pinsToBottom) resizing=\(isResizing) live=\(window?.inLiveResize == true)")
         clip.scroll(to: NSPoint(x: clip.bounds.minX, y: bottom))
+        writtenOrigin = clip.bounds.minY
         scrollView.reflectScrolledClipView(clip)
     }
 
@@ -115,6 +124,7 @@ final class TranscriptWindowObserver {
         transcriptScrollTrace("native.scrollBy origin=\(clip.bounds.minY) target=\(target.y)"
                               + " delta=\(delta) pins=\(pinsToBottom)")
         clip.scroll(to: target)
+        writtenOrigin = clip.bounds.minY
         scrollView.reflectScrolledClipView(clip)
     }
 
@@ -132,6 +142,7 @@ final class TranscriptWindowObserver {
         transcriptScrollTrace("native.restoreReadingBottom origin=\(previous) target=\(target)"
                               + " message=\(frame.sequence) pins=\(pinsToBottom)")
         clip.scroll(to: NSPoint(x: clip.bounds.minX, y: target))
+        writtenOrigin = clip.bounds.minY
         scrollView.reflectScrolledClipView(clip)
         if ProcessInfo.processInfo.environment["TOY_BOX_TEST_PAGING_TRACE"] == "1" {
             let line = "Transcript paging m\(frame.sequence): native \(previous) -> \(clip.bounds.minY), "
@@ -155,6 +166,7 @@ final class TranscriptWindowObserver {
         window = nil
         isKeyWindow = false
         isResizing = false
+        writtenOrigin = nil
     }
 }
 
