@@ -16,6 +16,69 @@ private let transcriptTimingTestsEnabled = ProcessInfo.processInfo.environment["
 @MainActor
 @Suite("Explicit transcript table heights", .serialized)
 struct TranscriptTableHeightTests {
+    @Test func jumpAnimationRespectsReduceMotionAndDoesNotAnimateAnAlreadyReachedEnd() {
+        #expect(TranscriptScrollAnimation.shouldAnimate(reducesMotion: false, distance: 100))
+        #expect(!TranscriptScrollAnimation.shouldAnimate(reducesMotion: true, distance: 100))
+        #expect(!TranscriptScrollAnimation.shouldAnimate(reducesMotion: false, distance: 0.5))
+    }
+
+    @Test func jumpInterpolationProjectsBothEndpointsFromCurrentModelFrames() {
+        let viewport = TranscriptScrollModel.Viewport(width: 720, height: 400, topInset: 50, bottomInset: 100)
+        let rows = (1...20).map {
+            TranscriptScrollModel.RowFrame(id: "m\($0)", order: $0, top: CGFloat($0 - 1) * 100, height: 100)
+        }
+        let start = TranscriptScrollModel.Intent.reading(.init(row: "m6", order: 6, offset: 20))
+        let prepended = [
+            TranscriptScrollModel.RowFrame(id: "older-1", order: -1, top: 0, height: 100),
+            TranscriptScrollModel.RowFrame(id: "older-2", order: 0, top: 100, height: 100)
+        ] + rows.map {
+            TranscriptScrollModel.RowFrame(id: $0.id, order: $0.order, top: $0.top + 200, height: $0.height)
+        }
+        for progress: CGFloat in [0, 0.25, 0.5, 0.75, 1] {
+            let placement = TranscriptScrollAnimation.placement(from: start, to: .following, progress: progress,
+                                                                rows: rows, viewport: viewport)
+            #expect(placement.intent == .following)
+            #expect(placement.origin == 430 + (1716 - 430) * progress)
+            let shifted = TranscriptScrollAnimation.placement(from: start, to: .following, progress: progress,
+                                                              rows: prepended, viewport: viewport)
+            #expect(shifted.origin == placement.origin.map { $0 + 200 })
+        }
+    }
+
+    @Test func nativeTableGeometryMatchesItsExplicitHeightsWithoutVisitingEveryMessage() throws {
+        let setup = try setup()
+        var messages = (1...542).map(transcriptTestMessage)
+        let coordinator = TranscriptTablePrototype.Coordinator()
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 720, height: 600))
+        coordinator.attach(scroll)
+        defer { coordinator.stopObserving() }
+        func update() {
+            let items = TranscriptTableItem.project(transcriptRows(messages, lead: setup.lead, members: []))
+            coordinator.update(items: items, content: content(items, setup: setup), header: AnyView(EmptyView()),
+                               environment: setup.environment, insets: EdgeInsets())
+            coordinator.layoutContent()
+        }
+        func expectGeometry() {
+            #expect(abs(coordinator.table.rect(ofRow: coordinator.table.numberOfRows - 1).maxY
+                        + TranscriptScrollModel.endClearance - coordinator.documentHeight) <= 0.5)
+            #expect(scroll.documentView?.bounds.height == coordinator.documentHeight)
+        }
+        update()
+        expectGeometry()
+        for fraction: CGFloat in [0, 0.25, 0.5, 0.75, 1] {
+            let measured = coordinator.measurementCount
+            let clip = scroll.contentView
+            clip.scroll(to: NSPoint(x: 0, y: max(0, coordinator.documentHeight - 600) * fraction))
+            coordinator.layoutContent()
+            expectGeometry()
+            #expect(coordinator.measurementCount - measured < 50)
+        }
+        messages.append(transcriptTestMessage(543))
+        update()
+        expectGeometry()
+        #expect(coordinator.measurementCount < messages.count)
+    }
+
     @Test func cancelledSnapshotPublicationsDoNotLoseTheFinalVisibleSequence() async {
         let state = TranscriptDocumentState()
         let first = TranscriptDocumentState.Snapshot(hasLanded: true, isAtBottom: false, visibleSequence: 10)
@@ -509,11 +572,25 @@ struct TranscriptTableHeightTests {
           arguments: ["page-up", "home", "ax-older-page", "up-arrow", "scroller", "scroll-to-visible",
                       "page-down", "down-arrow", "end", "home-during-inset-change"])
     func nativeReaderInputsKeepTheirPositionWhenTheNextMessageArrives(_ input: String) async throws {
+        try await exerciseNativeNavigation(input)
+    }
+
+    @Test(.enabled(if: transcriptTimingTestsEnabled),
+          arguments: ["jump", "jump-interrupted", "jump-interrupted-by-scroller", "jump-reflow",
+                      "jump-during-page"])
+    func nativeJumpIsAnimatedInterruptibleAndKeepsItsIntentWhenTheNextMessageArrives(_ input: String) async throws {
+        try await exerciseNativeNavigation(input)
+    }
+
+    private func exerciseNativeNavigation(_ input: String) async throws {
         let setup = try setup()
+        let isJump = input.hasPrefix("jump")
+        let isInterruptedJump = input.hasPrefix("jump-interrupted")
+        let messageCount = isJump ? 542 : 100
         let bars = TableBars()
         bars.leading = 248
         let data = TableData()
-        var messages = (1...100).map(transcriptTestMessage)
+        var messages = (1...messageCount).map(transcriptTestMessage)
         func setMessages() {
             data.items = TranscriptTableItem.project(transcriptRows(messages, lead: setup.lead, members: []))
             data.content = content(data.items, setup: setup)
@@ -578,7 +655,7 @@ struct TranscriptTableHeightTests {
             }
             try await transcriptSettled(in: host) { scroll.contentView.bounds.origin }
         }
-        if ["page-down", "down-arrow", "end"].contains(input) {
+        if isJump || ["page-down", "down-arrow", "end"].contains(input) {
             try key(115, "\u{f729}")
             try await transcriptUntil(in: host) { !state.snapshot.isAtBottom }
             try await transcriptSettled(in: host) { scroll.contentView.bounds.origin }
@@ -586,7 +663,7 @@ struct TranscriptTableHeightTests {
         find.present()
         find.close()
         let before = scroll.contentView.bounds.minY
-        let beforeEvents = readerEvents
+        var beforeEvents = readerEvents
         let pageDistance = max(0, scroll.contentView.bounds.height - scroll.contentInsets.top
                                - scroll.contentInsets.bottom - scroll.verticalPageScroll)
         func remainingToEnd() -> CGFloat {
@@ -594,6 +671,58 @@ struct TranscriptTableHeightTests {
                 - scroll.contentView.bounds.maxY + scroll.contentInsets.bottom
         }
         switch input {
+        case "jump", "jump-interrupted", "jump-interrupted-by-scroller", "jump-reflow", "jump-during-page":
+            if input == "jump-during-page" {
+                try key(121, "\u{f72d}")
+                try await transcriptUntil(in: host) { scroll.contentView.bounds.minY > before + 0.5 }
+                beforeEvents = readerEvents
+            }
+            let jumpStart = scroll.contentView.bounds.minY
+            find.resumeReading()
+            state.send(.jumpToLatest)
+            try await transcriptUntil(in: host, timeout: .seconds(5)) {
+                document.coordinator.isAnimatingJump && scroll.contentView.bounds.minY > jumpStart + 0.5
+                    && remainingToEnd() > 48
+            }
+            #expect(document.coordinator.measurementCount < 100)
+            if isInterruptedJump {
+                if input == "jump-interrupted-by-scroller" {
+                    let scroller = try #require(scroll.verticalScroller)
+                    scroller.setAccessibilityValue(NSNumber(value: 0.1))
+                } else { try key(115, "\u{f729}") }
+                #expect(!document.coordinator.isAnimatingJump)
+                guard case .reading(let interruptedAnchor) = document.coordinator.scrollIntent else {
+                    Issue.record("Interrupting a Jump did not capture the reader's position.")
+                    return
+                }
+                let interruptedOffset = try anchorOffset(interruptedAnchor)
+                if input == "jump-interrupted" {
+                    #expect(abs(scroll.contentView.bounds.minY + scroll.contentInsets.top) <= 0.5)
+                }
+                let deadline = ContinuousClock.now + .seconds(TranscriptScrollAnimation.duration + 0.1)
+                while ContinuousClock.now < deadline {
+                    try await transcriptFrame(in: host)
+                    #expect(!document.coordinator.isAnimatingJump)
+                    #expect(document.coordinator.scrollIntent == .reading(interruptedAnchor))
+                    #expect(abs(try anchorOffset(interruptedAnchor) - interruptedOffset) <= 0.5)
+                }
+            } else if input == "jump-reflow" {
+                bars.bottom = 176
+                window.setContentSize(NSSize(width: 760, height: 600))
+            }
+            if !isInterruptedJump {
+                try await transcriptUntil(in: host, timeout: .seconds(5), failure: {
+                    "\(input) did not finish. Intent \(document.coordinator.scrollIntent),"
+                        + " animating \(document.coordinator.isAnimatingJump), remaining \(remainingToEnd()),"
+                        + " reader callbacks \(readerEvents - beforeEvents), clip \(scroll.contentView.bounds),"
+                        + " table \(table.frame), document \(document.frame),"
+                        + " last \(table.rect(ofRow: data.items.count)), model \(document.coordinator.documentHeight)."
+                }) {
+                    document.coordinator.scrollIntent == .following
+                        && !document.coordinator.isAnimatingJump && abs(remainingToEnd()) <= 0.5
+                }
+                #expect(readerEvents == beforeEvents)
+            }
         case "page-up": try key(116, "\u{f72c}")
         case "home": try key(115, "\u{f729}")
         case "home-during-inset-change":
@@ -623,7 +752,8 @@ struct TranscriptTableHeightTests {
                 + " previous \(before), input callbacks \(readerEvents - beforeEvents),"
                 + " responder \(String(describing: window.firstResponder))."
         }) {
-            abs(scroll.contentView.bounds.minY - before) > 0.5 && readerEvents > beforeEvents
+            return (isInterruptedJump || abs(scroll.contentView.bounds.minY - before) > 0.5)
+                && (isJump && !isInterruptedJump || readerEvents > beforeEvents)
                 && (input != "page-up" || abs(remainingToEnd() - pageDistance) <= 0.5)
                 && (input != "page-down"
                     || abs(scroll.contentView.bounds.minY + scroll.contentInsets.top - pageDistance) <= 0.5)
@@ -633,12 +763,12 @@ struct TranscriptTableHeightTests {
         let visibleSequence = lastVisibleSequence()
         #expect(visibleSequence != nil)
         #expect(state.snapshot.visibleSequence == visibleSequence)
-        #expect(document.coordinator.measurementCount < 50)
+        if !isJump { #expect(document.coordinator.measurementCount < 50) }
         let anchor: TranscriptScrollModel.Anchor?
         if case .reading(let reading) = document.coordinator.scrollIntent {
             anchor = reading
         } else {
-            #expect(input == "end" && document.coordinator.scrollIntent == .following)
+            #expect((input == "end" || isJump && !isInterruptedJump) && document.coordinator.scrollIntent == .following)
             anchor = nil
         }
         func anchorOffset(_ anchor: TranscriptScrollModel.Anchor) throws -> CGFloat {
@@ -646,7 +776,7 @@ struct TranscriptTableHeightTests {
             return table.rect(ofRow: index + 1).minY - scroll.contentView.bounds.minY - scroll.contentInsets.top
         }
         let offset = try anchor.map(anchorOffset)
-        messages.append(transcriptTestMessage(101))
+        messages.append(transcriptTestMessage(messageCount + 1))
         setMessages()
         try await transcriptUntil(in: host) { table.numberOfRows == data.items.count + 1 }
         try await transcriptSettled(in: host) { scroll.contentView.bounds.origin }

@@ -81,6 +81,8 @@ struct TranscriptTablePrototype: NSViewControllerRepresentable {
         private var isHandlingReaderInput = false
         private var hasLanded = false
         private var pendingReaderPages: [Bool] = []
+        private var jumpAnimation: TranscriptScrollAnimation?
+        private var stopsNativeScroll = false
         private var hasLoadedTable = false
         private var intent: Model.Intent = .landing(.end)
         private var pendingEvents: [Model.Event] = []
@@ -101,6 +103,7 @@ struct TranscriptTablePrototype: NSViewControllerRepresentable {
         private(set) var documentHeight: CGFloat = 0
         private(set) var reusedCellCount = 0
         var scrollIntent: TranscriptScrollModel.Intent { intent }
+        var isAnimatingJump: Bool { jumpAnimation != nil }
         var measurementCount: Int { cache.measurementCount }
 
         override init() {
@@ -174,8 +177,12 @@ struct TranscriptTablePrototype: NSViewControllerRepresentable {
                                           footer: footer, environment: environment, insets: insets,
                                           isReadyToLand: isReadyToLand, holdsPosition: holdsPosition,
                                           onReaderScroll: onReaderScroll)
+            if environment.accessibilityReduceMotion, jumpAnimation != nil {
+                request(.jumpToLatest)
+            }
             if previouslyHeld != holdsPosition {
                 if holdsPosition {
+                    cancelJumpAnimation(capturingPosition: false)
                     pendingReaderPages.removeAll()
                     pendingResume = false
                     if hasLanded, let viewport {
@@ -202,6 +209,7 @@ struct TranscriptTablePrototype: NSViewControllerRepresentable {
 
         func captureExpansion(_ event: TranscriptScrollModel.Event) -> Bool {
             guard let viewport else { return false }
+            cancelJumpAnimation(capturingPosition: false)
             let placement = Model.reduce(intent, event, rows: frames, viewport: viewport, origin: nativeOrigin)
             guard placement.unavailableTarget == nil else { return false }
             intent = placement.intent
@@ -209,9 +217,40 @@ struct TranscriptTablePrototype: NSViewControllerRepresentable {
         }
 
         private func request(_ event: TranscriptScrollModel.Event) {
+            cancelJumpAnimation(capturingPosition: false)
             pendingReaderPages.removeAll()
+            if event == .jumpToLatest, hasLanded, let viewport {
+                stopsNativeScroll = true
+                let reducesMotion = configuration?.environment.accessibilityReduceMotion
+                    ?? environment.accessibilityReduceMotion
+                if TranscriptScrollAnimation.shouldAnimate(
+                    reducesMotion: reducesMotion, distance: Model.distanceToEnd(nativeOrigin, rows: frames, viewport: viewport)
+                ) {
+                    let start = Model.reduce(intent, .holdCurrentPosition, rows: frames,
+                                             viewport: viewport, origin: nativeOrigin).intent
+                    let animation = TranscriptScrollAnimation(
+                        start: start, framesPerSecond: table.window?.screen?.maximumFramesPerSecond ?? 60
+                    ) { [weak self] in self?.requestLayout() }
+                    jumpAnimation = animation
+                    animation.start()
+                }
+            }
             pendingEvents.append(event)
             requestLayout()
+        }
+
+        private func cancelJumpAnimation(capturingPosition: Bool) {
+            let hadJump = jumpAnimation != nil || stopsNativeScroll
+            jumpAnimation?.stop()
+            jumpAnimation = nil
+            stopsNativeScroll = false
+            if hadJump {
+                pendingEvents.removeAll { $0 == .jumpToLatest }
+                if capturingPosition, let viewport {
+                    intent = Model.reduce(intent, .readerScrolled(to: nativeOrigin), rows: frames,
+                                          viewport: viewport, origin: nativeOrigin).intent
+                }
+            }
         }
 
         private var nativeOrigin: CGFloat {
@@ -268,10 +307,18 @@ struct TranscriptTablePrototype: NSViewControllerRepresentable {
                 let top = origin + viewport.topInset + min(0, page) - viewport.unobscuredHeight / 2
                 let bottom = origin + viewport.height - viewport.bottomInset
                     + max(0, page) + viewport.unobscuredHeight / 2
+                // Warm two viewport bands, never the history between a Jump's endpoints.
+                let destination: CGFloat? = jumpAnimation == nil ? nil
+                    : Model.placement(for: .following, rows: frames, viewport: viewport).origin
                 var requested = IndexSet()
                 for index in items.indices {
                     let frame = frames[index + 1]
-                    if frame.bottom >= top && frame.top <= bottom { requested.insert(index) }
+                    let inView = frame.bottom >= top && frame.top <= bottom
+                    let atDestination = destination.map {
+                        frame.bottom >= $0 + viewport.topInset - viewport.unobscuredHeight / 2
+                            && frame.top <= $0 + viewport.height - viewport.bottomInset + viewport.unobscuredHeight / 2
+                    } ?? false
+                    if inView || atDestination { requested.insert(index) }
                 }
                 let missing = requested.subtracting(result.exactIndexes)
                 guard !missing.isEmpty else { return result }
@@ -329,6 +376,10 @@ struct TranscriptTablePrototype: NSViewControllerRepresentable {
                let event = Model.layoutEvent(from: frames, viewport: oldViewport, to: rows, viewport: viewport) {
                 apply(event)
             }
+            if let animation = jumpAnimation {
+                return TranscriptScrollAnimation.placement(from: animation.startIntent, to: intent,
+                                                          progress: animation.progress, rows: rows, viewport: viewport)
+            }
             return receivedEvent ? Model.Placement(intent: intent, origin: origin, unavailableTarget: unavailable) : nil
         }
 
@@ -350,6 +401,7 @@ struct TranscriptTablePrototype: NSViewControllerRepresentable {
             isReaderScrolling = phase != .idle
             guard wasScrolling != isReaderScrolling, hasLanded, let viewport else { return }
             if isReaderScrolling {
+                cancelJumpAnimation(capturingPosition: false)
                 pendingResume = false
                 intent = Model.reduce(intent, .holdCurrentPosition, rows: frames,
                                       viewport: viewport, origin: nativeOrigin).intent
@@ -360,6 +412,7 @@ struct TranscriptTablePrototype: NSViewControllerRepresentable {
         }
 
         func performReaderInput(_ action: () -> Void) {
+            cancelJumpAnimation(capturingPosition: true)
             pendingReaderPages.removeAll()
             let wasHandlingInput = isHandlingReaderInput
             isHandlingReaderInput = true
@@ -368,6 +421,7 @@ struct TranscriptTablePrototype: NSViewControllerRepresentable {
         }
 
         func prepareReaderPage(towardOlder: Bool) {
+            cancelJumpAnimation(capturingPosition: true)
             pendingReaderPages.append(towardOlder)
             requestLayout()
         }
@@ -408,6 +462,7 @@ struct TranscriptTablePrototype: NSViewControllerRepresentable {
 
         private func readerScrolled() {
             guard hasLanded, let viewport else { return }
+            cancelJumpAnimation(capturingPosition: false)
             let event: Model.Event = configuration?.holdsPosition == true || isReaderScrolling
                 ? .holdCurrentPosition : .readerScrolled(to: nativeOrigin)
             intent = Model.reduce(intent, event, rows: frames,
@@ -448,6 +503,7 @@ struct TranscriptTablePrototype: NSViewControllerRepresentable {
         }
 
         func stopObserving() {
+            cancelJumpAnimation(capturingPosition: false)
             notifications.forEach(NotificationCenter.default.removeObserver)
             notifications.removeAll()
             insetObservation = nil
@@ -510,6 +566,7 @@ struct TranscriptTablePrototype: NSViewControllerRepresentable {
             documentHeight = Model.end(newFrames)
             frames = newFrames
             viewport = newViewport
+            var needsNativeRowGeometry = !hasLoadedTable || !difference.isEmpty
             if !hasLoadedTable {
                 table.reloadData()
                 hasLoadedTable = true
@@ -519,6 +576,7 @@ struct TranscriptTablePrototype: NSViewControllerRepresentable {
                     && !inserted.contains(row) {
                     changedHeights.insert(row)
                 }
+                needsNativeRowGeometry = needsNativeRowGeometry || !changedHeights.isEmpty
                 if !difference.isEmpty || !changedHeights.isEmpty {
                     NSAnimationContext.runAnimationGroup { context in
                         context.duration = 0
@@ -547,8 +605,13 @@ struct TranscriptTablePrototype: NSViewControllerRepresentable {
             appliedAccessoryHeights = [Self.headerID: headerHeight, Self.footerID: footerHeight]
             let retained = Set(items.map(\.id))
             messageFrames = messageFrames.filter { retained.contains($0.key) }
-            table.setFrameSize(NSSize(width: width, height: documentHeight))
             table.layoutSubtreeIfNeeded()
+            if needsNativeRowGeometry {
+                // AppKit estimates unqueried delegate heights even with automatic sizing disabled.
+                // Cache our cheap explicit heights, not additional SwiftUI measurements.
+                for row in newIDs.indices { _ = table.rect(ofRow: row) }
+            }
+            table.setFrameSize(NSSize(width: width, height: documentHeight))
             if let placement {
                 pendingEvents.removeAll()
                 intent = placement.intent
@@ -558,14 +621,20 @@ struct TranscriptTablePrototype: NSViewControllerRepresentable {
                 if let origin = placement.origin {
                     let clip = scroll.contentView
                     let target = clip.convert(NSPoint(x: 0, y: origin), from: table).y
-                    if abs(target - clip.bounds.minY) > 0.5 {
+                    // A Jump must stop an existing AppKit page animation even at progress zero.
+                    if stopsNativeScroll || abs(target - clip.bounds.minY) > 0.5 {
+                        stopsNativeScroll = false
                         clip.scroll(to: NSPoint(x: clip.bounds.minX, y: target))
                     }
                 }
                 scroll.reflectScrolledClipView(scroll.contentView)
                 hasLanded = true
             }
-            if hasLanded, pendingResume, !isReaderScrolling, !configuration.holdsPosition {
+            if jumpAnimation?.progress == 1 {
+                jumpAnimation?.stop()
+                jumpAnimation = nil
+            }
+            if hasLanded, pendingResume, !isReaderScrolling, !configuration.holdsPosition, jumpAnimation == nil {
                 intent = Model.reduce(intent, .resumeFromCurrentPosition, rows: frames,
                                       viewport: newViewport, origin: nativeOrigin).intent
                 pendingResume = false
