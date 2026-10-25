@@ -25,6 +25,13 @@ test("only the key-window scenario takes focus", () => {
     expect(benchmarkLaunchCommand({ ...options, scenario: "key", transcript: "table" })).not.toContain("-g");
 });
 
+test("the opt-in trackpad check stays background-only", () => {
+    const command = benchmarkLaunchCommand({ ...options, scenario: "trackpad", transcript: "table" });
+    expect(command).toContain("-g");
+    expect(command.slice(command.indexOf("--benchmark"), command.indexOf("--benchmark") + 2))
+        .toEqual(["--benchmark", "trackpad"]);
+});
+
 test("the probe overhead control is forwarded independently of transcript selection", () => {
     const command = benchmarkLaunchCommand({ ...options, transcript: "lazy", scrollDrift: "0" });
     expect(command).toContain("TOY_BOX_TRANSCRIPT=lazy");
