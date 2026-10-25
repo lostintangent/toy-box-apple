@@ -48,9 +48,11 @@ final class AppModel {
     @ObservationIgnored private var dockBadgeLabel: String?
     @ObservationIgnored private var catalogGeneration = UUID()
     @ObservationIgnored private var applicationObservers: [NSObjectProtocol] = []
+    @ObservationIgnored private let session: URLSession
 
-    init(launchOptions: LaunchOptions = .init()) {
+    init(launchOptions: LaunchOptions = .init(), session: URLSession = .shared) {
         self.launchOptions = launchOptions
+        self.session = session
         updates = AppUpdates(isSnapshot: launchOptions.isSnapshot)
         openAtLogin = OpenAtLogin(isAvailable: OpenAtLogin.isAllowed(
             launchOptions, bundleID: Bundle.main.bundleIdentifier))
@@ -149,7 +151,7 @@ final class AppModel {
 
     func configure(serverURL: String, persist: Bool = true) {
         do {
-            let api = try ChannelAPI(serverURL: serverURL)
+            let api = try ChannelAPI(serverURL: serverURL, session: session)
             if self.serverURL != api.baseURL.absoluteString { quickSend.dismiss() }
             catalog?.stopPolling()
             connections.disconnectAll()
