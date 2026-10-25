@@ -36,11 +36,13 @@ struct SendAttemptTests {
         #expect(store.lastSendFailure?.phase == .notSent)
         #expect(attempt.content == "Original")
         #expect(store.state?.messages.isEmpty == true)
+        #expect(store.lastConfirmedSendID == nil)
         let result = try await store.post(id: attempt.id, content: "Original")
         guard case .committed(let message) = result else { Issue.record("Expected a committed result"); return }
         #expect(message.id == attempt.id)
         #expect(store.sendAttempts.isEmpty)
         #expect(store.lastSendFailure == nil)
+        #expect(store.lastConfirmedSendID == attempt.id)
         #expect(store.state?.messages.map(\.id) == [attempt.id])
         let posts = mock.requests.filter { $0.httpMethod == "POST" }
         #expect(try posts.map { try Self.posted($0).id } == [attempt.id, attempt.id])
@@ -76,8 +78,10 @@ struct SendAttemptTests {
         await #expect(throws: URLError.self) { try await store.post(content: "Do not duplicate") }
         let attempt = try #require(store.sendAttempts.first)
         #expect(attempt.phase == .deliveryNotConfirmed)
+        #expect(store.lastConfirmedSendID == nil)
         let result = try await store.retrySend(id: attempt.id)
         #expect(result == .alreadyAccepted(id: attempt.id))
+        #expect(store.lastConfirmedSendID == attempt.id)
         try await eventually { store.phase.isLive && store.sendAttempts.isEmpty }
         let posts = mock.requests.filter { $0.httpMethod == "POST" }
         #expect(posts.count == 2)
@@ -165,11 +169,24 @@ struct SendAttemptTests {
         try await eventually { store.phase.isLive }
         await #expect(throws: URLError.self) { try await store.post(id: id, content: content) }
         #expect(store.lastSendFailure?.messageId == id)
+        #expect(store.lastConfirmedSendID == nil)
         store.reconnect()
         try await eventually { store.phase.isLive && store.state?.messages.first?.id == id }
         #expect(store.lastSendFailure == nil)
         #expect(store.sendAttempts.isEmpty)
+        #expect(store.lastConfirmedSendID == id)
         #expect(mock.requests.filter { $0.httpMethod == "POST" }.count == 1)
+    }
+
+    @Test @MainActor func unrelatedUserMessagesDoNotConfirmALocalPost() throws {
+        let mock = MockTransport { _, _ in MockResponse() }
+        let store = ChannelStore(id: "test", api: try mock.api(), sendJournal: nil)
+        _ = try store.apply(.init(type: "snapshot", state: testState()))
+        var message = testMessage(1)
+        message.sender = .user
+        _ = try store.apply(.init(type: "message", revision: 1, message: message))
+        #expect(store.messages == [message])
+        #expect(store.lastConfirmedSendID == nil)
     }
 
     @Test @MainActor func journalWriteFailuresEmitANewEventForEachExplicitDelivery() async throws {

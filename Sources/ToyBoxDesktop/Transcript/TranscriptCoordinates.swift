@@ -10,12 +10,4 @@ enum TranscriptCoordinates {
         return positioned
     }
 
-    // Viewport frames can lag native scrolling, so replaying one must set the same absolute offset.
-    static func targetOffset(for frame: TranscriptMessageFrame, bottom: CGFloat, topInset: CGFloat) -> CGFloat {
-        contentTopPadding + frame.contentTop + frame.rect.height - bottom - topInset
-    }
-
-    static func isRestored(_ frame: TranscriptMessageFrame, bottom: CGFloat, nativeIsAligned: Bool) -> Bool {
-        nativeIsAligned && abs(frame.rect.maxY - bottom) <= 0.5
-    }
 }

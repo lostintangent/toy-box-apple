@@ -96,6 +96,7 @@ public final class ChannelStore {
     public private(set) var readError: String?
     public private(set) var sendAttempts: [ChannelSendAttempt] = []
     public private(set) var lastSendFailure: ChannelSendFailure?
+    public private(set) var lastConfirmedSendID: String?
     public private(set) var attemptPersistenceError: String?
     public private(set) var optimisticMessageIds: Set<String> = []
 
@@ -103,6 +104,7 @@ public final class ChannelStore {
     @ObservationIgnored private var generation = UUID()
     @ObservationIgnored private var capturedUnread = false
     @ObservationIgnored private var historyGeneration = UUID()
+    @ObservationIgnored private var olderPageTask: Task<Void, Never>?
     @ObservationIgnored private var markingRead = false
     @ObservationIgnored private var pendingRead = 0
     @ObservationIgnored private var acknowledgedRead = 0
@@ -214,15 +216,30 @@ public final class ChannelStore {
     }
 
     public func loadOlder() async {
-        guard !isLoadingOlder, hasOlderMessages, let state,
+        if let olderPageTask {
+            await olderPageTask.value
+            return
+        }
+        guard hasOlderMessages, let state,
               let first = state.messages.filter({ !optimisticMessageIds.contains($0.id) }).first else { return }
         if first.sequence <= 1 { hasOlderMessages = false; return }
         let historyToken = historyGeneration
         isLoadingOlder = true
         historyError = nil
-        defer { isLoadingOlder = false }
+        let task = Task { [self] in
+            defer {
+                olderPageTask = nil
+                isLoadingOlder = false
+            }
+            await fetchOlder(before: first.sequence, generation: historyToken)
+        }
+        olderPageTask = task
+        await task.value
+    }
+
+    private func fetchOlder(before sequence: Int, generation historyToken: UUID) async {
         do {
-            let page = try await api.history(channelId: id, before: first.sequence)
+            let page = try await api.history(channelId: id, before: sequence)
             guard historyGeneration == historyToken, phase != .deleted else { return }
             if var current = self.state {
                 current.messages = mergeChannelMessages(current.messages, incoming: page.messages)
@@ -340,6 +357,7 @@ public final class ChannelStore {
                 return .committed(message)
             }
             updateAttempt(id: attempt.id, phase: .confirmed, error: nil)
+            lastConfirmedSendID = attempt.id
             saveAttemptsInBackground()
             reconnect()
             return .alreadyAccepted(id: attempt.id)
@@ -375,6 +393,7 @@ public final class ChannelStore {
     private func reconcileSend(id: String) {
         if lastSendFailure?.messageId == id { lastSendFailure = nil }
         guard sendAttempts.contains(where: { $0.id == id }) else { return }
+        lastConfirmedSendID = id
         sendAttempts.removeAll { $0.id == id }
         optimisticMessageIds.remove(id)
         sendError = nil

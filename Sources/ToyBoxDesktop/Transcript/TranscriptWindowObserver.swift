@@ -2,14 +2,6 @@ import AppKit
 import Observation
 import SwiftUI
 
-private let transcriptScrollTraceEnabled = ProcessInfo.processInfo.environment["TOY_BOX_TRACE_SCROLL"] == "1"
-
-func transcriptScrollTrace(_ message: @autoclosure () -> String) {
-    if transcriptScrollTraceEnabled {
-        print("TRACE_SCROLL \(ProcessInfo.processInfo.systemUptime) \(message())")
-    }
-}
-
 @MainActor @Observable
 final class TranscriptWindowObserver {
     private(set) var isKeyWindow = false
@@ -36,7 +28,6 @@ final class TranscriptWindowObserver {
             }
             notifications.append(token)
         }
-        if let scroll { observeResizes(of: scroll) }
     }
 
     /// The clip view's offset as AppKit has it, which can run ahead of SwiftUI's geometry after a clamp.
@@ -45,100 +36,6 @@ final class TranscriptWindowObserver {
     var viewportTop: CGFloat? {
         guard let scrollView else { return nil }
         return scrollView.contentView.bounds.minY + scrollView.contentInsets.top
-    }
-
-    /// Whether the transcript is following its newest message. A window resize then keeps the end of the
-    /// content at the bottom of the viewport in the same layout pass that draws the new size. SwiftUI's
-    /// follow lands a frame or more later, which a live resize shows as the newest message drifting.
-    @ObservationIgnored var pinsToBottom = false
-    @ObservationIgnored private var isResizing = false
-
-    private func observeResizes(of scroll: NSScrollView) {
-        let clip = scroll.contentView
-        clip.postsFrameChangedNotifications = true
-        notifications.append(NotificationCenter.default.addObserver(
-            forName: NSView.frameDidChangeNotification, object: clip, queue: nil) { [weak self] _ in
-            MainActor.assumeIsolated { self?.containerResized() }
-        })
-        guard let document = scroll.documentView else { return }
-        document.postsFrameChangedNotifications = true
-        notifications.append(NotificationCenter.default.addObserver(
-            forName: NSView.frameDidChangeNotification, object: document, queue: nil) { [weak self] _ in
-            MainActor.assumeIsolated {
-                // Rewrapping for a new width resizes the content after the container, in the same pass.
-                guard let self, self.isResizing || self.window?.inLiveResize == true else { return }
-                self.pinToBottom()
-            }
-        })
-    }
-
-    private func containerResized() {
-        pinToBottom()
-        guard !isResizing else { return }
-        isResizing = true
-        RunLoop.main.perform { [weak self] in
-            MainActor.assumeIsolated { self?.isResizing = false }
-        }
-    }
-
-    /// Whether a resize has already pinned the transcript to its end during this layout pass, so a
-    /// SwiftUI follow would only move it. SwiftUI rests its own follow a point short of the end.
-    var holdsResizePin: Bool {
-        guard pinsToBottom, isResizing || window?.inLiveResize == true,
-              let bottom = bottomOffset, let clip = scrollView?.contentView else { return false }
-        return abs(clip.bounds.minY - bottom) <= 0.25
-    }
-
-    private var bottomOffset: CGFloat? {
-        guard let scrollView, let document = scrollView.documentView, document.isFlipped else { return nil }
-        let clip = scrollView.contentView
-        let end = document.frame.height + scrollView.contentInsets.bottom - clip.bounds.height
-        return max(-scrollView.contentInsets.top, end)
-    }
-
-    private func pinToBottom() {
-        guard pinsToBottom, let scrollView, let bottom = bottomOffset else { return }
-        let clip = scrollView.contentView
-        guard abs(clip.bounds.minY - bottom) > 0.25 else { return }
-        transcriptScrollTrace("native.pinToBottom origin=\(clip.bounds.minY) target=\(bottom)"
-                              + " pins=\(pinsToBottom) resizing=\(isResizing) live=\(window?.inLiveResize == true)")
-        clip.scroll(to: NSPoint(x: clip.bounds.minX, y: bottom))
-        scrollView.reflectScrolledClipView(clip)
-    }
-
-    func scroll(by delta: CGFloat) {
-        guard let scrollView, let document = scrollView.documentView, delta.isFinite else { return }
-        let clip = scrollView.contentView
-        let maximum = max(0, document.bounds.height - clip.bounds.height)
-        let target = CGPoint(x: clip.bounds.origin.x,
-                             y: min(maximum, max(0, clip.bounds.origin.y + (document.isFlipped ? delta : -delta))))
-        transcriptScrollTrace("native.scrollBy origin=\(clip.bounds.minY) target=\(target.y)"
-                              + " delta=\(delta) pins=\(pinsToBottom)")
-        clip.scroll(to: target)
-        scrollView.reflectScrolledClipView(clip)
-    }
-
-    func restoreReadingBottom(_ bottom: CGFloat, of frame: TranscriptMessageFrame) -> Bool {
-        guard let scrollView, let document = scrollView.documentView,
-              document.isFlipped else { return false }
-        let clip = scrollView.contentView
-        let offset = TranscriptCoordinates.targetOffset(
-            for: frame, bottom: bottom, topInset: scrollView.contentInsets.top)
-        let minimum = -scrollView.contentInsets.top
-        let maximum = max(minimum, document.bounds.height + scrollView.contentInsets.bottom - clip.bounds.height)
-        let target = min(maximum, max(minimum, offset))
-        guard abs(clip.bounds.minY - target) > 0.25 else { return true }
-        let previous = clip.bounds.minY
-        transcriptScrollTrace("native.restoreReadingBottom origin=\(previous) target=\(target)"
-                              + " message=\(frame.sequence) pins=\(pinsToBottom)")
-        clip.scroll(to: NSPoint(x: clip.bounds.minX, y: target))
-        scrollView.reflectScrolledClipView(clip)
-        if ProcessInfo.processInfo.environment["TOY_BOX_TEST_PAGING_TRACE"] == "1" {
-            let line = "Transcript paging m\(frame.sequence): native \(previous) -> \(clip.bounds.minY), "
-                + "target \(target), content top \(frame.contentTop), saved bottom \(bottom)\n"
-            FileHandle.standardError.write(Data(line.utf8))
-        }
-        return false
     }
 
     func announce(_ message: String) {
@@ -154,7 +51,6 @@ final class TranscriptWindowObserver {
         scrollView = nil
         window = nil
         isKeyWindow = false
-        isResizing = false
     }
 }
 

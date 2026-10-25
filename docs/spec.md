@@ -1061,48 +1061,30 @@ show Load Older Messages when more history is available, a small loading row whi
 "Beginning of conversation" label and reserve no empty header space. A filtered view must
 continue paging even when a page contains no visible rows.
 
-`ChannelKit.TranscriptScrollModel` defines container-independent placement from ordered row frames
-and the viewport's width, height and glass insets. Its adapter sends `layoutChanged` only when
-`layoutEvent` detects changed geometry, never just because another native layout pass ran.
-The pure `placement(for:rows:viewport:)` function projects an existing intent against current
-frames for adapter-owned animation, using the same fallback, clamping and end clearance
-without inventing a layout event.
-Reader input updates intent without returning an origin. Opening Find uses `holdCurrentPosition`
-to capture reading even at the end without moving. With no anchorable rows it preserves the existing intent.
-After the Find bar's closing geometry settles, `resumeFromCurrentPosition` restores the normal
-following threshold without moving. Jump to Latest immediately resumes following at the end.
-Landing and reveal targets retain their
-conversation order so a target removed during layout falls forward to its next surviving row,
-then backward to the last row, then to the end. Only explicit missing-target actions report an
-unavailable target without moving. The model's document end owns the 16-point clearance exactly
-once, and read eligibility excludes both glass insets and zero-sized viewports.
-`RowFrame.isAnchorable` defaults to true. History and empty-state accessories set it to false:
-they still contribute document height, but are never reading anchors, fallback targets or read
-candidates. Explicit row-target actions reject accessories. With only accessory geometry remaining,
-a layout-time target loss falls back to the document end.
+`ChannelKit.TranscriptScrollIntent` owns only landing, following and reading intent. It never
+computes an origin or treats the lazy stack's height estimates as stable coordinates. Each agent
+message is a separate native lazy row, with grouping kept visually and the canonical projection
+unchanged. SwiftUI owns the position through `scrollPosition`, `scrollTargetLayout` and a bottom
+size-change anchor while following. Width, window and scroller changes keep the reading message
+within one line of the top, rather than preserving an exact offset inside reflowed text.
 
-Lazy containers use the model's `Layout` entry points. A layout separates all canonical
-`RowIdentity` values in conversation order from the subset of measured `RowFrame` values,
-and supplies the viewport, native origin and native `documentEnd`. That extent already
-includes the existing 16-point clearance. Following, threshold classification and clamping
-use it without adding clearance or inferring an end from the last measured row.
-A known target without a frame returns `needsMeasurement` and no origin, retaining its intent.
-Only canonical absence triggers unavailable-target errors or layout-time survivor fallback.
-The adapter materializes the requested ID, then submits a new measured layout.
+Landing, Jump to Latest, confirmed own posts, Reveal, filter changes and Show Less produce one
+row-or-end command. One view function applies it through SwiftUI. Reader geometry only classifies
+the 48-point following threshold and never produces a placement. No native clip writes, resize
+pins, correction loops, materialization acknowledgements or scroll watchdogs remain. Prepending,
+growing rows and returning from a viewer leave position to the native scroll view.
 
-The adapter builds each `Layout` from one layout callback, never mixing old frames with a
-new native viewport, origin or document extent. Identities and measured frames have unique
-IDs, and frame identity metadata must match canonical membership. Before capturing reader
-input or Find's position, the adapter requires current measured viewport geometry. If that
-geometry is not available, it retains the reader-input notification and suppresses programmatic
-placement until it can reduce that input first. Expansion actions require the clicked row's
-measured frame. The model never invents an anchor offset or falls back to following merely
-because a known row is unmeasured.
-Violations of those live-input requirements assert in debug builds and leave the intent and
-position unchanged in release builds, never crashing a release app for delayed geometry.
-`layoutEvent(from:to:)` compares membership, measured geometry, viewport and document extent,
-not reader-only origin changes. Complete-frame entry points remain available and use the
-same reducer and placement logic.
+Reveal loads the target's history first, switches a hiding filter to All Messages and expands Find
+results before issuing its one centered command. An unavailable target shows the existing error
+without moving. A filter change while reading chooses the first remaining message at or after
+the old visible sequence, then the last earlier message. Following stays at the end. Show Less
+targets its entry's top only when that top was above the viewport.
+
+Measured row frames serve visibility and benchmark observation, never placement. The pure
+`visibleRows` helper counts only committed rows with at least `min(24, height / 2)` unobscured
+points between the toolbar and floating controls. Find and either viewer suspend read marking.
+Opening or closing a viewer never issues a scroll command. Concurrent older-history callers
+share one in-flight request, so Reveal can await a page already requested by the reader.
 
 Long histories must stay as fast as short ones. Build rows incrementally: derive each message's
 audience, display text and reactions once, and when messages only append, rebuild from the last

@@ -213,6 +213,38 @@ struct TransportTests {
         #expect(mock.requests.last?.url?.query == "before=100")
     }
 
+    @Test @MainActor func concurrentHistoryCallersAwaitTheSameCommittedPage() async throws {
+        let mock = MockTransport { _, _ in
+            var response = try MockResponse.json(
+                ChannelHistoryPage(version: 1, revision: 10, messages: [testMessage(99)]))
+            response.keepOpen = true
+            return response
+        }
+        let store = ChannelStore(id: "test", api: try mock.api(), sendJournal: nil)
+        _ = try store.apply(.init(type: "snapshot", state: testState(revision: 10, messages: [testMessage(100)])))
+        let first = Task { await store.loadOlder() }
+        defer { mock.finishPendingResponses() }
+        try await eventually { mock.pendingResponseCount == 1 }
+        var secondEntered = false
+        var secondFinished = false
+        let second = Task {
+            secondEntered = true
+            await store.loadOlder()
+            secondFinished = true
+        }
+        try await eventually { secondEntered }
+        #expect(!secondFinished)
+        #expect(store.isLoadingOlder)
+        #expect(mock.requests.count == 1)
+        #expect(mock.finishPendingResponses() == 1)
+        await first.value
+        await second.value
+        #expect(secondFinished)
+        #expect(!store.isLoadingOlder)
+        #expect(store.messages.map(\.sequence) == [99, 100])
+        #expect(mock.requests.count == 1)
+    }
+
     @Test @MainActor func serverFailurePreservesUncertainAttemptOutsideCanonicalState() async throws {
         let initial = testState(revision: 10, messages: [testMessage(1)])
         let mock = MockTransport { request, _ in

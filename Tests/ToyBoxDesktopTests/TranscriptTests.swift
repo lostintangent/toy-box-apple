@@ -17,87 +17,16 @@ private let transcriptTimingTestsEnabled = ProcessInfo.processInfo.environment["
 struct TranscriptTests {
     @Test func nativeIntentChangesPolicyWithoutComputingAPlacement() {
         var model = TranscriptScrollIntent()
-        #expect(model.open(unreadRow: "m74") == .row("m74"))
+        #expect(model.open(unreadRow: "m74") == .row("m74", anchor: .top))
         model.moved(distanceToEnd: 200)
         #expect(model.intent == .reading)
         model.moved(distanceToEnd: 48)
         #expect(model.intent == .following)
         model.moved(distanceToEnd: 49)
         #expect(model.intent == .reading)
-        #expect(model.jumpToLatest() == .end)
+        #expect(model.jumpToLatest() == .end(animated: true))
         #expect(model.followsEnd)
     }
-    @Test func theScrollLayoutUsesOneUnobscuredGeometrySnapshot() {
-        let geometry = TranscriptViewport(top: 4320.5, bottomGap: 945.5, width: 520, height: 344,
-                                          contentHeight: 5610, contentWidth: 503)
-        let layout = geometry.scrollLayout
-        #expect(layout.origin == 4320.5)
-        #expect(layout.documentEnd == 5610)
-        #expect(layout.documentWidth == 503)
-        #expect(layout.viewport == .init(width: 503, height: 344, topInset: 0, bottomInset: 0))
-    }
-
-    @MainActor
-    @Test func readingRowIntentSurvivesUnmeasuredWidthsAndKeepsTheMessageOffset() throws {
-        let scroll = TranscriptReadingScroll()
-        scroll.configure(rows: transcriptRows((1...100).map(transcriptTestMessage),
-                                              lead: .lead(id: "lead"), members: []), expandedIDs: [])
-        func native(width: CGFloat, origin: CGFloat, end: CGFloat) -> TranscriptNativeLayout {
-            .init(viewport: .init(width: width, height: 480, topInset: 0, bottomInset: 136),
-                  origin: origin, documentEnd: end, documentWidth: width)
-        }
-        func frame(_ sequence: Int, top: CGFloat, height: CGFloat, width: CGFloat,
-                   end: CGFloat) -> TranscriptMessageFrame {
-            .init(sequence: sequence, rect: CGRect(x: 0, y: 0, width: width, height: height), historyStart: 1,
-                  contentTop: top - TranscriptCoordinates.contentTopPadding,
-                  layoutSize: CGSize(width: width - 2 * ConversationRail.inset,
-                                     height: end - TranscriptCoordinates.contentTopPadding))
-        }
-        let initial = ["m74": frame(74, top: 6433, height: 52, width: 520, end: 9000),
-                       "scroll-row-m74": frame(0, top: 6425, height: 60, width: 520, end: 9000)]
-        #expect(scroll.receive(frames: initial, native: native(width: 520, origin: 6396, end: 9000),
-                               historyStart: 1) == nil)
-        let reading = TranscriptScrollModel.Intent.reading(.init(row: "m74", order: 297, offset: 37))
-        #expect(scroll.intent == reading)
-        // Frames at the old width cannot drive placement in the resized document.
-        #expect(scroll.receive(frames: initial, native: native(width: 360, origin: 2000, end: 3000),
-                               historyStart: 1) == nil)
-        #expect(scroll.intent == reading)
-        let partial = ["m99": frame(99, top: 2600, height: 72, width: 360, end: 3000)]
-        let materialize = try #require(scroll.receive(
-            frames: partial, native: native(width: 360, origin: 2000, end: 3000), historyStart: 1))
-        #expect(materialize.id == "m74")
-        #expect(materialize.anchor == .top)
-        #expect(scroll.intent == reading)
-
-        let measured = ["m74": frame(74, top: 2100, height: 72, width: 360, end: 3000),
-                        "scroll-row-m74": frame(0, top: 2092, height: 80, width: 360, end: 3000)]
-        let write = try #require(scroll.receive(
-            frames: measured, native: native(width: 360, origin: 2000, end: 3000), historyStart: 1))
-        #expect(write.id == "m74")
-        let writtenOrigin = 2092 - write.anchor.y * (344 - 80)
-        #expect(abs(2100 - writtenOrigin - 37) < 0.001)
-        #expect(scroll.receive(frames: measured, native: native(width: 360, origin: writtenOrigin, end: 3000),
-                               historyStart: 1) == nil)
-        #expect(scroll.intent == reading)
-
-        let widened = ["m74": frame(74, top: 4337.5, height: 37, width: 520, end: 5610),
-                       "scroll-row-m74": frame(0, top: 4329.5, height: 45, width: 520, end: 5610)]
-        #expect(scroll.receive(frames: widened, native: native(width: 520, origin: 4320.5, end: 5616),
-                               historyStart: 1) == nil)
-        let afterNativeResize = try #require(scroll.receive(
-            frames: widened, native: native(width: 520, origin: 4320.5, end: 5610), historyStart: 1))
-        let correctedOrigin = 4329.5 - afterNativeResize.anchor.y * (344 - 45)
-        #expect(abs(4337.5 - correctedOrigin - 37) < 0.001)
-        #expect(scroll.intent == reading)
-
-        scroll.readerMoved()
-        let end = ["m100": frame(100, top: 2912, height: 72, width: 360, end: 3000)]
-        #expect(scroll.receive(frames: end, native: native(width: 360, origin: 2656, end: 3000),
-                               historyStart: 1) == nil)
-        #expect(scroll.intent == .following)
-    }
-
     @Test func lazyAgentRowsKeepCanonicalEntriesAndShowOneAvatarPerRun() throws {
         let messages = (1...100).map(transcriptTestMessage)
         let canonical = transcriptRows(messages, lead: .lead(id: "lead"), members: [])
@@ -323,45 +252,6 @@ struct TranscriptTests {
         try await harness.settled()
         #expect(abs(final - clip.bounds.minY) <= 1, "A completed reader page must not be reverted later.")
         #expect(harness.readRequests == 0)
-    }
-
-    @Test func revealRejectsUnmeasuredAndPrependStaleTargets() throws {
-        let viewport = TranscriptViewport(top: 1_890, width: 503, height: 380, contentHeight: 5_148)
-        let stale = TranscriptMessageFrame(sequence: 2, rect: CGRect(x: 0, y: -1_800, width: 400, height: 57),
-                                           historyStart: 61, contentTop: 70)
-        #expect(TranscriptReveal.Layout(frame: nil, historyStart: 1, viewport: viewport, nativeTop: 1_890) == nil)
-        #expect(TranscriptReveal.Layout(frame: stale, historyStart: 1, viewport: viewport, nativeTop: 1_890) == nil)
-        var current = stale
-        current.historyStart = 1
-        current.rect.origin.y = 100
-        let layout = try #require(TranscriptReveal.Layout(
-            frame: current, historyStart: 1, viewport: viewport, nativeTop: 1_890))
-        #expect(TranscriptCoordinates.targetOffset(for: current, bottom: layout.bottom, topInset: 0) == -71.5)
-        #expect(TranscriptReveal.Layout(frame: current, historyStart: 1, viewport: .init(), nativeTop: 0) == nil)
-        var reveal = TranscriptReveal()
-        let first = reveal.receive(layout, isAligned: false)
-        let next = reveal.receive(layout, isAligned: false)
-        #expect(!first && !next)
-    }
-
-    @Test func revealCompletesOnlyAfterAnUnchangedNativeAlignment() throws {
-        let viewport = TranscriptViewport(top: 1_890, width: 503, height: 380, contentHeight: 5_148)
-        let frame = TranscriptMessageFrame(sequence: 2, rect: CGRect(x: 0, y: -1_800, width: 400, height: 57),
-                                           historyStart: 1, contentTop: 70)
-        let layout = try #require(TranscriptReveal.Layout(
-            frame: frame, historyStart: 1, viewport: viewport, nativeTop: 1_890))
-        #expect(layout.bottom == 218.5)
-        var reveal = TranscriptReveal()
-        var completions = [reveal.receive(layout, isAligned: true)]
-        var corrected = layout
-        corrected.frame.contentTop += 120
-        completions.append(reveal.receive(corrected, isAligned: true))
-        corrected.nativeTop += 40
-        completions.append(reveal.receive(corrected, isAligned: true))
-        completions.append(reveal.receive(nil, isAligned: false))
-        completions.append(reveal.receive(corrected, isAligned: true))
-        completions.append(reveal.receive(corrected, isAligned: true))
-        #expect(completions == [false, false, false, false, false, true])
     }
 
     @MainActor
@@ -796,86 +686,6 @@ struct TranscriptTests {
         #expect(anchor?.id == "first-visible")
         #expect(anchor?.frame.rect.minY == -20)
         #expect(TranscriptViewport().topVisibleFrame(in: frames) == nil)
-    }
-
-    @Test func theReadingAnchorIsTheFirstRowStartingInTheViewport() {
-        let viewport = TranscriptViewport(width: 600, height: 400)
-        func row(_ y: CGFloat, _ height: CGFloat, top: CGFloat) -> TranscriptMessageFrame {
-            .init(sequence: 1, rect: CGRect(x: 24, y: y, width: 300, height: height), historyStart: 1, contentTop: top)
-        }
-        let frames = ["spanning": row(-100, 150, top: 900), "first": row(50, 150, top: 1050),
-                      "second": row(200, 300, top: 1200), "below": row(420, 80, top: 1420)]
-        #expect(viewport.readingAnchor(in: frames) == .init(id: "first", contentTop: 1050))
-        // After a scroll down by 60, the first row spans the top and the next one starts in view.
-        #expect(viewport.readingAnchor(in: frames, scrolledBy: 60) == .init(id: "second", contentTop: 1200))
-        // A row taller than the viewport is the anchor while it fills it.
-        #expect(viewport.readingAnchor(in: ["tall": row(-300, 900, top: 600)]) == .init(id: "tall", contentTop: 600))
-        #expect(TranscriptViewport().readingAnchor(in: frames) == nil)
-    }
-
-    @Test func followingTheBottomSurvivesGrowthUntilTheReaderMovesAway() {
-        func viewport(gap: CGFloat, content: CGFloat = 2000) -> TranscriptViewport {
-            TranscriptViewport(top: content - 400 - gap, bottomGap: gap, width: 600, height: 400,
-                               contentHeight: content)
-        }
-        let atBottom = viewport(gap: 0)
-        // A sent image grows the last bubble while following, then the follow scroll is in flight.
-        let grown = viewport(gap: 260, content: 2260)
-        #expect(grown.isAtBottom(after: atBottom, wasAtBottom: true, following: true))
-        #expect(viewport(gap: 120, content: 2260).isAtBottom(after: grown, wasAtBottom: true, following: false))
-        // Jump to Latest that lands short still follows the correction that comes next.
-        #expect(viewport(gap: 90).isAtBottom(after: viewport(gap: 900), wasAtBottom: true, following: false))
-        // Scrolling, paging or revealing away from the bottom stops following.
-        #expect(!viewport(gap: 60).isAtBottom(after: viewport(gap: 30), wasAtBottom: true, following: false))
-        #expect(!grown.isAtBottom(after: atBottom, wasAtBottom: true, following: false))
-        // Moving toward the bottom resumes following only once it is reached.
-        #expect(!viewport(gap: 200).isAtBottom(after: viewport(gap: 600), wasAtBottom: false, following: false))
-        #expect(viewport(gap: 40).isAtBottom(after: viewport(gap: 200), wasAtBottom: false, following: false))
-    }
-
-    @Test(arguments: [CGFloat(0), 48])
-    func aResizeCannotTurnAReadingPositionIntoFollowing(gap: CGFloat) {
-        let reading = TranscriptViewport(top: 1000, bottomGap: 600, width: 600, height: 400, contentHeight: 2000)
-        let shrunk = TranscriptViewport(top: 800 - gap, bottomGap: gap, width: 600, height: 400,
-                                         contentHeight: 1200)
-        let taller = TranscriptViewport(top: 1000 - gap, bottomGap: gap, width: 600, height: 1000,
-                                         contentHeight: 2000)
-        for resized in [shrunk, taller] {
-            #expect(!resized.isAtBottom(after: reading, wasAtBottom: false, following: false))
-            #expect(resized.update(after: reading, wasAtBottom: false, canFollow: true, isJumping: false)
-                    == .init(isAtBottom: false, follow: nil, landsJump: false))
-            #expect(resized.isAtBottom(after: reading, wasAtBottom: true, following: false))
-        }
-    }
-
-    @Test func aResizeBeforeAJumpAppliesCannotPinTheTranscriptBackToLatest() {
-        func viewport(top: CGFloat, content: CGFloat) -> TranscriptViewport {
-            TranscriptViewport(top: top, bottomGap: content - top - 400, width: 600, height: 400,
-                               contentHeight: content)
-        }
-        let atBottom = viewport(top: 365, content: 765)
-        // An image settles while the jump to the start is still queued.
-        let resized = viewport(top: 365, content: 772)
-        let held = resized.update(after: atBottom, wasAtBottom: true, canFollow: true, isJumping: true)
-        #expect(held == .init(isAtBottom: true, follow: .jump, landsJump: false))
-        #expect(resized.update(after: atBottom, wasAtBottom: true, canFollow: true, isJumping: false)
-                == .init(isAtBottom: true, follow: .latest, landsJump: false))
-
-        // The jump lands, even alongside another resize, and leaves the bottom without following.
-        let start = viewport(top: 0, content: 780)
-        #expect(start.update(after: resized, wasAtBottom: true, canFollow: true, isJumping: true)
-                == .init(isAtBottom: false, follow: nil, landsJump: true))
-        // Once landed, later growth below no longer follows.
-        #expect(viewport(top: 0, content: 800).update(after: start, wasAtBottom: false, canFollow: true,
-                                                      isJumping: false)
-                == .init(isAtBottom: false, follow: nil, landsJump: false))
-        // A target already on the last screen clamps to the bottom, which keeps following.
-        #expect(viewport(top: 372, content: 772).update(after: resized, wasAtBottom: true, canFollow: true,
-                                                        isJumping: true)
-                == .init(isAtBottom: true, follow: nil, landsJump: true))
-        // Before landing, or while the reader scrolls, nothing follows.
-        #expect(resized.update(after: atBottom, wasAtBottom: true, canFollow: false, isJumping: true)
-                == .init(isAtBottom: true, follow: nil, landsJump: false))
     }
 
     @MainActor
@@ -1887,100 +1697,16 @@ struct TranscriptLandingTests {
         }, lead: .lead(id: "lead"), members: [])
     }
 
-    private func frame(_ y: CGFloat) -> TranscriptMessageFrame {
-        .init(sequence: 1, rect: CGRect(x: 0, y: y, width: 400, height: 40), historyStart: 1)
-    }
-
-    private func step(top: CGFloat, height: CGFloat = 400, bottomGap: CGFloat = 100,
-                      isColdOpening: Bool = false, jumps: Int = 0, hasPendingJump: Bool = false) -> TranscriptLanding.Step {
-        let row = rows()[0]
-        return TranscriptLanding.step(
-            on: row, frames: [row.messages[0].id: frame(top)],
-            viewport: TranscriptViewport(bottomGap: bottomGap, width: 500, height: height),
-            isColdOpening: isColdOpening, jumps: jumps, hasPendingJump: hasPendingJump)
-    }
-
     @Test func theTargetIsTheFirstRowContainingUnreadMessagesOrLatest() throws {
         let rows = rows()
-        #expect(TranscriptLanding.target(unreadAfter: nil, rows: rows) == .latest)
-        #expect(TranscriptLanding.target(unreadAfter: 20, rows: rows) == .latest)
-        #expect(TranscriptLanding.target(unreadAfter: 0, rows: []) == .latest)
-        #expect(TranscriptLanding.target(unreadAfter: 10, rows: rows) == .unread(rows[10].id))
+        #expect(TranscriptScrollIntent.openingRow(after: nil, in: rows) == nil)
+        #expect(TranscriptScrollIntent.openingRow(after: 20, in: rows) == nil)
+        #expect(TranscriptScrollIntent.openingRow(after: 0, in: []) == nil)
+        #expect(TranscriptScrollIntent.openingRow(after: 10, in: rows) == rows[10].id)
         let run = transcriptRows((1...10).map(transcriptTestMessage),
                                  lead: .lead(id: "lead"), members: [], unreadAfter: 5)
         let unread = try #require(run.first { $0.messages.contains { $0.sequence == 6 } })
-        #expect(TranscriptLanding.target(unreadAfter: 5, rows: run) == .unread(unread.id))
-    }
-
-    @Test func aWarmOpeningRequiresTheUnreadBoundaryToBeLoaded() {
-        let rows = rows(31...50)
-        #expect(TranscriptLanding.opening(unreadAfter: nil, oldestSequence: 31,
-                                         hasOlderMessages: true, rows: rows) == nil)
-        #expect(TranscriptLanding.opening(unreadAfter: 30, oldestSequence: nil,
-                                         hasOlderMessages: true, rows: rows) == nil)
-        #expect(TranscriptLanding.opening(unreadAfter: 20, oldestSequence: 31,
-                                         hasOlderMessages: true, rows: rows) == nil)
-        #expect(TranscriptLanding.opening(unreadAfter: 30, oldestSequence: 31,
-                                         hasOlderMessages: true, rows: rows)?.rowID == rows[0].id)
-        #expect(TranscriptLanding.opening(unreadAfter: 20, oldestSequence: 31,
-                                         hasOlderMessages: false, rows: rows)?.rowID == rows[0].id)
-        #expect(TranscriptLanding.opening(unreadAfter: 50, oldestSequence: 31,
-                                         hasOlderMessages: false, rows: rows) == nil)
-    }
-
-    @Test func aWarmOpeningSeedsOnlyTailsLongerThanEightRows() throws {
-        let rows = rows()
-        let short = try #require(TranscriptLanding.opening(unreadAfter: 12, oldestSequence: 1,
-                                                           hasOlderMessages: false, rows: rows))
-        #expect(short == .init(rowID: rows[12].id, unreadAfter: 12, seeds: false))
-        let long = try #require(TranscriptLanding.opening(unreadAfter: 11, oldestSequence: 1,
-                                                          hasOlderMessages: false, rows: rows))
-        #expect(long == .init(rowID: rows[11].id, unreadAfter: 11, seeds: true))
-    }
-
-    @Test func aColdOpeningMustTargetUnreadOnceEvenWhenProvisionalFramesLookLanded() {
-        #expect(step(top: 132.6857, height: 800, bottomGap: 0, isColdOpening: true) == .placeColdOpening)
-        #expect(step(top: 20, isColdOpening: true) == .placeColdOpening)
-        #expect(step(top: 20, isColdOpening: true, jumps: 1) == .settled)
-        #expect(step(top: 20) == .settled)
-    }
-
-    @Test(arguments: [(CGFloat(-0.51), false), (-0.5, true), (0, true), (119.99, true), (120, false)])
-    func aTopLandingUsesTheExactVisibleThreshold(_ sample: (top: CGFloat, fits: Bool)) {
-        #expect(step(top: sample.top) == (sample.fits ? .settled : .correctPosition))
-        #expect(step(top: 49.99, height: 100) == .settled)
-        #expect(step(top: 50, height: 100) == .correctPosition)
-    }
-
-    @Test func aShortTailMayLandAnywhereInsideTheLastScreenButNotUnderTheFloatingBar() {
-        #expect(step(top: 300, bottomGap: 0) == .settled)
-        #expect(step(top: 300, bottomGap: 0.99) == .settled)
-        #expect(step(top: 300, bottomGap: 1) == .correctPosition)
-        #expect(step(top: 400, bottomGap: 0) == .correctPosition)
-        #expect(step(top: -0.51, bottomGap: 0) == .correctPosition)
-    }
-
-    @Test func placementMeasuresTheMessageRunSystemGroupAndUnreadDivider() {
-        let row = rows()[0]
-        let viewport = TranscriptViewport(bottomGap: 100, width: 500, height: 400)
-        for id in [row.messages[0].id, row.id, "system-group-\(row.id)", "divider-\(row.id)"] {
-            #expect(TranscriptLanding.step(on: row, frames: [id: frame(20)], viewport: viewport,
-                                            isColdOpening: false, jumps: 0, hasPendingJump: false) == .settled)
-        }
-        #expect(TranscriptLanding.step(on: row, frames: [:], viewport: viewport,
-                                       isColdOpening: false, jumps: 0, hasPendingJump: false) == .correctPosition)
-        #expect(step(top: 20, height: 0) == .correctPosition)
-        let straddling = [row.messages[0].id: frame(-10), "divider-\(row.id)": frame(20)]
-        #expect(TranscriptLanding.step(on: row, frames: straddling, viewport: viewport,
-                                       isColdOpening: false, jumps: 0, hasPendingJump: false) == .correctPosition)
-    }
-
-    @Test func anInFlightJumpOwnsThePositionAndCorrectionsStayBounded() {
-        #expect(step(top: 20, hasPendingJump: true) == .waitForJump)
-        #expect(step(top: 20, isColdOpening: true, hasPendingJump: true) == .waitForJump)
-        #expect(step(top: 500, jumps: 1) == .correctPosition)
-        #expect(step(top: 500, jumps: 2) == .settled)
-        #expect(step(top: 500, jumps: 2, hasPendingJump: true) == .waitForJump)
+        #expect(TranscriptScrollIntent.openingRow(after: 5, in: run) == unread.id)
     }
 }
 
@@ -1989,15 +1715,6 @@ struct TranscriptPagingTests {
     private func frame(top: CGFloat, height: CGFloat, measuredY: CGFloat) -> TranscriptMessageFrame {
         .init(sequence: 61, rect: CGRect(x: 68, y: measuredY, width: 400, height: height),
               historyStart: 31, contentTop: top)
-    }
-
-    @Test func replayingAFrameCannotAddItsCorrectionAgain() {
-        let measured = frame(top: 1455, height: 37, measuredY: 1392)
-        var offset: CGFloat = 83
-        for _ in 0..<4 {
-            offset = TranscriptCoordinates.targetOffset(for: measured, bottom: 79, topInset: 0)
-            #expect(offset == 1433)
-        }
     }
 
     @Test func scrollingReprojectsACachedFrameInsteadOfWaitingForAnotherPreference() {
@@ -2017,49 +1734,6 @@ struct TranscriptPagingTests {
         let later = TranscriptCoordinates.viewportFrame(cached, top: 83)
         #expect(first.rect.maxY == 139)
         #expect(later.rect.maxY == 79)
-        let loaded = frame(top: 1455, height: 37, measuredY: 1392)
-        #expect(TranscriptCoordinates.targetOffset(for: loaded, bottom: later.rect.maxY,
-                                                   topInset: 0) == 1433)
-    }
-
-    @Test func theToolbarInsetIsRemovedOnlyFromTheNativeOffset() {
-        let measured = frame(top: 2055, height: 57, measuredY: 2023)
-        #expect(TranscriptCoordinates.targetOffset(for: measured, bottom: 130, topInset: 52) == 1950)
-        #expect(TranscriptCoordinates.targetOffset(for: measured, bottom: 130, topInset: 76) == 1926)
-    }
-
-    @Test func joiningARunKeepsTheMessagesBottomWhenItsRepeatedHeaderDisappears() {
-        let before = frame(top: 84, height: 58, measuredY: 21)
-        let joined = frame(top: 1465, height: 37, measuredY: 1381)
-        let oldOffset = TranscriptCoordinates.targetOffset(for: before, bottom: 79, topInset: 0)
-        let newOffset = TranscriptCoordinates.targetOffset(for: joined, bottom: 79, topInset: 0)
-        #expect(oldOffset == 83)
-        #expect(newOffset == 1443)
-        #expect(newOffset - oldOffset == 1360)
-    }
-
-    @Test func scrollingDoesNotChangeTheTargetButALazyHeightCorrectionDoes() {
-        for y: CGFloat in [-963, 21, 1381] {
-            let measured = frame(top: 1465, height: 37, measuredY: y)
-            #expect(TranscriptCoordinates.targetOffset(for: measured, bottom: 79,
-                                                       topInset: 0) == 1443)
-        }
-        let corrected = frame(top: 1455, height: 37, measuredY: 21)
-        #expect(TranscriptCoordinates.targetOffset(for: corrected, bottom: 79,
-                                                   topInset: 0) == 1433)
-    }
-
-    @Test func restorationWaitsUntilBothNativeScrollingAndItsMeasuredFrameAgree() {
-        let stale = frame(top: 1455, height: 37, measuredY: 1392)
-        let measured = frame(top: 1455, height: 37, measuredY: 42)
-        func restored(_ frame: TranscriptMessageFrame, bottom: CGFloat = 79, nativeIsAligned: Bool = true) -> Bool {
-            TranscriptCoordinates.isRestored(frame, bottom: bottom, nativeIsAligned: nativeIsAligned)
-        }
-        #expect(!restored(stale))
-        #expect(!restored(measured, nativeIsAligned: false))
-        #expect(restored(measured))
-        #expect(restored(measured, bottom: 79.5))
-        #expect(!restored(measured, bottom: 79.51))
     }
 
     @Test func readMarkingUsesNativeContentBoundsWithoutReprojectingEveryFrame() {
