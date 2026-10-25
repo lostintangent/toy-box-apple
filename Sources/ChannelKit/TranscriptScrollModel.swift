@@ -14,14 +14,17 @@ public enum TranscriptScrollModel {
         public let order: Int
         public let top: CGFloat
         public let height: CGFloat
+        /// Accessories contribute geometry but cannot be anchored, targeted, or marked read.
+        public let isAnchorable: Bool
         public var bottom: CGFloat { top + height }
 
-        public init(id: RowID, order: Int, top: CGFloat, height: CGFloat) {
+        public init(id: RowID, order: Int, top: CGFloat, height: CGFloat, isAnchorable: Bool = true) {
             precondition(!id.isEmpty && top.isFinite && height.isFinite && height >= 0 && (top + height).isFinite)
             self.id = id
             self.order = order
             self.top = top
             self.height = height
+            self.isAnchorable = isAnchorable
         }
     }
 
@@ -73,7 +76,7 @@ public enum TranscriptScrollModel {
         /// Only for changed row frames or viewport geometry. Use `layoutEvent` to suppress no-ops.
         case layoutChanged
         case readerScrolled(to: CGFloat)
-        /// Captures reading without moving. With no rows, preserves the existing intent.
+        /// Captures reading without moving. With no anchorable rows, preserves the existing intent.
         case holdCurrentPosition
         case land(Target)
         case jumpToLatest
@@ -116,19 +119,19 @@ public enum TranscriptScrollModel {
             let anchor = readingAnchor(origin, rows: rows, viewport: viewport)
             return Placement(intent: anchor.map(Intent.reading) ?? intent, origin: nil)
         case .land(let target):
-            if case .row(let id, _) = target, !rows.contains(where: { $0.id == id }) {
+            if case .row(let id, _) = target, anchorableRow(id, rows: rows) == nil {
                 return Placement(intent: intent, origin: nil, unavailableTarget: id)
             }
             return place(.landing(target), rows: rows, viewport: viewport)
         case .jumpToLatest, .ownPostConfirmed:
             return place(.following, rows: rows, viewport: viewport)
         case .reveal(let id):
-            guard let row = rows.first(where: { $0.id == id }) else {
+            guard let row = anchorableRow(id, rows: rows) else {
                 return Placement(intent: intent, origin: nil, unavailableTarget: id)
             }
             return place(.revealing(id, order: row.order), rows: rows, viewport: viewport)
         case .toggledExpansion(let id, let expanded):
-            guard let row = rows.first(where: { $0.id == id }) else {
+            guard let row = anchorableRow(id, rows: rows) else {
                 return Placement(intent: intent, origin: nil, unavailableTarget: id)
             }
             let offset = row.top - origin - viewport.topInset
@@ -162,6 +165,7 @@ public enum TranscriptScrollModel {
         let top = origin + viewport.topInset
         let bottom = origin + viewport.height - viewport.bottomInset
         return rows.compactMap { row in
+            guard row.isAnchorable else { return nil }
             let visible = min(row.bottom, bottom) - max(row.top, top)
             return visible > 0 && visible >= min(24, row.height / 2) ? row.id : nil
         }
@@ -173,8 +177,8 @@ public enum TranscriptScrollModel {
         guard viewport.width > 0, viewport.unobscuredHeight > 0 else { return nil }
         let top = origin + viewport.topInset
         let bottom = origin + viewport.height - viewport.bottomInset
-        let starting = rows.first { $0.height > 0 && $0.top >= top && $0.top < bottom }
-        let covering = rows.first { $0.top < top && $0.bottom > top }
+        let starting = rows.first { $0.isAnchorable && $0.height > 0 && $0.top >= top && $0.top < bottom }
+        let covering = rows.first { $0.isAnchorable && $0.top < top && $0.bottom > top }
         return (starting ?? covering).map { Anchor(row: $0.id, order: $0.order, offset: $0.top - top) }
     }
 
@@ -182,7 +186,7 @@ public enum TranscriptScrollModel {
         if let anchor = firstRowStartingInView(origin, rows: rows, viewport: viewport) { return anchor }
         let top = origin + viewport.topInset
         // A gap with no visible row must not retain a landing/reveal intent and later undo input.
-        let row = rows.first(where: { $0.top >= top }) ?? rows.last
+        let row = rows.first(where: { $0.isAnchorable && $0.top >= top }) ?? rows.last(where: \.isAnchorable)
         return row.map { Anchor(row: $0.id, order: $0.order, offset: $0.top - top) }
     }
 
@@ -214,6 +218,11 @@ public enum TranscriptScrollModel {
     }
 
     private static func survivor(id: RowID, order: Int, rows: [RowFrame]) -> RowFrame? {
-        rows.first(where: { $0.id == id }) ?? rows.first(where: { $0.order >= order }) ?? rows.last
+        anchorableRow(id, rows: rows) ?? rows.first(where: { $0.isAnchorable && $0.order >= order })
+            ?? rows.last(where: \.isAnchorable)
+    }
+
+    private static func anchorableRow(_ id: RowID, rows: [RowFrame]) -> RowFrame? {
+        rows.first(where: { $0.isAnchorable && $0.id == id })
     }
 }

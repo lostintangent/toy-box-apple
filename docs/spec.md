@@ -1005,12 +1005,16 @@ continue paging even when a page contains no visible rows.
 and the viewport's width, height and glass insets. Its adapter sends `layoutChanged` only when
 `layoutEvent` detects changed geometry, never just because another native layout pass ran.
 Reader input updates intent without returning an origin. Opening Find uses `holdCurrentPosition`
-to capture reading even at the end without moving. With no rows it preserves the existing intent.
+to capture reading even at the end without moving. With no anchorable rows it preserves the existing intent.
 Jump to Latest resumes following. Landing and reveal targets retain their
 conversation order so a target removed during layout falls forward to its next surviving row,
 then backward to the last row, then to the end. Only explicit missing-target actions report an
 unavailable target without moving. The model's document end owns the 16-point clearance exactly
 once, and read eligibility excludes both glass insets and zero-sized viewports.
+`RowFrame.isAnchorable` defaults to true. History and empty-state accessories set it to false:
+they still contribute document height, but are never reading anchors, fallback targets or read
+candidates. Explicit row-target actions reject accessories. With only accessory geometry remaining,
+a layout-time target loss falls back to the document end.
 
 Long histories must stay as fast as short ones. Build rows incrementally: derive each message's
 audience, display text and reactions once, and when messages only append, rebuild from the last

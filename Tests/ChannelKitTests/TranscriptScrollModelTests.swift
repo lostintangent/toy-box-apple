@@ -79,6 +79,80 @@ struct TranscriptScrollModelTests {
         #expect(held.unavailableTarget == nil)
     }
 
+    @Test func theHistoryHeaderContributesHeightButNeverOwnsThePrependAnchor() {
+        let header = Model.RowFrame(id: "load-older", order: -2, top: 0, height: 180, isAnchorable: false)
+        let rows = [header] + frames(shift: 180)
+        #expect(Model.end(rows) == 2_196)
+        #expect(frames()[0].isAnchorable)
+        let anchor = Model.Anchor(row: "m0", order: 0, offset: 180)
+        for event in [Model.Event.readerScrolled(to: -50), .holdCurrentPosition] {
+            let captured = Model.reduce(.following, event, rows: rows, viewport: viewport, origin: -50)
+            #expect(captured.intent == .reading(anchor))
+            #expect(captured.origin == nil)
+            let older = Model.RowFrame(id: "older", order: -1, top: 180, height: 300)
+            let prepended = [header, older] + frames(shift: 480)
+            let placed = Model.reduce(captured.intent, .layoutChanged, rows: prepended,
+                                      viewport: viewport, origin: -50)
+            #expect(placed.origin == 250)
+            #expect(480 - (250 + viewport.topInset) == anchor.offset)
+        }
+        #expect(!Model.visibleRows(rows, viewport: viewport, origin: -50).contains("load-older"))
+    }
+
+    @Test(arguments: [
+        (Model.Intent.landing(.row("m5", order: 5)), CGFloat(650), CGFloat(350)),
+        (.reading(.init(row: "m5", order: 5, offset: 30)), 620, 320),
+        (.revealing("m5", order: 5), 500, 350),
+    ])
+    func survivorFallbackSkipsAccessoriesIncludingTheExactIDAndLastRow(_ intent: Model.Intent,
+                                                                      _ successor: CGFloat,
+                                                                      _ predecessor: CGFloat) {
+        var rows = frames()
+        for index in [5, 6] {
+            let row = rows[index]
+            rows[index] = .init(id: row.id, order: row.order, top: row.top, height: row.height, isAnchorable: false)
+        }
+        let next = Model.reduce(intent, .layoutChanged, rows: rows, viewport: viewport, origin: 400)
+        #expect(next.origin == successor)
+        #expect(next.unavailableTarget == nil)
+        let trailing = Model.RowFrame(id: "empty", order: 10, top: 500, height: 900, isAnchorable: false)
+        let remaining = Array(frames().prefix(5)) + [trailing]
+        let small = Model.Viewport(width: 600, height: 200, topInset: 50, bottomInset: 50)
+        let previous = Model.reduce(intent, .layoutChanged, rows: remaining, viewport: small, origin: 400)
+        #expect(previous.origin == predecessor)
+        #expect(previous.unavailableTarget == nil)
+        #expect(Model.end(remaining) == 1_416)
+    }
+
+    @Test func accessoryOnlyGeometryFallsBackToTheEndWithoutCreatingAReadingAnchor() {
+        let rows = [Model.RowFrame(id: "empty", order: 0, top: 0, height: 240, isAnchorable: false)]
+        #expect(Model.end(rows) == 256)
+        #expect(Model.visibleRows(rows, viewport: viewport, origin: -50).isEmpty)
+        #expect(Model.firstRowStartingInView(-50, rows: rows, viewport: viewport) == nil)
+        #expect(Model.firstRowStartingInView(0, rows: rows, viewport: viewport) == nil)
+        let previous = Model.Intent.reading(.init(row: "m5", order: 5, offset: 30))
+        let empty = Model.reduce(previous, .layoutChanged, rows: rows, viewport: viewport, origin: 400)
+        #expect(empty.intent == .following)
+        #expect(empty.origin == -50)
+        #expect(empty.unavailableTarget == nil)
+        let held = Model.reduce(.following, .holdCurrentPosition, rows: rows, viewport: viewport, origin: -50)
+        #expect(held.intent == .following)
+        #expect(held.origin == nil)
+    }
+
+    @Test(arguments: [
+        Model.Event.land(.row("header", order: 0)),
+        .reveal("header"),
+        .toggledExpansion("header", expanded: true),
+    ])
+    func explicitActionsCannotTargetAccessoryGeometry(_ event: Model.Event) {
+        let rows = [Model.RowFrame(id: "header", order: 0, top: 0, height: 180, isAnchorable: false)]
+        let rejected = Model.reduce(.following, event, rows: rows, viewport: viewport, origin: -50)
+        #expect(rejected.intent == .following)
+        #expect(rejected.origin == nil)
+        #expect(rejected.unavailableTarget == "header")
+    }
+
     @Test func prependPreservesTheSameAnchorAndOffset() {
         let intent = Model.Intent.reading(.init(row: "m5", order: 5, offset: 30))
         let before = Model.reduce(intent, .layoutChanged, rows: frames(), viewport: viewport, origin: 0)
