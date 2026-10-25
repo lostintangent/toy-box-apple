@@ -33,6 +33,25 @@ struct TranscriptAlignment {
 }
 
 struct TranscriptReadingMotion {
+    /// A partially refreshed lazy stack can put a later message above an old divider measurement.
+    static func isCoherent(_ anchor: TranscriptReadingAnchor, in frames: [String: TranscriptMessageFrame],
+                           previousFrames: [String: TranscriptMessageFrame]) -> Bool {
+        guard let current = frames[anchor.id] else { return false }
+        let previousTop = previousFrames[anchor.id]?.contentTop ?? anchor.contentTop
+        return frames.allSatisfy { id, frame in
+            guard let previous = previousFrames[id] else { return true }
+            let before = previous.contentTop - previousTop
+            let after = frame.contentTop - current.contentTop
+            return !(before > 0.5 && after < -0.5) && !(before < -0.5 && after > 0.5)
+        }
+    }
+
+    static func canYield(_ anchor: TranscriptReadingAnchor, in frames: [String: TranscriptMessageFrame],
+                         previousFrames: [String: TranscriptMessageFrame]) -> Bool {
+        isCoherent(anchor, in: frames, previousFrames: previousFrames)
+            && frames[anchor.id].map { abs($0.contentTop - anchor.contentTop) <= 0.25 } == true
+    }
+
     struct Layout: Equatable {
         var viewportSize: CGSize
         var contentSize: CGSize
@@ -54,6 +73,20 @@ struct TranscriptReadingMotion {
         expectedOffset = offset
         self.layout = layout
         return moved
+    }
+}
+
+struct TranscriptReadingMaterialization {
+    var rowID: String
+    var frameIDs: [String]
+    var topPadding: CGFloat
+
+    func contains(nativeTop: CGFloat, frames: [String: TranscriptMessageFrame]) -> Bool {
+        let outerTop = frameIDs.compactMap { frames[$0]?.contentTop }.min().map { $0 - topPadding }
+        // The row and its first message can share an ID, so the proxy can resolve either frame.
+        return [outerTop, frames[rowID]?.contentTop].contains {
+            $0.map { abs($0 - nativeTop) <= 0.5 } == true
+        }
     }
 }
 

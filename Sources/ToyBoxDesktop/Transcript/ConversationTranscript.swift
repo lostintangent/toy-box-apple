@@ -238,10 +238,14 @@ struct ConversationTranscript: View {
         .scrollEdgeEffectStyle(.hard, for: .top)
         .coordinateSpace(name: "transcript-viewport")
         .defaultScrollAnchor(opening.seededRowID == nil ? .bottom : .top, for: .initialOffset)
-        .scrollPosition(id: Binding {
+        .scrollPosition(id: Binding<String?> {
+            // A reported row ID must not give SwiftUI a second, top-aligned resize anchor.
+            if readingRestore != nil { return nil }
             // The seed holds the first unread row at the top until it lands, as the card appears above it.
-            scrollPosition ?? (hasLanded || isRevealing ? nil : opening.seededRowID)
-        } set: { scrollPosition = $0 }, anchor: .top)
+            return scrollPosition ?? (hasLanded || isRevealing ? nil : opening.seededRowID)
+        } set: {
+            if readingRestore == nil { scrollPosition = $0 }
+        }, anchor: .top)
         .preference(key: TranscriptLanded.self, value: hasLanded)
         .preference(key: TranscriptRestoringHistory.self, value: pagingAnchor != nil)
         .preference(key: TranscriptRestoringReading.self, value: readingRestore != nil)
@@ -268,7 +272,11 @@ struct ConversationTranscript: View {
             if hasLanded, !isAtBottom, readingRestore == nil, pagingAnchor == nil, pendingJump == nil, !isRevealing,
                new.width == old.width, new.height == old.height, new.contentHeight == old.contentHeight,
                abs(new.top - old.top) > 0.5 {
-                geometry.readingAnchor = new.readingAnchor(in: frames, nativeViewportTop: new.top)
+                if geometry.readingAnchor.map({
+                    TranscriptReadingMotion.canYield($0, in: frames, previousFrames: geometry.readingFrames)
+                }) ?? true {
+                    geometry.capture(viewport: new, frames: frames, nativeViewportTop: new.top)
+                }
             }
             let jump = pendingJump
             if update.landsJump { pendingJump = nil }
@@ -343,6 +351,7 @@ struct ConversationTranscript: View {
                                                  frame, top: window.viewportTop ?? viewport.top)
                                              geometry.readingAnchor = .init(
                                                  id: id, contentTop: frame.contentTop, top: positioned.rect.minY)
+                                             geometry.readingFrames = frames
                                          }
                                          if expands {
                                              expandedMessageIds.insert(id)
@@ -355,7 +364,7 @@ struct ConversationTranscript: View {
                                          }
                                      })
                     .equatable()
-                    .padding(.top, stacked.contains(row.id) ? 4 : 20)
+                    .padding(.top, transcriptRowTopPadding(for: row.id, stacked: stacked))
             }
             ForEach(store.sendAttempts) { attempt in
                 sendAttempt(attempt, statusReactions: statusReactions[attempt.message.sequence] ?? [])
@@ -993,10 +1002,21 @@ struct ConversationTranscript: View {
         let holds = hasLanded && pagingAnchor == nil && pendingJump == nil && !isRevealing
             && (!isAtBottom || catchUp?.holdsLanding == true)
         if let restore = readingRestore {
-            if let frame = frames[restore.id] {
+            if let frame = frames[restore.id],
+               geometry.readingAnchor.map({
+                   TranscriptReadingMotion.isCoherent($0, in: frames, previousFrames: geometry.readingFrames)
+               }) == true {
                 _ = window.restoreReadingBottom(restore.top + frame.rect.height, of: frame)
+                if readingRestore == restore { geometry.restored(restore, frame: frame, frames: frames) }
             }
             return
+        }
+        if holds {
+            if let anchor = geometry.readingAnchor,
+               !TranscriptReadingMotion.isCoherent(anchor, in: frames, previousFrames: geometry.readingFrames) {
+                beginReadingRestore()
+                if readingRestore != nil { return }
+            }
         }
         var shift: CGFloat = 0
         if holds, let anchor = geometry.readingAnchor, let frame = frames[anchor.id] {
@@ -1010,20 +1030,30 @@ struct ConversationTranscript: View {
         }
         if abs(shift) > 0.25 {
             beginReadingRestore()
-            if let restore = readingRestore, let frame = frames[restore.id] {
-                _ = window.restoreReadingBottom(restore.top + frame.rect.height, of: frame)
+            if let restore = readingRestore {
+                if let frame = frames[restore.id] {
+                    _ = window.restoreReadingBottom(restore.top + frame.rect.height, of: frame)
+                    if readingRestore == restore { geometry.restored(restore, frame: frame, frames: frames) }
+                }
                 return
             }
             window.scroll(by: shift)
         }
-        geometry.readingAnchor = holds ? viewport.readingAnchor(in: frames, nativeViewportTop: window.viewportTop) : nil
+        if !holds {
+            geometry.readingAnchor = nil
+            geometry.readingFrames = [:]
+        } else if isUserScrolling || geometry.readingAnchor == nil {
+            geometry.capture(viewport: viewport, frames: frames, nativeViewportTop: window.viewportTop)
+        }
     }
 
     /// Keeps the original screen top until deferred rewrapping and native offset clamps settle.
     private func beginReadingRestore() {
-        guard readingRestore == nil, hasLanded, !isAtBottom, !isUserScrolling, !isRevealing,
+        guard readingRestore == nil, hasLanded, (!isAtBottom || catchUp?.holdsLanding == true),
+              !isUserScrolling, !isRevealing,
               pagingAnchor == nil, pendingJump == nil, let anchor = geometry.readingAnchor else { return }
         readingRestore = .init(anchor: anchor)
+        geometry.readingMaterialization = nil
         if ProcessInfo.processInfo.environment["TOY_BOX_TEST_PAGING_TRACE"] == "1" {
             let line = "Transcript reading \(anchor.id): content top \(anchor.contentTop), saved top \(anchor.top), "
                 + "cached viewport \(viewport.top), native \(String(describing: window.viewportTop))\n"
@@ -1035,11 +1065,24 @@ struct ConversationTranscript: View {
         let geometry = geometry
         let observer = window
         observer.beginReadingRestore(restore.token) { [weak observer] in
-            guard state.wrappedValue?.token == restore.token else { return }
+            guard state.wrappedValue?.token == restore.token else { return true }
+            if let nativeTop = observer?.viewportTop, let materialization = geometry.readingMaterialization,
+               materialization.contains(nativeTop: nativeTop, frames: geometry.frames) {
+                if ProcessInfo.processInfo.environment["TOY_BOX_TEST_PAGING_TRACE"] == "1" {
+                    let line = "Transcript materialized \(materialization.rowID): native viewport \(nativeTop)\n"
+                    FileHandle.standardError.write(Data(line.utf8))
+                }
+                geometry.readingMaterialization = nil
+                return false
+            }
+            guard let anchor = geometry.readingAnchor,
+                  TranscriptReadingMotion.canYield(anchor, in: geometry.frames,
+                                                   previousFrames: geometry.readingFrames) else { return false }
             state.wrappedValue = nil
             geometry.viewport = geometry.viewport.positioned(atNativeTop: observer?.viewportTop)
-            geometry.readingAnchor = geometry.viewport.readingAnchor(
-                in: geometry.frames, nativeViewportTop: observer?.viewportTop)
+            geometry.capture(viewport: geometry.viewport, frames: geometry.frames,
+                             nativeViewportTop: observer?.viewportTop)
+            return true
         }
     }
 
@@ -1047,6 +1090,7 @@ struct ConversationTranscript: View {
         defer {
             window.endReadingRestore(restore.token)
             if readingRestore == restore { readingRestore = nil }
+            if readingRestore == nil { geometry.readingMaterialization = nil }
         }
         var settling = TranscriptReadingSettling(size: CGSize(width: viewport.width, height: viewport.height),
                                                  now: .now)
@@ -1067,16 +1111,31 @@ struct ConversationTranscript: View {
                 if !materialized, let row = rows.first(where: {
                     transcriptFrameIDs(of: $0).contains(restore.id) || "divider-\($0.id)" == restore.id
                 }) {
+                    geometry.readingMaterialization = .init(
+                        rowID: row.id, frameIDs: transcriptFrameIDs(of: row) + ["divider-\(row.id)"],
+                        topPadding: transcriptRowTopPadding(for: row.id, stacked: transcriptStackedSystemRowIDs(rows)))
                     proxy.scrollTo(row.id, anchor: .top)
                     materialized = true
                 }
                 continue
             }
+            guard let anchor = geometry.readingAnchor,
+                  TranscriptReadingMotion.isCoherent(anchor, in: frames, previousFrames: geometry.readingFrames)
+            else {
+                _ = alignment.receive(nil, isAligned: false)
+                continue
+            }
             let aligned = window.restoreReadingBottom(restore.top + layout.frame.rect.height, of: layout.frame)
+            guard readingRestore == restore else { return }
+            geometry.restored(restore, frame: layout.frame, frames: frames)
             if alignment.receive(layout, isAligned: aligned) {
                 if window.isLiveResizing { continue }
                 geometry.viewport = viewport.positioned(atNativeTop: window.viewportTop)
-                geometry.readingAnchor = viewport.readingAnchor(in: frames, nativeViewportTop: window.viewportTop)
+                if ProcessInfo.processInfo.environment["TOY_BOX_TEST_PAGING_TRACE"] == "1" {
+                    let line = "Transcript settled \(restore.id): content top \(layout.frame.contentTop), "
+                        + "saved top \(restore.top), native \(String(describing: window.viewportTop))\n"
+                    FileHandle.standardError.write(Data(line.utf8))
+                }
                 isAtBottom = viewport.bottomGap <= 48
                 return
             }
@@ -1224,6 +1283,10 @@ private func transcriptFrameIDs(of row: TranscriptRow) -> [String] {
     row.messages.map(\.id) + [row.id, "system-group-\(row.id)"]
 }
 
+private func transcriptRowTopPadding(for rowID: String, stacked: Set<String>) -> CGFloat {
+    stacked.contains(rowID) ? 4 : 20
+}
+
 /// Scroll geometry changes on every frame of a scroll. Kept out of SwiftUI's tracking, it lets a
 /// scroll run without re-running the transcript's body and diffing every loaded row. Only what a
 /// frame actually changes, like the visible message or reaching the bottom, is published as state.
@@ -1232,6 +1295,19 @@ private final class TranscriptScrollGeometry {
     var viewport = TranscriptViewport()
     var frames: [String: TranscriptMessageFrame] = [:]
     var readingAnchor: TranscriptReadingAnchor?
+    var readingFrames: [String: TranscriptMessageFrame] = [:]
+    var readingMaterialization: TranscriptReadingMaterialization?
+
+    func capture(viewport: TranscriptViewport, frames: [String: TranscriptMessageFrame], nativeViewportTop: CGFloat?) {
+        readingAnchor = viewport.readingAnchor(in: frames, nativeViewportTop: nativeViewportTop)
+        readingFrames = frames
+    }
+
+    func restored(_ restore: TranscriptReadingRestore, frame: TranscriptMessageFrame,
+                  frames: [String: TranscriptMessageFrame]) {
+        readingAnchor = .init(id: restore.id, contentTop: frame.contentTop, top: restore.top)
+        readingFrames = frames
+    }
 }
 
 /// A row whose place on screen the reader keeps, by where its top sits in the content.

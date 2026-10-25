@@ -116,6 +116,60 @@ struct TranscriptTests {
         #expect(tops == [top, top, top])
     }
 
+    @Test func aPartialLazyRemeasurementCannotReplaceTheSettledUnreadDividerAnchor() throws {
+        let viewport = TranscriptViewport(top: 6_179, width: 1053, height: 632, contentHeight: 7_933)
+        func frame(_ sequence: Int, contentTop: CGFloat, height: CGFloat, nativeTop: CGFloat)
+            -> TranscriptMessageFrame {
+            .init(sequence: sequence,
+                  rect: CGRect(x: 24, y: 20 + contentTop - nativeTop, width: 1005, height: height),
+                  historyStart: 381, contentTop: contentTop)
+        }
+        let settled = [
+            "divider-m451": frame(0, contentTop: 6_179, height: 16, nativeTop: 6_179),
+            "m451": frame(451, contentTop: 6_211, height: 58, nativeTop: 6_179),
+            "m452": frame(452, contentTop: 6_289, height: 58, nativeTop: 6_179)
+        ]
+        let original = try #require(viewport.readingAnchor(in: settled, nativeViewportTop: 6_179))
+        #expect(original.id == "divider-m451" && original.top == 20)
+        let partial = [
+            "divider-m451": frame(0, contentTop: 6_179, height: 16, nativeTop: 5_206),
+            "m451": frame(451, contentTop: 6_211, height: 58, nativeTop: 5_206),
+            "m452": frame(452, contentTop: 5_476, height: 58, nativeTop: 5_206)
+        ]
+        let complete = [
+            "divider-m451": frame(0, contentTop: 5_366, height: 16, nativeTop: 5_206),
+            "m451": frame(451, contentTop: 5_398, height: 58, nativeTop: 5_206),
+            "m452": frame(452, contentTop: 5_476, height: 58, nativeTop: 5_206)
+        ]
+        let premature = try #require(viewport.readingAnchor(in: partial, nativeViewportTop: 5_206))
+        #expect(premature.id == "m452" && premature.top == 290)
+        #expect(!TranscriptReadingMotion.isCoherent(original, in: partial, previousFrames: settled))
+        #expect(TranscriptReadingMotion.isCoherent(original, in: complete, previousFrames: settled))
+        var anchor = original
+        for batch in [partial, ["m452": try #require(partial["m452"])], complete] {
+            #expect(!TranscriptReadingMotion.canYield(anchor, in: batch, previousFrames: settled))
+            if TranscriptReadingMotion.canYield(anchor, in: batch, previousFrames: settled) {
+                anchor = try #require(viewport.readingAnchor(in: batch, nativeViewportTop: 5_206))
+            }
+            #expect(anchor == original)
+        }
+        let restore = TranscriptReadingRestore(anchor: anchor)
+        let measured = try #require(complete[restore.id])
+        let offset = TranscriptCoordinates.targetOffset(for: measured, bottom: restore.top + measured.rect.height,
+                                                        topInset: 52)
+        #expect(offset == 5_314)
+        #expect(TranscriptCoordinates.viewportFrame(measured, top: offset + 52).rect.minY == original.top)
+
+        anchor = .init(id: restore.id, contentTop: measured.contentTop, top: restore.top)
+        let aligned = complete.mapValues { TranscriptCoordinates.viewportFrame($0, top: offset + 52) }
+        let landed = try #require(viewport.readingAnchor(in: aligned, nativeViewportTop: offset + 52))
+        #expect(landed == anchor)
+        let scrolled = complete.mapValues { TranscriptCoordinates.viewportFrame($0, top: offset + 152) }
+        #expect(TranscriptReadingMotion.canYield(anchor, in: scrolled, previousFrames: aligned))
+        let reader = try #require(viewport.readingAnchor(in: scrolled, nativeViewportTop: offset + 152))
+        #expect(reader.id == "m452" && reader.top == 30)
+    }
+
     @Test func nativeScrollingTakesOwnershipWithoutRequiringAScrollPhase() {
         let narrow = TranscriptReadingMotion.Layout(viewportSize: CGSize(width: 503, height: 480),
                                                      contentSize: CGSize(width: 503, height: 2_116),
@@ -130,6 +184,20 @@ struct TranscriptTests {
         let ownAlignment = motion.receive(offset: 946, layout: wide)
         let pageUp = motion.receive(offset: 646, layout: wide)
         #expect(!ownAlignment && pageUp)
+    }
+
+    @Test func materializingAnEvictedRowIsNotReaderInput() {
+        let frame = TranscriptMessageFrame(sequence: 83, rect: CGRect(x: 68, y: 20, width: 366, height: 78),
+                                           historyStart: 1, contentTop: 8_952.5)
+        let materialization = TranscriptReadingMaterialization(rowID: "m83", frameIDs: ["m83"], topPadding: 20)
+        #expect(materialization.contains(nativeTop: 8_952.5, frames: ["m83": frame]))
+        #expect(materialization.contains(nativeTop: 8_932.5, frames: ["m83": frame]))
+        #expect(!materialization.contains(nativeTop: 8_658.5, frames: ["m83": frame]))
+        #expect(!materialization.contains(nativeTop: 9_258.5, frames: ["m83": frame]))
+        let anchor = TranscriptReadingAnchor(id: "m83", contentTop: frame.contentTop, top: 14)
+        let offset = TranscriptCoordinates.targetOffset(for: frame, bottom: anchor.top + frame.rect.height, topInset: 0)
+        #expect(offset == 8_958.5)
+        #expect(TranscriptCoordinates.viewportFrame(frame, top: offset).rect.minY == anchor.top)
     }
 
     @Test func aSlowLiveResizeKeepsHoldingUntilItsLastWidthHasHadTimeToSettle() {
@@ -734,17 +802,18 @@ struct TranscriptTests {
     }
 
     @MainActor
-    @Test(.enabled(if: transcriptTimingTestsEnabled), arguments: [false, true])
-    func nativeReaderScrollingCancelsAnInFlightWidthRestoration(byScroller: Bool) async throws {
+    @Test(.enabled(if: transcriptTimingTestsEnabled), arguments: [false, true], [false, true])
+    func nativeReaderScrollingCancelsAnInFlightWidthRestoration(byScroller: Bool, towardsEnd: Bool) async throws {
         let action = TranscriptReaderAction()
         let harness = try await TranscriptHarness(messages: transcriptFindTestMessages(1...90), resizable: true) { harness in
             guard action.isArmed, action.after == nil, harness.capture.isRestoringReading else { return }
             let clip = harness.scrollView.contentView
             action.before = clip.bounds.minY
+            let direction: CGFloat = towardsEnd ? 1 : -1
             if byScroller {
                 NotificationCenter.default.post(name: NSScrollView.willStartLiveScrollNotification,
                                                 object: harness.scrollView)
-                clip.scroll(to: CGPoint(x: 0, y: clip.bounds.minY - 120))
+                clip.scroll(to: CGPoint(x: 0, y: clip.bounds.minY + direction * 120))
                 harness.scrollView.reflectScrolledClipView(clip)
                 NotificationCenter.default.post(name: NSScrollView.didLiveScrollNotification,
                                                 object: harness.scrollView)
@@ -752,7 +821,7 @@ struct TranscriptTests {
                                                 object: harness.scrollView)
             } else {
                 // Keyboard and accessibility scrolling have no live-scroll phase.
-                clip.scroll(to: CGPoint(x: 0, y: clip.bounds.minY - 300))
+                clip.scroll(to: CGPoint(x: 0, y: clip.bounds.minY + direction * 300))
                 harness.scrollView.reflectScrolledClipView(clip)
             }
             action.after = clip.bounds.minY
@@ -768,8 +837,17 @@ struct TranscriptTests {
         try await harness.waitUntil { !harness.capture.isRestoringReading }
         let before = try #require(action.before)
         let after = try #require(action.after)
-        #expect(after < before - 80)
-        #expect(harness.scrollView.contentView.bounds.minY <= after + 1)
+        if towardsEnd {
+            #expect(after > before + 80)
+            let scroll = harness.scrollView
+            let document = try #require(scroll.documentView)
+            let maximum = max(-scroll.contentInsets.top,
+                              document.bounds.height + scroll.contentInsets.bottom - scroll.contentView.bounds.height)
+            #expect(scroll.contentView.bounds.minY >= min(after, maximum) - 1)
+        } else {
+            #expect(after < before - 80)
+            #expect(harness.scrollView.contentView.bounds.minY <= after + 1)
+        }
         #expect(harness.readRequests == 0)
     }
 

@@ -10,7 +10,7 @@ final class TranscriptWindowObserver {
     @ObservationIgnored private var notifications: [NSObjectProtocol] = []
     @ObservationIgnored private var readingMotion: TranscriptReadingMotion?
     @ObservationIgnored private var readingToken: UUID?
-    @ObservationIgnored private var onReadingScroll: (@MainActor () -> Void)?
+    @ObservationIgnored private var onReadingScroll: (@MainActor () -> Bool)?
     @ObservationIgnored private var isApplyingReadingScroll = false
 
     func attach(to view: NSView) {
@@ -51,7 +51,7 @@ final class TranscriptWindowObserver {
                      topInset: scrollView.contentInsets.top, bottomInset: scrollView.contentInsets.bottom)
     }
 
-    func beginReadingRestore(_ token: UUID, onScroll: @escaping @MainActor () -> Void) {
+    func beginReadingRestore(_ token: UUID, onScroll: @escaping @MainActor () -> Bool) {
         guard let offset = scrollOffset, let layout = readingLayout else { return }
         readingMotion = .init(offset: offset, layout: layout)
         readingToken = token
@@ -70,10 +70,8 @@ final class TranscriptWindowObserver {
               let offset = scrollOffset, let layout = readingLayout else { return }
         let moved = motion.receive(offset: offset, layout: layout)
         readingMotion = motion
-        if moved, let token = readingToken {
-            let onScroll = onReadingScroll
+        if moved, let token = readingToken, onReadingScroll?() == true {
             endReadingRestore(token)
-            onScroll?()
         }
     }
 
