@@ -9,6 +9,19 @@ public enum TranscriptScrollModel {
     public static let endClearance: CGFloat = 16
     public static let followingThreshold: CGFloat = 48
 
+    public struct RowIdentity: Equatable, Sendable {
+        public let id: RowID
+        public let order: Int
+        public let isAnchorable: Bool
+
+        public init(id: RowID, order: Int, isAnchorable: Bool = true) {
+            precondition(!id.isEmpty)
+            self.id = id
+            self.order = order
+            self.isAnchorable = isAnchorable
+        }
+    }
+
     public struct RowFrame: Equatable, Sendable {
         public let id: RowID
         public let order: Int
@@ -60,6 +73,37 @@ public enum TranscriptScrollModel {
         }
     }
 
+    public struct Layout: Equatable, Sendable {
+        public let rows: [RowIdentity]
+        public let frames: [RowFrame]
+        public let viewport: Viewport
+        public let origin: CGFloat
+        /// The native document extent, already including the sole end clearance.
+        public let documentEnd: CGFloat
+        fileprivate let identities: [RowID: RowIdentity]
+        fileprivate let measurements: [RowID: RowFrame]
+        fileprivate let orderedFrames: [RowFrame]
+
+        public init(rows: [RowIdentity], frames: [RowFrame], viewport: Viewport,
+                    origin: CGFloat, documentEnd: CGFloat) {
+            precondition(origin.isFinite && documentEnd.isFinite && documentEnd >= 0)
+            self.rows = rows
+            self.frames = frames
+            self.viewport = viewport
+            self.origin = origin
+            self.documentEnd = documentEnd
+            let identities = Dictionary(uniqueKeysWithValues: rows.map { ($0.id, $0) })
+            let measurements = Dictionary(uniqueKeysWithValues: frames.map { ($0.id, $0) })
+            self.identities = identities
+            self.measurements = measurements
+            orderedFrames = rows.compactMap { measurements[$0.id] }
+            precondition(frames.allSatisfy { frame in
+                identities[frame.id] == RowIdentity(id: frame.id, order: frame.order,
+                                                    isAnchorable: frame.isAnchorable)
+            }, "Measured frames must belong to the canonical layout.")
+        }
+    }
+
     public enum Target: Equatable, Sendable {
         case row(RowID, order: Int)
         case end
@@ -93,54 +137,89 @@ public enum TranscriptScrollModel {
         public let origin: CGFloat?
         /// The adapter reports an unavailable explicit row action instead of silently moving elsewhere.
         public let unavailableTarget: RowID?
+        /// A canonical target that the adapter must bring into measured layout before placement.
+        public let needsMeasurement: RowID?
 
-        public init(intent: Intent, origin: CGFloat?, unavailableTarget: RowID? = nil) {
+        public init(intent: Intent, origin: CGFloat?, unavailableTarget: RowID? = nil,
+                    needsMeasurement: RowID? = nil) {
             precondition(origin?.isFinite != false)
+            precondition(origin == nil || (unavailableTarget == nil && needsMeasurement == nil))
+            precondition(unavailableTarget == nil || needsMeasurement == nil)
             self.intent = intent
             self.origin = origin
             self.unavailableTarget = unavailableTarget
+            self.needsMeasurement = needsMeasurement
         }
     }
 
     public static func reduce(_ intent: Intent, _ event: Event, rows: [RowFrame],
                               viewport: Viewport, origin: CGFloat) -> Placement {
         precondition(origin.isFinite)
+        let currentOrigin: CGFloat
+        if case .readerScrolled(let y) = event { currentOrigin = y } else { currentOrigin = origin }
+        return reduce(intent, event, layout: completeLayout(rows, viewport: viewport, origin: currentOrigin))
+    }
+
+    public static func reduce(_ intent: Intent, _ event: Event, layout: Layout) -> Placement {
         switch event {
         case .readerScrolled(let y):
             precondition(y.isFinite)
-            return Placement(intent: intentForPosition(y, rows: rows, viewport: viewport), origin: nil)
+            precondition(y == layout.origin, "Reader input and layout must share the current native origin.")
+            return Placement(intent: intentForPosition(layout, allowsFollowing: true), origin: nil)
         case .holdCurrentPosition:
-            let anchor = readingAnchor(origin, rows: rows, viewport: viewport)
-            return Placement(intent: anchor.map(Intent.reading) ?? intent, origin: nil)
+            if !layout.rows.contains(where: \.isAnchorable) {
+                return Placement(intent: intent, origin: nil)
+            }
+            return Placement(intent: intentForPosition(layout, allowsFollowing: false), origin: nil)
         case .resumeFromCurrentPosition:
-            return Placement(intent: intentForPosition(origin, rows: rows, viewport: viewport), origin: nil)
+            return Placement(intent: intentForPosition(layout, allowsFollowing: true), origin: nil)
         case .land(let target):
-            if case .row(let id, _) = target, anchorableRow(id, rows: rows) == nil {
+            if case .row(let id, _) = target, anchorableIdentity(id, layout: layout) == nil {
                 return Placement(intent: intent, origin: nil, unavailableTarget: id)
             }
-            return place(.landing(target), rows: rows, viewport: viewport)
+            return place(.landing(target), layout: layout)
         case .jumpToLatest, .ownPostConfirmed:
-            return place(.following, rows: rows, viewport: viewport)
+            return place(.following, layout: layout)
         case .reveal(let id):
-            guard let row = anchorableRow(id, rows: rows) else {
+            guard let row = anchorableIdentity(id, layout: layout) else {
                 return Placement(intent: intent, origin: nil, unavailableTarget: id)
             }
-            return place(.revealing(id, order: row.order), rows: rows, viewport: viewport)
+            return place(.revealing(id, order: row.order), layout: layout)
         case .toggledExpansion(let id, let expanded):
-            guard let row = anchorableRow(id, rows: rows) else {
+            guard let identity = anchorableIdentity(id, layout: layout) else {
                 return Placement(intent: intent, origin: nil, unavailableTarget: id)
             }
-            let offset = row.top - origin - viewport.topInset
-            let anchor = Anchor(row: row.id, order: row.order, offset: expanded ? offset : max(offset, 0))
-            return place(.reading(anchor), rows: rows, viewport: viewport)
+            guard let row = layout.measurements[id] else {
+                preconditionFailure("Expansion requires the clicked row's measured frame.")
+            }
+            let offset = row.top - layout.origin - layout.viewport.topInset
+            let anchor = Anchor(row: id, order: identity.order, offset: expanded ? offset : max(offset, 0))
+            return place(.reading(anchor), layout: layout)
         case .layoutChanged:
-            return place(intent, rows: rows, viewport: viewport)
+            return place(intent, layout: layout)
         }
     }
 
     /// Projects an existing intent onto current geometry without reducing an event.
     public static func placement(for intent: Intent, rows: [RowFrame], viewport: Viewport) -> Placement {
-        place(intent, rows: rows, viewport: viewport)
+        place(intent, layout: completeLayout(rows, viewport: viewport, origin: 0))
+    }
+
+    public static func placement(for intent: Intent, layout: Layout) -> Placement {
+        place(intent, layout: layout)
+    }
+
+    public static func layoutEvent(from old: Layout, to new: Layout) -> Event? {
+        old.rows != new.rows || old.measurements != new.measurements
+            || old.viewport != new.viewport || old.documentEnd != new.documentEnd ? .layoutChanged : nil
+    }
+
+    public static func visibleRows(in layout: Layout) -> [RowID] {
+        return visibleRows(layout.orderedFrames, viewport: layout.viewport, origin: layout.origin)
+    }
+
+    public static func distanceToEnd(in layout: Layout) -> CGFloat {
+        return max(0, layout.documentEnd - layout.origin - layout.viewport.height + layout.viewport.bottomInset)
     }
 
     /// Repeated native layout passes and content-only changes must not undo a reader's position.
@@ -183,9 +262,23 @@ public enum TranscriptScrollModel {
         return (starting ?? covering).map { Anchor(row: $0.id, order: $0.order, offset: $0.top - top) }
     }
 
-    private static func intentForPosition(_ origin: CGFloat, rows: [RowFrame], viewport: Viewport) -> Intent {
-        if distanceToEnd(origin, rows: rows, viewport: viewport) <= followingThreshold { return .following }
-        return readingAnchor(origin, rows: rows, viewport: viewport).map(Intent.reading) ?? .following
+    private static func completeLayout(_ rows: [RowFrame], viewport: Viewport, origin: CGFloat) -> Layout {
+        Layout(rows: rows.map { .init(id: $0.id, order: $0.order, isAnchorable: $0.isAnchorable) },
+               frames: rows, viewport: viewport, origin: origin, documentEnd: end(rows))
+    }
+
+    private static func intentForPosition(_ layout: Layout, allowsFollowing: Bool) -> Intent {
+        let distance = distanceToEnd(in: layout)
+        if allowsFollowing && distance <= followingThreshold { return .following }
+        let anchor = layout.measurements.count == layout.identities.count
+            ? readingAnchor(layout.origin, rows: layout.orderedFrames, viewport: layout.viewport)
+            : firstRowStartingInView(layout.origin, rows: layout.orderedFrames, viewport: layout.viewport)
+        if let anchor {
+            return .reading(anchor)
+        }
+        precondition(!layout.rows.contains(where: \.isAnchorable),
+                     "Reader capture requires current measured viewport geometry.")
+        return .following
     }
 
     private static func readingAnchor(_ origin: CGFloat, rows: [RowFrame], viewport: Viewport) -> Anchor? {
@@ -196,39 +289,49 @@ public enum TranscriptScrollModel {
         return row.map { Anchor(row: $0.id, order: $0.order, offset: $0.top - top) }
     }
 
-    private static func place(_ intent: Intent, rows: [RowFrame], viewport: Viewport) -> Placement {
+    private static func place(_ intent: Intent, layout: Layout) -> Placement {
+        let viewport = layout.viewport
         let proposed: CGFloat
         switch intent {
         case .following, .landing(.end):
-            proposed = end(rows) - viewport.height + viewport.bottomInset
+            proposed = layout.documentEnd - viewport.height + viewport.bottomInset
         case .landing(.row(let id, let order)):
-            guard let row = survivor(id: id, order: order, rows: rows) else {
-                return place(.following, rows: rows, viewport: viewport)
+            guard let identity = survivor(id: id, order: order, layout: layout) else {
+                return place(.following, layout: layout)
+            }
+            guard let row = layout.measurements[identity.id] else {
+                return Placement(intent: intent, origin: nil, needsMeasurement: identity.id)
             }
             proposed = row.top - viewport.topInset
         case .reading(let anchor):
-            guard let row = survivor(id: anchor.row, order: anchor.order, rows: rows) else {
-                return place(.following, rows: rows, viewport: viewport)
+            guard let identity = survivor(id: anchor.row, order: anchor.order, layout: layout) else {
+                return place(.following, layout: layout)
+            }
+            guard let row = layout.measurements[identity.id] else {
+                return Placement(intent: intent, origin: nil, needsMeasurement: identity.id)
             }
             proposed = row.top - viewport.topInset - anchor.offset
         case .revealing(let id, let order):
-            guard let row = survivor(id: id, order: order, rows: rows) else {
-                return place(.following, rows: rows, viewport: viewport)
+            guard let identity = survivor(id: id, order: order, layout: layout) else {
+                return place(.following, layout: layout)
+            }
+            guard let row = layout.measurements[identity.id] else {
+                return Placement(intent: intent, origin: nil, needsMeasurement: identity.id)
             }
             let middle = viewport.topInset + viewport.unobscuredHeight / 2
             proposed = row.top + row.height / 2 - middle
         }
         let minimum = -viewport.topInset
-        let maximum = max(minimum, end(rows) - viewport.height + viewport.bottomInset)
+        let maximum = max(minimum, layout.documentEnd - viewport.height + viewport.bottomInset)
         return Placement(intent: intent, origin: min(maximum, max(minimum, proposed)))
     }
 
-    private static func survivor(id: RowID, order: Int, rows: [RowFrame]) -> RowFrame? {
-        anchorableRow(id, rows: rows) ?? rows.first(where: { $0.isAnchorable && $0.order >= order })
-            ?? rows.last(where: \.isAnchorable)
+    private static func survivor(id: RowID, order: Int, layout: Layout) -> RowIdentity? {
+        anchorableIdentity(id, layout: layout) ?? layout.rows.first(where: { $0.isAnchorable && $0.order >= order })
+            ?? layout.rows.last(where: \.isAnchorable)
     }
 
-    private static func anchorableRow(_ id: RowID, rows: [RowFrame]) -> RowFrame? {
-        rows.first(where: { $0.isAnchorable && $0.id == id })
+    private static func anchorableIdentity(_ id: RowID, layout: Layout) -> RowIdentity? {
+        layout.identities[id].flatMap { $0.isAnchorable ? $0 : nil }
     }
 }

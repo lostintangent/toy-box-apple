@@ -11,6 +11,117 @@ struct TranscriptScrollModelTests {
         (0..<count).map { .init(id: "m\($0)", order: $0, top: CGFloat($0) * height + shift, height: height) }
     }
 
+    func layout(_ measured: [Model.RowFrame], canonical: [Model.RowFrame]? = nil, origin: CGFloat = 420,
+                documentEnd: CGFloat = 2_016) -> Model.Layout {
+        .init(rows: (canonical ?? frames()).map {
+            .init(id: $0.id, order: $0.order, isAnchorable: $0.isAnchorable)
+        }, frames: measured, viewport: viewport, origin: origin, documentEnd: documentEnd)
+    }
+
+    @Test(arguments: [Model.Event.land(.row("m5", order: 5)), .reveal("m5"),
+                      .toggledExpansion("m5", expanded: true), .toggledExpansion("m5", expanded: false)])
+    func partialMeasuredTargetsMatchCompleteGeometry(_ event: Model.Event) {
+        let partial = layout([frames()[5]], origin: 700)
+        let placed = Model.reduce(.following, event, layout: partial)
+        let complete = Model.reduce(.following, event, rows: frames(), viewport: viewport, origin: 700)
+        #expect(placed == complete)
+        #expect(placed.origin != nil)
+        #expect(placed.needsMeasurement == nil)
+    }
+
+    @Test(arguments: [Model.Event.land(.row("m5", order: 5)), .reveal("m5")])
+    func knownUnmeasuredTargetsWaitWithoutChoosingAMeasuredNeighbor(_ event: Model.Event) {
+        let waiting = Model.reduce(.following, event, layout: layout([frames()[6]], origin: 700))
+        #expect(waiting.origin == nil)
+        #expect(waiting.needsMeasurement == "m5")
+        #expect(waiting.unavailableTarget == nil)
+        let measured = layout([frames()[5]], origin: 700)
+        let placed = Model.reduce(waiting.intent, .layoutChanged, layout: measured)
+        #expect(placed == Model.reduce(.following, event, rows: frames(), viewport: viewport, origin: 700))
+        #expect(Model.placement(for: waiting.intent, layout: measured) == placed)
+    }
+
+    @Test(arguments: [Model.Event.land(.row("m5", order: 5)), .reveal("m5"),
+                      .toggledExpansion("m5", expanded: true)])
+    func canonicalAbsenceAndAccessoriesRejectExplicitActions(_ event: Model.Event) {
+        let intent = Model.Intent.reading(.init(row: "m6", order: 6, offset: 30))
+        let absent = frames().filter { $0.id != "m5" }
+        var accessory = frames()
+        accessory[5] = .init(id: "m5", order: 5, top: 500, height: 100, isAnchorable: false)
+        for canonical in [absent, accessory] {
+            let rejected = Model.reduce(intent, event, layout: layout([frames()[19]], canonical: canonical))
+            #expect(rejected.intent == intent)
+            #expect(rejected.origin == nil)
+            #expect(rejected.unavailableTarget == "m5")
+            #expect(rejected.needsMeasurement == nil)
+        }
+    }
+
+    @Test func removedAnchorsChooseCanonicalSurvivorsBeforeLookingForFrames() {
+        let intent = Model.Intent.reading(.init(row: "m5", order: 5, offset: 30))
+        let successors = frames().filter { $0.order != 5 && $0.order != 6 }
+        let next = Model.reduce(intent, .layoutChanged, layout: layout([frames()[8]], canonical: successors))
+        #expect(next.intent == intent)
+        #expect(next.origin == nil)
+        #expect(next.needsMeasurement == "m7")
+        let measured = Model.reduce(next.intent, .layoutChanged,
+                                    layout: layout([frames()[7]], canonical: successors))
+        #expect(measured.origin == 620)
+        let predecessors = Array(frames().prefix(5))
+        let previous = Model.reduce(intent, .layoutChanged,
+                                    layout: layout([frames()[3]], canonical: predecessors))
+        #expect(previous.needsMeasurement == "m4")
+        #expect(previous.origin == nil)
+        let empty = Model.reduce(intent, .layoutChanged, layout: layout([], canonical: []))
+        #expect(empty.intent == .following)
+        #expect(empty.origin == 1_566)
+    }
+
+    @Test func partialGeometryUsesTheNativeExtentForFollowingThresholdAndClamping() {
+        let partial = layout([frames()[0], frames()[1]])
+        #expect(Model.reduce(.following, .layoutChanged, layout: partial).origin == 1_566)
+        #expect(Model.distanceToEnd(in: partial) == 1_146)
+        let threshold = layout([], origin: 1_518)
+        #expect(Model.reduce(.revealing("m5", order: 5), .readerScrolled(to: 1_518),
+                             layout: threshold).intent == .following)
+        let outside = Model.reduce(.following, .readerScrolled(to: 1_517.5),
+                                    layout: layout([frames()[16]], origin: 1_517.5))
+        #expect(outside.intent == .reading(.init(row: "m16", order: 16, offset: 32.5)))
+        #expect(outside.origin == nil)
+        #expect(Model.reduce(.following, .layoutChanged,
+                             layout: layout([], documentEnd: 216)).origin == -50)
+        let high = Model.Intent.reading(.init(row: "m1", order: 1, offset: -10_000))
+        #expect(Model.placement(for: high, layout: partial).origin == 1_566)
+    }
+
+    @Test func readerInputCancelsAnUnmeasuredTargetBeforeAnyLayoutPlacement() {
+        let target = Model.reduce(.following, .reveal("m5"), layout: layout([]))
+        let settled = layout([frames()[8], frames()[7]], origin: 700)
+        let reader = Model.reduce(target.intent, .readerScrolled(to: 700), layout: settled)
+        #expect(reader.intent == .reading(.init(row: "m8", order: 8, offset: 50)))
+        #expect(reader.origin == nil)
+        #expect(reader.needsMeasurement == nil)
+        #expect(Model.placement(for: reader.intent, layout: settled).origin == 700)
+        let end = layout([frames()[17]], origin: 1_566)
+        let held = Model.reduce(.following, .holdCurrentPosition, layout: end)
+        #expect(held.intent == .reading(.init(row: "m17", order: 17, offset: 84)))
+        #expect(held.origin == nil)
+    }
+
+    @Test func layoutChangesIgnoreReaderOriginButIncludeMembershipAndExtent() {
+        let first = layout([frames()[5]])
+        let repeated = layout([frames()[5]], origin: 700)
+        #expect(Model.layoutEvent(from: first, to: repeated) == nil)
+        let appended = layout([frames()[5]], canonical: frames(21))
+        #expect(Model.layoutEvent(from: first, to: appended) == .layoutChanged)
+        #expect(Model.layoutEvent(from: first, to: layout([frames()[5]], documentEnd: 2_116)) == .layoutChanged)
+        let removed = layout([frames()[5]], canonical: frames().filter { $0.order != 6 })
+        #expect(Model.layoutEvent(from: first, to: removed) == .layoutChanged)
+        let measured = layout([frames()[5], frames()[6]])
+        #expect(Model.layoutEvent(from: measured, to: layout([frames()[6], frames()[5]])) == nil)
+        #expect(Model.visibleRows(in: measured) == ["m5", "m6"])
+    }
+
     @Test(arguments: [
         Model.Intent.landing(.row("m5", order: 5)),
         .landing(.end),
