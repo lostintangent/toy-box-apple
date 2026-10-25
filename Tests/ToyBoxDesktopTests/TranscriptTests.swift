@@ -15,6 +15,16 @@ private let transcriptTimingTestsEnabled = ProcessInfo.processInfo.environment["
 
 @Suite("Transcript rendering and visibility")
 struct TranscriptTests {
+    @Test func theScrollLayoutUsesOneUnobscuredGeometrySnapshot() {
+        let geometry = TranscriptViewport(top: 4320.5, bottomGap: 945.5, width: 520, height: 344,
+                                          contentHeight: 5610, contentWidth: 503)
+        let layout = geometry.scrollLayout
+        #expect(layout.origin == 4320.5)
+        #expect(layout.documentEnd == 5610)
+        #expect(layout.documentWidth == 503)
+        #expect(layout.viewport == .init(width: 503, height: 344, topInset: 0, bottomInset: 0))
+    }
+
     @MainActor
     @Test func readingRowIntentSurvivesUnmeasuredWidthsAndKeepsTheMessageOffset() throws {
         let scroll = TranscriptReadingScroll()
@@ -776,18 +786,26 @@ struct TranscriptTests {
         let anchor = try #require(harness.visibleFrames().min { $0.value.minY < $1.value.minY })
         drift.anchorID = anchor.key
         drift.anchorTop = anchor.value.minY
+        var heights: [CGFloat: [CGFloat]] = [:]
         for _ in 0..<3 {
-            for width: CGFloat in [360, 520] {
+            for width: CGFloat in [360, 720] {
                 harness.resize(width: width)
                 try await harness.frame()
                 logLayout("width-\(width)")
+                heights[width, default: []].append(try #require(harness.frames[anchor.key]).rect.height)
             }
         }
         try await harness.settled()
+        let narrowHeights = try #require(heights[360])
+        let wideHeights = try #require(heights[720])
+        #expect(narrowHeights.count == 3 && wideHeights.count == 3)
+        #expect(zip(narrowHeights, wideHeights).allSatisfy { abs($0.0 - $0.1) > 0.5 },
+                "The width cycles must actually change the anchored message's height.")
         print("WIDTH_ANCHOR legacy=\(legacyScrollers) id=\(anchor.key) offset=\(drift.anchorTop)"
               + " samples=\(drift.values.count) missing=\(drift.missing)"
               + " worst=\(drift.values.map(abs).max() ?? .infinity)"
-              + " endClamps=\(drift.endClampSamples) endVisible=\(drift.endVisibleSamples)")
+              + " endClamps=\(drift.endClampSamples) endVisible=\(drift.endVisibleSamples)"
+              + " narrowHeights=\(narrowHeights) wideHeights=\(wideHeights)")
         #expect(drift.missing == 0)
         #expect(drift.endVisibleSamples == 0, "The end was visible in a post-display sample while reading.")
         #expect(!drift.values.isEmpty && drift.values.allSatisfy { abs($0) <= 1 },

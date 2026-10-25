@@ -1010,9 +1010,9 @@ struct ConversationTranscript: View {
             readingScroll.release()
             return
         }
-        guard let native = window.nativeLayout,
-              let placement = readingScroll.receive(
-                frames: frames, native: native, historyStart: store.messages.first?.sequence ?? 0) else { return }
+        guard let placement = readingScroll.receive(
+            frames: frames, native: viewport.scrollLayout, historyStart: store.messages.first?.sequence ?? 0)
+        else { return }
         traceScroll("proxy.reading target=\(placement.id) anchor=\(placement.anchor)")
         scrollPosition = .init(idType: String.self)
         proxy.scrollTo(placement.id, anchor: placement.anchor)
@@ -1207,14 +1207,16 @@ struct TranscriptViewport: Equatable {
     var width: CGFloat = 0
     var height: CGFloat = 0
     var contentHeight: CGFloat = 0
+    var contentWidth: CGFloat = 0
 
     init(top: CGFloat = 0, bottomGap: CGFloat = 0, width: CGFloat = 0, height: CGFloat = 0,
-         contentHeight: CGFloat = 0) {
+         contentHeight: CGFloat = 0, contentWidth: CGFloat = 0) {
         self.top = top
         self.bottomGap = bottomGap
         self.width = width
         self.height = height
         self.contentHeight = contentHeight
+        self.contentWidth = contentWidth
     }
 
     /// The unobscured viewport between the toolbar and the floating bottom bars. The container
@@ -1224,7 +1226,13 @@ struct TranscriptViewport: Equatable {
         self.init(top: top,
                   bottomGap: max(0, geometry.contentSize.height - top - geometry.containerSize.height),
                   width: geometry.containerSize.width, height: geometry.containerSize.height,
-                  contentHeight: geometry.contentSize.height)
+                  contentHeight: geometry.contentSize.height, contentWidth: geometry.contentSize.width)
+    }
+
+    var scrollLayout: TranscriptNativeLayout {
+        // The container is already unobscured, and `top` already includes the top inset.
+        .init(viewport: .init(width: contentWidth, height: height, topInset: 0, bottomInset: 0),
+              origin: top, documentEnd: contentHeight, documentWidth: contentWidth)
     }
 
     enum Follow: Equatable { case latest, jump }
