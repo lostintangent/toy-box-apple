@@ -73,6 +73,8 @@ public enum TranscriptScrollModel {
         /// Only for changed row frames or viewport geometry. Use `layoutEvent` to suppress no-ops.
         case layoutChanged
         case readerScrolled(to: CGFloat)
+        /// Captures reading without moving. With no rows, preserves the existing intent.
+        case holdCurrentPosition
         case land(Target)
         case jumpToLatest
         case ownPostConfirmed
@@ -104,13 +106,15 @@ public enum TranscriptScrollModel {
             let next: Intent
             if distanceToEnd(y, rows: rows, viewport: viewport) <= followingThreshold {
                 next = .following
-            } else if let anchor = firstRowStartingInView(y, rows: rows, viewport: viewport)
-                ?? nearestAnchor(y, rows: rows, viewport: viewport) {
+            } else if let anchor = readingAnchor(y, rows: rows, viewport: viewport) {
                 next = .reading(anchor)
             } else {
                 next = .following
             }
             return Placement(intent: next, origin: nil)
+        case .holdCurrentPosition:
+            let anchor = readingAnchor(origin, rows: rows, viewport: viewport)
+            return Placement(intent: anchor.map(Intent.reading) ?? intent, origin: nil)
         case .land(let target):
             if case .row(let id, _) = target, !rows.contains(where: { $0.id == id }) {
                 return Placement(intent: intent, origin: nil, unavailableTarget: id)
@@ -174,7 +178,8 @@ public enum TranscriptScrollModel {
         return (starting ?? covering).map { Anchor(row: $0.id, order: $0.order, offset: $0.top - top) }
     }
 
-    private static func nearestAnchor(_ origin: CGFloat, rows: [RowFrame], viewport: Viewport) -> Anchor? {
+    private static func readingAnchor(_ origin: CGFloat, rows: [RowFrame], viewport: Viewport) -> Anchor? {
+        if let anchor = firstRowStartingInView(origin, rows: rows, viewport: viewport) { return anchor }
         let top = origin + viewport.topInset
         // A gap with no visible row must not retain a landing/reveal intent and later undo input.
         let row = rows.first(where: { $0.top >= top }) ?? rows.last

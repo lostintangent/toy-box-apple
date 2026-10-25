@@ -1004,7 +1004,9 @@ continue paging even when a page contains no visible rows.
 `ChannelKit.TranscriptScrollModel` defines container-independent placement from ordered row frames
 and the viewport's width, height and glass insets. Its adapter sends `layoutChanged` only when
 `layoutEvent` detects changed geometry, never just because another native layout pass ran.
-Reader input updates intent without returning an origin. Landing and reveal targets retain their
+Reader input updates intent without returning an origin. Opening Find uses `holdCurrentPosition`
+to capture reading even at the end without moving. With no rows it preserves the existing intent.
+Jump to Latest resumes following. Landing and reveal targets retain their
 conversation order so a target removed during layout falls forward to its next surviving row,
 then backward to the last row, then to the end. Only explicit missing-target actions report an
 unavailable target without moving. The model's document end owns the 16-point clearance exactly

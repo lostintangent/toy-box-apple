@@ -51,6 +51,34 @@ struct TranscriptScrollModelTests {
         #expect(outside.origin == nil)
     }
 
+    @Test(arguments: [
+        (CGFloat(500), "m6", 6, CGFloat(50)),
+        (1_518, "m16", 16, 32),
+        (1_536, "m16", 16, 14),
+        (1_566, "m17", 17, 84),
+    ])
+    func holdingCapturesReadingEvenAtTheEndWithoutMoving(_ y: CGFloat, _ row: String,
+                                                        _ order: Int, _ offset: CGFloat) {
+        let held = Model.reduce(.following, .holdCurrentPosition, rows: frames(),
+                                viewport: viewport, origin: y)
+        #expect(held.intent == .reading(.init(row: row, order: order, offset: offset)))
+        #expect(held.origin == nil)
+        #expect(held.unavailableTarget == nil)
+        let arrival = Model.reduce(held.intent, .layoutChanged, rows: frames(21), viewport: viewport, origin: y)
+        #expect(arrival.origin == y)
+        let jump = Model.reduce(held.intent, .jumpToLatest, rows: frames(21), viewport: viewport, origin: y)
+        #expect(jump.intent == .following)
+        #expect(jump.origin == 1_666)
+    }
+
+    @Test(arguments: [Model.Intent.following, .reading(.init(row: "old", order: 1, offset: 30))])
+    func holdingWithoutRowsPreservesTheExistingIntent(_ intent: Model.Intent) {
+        let held = Model.reduce(intent, .holdCurrentPosition, rows: [], viewport: viewport, origin: -50)
+        #expect(held.intent == intent)
+        #expect(held.origin == nil)
+        #expect(held.unavailableTarget == nil)
+    }
+
     @Test func prependPreservesTheSameAnchorAndOffset() {
         let intent = Model.Intent.reading(.init(row: "m5", order: 5, offset: 30))
         let before = Model.reduce(intent, .layoutChanged, rows: frames(), viewport: viewport, origin: 0)
