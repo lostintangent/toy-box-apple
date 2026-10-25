@@ -349,14 +349,35 @@ loaded, since run-loop wall time includes scheduling delays. Judge hitches only 
 machine, with the same gesture, distance, loaded count and hover state in both builds.
 
 Frame drift is the largest distance the first visible row moves away from that frame's scroll.
-Each display callback compares the same row's viewport position across consecutive samples with
-the wheel deltas actually delivered to that window between them, not queued input or total native
+Each display callback schedules one late-run-loop sample, after layout. It compares the same row's
+viewport position across consecutive samples with the wheel deltas delivered between them, not queued input or total native
 scroll travel. On a row handoff it retains the previous first row, or uses the current first row
 if the previous row was recycled. Missing shared first-row geometry fails the measurement rather
 than reporting zero drift. Results include measured frame pairs, frames above 1 point, maximum
 drift and total absolute drift. Both directions stay 1,000 points from the content edges, so end
-clamping and rubber-banding are not mistaken for row drift. Posted and locally delivered wheel
-event counts and total deltas must match, including the gesture's end event.
+clamping and rubber-banding are not mistaken for row drift.
+
+The common driver uses precise **unphased** wheel events through the app-local event queue,
+with a window-scoped local monitor counting delivery. The report names this path. Posted and
+delivered event counts and total deltas must match, including the final zero-delta drain event.
+Event creation, monitor installation or observation failures fail the run. This permission-free
+driver is not the phased responsive-scroll path.
+
+Every scroll run first checks the identical driver and sampler on a plain native table, up and
+down for 15,000 points. The table must apply the full delivered distance, with no missing geometry
+and at most 1 point of frame drift, before any transcript result is reported. A warm-up visits
+1,000 points of the actual transcript. A short return within those already-measured rows must
+also apply the full delivered distance. The transcript then returns to its end for measurement.
+These controls run outside the timed transcript measurements.
+
+`bun run benchmark trackpad` is a separate, opt-in native check using began/changed/ended phases
+through WindowServer to the benchmark's own PID, never to the global input stream. A listen-only,
+own-PID event tap counts delivery. This check requires Accessibility permission and fails explicitly
+without it. The harness never requests or changes that permission. `NSApp.postEvent` does not
+exercise responsive scrolling, and a local monitor does not see every event consumed by that path.
+The check reports native travel after a one-second end drain. AppKit's interpolation can move
+content beyond the raw delivered delta, so this is not a deterministic wheel baseline or a raw
+wheel-relative row-drift gate.
 
 During the transcript replacement, `TOY_BOX_TRANSCRIPT=lazy|table bun run benchmark scroll`
 selects the container through `open --env`. The output names the requested transcript. This is
@@ -367,10 +388,15 @@ provider and add no row callbacks.
 The native-table producer reads existing row rects without mounting cells or forcing layout.
 Scroll fixtures do not reorder rows during a gesture, so native row indices are stable for the
 measurement. A row-count change invalidates the sample instead of comparing different rows.
-`TOY_BOX_BENCHMARK_SCROLL_TRACE=1` retains signed per-frame samples in memory and prints them
-after each gesture's CPU measurement. The trace includes the tracked row and its two viewport
-positions, delivered wheel delta, signed residual, native top, document height and event counts.
-Use it to investigate cancelling spikes or sampling lag, not as a performance baseline.
+`TOY_BOX_BENCHMARK_SCROLL_TRACE=1` runs only the first-page upward gesture, retains signed
+per-frame samples in memory and prints them after CPU measurement. The trace includes the tracked
+row and its two viewport positions, delivered wheel delta, signed residual, native top, document
+height and event counts. Lazy samples also retain the row's callback-reported positions for
+comparison with live native clipping.
+Diagnostic traces also retain display-link samples for comparison with the accepted late-run-loop
+phase. Display-link residuals can include input-application lag and are not an acceptance metric.
+`TOY_BOX_TRANSCRIPT=native-control bun run benchmark scroll` runs only the retained plain-table
+self-check. It is not a product-container performance baseline.
 
 ## Design
 

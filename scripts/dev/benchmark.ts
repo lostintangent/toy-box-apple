@@ -56,8 +56,8 @@ if (import.meta.main) await main(async () => {
         options: { summaries: { type: "boolean", default: false } } });
     const scenarios = positionals.length ? positionals : ["launch", "switch", "messages", "paging", "scroll"];
     for (const scenario of scenarios) {
-        if (!["launch", "switch", "messages", "paging", "scroll", "key", "idle"].includes(scenario)) {
-            throw new Error(`Unknown scenario: ${scenario}. Use launch, switch, messages, paging, scroll, key or idle.`);
+        if (!["launch", "switch", "messages", "paging", "scroll", "trackpad", "key", "idle"].includes(scenario)) {
+            throw new Error(`Unknown scenario: ${scenario}. Use launch, switch, messages, paging, scroll, trackpad, key or idle.`);
         }
     }
     const build = resolve(required("SCRATCH_PATH").replace(/\/$/, "") + "-benchmark");
@@ -111,7 +111,7 @@ if (import.meta.main) await main(async () => {
                 if (values.summaries) console.log("Catch-up summaries are on");
                 for (const scenario of scenarios) {
                     const channel = ["switch", "key"].includes(scenario) ? "studio-demo"
-                        : scenario === "scroll" ? "scroll-demo" : "history-demo";
+                        : ["scroll", "trackpad"].includes(scenario) ? "scroll-demo" : "history-demo";
                     const deletion = await command(["defaults", "delete", identity], { quiet: true, allowFailure: true });
                     if (deletion.exitCode && !/not found|does not exist/i.test(deletion.stderr.toString())) {
                         throw new Error(deletion.stderr.toString() || "Could not reset benchmark preferences.");

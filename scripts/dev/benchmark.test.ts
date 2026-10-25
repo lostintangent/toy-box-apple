@@ -7,7 +7,7 @@ const options = {
     server: "http://127.0.0.1:3292", channel: "scroll-demo",
 };
 
-test.each(["table", "lazy", undefined])("open forwards transcript selection %s to the app", transcript => {
+test.each(["table", "lazy", "native-control", undefined])("open forwards transcript selection %s to the app", transcript => {
     const command = benchmarkLaunchCommand({ ...options, transcript });
     expect(command.slice(command.indexOf("--env"), command.indexOf("--stdout")))
         .toEqual(["--env", `TOY_BOX_TRANSCRIPT=${transcript ?? "lazy"}`,

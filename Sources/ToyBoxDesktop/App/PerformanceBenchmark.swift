@@ -4,7 +4,7 @@ import Darwin
 import Observation
 import QuartzCore
 
-/// `--benchmark launch|switch|messages|paging|scroll|idle|key` measures one scenario in the first window,
+/// `--benchmark launch|switch|messages|paging|scroll|trackpad|idle|key` measures one scenario in the first window,
 /// prints each result beside its budget and exits. `bun run benchmark` builds a release bundle and
 /// runs the scenarios against `bun run perf-demo`, whose `/perf/messages` route streams the agent
 /// messages that `messages` measures.
@@ -28,13 +28,17 @@ import QuartzCore
 ///   older page loaded.
 /// - `paging`: scrolls the transcript to its top until every older page has loaded, and times each
 ///   from the scroll that crosses the transcript's paging edge until the page settles.
-/// - `scroll`: a steady trackpad scroll up the transcript and back down, 15,000 pt each way at
+/// - `scroll`: precise, unphased wheel input up the transcript and back down, 15,000 pt each way at
 ///   2,400 pt a second, first at the first page of history and again with every older page loaded.
-///   The wheel events go through the app's event queue, one per display frame, as a person's do.
+///   Wheel events go through the app-local queue, one per display frame. A plain table
+///   first verifies the full applied distance and per-frame sampling in both directions. A short
+///   already-visited transcript stretch then verifies that the same input reaches that container.
 ///   A frame the display link skips is a dropped frame. The budget is on hitch time, the dropped
 ///   frames' milliseconds per second of scrolling. Hover runs only while the pointer is over the
-///   transcript, which the results say. Each displayed frame also compares the first visible row's
+///   transcript, which the results say. Late-run-loop samples compare the first visible row's
 ///   movement with wheel deltas delivered since the preceding sample, with a 1-point drift budget.
+/// - `trackpad`: an opt-in phased native check. It reports delivery and native travel after AppKit's
+///   interpolation, not wheel-baseline performance or raw wheel-relative row drift.
 /// - `idle`: a minute of wakeups and busy time once the channel settles. No budget.
 /// - `key`: makes the window key, which a person's window is, and measures the whole process's CPU
 ///   while it sits there, first with the channel's own working agents and then with 20 working.
@@ -42,7 +46,7 @@ import QuartzCore
 @MainActor
 final class PerformanceBenchmark {
     enum Scenario: String, CaseIterable, Sendable {
-        case launch, messages, paging, scroll, idle, key
+        case launch, messages, paging, scroll, trackpad, idle, key
         case switching = "switch"
     }
 
@@ -111,6 +115,7 @@ final class PerformanceBenchmark {
             case .messages: await messages()
             case .paging: await paging()
             case .scroll: await scrolling()
+            case .trackpad: await trackpad()
             case .idle: await idle()
             case .key: await keyWindow()
             }
@@ -363,13 +368,21 @@ final class PerformanceBenchmark {
     }
 
     private func scrolling() async {
+        guard !BenchmarkScrollGeometry.traceEnabled || BenchmarkScrollGeometry.isEnabled else {
+            fail("signed frame tracing requires geometry sampling")
+        }
         await load(channelID)
         guard let store = store(channelID) else { return }
         // The first rows' images load before the first measurement.
         try? await Task.sleep(for: .seconds(1))
         _ = await settled()
         header()
+        info("Wheel driver", "unphased precise input through the app-local event queue")
+        await verifyWheelDriver()
+        if ProcessInfo.processInfo.environment["TOY_BOX_TRANSCRIPT"] == "native-control" { return }
+        await verifyTranscriptInput()
         await measureScrolling(in: store)
+        if BenchmarkScrollGeometry.traceEnabled { return }
         let loaded = store.messages.count
         while store.hasOlderMessages {
             await store.loadOlder()
@@ -381,6 +394,105 @@ final class PerformanceBenchmark {
         let gap = await scrollToEnd()
         guard gap < 2 else { fail("the transcript stayed \(Int(gap)) pt from the latest message") }
         await measureScrolling(in: store)
+    }
+
+    private func verifyWheelDriver() async {
+        guard let original = window else { fail("the wheel driver has no window") }
+        let control = BenchmarkNativeScrollControl(frame: original.frame, rows: 100)
+        window = control.window
+        defer {
+            control.window.close()
+            window = original
+        }
+        control.window.orderFrontRegardless()
+        guard let scroll = transcriptScrollView(),
+              let geometry = transcriptGeometrySource(in: scroll) else {
+            fail("the plain-table wheel driver control has no geometry")
+        }
+        move(scroll, toTopOffset: Self.scrollDistance + Self.scrollMargin * 2)
+        for up in [true, false] {
+            _ = await settled()
+            let start = offsetFromTop(scroll)
+            let gesture = WheelGesture(window: control.window, over: scroll, geometry: geometry,
+                                       speed: up ? Self.scrollSpeed : -Self.scrollSpeed,
+                                       distance: Self.scrollDistance) { false }
+            let frames = await gesture.run()
+            requireDelivery(frames.delivery)
+            let moved = start - offsetFromTop(scroll)
+            guard frames.delivery.matchesNativeTravel(moved),
+                  frames.drift.measuredFrames > 0, frames.drift.unmeasuredFrames == 0,
+                  frames.drift.maximum <= Budget.scrollDrift else {
+                fail("plain-table driver control \(up ? "up" : "down"): "
+                     + "\(frames.delivery.deliveredDelta) pt delivered, \(moved) pt applied; "
+                     + "\(frames.drift.maximum) pt frame drift, "
+                     + "\(frames.drift.unmeasuredFrames) missing frame pairs")
+            }
+            info("Wheel driver control \(up ? "up" : "down")",
+                 "\(frames.delivery.deliveredEvents)/\(frames.delivery.postedEvents) events, "
+                 + "\(abs(moved))/\(abs(frames.delivery.deliveredDelta)) pt applied, "
+                 + "\(frames.drift.measuredFrames) frame pairs, \(frames.drift.maximum) pt maximum drift")
+        }
+    }
+
+    private func verifyTranscriptInput() async {
+        guard let window, let scroll = transcriptScrollView() else {
+            fail("the transcript input control has no scroll view")
+        }
+        let warmDistance = min(1_000, offsetFromTop(scroll) - Self.scrollMargin)
+        guard warmDistance >= 500 else { fail("the transcript is too short for the measured-row input control") }
+        let warm = WheelGesture(window: window, over: scroll, geometry: nil,
+                                speed: Self.scrollSpeed, distance: warmDistance) { false }
+        requireDelivery(await warm.run().delivery)
+        _ = await settled()
+        // Scroll back within the rows just visited, so estimates can't change the native distance.
+        let distance = min(400, gapToEnd(scroll) / 2)
+        guard distance >= 100 else { fail("the measured-row input control has no room before the end") }
+        let start = offsetFromTop(scroll)
+        let gesture = WheelGesture(window: window, over: scroll, geometry: nil,
+                                   speed: -Self.scrollSpeed, distance: distance) { false }
+        let frames = await gesture.run()
+        requireDelivery(frames.delivery)
+        let moved = start - offsetFromTop(scroll)
+        guard frames.delivery.matchesNativeTravel(moved) else {
+            fail("measured-row transcript input control: \(frames.delivery.deliveredDelta) pt delivered, "
+                 + "\(moved) pt applied")
+        }
+        info("Measured-row transcript input control",
+             "\(frames.delivery.deliveredEvents)/\(frames.delivery.postedEvents) events, "
+             + "\(abs(moved))/\(abs(frames.delivery.deliveredDelta)) pt applied")
+        let gap = await scrollToEnd()
+        guard gap < 2 else { fail("the transcript input control didn't restore the latest message") }
+    }
+
+    private func trackpad() async {
+        await load(channelID)
+        _ = await settled()
+        header()
+        info("Phased trackpad check",
+             "own-PID WindowServer delivery, requires Accessibility; not a wheel baseline or a row-drift gate")
+        guard let window, let scroll = transcriptScrollView() else { fail("there's no transcript scroll view") }
+        let distance = min(Self.scrollDistance, offsetFromTop(scroll) - Self.scrollMargin)
+        guard distance >= Self.scrollDistance / 2 else { fail("the transcript is too short for the trackpad check") }
+        let start = offsetFromTop(scroll)
+        let gesture = WheelGesture(window: window, over: scroll, geometry: nil, speed: Self.scrollSpeed,
+                                   distance: distance, phased: true) { self.offsetFromTop(scroll) < Self.scrollMargin }
+        let frames = await gesture.run()
+        requireDelivery(frames.delivery)
+        let moved = abs(offsetFromTop(scroll) - start)
+        guard moved > gesture.scrolled / 4 else { fail("the phased trackpad input didn't move the transcript") }
+        info("Phased trackpad input",
+             "\(frames.delivery.deliveredEvents)/\(frames.delivery.postedEvents) events, "
+             + "\(frames.delivery.deliveredDelta) pt delivered, \(moved) pt native travel after a 1 s end drain. "
+             + "AppKit interpolation is included in native travel.")
+    }
+
+    private func requireDelivery(_ delivery: BenchmarkScrollDelivery) {
+        guard delivery.matches else {
+            fail("wheel delivery mismatch: \(delivery.postedEvents) posted, "
+                 + "\(delivery.deliveredEvents) delivered; "
+                 + "\(delivery.postedDelta) pt posted, \(delivery.deliveredDelta) pt delivered; "
+                 + "\(delivery.creationFailures) creation and \(delivery.observationFailures) observation failures")
+        }
     }
 
     /// Scrolls up from the latest message and back down the same distance.
@@ -426,12 +538,7 @@ final class PerformanceBenchmark {
                     }
                 } catch { fail("couldn't encode the signed scroll trace: \(error.localizedDescription)") }
             }
-            guard frames.delivery.matches else {
-                fail("wheel delivery mismatch: \(frames.delivery.postedEvents) posted, "
-                     + "\(frames.delivery.deliveredEvents) delivered; "
-                     + "\(frames.delivery.postedDelta) pt posted, \(frames.delivery.deliveredDelta) pt delivered; "
-                     + "\(frames.delivery.creationFailures) event creation failures")
-            }
+            requireDelivery(frames.delivery)
             info("Wheel delivery \(up ? "up" : "down") at \(loaded) loaded",
                  "\(frames.delivery.deliveredEvents)/\(frames.delivery.postedEvents) events, "
                  + "\(frames.delivery.deliveredDelta)/\(frames.delivery.postedDelta) pt")
@@ -458,6 +565,17 @@ final class PerformanceBenchmark {
                   + String(format: "%.3f pt maximum, %.3f pt total absolute drift",
                            frames.drift.maximum, frames.drift.total),
                   value: frames.drift.maximum, budget: Budget.scrollDrift, unit: " pt")
+            if BenchmarkScrollGeometry.traceEnabled {
+                guard frames.displayLinkDrift.measuredFrames == frames.drift.measuredFrames,
+                      frames.displayLinkDrift.unmeasuredFrames == 0 else {
+                    fail("the diagnostic display-link sampler had incomplete geometry coverage")
+                }
+                info("Diagnostic display-link drift \(up ? "up" : "down") at \(loaded) loaded",
+                     "\(frames.displayLinkDrift.measuredFrames) frame pairs, "
+                     + "\(frames.displayLinkDrift.exceedingFrames) over 1 pt, "
+                     + String(format: "%.3f pt maximum, not an acceptance metric", frames.displayLinkDrift.maximum))
+                return
+            }
         }
     }
 
@@ -724,7 +842,7 @@ final class PerformanceBenchmark {
             info("Frame drift", "disabled for the probe overhead control")
         }
         if scenario == .scroll, BenchmarkScrollGeometry.traceEnabled {
-            info("Signed frame trace", "buffered during each gesture, printed after CPU measurement")
+            info("Signed frame trace", "first-page upward gesture only, buffered until CPU measurement ends")
         }
     }
 
@@ -792,6 +910,7 @@ struct BenchmarkScrollGeometry: Equatable, Sendable {
 
     var firstVisibleRow: String
     var rowTops: [String: CGFloat]
+    var reportedTops: [String: CGFloat] = [:]
 }
 
 struct BenchmarkScrollDelivery: Equatable, Sendable {
@@ -800,10 +919,15 @@ struct BenchmarkScrollDelivery: Equatable, Sendable {
     var postedDelta: CGFloat = 0
     var deliveredDelta: CGFloat = 0
     var creationFailures = 0
+    var observationFailures = 0
 
     var matches: Bool {
-        creationFailures == 0 && postedEvents > 0 && postedEvents == deliveredEvents
+        creationFailures == 0 && observationFailures == 0 && postedEvents > 0 && postedEvents == deliveredEvents
             && postedDelta.isFinite && postedDelta == deliveredDelta
+    }
+
+    func matchesNativeTravel(_ movement: CGFloat) -> Bool {
+        matches && movement.isFinite && abs(movement - deliveredDelta) <= 0.000_001
     }
 }
 
@@ -848,6 +972,48 @@ final class BenchmarkTableScrollGeometry: BenchmarkScrollGeometrySource {
     }
 }
 
+@MainActor
+private final class BenchmarkNativeScrollControl: NSObject, NSTableViewDataSource, NSTableViewDelegate {
+    let window: NSWindow
+    private let rows: Int
+
+    init(frame: CGRect, rows: Int) {
+        self.rows = rows
+        window = NSWindow(contentRect: frame, styleMask: [.titled, .resizable], backing: .buffered, defer: false)
+        super.init()
+        window.title = "Native table scroll control"
+        window.isReleasedWhenClosed = false
+        window.isRestorable = false
+        let scroll = NSScrollView(frame: CGRect(origin: .zero, size: frame.size))
+        scroll.hasVerticalScroller = true
+        let table = NSTableView(frame: CGRect(x: 0, y: 0, width: frame.width, height: CGFloat(rows) * 400))
+        table.headerView = nil
+        table.style = .plain
+        table.intercellSpacing = .zero
+        table.rowHeight = 400
+        table.selectionHighlightStyle = .none
+        let column = NSTableColumn(identifier: .init("message"))
+        column.width = frame.width
+        table.addTableColumn(column)
+        table.dataSource = self
+        table.delegate = self
+        scroll.documentView = table
+        window.contentView = scroll
+        table.reloadData()
+    }
+
+    func numberOfRows(in tableView: NSTableView) -> Int { rows }
+
+    func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
+        let identifier = NSUserInterfaceItemIdentifier("control-row")
+        let label = tableView.makeView(withIdentifier: identifier, owner: nil) as? NSTextField
+            ?? NSTextField(labelWithString: "")
+        label.identifier = identifier
+        label.stringValue = "Native control row \(row + 1)"
+        return label
+    }
+}
+
 struct BenchmarkScrollDrift: Equatable, Sendable {
     struct Sample: Equatable, Sendable, Encodable {
         var rowID: String
@@ -855,6 +1021,8 @@ struct BenchmarkScrollDrift: Equatable, Sendable {
         var after: CGFloat
         var wheel: CGFloat
         var residual: CGFloat
+        var reportedBefore: CGFloat?
+        var reportedAfter: CGFloat?
     }
 
     private var previous: BenchmarkScrollGeometry?
@@ -892,17 +1060,21 @@ struct BenchmarkScrollDrift: Equatable, Sendable {
         if drift > PerformanceBenchmark.Budget.scrollDrift { exceedingFrames += 1 }
         maximum = max(maximum, drift)
         total += drift
-        return .init(rowID: id, before: before, after: after, wheel: scrollDelta, residual: residual)
+        return .init(rowID: id, before: before, after: after, wheel: scrollDelta, residual: residual,
+                     reportedBefore: previous.reportedTops[id], reportedAfter: current.reportedTops[id])
     }
 }
 
-/// One steady trackpad scroll over `scroll`, a step each display frame through the app's event
-/// queue, the way a person's gesture arrives. Each step covers the time since the last frame, so a
+/// One steady scroll over `scroll`, a step each display frame. Unphased wheel input uses the
+/// app-local queue. Opt-in phased input uses WindowServer delivery to this PID only.
+/// Each step covers the time since the last frame, so a
 /// late frame scrolls further, as the coalesced events of a held-up gesture do.
 @MainActor
 private final class WheelGesture: NSObject {
     struct Trace: Encodable {
+        var phase: String
         var time: CFTimeInterval
+        var sampleTime: CFTimeInterval
         var sample: BenchmarkScrollDrift.Sample?
         var nativeTop: CGFloat?
         var documentHeight: CGFloat?
@@ -919,6 +1091,7 @@ private final class WheelGesture: NSObject {
         var seconds: CFTimeInterval = 0
         var duration: CFTimeInterval = 1.0 / 60
         var drift = BenchmarkScrollDrift()
+        var displayLinkDrift = BenchmarkScrollDrift()
         var delivery = BenchmarkScrollDelivery()
         var trace: [Trace] = []
     }
@@ -929,6 +1102,7 @@ private final class WheelGesture: NSObject {
     /// Points a second. Positive scrolls toward the top.
     private let speed: Double
     private let distance: Double
+    private let phased: Bool
     private let stop: @MainActor () -> Bool
     private(set) var scrolled = 0.0
     private var frames = Frames()
@@ -937,32 +1111,53 @@ private final class WheelGesture: NSObject {
     private var last: CFTimeInterval?
     private var carried = 0.0
     private var finished: CheckedContinuation<Void, Never>?
-    private var sampledScroll: CGFloat = 0
+    private var displayLinkSampledScroll: CGFloat = 0
     private var endedAt: CFTimeInterval?
+    private var pendingLateTime: CFTimeInterval?
+    private var sampledScroll: CGFloat = 0
+    private var finishAfterLateSample = false
 
     init(window: NSWindow, over scroll: NSScrollView, geometry: (any BenchmarkScrollGeometrySource)?,
-         speed: Double, distance: Double,
+         speed: Double, distance: Double, phased: Bool = false,
          stop: @escaping @MainActor () -> Bool) {
         self.window = window
         self.scroll = scroll
         self.geometry = geometry
         self.speed = speed
         self.distance = distance
+        self.phased = phased
         self.stop = stop
     }
 
     func run() async -> Frames {
         guard let scroll else { return frames }
-        let monitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
-            MainActor.assumeIsolated {
-                if let self, event.window === self.window {
-                    self.frames.delivery.deliveredEvents += 1
-                    self.frames.delivery.deliveredDelta += event.scrollingDeltaY
-                }
+        let stopObserving = observeDelivery()
+        defer { stopObserving() }
+        if let geometry {
+            let initial = geometry.benchmarkScrollGeometry()
+            frames.drift.sample(initial, scrollDelta: 0)
+            if BenchmarkScrollGeometry.traceEnabled {
+                frames.displayLinkDrift.sample(initial, scrollDelta: 0)
             }
-            return event
         }
-        defer { if let monitor { NSEvent.removeMonitor(monitor) } }
+        let lateObserver: CFRunLoopObserver?
+        if geometry != nil {
+            let activities = CFRunLoopActivity.beforeWaiting.rawValue | CFRunLoopActivity.exit.rawValue
+            guard let observer = CFRunLoopObserverCreateWithHandler(
+                nil, activities, true, CFIndex.max - 1, { [weak self] _, _ in
+                MainActor.assumeIsolated { self?.sampleAtEndOfLoop() }
+            }) else {
+                FileHandle.standardError.write(Data("Benchmark failed: couldn't install the end-of-loop sampler\n".utf8))
+                exit(EXIT_FAILURE)
+            }
+            lateObserver = observer
+            CFRunLoopAddObserver(CFRunLoopGetMain(), observer, .commonModes)
+        } else {
+            lateObserver = nil
+        }
+        defer {
+            if let lateObserver { CFRunLoopRemoveObserver(CFRunLoopGetMain(), lateObserver, .commonModes) }
+        }
         let link = scroll.displayLink(target: self, selector: #selector(tick(_:)))
         let rate = Float(scroll.window?.screen?.maximumFramesPerSecond ?? 60)
         link.preferredFrameRateRange = CAFrameRateRange(minimum: rate, maximum: rate, preferred: rate)
@@ -973,22 +1168,65 @@ private final class WheelGesture: NSObject {
         return frames
     }
 
+    private func observeDelivery() -> () -> Void {
+        if !phased {
+            guard let monitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel, handler: { [weak self] event in
+                MainActor.assumeIsolated {
+                    if let self, event.window === self.window {
+                        self.frames.delivery.deliveredEvents += 1
+                        self.frames.delivery.deliveredDelta += event.scrollingDeltaY
+                        if !event.phase.isEmpty { self.frames.delivery.observationFailures += 1 }
+                    }
+                }
+                return event
+            }) else {
+                FileHandle.standardError.write(Data("Benchmark failed: couldn't observe app-local wheel delivery\n".utf8))
+                exit(EXIT_FAILURE)
+            }
+            return { NSEvent.removeMonitor(monitor) }
+        }
+        guard CGPreflightPostEventAccess() else {
+            FileHandle.standardError.write(Data(
+                "Benchmark failed: Toy Box Benchmark needs Accessibility permission for own-PID wheel delivery\n".utf8))
+            exit(EXIT_FAILURE)
+        }
+        guard let tap = CGEvent.tapCreateForPid(
+            pid: getpid(), place: .tailAppendEventTap, options: .listenOnly,
+            eventsOfInterest: CGEventMask(1) << CGEventType.scrollWheel.rawValue,
+            callback: { _, type, event, context in
+            MainActor.assumeIsolated {
+                guard let context else { return }
+                let gesture = Unmanaged<WheelGesture>.fromOpaque(context).takeUnretainedValue()
+                if type == .scrollWheel, let native = NSEvent(cgEvent: event) {
+                    gesture.frames.delivery.deliveredEvents += 1
+                    gesture.frames.delivery.deliveredDelta += native.scrollingDeltaY
+                } else {
+                    gesture.frames.delivery.observationFailures += 1
+                }
+            }
+            return Unmanaged.passUnretained(event)
+        }, userInfo: Unmanaged.passUnretained(self).toOpaque()),
+              let source = CFMachPortCreateRunLoopSource(nil, tap, 0) else {
+            FileHandle.standardError.write(Data("Benchmark failed: couldn't observe own-process wheel delivery\n".utf8))
+            exit(EXIT_FAILURE)
+        }
+        CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
+        return {
+            CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes)
+            CFMachPortInvalidate(tap)
+        }
+    }
+
     @objc private func tick(_ link: CADisplayLink) {
         guard finished != nil else { return }
-        if let geometry {
-            let sample = frames.drift.sample(geometry.benchmarkScrollGeometry(),
-                                            scrollDelta: frames.delivery.deliveredDelta - sampledScroll)
-            if BenchmarkScrollGeometry.traceEnabled {
-                frames.trace.append(.init(
-                    time: link.timestamp - (first ?? link.timestamp), sample: sample,
-                    nativeTop: scroll.map { $0.contentView.bounds.minY + $0.contentInsets.top },
-                    documentHeight: scroll?.documentView?.frame.height,
-                    postedEvents: frames.delivery.postedEvents,
-                    deliveredEvents: frames.delivery.deliveredEvents,
-                    deliveredDelta: frames.delivery.deliveredDelta))
-            }
+        if geometry != nil { pendingLateTime = link.timestamp }
+        if BenchmarkScrollGeometry.traceEnabled, let geometry {
+            let sample = frames.displayLinkDrift.sample(
+                geometry.benchmarkScrollGeometry(),
+                scrollDelta: frames.delivery.deliveredDelta - displayLinkSampledScroll)
+            appendTrace(sample, at: link.timestamp, phase: "display-link")
+            displayLinkSampledScroll = frames.delivery.deliveredDelta
         }
-        sampledScroll = frames.delivery.deliveredDelta
         let now = link.timestamp
         frames.duration = link.targetTimestamp - link.timestamp
         let elapsed = last.map { now - $0 } ?? frames.duration
@@ -1004,7 +1242,13 @@ private final class WheelGesture: NSObject {
         let begins = last == nil
         last = now
         if let endedAt {
-            if frames.delivery.matches || now - endedAt >= 1 { finish() }
+            if (frames.delivery.matches && now - endedAt >= (phased ? 1 : 0)) || now - endedAt >= 2 {
+                if geometry != nil { finishAfterLateSample = true } else { finish() }
+            }
+            return
+        }
+        if begins, phased {
+            post(.began, delta: 0)
             return
         }
         guard scrolled < distance, !stop() else {
@@ -1015,7 +1259,7 @@ private final class WheelGesture: NSObject {
         let step = speed * elapsed + carried
         let whole = min(abs(step.rounded(.towardZero)), distance - scrolled).rounded(.up)
         carried = step - whole * (speed < 0 ? -1 : 1)
-        post(begins ? .began : .changed, delta: Int32(whole * (speed < 0 ? -1 : 1)))
+        post(.changed, delta: Int32(whole * (speed < 0 ? -1 : 1)))
         scrolled += whole
     }
 
@@ -1024,36 +1268,67 @@ private final class WheelGesture: NSObject {
         finished = nil
     }
 
-    /// Posts a trackpad scroll event over the scroll view's center. Quartz's scroll event can't name
-    /// a window, so the scroll fields move onto an AppKit event that does.
+    private func sampleAtEndOfLoop() {
+        guard let time = pendingLateTime, let geometry else { return }
+        pendingLateTime = nil
+        let sample = frames.drift.sample(geometry.benchmarkScrollGeometry(),
+                                        scrollDelta: frames.delivery.deliveredDelta - sampledScroll)
+        sampledScroll = frames.delivery.deliveredDelta
+        if BenchmarkScrollGeometry.traceEnabled { appendTrace(sample, at: time, phase: "end-of-loop") }
+        if finishAfterLateSample { finish() }
+    }
+
+    private func appendTrace(_ sample: BenchmarkScrollDrift.Sample?, at time: CFTimeInterval, phase: String) {
+        frames.trace.append(.init(
+            phase: phase, time: time - (first ?? time), sampleTime: CACurrentMediaTime() - (first ?? time),
+            sample: sample,
+            nativeTop: scroll.map { $0.contentView.bounds.minY + $0.contentInsets.top },
+            documentHeight: scroll?.documentView?.frame.height,
+            postedEvents: frames.delivery.postedEvents,
+            deliveredEvents: frames.delivery.deliveredEvents,
+            deliveredDelta: frames.delivery.deliveredDelta))
+    }
+
     private func post(_ phase: CGScrollPhase, delta: Int32) {
         guard let window, let scroll,
-              let wheel = CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 1, wheel1: delta, wheel2: 0,
-                                  wheel3: 0),
-              let event = NSEvent.mouseEvent(with: .mouseMoved,
-                                             location: scroll.convert(NSPoint(x: scroll.bounds.midX,
-                                                                              y: scroll.bounds.midY), to: nil),
-                                             modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
-                                             windowNumber: window.windowNumber, context: nil, eventNumber: 0,
-                                             clickCount: 0, pressure: 0)?.cgEvent else {
-            frames.delivery.creationFailures += 1
-            return
-        }
-        event.type = .scrollWheel
-        for field in Self.integerFields { event.setIntegerValueField(field, value: wheel.getIntegerValueField(field)) }
-        for field in Self.fractionalFields { event.setDoubleValueField(field, value: wheel.getDoubleValueField(field)) }
-        event.setIntegerValueField(.scrollWheelEventScrollPhase, value: Int64(phase.rawValue))
-        guard let posted = NSEvent(cgEvent: event) else {
+              let posted = BenchmarkWheelEvent.make(
+                  delta: delta, phase: phased ? phase : nil,
+                  location: scroll.convert(NSPoint(x: scroll.bounds.midX, y: scroll.bounds.midY), to: nil),
+                  windowNumber: window.windowNumber) else {
             frames.delivery.creationFailures += 1
             return
         }
         frames.delivery.postedEvents += 1
         frames.delivery.postedDelta += posted.scrollingDeltaY
-        NSApp.postEvent(posted, atStart: false)
+        if !phased {
+            NSApp.postEvent(posted, atStart: false)
+            return
+        }
+        guard let event = posted.cgEvent else {
+            frames.delivery.creationFailures += 1
+            return
+        }
+        event.postToPid(getpid())
+    }
+}
+
+enum BenchmarkWheelEvent {
+    /// Quartz's scroll event can't name a window, so its fields move onto an AppKit event that does.
+    static func make(delta: Int32, phase: CGScrollPhase? = nil, location: NSPoint, windowNumber: Int) -> NSEvent? {
+        guard let wheel = CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 1,
+                                  wheel1: delta, wheel2: 0, wheel3: 0),
+              let event = NSEvent.mouseEvent(
+                  with: .mouseMoved, location: location, modifierFlags: [],
+                  timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: windowNumber,
+                  context: nil, eventNumber: 0, clickCount: 0, pressure: 0)?.cgEvent else { return nil }
+        event.type = .scrollWheel
+        for field in Self.integerFields { event.setIntegerValueField(field, value: wheel.getIntegerValueField(field)) }
+        for field in Self.fractionalFields { event.setDoubleValueField(field, value: wheel.getDoubleValueField(field)) }
+        event.setIntegerValueField(.scrollWheelEventScrollPhase, value: Int64(phase?.rawValue ?? 0))
+        return NSEvent(cgEvent: event)
     }
 
-    /// Every field Quartz sets on a pixel scroll event. 101, 126 and 142 aren't named, but AppKit
-    /// reads the deltas from them.
+    /// Pixel delta fields consumed by AppKit. 101, 126 and 142 have no public names.
     private static let integerFields: [CGEventField] = [.scrollWheelEventDeltaAxis1, .scrollWheelEventIsContinuous,
                                                         .scrollWheelEventPointDeltaAxis1]
         + [101].compactMap { CGEventField(rawValue: $0) }

@@ -53,16 +53,22 @@ struct PerformanceBenchmarkTests {
 
     @Test func signedSamplesKeepTheAnchorAndExposeCancellingSpikes() throws {
         var drift = BenchmarkScrollDrift()
-        let seed = drift.sample(.init(firstVisibleRow: "a", rowTops: ["a": 0]), scrollDelta: 0)
+        let seed = drift.sample(.init(firstVisibleRow: "a", rowTops: ["a": 0], reportedTops: ["a": 0]),
+                                scrollDelta: 0)
         #expect(seed == nil)
-        let firstSample = drift.sample(.init(firstVisibleRow: "a", rowTops: ["a": 0]), scrollDelta: 40)
-        let nextSample = drift.sample(.init(firstVisibleRow: "a", rowTops: ["a": 80]), scrollDelta: 40)
+        let firstSample = drift.sample(.init(firstVisibleRow: "a", rowTops: ["a": 0], reportedTops: ["a": 0]),
+                                       scrollDelta: 40)
+        let nextSample = drift.sample(.init(firstVisibleRow: "a", rowTops: ["a": 80], reportedTops: ["a": 80]),
+                                      scrollDelta: 40)
         let first = try #require(firstSample)
         let next = try #require(nextSample)
         #expect(first.rowID == "a")
         #expect(first.residual == -40)
         #expect(next.residual == 40)
         #expect(first.residual + next.residual == 0)
+        #expect(first.reportedBefore == 0)
+        #expect(first.reportedAfter == 0)
+        #expect(next.reportedAfter == 80)
         #expect(drift.exceedingFrames == 2)
     }
 
@@ -133,6 +139,48 @@ struct PerformanceBenchmarkTests {
         #expect(delivery.matches)
         delivery.creationFailures = 1
         #expect(!delivery.matches)
+    }
+
+    @Test func deliveryIsNotProofThatTheNativeScrollViewAppliedTheInput() {
+        var delivery = BenchmarkScrollDelivery(postedEvents: 4, deliveredEvents: 4,
+                                                postedDelta: 120, deliveredDelta: 120)
+        #expect(delivery.matchesNativeTravel(120))
+        #expect(!delivery.matchesNativeTravel(40))
+        #expect(!delivery.matchesNativeTravel(-120))
+        #expect(!delivery.matchesNativeTravel(120.001))
+        #expect(!delivery.matchesNativeTravel(.nan))
+        delivery.postedDelta = -120
+        delivery.deliveredDelta = -120
+        #expect(delivery.matchesNativeTravel(-120))
+        delivery.observationFailures = 1
+        #expect(!delivery.matches)
+        #expect(!delivery.matchesNativeTravel(-120))
+    }
+
+    @Test(arguments: [Int32(-40), 0, 40])
+    func commonWheelEventsArePreciseAndUnphased(_ delta: Int32) throws {
+        let event = try #require(BenchmarkWheelEvent.make(
+            delta: delta, location: CGPoint(x: 200, y: 300), windowNumber: 0))
+        #expect(event.type == .scrollWheel)
+        #expect(event.hasPreciseScrollingDeltas)
+        #expect(event.phase.isEmpty)
+        #expect(event.momentumPhase.isEmpty)
+        #expect(event.scrollingDeltaY == CGFloat(delta))
+        #expect(event.scrollingDeltaX == 0)
+        #expect(event.windowNumber == 0)
+        #expect(event.locationInWindow == CGPoint(x: 200, y: 300))
+    }
+
+    @Test(arguments: [
+        (CGScrollPhase.began, NSEvent.Phase.began),
+        (.changed, .changed),
+        (.ended, .ended),
+    ])
+    func optInTrackpadEventsBridgeTheQuartzPhaseCorrectly(_ quartz: CGScrollPhase, _ native: NSEvent.Phase) throws {
+        let event = try #require(BenchmarkWheelEvent.make(
+            delta: 0, phase: quartz, location: .zero, windowNumber: 0))
+        #expect(event.phase == native)
+        #expect(event.momentumPhase.isEmpty)
     }
 
     @Test func nonFiniteWheelTotalsFailDeliveryValidation() {

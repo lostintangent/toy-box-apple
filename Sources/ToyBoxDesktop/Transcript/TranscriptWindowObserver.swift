@@ -191,6 +191,7 @@ extension BenchmarkScrollGeometry {
               viewport.width > 0, viewport.height > 0, let nativeTop, nativeTop.isFinite,
               let historyStart else { return nil }
         var tops: [String: CGFloat] = [:]
+        var reported: [String: CGFloat] = [:]
         var first: (id: String, top: CGFloat)?
         for (id, frame) in messageFrames where frame.sequence > 0 && frame.historyStart == historyStart {
             let positioned = TranscriptCoordinates.viewportFrame(frame, top: nativeTop).rect
@@ -198,13 +199,14 @@ extension BenchmarkScrollGeometry {
                   positioned.width.isFinite, positioned.width > 0,
                   positioned.maxY > -viewport.height, positioned.minY < viewport.height * 2 else { continue }
             tops[id] = positioned.minY
+            if BenchmarkScrollGeometry.traceEnabled { reported[id] = frame.rect.minY }
             guard positioned.maxY > 0, positioned.minY < viewport.height else { continue }
             if let first, first.top < positioned.minY
                 || (first.top == positioned.minY && first.id < id) { continue }
             first = (id, positioned.minY)
         }
         guard let first else { return nil }
-        self.init(firstVisibleRow: first.id, rowTops: tops)
+        self.init(firstVisibleRow: first.id, rowTops: tops, reportedTops: reported)
     }
 }
 
