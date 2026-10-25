@@ -59,6 +59,16 @@ struct TranscriptTests {
                                historyStart: 1) == nil)
         #expect(scroll.intent == reading)
 
+        let widened = ["m74": frame(74, top: 4337.5, height: 37, width: 520, end: 5610),
+                       "scroll-row-m74": frame(0, top: 4329.5, height: 45, width: 520, end: 5610)]
+        #expect(scroll.receive(frames: widened, native: native(width: 520, origin: 4320.5, end: 5616),
+                               historyStart: 1) == nil)
+        let afterNativeResize = try #require(scroll.receive(
+            frames: widened, native: native(width: 520, origin: 4320.5, end: 5610), historyStart: 1))
+        let correctedOrigin = 4329.5 - afterNativeResize.anchor.y * (344 - 45)
+        #expect(abs(4337.5 - correctedOrigin - 37) < 0.001)
+        #expect(scroll.intent == reading)
+
         scroll.readerMoved()
         let end = ["m100": frame(100, top: 2912, height: 72, width: 360, end: 3000)]
         #expect(scroll.receive(frames: end, native: native(width: 360, origin: 2656, end: 3000),
@@ -750,6 +760,10 @@ struct TranscriptTests {
                   + " end=\(harness.scrollView.documentView?.frame.maxY ?? 0)"
                   + " clip=\(harness.scrollView.contentView.bounds.size)"
                   + " gap=\(bottomGap())"
+                  + " documentWidth=\(harness.scrollView.documentView?.bounds.width ?? 0)"
+                  + " m74Rect=\(String(describing: harness.frames["m74"]?.rect))"
+                  + " m74Source=\(String(describing: harness.capture.frames["m74"]?.layoutSize))"
+                  + " nativeRow=\(String(describing: harness.frames["scroll-row-m74"]?.rect))"
                   + " measured=\(harness.frames.count) visible=\(visible)")
         }
         logLayout("landed")

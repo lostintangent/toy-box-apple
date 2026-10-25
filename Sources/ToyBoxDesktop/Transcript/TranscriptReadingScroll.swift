@@ -53,6 +53,13 @@ final class TranscriptReadingScroll {
 
     func receive(frames: [String: TranscriptMessageFrame], native: TranscriptNativeLayout,
                  historyStart: Int) -> (id: String, anchor: UnitPoint)? {
+        func skipped(_ reason: String) {
+            transcriptScrollTrace("reading.skip reason=\(reason) width=\(native.viewport.width)"
+                                  + " origin=\(native.origin) document=\(native.documentWidth)x\(native.documentEnd)"
+                                  + " m74Source=\(String(describing: frames["m74"]?.layoutSize))"
+                                  + " m74Top=\(String(describing: frames["m74"]?.contentTop))"
+                                  + " rowSource=\(String(describing: frames["scroll-row-m74"]?.layoutSize))")
+        }
         func isCurrent(_ frame: TranscriptMessageFrame) -> Bool {
             guard frame.historyStart == historyStart, let size = frame.layoutSize else { return false }
             return abs(size.width + 2 * ConversationRail.inset - native.documentWidth) <= 0.5
@@ -65,7 +72,10 @@ final class TranscriptReadingScroll {
             return .init(id: id, order: identity.order, top: top, height: frame.rect.height,
                          isAnchorable: identity.isAnchorable)
         }.sorted { $0.order < $1.order }
-        guard !measured.isEmpty else { return nil }
+        guard !measured.isEmpty else {
+            skipped("no-current-frames")
+            return nil
+        }
         let next = Model.Layout(rows: rows, frames: measured, viewport: native.viewport,
                                 origin: native.origin, documentEnd: native.documentEnd)
         defer { layout = next }
@@ -78,16 +88,24 @@ final class TranscriptReadingScroll {
                                   + " intent=\(intent)")
             return nil
         }
-        guard let layout, Model.layoutEvent(from: layout, to: next) != nil,
-              case .reading(let anchor) = intent else { return nil }
+        guard let layout, case .reading(let anchor) = intent else { return nil }
         let placement = Model.reduce(intent, .layoutChanged, layout: next)
+        guard Model.layoutEvent(from: layout, to: next) != nil else {
+            if let origin = placement.origin, abs(origin - next.origin) > 0.5 {
+                skipped("unchanged-layout desired=\(origin)")
+            }
+            return nil
+        }
         if let id = placement.needsMeasurement, let target = targets[id] {
             transcriptScrollTrace("reading.materialize target=\(target) intent=\(intent)")
             return (target, .top)
         }
-        guard let origin = placement.origin, abs(origin - next.origin) > 0.5,
-              let target = targets[anchor.row], let frame = frames["scroll-row-\(target)"],
-              isCurrent(frame), next.viewport.unobscuredHeight > 0 else { return nil }
+        guard let origin = placement.origin, abs(origin - next.origin) > 0.5 else { return nil }
+        guard let target = targets[anchor.row], let frame = frames["scroll-row-\(target)"],
+              isCurrent(frame), next.viewport.unobscuredHeight > 0 else {
+            skipped("no-current-native-row desired=\(origin)")
+            return nil
+        }
         // SwiftUI aligns the padded lazy row, while the model keeps the message inside it.
         let alignmentRange = next.viewport.unobscuredHeight - frame.rect.height
         guard abs(alignmentRange) > 0.5 else {
