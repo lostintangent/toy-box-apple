@@ -102,15 +102,18 @@ struct SendAttemptTests {
         defer { store.disconnect() }
         try await eventually { store.phase.isLive }
         #expect(store.lastSendFailure == nil)
+        #expect(store.lastSendSubmission == nil)
         let id = UUID().uuidString
         let expectedError = ChannelAPIError.http(status: status, message: "Repeated failure")
         await #expect(throws: expectedError) { try await store.post(id: id, content: "Keep this UUID") }
+        let firstSubmission = try #require(store.lastSendSubmission)
         let first = try #require(store.lastSendFailure)
         #expect(first.messageId == id)
         #expect(first.phase == (status == 422 ? .notSent : .deliveryNotConfirmed))
         #expect(first.error == expectedError.localizedDescription)
         #expect(store.lastSendFailure == first)
         await #expect(throws: expectedError) { try await store.retrySend(id: id) }
+        #expect(try #require(store.lastSendSubmission) != firstSubmission)
         let retry = try #require(store.lastSendFailure)
         #expect(retry.id != first.id)
         #expect(retry.messageId == first.messageId)

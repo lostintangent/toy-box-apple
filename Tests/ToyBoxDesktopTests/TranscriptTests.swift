@@ -1258,6 +1258,53 @@ struct TranscriptTests {
         defer { harness.close() }
         harness.interaction.findInChannel()
         try await harness.waitUntil { find.isPresented && harness.findField != nil }
+    @MainActor
+    @Test func ownSubmissionAndSendAgainFollowWithFindOpenWithoutReleasingItsReadLatch() async throws {
+        let find = TranscriptFind()
+        let harness = try await TranscriptHarness(messages: transcriptFindTestMessages(1...90), find: find)
+        defer { harness.close() }
+        harness.interaction.findInChannel()
+        try await harness.waitUntil { find.isPresented && harness.findField != nil }
+        let clip = harness.scrollView.contentView
+        clip.scroll(to: CGPoint(x: clip.bounds.minX, y: clip.bounds.minY - 900))
+        harness.scrollView.reflectScrolledClipView(clip)
+        try await harness.settled()
+        try #require(harness.bottomGap > 200)
+
+        let id = UUID().uuidString
+        await #expect(throws: ChannelAPIError.self) {
+            _ = try await harness.store.post(id: id, content: "A confirmed reply", attachments: [])
+        }
+        try await harness.settled()
+        #expect(harness.store.lastConfirmedSendID == nil)
+        #expect(abs(harness.bottomGap) < 2)
+        #expect(find.isPresented && find.blocksRead)
+        clip.scroll(to: CGPoint(x: clip.bounds.minX, y: clip.bounds.minY - 900))
+        harness.scrollView.reflectScrolledClipView(clip)
+        try await harness.settled()
+        try #require(harness.bottomGap > 200)
+        let submission = try #require(harness.store.lastSendSubmission)
+        await #expect(throws: ChannelAPIError.self) { _ = try await harness.store.retrySend(id: id) }
+        try await harness.settled()
+        #expect(harness.store.lastSendSubmission != submission)
+        #expect(abs(harness.bottomGap) < 2)
+        #expect(find.isPresented && find.blocksRead)
+        var confirmed = transcriptTestMessage(91)
+        confirmed.id = id
+        confirmed.sender = .user
+        harness.push(confirmed, revision: 2)
+        try await harness.waitUntil { harness.store.lastConfirmedSendID == id && abs(harness.bottomGap) < 2 }
+        #expect(find.isPresented && find.blocksRead)
+
+        harness.push(transcriptTestMessage(92), revision: 3)
+        try await harness.waitUntil { harness.store.messages.last?.sequence == 92 && abs(harness.bottomGap) < 2 }
+        #expect(find.isPresented && find.blocksRead)
+        find.close()
+        try await harness.settled()
+        #expect(find.blocksRead)
+        #expect(harness.readRequests == 0)
+    }
+
         find.query = "joined"
         try await harness.waitUntil { memberships.allSatisfy { harness.capture.frames[$0.id]?.sequence == $0.sequence } }
         try await harness.settled()

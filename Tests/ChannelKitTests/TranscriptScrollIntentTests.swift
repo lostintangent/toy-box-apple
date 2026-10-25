@@ -37,7 +37,7 @@ struct TranscriptScrollIntentTests {
         #expect(model.jumpToLatest() == .end(animated: true))
         #expect(model.followsEnd)
         model.moved(distanceToEnd: 500)
-        #expect(model.ownPostConfirmed() == .end(animated: false))
+        #expect(model.ownPostSubmitted() == .end(animated: false))
         #expect(model.followsEnd)
     }
 

@@ -1068,7 +1068,7 @@ unchanged. SwiftUI owns the position through `ScrollPosition`, `scrollTargetLayo
 size-change anchor while following. Width, window and scroller changes keep the reading message
 within one line of the top, rather than preserving an exact offset inside reflowed text.
 
-Landing, Jump to Latest, confirmed own posts, Reveal, filter changes and Show Less produce one
+Landing, Jump to Latest, own submissions, Reveal, filter changes and Show Less produce one
 row-or-end command. Opening waits until current-history rows belong to the attached native scroll
 view's unobscured layout, rather than a provisional SwiftUI sizing pass. One view function applies
 commands with `ScrollPosition.scrollTo`. Reader geometry classifies the 48-point
@@ -1218,6 +1218,10 @@ closing Find or switching server cancels obsolete work.
 Opening Find, fetching history and revealing results never mark messages read or answer a
 request. Read marking remains suspended after search navigation until the reader explicitly
 resumes normal scrolling or Jump to Latest. Closing the bar alone is not a read action.
+Receipt suspension does not own placement. Closing at the end resumes following without releasing
+the read latch. An own submission follows the end and subsequent arrivals even with Find open,
+including a failed submission and Send Again. The bar and its read suspension remain. Later
+confirmation does not navigate again if the reader has moved.
 VoiceOver gets "Find in [channel]", named Previous Match and Next Match controls, the result
 position and a "Done" button with "Close Find" help. Give one polite completed-result
 announcement, not an announcement for every older page.

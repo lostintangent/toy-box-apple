@@ -96,6 +96,7 @@ public final class ChannelStore {
     public private(set) var readError: String?
     public private(set) var sendAttempts: [ChannelSendAttempt] = []
     public private(set) var lastSendFailure: ChannelSendFailure?
+    public private(set) var lastSendSubmission: UUID?
     public private(set) var lastConfirmedSendID: String?
     public private(set) var attemptPersistenceError: String?
     public private(set) var optimisticMessageIds: Set<String> = []
@@ -322,6 +323,7 @@ public final class ChannelStore {
     }
 
     private func deliver(_ attempt: ChannelSendAttempt) async throws -> ChannelSendResult {
+        lastSendSubmission = UUID()
         isSending = true
         sendError = nil
         lastSendFailure = nil

@@ -68,7 +68,7 @@ public struct TranscriptScrollIntent: Equatable, Sendable {
         return .end(animated: true)
     }
 
-    public mutating func ownPostConfirmed() -> Scroll {
+    public mutating func ownPostSubmitted() -> Scroll {
         intent = .following
         return .end(animated: false)
     }

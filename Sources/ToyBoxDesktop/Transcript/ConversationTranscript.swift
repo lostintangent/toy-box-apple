@@ -56,7 +56,7 @@ struct ConversationTranscript: View {
 
     private var viewport: TranscriptViewport { geometry.viewport }
     private var frames: [String: TranscriptMessageFrame] { geometry.frames }
-    private var followsEnd: Bool { model.followsEnd && !find.blocksRead && catchUp?.holdsLanding != true }
+    private var followsEnd: Bool { model.followsEnd && catchUp?.holdsLanding != true }
 
     private var visibleReadSequence: Int? {
         guard snapshot == nil, hasLanded, !isRevealing, !store.isLoadingOlder, window.isKeyWindow,
@@ -123,6 +123,9 @@ struct ConversationTranscript: View {
                 find.present()
                 find.move(interaction.findNavigation?.direction ?? 1)
             }
+            .onChange(of: find.isPresented) {
+                if !find.isPresented { model.moved(distanceToEnd: viewport.bottomGap) }
+            }
             .onChange(of: interaction.isArtifactViewerPresented) {
                 if interaction.isArtifactViewerPresented { find.close() }
             }
@@ -188,10 +191,10 @@ struct ConversationTranscript: View {
             .onChange(of: store.messages) {
                 if find.isPresented { prepareFind() }
             }
-            .onChange(of: store.lastConfirmedSendID) {
-                guard hasLanded, store.lastConfirmedSendID != nil else { return }
+            .onChange(of: store.lastSendSubmission) {
+                guard hasLanded, store.lastSendSubmission != nil else { return }
                 catchUp?.isPinned = false
-                perform(model.ownPostConfirmed())
+                perform(model.ownPostSubmitted())
             }
             .onChange(of: store.requestSequence, initial: true) { _, sequence in
                 let eligible = snapshot == nil && hasLanded && window.isKeyWindow
@@ -224,7 +227,9 @@ struct ConversationTranscript: View {
             let wasLanded = hasLanded
             geometry.viewport = new
             landIfReady()
-            if wasLanded && !find.blocksRead && !isRevealing { model.moved(distanceToEnd: new.bottomGap) }
+            if wasLanded && (!find.isPresented || position.isPositionedByUser) && !isRevealing {
+                model.moved(distanceToEnd: new.bottomGap)
+            }
             publishVisibleSequence()
             pointer.contentDidMove()
             if hasLanded, new.top < 32, old.top >= 32, !isRevealing {
