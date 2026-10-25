@@ -78,6 +78,8 @@ public enum TranscriptScrollModel {
         case readerScrolled(to: CGFloat)
         /// Captures reading without moving. With no anchorable rows, preserves the existing intent.
         case holdCurrentPosition
+        /// Restores position-based following without moving or reporting reader input.
+        case resumeFromCurrentPosition
         case land(Target)
         case jumpToLatest
         case ownPostConfirmed
@@ -106,18 +108,12 @@ public enum TranscriptScrollModel {
         switch event {
         case .readerScrolled(let y):
             precondition(y.isFinite)
-            let next: Intent
-            if distanceToEnd(y, rows: rows, viewport: viewport) <= followingThreshold {
-                next = .following
-            } else if let anchor = readingAnchor(y, rows: rows, viewport: viewport) {
-                next = .reading(anchor)
-            } else {
-                next = .following
-            }
-            return Placement(intent: next, origin: nil)
+            return Placement(intent: intentForPosition(y, rows: rows, viewport: viewport), origin: nil)
         case .holdCurrentPosition:
             let anchor = readingAnchor(origin, rows: rows, viewport: viewport)
             return Placement(intent: anchor.map(Intent.reading) ?? intent, origin: nil)
+        case .resumeFromCurrentPosition:
+            return Placement(intent: intentForPosition(origin, rows: rows, viewport: viewport), origin: nil)
         case .land(let target):
             if case .row(let id, _) = target, anchorableRow(id, rows: rows) == nil {
                 return Placement(intent: intent, origin: nil, unavailableTarget: id)
@@ -180,6 +176,11 @@ public enum TranscriptScrollModel {
         let starting = rows.first { $0.isAnchorable && $0.height > 0 && $0.top >= top && $0.top < bottom }
         let covering = rows.first { $0.isAnchorable && $0.top < top && $0.bottom > top }
         return (starting ?? covering).map { Anchor(row: $0.id, order: $0.order, offset: $0.top - top) }
+    }
+
+    private static func intentForPosition(_ origin: CGFloat, rows: [RowFrame], viewport: Viewport) -> Intent {
+        if distanceToEnd(origin, rows: rows, viewport: viewport) <= followingThreshold { return .following }
+        return readingAnchor(origin, rows: rows, viewport: viewport).map(Intent.reading) ?? .following
     }
 
     private static func readingAnchor(_ origin: CGFloat, rows: [RowFrame], viewport: Viewport) -> Anchor? {

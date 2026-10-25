@@ -1006,7 +1006,9 @@ and the viewport's width, height and glass insets. Its adapter sends `layoutChan
 `layoutEvent` detects changed geometry, never just because another native layout pass ran.
 Reader input updates intent without returning an origin. Opening Find uses `holdCurrentPosition`
 to capture reading even at the end without moving. With no anchorable rows it preserves the existing intent.
-Jump to Latest resumes following. Landing and reveal targets retain their
+After the Find bar's closing geometry settles, `resumeFromCurrentPosition` restores the normal
+following threshold without moving. Jump to Latest immediately resumes following at the end.
+Landing and reveal targets retain their
 conversation order so a target removed during layout falls forward to its next surviving row,
 then backward to the last row, then to the end. Only explicit missing-target actions report an
 unavailable target without moving. The model's document end owns the 16-point clearance exactly

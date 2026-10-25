@@ -79,6 +79,26 @@ struct TranscriptScrollModelTests {
         #expect(held.unavailableTarget == nil)
     }
 
+    @Test(arguments: [
+        (CGFloat(500), Model.Intent.reading(.init(row: "m6", order: 6, offset: 50)), CGFloat(500)),
+        (1_517.5, .reading(.init(row: "m16", order: 16, offset: 32.5)), 1_517.5),
+        (1_518, .following, 1_666),
+        (1_536, .following, 1_666),
+        (1_566, .following, 1_666),
+    ])
+    func resumingAfterFindClassifiesTheThresholdWithoutMoving(_ y: CGFloat, _ intent: Model.Intent,
+                                                            _ afterArrival: CGFloat) {
+        let rows = frames()
+        let held = Model.reduce(.following, .holdCurrentPosition, rows: rows, viewport: viewport, origin: y)
+        let resumed = Model.reduce(held.intent, .resumeFromCurrentPosition, rows: rows, viewport: viewport, origin: y)
+        #expect(resumed.intent == intent)
+        #expect(resumed.origin == nil)
+        #expect(resumed.unavailableTarget == nil)
+        #expect(Model.layoutEvent(from: rows, viewport: viewport, to: rows, viewport: viewport) == nil)
+        let arrival = Model.reduce(resumed.intent, .layoutChanged, rows: frames(21), viewport: viewport, origin: y)
+        #expect(arrival.origin == afterArrival)
+    }
+
     @Test func theHistoryHeaderContributesHeightButNeverOwnsThePrependAnchor() {
         let header = Model.RowFrame(id: "load-older", order: -2, top: 0, height: 180, isAnchorable: false)
         let rows = [header] + frames(shift: 180)
