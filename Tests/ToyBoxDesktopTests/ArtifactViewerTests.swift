@@ -441,11 +441,12 @@ struct ArtifactViewerTests {
         #expect(opener.actionError == nil)
     }
 
-    @Test func HTMLUsesAnOpaqueFrameAndCanLoadOnlyTheServersFileResources() async throws {
+    @Test(arguments: [false, true])
+    func HTMLKeepsAnOpaqueOriginAndCanLoadOnlyTheServersFileResources(root: Bool) async throws {
         let fixture = try ArtifactHTTPFixture()
         try await fixture.start()
         defer { fixture.stop() }
-        let web = ArtifactWebContent(openURL: { _ in
+        let web = ArtifactWebContent(usesRootDocument: root, openURL: { _ in
             Issue.record("The fixture must not open a browser.")
             return false
         })
@@ -466,7 +467,7 @@ struct ArtifactViewerTests {
             <script>
             (async () => {
                 const result = {scripts:true, parentAccess:false, cookieReadable:false, base:document.baseURI};
-                try { result.parentAccess = !!parent.document; } catch {}
+                try { result.parentAccess = parent !== self && !!parent.document; } catch {}
                 try { result.cookie = document.cookie; result.cookieReadable = true; } catch {}
                 result.api = await fetch("\(api)", {credentials:"include"}).then(() => true, () => false);
                 result.aliasAPI = await fetch("\(alias)").then(() => true, () => false);
@@ -497,10 +498,11 @@ struct ArtifactViewerTests {
         #expect(requests.allSatisfy { !$0.headers.lowercased().contains(fakeCookie.name.lowercased()) })
     }
 
-    @Test func externalLinksOpenTheBrowserInsteadOfReplacingTheEmbeddedDocument() async throws {
+    @Test(arguments: [false, true])
+    func externalLinksOpenTheBrowserInsteadOfReplacingTheEmbeddedDocument(root: Bool) async throws {
         let destination = try #require(URL(string: "https://artifact-viewer-test.invalid/review"))
         var opened: [URL] = []
-        let web = ArtifactWebContent(openURL: { opened.append($0); return true })
+        let web = ArtifactWebContent(usesRootDocument: root, openURL: { opened.append($0); return true })
         defer { web.stop() }
         let server = try #require(URL(string: "http://127.0.0.1:1"))
         await web.load("""
@@ -510,12 +512,13 @@ struct ArtifactViewerTests {
         try await wait { !opened.isEmpty || web.error != nil }
         #expect(web.error == nil)
         #expect(opened == [destination])
-        #expect(web.webView.url?.scheme == "about")
+        #expect(web.webView.url?.scheme == (root ? "toybox-artifact" : "about"))
     }
 
-    @Test func sameDocumentAnchorsScrollInsideTheOpaqueFrameWithoutOpeningTheBrowser() async throws {
+    @Test(arguments: [false, true])
+    func sameDocumentAnchorsScrollInsideTheOpaqueFrameWithoutOpeningTheBrowser(root: Bool) async throws {
         var opened: [URL] = []
-        let web = ArtifactWebContent(openURL: { opened.append($0); return true })
+        let web = ArtifactWebContent(usesRootDocument: root, openURL: { opened.append($0); return true })
         defer { web.stop() }
         web.webView.frame = NSRect(x: 0, y: 0, width: 640, height: 400)
         let probe = ArtifactWebProbe()
@@ -780,6 +783,108 @@ struct ArtifactViewerTests {
         let zoom = try #require(opener.zoomActions)
         zoom.zoomIn()
         #expect(image.magnification > 1)
+    }
+
+    @Test(arguments: [false, true])
+    func rootHTMLPrototypeUnderlapsTheBarsAndRestoresItsReadingPosition(tampered: Bool) async throws {
+        let fixture = try ArtifactHTTPFixture()
+        fixture.bodies.withLock {
+            $0["/api/serve/test/root.html"] = """
+            <!doctype html><html><head><style>html,body{margin:0;background:orange}</style></head><body>
+            <header id="fixed" style="position:fixed;top:0;height:24px">Fixed header</header>
+            <section id="vh" style="height:100vh">Viewport-sized section</section><div style="height:3000px"></div>
+            \(tampered ? "<script>Object.defineProperty(window,'scrollY',{get:()=>17});window.scrollTo=()=>{throw new Error('Page override');};</script>" : "")
+            </body></html>
+            """
+        }
+        try await fixture.start()
+        defer { fixture.stop() }
+        let html = ChannelArtifact(file: .init(kind: "machine", path: "root.html"), title: "Root",
+                                   url: "/api/serve/test/root.html")
+        let other = artifact("other.md")
+        let opener = ArtifactOpener(usesRootHTML: true)
+        opener.configure(api: try ChannelAPI(baseURL: fixture.url("/")), channelID: "test",
+                         artifacts: [html, other], interaction: ChannelInteraction(), imageViewer: ImageViewer())
+        let host = ArtifactKeyboardWindow(opener: opener, composer: NSTextView(), hasToolbar: true)
+        defer { opener.close(animated: false); host.window.close() }
+        opener.open(html)
+        try await wait { opener.webView?.url != nil && opener.webRenderer?.isLoading == false }
+        let web = try #require(opener.webView)
+        let contentView = try #require(host.window.contentView)
+        let canvas = contentView.convert(contentView.bounds, to: nil)
+        let frame = web.convert(web.bounds, to: nil)
+        #expect(frame == canvas)
+        let top = canvas.maxY - host.window.contentLayoutRect.maxY
+        #expect(abs(web.obscuredContentInsets.top - top) < 1)
+        #expect(web.obscuredContentInsets.bottom == 80)
+        let testWorld = WKContentWorld.world(name: "ArtifactRootGeometryTests")
+        let result = try await web.callAsyncJavaScript("""
+            window.scrollTo(0,900);
+            return {height:innerHeight,vh:document.getElementById("vh").getBoundingClientRect().height,
+              fixedTop:document.getElementById("fixed").getBoundingClientRect().top,scroll:scrollY,origin:self.origin}
+            """, arguments: [:], in: nil, contentWorld: testWorld)
+        let metrics = try #require(result as? [String: Any])
+        let viewport = Double(canvas.height - top - 80)
+        #expect(metrics["height"] as? Double == viewport)
+        #expect(metrics["vh"] as? Double == viewport)
+        #expect(metrics["fixedTop"] as? Double == 0)
+        #expect(metrics["scroll"] as? Double == 900)
+        #expect(metrics["origin"] as? String == "null")
+        if tampered { #expect(try await web.evaluateJavaScript("scrollY") as? Double == 17) }
+        _ = try await web.takeSnapshot(configuration: nil)
+        #expect(web.configuration.userContentController.userScripts.isEmpty)
+        opener.select(other.id)
+        let savedState = try #require(opener.webReadingStates[html.id])
+        #expect(try await savedState.position.value == CGPoint(x: 0, y: 900))
+        try await wait { web.window == nil }
+        opener.select(html.id)
+        try await wait {
+            guard let restored = opener.webView else { return false }
+            return restored !== web && opener.webRenderer?.isLoading == false
+                && restored.convert(restored.bounds, to: nil) == frame
+        }
+        let restored = try #require(opener.webView)
+        #expect(opener.webRenderer?.error == nil)
+        let currentState = try #require(opener.webRenderer?.readingState)
+        #expect(savedState.document == currentState.document)
+        _ = try await restored.takeSnapshot(configuration: nil)
+        let restoredResult = try await restored.callAsyncJavaScript("return {scroll:scrollY,origin:self.origin}",
+                                                                  arguments: [:], in: nil, contentWorld: testWorld)
+        let restoredMetrics = try #require(restoredResult as? [String: Any])
+        #expect(restoredMetrics["scroll"] as? Double == 900)
+        #expect(restoredMetrics["origin"] as? String == "null")
+        opener.close(animated: false)
+        #expect(opener.webReadingStates.isEmpty)
+    }
+
+    @Test(arguments: ["script", "form"])
+    func rootHTMLPrototypeCannotNavigateOutOfItsCSPDocument(method: String) async throws {
+        let fixture = try ArtifactHTTPFixture()
+        try await fixture.start()
+        defer { fixture.stop() }
+        let destination = fixture.url("/api/serve/test/next.html")
+        let web = ArtifactWebContent(usesRootDocument: true, openURL: { _ in
+            Issue.record("The fixture must not open a browser.")
+            return false
+        })
+        defer { web.stop() }
+        await web.load("""
+            <!doctype html><html><body><form id="form" method="post" action="\(destination.absoluteString)">
+            <input name="probe" value="not-a-credential"></form></body></html>
+            """, directory: fixture.url("/api/serve/test/"), server: fixture.url("/"))
+        try await wait { !web.isLoading }
+        #expect(web.error == nil)
+        let url = web.webView.url
+        let script = method == "form"
+            ? "document.getElementById('form').submit()"
+            : "location.href='\(destination.absoluteString)'"
+        _ = try await web.webView.evaluateJavaScript(script)
+        try await wait { web.error != nil }
+        #expect(web.error == ArtifactWebError.rootNavigationUnavailable.localizedDescription)
+        #expect(web.webView.url == url)
+        let origin = try await web.webView.evaluateJavaScript("self.origin")
+        #expect(origin as? String == "null")
+        #expect(fixture.requests.withLock { $0.isEmpty })
     }
 
     @Test func HTMLKeepsItsViewportClearOfTheNativeBars() async throws {
