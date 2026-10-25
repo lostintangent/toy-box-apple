@@ -1066,8 +1066,8 @@ available canvas, but do not enlarge a small icon past its natural point size un
 zooms. Raster images retain their existing pixel-to-point sizing. Live Text receives
 the resulting `CGImage`. External image or font references must not trigger network requests.
 Malformed, unusably sized or unsupported SVGs show the existing retryable image error, never a
-crash, blank success state or unbounded allocation. This attachment path is separate from the
-artifact viewer's script-disabled SVG web renderer.
+crash, blank success state or unbounded allocation. Attachments and artifacts share the bounded
+native `TranscriptSVGImage` decoder, while keeping their viewer state and navigation separate.
 
 Reactions are display-only in this client, matching the user pane. Use the existing emoji for
 done, agree, celebrate, love and laugh. Also show the projected looking/working reactions while
@@ -1456,7 +1456,7 @@ their channel and can move between its artifacts without closing and reopening f
 | --- | --- |
 | Markdown | Render natively with `TranscriptMarkdown`, selectable text, normal links, code and tables. Use a centered text lane at most 720 points wide, at least 24-point side insets and 32-point top padding. Body is 15-point system text with 4-point additional line spacing; code is 13-point monospaced. Follow the app's Text Size setting. Do not display source syntax or put prose inside a web view. Keep document scroll position when revisiting it during this viewer visit |
 | HTML | Display the authored page in `WKWebView`, filling the available content area. Preserve its responsive layout, forms and interactions. Use a non-persistent data store and the reference pane's CSP sandbox with scripts, forms, modals, popups and user-activated external navigation, but no same-origin permission. Its origin is opaque, and it must have no Toy Box server cookies, API access or privileged host bridge. Relative resources resolve from the artifact's directory. User-activated links and new-window requests open in the default browser, never replace the Toy Box channel. Leave ordinary text input, selection and scrolling with the web view |
-| SVG | Use a separate `WKWebView` configuration with JavaScript disabled. Fit the drawing without cropping, using its intrinsic dimensions as logical points: large drawings fit down and small icons stay at natural point size. Preserve transparent backgrounds and allow magnification and pan. Use the same isolated resource and navigation policy as HTML. Never execute scripts to display a drawing. This is a viewing surface, not an SVG editor |
+| SVG | Use the shared `TranscriptSVGImage` bounded native decoder, not a web renderer. Decode off the main thread and rerasterize for the effective display size and scale, within the 8192-pixel cap. Fit without cropping, using intrinsic dimensions as logical points: large drawings fit down and small icons stay at natural point size. Preserve transparency and allow magnification and pan. Never execute scripts or request external resources to display a drawing. This is a viewing surface, not an SVG editor |
 | Raster images | Use the native image rendering and zoom/pan behavior of the image gallery, including Live Text when available. Changing artifacts resets image zoom as changing gallery images does. Do not fabricate a transcript message to represent an artifact |
 | Other files | Keep the artifact title, type and gallery position visible. Center the real file icon, a short explanation, Quick Look and Open in the default application. Unsupported content is an honest fallback, not a failed Markdown page. Quick Look may use its normal system panel |
 

@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1640 1460" fill="none" font-family="-apple-system, BlinkMacSystemFont, Helvetica, Arial, sans-serif">
   <title>Artifact viewer for Toy Box</title>
-  <desc>A native 1280 by 840 point channel window with a readable Markdown artifact replacing the conversation and inspector. The channel sidebar stays, native Back, Share and More controls frame the document, and the existing image-gallery capsule moves between artifacts. Supporting detail excerpts show interactive HTML, a script-disabled SVG in Dark appearance, and an explicit loading failure. Materials are schematic, not native-rendering evidence.</desc>
+  <desc>A native 1280 by 840 point channel window with a readable Markdown artifact replacing the conversation and inspector. The channel sidebar stays, native Back, Share and More controls frame the document, and the existing image-gallery capsule moves between artifacts. Supporting detail excerpts show interactive HTML, a natively rendered SVG in Dark appearance, and an explicit loading failure. Materials are schematic, not native-rendering evidence.</desc>
   <defs>
     <linearGradient id="sidebar-material" x1="32" y1="90" x2="280" y2="930" gradientUnits="userSpaceOnUse">
       <stop stop-color="#edf0f5"/>
@@ -305,7 +305,7 @@
 
   <g id="excerpt-captions">
     <text x="32" y="1400" fill="#647387" font-size="13">HTML is interactive, with an opaque origin and no host access.</text>
-    <text x="552" y="1400" fill="#647387" font-size="13">SVG uses a separate, script-disabled renderer.</text>
+    <text x="552" y="1400" fill="#647387" font-size="13">SVG uses the shared bounded native decoder.</text>
     <text x="1072" y="1400" fill="#647387" font-size="13">A failure keeps Back and the other artifacts available.</text>
     <text x="32" y="1434" fill="#8792a2" font-size="12">The strip is shared across types. Arrows never hijack text input. Loaded content stays put until the person navigates or reloads.</text>
   </g>
