@@ -10,17 +10,6 @@ enum ArtifactWebPolicy {
     ]
 
     static func document(_ content: String, directory: URL) -> String {
-        let prepared = preparedDocument(content, directory: directory)
-        let permissions = htmlPermissions.joined(separator: " ")
-        return """
-        <!doctype html><html><head><meta name="referrer" content="no-referrer">
-        <style>html,body,iframe{width:100%;height:100%;margin:0;border:0}iframe{display:block}</style>
-        </head><body><iframe title="Artifact" sandbox="\(permissions)" referrerpolicy="no-referrer" \
-        srcdoc="\(attribute(prepared))"></iframe></body></html>
-        """
-    }
-
-    static func preparedDocument(_ content: String, directory: URL) -> String {
         let base = "<base data-toybox-file-base href=\"\(attribute(directory.absoluteString))\">"
         if let head = content.range(of: #"<head(?:\s[^>]*)?>"#, options: [.regularExpression, .caseInsensitive]) {
             return String(content[..<head.upperBound]) + base + content[head.upperBound...]
@@ -74,10 +63,10 @@ enum ArtifactWebError: LocalizedError {
         case .missingRules: "The artifact's network isolation could not be installed."
         case .blockedNavigation: "This document tried to open an unsupported address."
         case .browserUnavailable: "The link could not be opened in your default browser."
-        case .rootDocumentUnavailable: "The experimental document's sandboxed address could not be created."
-        case .rootNavigationUnavailable: "The experimental renderer cannot replace its sandboxed document. Forms and page navigation are not supported in this probe."
+        case .rootDocumentUnavailable: "The document's sandboxed address could not be created."
+        case .rootNavigationUnavailable: "This document cannot replace its sandboxed page. Forms that navigate and other page navigation are not supported in the artifact viewer."
         case .invalidReadingState: "The document's reading position could not be saved."
-        case .probeWindowUnavailable: "The experimental renderer's window hierarchy is unavailable."
+        case .probeWindowUnavailable: "The artifact viewer's diagnostic window hierarchy is unavailable."
         }
     }
 }
@@ -143,7 +132,6 @@ private final class ArtifactRootDocument: NSObject, WKURLSchemeHandler {
 final class ArtifactWebContent: NSObject, WKNavigationDelegate, WKUIDelegate {
     private static let readingWorld = WKContentWorld.world(name: "ToyBoxArtifactReadingState")
     let webView: WKWebView
-    let usesRootDocument: Bool
     private(set) var isLoading = false
     private(set) var error: String?
     @ObservationIgnored private let openURL: (URL) -> Bool
@@ -151,20 +139,22 @@ final class ArtifactWebContent: NSObject, WKNavigationDelegate, WKUIDelegate {
     @ObservationIgnored private var resource: URL?
     @ObservationIgnored private var installedRules: String?
     @ObservationIgnored private var generation = UUID()
-    @ObservationIgnored private let rootDocument: ArtifactRootDocument?
+    @ObservationIgnored private let rootDocument: ArtifactRootDocument
     @ObservationIgnored private var pendingPosition: CGPoint?
     @ObservationIgnored private let probeOutput: URL?
+    private var probesEndPosition: Bool {
+        probeOutput != nil && ProcessInfo.processInfo.environment["TOY_BOX_ARTIFACT_PROBE_POSITION"] == "end"
+    }
 
-    init(usesRootDocument: Bool = false, openURL: @escaping (URL) -> Bool = { NSWorkspace.shared.open($0) }) {
+    init(openURL: @escaping (URL) -> Bool = { NSWorkspace.shared.open($0) }) {
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .nonPersistent()
         configuration.defaultWebpagePreferences.allowsContentJavaScript = true
         configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
-        let rootDocument = usesRootDocument ? ArtifactRootDocument() : nil
-        if let rootDocument { configuration.setURLSchemeHandler(rootDocument, forURLScheme: ArtifactRootDocument.scheme) }
+        let rootDocument = ArtifactRootDocument()
+        configuration.setURLSchemeHandler(rootDocument, forURLScheme: ArtifactRootDocument.scheme)
         self.rootDocument = rootDocument
-        self.usesRootDocument = usesRootDocument
-        probeOutput = usesRootDocument && Bundle.main.bundleIdentifier == "dev.toybox.desktop.test"
+        probeOutput = Bundle.main.bundleIdentifier == "dev.toybox.desktop.test"
             ? ProcessInfo.processInfo.environment["TOY_BOX_ARTIFACT_PROBE_OUTPUT"].map { URL(fileURLWithPath: $0) }
             : nil
         webView = WKWebView(frame: .zero, configuration: configuration)
@@ -175,7 +165,7 @@ final class ArtifactWebContent: NSObject, WKNavigationDelegate, WKUIDelegate {
     }
 
     var readingState: ArtifactWebReadingState? {
-        guard let rootDocument, !isLoading, let url = rootDocument.url, let current = webView.url,
+        guard !isLoading, let url = rootDocument.url, let current = webView.url,
               rootDocument.contains(current) else { return nil }
         let position = Task { @MainActor [webView] in
             let result = try await webView.evaluateJavaScript("({x:window.scrollX,y:window.scrollY})",
@@ -208,19 +198,15 @@ final class ArtifactWebContent: NSObject, WKNavigationDelegate, WKUIDelegate {
                 webView.configuration.userContentController.add(compiled)
                 installedRules = digest
             }
-            if let rootDocument {
-                let html = ArtifactWebPolicy.preparedDocument(content, directory: directory)
-                let url = try rootDocument.prepare(html, identity: resource ?? directory)
-                if let state, state.document == url {
-                    let position = try await state.position.value
-                    guard generation == token else { return }
-                    try Task.checkCancellation()
-                    pendingPosition = position
-                }
-                webView.load(URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData))
-            } else {
-                webView.loadHTMLString(ArtifactWebPolicy.document(content, directory: directory), baseURL: nil)
+            let html = ArtifactWebPolicy.document(content, directory: directory)
+            let url = try rootDocument.prepare(html, identity: resource ?? directory)
+            if let state, state.document == url {
+                let position = try await state.position.value
+                guard generation == token else { return }
+                try Task.checkCancellation()
+                pendingPosition = position
             }
+            webView.load(URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData))
         } catch is CancellationError {
             if generation == token { isLoading = false }
         } catch {
@@ -233,7 +219,7 @@ final class ArtifactWebContent: NSObject, WKNavigationDelegate, WKUIDelegate {
     func stop() {
         generation = UUID()
         webView.stopLoading()
-        rootDocument?.clear()
+        rootDocument.clear()
         pendingPosition = nil
         isLoading = false
     }
@@ -249,9 +235,15 @@ final class ArtifactWebContent: NSObject, WKNavigationDelegate, WKUIDelegate {
             guard let self, generation == token else { return }
             do {
                 let result = try await webView.callAsyncJavaScript("""
-                    window.scrollTo(x,y);
-                    return {x:window.scrollX,y:window.scrollY};
-                    """, arguments: ["x": position.x, "y": position.y],
+                    window.scrollTo(x,end ? document.scrollingElement.scrollHeight : y);
+                    const position = {x:window.scrollX,y:window.scrollY};
+                    if (probe) {
+                        position.viewportHeight = innerHeight;
+                        position.documentHeight = document.scrollingElement.scrollHeight;
+                    }
+                    return position;
+                    """, arguments: ["x": position.x, "y": position.y,
+                                     "end": probesEndPosition, "probe": probeOutput != nil],
                     in: nil, contentWorld: Self.readingWorld)
                 guard generation == token else { return }
                 isLoading = false
@@ -277,13 +269,17 @@ final class ArtifactWebContent: NSObject, WKNavigationDelegate, WKUIDelegate {
 
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
                  decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void) {
+        guard !blockFormNavigation(navigationAction) else {
+            decisionHandler(.cancel)
+            return
+        }
         guard let url = navigationAction.request.url else {
             error = ArtifactWebError.blockedNavigation.localizedDescription
             decisionHandler(.cancel)
             return
         }
         let scheme = url.scheme?.lowercased() ?? ""
-        if let rootDocument, navigationAction.targetFrame?.isMainFrame == true {
+        if navigationAction.targetFrame?.isMainFrame == true {
             if rootDocument.contains(url) {
                 decisionHandler(.allow)
                 return
@@ -330,6 +326,7 @@ final class ArtifactWebContent: NSObject, WKNavigationDelegate, WKUIDelegate {
 
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
                  for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
+        guard !blockFormNavigation(navigationAction) else { return nil }
         if let url = navigationAction.request.url, ["http", "https"].contains(url.scheme?.lowercased() ?? "") {
             openInBrowser(url)
         } else {
@@ -382,6 +379,12 @@ final class ArtifactWebContent: NSObject, WKNavigationDelegate, WKUIDelegate {
         if !openURL(url) { error = ArtifactWebError.browserUnavailable.localizedDescription }
     }
 
+    private func blockFormNavigation(_ action: WKNavigationAction) -> Bool {
+        guard action.navigationType == .formSubmitted || action.navigationType == .formResubmitted else { return false }
+        error = ArtifactWebError.rootNavigationUnavailable.localizedDescription
+        return true
+    }
+
     private func isSameDocument(_ url: URL) -> Bool {
         guard var parts = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return false }
         parts.fragment = nil
@@ -416,7 +419,7 @@ final class ArtifactWebContent: NSObject, WKNavigationDelegate, WKUIDelegate {
             "sourceRevision": Bundle.main.object(forInfoDictionaryKey: "ToyBoxSourceRevision") ?? NSNull(),
             "pid": ProcessInfo.processInfo.processIdentifier,
             "window": window.windowNumber,
-            "usesRootDocument": usesRootDocument,
+            "renderer": "root",
             "frameCoordinates": "window points, origin at lower left",
             "active": NSApp.isActive,
             "key": window.isKeyWindow,
@@ -425,6 +428,7 @@ final class ArtifactWebContent: NSObject, WKNavigationDelegate, WKUIDelegate {
             "root": describe(root),
             "webView": describe(webView),
             "requestedOffset": ["x": Double(requested.x), "y": Double(requested.y)],
+            "requestedPosition": probesEndPosition ? "end" : "offset",
             "actualOffset": actual,
             "scrollViews": scrollViews.map { scroll in
                 var result = describe(scroll)

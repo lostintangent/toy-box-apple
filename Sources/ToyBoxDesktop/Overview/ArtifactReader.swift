@@ -8,7 +8,6 @@ import WebKit
 
 @MainActor @Observable
 final class ArtifactOpener {
-    let usesRootHTML: Bool
     private(set) var artifact: ChannelArtifact?
     private(set) var pages: ArtifactPageList?
     private(set) var content: ArtifactContent?
@@ -43,10 +42,6 @@ final class ArtifactOpener {
     @ObservationIgnored weak var webRenderer: ArtifactWebContent?
     @ObservationIgnored var webReadingStates: [String: ArtifactWebReadingState] = [:]
     @ObservationIgnored var scrollOffsets: [String: CGFloat] = [:]
-
-    init(usesRootHTML: Bool = ProcessInfo.processInfo.environment["TOY_BOX_ARTIFACT_HTML"] == "root") {
-        self.usesRootHTML = usesRootHTML
-    }
 
     var isPresented: Bool { artifact != nil }
     var isUnavailable: Bool { artifact != nil && pages?.selected == nil }

@@ -135,7 +135,7 @@ struct ArtifactViewerStage: View {
             case .markdown:
                 ArtifactMarkdownPage(content: content, opener: opener, bottomInset: hasStrip ? 0 : 24)
             case .html:
-                ArtifactWebPage(content: content, opener: opener)
+                ArtifactWebPage(content: content, opener: opener, bottomInset: hasStrip ? 0 : 24)
             case .image, .svg:
                 if let image = opener.image {
                     ArtifactNativeImage(content: content, image: image, opener: opener)
@@ -214,28 +214,26 @@ private struct ArtifactMarkdownPage: View {
 private struct ArtifactWebPage: View {
     let content: ArtifactContent
     let opener: ArtifactOpener
+    let bottomInset: CGFloat
     @ViewState private var renderer: ArtifactWebContent
     @ViewState private var showsSpinner = false
 
-    init(content: ArtifactContent, opener: ArtifactOpener) {
+    init(content: ArtifactContent, opener: ArtifactOpener, bottomInset: CGFloat) {
         self.content = content
         self.opener = opener
-        _renderer = ViewState(initialValue: ArtifactWebContent(usesRootDocument: opener.usesRootHTML))
+        self.bottomInset = bottomInset
+        _renderer = ViewState(initialValue: ArtifactWebContent())
     }
 
     var body: some View {
         ZStack {
             if content.text != nil {
-                if renderer.usesRootDocument {
-                    GeometryReader { geometry in
-                        ArtifactWebView(renderer: renderer, obscuredInsets: geometry.safeAreaInsets)
-                            .ignoresSafeArea(edges: .vertical)
-                    }
-                    .scrollEdgeEffectStyle(.hard, for: .top)
-                    .scrollEdgeEffectStyle(.soft, for: .bottom)
-                } else {
-                    ArtifactWebView(renderer: renderer)
+                GeometryReader { geometry in
+                    ArtifactWebView(renderer: renderer, obscuredInsets: geometry.safeAreaInsets,
+                                    bottomInset: bottomInset)
+                        .ignoresSafeArea(edges: .vertical)
                 }
+                .scrollEdgeEffectStyle(.hard, for: .top)
             } else {
                 ContentUnavailableView("Couldn't Load Artifact", systemImage: "doc.badge.ellipsis",
                                        description: Text("The artifact's text is unavailable."))
@@ -278,7 +276,8 @@ private struct ArtifactWebPage: View {
 
 private struct ArtifactWebView: NSViewRepresentable {
     let renderer: ArtifactWebContent
-    var obscuredInsets = EdgeInsets()
+    let obscuredInsets: EdgeInsets
+    let bottomInset: CGFloat
 
     func makeNSView(context: Context) -> WKWebView {
         renderer.webView.allowsMagnification = true
@@ -292,7 +291,8 @@ private struct ArtifactWebView: NSViewRepresentable {
     }
 
     private func updateInsets(_ webView: WKWebView) {
-        let next = NSEdgeInsets(top: obscuredInsets.top, left: 0, bottom: obscuredInsets.bottom, right: 0)
+        let next = NSEdgeInsets(top: obscuredInsets.top, left: 0,
+                               bottom: obscuredInsets.bottom + bottomInset, right: 0)
         let current = webView.obscuredContentInsets
         if current.top != next.top || current.bottom != next.bottom || current.left != 0 || current.right != 0 {
             webView.obscuredContentInsets = next
