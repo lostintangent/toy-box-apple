@@ -24,6 +24,8 @@ final class TranscriptDocumentState {
     private(set) var failure: Failure?
     private(set) var command: Command?
     @ObservationIgnored weak var coordinator: TranscriptTablePrototype.Coordinator?
+    @ObservationIgnored private var publication: Task<Void, Never>?
+    @ObservationIgnored private var pendingSnapshot: Snapshot?
 
     func send(_ event: TranscriptScrollModel.Event) {
         // Expansion captures its old offset before SwiftUI changes the row.
@@ -38,8 +40,26 @@ final class TranscriptDocumentState {
         self.coordinator = coordinator
     }
 
-    func publish(_ snapshot: Snapshot) {
-        self.snapshot = snapshot
+    @discardableResult
+    func publish(_ snapshot: Snapshot) -> Task<Void, Never>? {
+        guard pendingSnapshot != snapshot else { return publication }
+        cancelPublication()
+        guard self.snapshot != snapshot else { return nil }
+        pendingSnapshot = snapshot
+        let task = Task { @MainActor [weak self] in
+            guard !Task.isCancelled, let self else { return }
+            self.snapshot = snapshot
+            self.pendingSnapshot = nil
+            self.publication = nil
+        }
+        publication = task
+        return task
+    }
+
+    func cancelPublication() {
+        publication?.cancel()
+        publication = nil
+        pendingSnapshot = nil
     }
 
     func reportUnavailable(_ target: String) {

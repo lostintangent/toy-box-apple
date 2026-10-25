@@ -46,6 +46,13 @@ struct TranscriptTablePrototype: NSViewControllerRepresentable {
             let insets: EdgeInsets
             let isReadyToLand: Bool
             let holdsPosition: Bool
+            let onReaderScroll: ((Bool) -> Void)?
+        }
+
+        private struct NativeGeometry: Equatable {
+            let clipSize: NSSize
+            let topInset: CGFloat
+            let bottomInset: CGFloat
         }
 
         private typealias Model = TranscriptScrollModel
@@ -70,7 +77,10 @@ struct TranscriptTablePrototype: NSViewControllerRepresentable {
         private var appliedWidth: CGFloat = 0
         private var isDirty = false
         private var isLayingOut = false
+        private var isReaderScrolling = false
+        private var isHandlingReaderInput = false
         private var hasLanded = false
+        private var pendingReaderPages: [Bool] = []
         private var hasLoadedTable = false
         private var intent: Model.Intent = .landing(.end)
         private var pendingEvents: [Model.Event] = []
@@ -78,10 +88,10 @@ struct TranscriptTablePrototype: NSViewControllerRepresentable {
         private var pendingResume = false
         private var frames: [Model.RowFrame] = []
         private var viewport: Model.Viewport?
+        private var observedBounds: NSRect?
+        private var laidOutNativeGeometry: NativeGeometry?
         private var notifications: [NSObjectProtocol] = []
         private var insetObservation: NSKeyValueObservation?
-        private var publication: Task<Void, Never>?
-        private var lastPublication: TranscriptDocumentState.Snapshot?
         private var accessoryNeedsMeasurement = true
         private var sizingWidth: CGFloat = 0
         private(set) var messageFrames: [String: [String: TranscriptMessageFrame]] = [:]
@@ -113,6 +123,7 @@ struct TranscriptTablePrototype: NSViewControllerRepresentable {
             table.addTableColumn(column)
             table.dataSource = self
             table.delegate = self
+            table.coordinator = self
         }
 
         func attach(_ scroll: NSScrollView, ownsDocument: Bool = true, document: NSView? = nil) {
@@ -123,19 +134,18 @@ struct TranscriptTablePrototype: NSViewControllerRepresentable {
             if let native = scroll as? TranscriptTableScrollView { native.coordinator = self }
             if ownsDocument { scroll.documentView = table }
             let clip = scroll.contentView
+            observedBounds = clip.bounds
             clip.postsBoundsChangedNotifications = true
             clip.postsFrameChangedNotifications = true
-            for name in [NSView.boundsDidChangeNotification, NSView.frameDidChangeNotification] {
-                notifications.append(NotificationCenter.default.addObserver(
-                    forName: name, object: clip, queue: nil
-                ) { [weak self] _ in
-                    MainActor.assumeIsolated { self?.requestLayout() }
-                })
-            }
             notifications.append(NotificationCenter.default.addObserver(
-                forName: NSScrollView.didLiveScrollNotification, object: scroll, queue: nil
+                forName: NSView.boundsDidChangeNotification, object: clip, queue: nil
             ) { [weak self] _ in
-                MainActor.assumeIsolated { self?.readerScrolled() }
+                MainActor.assumeIsolated { self?.boundsChanged() }
+            })
+            notifications.append(NotificationCenter.default.addObserver(
+                forName: NSView.frameDidChangeNotification, object: clip, queue: nil
+            ) { [weak self] _ in
+                MainActor.assumeIsolated { self?.requestLayout() }
             })
             insetObservation = scroll.observe(\.contentInsets) { [weak self] _, _ in
                 MainActor.assumeIsolated { self?.requestLayout() }
@@ -158,13 +168,15 @@ struct TranscriptTablePrototype: NSViewControllerRepresentable {
         func update(items: [TranscriptTableItem], content: [TranscriptRowContent], header: AnyView,
                     environment: EnvironmentValues, insets: EdgeInsets,
                     state: TranscriptDocumentState? = nil, isReadyToLand: Bool = true, footer: AnyView? = nil,
-                    holdsPosition: Bool = false) {
+                    holdsPosition: Bool = false, onReaderScroll: ((Bool) -> Void)? = nil) {
             let previouslyHeld = configuration?.holdsPosition ?? false
             configuration = Configuration(items: items, content: content, header: header,
                                           footer: footer, environment: environment, insets: insets,
-                                          isReadyToLand: isReadyToLand, holdsPosition: holdsPosition)
+                                          isReadyToLand: isReadyToLand, holdsPosition: holdsPosition,
+                                          onReaderScroll: onReaderScroll)
             if previouslyHeld != holdsPosition {
                 if holdsPosition {
+                    pendingReaderPages.removeAll()
                     pendingResume = false
                     if hasLanded, let viewport {
                         intent = Model.reduce(intent, .holdCurrentPosition, rows: frames,
@@ -173,8 +185,8 @@ struct TranscriptTablePrototype: NSViewControllerRepresentable {
                 } else { pendingResume = true }
             }
             if self.state !== state {
+                self.state?.cancelPublication()
                 self.state = state
-                lastPublication = nil
                 state?.attach(self)
             }
             accessoryNeedsMeasurement = true
@@ -197,6 +209,7 @@ struct TranscriptTablePrototype: NSViewControllerRepresentable {
         }
 
         private func request(_ event: TranscriptScrollModel.Event) {
+            pendingReaderPages.removeAll()
             pendingEvents.append(event)
             requestLayout()
         }
@@ -249,8 +262,12 @@ struct TranscriptTablePrototype: NSViewControllerRepresentable {
                 let frames = rowFrames(items: items, heights: result.heights, hasFooter: footer != nil)
                 let placement = proposedPlacement(rows: frames, viewport: viewport)
                 let origin = placement?.origin ?? nativeOrigin
-                let top = origin + viewport.topInset - viewport.unobscuredHeight / 2
-                let bottom = origin + viewport.height - viewport.bottomInset + viewport.unobscuredHeight / 2
+                let page = pendingReaderPages.first.map {
+                    ($0 ? -1 : 1) * max(0, viewport.unobscuredHeight - (scroll?.verticalPageScroll ?? 0))
+                } ?? 0
+                let top = origin + viewport.topInset + min(0, page) - viewport.unobscuredHeight / 2
+                let bottom = origin + viewport.height - viewport.bottomInset
+                    + max(0, page) + viewport.unobscuredHeight / 2
                 var requested = IndexSet()
                 for index in items.indices {
                     let frame = frames[index + 1]
@@ -321,12 +338,87 @@ struct TranscriptTablePrototype: NSViewControllerRepresentable {
             scroll?.needsLayout = true
         }
 
+        private func nativeGeometry() -> NativeGeometry? {
+            guard let scroll else { return nil }
+            return NativeGeometry(clipSize: scroll.contentView.bounds.size,
+                                  topInset: scroll.contentInsets.top, bottomInset: scroll.contentInsets.bottom)
+        }
+
+        func readerPhaseChanged(_ phase: ScrollPhase) {
+            if phase == .tracking { pendingReaderPages.removeAll() }
+            let wasScrolling = isReaderScrolling
+            isReaderScrolling = phase != .idle
+            guard wasScrolling != isReaderScrolling, hasLanded, let viewport else { return }
+            if isReaderScrolling {
+                pendingResume = false
+                intent = Model.reduce(intent, .holdCurrentPosition, rows: frames,
+                                      viewport: viewport, origin: nativeOrigin).intent
+            } else {
+                pendingResume = configuration?.holdsPosition != true
+            }
+            requestLayout()
+        }
+
+        func performReaderInput(_ action: () -> Void) {
+            pendingReaderPages.removeAll()
+            let wasHandlingInput = isHandlingReaderInput
+            isHandlingReaderInput = true
+            defer { isHandlingReaderInput = wasHandlingInput }
+            action()
+        }
+
+        func prepareReaderPage(towardOlder: Bool) {
+            pendingReaderPages.append(towardOlder)
+            requestLayout()
+        }
+
+        private func forwardPreparedReaderPage() {
+            guard let scroll, let towardOlder = pendingReaderPages.first,
+                  abs((scroll.documentView?.bounds.height ?? 0) - documentHeight) <= 0.5 else { return }
+            pendingReaderPages.removeFirst()
+            if towardOlder { scroll.pageUp(table) }
+            else { scroll.pageDown(table) }
+            if !pendingReaderPages.isEmpty { requestLayout() }
+        }
+
+        private func boundsChanged() {
+            guard let clip = scroll?.contentView else { return }
+            let bounds = clip.bounds
+            let previous = observedBounds
+            observedBounds = bounds
+            if previous?.origin != bounds.origin { environment.transcriptPointer?.contentDidMove() }
+            guard hasLanded, !isLayingOut, let previous, previous.origin.y != bounds.origin.y else {
+                requestLayout()
+                return
+            }
+            let constrained = clip.constrainBoundsRect(NSRect(origin: previous.origin, size: bounds.size))
+            if abs(constrained.minY - previous.minY) > 0.5,
+               abs(constrained.minY - bounds.minY) <= 0.5 {
+                requestLayout()
+                return
+            }
+            // Insets can move the clip after layout without any reader input.
+            if !isReaderScrolling, !isHandlingReaderInput, nativeGeometry() != laidOutNativeGeometry {
+                requestLayout()
+                return
+            }
+            if !isReaderScrolling { pendingReaderPages.removeAll() }
+            readerScrolled()
+        }
+
         private func readerScrolled() {
             guard hasLanded, let viewport else { return }
-            let event: Model.Event = configuration?.holdsPosition == true
+            let event: Model.Event = configuration?.holdsPosition == true || isReaderScrolling
                 ? .holdCurrentPosition : .readerScrolled(to: nativeOrigin)
             intent = Model.reduce(intent, event, rows: frames,
                                   viewport: viewport, origin: nativeOrigin).intent
+            if configuration?.holdsPosition != true, intent == .following {
+                // Resolve newly exposed estimates before restoring the following threshold.
+                intent = Model.reduce(intent, .holdCurrentPosition, rows: frames,
+                                      viewport: viewport, origin: nativeOrigin).intent
+                pendingResume = true
+            }
+            configuration?.onReaderScroll?(nativeOrigin + viewport.topInset < 32)
             requestLayout()
             publish()
         }
@@ -338,13 +430,7 @@ struct TranscriptTablePrototype: NSViewControllerRepresentable {
                 hasLanded: hasLanded,
                 isAtBottom: Model.distanceToEnd(nativeOrigin, rows: frames, viewport: viewport) <= Model.followingThreshold,
                 visibleSequence: visibleSequence)
-            guard snapshot != lastPublication, let state else { return }
-            lastPublication = snapshot
-            publication?.cancel()
-            publication = Task { @MainActor [weak state] in
-                guard !Task.isCancelled else { return }
-                state?.publish(snapshot)
-            }
+            state?.publish(snapshot)
         }
 
         private func readSequence(viewport: Model.Viewport) -> Int? {
@@ -365,8 +451,11 @@ struct TranscriptTablePrototype: NSViewControllerRepresentable {
             notifications.forEach(NotificationCenter.default.removeObserver)
             notifications.removeAll()
             insetObservation = nil
-            publication?.cancel()
-            publication = nil
+            state?.cancelPublication()
+            observedBounds = nil
+            laidOutNativeGeometry = nil
+            isReaderScrolling = false
+            pendingReaderPages.removeAll()
         }
 
         func layoutContent() {
@@ -375,8 +464,11 @@ struct TranscriptTablePrototype: NSViewControllerRepresentable {
             guard width > 0 else { return }
             isLayingOut = true
             defer {
+                observedBounds = scroll.contentView.bounds
+                laidOutNativeGeometry = nativeGeometry()
                 isLayingOut = false
                 if !invalidatedCells.isEmpty { requestLayout() }
+                forwardPreparedReaderPage()
             }
             let updatesContent = isDirty || appliedWidth != width
             isDirty = false
@@ -466,12 +558,14 @@ struct TranscriptTablePrototype: NSViewControllerRepresentable {
                 if let origin = placement.origin {
                     let clip = scroll.contentView
                     let target = clip.convert(NSPoint(x: 0, y: origin), from: table).y
-                    clip.scroll(to: NSPoint(x: clip.bounds.minX, y: target))
+                    if abs(target - clip.bounds.minY) > 0.5 {
+                        clip.scroll(to: NSPoint(x: clip.bounds.minX, y: target))
+                    }
                 }
                 scroll.reflectScrolledClipView(scroll.contentView)
                 hasLanded = true
             }
-            if hasLanded, pendingResume {
+            if hasLanded, pendingResume, !isReaderScrolling, !configuration.holdsPosition {
                 intent = Model.reduce(intent, .resumeFromCurrentPosition, rows: frames,
                                       viewport: newViewport, origin: nativeOrigin).intent
                 pendingResume = false
@@ -575,6 +669,53 @@ final class TranscriptTableScrollView: NSScrollView {
 }
 
 final class TranscriptTableView: NSTableView {
+    weak var coordinator: TranscriptTablePrototype.Coordinator?
+
+    override func keyDown(with event: NSEvent) {
+        guard event.modifierFlags.intersection([.command, .control, .option, .shift]).isEmpty,
+              let coordinator else {
+            super.keyDown(with: event)
+            return
+        }
+        if event.specialKey == .pageUp {
+            scrollPageUp(self)
+            return
+        }
+        if event.specialKey == .pageDown {
+            scrollPageDown(self)
+            return
+        }
+        coordinator.performReaderInput { routeKeyDown(with: event) }
+    }
+
+    private func routeKeyDown(with event: NSEvent) {
+        guard let scroll = enclosingScrollView else {
+            super.keyDown(with: event)
+            return
+        }
+        switch event.specialKey {
+        case .upArrow, .downArrow:
+            let direction: CGFloat = event.specialKey == .upArrow ? -1 : 1
+            let flipped: CGFloat = scroll.documentView?.isFlipped == false ? -1 : 1
+            let clip = scroll.contentView
+            let proposed = clip.bounds.offsetBy(dx: 0, dy: direction * flipped * scroll.verticalLineScroll)
+            clip.scroll(to: clip.constrainBoundsRect(proposed).origin)
+            scroll.reflectScrolledClipView(clip)
+        default:
+            super.keyDown(with: event)
+        }
+    }
+
+    override func scrollPageUp(_ sender: Any?) {
+        if let coordinator { coordinator.prepareReaderPage(towardOlder: true) }
+        else { super.scrollPageUp(sender) }
+    }
+
+    override func scrollPageDown(_ sender: Any?) {
+        if let coordinator { coordinator.prepareReaderPage(towardOlder: false) }
+        else { super.scrollPageDown(sender) }
+    }
+
     override func validateProposedFirstResponder(_ responder: NSResponder, for event: NSEvent?) -> Bool {
         if let view = responder as? NSView, view.isDescendant(of: self) { return true }
         return super.validateProposedFirstResponder(responder, for: event)

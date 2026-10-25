@@ -16,6 +16,29 @@ private let transcriptTimingTestsEnabled = ProcessInfo.processInfo.environment["
 @MainActor
 @Suite("Explicit transcript table heights", .serialized)
 struct TranscriptTableHeightTests {
+    @Test func cancelledSnapshotPublicationsDoNotLoseTheFinalVisibleSequence() async {
+        let state = TranscriptDocumentState()
+        let first = TranscriptDocumentState.Snapshot(hasLanded: true, isAtBottom: false, visibleSequence: 10)
+        let last = TranscriptDocumentState.Snapshot(hasLanded: true, isAtBottom: false, visibleSequence: 20)
+
+        let cancelled = state.publish(first)
+        state.cancelPublication()
+        await cancelled?.value
+        #expect(state.snapshot == .init())
+        await state.publish(first)?.value
+        #expect(state.snapshot == first)
+
+        let superseded = state.publish(last)
+        await state.publish(first)?.value
+        await superseded?.value
+        #expect(state.snapshot == first)
+
+        state.publish(last)
+        state.publish(first)
+        await state.publish(last)?.value
+        #expect(state.snapshot == last)
+    }
+
     @Test func tableItemsKeepCanonicalRunEntriesAndOnlyTheFirstAvatar() {
         let lead = ChannelAgent.lead(id: "lead")
         let messages = (1...5).map(transcriptTestMessage)
@@ -276,6 +299,7 @@ struct TranscriptTableHeightTests {
             let viewportBottom = scroll.contentView.bounds.maxY - scroll.contentInsets.bottom
             #expect(abs(viewportBottom - lastMessageEnd - 16) <= 0.5)
         }
+        let landingIntent = document.coordinator.scrollIntent
         for bottom: CGFloat in [100, 176, 240, 100] {
             bars.bottom = bottom
             document.needsDisplay = true
@@ -296,6 +320,7 @@ struct TranscriptTableHeightTests {
             #expect(abs(document.bounds.height - document.coordinator.documentHeight) <= 0.5)
             #expect(abs(hostingDocument.bounds.height - document.bounds.height) <= 0.5)
             #expect(abs(table.frame.height - document.bounds.height) <= 0.5)
+            #expect(document.coordinator.scrollIntent == landingIntent)
             if landsOnUnread {
                 let target = try #require(items.firstIndex { $0.row.divider?.unread == true })
                 let viewportTop = scroll.contentView.bounds.minY + scroll.contentInsets.top
@@ -461,6 +486,7 @@ struct TranscriptTableHeightTests {
         setMessages()
         try await transcriptUntil(in: host) { table.numberOfRows == data.items.count + 1 }
         try await transcriptSettled(in: host) { scroll.contentView.bounds.origin }
+        #expect(document.coordinator.scrollIntent == .following)
         readerMoves(to: -scroll.contentInsets.top)
         try await transcriptSettled(in: host) { scroll.contentView.bounds.origin }
         guard case .reading(let first) = document.coordinator.scrollIntent else {
@@ -477,6 +503,192 @@ struct TranscriptTableHeightTests {
         let restored = table.rect(ofRow: restoredIndex + 1).minY
             - scroll.contentView.bounds.minY - scroll.contentInsets.top
         #expect(abs(restored - firstOffset) <= 0.5)
+    }
+
+    @Test(.enabled(if: transcriptTimingTestsEnabled),
+          arguments: ["page-up", "home", "ax-older-page", "up-arrow", "scroller", "scroll-to-visible",
+                      "page-down", "down-arrow", "end", "home-during-inset-change"])
+    func nativeReaderInputsKeepTheirPositionWhenTheNextMessageArrives(_ input: String) async throws {
+        let setup = try setup()
+        let bars = TableBars()
+        bars.leading = 248
+        let data = TableData()
+        var messages = (1...100).map(transcriptTestMessage)
+        func setMessages() {
+            data.items = TranscriptTableItem.project(transcriptRows(messages, lead: setup.lead, members: []))
+            data.content = content(data.items, setup: setup)
+        }
+        setMessages()
+        let find = TranscriptFind()
+        var readerEvents = 0
+        let state = TranscriptDocumentState()
+        let host = NSHostingView(rootView: MutableDocumentFixture(bars: bars, data: data, state: state,
+                                                                 onReaderScroll: { _ in
+            readerEvents += 1
+            find.resumeReading()
+        }).environment(\.self, setup.environment))
+        let window = InputWindow(contentRect: NSRect(x: -6_000, y: -6_000, width: 980, height: 600),
+                              styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        window.orderBack(nil)
+        defer { window.close() }
+        func findDocument(_ view: NSView) -> TranscriptTableDocument? {
+            if let document = view as? TranscriptTableDocument { return document }
+            return view.subviews.lazy.compactMap(findDocument).first
+        }
+        try await transcriptUntil(in: host) { state.snapshot.hasLanded && findDocument(host) != nil }
+        let document = try #require(findDocument(host))
+        let table = document.coordinator.table
+        let scroll = try #require(document.enclosingScrollView)
+        try #require(window.makeFirstResponder(table))
+        state.send(.jumpToLatest)
+        try await transcriptUntil(in: host) { document.coordinator.scrollIntent == .following }
+        try await transcriptSettled(in: host) { scroll.contentView.bounds.origin }
+        func key(_ code: UInt16, _ characters: String) throws {
+            window.sendEvent(try #require(NSEvent.keyEvent(
+                with: .keyDown, location: .zero, modifierFlags: [],
+                timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+                context: nil, characters: characters, charactersIgnoringModifiers: characters,
+                isARepeat: false, keyCode: code)))
+        }
+        func lastVisibleSequence() -> Int? {
+            let top = scroll.contentView.bounds.minY + scroll.contentInsets.top
+            let bottom = scroll.contentView.bounds.maxY - scroll.contentInsets.bottom
+            return data.items.enumerated().flatMap { index, item in
+                let row = table.rect(ofRow: index + 1)
+                return (document.coordinator.messageFrames[item.id] ?? [:]).values.compactMap { message -> Int? in
+                    guard message.sequence > 0, message.rect.height > 0 else { return nil }
+                    let messageTop = row.minY + message.contentTop
+                    let overlap = min(bottom, messageTop + message.rect.height) - max(top, messageTop)
+                    return overlap >= min(24, message.rect.height / 2) ? message.sequence : nil
+                }
+            }.max()
+        }
+        if input == "scroll-to-visible" {
+            table.scrollRowToVisible(45)
+            try await transcriptUntil(in: host) {
+                let visible = lastVisibleSequence()
+                return visible != nil && state.snapshot.visibleSequence == visible
+            }
+            try await transcriptSettled(in: host) { scroll.contentView.bounds.origin }
+            try key(119, "\u{f72b}")
+            try await transcriptUntil(in: host) {
+                state.snapshot.isAtBottom && state.snapshot.visibleSequence == 100
+            }
+            try await transcriptSettled(in: host) { scroll.contentView.bounds.origin }
+        }
+        if ["page-down", "down-arrow", "end"].contains(input) {
+            try key(115, "\u{f729}")
+            try await transcriptUntil(in: host) { !state.snapshot.isAtBottom }
+            try await transcriptSettled(in: host) { scroll.contentView.bounds.origin }
+        }
+        find.present()
+        find.close()
+        let before = scroll.contentView.bounds.minY
+        let beforeEvents = readerEvents
+        let pageDistance = max(0, scroll.contentView.bounds.height - scroll.contentInsets.top
+                               - scroll.contentInsets.bottom - scroll.verticalPageScroll)
+        func remainingToEnd() -> CGFloat {
+            table.rect(ofRow: data.items.count).maxY + 16
+                - scroll.contentView.bounds.maxY + scroll.contentInsets.bottom
+        }
+        switch input {
+        case "page-up": try key(116, "\u{f72c}")
+        case "home": try key(115, "\u{f729}")
+        case "home-during-inset-change":
+            bars.bottom = 176
+            scroll.contentInsets.bottom = 176
+            try key(115, "\u{f729}")
+        case "up-arrow":
+            for _ in 0..<6 { try key(126, "\u{f700}") }
+        case "page-down": try key(121, "\u{f72d}")
+        case "down-arrow": try key(125, "\u{f701}")
+        case "end": try key(119, "\u{f72b}")
+        case "ax-older-page":
+            try performOlderPageAccessibilityAction(in: scroll)
+        case "scroll-to-visible":
+            for row in [20, 70, 45] { table.scrollRowToVisible(row) }
+            document.coordinator.stopObserving()
+            document.coordinator.attach(scroll, ownsDocument: false, document: document)
+        case "scroller":
+            let scroller = try #require(scroll.verticalScroller)
+            scroller.setAccessibilityValue(NSNumber(value: 0.5))
+        default:
+            Issue.record("Unknown native reader input \(input).")
+            return
+        }
+        try await transcriptUntil(in: host, timeout: .seconds(5), failure: {
+            "\(input) did not move the native reader. Origin \(scroll.contentView.bounds.minY),"
+                + " previous \(before), input callbacks \(readerEvents - beforeEvents),"
+                + " responder \(String(describing: window.firstResponder))."
+        }) {
+            abs(scroll.contentView.bounds.minY - before) > 0.5 && readerEvents > beforeEvents
+                && (input != "page-up" || abs(remainingToEnd() - pageDistance) <= 0.5)
+                && (input != "page-down"
+                    || abs(scroll.contentView.bounds.minY + scroll.contentInsets.top - pageDistance) <= 0.5)
+        }
+        try await transcriptSettled(in: host) { scroll.contentView.bounds.origin }
+        #expect(!find.blocksRead)
+        let visibleSequence = lastVisibleSequence()
+        #expect(visibleSequence != nil)
+        #expect(state.snapshot.visibleSequence == visibleSequence)
+        #expect(document.coordinator.measurementCount < 50)
+        let anchor: TranscriptScrollModel.Anchor?
+        if case .reading(let reading) = document.coordinator.scrollIntent {
+            anchor = reading
+        } else {
+            #expect(input == "end" && document.coordinator.scrollIntent == .following)
+            anchor = nil
+        }
+        func anchorOffset(_ anchor: TranscriptScrollModel.Anchor) throws -> CGFloat {
+            let index = try #require(data.items.firstIndex { $0.id == anchor.row })
+            return table.rect(ofRow: index + 1).minY - scroll.contentView.bounds.minY - scroll.contentInsets.top
+        }
+        let offset = try anchor.map(anchorOffset)
+        messages.append(transcriptTestMessage(101))
+        setMessages()
+        try await transcriptUntil(in: host) { table.numberOfRows == data.items.count + 1 }
+        try await transcriptSettled(in: host) { scroll.contentView.bounds.origin }
+        if let anchor, let offset {
+            #expect(abs(try anchorOffset(anchor) - offset) <= 0.5)
+            #expect(!state.snapshot.isAtBottom)
+        } else {
+            let bottom = scroll.contentView.bounds.maxY - scroll.contentInsets.bottom
+            #expect(abs(bottom - table.rect(ofRow: data.items.count).maxY - 16) <= 0.5)
+        }
+    }
+
+    private func performOlderPageAccessibilityAction(in root: NSObject) throws {
+        // AX describes the direction the content moves, opposite the viewport's movement.
+        let action = NSAccessibility.Action(rawValue: "AXScrollDownByPage")
+        var queue = [root]
+        var visited: Set<ObjectIdentifier> = []
+        var actions: Set<String> = []
+        while let element = queue.popLast(), visited.count < 2_000 {
+            guard visited.insert(ObjectIdentifier(element)).inserted else { continue }
+            let supported = element.accessibilityActionNames()
+            actions.formUnion(supported.map(\.rawValue))
+            if supported.contains(action) {
+                element.accessibilityPerformAction(action)
+                return
+            }
+            if element.accessibilityAttributeNames().contains(.children),
+               let children = element.accessibilityAttributeValue(.children) as? [NSObject] {
+                queue.append(contentsOf: children)
+            }
+        }
+        throw NativeInputFailure(message: "No AX older-page action in \(visited.count) elements. Actions: \(actions.sorted()).")
+    }
+
+    private struct NativeInputFailure: Error, CustomStringConvertible {
+        let message: String
+        var description: String { message }
+    }
+
+    private final class InputWindow: NSWindow {
+        override var isKeyWindow: Bool { true }
+        override var canBecomeKey: Bool { true }
     }
 
     @Test(.enabled(if: transcriptTimingTestsEnabled))
@@ -590,13 +802,16 @@ struct TranscriptTableHeightTests {
         let bars: TableBars
         let data: TableData
         let state: TranscriptDocumentState
+        var onReaderScroll: ((Bool) -> Void)? = nil
 
         var body: some View {
             ScrollView {
                 TranscriptDocumentPrototype(items: data.items, content: data.content,
                                             header: AnyView(Color.clear.frame(height: 12)), state: state,
-                                            command: state.command, holdsPosition: data.holdsPosition)
+                                            command: state.command, holdsPosition: data.holdsPosition,
+                                            onReaderScroll: onReaderScroll)
             }
+            .onScrollPhaseChange { _, phase in state.coordinator?.readerPhaseChanged(phase) }
             .scrollEdgeEffectStyle(.hard, for: .top)
             .scrollEdgeEffectStyle(.soft, for: .bottom)
             .safeAreaBar(edge: .top, spacing: 0) { Color.clear.frame(height: 50) }
@@ -3166,10 +3381,11 @@ private func transcriptFrame(in view: NSView) async throws {
 }
 
 @MainActor
-private func transcriptUntil(in view: NSView? = nil, sourceLocation: SourceLocation = #_sourceLocation,
+private func transcriptUntil(in view: NSView? = nil, timeout: Duration = .seconds(60),
+                             sourceLocation: SourceLocation = #_sourceLocation,
                              failure: () -> String = { "The transcript did not reach the expected state" },
                              _ condition: () -> Bool) async throws {
-    let deadline = ContinuousClock.now + .seconds(60)
+    let deadline = ContinuousClock.now + timeout
     while !condition(), ContinuousClock.now < deadline {
         if let view { try await transcriptFrame(in: view) }
         else { try await Task.sleep(for: .milliseconds(20)) }

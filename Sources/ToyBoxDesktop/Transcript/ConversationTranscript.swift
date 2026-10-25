@@ -152,9 +152,15 @@ struct ConversationTranscript: View {
                                                 state: documentState, windowObserver: window,
                                                 isReadyToLand: documentOpeningReady,
                                                 command: documentState.command, sizingPhase: catchUp?.phase,
-                                                holdsPosition: find.isPresented)
+                                                holdsPosition: find.isPresented,
+                                                onReaderScroll: { nearStart in
+                                                    catchUp?.isPinned = false
+                                                    find.resumeReading()
+                                                    if nearStart { Task { await loadOlder() } }
+                                                })
                         .environment(\.transcriptPointer, pointer)
                 }
+                .onScrollPhaseChange { _, phase in documentState.coordinator?.readerPhaseChanged(phase) }
                 .opacity(documentOpeningReady ? 1 : 0)
             } else {
                 GeometryReader { geometry in

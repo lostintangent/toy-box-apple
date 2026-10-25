@@ -15,6 +15,7 @@ struct TranscriptDocumentPrototype: NSViewRepresentable {
     // Reading the phase in the parent makes summary changes invalidate native sizing.
     var sizingPhase: TranscriptCatchUp.Phase? = nil
     var holdsPosition = false
+    var onReaderScroll: ((Bool) -> Void)? = nil
     var onDraw: ((TranscriptTableDocument) -> Void)? = nil
 
     func makeCoordinator() -> TranscriptTablePrototype.Coordinator { .init() }
@@ -29,7 +30,8 @@ struct TranscriptDocumentPrototype: NSViewRepresentable {
     func updateNSView(_ view: TranscriptTableDocument, context: Context) {
         context.coordinator.update(items: items, content: content, header: header,
                                    environment: context.environment, insets: EdgeInsets(), state: state,
-                                   isReadyToLand: isReadyToLand, footer: footer, holdsPosition: holdsPosition)
+                                   isReadyToLand: isReadyToLand, footer: footer, holdsPosition: holdsPosition,
+                                   onReaderScroll: onReaderScroll)
         context.coordinator.accept(command)
         view.windowObserver = windowObserver
         view.onDraw = onDraw
