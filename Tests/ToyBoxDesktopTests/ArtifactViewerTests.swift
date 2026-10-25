@@ -342,8 +342,10 @@ struct ArtifactViewerTests {
         #expect(!opener.canPageUsingKeys)
     }
 
-    @Test(arguments: [false, true])
-    func pagingOwnsFocusAfterOpeningFromTheComposerAndAfterLeavingHTML(leavingHTML: Bool) async throws {
+    @Test(arguments: [false, true], [false, true])
+    func pagingOwnsFocusAfterOpeningFromTheComposerAndAfterLeavingHTML(
+        leavingHTML: Bool, capsLock: Bool
+    ) async throws {
         let fixture = try ArtifactHTTPFixture()
         try await fixture.start()
         defer { fixture.stop() }
@@ -359,6 +361,7 @@ struct ArtifactViewerTests {
         let composer = NSTextView()
         composer.string = "Keep this unsent draft."
         let host = ArtifactKeyboardWindow(opener: opener, composer: composer)
+        let flags: NSEvent.ModifierFlags = capsLock ? [.numericPad, .function, .capsLock] : [.numericPad, .function]
         defer { opener.close(animated: false); host.window.close() }
         #expect(host.window.makeFirstResponder(composer))
         opener.open(leavingHTML ? html : plan)
@@ -368,7 +371,7 @@ struct ArtifactViewerTests {
             let web = try #require(opener.webView)
             #expect(host.window.makeFirstResponder(web))
             #expect(!opener.canPageUsingKeys)
-            try host.press(.rightArrow)
+            try host.press(.rightArrow, modifiers: flags)
             #expect(opener.artifact?.id == html.id)
             // A disappearing native web responder can leave the window itself holding focus.
             #expect(host.window.makeFirstResponder(nil))
@@ -378,15 +381,15 @@ struct ArtifactViewerTests {
             opener.artifact?.id == plan.id && opener.canPageUsingKeys
                 && host.window.firstResponder != nil && host.window.firstResponder !== host.window
         }
-        for modifier: NSEvent.ModifierFlags in [.shift, .control, .option, .command, .capsLock] {
+        for modifier: NSEvent.ModifierFlags in [.shift, .control, .option, .command] {
             for key: KeyEquivalent in [.leftArrow, .rightArrow] {
-                try host.press(key, modifiers: [.numericPad, .function, modifier])
+                try host.press(key, modifiers: flags.union(modifier))
                 #expect(opener.artifact?.id == plan.id)
             }
         }
-        try host.press(.rightArrow)
+        try host.press(.rightArrow, modifiers: flags)
         try await wait { opener.artifact?.id == html.id }
-        try host.press(.leftArrow)
+        try host.press(.leftArrow, modifiers: flags)
         try await wait { opener.artifact?.id == plan.id }
         #expect(composer.string == "Keep this unsent draft.")
     }
@@ -412,7 +415,7 @@ struct ArtifactViewerTests {
             window.orderFrontRegardless()
             view.layoutSubtreeIfNeeded()
         }
-        func press(_ key: KeyEquivalent, modifiers: NSEvent.ModifierFlags = [.numericPad, .function]) throws {
+        func press(_ key: KeyEquivalent, modifiers: NSEvent.ModifierFlags) throws {
             let isRight = key == .rightArrow
             let characters = String(UnicodeScalar(UInt16(isRight ? NSRightArrowFunctionKey : NSLeftArrowFunctionKey))!)
             window.sendEvent(try #require(NSEvent.keyEvent(

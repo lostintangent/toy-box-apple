@@ -90,8 +90,8 @@ struct ArtifactViewerStage: View {
         .onChange(of: artifact.id) { focused = true }
         .onExitCommand { opener.close() }
         .onKeyPress(keys: [.leftArrow, .rightArrow], phases: [.down, .repeat]) { press in
-            // Physical arrows carry these flags even when no shortcut modifier is held.
-            guard press.modifiers.subtracting([.numericPad, .function]).isEmpty,
+            // Physical arrow flags and Caps Lock are not shortcut modifiers.
+            guard press.modifiers.subtracting([.numericPad, .function, .capsLock]).isEmpty,
                   opener.canPageUsingKeys else { return .ignored }
             opener.move(by: press.key == .leftArrow ? -1 : 1)
             return .handled
