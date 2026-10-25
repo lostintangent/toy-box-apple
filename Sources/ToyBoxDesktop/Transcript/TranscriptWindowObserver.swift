@@ -2,6 +2,14 @@ import AppKit
 import Observation
 import SwiftUI
 
+private let transcriptScrollTraceEnabled = ProcessInfo.processInfo.environment["TOY_BOX_TRACE_SCROLL"] == "1"
+
+func transcriptScrollTrace(_ message: @autoclosure () -> String) {
+    if transcriptScrollTraceEnabled {
+        print("TRACE_SCROLL \(ProcessInfo.processInfo.systemUptime) \(message())")
+    }
+}
+
 @MainActor @Observable
 final class TranscriptWindowObserver {
     private(set) var isKeyWindow = false
@@ -92,6 +100,8 @@ final class TranscriptWindowObserver {
         guard pinsToBottom, let scrollView, let bottom = bottomOffset else { return }
         let clip = scrollView.contentView
         guard abs(clip.bounds.minY - bottom) > 0.25 else { return }
+        transcriptScrollTrace("native.pinToBottom origin=\(clip.bounds.minY) target=\(bottom)"
+                              + " pins=\(pinsToBottom) resizing=\(isResizing) live=\(window?.inLiveResize == true)")
         clip.scroll(to: NSPoint(x: clip.bounds.minX, y: bottom))
         scrollView.reflectScrolledClipView(clip)
     }
@@ -102,6 +112,8 @@ final class TranscriptWindowObserver {
         let maximum = max(0, document.bounds.height - clip.bounds.height)
         let target = CGPoint(x: clip.bounds.origin.x,
                              y: min(maximum, max(0, clip.bounds.origin.y + (document.isFlipped ? delta : -delta))))
+        transcriptScrollTrace("native.scrollBy origin=\(clip.bounds.minY) target=\(target.y)"
+                              + " delta=\(delta) pins=\(pinsToBottom)")
         clip.scroll(to: target)
         scrollView.reflectScrolledClipView(clip)
     }
@@ -117,6 +129,8 @@ final class TranscriptWindowObserver {
         let target = min(maximum, max(minimum, offset))
         guard abs(clip.bounds.minY - target) > 0.25 else { return true }
         let previous = clip.bounds.minY
+        transcriptScrollTrace("native.restoreReadingBottom origin=\(previous) target=\(target)"
+                              + " message=\(frame.sequence) pins=\(pinsToBottom)")
         clip.scroll(to: NSPoint(x: clip.bounds.minX, y: target))
         scrollView.reflectScrolledClipView(clip)
         if ProcessInfo.processInfo.environment["TOY_BOX_TEST_PAGING_TRACE"] == "1" {

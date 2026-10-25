@@ -180,7 +180,10 @@ struct ConversationTranscript: View {
 
     private func observedScroll(proxy: ScrollViewProxy) -> some View {
         scrollViewport(proxy: proxy)
-            .onChange(of: followsLatest, initial: true) { window.pinsToBottom = followsLatest }
+            .onChange(of: followsLatest, initial: true) {
+                traceScroll("follow.signal newPins=\(followsLatest)")
+                window.pinsToBottom = followsLatest
+            }
             .onChange(of: interaction.jumpToLatestRequest) {
                 find.close()
                 find.resumeReading()
@@ -237,8 +240,13 @@ struct ConversationTranscript: View {
         .defaultScrollAnchor(opening.seededRowID == nil ? .bottom : .top, for: .initialOffset)
         .scrollPosition(id: Binding {
             // The seed holds the first unread row at the top until it lands, as the card appears above it.
-            scrollPosition ?? (hasLanded || isRevealing ? nil : opening.seededRowID)
-        } set: { scrollPosition = $0 }, anchor: .top)
+            let id = scrollPosition ?? (hasLanded || isRevealing ? nil : opening.seededRowID)
+            traceScroll("binding.get target=\(String(describing: id))")
+            return id
+        } set: {
+            traceScroll("binding.set target=\(String(describing: $0))")
+            scrollPosition = $0
+        }, anchor: .top)
         .preference(key: TranscriptLanded.self, value: hasLanded)
         .preference(key: TranscriptRestoringHistory.self, value: pagingAnchor != nil)
         .onScrollGeometryChange(for: TranscriptViewport.self) { TranscriptViewport($0) } action: { old, new in
@@ -252,6 +260,7 @@ struct ConversationTranscript: View {
                                     canFollow: hasLanded && pagingAnchor == nil && !isRevealing && !isUserScrolling
                                         && catchUp?.holdsLanding != true && !find.isPresented,
                                     isJumping: pendingJump != nil)
+            traceScroll("geometry old=\(old) new=\(new) next=\(update)")
             geometry.viewport = new
             followReaderWhilePaging()
             publishVisibleSequence()
@@ -267,7 +276,10 @@ struct ConversationTranscript: View {
                     ? nil : .easeOut(duration: 0.2)
                 scrollToLatest(using: proxy, animation: animation)
             case .jump:
-                if let jump { proxy.scrollTo(jump.id, anchor: jump.anchor) }
+                if let jump {
+                    traceScroll("proxy.geometryJump target=\(jump.id) anchor=\(jump.anchor)")
+                    proxy.scrollTo(jump.id, anchor: jump.anchor)
+                }
             case nil:
                 break
             }
@@ -417,6 +429,13 @@ struct ConversationTranscript: View {
     private var followsLatest: Bool {
         isAtBottom && hasLanded && pagingAnchor == nil && !isRevealing && !isUserScrolling && pendingJump == nil
             && catchUp?.holdsLanding != true && !find.isPresented
+    }
+
+    private func traceScroll(_ writer: String) {
+        transcriptScrollTrace("\(writer) native=\(String(describing: window.scrollOffset))"
+                              + " isAtBottom=\(isAtBottom) follows=\(followsLatest) pins=\(window.pinsToBottom)"
+                              + " landed=\(hasLanded) scrolling=\(isUserScrolling)"
+                              + " binding=\(String(describing: scrollPosition)) pending=\(String(describing: pendingJump))")
     }
 
     private var floatingControls: some View {
@@ -631,6 +650,7 @@ struct ConversationTranscript: View {
                 return
             }
             isRevealing = true
+            traceScroll("proxy.snapshotOldest target=\(first.id)")
             proxy.scrollTo(first.id, anchor: .top)
             guard await waitForSnapshotLayout(until: {
                 viewport.topVisibleFrame(in: pagingFrames)?.frame.sequence == oldest
@@ -731,6 +751,7 @@ struct ConversationTranscript: View {
     /// Programmatic scrolls never update the scroll position binding, so an anchor left by an earlier
     /// user scroll would pull the viewport back toward it whenever content changes size.
     private func scrollToLatest(using proxy: ScrollViewProxy, animation: Animation? = nil) {
+        traceScroll("scrollToLatest/proxy.end")
         scrollPosition = nil
         pendingJump = nil
         withAnimation(animation) { proxy.scrollTo("transcript-end", anchor: .bottom) }
@@ -743,6 +764,7 @@ struct ConversationTranscript: View {
     private func jump(to id: String, anchor: UnitPoint, using proxy: ScrollViewProxy) {
         let jump = TranscriptJump(id: id, anchor: anchor)
         pendingJump = jump
+        traceScroll("proxy.jump target=\(id) anchor=\(anchor)")
         scrollPosition = nil
         proxy.scrollTo(id, anchor: anchor)
         Task { @MainActor in
@@ -790,6 +812,7 @@ struct ConversationTranscript: View {
                 try? await Task.sleep(for: .milliseconds(16))
             case .placeColdOpening:
                 // Cold lazy rows can report their old bottom before measuring the unread run.
+                traceScroll("proxy.coldOpening target=\(row.id)")
                 scrollPosition = nil
                 proxy.scrollTo(row.id, anchor: .top)
                 jumps += 1
@@ -909,6 +932,7 @@ struct ConversationTranscript: View {
                 viewport: viewport, nativeTop: window.viewportTop) else {
                 _ = reveal.receive(nil, isAligned: false)
                 if !materialized {
+                    traceScroll("proxy.reveal target=\(rowID)")
                     proxy.scrollTo(rowID, anchor: .center)
                     materialized = true
                 }
@@ -983,7 +1007,10 @@ struct ConversationTranscript: View {
             // The pass that moved the anchor out of the built rows still moved the rows that stayed.
             shift = common.contentTop - previous.contentTop
         }
-        if abs(shift) > 0.25 { window.scroll(by: shift) } else { shift = 0 }
+        if abs(shift) > 0.25 {
+            traceScroll("holdReadingPlace shift=\(shift) anchor=\(String(describing: geometry.readingAnchor))")
+            window.scroll(by: shift)
+        } else { shift = 0 }
         geometry.readingAnchor = holds ? viewport.readingAnchor(in: frames, scrolledBy: shift) : nil
     }
 
@@ -1024,6 +1051,7 @@ struct ConversationTranscript: View {
                 alignedSince = nil
                 if !requestedMaterialization {
                     let row = rows.first { $0.messages.contains { $0.id == anchor.id } }
+                    traceScroll("proxy.paging target=\(anchor.id)")
                     proxy.scrollTo(row.map { transcriptLazyRowID(containing: anchor.id, in: $0) } ?? anchor.id,
                                    anchor: .top)
                     requestedMaterialization = true
