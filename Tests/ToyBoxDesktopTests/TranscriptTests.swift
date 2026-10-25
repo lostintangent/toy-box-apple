@@ -990,6 +990,36 @@ struct TranscriptTests {
     }
 
     @MainActor
+    @Test func aNativePageAfterUnreadLandingKeepsTheVisibleReadingPlaceThroughWidthChange() async throws {
+        let service = StubChannelIntelligence(results: [], holdsCatchUp: true)
+        func messages(_ range: ClosedRange<Int>) -> [ChannelMessage] {
+            range.map { catchUpTestMessage($0, sender: $0.isMultiple(of: 2) ? .user : .agent("lead"), repeats: 2) }
+        }
+        let harness = try await TranscriptHarness(
+            messages: messages(381...480), history: messages(1...380),
+            seenThrough: 450, width: 520, resizable: true, intelligence: service)
+        defer {
+            service.releaseCatchUp()
+            harness.close()
+        }
+        try await harness.waitUntil { service.catchUpCount > 0 }
+        try await harness.settled()
+        let clip = harness.scrollView.contentView
+        clip.scroll(to: CGPoint(x: clip.bounds.minX, y: clip.bounds.minY - 600))
+        harness.scrollView.reflectScrolledClipView(clip)
+        try await harness.settled()
+        let anchor = try #require(harness.visibleFrames().min { $0.value.minY < $1.value.minY })
+        try #require(anchor.key != "m451", "The non-wheel page must leave the initial target.")
+        harness.resize(width: 720)
+        try await harness.settled()
+        let after = try #require(harness.frames[anchor.key]?.rect)
+        #expect(abs(after.minY - anchor.value.minY) <= 24,
+                "Width reflow moved \(anchor.key) from \(anchor.value) to \(after)")
+        #expect(abs(after.height - anchor.value.height) > 0.5,
+                "The changed width must actually reflow the reading message.")
+    }
+
+    @MainActor
     @Test func nativePageUpIsNotReassertedAfterLayout() async throws {
         let harness = try await TranscriptHarness(messages: transcriptFindTestMessages(1...90))
         defer { harness.close() }

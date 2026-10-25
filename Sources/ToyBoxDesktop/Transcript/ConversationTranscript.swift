@@ -403,18 +403,25 @@ struct ConversationTranscript: View {
     }
 
     private func holdReadingPlace(in new: [String: TranscriptMessageFrame]) {
-        let historyChanged = geometry.frames.values.first?.historyStart != new.values.first?.historyStart
+        let historyStart = store.messages.first?.sequence
+        let historyChanged = geometry.historyStart != historyStart
+        geometry.historyStart = historyStart
         let holds = hasLanded && !isRevealing && !followsEnd && !historyChanged
+        guard holds else {
+            geometry.readingAnchor = nil
+            return
+        }
+        guard !new.isEmpty else { return }
         var shift: CGFloat = 0
-        if holds, let anchor = geometry.readingAnchor, let frame = new[anchor.id] {
+        if let anchor = geometry.readingAnchor, let frame = new[anchor.id] {
             shift = frame.contentTop - anchor.contentTop
-        } else if holds, geometry.readingAnchor != nil,
-                  let common = viewport.readingAnchor(in: new.filter { geometry.frames[$0.key] != nil }),
+        } else if geometry.readingAnchor != nil,
+                  let common = viewport.readingAnchor(in: positionedFrames(new.filter { geometry.frames[$0.key] != nil })),
                   let previous = geometry.frames[common.id] {
             shift = common.contentTop - previous.contentTop
         }
-        if abs(shift) > 0.25 { window.scroll(by: shift) } else { shift = 0 }
-        geometry.readingAnchor = holds ? viewport.readingAnchor(in: new, scrolledBy: shift) : nil
+        if abs(shift) > 0.25 { window.scroll(by: shift) }
+        geometry.readingAnchor = viewport.readingAnchor(in: positionedFrames(new))
     }
 
     private func setExpanded(_ id: String, _ expands: Bool) {
@@ -497,13 +504,17 @@ struct ConversationTranscript: View {
     }
 
     private var positionedFrames: [String: TranscriptMessageFrame] {
-        guard let top = window.viewportTop else { return frames }
-        return frames.mapValues { TranscriptCoordinates.viewportFrame($0, top: top) }
+        positionedFrames(frames)
+    }
+
+    private func positionedFrames(_ frames: [String: TranscriptMessageFrame]) -> [String: TranscriptMessageFrame] {
+        let current = frames.filter { $0.value.historyStart == store.messages.first?.sequence }
+        guard let top = window.viewportTop else { return current }
+        return current.mapValues { TranscriptCoordinates.viewportFrame($0, top: top) }
     }
 
     private func publishVisibleSequence() {
-        let current = frames.filter { $0.value.historyStart == store.messages.first?.sequence }
-        let sequence = viewport.readSequence(in: current, nativeViewportTop: window.viewportTop)
+        let sequence = viewport.readSequence(in: positionedFrames)
         if sequence != visibleSequence { visibleSequence = sequence }
     }
 
@@ -693,6 +704,7 @@ private final class TranscriptScrollGeometry {
     var viewport = TranscriptViewport()
     var frames: [String: TranscriptMessageFrame] = [:]
     var readingAnchor: TranscriptReadingAnchor?
+    var historyStart: Int?
 }
 
 struct TranscriptReadingAnchor: Equatable {
