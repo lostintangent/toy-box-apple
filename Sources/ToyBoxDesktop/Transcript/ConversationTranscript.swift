@@ -69,14 +69,15 @@ struct ConversationTranscript: View {
         return frames.mapValues { TranscriptCoordinates.viewportFrame($0, top: top) }
     }
 
-    private var visibleReadSequence: Int? {
+    private var canMarkVisibleRead: Bool {
         // A viewer covers the transcript, so nothing beneath it counts as read.
         guard snapshot == nil, hasLanded, !isRevealing, pagingAnchor == nil, window.isKeyWindow,
               scenePhase == .active, store.phase.isLive, viewer?.session == nil,
-              !interaction.isArtifactViewerPresented, !find.blocksRead else { return nil }
-        if TranscriptDocumentPrototype.isEnabled && store.isLoadingOlder { return nil }
-        return visibleSequence
+              !interaction.isArtifactViewerPresented, !find.blocksRead else { return false }
+        return !TranscriptDocumentPrototype.isEnabled || !store.isLoadingOlder
     }
+
+    private var visibleReadSequence: Int? { canMarkVisibleRead ? visibleSequence : nil }
 
     private var pagingRestoreTarget: PagingRestoreTarget? {
         guard let anchor = pagingAnchor, !store.isLoadingOlder,
@@ -174,11 +175,8 @@ struct ConversationTranscript: View {
         .scrollEdgeEffectStyle(.hard, for: .top)
         .scrollEdgeEffectStyle(.soft, for: .bottom))
         .preference(key: TranscriptLanded.self, value: hasLanded)
-        .onChange(of: documentState.snapshot) { _, state in
-            hasLanded = state.hasLanded
-            isAtBottom = state.isAtBottom
-            visibleSequence = state.visibleSequence
-        }
+        .onChange(of: documentState.hasLanded) { hasLanded = documentState.hasLanded }
+        .onChange(of: documentState.isAtBottom) { isAtBottom = documentState.isAtBottom }
         .onChange(of: documentState.failure) {
             if documentState.failure != nil { revealError = "This message is no longer available." }
         }
@@ -203,7 +201,8 @@ struct ConversationTranscript: View {
             guard TranscriptDocumentPrototype.isEnabled, store.phase.isLive, !documentOpeningReady else { return }
             await prepareDocumentOpening()
         }
-        .task(id: visibleReadSequence) { await markVisibleRead() }
+        .modifier(TranscriptDocumentReadMarking(state: documentState, isEnabled: canMarkVisibleRead,
+                                              markRead: { await markVisibleRead(through: $0) }))
         .task(id: catchUp?.generation) { await catchUp?.run(using: intelligence) }
         .task(id: interaction.isArtifactViewerPresented ? nil : interaction.revealRequestToken) {
             guard !interaction.isArtifactViewerPresented, let request = interaction.revealRequest else { return }
@@ -850,11 +849,17 @@ struct ConversationTranscript: View {
     }
 
     private func markVisibleRead() async {
-        guard let sequence = visibleReadSequence, sequence > lastMarkedRead else { return }
+        guard let sequence = visibleReadSequence else { return }
+        await markVisibleRead(through: sequence)
+    }
+
+    private func markVisibleRead(through sequence: Int) async {
+        guard sequence > lastMarkedRead else { return }
         do { try await Task.sleep(for: .milliseconds(250)) }
         catch { return }
-        guard !Task.isCancelled, window.isKeyWindow, scenePhase == .active,
-              visibleReadSequence == sequence else { return }
+        guard !Task.isCancelled, canMarkVisibleRead,
+              (TranscriptDocumentPrototype.isEnabled ? documentState.visibleSequence : visibleSequence) == sequence
+        else { return }
         await store.markRead(through: sequence)
         if store.readError == nil { lastMarkedRead = max(lastMarkedRead, sequence) }
     }
@@ -1203,6 +1208,20 @@ struct ConversationTranscript: View {
         guard !Task.isCancelled, pagingRestoreTarget == target else { return }
         pagingAnchor = nil
         publishVisibleSequence()
+    }
+}
+
+private struct TranscriptDocumentReadMarking: ViewModifier {
+    let state: TranscriptDocumentState
+    let isEnabled: Bool
+    let markRead: @MainActor (Int) async -> Void
+
+    func body(content: Content) -> some View {
+        // Visibility updates must not rebuild the table's projected rows or hosted roots.
+        let sequence = isEnabled ? state.visibleSequence : nil
+        content.task(id: sequence) {
+            if let sequence { await markRead(sequence) }
+        }
     }
 }
 

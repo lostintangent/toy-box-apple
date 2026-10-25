@@ -58,6 +58,7 @@ struct TranscriptTablePrototype: NSViewControllerRepresentable {
         private typealias Model = TranscriptScrollModel
         private static let headerID = "transcript-history-header"
         private static let footerID = "transcript-pending-sends"
+        private static let retainedCellLimit = 128
         let table = TranscriptTableView()
         private weak var scroll: NSScrollView?
         private weak var document: NSView?
@@ -94,10 +95,13 @@ struct TranscriptTablePrototype: NSViewControllerRepresentable {
         private var laidOutNativeGeometry: NativeGeometry?
         private var notifications: [NSObjectProtocol] = []
         private var insetObservation: NSKeyValueObservation?
+        private var insetChangeDepth = 0
         private var accessoryNeedsMeasurement = true
         private var sizingWidth: CGFloat = 0
         private(set) var messageFrames: [String: [String: TranscriptMessageFrame]] = [:]
         private var invalidatedCells: Set<String> = []
+        private var cachedCells: [String: TranscriptTableCell] = [:]
+        private var recentCellIDs: [String] = []
         private var isRefiningHeights = false
         private var configuration: Configuration?
         private(set) var documentHeight: CGFloat = 0
@@ -105,6 +109,7 @@ struct TranscriptTablePrototype: NSViewControllerRepresentable {
         var scrollIntent: TranscriptScrollModel.Intent { intent }
         var isAnimatingJump: Bool { jumpAnimation != nil }
         var measurementCount: Int { cache.measurementCount }
+        var retainedCellCount: Int { cachedCells.count }
 
         override init() {
             super.init()
@@ -150,8 +155,12 @@ struct TranscriptTablePrototype: NSViewControllerRepresentable {
             ) { [weak self] _ in
                 MainActor.assumeIsolated { self?.requestLayout() }
             })
-            insetObservation = scroll.observe(\.contentInsets) { [weak self] _, _ in
-                MainActor.assumeIsolated { self?.requestLayout() }
+            insetObservation = scroll.observe(\.contentInsets, options: [.prior]) { [weak self] _, change in
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    self.insetChangeDepth += change.isPrior ? 1 : -1
+                    if !change.isPrior { self.requestLayout() }
+                }
             }
         }
 
@@ -266,11 +275,17 @@ struct TranscriptTablePrototype: NSViewControllerRepresentable {
 
         private func rowFrames(items: [TranscriptTableItem], heights: [CGFloat],
                                hasFooter: Bool) -> [Model.RowFrame] {
+            if items == self.items, heights == self.heights, hasFooter == (footer != nil),
+               appliedAccessoryHeights[Self.headerID] == headerHeight,
+               appliedAccessoryHeights[Self.footerID] == footerHeight {
+                return frames
+            }
             var result = [Model.RowFrame(id: Self.headerID, order: Int.min, top: 0,
                                          height: headerHeight, isAnchorable: false)]
+            result.reserveCapacity(items.count + 2)
             var top = headerHeight
             for (index, item) in items.enumerated() {
-                result.append(Model.RowFrame(id: item.id, order: item.row.messages.first?.sequence ?? 0,
+                result.append(Model.RowFrame(id: item.id, order: item.order,
                                              top: top, height: heights[index]))
                 top += heights[index]
             }
@@ -384,9 +399,8 @@ struct TranscriptTablePrototype: NSViewControllerRepresentable {
         }
 
         private func requestLayout() {
-            document?.invalidateIntrinsicContentSize()
-            document?.needsLayout = true
-            scroll?.needsLayout = true
+            if let document { document.needsLayout = true }
+            else { scroll?.needsLayout = true }
         }
 
         private func nativeGeometry() -> NativeGeometry? {
@@ -451,8 +465,9 @@ struct TranscriptTablePrototype: NSViewControllerRepresentable {
                 requestLayout()
                 return
             }
-            // Insets can move the clip after layout without any reader input.
-            if !isReaderScrolling, !isHandlingReaderInput, nativeGeometry() != laidOutNativeGeometry {
+            // AppKit can reflect insets before their did-change notification, even for equal values.
+            if !isReaderScrolling, !isHandlingReaderInput,
+               insetChangeDepth > 0 || nativeGeometry() != laidOutNativeGeometry {
                 requestLayout()
                 return
             }
@@ -507,6 +522,7 @@ struct TranscriptTablePrototype: NSViewControllerRepresentable {
             notifications.forEach(NotificationCenter.default.removeObserver)
             notifications.removeAll()
             insetObservation = nil
+            insetChangeDepth = 0
             state?.cancelPublication()
             observedBounds = nil
             laidOutNativeGeometry = nil
@@ -661,14 +677,30 @@ struct TranscriptTablePrototype: NSViewControllerRepresentable {
         func tableView(_ tableView: NSTableView, shouldSelectRow row: Int) -> Bool { false }
 
         func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
-            let identifier = NSUserInterfaceItemIdentifier("transcript-cell")
+            let id = row == 0 ? Self.headerID : row == items.count + 1 ? Self.footerID : items[row - 1].id
+            let cell = cell(for: id)
+            configure(cell, row: row)
+            return cell
+        }
+
+        private func cell(for id: String) -> TranscriptTableCell {
+            // Reusing another row's cell rebuilds its SwiftUI graph on every return visit.
             let cell: TranscriptTableCell
-            if let reused = tableView.makeView(withIdentifier: identifier, owner: nil) as? TranscriptTableCell {
+            if let reused = cachedCells[id] {
                 reusedCellCount += 1
                 cell = reused
-            } else { cell = TranscriptTableCell() }
-            cell.identifier = identifier
-            configure(cell, row: row)
+            } else {
+                cell = TranscriptTableCell()
+                cachedCells[id] = cell
+            }
+            recentCellIDs.removeAll { $0 == id }
+            recentCellIDs.append(id)
+            for old in recentCellIDs where cachedCells.count > Self.retainedCellLimit && old != id {
+                guard let candidate = cachedCells[old] else { continue }
+                if candidate.isDescendant(of: table), !candidate.visibleRect.isEmpty { continue }
+                cachedCells[old] = nil
+            }
+            recentCellIDs.removeAll { cachedCells[$0] == nil }
             return cell
         }
 

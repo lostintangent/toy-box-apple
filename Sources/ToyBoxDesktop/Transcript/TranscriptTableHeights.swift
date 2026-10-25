@@ -9,6 +9,7 @@ struct TranscriptTableItem: Identifiable, Equatable {
     let canonicalRowID: String
     let showsAvatar: Bool
     let topSpacing: CGFloat
+    let order: Int
 
     var id: String { row.id }
 
@@ -22,11 +23,11 @@ struct TranscriptTableItem: Identifiable, Equatable {
                     cell.content = .agent(agentId: agentID, entries: [entry])
                     if index != 0 { cell.divider = nil }
                     return Self(row: cell, canonicalRowID: row.id, showsAvatar: index == 0,
-                                topSpacing: index == 0 ? 20 : 8)
+                                topSpacing: index == 0 ? 20 : 8, order: entry.message.sequence)
                 }
             }
             return [Self(row: row, canonicalRowID: row.id, showsAvatar: true,
-                         topSpacing: stacked.contains(row.id) ? 4 : 20)]
+                         topSpacing: stacked.contains(row.id) ? 4 : 20, order: row.messages.first?.sequence ?? 0)]
         }
     }
 }
@@ -84,9 +85,25 @@ final class TranscriptTableHeights {
         let overflows: Bool?
     }
 
+    @MainActor private struct Resolution {
+        let items: [TranscriptTableItem]
+        let content: [TranscriptRowContent]
+        let environment: Environment
+        let summaries: [(summary: TranscriptCatchUp, phase: TranscriptCatchUp.Phase)]
+        let result: Result
+
+        func matches(items: [TranscriptTableItem], content: [TranscriptRowContent],
+                     environment: Environment) -> Bool {
+            self.environment == environment && self.items == items && self.content == content
+                && summaries.allSatisfy { $0.summary.phase == $0.phase }
+        }
+    }
+
     private var entries: [String: [Entry]] = [:]
+    private var resolution: Resolution?
     private let sizer = TranscriptTableSizer()
     private(set) var measurementCount = 0
+    private(set) var identityCheckCount = 0
 
     func measureAccessory(_ view: AnyView, width: CGFloat, environment: EnvironmentValues) -> CGFloat {
         sizer.measure([view], width: width, environment: environment)[0]
@@ -96,6 +113,7 @@ final class TranscriptTableHeights {
                           width: CGFloat, environment: EnvironmentValues, overflows: Bool?) {
         precondition(height.isFinite && height > 0 && width.isFinite && width > 0)
         let metrics = Environment(width: width, values: environment)
+        resolution = nil
         store(height: height, item: item, content: content, metrics: metrics, overflows: overflows)
     }
 
@@ -104,25 +122,43 @@ final class TranscriptTableHeights {
         precondition(width.isFinite && width > 0 && items.count == content.count)
         precondition(requested?.allSatisfy { items.indices.contains($0) } ?? true)
         let metrics = Environment(width: width, values: environment)
-        var heights = [CGFloat](repeating: 100 * metrics.textScale, count: items.count)
-        var overflows = [Bool?](repeating: nil, count: items.count)
-        var exact = IndexSet()
-        var missing: [Int] = []
-        for index in items.indices {
-            let item = items[index]
-            let row = sizingIdentity(content[index])
-            if let cached = entries[item.id]?.first(where: {
-                $0.item.row == item.row && $0.item.showsAvatar == item.showsAvatar
-                    && $0.item.topSpacing == item.topSpacing && $0.content == row && $0.environment == metrics
-                    && $0.catchUpPhase == row.catchUp?.phase
-            }) {
-                heights[index] = cached.height
-                overflows[index] = cached.overflows
-                exact.insert(index)
-            } else {
-                if let previous = entries[item.id]?.first { heights[index] = previous.height }
-                if requested?.contains(index) != false { missing.append(index) }
+        var heights: [CGFloat]
+        var overflows: [Bool?]
+        var exact: IndexSet
+        let missing: [Int]
+        if let resolution, resolution.matches(items: items, content: content, environment: metrics) {
+            heights = resolution.result.heights
+            overflows = resolution.result.overflows
+            exact = resolution.result.exactIndexes
+            missing = Array((requested ?? IndexSet(items.indices)).subtracting(exact))
+            if missing.isEmpty {
+                return Result(heights: heights, overflows: overflows, measured: 0, exactIndexes: exact)
             }
+        } else {
+            heights = [CGFloat](repeating: 100 * metrics.textScale, count: items.count)
+            overflows = [Bool?](repeating: nil, count: items.count)
+            exact = IndexSet()
+            var requestedMissing: [Int] = []
+            identityCheckCount += items.count
+            for index in items.indices {
+                let item = items[index]
+                let row = sizingIdentity(content[index])
+                if let cached = entries[item.id]?.first(where: {
+                    $0.item.row == item.row && $0.item.showsAvatar == item.showsAvatar
+                        && $0.item.topSpacing == item.topSpacing && $0.content == row && $0.environment == metrics
+                        && $0.catchUpPhase == row.catchUp?.phase
+                }) {
+                    heights[index] = cached.height
+                    overflows[index] = cached.overflows
+                    exact.insert(index)
+                } else {
+                    if let previous = entries[item.id]?.first { heights[index] = previous.height }
+                    if requested?.contains(index) != false { requestedMissing.append(index) }
+                }
+            }
+            missing = requestedMissing
+            let retained = Set(items.map(\.id))
+            entries = entries.filter { retained.contains($0.key) }
         }
         let coordination = missing.filter { index in
             if case .agent(_, let entries) = items[index].row.content {
@@ -165,9 +201,10 @@ final class TranscriptTableHeights {
             }
             measurementCount += missing.count
         }
-        let retained = Set(items.map(\.id))
-        entries = entries.filter { retained.contains($0.key) }
-        return Result(heights: heights, overflows: overflows, measured: missing.count, exactIndexes: exact)
+        let result = Result(heights: heights, overflows: overflows, measured: missing.count, exactIndexes: exact)
+        resolution = Resolution(items: items, content: content, environment: metrics,
+                                summaries: content.compactMap { $0.catchUp.map { ($0, $0.phase) } }, result: result)
+        return result
     }
 
     private func store(height: CGFloat, item: TranscriptTableItem, content: TranscriptRowContent,

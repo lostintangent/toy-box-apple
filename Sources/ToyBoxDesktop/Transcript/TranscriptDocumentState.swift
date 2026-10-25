@@ -20,7 +20,12 @@ final class TranscriptDocumentState {
         let token = UUID()
     }
 
-    private(set) var snapshot = Snapshot()
+    private(set) var hasLanded = false
+    private(set) var isAtBottom = true
+    private(set) var visibleSequence: Int?
+    var snapshot: Snapshot {
+        Snapshot(hasLanded: hasLanded, isAtBottom: isAtBottom, visibleSequence: visibleSequence)
+    }
     private(set) var failure: Failure?
     private(set) var command: Command?
     @ObservationIgnored weak var coordinator: TranscriptTablePrototype.Coordinator?
@@ -48,7 +53,9 @@ final class TranscriptDocumentState {
         pendingSnapshot = snapshot
         let task = Task { @MainActor [weak self] in
             guard !Task.isCancelled, let self else { return }
-            self.snapshot = snapshot
+            if self.hasLanded != snapshot.hasLanded { self.hasLanded = snapshot.hasLanded }
+            if self.isAtBottom != snapshot.isAtBottom { self.isAtBottom = snapshot.isAtBottom }
+            if self.visibleSequence != snapshot.visibleSequence { self.visibleSequence = snapshot.visibleSequence }
             self.pendingSnapshot = nil
             self.publication = nil
         }

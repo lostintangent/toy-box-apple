@@ -4,6 +4,7 @@ import ChannelIntelligence
 import ChannelKit
 import Foundation
 import ImageIO
+import Observation
 import SwiftUI
 import Synchronization
 import Testing
@@ -79,6 +80,106 @@ struct TranscriptTableHeightTests {
         #expect(coordinator.measurementCount < messages.count)
     }
 
+    @Test func insetReflectionCannotBecomeReaderInputBeforeItsDidChangeNotification() throws {
+        let setup = try setup()
+        let items = TranscriptTableItem.project(transcriptRows((1...100).map(transcriptTestMessage),
+                                                               lead: setup.lead, members: []))
+        let coordinator = TranscriptTablePrototype.Coordinator()
+        let scroll = InsetReflectingScrollView(frame: NSRect(x: 0, y: 0, width: 720, height: 600))
+        coordinator.attach(scroll)
+        defer { coordinator.stopObserving() }
+        var readerEvents = 0
+        coordinator.update(items: items, content: content(items, setup: setup), header: AnyView(EmptyView()),
+                           environment: setup.environment, insets: EdgeInsets(),
+                           onReaderScroll: { _ in readerEvents += 1 })
+        coordinator.layoutContent()
+        coordinator.performReaderInput {
+            scroll.contentView.scroll(to: NSPoint(x: 0, y: 100))
+        }
+        coordinator.layoutContent()
+        coordinator.accept(.init(event: .jumpToLatest))
+        coordinator.layoutContent()
+        try #require(coordinator.isAnimatingJump)
+        let before = readerEvents
+        let insets = scroll.contentInsets
+        var reflected = false
+        scroll.onReflectInsets = {
+            reflected = true
+            #expect(scroll.contentInsets.top == insets.top && scroll.contentInsets.bottom == insets.bottom
+                    && scroll.contentInsets.left == insets.left && scroll.contentInsets.right == insets.right)
+            let clip = scroll.contentView
+            clip.scroll(to: NSPoint(x: clip.bounds.minX, y: clip.bounds.minY - 0.5))
+        }
+        scroll.contentInsets = insets
+        #expect(reflected)
+        #expect(readerEvents == before)
+        #expect(coordinator.isAnimatingJump)
+        #expect(coordinator.scrollIntent == .following)
+    }
+
+    @Test func scrollingKnownHeightsDoesNotInvalidateTheOuterDocumentSize() throws {
+        let setup = try setup()
+        let items = TranscriptTableItem.project(transcriptRows((1...20).map(transcriptTestMessage),
+                                                               lead: setup.lead, members: []))
+        let coordinator = TranscriptTablePrototype.Coordinator()
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 720, height: 10_000))
+        let document = SizeInvalidationDocument(frame: scroll.bounds)
+        document.addSubview(coordinator.table)
+        scroll.documentView = document
+        coordinator.attach(scroll, ownsDocument: false, document: document)
+        defer { coordinator.stopObserving() }
+        coordinator.update(items: items, content: content(items, setup: setup), header: AnyView(EmptyView()),
+                           environment: setup.environment, insets: EdgeInsets())
+        coordinator.layoutContent()
+        #expect(coordinator.measurementCount == items.count)
+        scroll.setFrameSize(NSSize(width: 720, height: 600))
+        document.setFrameSize(NSSize(width: 720, height: coordinator.documentHeight))
+        coordinator.layoutContent()
+        let height = coordinator.documentHeight
+        document.invalidationCount = 0
+        document.needsLayout = false
+        let clip = scroll.contentView
+        let origin = clip.bounds.minY
+        coordinator.performReaderInput {
+            clip.scroll(to: NSPoint(x: clip.bounds.minX, y: origin - 50))
+        }
+        #expect(abs(clip.bounds.minY - origin) == 50)
+        #expect(document.needsLayout)
+        #expect(document.invalidationCount == 0)
+        coordinator.layoutContent()
+        #expect(coordinator.documentHeight == height)
+        #expect(coordinator.measurementCount == items.count)
+    }
+
+    @Test func nativeCellGraphsAreReusedByRowAndRetainedWithinABoundedCache() throws {
+        let setup = try setup()
+        let items = TranscriptTableItem.project(transcriptRows((1...300).map(transcriptTestMessage),
+                                                               lead: setup.lead, members: []))
+        let coordinator = TranscriptTablePrototype.Coordinator()
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 720, height: 600))
+        coordinator.attach(scroll)
+        defer { coordinator.stopObserving() }
+        coordinator.update(items: items, content: content(items, setup: setup), header: AnyView(EmptyView()),
+                           environment: setup.environment, insets: EdgeInsets())
+        coordinator.layoutContent()
+        coordinator.table.layoutSubtreeIfNeeded()
+        let column = try #require(coordinator.table.tableColumns.first)
+        let shown = try #require(coordinator.table.view(atColumn: 0, row: items.count, makeIfNecessary: true))
+        #expect(shown.isDescendant(of: coordinator.table))
+        #expect(!shown.visibleRect.isEmpty)
+        let first = try #require(coordinator.tableView(coordinator.table, viewFor: column, row: 1))
+        #expect(coordinator.tableView(coordinator.table, viewFor: column, row: 2) !== first)
+        #expect(coordinator.tableView(coordinator.table, viewFor: column, row: 1) === first)
+        for row in 3...250 {
+            _ = coordinator.tableView(coordinator.table, viewFor: column, row: row)
+        }
+        #expect(coordinator.retainedCellCount <= 128)
+        #expect(coordinator.tableView(coordinator.table, viewFor: column, row: items.count) === shown)
+        #expect(coordinator.tableView(coordinator.table, viewFor: column, row: 1) !== first)
+        let last = try #require(coordinator.tableView(coordinator.table, viewFor: column, row: 250))
+        #expect(coordinator.tableView(coordinator.table, viewFor: column, row: 250) === last)
+    }
+
     @Test func cancelledSnapshotPublicationsDoNotLoseTheFinalVisibleSequence() async {
         let state = TranscriptDocumentState()
         let first = TranscriptDocumentState.Snapshot(hasLanded: true, isAtBottom: false, visibleSequence: 10)
@@ -100,6 +201,30 @@ struct TranscriptTableHeightTests {
         state.publish(first)
         await state.publish(last)?.value
         #expect(state.snapshot == last)
+    }
+
+    @Test func visibleSequencePublicationDoesNotInvalidateLandingOrFollowingObservers() async {
+        let state = TranscriptDocumentState()
+        await state.publish(.init(hasLanded: true, isAtBottom: false, visibleSequence: 10))?.value
+        let positionChanges = Mutex(0)
+        let visibilityChanges = Mutex(0)
+        withObservationTracking {
+            _ = state.hasLanded
+            _ = state.isAtBottom
+        } onChange: {
+            positionChanges.withLock { $0 += 1 }
+        }
+        withObservationTracking {
+            _ = state.visibleSequence
+        } onChange: {
+            visibilityChanges.withLock { $0 += 1 }
+        }
+        await state.publish(.init(hasLanded: true, isAtBottom: false, visibleSequence: 20))?.value
+        #expect(positionChanges.withLock { $0 } == 0)
+        #expect(visibilityChanges.withLock { $0 } == 1)
+        await state.publish(.init(hasLanded: true, isAtBottom: true, visibleSequence: 20))?.value
+        #expect(positionChanges.withLock { $0 } == 1)
+        #expect(state.snapshot == .init(hasLanded: true, isAtBottom: true, visibleSequence: 20))
     }
 
     @Test func tableItemsKeepCanonicalRunEntriesAndOnlyTheFirstAvatar() {
@@ -151,6 +276,35 @@ struct TranscriptTableHeightTests {
         #expect(cache.measureAccessory(AnyView(EmptyView()), width: 600, environment: setup.environment) == 0)
         #expect(cache.measureAccessory(AnyView(Color.clear.frame(height: 40)), width: 600,
                                        environment: setup.environment) == 40)
+    }
+
+    @Test func repeatedSizingOnlyReconcilesNewInputsAndMeasuresNewlyRequestedRows() throws {
+        let setup = try setup()
+        let items = TranscriptTableItem.project(transcriptRows((1...100).map(transcriptTestMessage),
+                                                               lead: setup.lead, members: []))
+        let content = content(items, setup: setup)
+        let cache = TranscriptTableHeights()
+        let tail = IndexSet(90..<100)
+        let first = cache.resolve(items: items, content: content, width: 720,
+                                  environment: setup.environment, measuring: tail)
+        #expect(cache.identityCheckCount == 100)
+        for _ in 0..<20 {
+            let repeated = cache.resolve(items: items, content: content, width: 720,
+                                         environment: setup.environment, measuring: tail)
+            #expect(repeated.heights == first.heights)
+            #expect(repeated.measured == 0)
+        }
+        let head = cache.resolve(items: items, content: content, width: 720,
+                                 environment: setup.environment, measuring: IndexSet(0..<5))
+        #expect(head.measured == 5)
+        #expect(cache.identityCheckCount == 100)
+        cache.recordLiveHeight(180, item: items[95], content: content[95], width: 720,
+                               environment: setup.environment, overflows: nil)
+        let changed = cache.resolve(items: items, content: content, width: 720,
+                                    environment: setup.environment, measuring: tail)
+        #expect(changed.heights[95] == 180)
+        #expect(changed.measured == 0)
+        #expect(cache.identityCheckCount == 200)
     }
 
     @Test func boundedHeightMeasurementLeavesExplicitEstimatesOutsideTheRequestedRows() throws {
@@ -819,6 +973,31 @@ struct TranscriptTableHeightTests {
     private final class InputWindow: NSWindow {
         override var isKeyWindow: Bool { true }
         override var canBecomeKey: Bool { true }
+    }
+
+    private final class SizeInvalidationDocument: NSView {
+        var invalidationCount = 0
+
+        override var isFlipped: Bool { true }
+
+        override func invalidateIntrinsicContentSize() {
+            invalidationCount += 1
+            super.invalidateIntrinsicContentSize()
+        }
+    }
+
+    private final class InsetReflectingScrollView: NSScrollView {
+        var onReflectInsets: (() -> Void)?
+
+        override func didChangeValue(forKey key: String) {
+            MainActor.assumeIsolated {
+                if key == "contentInsets", let reflect = onReflectInsets {
+                    onReflectInsets = nil
+                    reflect()
+                }
+            }
+            super.didChangeValue(forKey: key)
+        }
     }
 
     @Test(.enabled(if: transcriptTimingTestsEnabled))
