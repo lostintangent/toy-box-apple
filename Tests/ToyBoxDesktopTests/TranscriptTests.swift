@@ -852,7 +852,13 @@ struct TranscriptTests {
     }
 
     @MainActor
-    @Test func findingOlderMessagesDoesNotPageTheTranscriptUntilNavigation() async throws {
+    // Quarantined after main CI 40148398608 failed on README-only 43d015a, with no identified code cause.
+    // History reached sequence 1, but m2 stayed offscreen: landed true, gap 2914,
+    // clip (0, 1890, 503, 480), document (0, 0, 503, 5148).
+    // Owner: Transcript. Follow-up t255: diagnose older-match reveal and add deterministic coverage.
+    // Opt in with TOY_BOX_TEST_OLDER_FIND_REVEAL=1.
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["TOY_BOX_TEST_OLDER_FIND_REVEAL"] == "1"))
+    func findingOlderMessagesDoesNotPageTheTranscriptUntilNavigation() async throws {
         var history = (1...60).map(transcriptTestMessage)
         history[1].content = .text("An older-only targetneedle for Find.")
         history[1].sender = .agent("helper")
