@@ -10,6 +10,15 @@ final class TranscriptWindowObserver {
     @ObservationIgnored private var notifications: [NSObjectProtocol] = []
     @ObservationIgnored private var keyMonitor: Any?
     @ObservationIgnored var readerScrolled: (@MainActor () -> Void)?
+    @ObservationIgnored var readerWillScroll: (@MainActor () -> Void)?
+    @ObservationIgnored var layoutChanged: (@MainActor () -> Void)?
+    @ObservationIgnored var isTargeting: (@MainActor () -> Bool)?
+    @ObservationIgnored private var applyingPosition = false
+    @ObservationIgnored private var geometryIsChanging = false
+    @ObservationIgnored private var expectsReaderScroll = false
+    @ObservationIgnored private var observedReaderScroll = false
+    @ObservationIgnored private var previousLayout: TranscriptNativeLayout?
+    @ObservationIgnored private var geometryTurn: CFRunLoopObserver?
 
     func attach(to view: NSView) {
         let scroll = view.enclosingScrollView
@@ -31,22 +40,52 @@ final class TranscriptWindowObserver {
             notifications.append(token)
         }
         if let scroll { observeResizes(of: scroll) }
+        previousLayout = nativeLayout
+        if let clip = scroll?.contentView {
+            clip.postsBoundsChangedNotifications = true
+            notifications.append(NotificationCenter.default.addObserver(
+                forName: NSView.boundsDidChangeNotification, object: clip, queue: nil
+            ) { [weak self] _ in
+                MainActor.assumeIsolated { self?.nativeBoundsChanged() }
+            })
+        }
         if let scroll {
+            notifications.append(NotificationCenter.default.addObserver(
+                forName: NSScrollView.willStartLiveScrollNotification, object: scroll, queue: nil
+            ) { [weak self] _ in
+                MainActor.assumeIsolated { self?.readerWillScroll?() }
+            })
             notifications.append(NotificationCenter.default.addObserver(
                 forName: NSScrollView.didLiveScrollNotification, object: scroll, queue: nil
             ) { [weak self] _ in
                 MainActor.assumeIsolated { self?.readerScrolled?() }
             })
         }
-        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+        keyMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.keyDown, .scrollWheel, .leftMouseDown, .leftMouseDragged]
+        ) { [weak self] event in
             MainActor.assumeIsolated {
-                guard let self, event.window === self.window,
-                      [UInt16(115), 116, 119, 121, 125, 126].contains(event.keyCode),
-                      let scroll = self.scrollView,
-                      let responder = self.window?.firstResponder as? NSView,
-                      responder === scroll || responder.isDescendant(of: scroll) else { return }
+                guard let self, event.window === self.window, let scroll = self.scrollView else { return }
+                let point = scroll.convert(event.locationInWindow, from: nil)
+                if event.type == .keyDown {
+                    guard [UInt16(115), 116, 119, 121, 125, 126].contains(event.keyCode),
+                          let responder = self.window?.firstResponder as? NSView,
+                          responder === scroll || responder.isDescendant(of: scroll) else { return }
+                } else if event.type == .scrollWheel {
+                    guard scroll.contentView.frame.contains(point) else { return }
+                } else {
+                    guard scroll.verticalScroller?.frame.contains(point) == true
+                            || scroll.horizontalScroller?.frame.contains(point) == true else { return }
+                }
+                self.expectsReaderScroll = true
+                self.observedReaderScroll = false
+                self.readerWillScroll?()
                 RunLoop.main.perform { [weak self] in
-                    MainActor.assumeIsolated { self?.readerScrolled?() }
+                    MainActor.assumeIsolated {
+                        guard let self else { return }
+                        if !self.observedReaderScroll { self.readerScrolled?() }
+                        self.expectsReaderScroll = false
+                    }
                 }
             }
             return event
@@ -63,74 +102,65 @@ final class TranscriptWindowObserver {
 
     var nativeLayout: TranscriptNativeLayout? { scrollView.flatMap(TranscriptNativeLayout.init) }
 
-    /// Whether the transcript is following its newest message. A window resize then keeps the end of the
-    /// content at the bottom of the viewport in the same layout pass that draws the new size. SwiftUI's
-    /// follow lands a frame or more later, which a live resize shows as the newest message drifting.
-    @ObservationIgnored var pinsToBottom = false
-    @ObservationIgnored private var isResizing = false
-
     private func observeResizes(of scroll: NSScrollView) {
         let clip = scroll.contentView
         clip.postsFrameChangedNotifications = true
         notifications.append(NotificationCenter.default.addObserver(
             forName: NSView.frameDidChangeNotification, object: clip, queue: nil) { [weak self] _ in
-            MainActor.assumeIsolated { self?.containerResized() }
+            MainActor.assumeIsolated { self?.nativeGeometryChanged() }
         })
         guard let document = scroll.documentView else { return }
         document.postsFrameChangedNotifications = true
+        document.postsBoundsChangedNotifications = true
         notifications.append(NotificationCenter.default.addObserver(
             forName: NSView.frameDidChangeNotification, object: document, queue: nil) { [weak self] _ in
             MainActor.assumeIsolated {
-                // Rewrapping for a new width resizes the content after the container, in the same pass.
-                guard let self, self.isResizing || self.window?.inLiveResize == true else { return }
-                self.pinToBottom()
+                self?.nativeGeometryChanged()
             }
+        })
+        notifications.append(NotificationCenter.default.addObserver(
+            forName: NSView.boundsDidChangeNotification, object: document, queue: nil) { [weak self] _ in
+            MainActor.assumeIsolated { self?.nativeGeometryChanged() }
         })
     }
 
-    private func containerResized() {
-        pinToBottom()
-        guard !isResizing else { return }
-        isResizing = true
-        RunLoop.main.perform { [weak self] in
-            MainActor.assumeIsolated { self?.isResizing = false }
+    private func nativeGeometryChanged() {
+        holdGeometryTurn()
+        previousLayout = nativeLayout
+        layoutChanged?()
+    }
+
+    private func holdGeometryTurn() {
+        geometryIsChanging = true
+        guard geometryTurn == nil else { return }
+        geometryTurn = CFRunLoopObserverCreateWithHandler(
+            nil, CFRunLoopActivity.beforeWaiting.rawValue, false, CFIndex.max
+        ) { [weak self] _, _ in
+            MainActor.assumeIsolated {
+                self?.geometryIsChanging = false
+                self?.geometryTurn = nil
+            }
         }
+        CFRunLoopAddObserver(CFRunLoopGetMain(), geometryTurn, .commonModes)
     }
 
-    /// Whether a resize has already pinned the transcript to its end during this layout pass, so a
-    /// SwiftUI follow would only move it. SwiftUI rests its own follow a point short of the end.
-    var holdsResizePin: Bool {
-        guard pinsToBottom, isResizing || window?.inLiveResize == true,
-              let bottom = bottomOffset, let clip = scrollView?.contentView else { return false }
-        return abs(clip.bounds.minY - bottom) <= 0.25
-    }
-
-    private var bottomOffset: CGFloat? {
-        guard let scrollView, let document = scrollView.documentView, document.isFlipped else { return nil }
-        let clip = scrollView.contentView
-        let end = document.frame.height + scrollView.contentInsets.bottom - clip.bounds.height
-        return max(-scrollView.contentInsets.top, end)
-    }
-
-    private func pinToBottom() {
-        guard pinsToBottom, let bottom = bottomOffset else { return }
-        restoreReadingBottom(to: bottom)
-    }
-
-    func scroll(by delta: CGFloat) {
-        guard let scrollView, let document = scrollView.documentView, delta.isFinite else { return }
-        let clip = scrollView.contentView
-        let maximum = max(0, document.bounds.height - clip.bounds.height)
-        let target = CGPoint(x: clip.bounds.origin.x,
-                             y: min(maximum, max(0, clip.bounds.origin.y + (document.isFlipped ? delta : -delta))))
-        restoreReadingBottom(to: target.y)
-    }
-
-    func restoreReadingBottom(_ bottom: CGFloat, of frame: TranscriptMessageFrame) -> Bool {
-        guard let scrollView else { return false }
-        let offset = TranscriptCoordinates.targetOffset(
-            for: frame, bottom: bottom, topInset: scrollView.contentInsets.top)
-        return restoreReadingBottom(to: offset)
+    private func nativeBoundsChanged() {
+        guard let current = nativeLayout else { return }
+        defer { previousLayout = current }
+        guard !applyingPosition, let previousLayout,
+              abs(current.origin - previousLayout.origin) > 0.25 else { return }
+        let unchangedGeometry = current.viewport == previousLayout.viewport
+            && current.documentEnd == previousLayout.documentEnd
+        guard expectsReaderScroll || (unchangedGeometry && !geometryIsChanging && isTargeting?() != true) else {
+            layoutChanged?()
+            return
+        }
+        observedReaderScroll = true
+        if ProcessInfo.processInfo.environment["TOY_BOX_SCROLL_TRACE"] == "1" {
+            print("INPUT_BOUNDS \(previousLayout.origin)->\(current.origin)"
+                  + " expected=\(expectsReaderScroll) changing=\(geometryIsChanging)")
+        }
+        readerScrolled?()
     }
 
     @discardableResult
@@ -144,6 +174,9 @@ final class TranscriptWindowObserver {
         let target = min(maximum, max(minimum, origin))
         guard abs(clip.bounds.minY - target) > 0.25 else { return true }
         let previous = clip.bounds.minY
+        applyingPosition = true
+        holdGeometryTurn()
+        defer { applyingPosition = false }
         clip.scroll(to: NSPoint(x: clip.bounds.minX, y: target))
         scrollView.reflectScrolledClipView(clip)
         if ProcessInfo.processInfo.environment["TOY_BOX_TEST_PAGING_TRACE"] == "1" {
@@ -161,6 +194,9 @@ final class TranscriptWindowObserver {
     }
 
     func detach() {
+        if let geometryTurn { CFRunLoopObserverInvalidate(geometryTurn) }
+        geometryTurn = nil
+        geometryIsChanging = false
         if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
         keyMonitor = nil
         notifications.forEach(NotificationCenter.default.removeObserver)
@@ -168,7 +204,6 @@ final class TranscriptWindowObserver {
         scrollView = nil
         window = nil
         isKeyWindow = false
-        isResizing = false
     }
 }
 
@@ -244,6 +279,7 @@ struct TranscriptMessageFrame: Equatable {
     var historyStart: Int
     /// The top in the content, which only layout changes move. Scrolling moves only `rect`.
     var contentTop: CGFloat = 0
+    var layoutSize: CGSize?
     var windowRect: CGRect = .zero
 }
 
@@ -264,6 +300,7 @@ extension View {
                     id: .init(sequence: sequence, rect: geometry.frame(in: .named("transcript-viewport")),
                               historyStart: historyStart,
                               contentTop: geometry.frame(in: .named("transcript-content")).minY,
+                              layoutSize: geometry.bounds(of: .named("transcript-content"))?.size,
                               windowRect: geometry.frame(in: .global))
                 ])
             }

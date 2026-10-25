@@ -25,22 +25,53 @@ struct TranscriptNativeLayout: Equatable {
 @MainActor
 final class TranscriptLazyScrollAdapter {
     typealias Model = TranscriptScrollModel
+    private static let traces = ProcessInfo.processInfo.environment["TOY_BOX_SCROLL_TRACE"] == "1"
 
     private(set) var intent: Model.Intent = .following
     private var rows: [Model.RowIdentity] = []
     private var identities: [String: Model.RowIdentity] = [:]
     private var projectedRows: [TranscriptRow] = []
     private var expandedMessageIds: Set<String> = []
+    private var attemptIDs: [String] = []
     private var materializationRows: [String: String] = [:]
     private var layout: Model.Layout?
-    private var wasHolding = false
     private var pendingReaderInput = false
+    private var pendingEvent: Model.Event?
+    private var requestedMeasurement: String?
+    private(set) var command: UUID?
+    private(set) var isAligned = false
+    private var isReady = false
 
-    func configure(rows: [TranscriptRow], expandedMessageIds: Set<String>) {
-        guard rows != projectedRows || expandedMessageIds != self.expandedMessageIds else { return }
+    var followsLatest: Bool {
+        switch intent {
+        case .following, .landing(.end): true
+        default: false
+        }
+    }
+
+    var blocksRead: Bool { pendingReaderInput || pendingEvent != nil || !isAligned }
+    var isTargeting: Bool { !isReady || pendingEvent != nil || requestedMeasurement != nil || !isAligned }
+
+    func visibleRows() -> [String] {
+        guard !blocksRead, let layout else { return [] }
+        return Model.visibleRows(in: layout)
+    }
+
+    func target(for id: String) -> Model.Target? {
+        identities[id].map { .row(id, order: $0.order) }
+    }
+
+    func configure(rows: [TranscriptRow], expandedMessageIds: Set<String>, attemptIDs: [String] = []) {
+        guard rows != projectedRows || expandedMessageIds != self.expandedMessageIds
+                || attemptIDs != self.attemptIDs else { return }
         projectedRows = rows
         self.expandedMessageIds = expandedMessageIds
+        self.attemptIDs = attemptIDs
         self.rows = transcriptScrollIdentities(rows, expandedMessageIds: expandedMessageIds)
+        let attemptOrder = (self.rows.last?.order ?? 0) + 1
+        self.rows.append(contentsOf: attemptIDs.enumerated().map {
+            .init(id: "attempt-\($0.element)", order: attemptOrder + $0.offset)
+        })
         identities = Dictionary(uniqueKeysWithValues: self.rows.map { ($0.id, $0) })
         materializationRows.removeAll(keepingCapacity: true)
         for row in rows {
@@ -48,63 +79,135 @@ final class TranscriptLazyScrollAdapter {
             materializationRows["divider-\(row.id)"] = row.id
             for message in row.messages { materializationRows[message.id] = row.id }
         }
+        for id in attemptIDs { materializationRows["attempt-\(id)"] = "attempt-\(id)" }
     }
 
-    func reset() {
-        intent = .following
-        layout = nil
-        wasHolding = false
+    @discardableResult
+    func request(_ event: Model.Event) -> UUID {
+        let token = UUID()
+        command = token
+        pendingEvent = event
+        requestedMeasurement = nil
         pendingReaderInput = false
+        isAligned = false
+        isReady = true
+        return token
+    }
+
+    func readerWillScroll() {
+        command = nil
+        pendingEvent = nil
+        requestedMeasurement = nil
+        pendingReaderInput = true
+        isAligned = false
     }
 
     func readerScrolled(frames: [String: TranscriptMessageFrame], native: TranscriptNativeLayout,
                         historyStart: Int) {
-        pendingReaderInput = true
-        let next = makeLayout(frames: frames, native: native, historyStart: historyStart)
+        readerWillScroll()
+        isReady = true
+        guard let next = makeLayout(frames: frames, native: native, historyStart: historyStart) else { return }
         captureReader(in: next)
+        if Self.traces { print("MODEL_READER y=\(native.origin) width=\(native.viewport.width) intent=\(intent)") }
         layout = next
     }
 
     func framesChanged(frames: [String: TranscriptMessageFrame], native: TranscriptNativeLayout,
-                       historyStart: Int, holdsReading: Bool) -> Model.Placement? {
-        let next = makeLayout(frames: frames, native: native, historyStart: historyStart)
-        defer {
-            layout = next
-            wasHolding = holdsReading
-        }
+                       historyStart: Int) -> Model.Placement? {
+        guard let next = makeLayout(frames: frames, native: native, historyStart: historyStart) else { return nil }
+        return receive(next)
+    }
+
+    private func receive(_ next: Model.Layout) -> Model.Placement? {
+        defer { layout = next }
+        guard isReady else { return nil }
         if pendingReaderInput {
             captureReader(in: next)
             return nil
         }
-        guard holdsReading else { return nil }
-        if !wasHolding, case .following = intent {
-            guard hasVisibleFrame(in: next) else { return nil }
-            intent = Model.reduce(intent, .holdCurrentPosition, layout: next).intent
+        var placement: Model.Placement
+        if let event = pendingEvent {
+            switch event {
+            case .holdCurrentPosition:
+                guard canCapture(in: next, allowsFollowing: false) else { return nil }
+            case .resumeFromCurrentPosition:
+                guard canCapture(in: next, allowsFollowing: true) else { return nil }
+            default: break
+            }
+            placement = Model.reduce(intent, event, layout: next)
+            pendingEvent = nil
+        } else {
+            if let layout, Model.layoutEvent(from: layout, to: next) == nil,
+               abs(layout.origin - next.origin) <= 0.25, isAligned { return nil }
+            placement = Model.placement(for: intent, layout: next)
         }
-        if let layout, Model.layoutEvent(from: layout, to: next) == nil { return nil }
-        let placement = Model.reduce(intent, .layoutChanged, layout: next)
+        if placement.needsMeasurement != nil, case .reading = intent, let layout {
+            let currentIDs = Set(next.frames.map(\.id))
+            let common = layout.frames.filter { currentIDs.contains($0.id) }
+            let previous = Model.Layout(rows: layout.rows, frames: common, viewport: layout.viewport,
+                                        origin: layout.origin, documentEnd: layout.documentEnd)
+            if canCapture(in: previous, allowsFollowing: false) {
+                intent = Model.reduce(intent, .holdCurrentPosition, layout: previous).intent
+                placement = Model.placement(for: intent, layout: next)
+            }
+        }
         intent = placement.intent
+        if Self.traces {
+            print("MODEL_PLACE width=\(next.viewport.width) y=\(next.origin) end=\(next.documentEnd)"
+                  + " intent=\(intent) origin=\(String(describing: placement.origin))"
+                  + " needs=\(String(describing: placement.needsMeasurement))"
+                  + " frames=\(next.frames.map { "\($0.id):\($0.top)" }.joined(separator: ","))")
+        }
+        isAligned = placement.origin.map { abs($0 - next.origin) <= 0.5 }
+            ?? (placement.needsMeasurement == nil && placement.unavailableTarget == nil)
+        if placement.origin != nil { requestedMeasurement = nil }
         return placement
     }
 
-    func materializationRow(for id: String) -> String? { materializationRows[id] }
+    func nativeGeometryChanged(frames: [String: TranscriptMessageFrame], native: TranscriptNativeLayout,
+                               historyStart: Int) -> Model.Placement? {
+        if followsLatest, pendingEvent == nil, !pendingReaderInput {
+            return receive(.init(rows: rows, frames: [], viewport: native.viewport,
+                                 origin: native.origin, documentEnd: native.documentEnd))
+        }
+        return framesChanged(frames: frames, native: native, historyStart: historyStart)
+    }
+
+    func materializationRow(for id: String) -> String? {
+        switch intent {
+        case .landing, .revealing: break
+        case .reading, .following: return nil
+        }
+        guard let row = materializationRows[id], requestedMeasurement != row else { return nil }
+        requestedMeasurement = row
+        return row
+    }
 
     func captureExpansion(_ id: String, expanded: Bool, frames: [String: TranscriptMessageFrame],
                           native: TranscriptNativeLayout, historyStart: Int) -> Bool {
-        let next = makeLayout(frames: frames, native: native, historyStart: historyStart)
+        guard let next = makeLayout(frames: frames, native: native, historyStart: historyStart) else { return false }
         guard next.frames.contains(where: { $0.id == id }) else { return false }
         intent = Model.reduce(intent, .toggledExpansion(id, expanded: expanded), layout: next).intent
         layout = next
         pendingReaderInput = false
+        pendingEvent = nil
+        command = UUID()
+        isReady = true
+        isAligned = false
         return true
     }
 
     private func captureReader(in layout: Model.Layout) {
-        guard Model.distanceToEnd(in: layout) <= Model.followingThreshold || hasVisibleFrame(in: layout) else {
-            return
-        }
+        guard canCapture(in: layout, allowsFollowing: true) else { return }
         intent = Model.reduce(intent, .readerScrolled(to: layout.origin), layout: layout).intent
         pendingReaderInput = false
+        isAligned = true
+    }
+
+    private func canCapture(in layout: Model.Layout, allowsFollowing: Bool) -> Bool {
+        !layout.rows.contains(where: \.isAnchorable)
+            || (allowsFollowing && Model.distanceToEnd(in: layout) <= Model.followingThreshold)
+            || hasVisibleFrame(in: layout)
     }
 
     private func hasVisibleFrame(in layout: Model.Layout) -> Bool {
@@ -113,13 +216,22 @@ final class TranscriptLazyScrollAdapter {
     }
 
     private func makeLayout(frames: [String: TranscriptMessageFrame], native: TranscriptNativeLayout,
-                            historyStart: Int) -> Model.Layout {
+                            historyStart: Int) -> Model.Layout? {
         let measured = frames.compactMap { id, frame -> Model.RowFrame? in
             guard frame.historyStart == historyStart, let identity = identities[id] else { return nil }
+            if let size = frame.layoutSize {
+                guard abs(size.width + 2 * ConversationRail.inset - native.viewport.width) <= 0.5
+                else { return nil }
+            }
             return .init(id: id, order: identity.order,
                          top: TranscriptCoordinates.contentTopPadding + frame.contentTop,
                          height: frame.rect.height, isAnchorable: identity.isAnchorable)
         }.sorted { $0.order < $1.order }
+        if Self.traces, measured.isEmpty, let frame = frames.values.first {
+            print("MODEL_EMPTY native=\(native.viewport.width)x\(native.documentEnd)"
+                  + " source=\(String(describing: frame.layoutSize)) frames=\(frames.count)"
+                  + " rows=\(rows.count) start=\(historyStart)/\(frame.historyStart)")
+        }
         return .init(rows: rows, frames: measured, viewport: native.viewport,
                      origin: native.origin, documentEnd: native.documentEnd)
     }

@@ -16,6 +16,52 @@ private let transcriptTimingTestsEnabled = ProcessInfo.processInfo.environment["
 @Suite("Transcript rendering and visibility")
 struct TranscriptTests {
     @MainActor @Test
+    func modelFollowingUsesTheNativeEndBeyondTheLastMeasuredRow() throws {
+        let adapter = TranscriptLazyScrollAdapter()
+        adapter.configure(rows: transcriptRows((1...3).map(transcriptTestMessage),
+                                               lead: .lead(id: "lead"), members: []),
+                          expandedMessageIds: [])
+        func sample(origin: CGFloat, end: CGFloat) -> TranscriptNativeLayout {
+            .init(viewport: .init(width: 520, height: 400, topInset: 0, bottomInset: 100),
+                  origin: origin, documentEnd: end)
+        }
+        let frames: [String: TranscriptMessageFrame] = [
+            "m2": .init(sequence: 2, rect: CGRect(x: 0, y: 0, width: 300, height: 150),
+                        historyStart: 1, contentTop: 180)
+        ]
+        adapter.request(.jumpToLatest)
+        #expect(adapter.framesChanged(frames: frames, native: sample(origin: 100, end: 1_000),
+                                      historyStart: 1)?.origin == 700)
+        #expect(adapter.framesChanged(frames: frames, native: sample(origin: 700, end: 1_000),
+                                      historyStart: 1)?.origin == 700)
+        #expect(adapter.isAligned)
+        #expect(adapter.nativeGeometryChanged(frames: frames, native: sample(origin: 700, end: 1_100),
+                                              historyStart: 1)?.origin == 800)
+    }
+
+    @MainActor @Test
+    func modelReaderCancelsAnUnmeasuredRevealBeforeAnyPlacement() throws {
+        let adapter = TranscriptLazyScrollAdapter()
+        adapter.configure(rows: transcriptRows((1...3).map(transcriptTestMessage),
+                                               lead: .lead(id: "lead"), members: []),
+                          expandedMessageIds: [])
+        let native = TranscriptNativeLayout(
+            viewport: .init(width: 520, height: 400, topInset: 0, bottomInset: 100),
+            origin: 100, documentEnd: 1_000)
+        let token = adapter.request(.reveal("m3"))
+        #expect(adapter.framesChanged(frames: [:], native: native, historyStart: 1)?.needsMeasurement == "m3")
+        adapter.readerWillScroll()
+        #expect(adapter.command != token)
+        #expect(adapter.framesChanged(frames: [:], native: native, historyStart: 1) == nil)
+        let frames: [String: TranscriptMessageFrame] = [
+            "m2": .init(sequence: 2, rect: CGRect(x: 0, y: 0, width: 300, height: 150),
+                        historyStart: 1, contentTop: 180)
+        ]
+        #expect(adapter.framesChanged(frames: frames, native: native, historyStart: 1) == nil)
+        #expect(adapter.intent == .reading(.init(row: "m2", order: 9, offset: 100)))
+    }
+
+    @MainActor @Test
     func modelReaderKeepsItsPointOffsetAcrossWidthChanges() throws {
         let adapter = TranscriptLazyScrollAdapter()
         adapter.configure(rows: transcriptRows((1...3).map(transcriptTestMessage),
@@ -35,9 +81,9 @@ struct TranscriptTests {
         narrowed["m2"] = frame(2, top: 260)
         narrowed["m3"] = frame(3, top: 480)
         #expect(adapter.framesChanged(frames: narrowed, native: sample(width: 360, origin: 100),
-                                      historyStart: 1, holdsReading: true)?.origin == 160)
+                                      historyStart: 1)?.origin == 160)
         #expect(adapter.framesChanged(frames: before, native: sample(width: 520, origin: 160),
-                                      historyStart: 1, holdsReading: true)?.origin == 100)
+                                      historyStart: 1)?.origin == 100)
     }
 
     @MainActor @Test
@@ -50,14 +96,12 @@ struct TranscriptTests {
             viewport: .init(width: 520, height: 400, topInset: 0, bottomInset: 100),
             origin: 100, documentEnd: 1_000)
         adapter.readerScrolled(frames: [:], native: native, historyStart: 1)
-        #expect(adapter.framesChanged(frames: [:], native: native, historyStart: 1,
-                                      holdsReading: true) == nil)
+        #expect(adapter.framesChanged(frames: [:], native: native, historyStart: 1) == nil)
         let frames: [String: TranscriptMessageFrame] = [
             "m2": .init(sequence: 2, rect: CGRect(x: 0, y: 0, width: 300, height: 150),
                         historyStart: 1, contentTop: 180)
         ]
-        #expect(adapter.framesChanged(frames: frames, native: native, historyStart: 1,
-                                      holdsReading: true) == nil)
+        #expect(adapter.framesChanged(frames: frames, native: native, historyStart: 1) == nil)
         #expect(adapter.intent == .reading(.init(row: "m2", order: 9, offset: 100)))
     }
 
@@ -608,6 +652,38 @@ struct TranscriptTests {
         // Before landing, or while the reader scrolls, nothing follows.
         #expect(resized.update(after: atBottom, wasAtBottom: true, canFollow: false, isJumping: true)
                 == .init(isAtBottom: true, follow: nil, landsJump: false))
+    }
+
+    @MainActor
+    @Test(.enabled(if: transcriptTimingTestsEnabled))
+    func readingWidthChangesAfterAnUnphasedNativePageKeepTheVisibleAnchor() async throws {
+        let drift = TranscriptGapLog()
+        var anchorID: String?
+        var anchorTop: CGFloat = 0
+        let harness = try await TranscriptHarness(messages: (1...100).map(transcriptTestMessage),
+                                                  resizable: true) { harness in
+            guard let anchorID, let frame = harness.frames[anchorID] else { return }
+            drift.values.append(frame.rect.minY - anchorTop)
+        }
+        defer { harness.close() }
+        let clip = harness.scrollView.contentView
+        let destination = clip.bounds.minY - 900
+        clip.scroll(to: NSPoint(x: clip.bounds.minX, y: destination))
+        harness.scrollView.reflectScrolledClipView(clip)
+        try await harness.settled()
+        let anchor = try #require(harness.visibleFrames().min { $0.value.minY < $1.value.minY })
+        anchorID = anchor.key
+        anchorTop = anchor.value.minY
+        for _ in 0..<3 {
+            for width: CGFloat in [360, 520] {
+                harness.resize(width: width)
+                try await harness.frame()
+            }
+        }
+        try await harness.settled()
+        #expect(!drift.values.isEmpty && drift.values.allSatisfy { abs($0) <= 1 },
+                "Worst width drift: \(drift.values.map(abs).max() ?? .infinity)")
+        #expect(harness.readRequests == 0)
     }
 
     @MainActor
