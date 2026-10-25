@@ -15,6 +15,89 @@ private let transcriptTimingTestsEnabled = ProcessInfo.processInfo.environment["
 
 @Suite("Transcript rendering and visibility")
 struct TranscriptTests {
+    @Test func lazyAgentRowsKeepCanonicalEntriesAndShowOneAvatarPerRun() throws {
+        let messages = (1...100).map(transcriptTestMessage)
+        let canonical = transcriptRows(messages, lead: .lead(id: "lead"), members: [])
+        let run = try #require(canonical.first)
+        try #require(canonical.count == 1)
+        let native = transcriptLazyRows(canonical)
+        #expect(native.map(\.id) == messages.map(\.id))
+        #expect(native.flatMap(\.row.messages) == messages)
+        #expect(native.map(\.showsAvatar) == [true] + Array(repeating: false, count: 99))
+        #expect(native.map(\.topSpacing) == [20] + Array(repeating: 8, count: 99))
+        #expect(native.first?.row.divider == run.divider)
+        #expect(native.dropFirst().allSatisfy { $0.row.divider == nil })
+        #expect(transcriptLazyRowID(containing: "m74", in: run) == "m74")
+        guard case .agent(_, let entries) = run.content else {
+            Issue.record("The fixture did not form an agent run.")
+            return
+        }
+        for (item, entry) in zip(native, entries) {
+            guard case .agent(_, let single) = item.row.content else {
+                Issue.record("A native row lost its agent entry.")
+                continue
+            }
+            #expect(single == [entry])
+        }
+    }
+
+    @MainActor
+    @Test(.enabled(if: transcriptTimingTestsEnabled))
+    func nativeMessageRowsRenderLikeTheirCanonicalRuns() async throws {
+        let lead = ChannelAgent.lead(id: "lead")
+        let store = ChannelStore(id: "row-render", api: try ChannelAPI(serverURL: "https://row-render.invalid"),
+                                 sendJournal: nil)
+        var messages = (1...6).map(transcriptTestMessage)
+        messages[3].sender = .user
+        let rows = transcriptRows(messages, lead: lead, members: [], unreadAfter: 2)
+        let native = transcriptLazyRows(rows)
+        let stacked = transcriptStackedSystemRowIDs(rows)
+        let context = TranscriptRowContext(agents: [lead], channelID: store.id, historyStart: 1, api: store.api)
+        func content(_ row: TranscriptRow, showsAvatar: Bool = true) -> some View {
+            TranscriptRowContent(row: row, context: context, statusReactions: [:], highlightedSequence: nil,
+                                 catchUp: nil, store: store, expandedMessageIds: [], showsAvatar: showsAvatar,
+                                 onSetExpanded: { _, _ in })
+        }
+        let original = VStack(alignment: .leading, spacing: 0) {
+            ForEach(rows) { row in
+                content(row).padding(.top, stacked.contains(row.id) ? 4 : 20)
+            }
+        }
+        let flattened = VStack(alignment: .leading, spacing: 0) {
+            ForEach(native) { item in
+                content(item.row, showsAvatar: item.showsAvatar).padding(.top, item.topSpacing)
+            }
+        }
+        for width: CGFloat in [420, 720] {
+            for name in [NSAppearance.Name.aqua, .darkAqua] {
+                func bitmap(_ view: some View) async throws -> NSBitmapImageRep {
+                    try await renderedTranscriptBitmap(
+                        view.modifier(ConversationRail())
+                            .frame(maxHeight: .infinity, alignment: .top)
+                            .background(Color(nsColor: .textBackgroundColor))
+                            .environment(ChannelInteraction()),
+                        size: CGSize(width: width, height: 900), appearance: NSAppearance(named: name))
+                }
+                let before = try await bitmap(original)
+                let after = try await bitmap(flattened)
+                let oldPixels = Data(bytes: try #require(before.bitmapData),
+                                     count: before.bytesPerRow * before.pixelsHigh)
+                let newPixels = Data(bytes: try #require(after.bitmapData),
+                                     count: after.bytesPerRow * after.pixelsHigh)
+                #expect(oldPixels == newPixels, "Row render changed at \(width) in \(name.rawValue)")
+                if let directory = ProcessInfo.processInfo.environment["TOY_BOX_TEST_TRANSCRIPT_SNAPSHOTS"] {
+                    let destination = URL(fileURLWithPath: directory, isDirectory: true)
+                    try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
+                    let suffix = "\(Int(width))-\(name == .aqua ? "light" : "dark").png"
+                    for (prefix, image) in [("main", before), ("message-rows", after)] {
+                        try #require(image.representation(using: .png, properties: [:]))
+                            .write(to: destination.appending(path: "\(prefix)-\(suffix)"))
+                    }
+                }
+            }
+        }
+    }
+
     @Test func paragraphsKeepSelectableInlineMarkdownAndLineBreaks() {
         #expect(MarkdownBlock.parse("").isEmpty)
         #expect(MarkdownBlock.parse(" \n\n ").isEmpty)
@@ -562,6 +645,66 @@ struct TranscriptTests {
         // Before landing, or while the reader scrolls, nothing follows.
         #expect(resized.update(after: atBottom, wasAtBottom: true, canFollow: false, isJumping: true)
                 == .init(isAtBottom: true, follow: nil, landsJump: false))
+    }
+
+    @MainActor
+    @Test(.serialized, .enabled(if: transcriptTimingTestsEnabled), arguments: [false, true])
+    func readingWidthChangesAfterAnUnphasedNativePageKeepTheVisibleAnchor(legacyScrollers: Bool) async throws {
+        let drift = TranscriptWidthLog()
+        let harness = try await TranscriptHarness(messages: (1...100).map(transcriptTestMessage),
+                                                  resizable: true, legacyScrollers: legacyScrollers) { harness in
+            guard let anchorID = drift.anchorID else { return }
+            guard let frame = harness.frames[anchorID] else {
+                if drift.missing == 0 {
+                    print("WIDTH_MISSING legacy=\(legacyScrollers)"
+                          + " origin=\(harness.scrollView.contentView.bounds.minY)"
+                          + " end=\(harness.scrollView.documentView?.frame.maxY ?? 0)"
+                          + " visible=\(harness.visibleFrames().keys.sorted())")
+                }
+                drift.missing += 1
+                return
+            }
+            drift.values.append(frame.rect.minY - drift.anchorTop)
+        }
+        defer { harness.close() }
+        func bottomGap() -> CGFloat {
+            (harness.scrollView.documentView?.bounds.height ?? 0)
+                + harness.scrollView.contentInsets.bottom - harness.scrollView.contentView.bounds.maxY
+        }
+        func logLayout(_ phase: String) {
+            let visible = harness.visibleFrames().sorted { $0.value.minY < $1.value.minY }.map(\.key)
+            print("WIDTH_LAYOUT legacy=\(legacyScrollers) phase=\(phase)"
+                  + " origin=\(harness.scrollView.contentView.bounds.minY)"
+                  + " end=\(harness.scrollView.documentView?.frame.maxY ?? 0)"
+                  + " clip=\(harness.scrollView.contentView.bounds.size)"
+                  + " gap=\(bottomGap())"
+                  + " measured=\(harness.frames.count) visible=\(visible)")
+        }
+        logLayout("landed")
+        let clip = harness.scrollView.contentView
+        clip.scroll(to: NSPoint(x: clip.bounds.minX, y: clip.bounds.minY - 900))
+        harness.scrollView.reflectScrolledClipView(clip)
+        try await harness.settled()
+        logLayout("paged")
+        try #require(bottomGap() > 48, "The native page was reverted before width cycling.")
+        let anchor = try #require(harness.visibleFrames().min { $0.value.minY < $1.value.minY })
+        drift.anchorID = anchor.key
+        drift.anchorTop = anchor.value.minY
+        for _ in 0..<3 {
+            for width: CGFloat in [360, 520] {
+                harness.resize(width: width)
+                try await harness.frame()
+                logLayout("width-\(width)")
+            }
+        }
+        try await harness.settled()
+        print("WIDTH_ANCHOR legacy=\(legacyScrollers) id=\(anchor.key) offset=\(drift.anchorTop)"
+              + " samples=\(drift.values.count) missing=\(drift.missing)"
+              + " worst=\(drift.values.map(abs).max() ?? .infinity)")
+        #expect(drift.missing == 0)
+        #expect(!drift.values.isEmpty && drift.values.allSatisfy { abs($0) <= 1 },
+                "Worst width drift: \(drift.values.map(abs).max() ?? .infinity)")
+        #expect(harness.readRequests == 0)
     }
 
     @MainActor
@@ -2488,6 +2631,14 @@ private final class TranscriptLayoutCapture {
 
 @MainActor
 private final class TranscriptGapLog {
+    var values: [CGFloat] = []
+}
+
+@MainActor
+private final class TranscriptWidthLog {
+    var anchorID: String?
+    var anchorTop: CGFloat = 0
+    var missing = 0
     var values: [CGFloat] = []
 }
 

@@ -297,8 +297,7 @@ struct ConversationTranscript: View {
     }
 
     private func conversationRows(proxy: ScrollViewProxy) -> some View {
-        let rows = rows
-        let stacked = transcriptStackedSystemRowIDs(rows)
+        let rows = transcriptLazyRows(rows)
         let context = TranscriptRowContext(agents: store.roster, channelID: store.id,
                                            historyStart: store.messages.first?.sequence ?? 0, api: store.api)
         let statusReactions = statusReactions
@@ -316,11 +315,12 @@ struct ConversationTranscript: View {
                         : "Messages from you and your team will appear here."))
                     .padding(.vertical, 40)
             }
-            ForEach(rows) { row in
-                TranscriptRowContent(row: row, context: context, statusReactions: statusReactions,
+            ForEach(rows) { item in
+                TranscriptRowContent(row: item.row, context: context, statusReactions: statusReactions,
                                      highlightedSequence: highlightedSequence, catchUp: catchUp, store: store,
                                      expandedMessageIds: expandedMessageIds,
                                      findHighlights: findHighlights,
+                                     showsAvatar: item.showsAvatar,
                                      onSetExpanded: { id, expands in
                                          // The message changes height below its own top, even when
                                          // that top is above the viewport.
@@ -338,7 +338,7 @@ struct ConversationTranscript: View {
                                          }
                                      })
                     .equatable()
-                    .padding(.top, stacked.contains(row.id) ? 4 : 20)
+                    .padding(.top, item.topSpacing)
             }
             ForEach(store.sendAttempts) { attempt in
                 sendAttempt(attempt, statusReactions: statusReactions[attempt.message.sequence] ?? [])
@@ -878,7 +878,8 @@ struct ConversationTranscript: View {
         let individualSystem = message.system?.type == "artifact_shared"
             || (membership && row.messages.contains(where: { expandedMessageIds.contains($0.id) }))
         let targetID = message.isSystem && !individualSystem ? row.id : message.id
-        guard await settleReveal(targetID: targetID, rowID: row.id, token: token,
+        guard await settleReveal(targetID: targetID,
+                                 rowID: transcriptLazyRowID(containing: message.id, in: row), token: token,
                                  findToken: findToken, using: proxy) else { return }
         highlightedSequence = find.isPresented ? nil : sequence
         hasLanded = true
@@ -1023,7 +1024,8 @@ struct ConversationTranscript: View {
                 alignedSince = nil
                 if !requestedMaterialization {
                     let row = rows.first { $0.messages.contains { $0.id == anchor.id } }
-                    proxy.scrollTo(row?.id ?? anchor.id, anchor: .top)
+                    proxy.scrollTo(row.map { transcriptLazyRowID(containing: anchor.id, in: $0) } ?? anchor.id,
+                                   anchor: .top)
                     requestedMaterialization = true
                 }
             }

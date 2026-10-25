@@ -17,6 +17,34 @@ struct TranscriptRowContext: Equatable {
     }
 }
 
+struct TranscriptLazyRow: Identifiable {
+    let row: TranscriptRow
+    let showsAvatar: Bool
+    let topSpacing: CGFloat
+    var id: String { row.id }
+}
+
+func transcriptLazyRows(_ rows: [TranscriptRow]) -> [TranscriptLazyRow] {
+    let stacked = transcriptStackedSystemRowIDs(rows)
+    return rows.flatMap { row -> [TranscriptLazyRow] in
+        guard case .agent(let agentID, let entries) = row.content else {
+            return [.init(row: row, showsAvatar: true, topSpacing: stacked.contains(row.id) ? 4 : 20)]
+        }
+        return entries.enumerated().map { index, entry in
+            var single = row
+            single.id = entry.id
+            single.content = .agent(agentId: agentID, entries: [entry])
+            single.divider = index == 0 ? row.divider : nil
+            return .init(row: single, showsAvatar: index == 0, topSpacing: index == 0 ? 20 : 8)
+        }
+    }
+}
+
+func transcriptLazyRowID(containing messageID: String, in row: TranscriptRow) -> String {
+    if case .agent = row.content { return messageID }
+    return row.id
+}
+
 /// One transcript row. It compares only what it renders, so the rows a new message doesn't touch
 /// skip their bodies, and its actions are ignored since they only call back into the transcript.
 struct TranscriptRowContent: View, @MainActor Equatable {
@@ -32,12 +60,14 @@ struct TranscriptRowContent: View, @MainActor Equatable {
     let store: ChannelStore
     /// This row's expanded messages.
     var expandedMessageIds: Set<String> = []
+    var showsAvatar = true
     var onSetExpanded: (String, Bool) -> Void = { _, _ in }
     @Environment(ChannelInteraction.self) private var interaction
 
     init(row: TranscriptRow, context: TranscriptRowContext, statusReactions: [Int: [ChannelReaction]],
          highlightedSequence: Int?, catchUp: TranscriptCatchUp?, store: ChannelStore,
          expandedMessageIds: Set<String>, findHighlights: [Int: TranscriptFindHighlight] = [:],
+         showsAvatar: Bool = true,
          onSetExpanded: @escaping (String, Bool) -> Void) {
         let messages = row.messages
         self.row = row
@@ -51,6 +81,7 @@ struct TranscriptRowContent: View, @MainActor Equatable {
         }
         self.catchUp = row.divider?.unread == true ? catchUp : nil
         self.store = store
+        self.showsAvatar = showsAvatar
         self.expandedMessageIds = expandedMessageIds.isEmpty ? [] : expandedMessageIds.filter { id in
             messages.contains { $0.id == id }
         }
@@ -62,6 +93,7 @@ struct TranscriptRowContent: View, @MainActor Equatable {
             && lhs.highlightedSequence == rhs.highlightedSequence && lhs.catchUp === rhs.catchUp
             && lhs.store === rhs.store && lhs.expandedMessageIds == rhs.expandedMessageIds
             && lhs.findHighlights == rhs.findHighlights
+            && lhs.showsAvatar == rhs.showsAvatar
     }
 
     var body: some View {
@@ -85,7 +117,11 @@ struct TranscriptRowContent: View, @MainActor Equatable {
             case .agent(let agentId, let entries):
                 let agent = channelAgentIdentity(context.agents, id: agentId)
                 HStack(alignment: .top, spacing: 12) {
-                    AgentAvatarView(agent: agent, size: 32)
+                    if showsAvatar {
+                        AgentAvatarView(agent: agent, size: 32)
+                    } else {
+                        Color.clear.frame(width: 32, height: 0).accessibilityHidden(true)
+                    }
                     VStack(alignment: .leading, spacing: 8) {
                         ForEach(entries) { entry in
                             TranscriptAgentMessage(entry: entry, agent: agent, agents: context.agents,
