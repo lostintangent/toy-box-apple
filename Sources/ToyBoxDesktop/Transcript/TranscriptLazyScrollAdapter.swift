@@ -5,11 +5,14 @@ struct TranscriptNativeLayout: Equatable {
     let viewport: TranscriptScrollModel.Viewport
     let origin: CGFloat
     let documentEnd: CGFloat
+    let documentWidth: CGFloat
 
-    init(viewport: TranscriptScrollModel.Viewport, origin: CGFloat, documentEnd: CGFloat) {
+    init(viewport: TranscriptScrollModel.Viewport, origin: CGFloat, documentEnd: CGFloat,
+         documentWidth: CGFloat? = nil) {
         self.viewport = viewport
         self.origin = origin
         self.documentEnd = documentEnd
+        self.documentWidth = documentWidth ?? viewport.width
     }
 
     init?(scrollView: NSScrollView) {
@@ -18,7 +21,7 @@ struct TranscriptNativeLayout: Equatable {
         let insets = scrollView.contentInsets
         self.init(viewport: .init(width: bounds.width, height: bounds.height,
                                  topInset: max(0, insets.top), bottomInset: max(0, insets.bottom)),
-                  origin: bounds.minY, documentEnd: document.bounds.height)
+                  origin: bounds.minY, documentEnd: document.bounds.height, documentWidth: document.bounds.width)
     }
 }
 
@@ -220,11 +223,14 @@ final class TranscriptLazyScrollAdapter {
         let measured = frames.compactMap { id, frame -> Model.RowFrame? in
             guard frame.historyStart == historyStart, let identity = identities[id] else { return nil }
             if let size = frame.layoutSize {
-                guard abs(size.width + 2 * ConversationRail.inset - native.viewport.width) <= 0.5
+                guard abs(size.width + 2 * ConversationRail.inset - native.documentWidth) <= 0.5,
+                      abs(size.height + TranscriptCoordinates.contentTopPadding - native.documentEnd) <= 0.5
                 else { return nil }
             }
+            let top = TranscriptCoordinates.contentTopPadding + frame.contentTop
+            guard top >= -0.5, top + frame.rect.height <= native.documentEnd + 0.5 else { return nil }
             return .init(id: id, order: identity.order,
-                         top: TranscriptCoordinates.contentTopPadding + frame.contentTop,
+                         top: top,
                          height: frame.rect.height, isAnchorable: identity.isAnchorable)
         }.sorted { $0.order < $1.order }
         if Self.traces, measured.isEmpty, let frame = frames.values.first {
@@ -232,6 +238,7 @@ final class TranscriptLazyScrollAdapter {
                   + " source=\(String(describing: frame.layoutSize)) frames=\(frames.count)"
                   + " rows=\(rows.count) start=\(historyStart)/\(frame.historyStart)")
         }
+        guard frames.isEmpty || !measured.isEmpty || !rows.contains(where: \.isAnchorable) else { return nil }
         return .init(rows: rows, frames: measured, viewport: native.viewport,
                      origin: native.origin, documentEnd: native.documentEnd)
     }

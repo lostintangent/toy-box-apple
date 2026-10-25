@@ -16,6 +16,28 @@ private let transcriptTimingTestsEnabled = ProcessInfo.processInfo.environment["
 @Suite("Transcript rendering and visibility")
 struct TranscriptTests {
     @MainActor @Test
+    func modelReaderRejectsFramesBeyondTheCurrentNativeDocument() {
+        let adapter = TranscriptLazyScrollAdapter()
+        adapter.configure(rows: transcriptRows((1...100).map(transcriptTestMessage),
+                                               lead: .lead(id: "lead"), members: []),
+                          expandedMessageIds: [])
+        let viewport = TranscriptScrollModel.Viewport(width: 360, height: 380, topInset: 0, bottomInset: 0)
+        let initial = TranscriptNativeLayout(viewport: viewport, origin: 4_801, documentEnd: 6_601)
+        let frame = TranscriptMessageFrame(sequence: 74, rect: CGRect(x: 0, y: 37, width: 200, height: 45),
+                                           historyStart: 1, contentTop: 4_818,
+                                           layoutSize: CGSize(width: 312, height: 6_581))
+        adapter.readerScrolled(frames: ["m74": frame], native: initial, historyStart: 1)
+        let intent = adapter.intent
+        var stale = frame
+        stale.layoutSize = CGSize(width: 312, height: 1_124)
+        let smaller = TranscriptNativeLayout(viewport: viewport, origin: 764, documentEnd: 1_144)
+        #expect(adapter.framesChanged(frames: ["m74": stale], native: smaller, historyStart: 1) == nil)
+        #expect(adapter.intent == intent)
+        let recovered = TranscriptNativeLayout(viewport: viewport, origin: 764, documentEnd: 6_601)
+        #expect(adapter.framesChanged(frames: ["m74": frame], native: recovered, historyStart: 1)?.origin == 4_801)
+    }
+
+    @MainActor @Test
     func modelFollowingUsesTheNativeEndBeyondTheLastMeasuredRow() throws {
         let adapter = TranscriptLazyScrollAdapter()
         adapter.configure(rows: transcriptRows((1...3).map(transcriptTestMessage),
