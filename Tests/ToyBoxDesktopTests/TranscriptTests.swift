@@ -617,6 +617,21 @@ struct TranscriptTests {
         #expect(viewport(gap: 40).isAtBottom(after: viewport(gap: 200), wasAtBottom: false, following: false))
     }
 
+    @Test(arguments: [CGFloat(0), 48])
+    func aResizeCannotTurnAReadingPositionIntoFollowing(gap: CGFloat) {
+        let reading = TranscriptViewport(top: 1000, bottomGap: 600, width: 600, height: 400, contentHeight: 2000)
+        let shrunk = TranscriptViewport(top: 800 - gap, bottomGap: gap, width: 600, height: 400,
+                                         contentHeight: 1200)
+        let taller = TranscriptViewport(top: 1000 - gap, bottomGap: gap, width: 600, height: 1000,
+                                         contentHeight: 2000)
+        for resized in [shrunk, taller] {
+            #expect(!resized.isAtBottom(after: reading, wasAtBottom: false, following: false))
+            #expect(resized.update(after: reading, wasAtBottom: false, canFollow: true, isJumping: false)
+                    == .init(isAtBottom: false, follow: nil, landsJump: false))
+            #expect(resized.isAtBottom(after: reading, wasAtBottom: true, following: false))
+        }
+    }
+
     @Test func aResizeBeforeAJumpAppliesCannotPinTheTranscriptBackToLatest() {
         func viewport(top: CGFloat, content: CGFloat) -> TranscriptViewport {
             TranscriptViewport(top: top, bottomGap: content - top - 400, width: 600, height: 400,

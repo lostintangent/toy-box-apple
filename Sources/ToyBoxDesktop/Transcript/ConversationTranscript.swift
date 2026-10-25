@@ -1245,10 +1245,10 @@ struct TranscriptViewport: Equatable {
 
     /// Whether the transcript is still at, or following, its bottom after moving here from `old`.
     /// Growth below a followed bottom, such as a sent image loading, and a follow still in flight
-    /// keep following. Moving away from the bottom, or resizing while not following, stops it.
+    /// keep following. A resize can preserve following, but cannot start it.
     func isAtBottom(after old: TranscriptViewport, wasAtBottom: Bool, following: Bool) -> Bool {
-        if bottomGap <= 48 || following { return true }
         let resized = contentHeight != old.contentHeight || height != old.height
+        if following || (bottomGap <= 48 && (wasAtBottom || !resized)) { return true }
         return resized || bottomGap > old.bottomGap ? false : wasAtBottom
     }
     func readSequence(in frames: [String: TranscriptMessageFrame], nativeViewportTop: CGFloat? = nil) -> Int? {
