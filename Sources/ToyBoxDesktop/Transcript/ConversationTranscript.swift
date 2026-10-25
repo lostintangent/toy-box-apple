@@ -183,7 +183,7 @@ struct ConversationTranscript: View {
             .onChange(of: interaction.messageView) {
                 catchUp?.isPinned = false
                 pagingAnchor = nil
-                if isAtBottom { scrollToLatest(using: proxy) }
+                if isAtBottom && !isRevealing { scrollToLatest(using: proxy) }
                 if rows.isEmpty && store.hasOlderMessages { Task { await loadOlder() } }
             }
             .onChange(of: store.messages.last?.id) {
@@ -843,13 +843,15 @@ struct ConversationTranscript: View {
     }
 
     private func reveal(sequence: Int, using proxy: ScrollViewProxy) async {
+        let token = interaction.revealRequestToken
+        let findToken = find.isPresented && find.revealRequest?.sequence == sequence ? find.revealRequest?.token : nil
         catchUp?.isPinned = false
         isRevealing = true
         revealError = nil
         pagingAnchor = nil
-        defer { isRevealing = false }
+        defer { if interaction.revealRequestToken == token { isRevealing = false } }
         await loadHistory(through: sequence)
-        guard !Task.isCancelled, !interaction.isArtifactViewerPresented else { return }
+        guard revealIsCurrent(token, findToken: findToken) else { return }
         guard let message = store.state?.messages.first(where: { $0.sequence == sequence }) else {
             revealError = store.historyError ?? "This message is no longer available."
             return
@@ -858,20 +860,55 @@ struct ConversationTranscript: View {
             interaction.messageView = .all
         }
         if find.isPresented { expandedMessageIds.insert(message.id) }
-        await Task.yield()
-        guard !Task.isCancelled, !interaction.isArtifactViewerPresented else { return }
-        let row = rows.first { $0.messages.contains { $0.id == message.id } }
+        guard let row = rows.first(where: { $0.messages.contains { $0.id == message.id } }) else {
+            revealError = "This message is no longer available."
+            return
+        }
         let membership = message.system?.type == "member_joined" || message.system?.type == "member_left"
         let individualSystem = message.system?.type == "artifact_shared"
-            || (membership && row?.messages.contains(where: { expandedMessageIds.contains($0.id) }) == true)
-        scrollPosition = nil
-        proxy.scrollTo(message.isSystem && !individualSystem ? row?.id ?? message.id : message.id, anchor: .center)
+            || (membership && row.messages.contains(where: { expandedMessageIds.contains($0.id) }))
+        let targetID = message.isSystem && !individualSystem ? row.id : message.id
+        guard await settleReveal(targetID: targetID, rowID: row.id, token: token,
+                                 findToken: findToken, using: proxy) else { return }
         highlightedSequence = find.isPresented ? nil : sequence
         hasLanded = true
         guard !find.isPresented else { return }
         do { try await Task.sleep(for: .seconds(2)) }
         catch { return }
         if highlightedSequence == sequence { highlightedSequence = nil }
+    }
+
+    private func revealIsCurrent(_ token: UUID, findToken: UUID?) -> Bool {
+        guard !Task.isCancelled, interaction.revealRequestToken == token,
+              !interaction.isArtifactViewerPresented else { return false }
+        return findToken == nil || (find.isPresented && find.revealRequest?.token == findToken)
+    }
+
+    private func settleReveal(targetID: String, rowID: String, token: UUID,
+                              findToken: UUID?, using proxy: ScrollViewProxy) async -> Bool {
+        let turns = TranscriptLayoutTurns()
+        let deadline = ContinuousClock.now + .seconds(2)
+        var reveal = TranscriptReveal()
+        var materialized = false
+        scrollPosition = nil
+        while ContinuousClock.now < deadline {
+            guard await turns.settled(), revealIsCurrent(token, findToken: findToken) else { return false }
+            guard let layout = TranscriptReveal.Layout(
+                frame: frames[targetID], historyStart: store.messages.first?.sequence,
+                viewport: viewport, nativeTop: window.viewportTop) else {
+                _ = reveal.receive(nil, isAligned: false)
+                if !materialized {
+                    proxy.scrollTo(rowID, anchor: .center)
+                    materialized = true
+                }
+                continue
+            }
+            let aligned = window.restoreReadingBottom(layout.bottom, of: layout.frame)
+            if reveal.receive(layout, isAligned: aligned) { return true }
+        }
+        guard revealIsCurrent(token, findToken: findToken) else { return false }
+        revealError = "Couldn't reveal this message. Try Reveal again."
+        return false
     }
 
     private func loadHistory(through sequence: Int) async {
