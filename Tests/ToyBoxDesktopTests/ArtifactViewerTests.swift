@@ -19,6 +19,212 @@ struct ArtifactViewerTests {
         #expect(ArtifactContentKind(artifact("report.pdf")) == .file)
     }
 
+    @Test(arguments: ["allowed", "blocked", "control"])
+    func topLevelSandboxResponseProbe(policy: String) async throws {
+        let configuration = WKWebViewConfiguration()
+        configuration.websiteDataStore = .nonPersistent()
+        configuration.setURLSchemeHandler(ArtifactSandboxResponseProbe(), forURLScheme: "toybox-sandbox")
+        let web = WKWebView(frame: NSRect(x: 0, y: 0, width: 640, height: 400), configuration: configuration)
+        let url = try #require(URL(string: "toybox-sandbox://document/\(policy)"))
+        web.load(URLRequest(url: url))
+        defer { web.stopLoading() }
+        try await wait { web.url == url && !web.isLoading }
+        #expect(web.title == (policy == "blocked" ? "Initial" : "Scripts ran"))
+        if policy != "blocked" {
+            let result = try await web.evaluateJavaScript("window.sandboxProbe")
+            let probe = try #require(result as? [String: String])
+            print("Top-level sandbox \(policy): \(probe)")
+            if policy == "allowed" {
+                #expect(probe["origin"] == "null")
+                #expect(probe["storage"] == "SecurityError")
+                #expect(probe["cookieRead"] == "")
+            } else {
+                #expect(probe["origin"] == "toybox-sandbox://document")
+                #expect(probe["storage"] == "allowed")
+            }
+        }
+    }
+
+    @Test(arguments: ["root", "iframe"], [true, false])
+    func sandboxViewportInsetsProbe(container: String, beforeLoad: Bool) async throws {
+        _ = NSApplication.shared
+        let source = """
+        <!doctype html><html><head><style>html,body{margin:0;background:orange}</style></head><body>
+        <div id="first" style="height:20px;background:red"></div>
+        <div style="height:3000px"></div><div id="last" style="height:20px;background:blue"></div>
+        <script>
+        function report() {
+            parent.postMessage({viewport:innerHeight, scroll:scrollY,
+                first:document.getElementById("first").getBoundingClientRect().top,
+                last:document.getElementById("last").getBoundingClientRect().bottom}, "*");
+        }
+        addEventListener("load",report);
+        addEventListener("resize",report);
+        addEventListener("scroll",report);
+        addEventListener("message",event=>{if(event.data==="probe-bottom")scrollTo(0,document.scrollingElement.scrollHeight);});
+        </script></body></html>
+        """
+        let configuration = WKWebViewConfiguration()
+        configuration.websiteDataStore = .nonPersistent()
+        configuration.setURLSchemeHandler(ArtifactSandboxResponseProbe(document: source), forURLScheme: "toybox-sandbox")
+        let web = WKWebView(frame: NSRect(x: 0, y: 0, width: 640, height: 400), configuration: configuration)
+        let probe = ArtifactWebProbe()
+        probe.attach(to: web)
+        let window = NSWindow(contentRect: NSRect(x: -10_000, y: -10_000, width: 640, height: 400),
+                              styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = web
+        window.orderFrontRegardless()
+        defer {
+            web.stopLoading()
+            web.configuration.userContentController.removeScriptMessageHandler(forName: "probe")
+            window.close()
+        }
+        let insets = NSEdgeInsets(top: 66, left: 0, bottom: 80, right: 0)
+        if beforeLoad { web.obscuredContentInsets = insets }
+        if container == "root" {
+            let url = try #require(URL(string: "toybox-sandbox://document/allowed"))
+            web.load(URLRequest(url: url))
+        } else {
+            let directory = try #require(URL(string: "http://127.0.0.1:1/api/serve/test/"))
+            web.loadHTMLString(ArtifactWebPolicy.document(source, directory: directory), baseURL: nil)
+        }
+        try await wait { !web.isLoading && !probe.values.isEmpty }
+        if !beforeLoad { web.obscuredContentInsets = insets }
+        _ = try await web.takeSnapshot(configuration: nil)
+        let target = container == "root" ? "window" : "document.querySelector('iframe').contentWindow"
+        _ = try await web.evaluateJavaScript("\(target).postMessage('probe-bottom','*')")
+        try await wait {
+            probe.values.contains { value in
+                guard let result = value["result"] as? [String: Any] else { return false }
+                return (result["scroll"] as? Double ?? 0) > 0
+            }
+        }
+        let metrics = try #require(probe.values.last?["result"] as? [String: Any])
+        print("Sandbox viewport \(container), beforeLoad=\(beforeLoad), bounds=\(web.bounds), metrics=\(metrics)")
+        #expect(metrics["viewport"] as? Double == 254)
+        #expect(metrics["last"] as? Double == 254)
+        let snapshot = try await web.takeSnapshot(configuration: nil)
+        let bitmap = try #require(snapshot.tiffRepresentation.flatMap(NSBitmapImageRep.init(data:)))
+        let scale = CGFloat(bitmap.pixelsHigh) / snapshot.size.height
+        for y in [5, 70, 200, 250, 320, 350, 390] {
+            let color = try #require(bitmap.colorAt(x: bitmap.pixelsWide / 2, y: Int(CGFloat(y) * scale))?
+                .usingColorSpace(.deviceRGB))
+            print("Sandbox viewport \(container), beforeLoad=\(beforeLoad), pixel y=\(y): \(color)")
+            if y >= 320 {
+                if container == "root" {
+                    #expect(color.redComponent > 0.7 && color.greenComponent > 0.3 && color.blueComponent < 0.1)
+                } else {
+                    #expect(color.redComponent > 0.95 && color.greenComponent > 0.95 && color.blueComponent > 0.95)
+                }
+            }
+        }
+    }
+
+    @Test func topLevelSandboxRetainsTheFileOnlyNetworkBoundary() async throws {
+        let fixture = try ArtifactHTTPFixture()
+        try await fixture.start()
+        defer { fixture.stop() }
+        let directory = fixture.url("/api/serve/test/documents/")
+        let api = fixture.url("/api/v1/channels").absoluteString
+        let alias = fixture.url("/api/v1/channels", host: "localhost").absoluteString
+        let fakeCookie = try #require(HTTPCookie(properties: [
+            .name: "toybox-root-sandbox-test-\(UUID().uuidString)", .value: "not-a-credential",
+            .domain: "127.0.0.1", .path: "/api/serve/test/",
+        ]))
+        HTTPCookieStorage.shared.setCookie(fakeCookie)
+        defer { HTTPCookieStorage.shared.deleteCookie(fakeCookie) }
+        let source = """
+        <!doctype html><html><head><base href="\(directory.absoluteString)"></head><body>
+        <script>
+        (async () => {
+            const result = {origin:self.origin, base:document.baseURI, cookie:document.cookie};
+            result.api = await fetch("\(api)", {credentials:"include"}).then(() => true, () => false);
+            result.aliasAPI = await fetch("\(alias)").then(() => true, () => false);
+            const image = new Image();
+            const loaded = new Promise(resolve => { image.onload=()=>resolve(true); image.onerror=()=>resolve(false); });
+            image.src = "pixel.svg";
+            document.body.append(image);
+            result.relativeImage = await loaded;
+            window.networkProbe = result;
+        })();
+        </script></body></html>
+        """
+        let configuration = WKWebViewConfiguration()
+        configuration.websiteDataStore = .nonPersistent()
+        configuration.setURLSchemeHandler(ArtifactSandboxResponseProbe(document: source), forURLScheme: "toybox-sandbox")
+        let rules = try ArtifactWebPolicy.blockingRules(server: fixture.url("/"))
+        let identifier = "artifact-root-sandbox-network-probe"
+        let ruleStore = try #require(WKContentRuleListStore.default())
+        let compiled = try #require(try await ruleStore.compileContentRuleList(forIdentifier: identifier,
+                                                                             encodedContentRuleList: rules))
+        configuration.userContentController.add(compiled)
+        let web = WKWebView(frame: .zero, configuration: configuration)
+        let url = try #require(URL(string: "toybox-sandbox://document/allowed"))
+        web.load(URLRequest(url: url))
+        defer { web.stopLoading() }
+        try await wait { web.url == url && !web.isLoading }
+        var result: [String: Any]?
+        let deadline = ContinuousClock.now + .seconds(15)
+        while result == nil, ContinuousClock.now < deadline {
+            result = try await web.evaluateJavaScript("window.networkProbe") as? [String: Any]
+            if result == nil { try await Task.sleep(for: .milliseconds(10)) }
+        }
+        let probe = try #require(result)
+        #expect(probe["origin"] as? String == "null")
+        #expect(probe["cookie"] as? String == "")
+        #expect(probe["api"] as? Bool == false)
+        #expect(probe["aliasAPI"] as? Bool == false)
+        #expect(probe["relativeImage"] as? Bool == true)
+        #expect(probe["base"] as? String == directory.absoluteString)
+        let requests = fixture.requests.withLock { $0 }
+        #expect(requests.map(\.path) == ["/api/serve/test/documents/pixel.svg"])
+        #expect(requests.allSatisfy { !$0.headers.lowercased().contains(fakeCookie.name.lowercased()) })
+        try await ruleStore.removeContentRuleList(forIdentifier: identifier)
+    }
+
+    @Test(arguments: ["root", "iframe"])
+    func onlyTheFrameSandboxSurvivesDocumentReplacement(container: String) async throws {
+        let fixture = try ArtifactHTTPFixture()
+        try await fixture.start()
+        defer { fixture.stop() }
+        let destination = fixture.url("/api/serve/test/next.html")
+        fixture.bodies.withLock {
+            $0[destination.path] = """
+            <!doctype html><html><body><script>
+            let storage;
+            try { localStorage.setItem("probe","1"); storage="allowed"; }
+            catch(error) { storage=error.name; }
+            parent.postMessage({origin:self.origin,storage}, "*");
+            </script></body></html>
+            """
+        }
+        let source = """
+        <!doctype html><html><body><script>location.href="\(destination.absoluteString)";</script></body></html>
+        """
+        let configuration = WKWebViewConfiguration()
+        configuration.websiteDataStore = .nonPersistent()
+        configuration.setURLSchemeHandler(ArtifactSandboxResponseProbe(document: source), forURLScheme: "toybox-sandbox")
+        let web = WKWebView(frame: .zero, configuration: configuration)
+        let probe = ArtifactWebProbe()
+        probe.attach(to: web)
+        defer {
+            web.stopLoading()
+            web.configuration.userContentController.removeScriptMessageHandler(forName: "probe")
+        }
+        if container == "root" {
+            let url = try #require(URL(string: "toybox-sandbox://document/allowed"))
+            web.load(URLRequest(url: url))
+        } else {
+            web.loadHTMLString(ArtifactWebPolicy.document(source, directory: fixture.url("/api/serve/test/")), baseURL: nil)
+        }
+        try await wait { !probe.values.isEmpty }
+        let result = try #require(probe.values.last?["result"] as? [String: String])
+        print("Sandbox after document replacement \(container): \(result)")
+        #expect(result["origin"] == (container == "root" ? String(fixture.url("/").absoluteString.dropLast()) : "null"))
+        #expect(result["storage"] == (container == "root" ? "allowed" : "SecurityError"))
+    }
+
     @Test func pagingUsesTheChannelsNewestFirstOrderingWithoutWrapping() {
         let old = artifact("old.md", shared: "2026-10-24T20:00:00Z")
         let latest = artifact("latest.html", shared: "2026-10-24T22:00:00Z")
@@ -592,6 +798,57 @@ struct ArtifactViewerTests {
 }
 
 @MainActor
+private final class ArtifactSandboxResponseProbe: NSObject, WKURLSchemeHandler {
+    private let document: String?
+
+    init(document: String? = nil) {
+        self.document = document
+        super.init()
+    }
+
+    func webView(_ webView: WKWebView, start urlSchemeTask: any WKURLSchemeTask) {
+        guard let url = urlSchemeTask.request.url else {
+            urlSchemeTask.didFailWithError(URLError(.badURL))
+            return
+        }
+        var headers = ["Content-Type": "text/html; charset=utf-8", "Referrer-Policy": "no-referrer"]
+        if url.path == "/allowed" {
+            headers["Content-Security-Policy"] = "sandbox " + ArtifactWebPolicy.htmlPermissions.joined(separator: " ")
+        } else if url.path == "/blocked" {
+            headers["Content-Security-Policy"] = "sandbox"
+        } else if url.path != "/control" {
+            urlSchemeTask.didFailWithError(URLError(.unsupportedURL))
+            return
+        }
+        guard let response = HTTPURLResponse(url: url, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: headers) else {
+            urlSchemeTask.didFailWithError(URLError(.badServerResponse))
+            return
+        }
+        let document = document ?? """
+        <!doctype html><html><head><title>Initial</title></head><body>
+        <p>Opaque top-level sandbox control</p>
+        <script>
+        function attempt(action) {
+            try { action(); return "allowed"; } catch (error) { return error.name; }
+        }
+        window.sandboxProbe = {
+            origin: self.origin,
+            storage: attempt(() => localStorage.setItem("probe", "1")),
+            cookies: attempt(() => document.cookie = "probe=1"),
+            cookieRead: (() => { try { return document.cookie; } catch (error) { return error.name; } })()
+        };
+        document.title = "Scripts ran";
+        </script></body></html>
+        """
+        urlSchemeTask.didReceive(response)
+        urlSchemeTask.didReceive(Data(document.utf8))
+        urlSchemeTask.didFinish()
+    }
+
+    func webView(_ webView: WKWebView, stop urlSchemeTask: any WKURLSchemeTask) {}
+}
+
+@MainActor
 private final class ArtifactWebProbe: NSObject, WKScriptMessageHandler {
     var values: [[String: Any]] = []
 
@@ -690,7 +947,7 @@ private final class ArtifactHTTPFixture: @unchecked Sendable {
         let body = bodies.withLock { $0[path] } ?? (path.hasSuffix(".svg")
             ? #"<svg xmlns="http://www.w3.org/2000/svg" width="120" height="80"><rect id="marker" width="120" height="80" fill="red"/><script>document.getElementById("marker").setAttribute("fill","green");</script></svg>"#
             : #"{"mustNotBeRead":true}"#)
-        let type = path.hasSuffix(".svg") ? "image/svg+xml" : "application/json"
+        let type = path.hasSuffix(".svg") ? "image/svg+xml" : (path.hasSuffix(".html") ? "text/html" : "application/json")
         let status = failures.withLock { $0.contains(path) } ? "500 Internal Server Error" : "200 OK"
         let response = "HTTP/1.1 \(status)\r\nContent-Type: \(type)\r\nContent-Length: \(body.utf8.count)\r\n"
             + "Access-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n\(body)"
