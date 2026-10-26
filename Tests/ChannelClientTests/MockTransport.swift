@@ -29,6 +29,10 @@ final class MockTransport: Sendable {
         let request: String
         let event: String
     }
+    struct ObservationEntry: Sendable {
+        let elapsed: Duration
+        let stage: ChannelObservationStage
+    }
 
     struct State {
         var requests: [URLRequest] = []
@@ -36,6 +40,7 @@ final class MockTransport: Sendable {
         var pending: [ObjectIdentifier: MockURLProtocol] = [:]
         var observers: [UUID: AsyncStream<Void>.Continuation] = [:]
         var lifecycle: [LifecycleEntry] = []
+        var observationLifecycle: [ObservationEntry] = []
     }
     let state = Mutex(State())
     let handler: Handler
@@ -53,6 +58,7 @@ final class MockTransport: Sendable {
     var pendingResponseCount: Int { state.withLock { $0.pending.count } }
     var changeObserverCount: Int { state.withLock { $0.observers.count } }
     var lifecycle: [LifecycleEntry] { state.withLock { $0.lifecycle } }
+    var observationLifecycle: [ObservationEntry] { state.withLock { $0.observationLifecycle } }
 
     func recordLifecycle(_ event: String, for request: URLRequest) {
         guard recordingLifecycle else { return }
@@ -60,6 +66,13 @@ final class MockTransport: Sendable {
         state.withLock {
             $0.lifecycle.append(.init(elapsed: started.duration(to: .now),
                                       request: "\(request.httpMethod ?? "GET") \(target)", event: event))
+        }
+    }
+
+    func recordObservation(_ stage: ChannelObservationStage) {
+        guard recordingLifecycle else { return }
+        state.withLock {
+            $0.observationLifecycle.append(.init(elapsed: started.duration(to: .now), stage: stage))
         }
     }
 
@@ -122,7 +135,11 @@ final class MockTransport: Sendable {
         MockURLProtocol.registry.withLock { $0[host] = self }
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [MockURLProtocol.self]
-        return try ChannelAPI(serverURL: "http://\(host)", session: URLSession(configuration: configuration))
+        var api = try ChannelAPI(serverURL: "http://\(host)", session: URLSession(configuration: configuration))
+        if recordingLifecycle {
+            api.observationTrace = { [self] in recordObservation($0) }
+        }
+        return api
     }
 }
 
@@ -233,14 +250,18 @@ struct ClientReadinessFailure: Error, CustomStringConvertible {
 func reconnectReadinessDiagnostics(store: ChannelStore, transport: MockTransport) -> String {
     let revision = store.state.map { String($0.revision) } ?? "none"
     let recorded = transport.state.withLock {
-        (requests: $0.requests.count, held: $0.pending.count, stopped: $0.stops, lifecycle: $0.lifecycle)
+        (requests: $0.requests.count, held: $0.pending.count, stopped: $0.stops,
+         lifecycle: $0.lifecycle, observation: $0.observationLifecycle)
     }
     let callbacks = recorded.lifecycle.map { "\($0.elapsed): \($0.request): \($0.event)" }
+    let observation = recorded.observation.map { "\($0.elapsed): \($0.stage)" }
     return """
     Reconnect readiness failed: phase=\(store.phase), appliedRevision=\(revision), \
     presence=\(store.presence["test"]?.state ?? "none").
     Requests=\(recorded.requests), held=\(recorded.held), stopped=\(recorded.stopped).
     Mock callback submissions (not evidence of consumer ingestion):
     \(callbacks.isEmpty ? "(none)" : callbacks.joined(separator: "\n"))
+    Client consumer stages:
+    \(observation.isEmpty ? "(none)" : observation.joined(separator: "\n"))
     """
 }

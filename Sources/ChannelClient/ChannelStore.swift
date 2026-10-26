@@ -136,20 +136,25 @@ public final class ChannelStore {
     /// reconcile them. Returns whether observation continues.
     private func receive(_ event: ChannelObservationEvent, token: UUID,
                          after restore: Task<Void, Never>?) async throws -> Bool {
+        api.observationTrace?(.eventReceived(type: event.type))
         await restore?.value
         guard !Task.isCancelled, generation == token else { return false }
-        return try !apply(event)
+        let terminal = try apply(event)
+        api.observationTrace?(.eventApplied(type: event.type, revision: state?.revision))
+        return !terminal
     }
 
     private func scheduleReconnect(after error: any Error, attempt: Int, token: UUID) -> TimeInterval? {
         guard !Task.isCancelled, generation == token else { return nil }
         let delay = reconnectPolicy.delay(attempt: attempt)
         phase = .stale(message: error.localizedDescription, retryAt: Date.now.addingTimeInterval(delay))
+        api.observationTrace?(.reconnectScheduled(attempt: attempt, delay: delay, after: state?.revision))
         return delay
     }
 
     private func resumeObservation(token: UUID) -> AsyncThrowingStream<ChannelObservationEvent, any Error>? {
         guard !Task.isCancelled, generation == token else { return nil }
+        api.observationTrace?(.reconnectRequested(after: state?.revision))
         return api.observe(channelId: id, after: state?.revision)
     }
 

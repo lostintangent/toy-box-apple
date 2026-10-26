@@ -91,6 +91,17 @@ private actor Heartbeat {
     }
 }
 
+enum ChannelObservationStage: Equatable, Sendable {
+    case streamRequested(after: Int?)
+    case responseReceived(status: Int)
+    case eventDecoded(type: String, revision: Int?)
+    case eventReceived(type: String)
+    case eventApplied(type: String, revision: Int?)
+    case streamFinished(error: String?)
+    case reconnectScheduled(attempt: Int, delay: TimeInterval, after: Int?)
+    case reconnectRequested(after: Int?)
+}
+
 public extension ChannelAPI {
     func observe(channelId: String, after: Int? = nil,
                  heartbeatTimeout: TimeInterval = 35) -> AsyncThrowingStream<ChannelObservationEvent, any Error> {
@@ -98,6 +109,7 @@ public extension ChannelAPI {
             let task = Task {
                 do {
                     let request = streamRequest(channelId: channelId, after: after, timeout: heartbeatTimeout)
+                    observationTrace?(.streamRequested(after: after))
                     let heartbeat = Heartbeat()
                     try await withThrowingTaskGroup(of: Void.self) { group in
                         group.addTask {
@@ -105,6 +117,7 @@ public extension ChannelAPI {
                             guard let http = response as? HTTPURLResponse else {
                                 throw ChannelAPIError.invalidResponse
                             }
+                            observationTrace?(.responseReceived(status: http.statusCode))
                             guard (200..<300).contains(http.statusCode) else {
                                 throw ChannelAPIError.http(
                                     status: http.statusCode,
@@ -126,6 +139,9 @@ public extension ChannelAPI {
                                     let event = try eventDecoder.decode(ChannelObservationEvent.self,
                                                                         from: Data(frame.data.utf8))
                                     try validate(event)
+                                    observationTrace?(.eventDecoded(
+                                        type: event.type, revision: event.revision ?? event.state?.revision
+                                    ))
                                     continuation.yield(event)
                                     if event.type == "deleted" { return }
                                 }
@@ -143,10 +159,13 @@ public extension ChannelAPI {
                         defer { group.cancelAll() }
                         _ = try await group.next()
                     }
+                    observationTrace?(.streamFinished(error: nil))
                     continuation.finish()
                 } catch let error as URLError where error.code == .timedOut {
+                    observationTrace?(.streamFinished(error: ChannelAPIError.heartbeatTimeout.localizedDescription))
                     continuation.finish(throwing: ChannelAPIError.heartbeatTimeout)
                 } catch {
+                    observationTrace?(.streamFinished(error: String(describing: error)))
                     continuation.finish(throwing: error)
                 }
             }

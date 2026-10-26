@@ -149,6 +149,59 @@ struct SendAttemptTests {
         #expect(try await journal.load(server: api.baseURL, channelId: "other").isEmpty)
     }
 
+    @Test(arguments: [false, true])
+    @MainActor func restoredAttemptsReconcileWithTheFirstSnapshot(snapshotArrivesFirst: Bool) async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("tbm-outbox-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let journal = ChannelSendJournal(directory: directory)
+        let id = UUID().uuidString
+        let content = "Accepted before the app quit"
+        let message = ChannelMessage(id: id, sequence: 1, timestamp: "2026-10-01T00:00:00Z",
+                                     sender: .user, content: .text(content))
+        let mock = MockTransport { _, _ in
+            try .stream([.init(type: "snapshot", state: testState(revision: 1, messages: [message]))])
+        }
+        let received = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
+        defer { received.continuation.finish() }
+        var api = try mock.api()
+        api.observationTrace = { stage in
+            if stage == .eventReceived(type: "snapshot") { received.continuation.yield(()) }
+        }
+        try await journal.save([.init(id: id, content: content, attachments: [],
+                                      timestamp: "2026-10-01T00:00:00Z", phase: .sending)],
+                               server: api.baseURL, channelId: "test")
+        let store = ChannelStore(id: "test", api: api, sendJournal: journal)
+        defer { store.disconnect() }
+        let release = DispatchSemaphore(value: 0)
+        defer { release.signal() }
+        var hold: Task<Void, Never>?
+        if snapshotArrivesFirst {
+            let started = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
+            defer { started.continuation.finish() }
+            hold = Task.detached { await journal.hold(started: started.continuation, until: release) }
+            var iterator = started.stream.makeAsyncIterator()
+            try #require(await iterator.next() != nil)
+        } else {
+            await #expect(throws: ChannelAPIError.disconnected) { try await store.retrySend(id: "unknown") }
+            #expect(store.sendAttempts.map(\.id) == [id])
+        }
+        store.connect()
+        if snapshotArrivesFirst {
+            var iterator = received.stream.makeAsyncIterator()
+            try #require(await iterator.next() != nil)
+            #expect(store.state == nil)
+            #expect(store.phase == .connecting)
+            release.signal()
+            await hold?.value
+        }
+        try await eventually { store.phase.isLive }
+        await #expect(throws: ChannelAPIError.self) { try await store.retrySend(id: "unknown") }
+        #expect(store.state?.messages.map(\.id) == [id])
+        #expect(store.sendAttempts.isEmpty)
+        #expect(store.optimisticMessageIds.isEmpty)
+        #expect(mock.requests.allSatisfy { $0.httpMethod == "GET" })
+    }
+
     @Test @MainActor func snapshotConfirmationClearsTheFailureWithoutRetrying() async throws {
         let id = UUID().uuidString
         let content = "Accepted before the response was lost"
@@ -217,5 +270,12 @@ struct SendAttemptTests {
         #expect(store.lastSendFailure == nil)
         #expect(store.sendAttempts.isEmpty)
         #expect(mock.requests.allSatisfy { $0.httpMethod == "GET" })
+    }
+}
+
+private extension ChannelSendJournal {
+    func hold(started: AsyncStream<Void>.Continuation, until release: DispatchSemaphore) {
+        started.yield(())
+        release.wait()
     }
 }
