@@ -111,7 +111,7 @@ struct TransportTests {
     @Test(.enabled(if: ProcessInfo.processInfo.environment["TOY_BOX_TEST_RECONNECT_TIMING"] == "1"))
     @MainActor func storeReconnectsFromAppliedRevisionZero() async throws {
         let initial = testState()
-        let mock = MockTransport { _, count in
+        let mock = MockTransport(recordingLifecycle: true) { _, count in
             if count == 1 { return try .stream([.init(type: "snapshot", state: initial)], keepOpen: false) }
             return try .stream([.init(type: "resumed", presence: ["test": .init(state: "working")])])
         }
@@ -119,7 +119,9 @@ struct TransportTests {
                                  reconnectPolicy: .init(initialDelay: 0.01), sendJournal: nil)
         store.connect()
         defer { store.disconnect() }
-        try await eventually(observing: mock) { mock.requests.count == 2 && store.phase.isLive }
+        try await eventually(observing: mock, diagnostics: {
+            reconnectReadinessDiagnostics(store: store, transport: mock)
+        }) { mock.requests.count == 2 && store.phase.isLive }
         #expect(mock.requests[0].url?.query == nil)
         #expect(mock.requests[1].url?.query == "after=0")
         #expect(mock.requests[1].value(forHTTPHeaderField: "Last-Event-ID") == "0")
@@ -156,7 +158,7 @@ struct TransportTests {
     @MainActor func recoverySnapshotReplacesCachedHistory() async throws {
         let initial = testState(revision: 5, messages: [testMessage(1)])
         let recovered = testState(revision: 100, messages: [testMessage(100)])
-        let mock = MockTransport { _, count in
+        let mock = MockTransport(recordingLifecycle: true) { _, count in
             try .stream([.init(type: "snapshot", state: count == 1 ? initial : recovered)],
                         keepOpen: count > 1)
         }
@@ -164,7 +166,9 @@ struct TransportTests {
                                  reconnectPolicy: .init(initialDelay: 0.01), sendJournal: nil)
         store.connect()
         defer { store.disconnect() }
-        try await eventually { store.state?.revision == 100 && store.phase.isLive }
+        try await eventually(diagnostics: {
+            reconnectReadinessDiagnostics(store: store, transport: mock)
+        }) { store.state?.revision == 100 && store.phase.isLive }
         #expect(mock.requests[1].value(forHTTPHeaderField: "Last-Event-ID") == "5")
         #expect(store.state?.messages.map(\.sequence) == [100])
     }

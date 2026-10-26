@@ -1,6 +1,8 @@
+import ChannelKit
 import Foundation
 import Observation
 import Testing
+@testable import ChannelClient
 
 @MainActor
 @Suite("Client readiness synchronization", .timeLimit(.minutes(1)))
@@ -82,5 +84,75 @@ struct ReadinessTests {
         await #expect(throws: CancellationError.self) { try await waiting.value }
         #expect(mock.changeObserverCount == 0)
         state.value = 2
+    }
+
+    @Test func aReadyConditionDoesNotEvaluateFailureDiagnostics() async throws {
+        var reports = 0
+        try await eventually(diagnostics: {
+            reports += 1
+            return "Unexpected failure diagnostics."
+        }) { true }
+        #expect(reports == 0)
+    }
+
+    @Test func cancellationCapturesDiagnosticsOnlyAfterReadinessObservationEnds() async throws {
+        let state = State()
+        let checks = AsyncStream<Void>.makeStream()
+        defer { checks.continuation.finish() }
+        var iterator = checks.stream.makeAsyncIterator()
+        var reports = 0
+        let waiting = Task {
+            try await eventually(diagnostics: {
+                reports += 1
+                return "Last value: \(state.value)"
+            }) {
+                checks.continuation.yield(())
+                return false
+            }
+        }
+        defer { waiting.cancel() }
+        _ = await iterator.next()
+        #expect(reports == 0)
+        state.value = 7
+        waiting.cancel()
+        do {
+            try await waiting.value
+            Issue.record("A cancelled readiness wait must throw.")
+        } catch let failure as ClientReadinessFailure {
+            #expect(failure.underlying is CancellationError)
+            #expect(failure.context == "Last value: 7")
+            #expect(failure.description.contains("Last value: 7"))
+        }
+        #expect(reports == 1)
+    }
+
+    @Test(arguments: [false, true])
+    func mockLifecycleRecordsCallbackSubmissionsOnlyWhenRequested(recording: Bool) async throws {
+        let response = try MockResponse.json(ChannelCatalog(lead: testLeadProfile))
+        let mock = MockTransport(recordingLifecycle: recording) { _, _ in response }
+        _ = try await mock.api().catalog()
+        if recording {
+            let entries = mock.lifecycle.filter { $0.event != "request stopped" }
+            #expect(entries.map(\.event) == [
+                "request received", "submitting headers: 200",
+                "submitting body: \(response.body.count) bytes", "submitting EOF",
+            ])
+            #expect(entries.allSatisfy { $0.request == "GET /api/v1/channels" && $0.elapsed >= .zero })
+            #expect(zip(entries, entries.dropFirst()).allSatisfy { $0.elapsed <= $1.elapsed })
+        } else {
+            #expect(mock.lifecycle.isEmpty)
+        }
+    }
+
+    @Test func reconnectDiagnosticsIncludeTheAppliedStateAndAnAtomicTransportSnapshot() throws {
+        let mock = MockTransport(recordingLifecycle: true) { _, _ in MockResponse() }
+        let store = ChannelStore(id: "test", api: try mock.api(), sendJournal: nil)
+        let url = try #require(URL(string: "http://\(mock.host)/api/v1/channels/test/events?after=0"))
+        _ = try mock.response(for: URLRequest(url: url))
+        let diagnostic = reconnectReadinessDiagnostics(store: store, transport: mock)
+        #expect(diagnostic.contains("phase=idle, appliedRevision=none, presence=none"))
+        #expect(diagnostic.contains("Requests=1, held=0, stopped=0"))
+        #expect(diagnostic.contains("GET /api/v1/channels/test/events?after=0: request received"))
+        #expect(diagnostic.contains("not evidence of consumer ingestion"))
     }
 }
