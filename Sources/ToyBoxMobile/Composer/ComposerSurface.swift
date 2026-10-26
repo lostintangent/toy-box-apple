@@ -22,7 +22,6 @@ struct ComposerSurface: View {
     @ViewState private var highlightedChoice: String?
     @ViewState private var dismissedCompletion: ChannelMentionContext?
     @ViewState private var connectionGrace = ConnectGrace()
-    @ViewState private var accessoryHeight: CGFloat = 0
     @ScaledMetric(relativeTo: .body) private var completionRowHeight = 56
 
     private var draft: ComposerDraft { session.draft }
@@ -116,12 +115,11 @@ struct ComposerSurface: View {
     private var container: some View {
         VStack(spacing: 0) {
             if hasNotices || composer.replySource != nil || !draft.images.isEmpty {
-                ScrollView {
+                ViewThatFits(in: .vertical) {
                     accessories
-                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { accessoryHeight = $0 }
+                    ScrollView { accessories }
+                        .scrollBounceBehavior(.basedOnSize)
                 }
-                .frame(minHeight: 0, idealHeight: accessoryHeight, maxHeight: accessoryHeight)
-                .scrollBounceBehavior(.basedOnSize)
             }
             ZStack(alignment: .topLeading) {
                 if draft.text.isEmpty {
