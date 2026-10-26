@@ -177,6 +177,8 @@ export class MobileDriveSession {
                 const path = isAbsolute(name) ? name : join(this.drive.output, name);
                 await this.host.capture(path, step.display, operation);
                 operation.throwIfAborted();
+                await atomicJSON(path.replace(/\.png$/, ".json"), status);
+                operation.throwIfAborted();
                 this.screenshots.push(path);
                 console.log(`Captured ${basename(path)}, display ${step.display}.`);
             } else if ("fold" in step) {

@@ -111,6 +111,8 @@ view.
   Other actions are never skipped or retried. Each step accepts a
   timeout in seconds (default 12, maximum 60). Screenshots are acknowledged by the host only after
   the app reports a settled accessibility/layout snapshot and go under `SCRATCH_PATH/mobile-drive/`.
+  Each `<name>.png` has a `<name>.json` companion with that snapshot's step, state, labels and
+  viewport. Both must save before acknowledgement, so later `status.json` updates cannot erase it.
   Capture/control subprocesses share the step deadline and interruption signal. Cancellation kills
   the exact child and awaits its exit before simulator shutdown and lease release.
   `{"scroll":"down","on":"scrollable-list"}` dispatches one public accessibility scroll action to
