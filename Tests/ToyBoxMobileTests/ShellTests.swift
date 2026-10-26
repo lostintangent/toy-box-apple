@@ -4,6 +4,7 @@ import ChannelKit
 import Foundation
 import SwiftUI
 import Testing
+import ToyBoxUI
 import UIKit
 import UniformTypeIdentifiers
 @testable import ToyBoxMobile
@@ -184,6 +185,40 @@ struct ShellTests {
         #expect(regular.height >= 72)
         #expect(accessible.height > regular.height)
     }
+
+    @Test(arguments: [SidebarConnection.connecting, .connected])
+    func nonFailureCatalogStatesReserveNoFooterSpace(connection: SidebarConnection) {
+        let host = UIHostingController(rootView: ChannelSidebarFailure(
+            connection: connection, error: nil, canRetry: true, retry: {}, openSettings: {}
+        ))
+        host.loadViewIfNeeded()
+        let size = host.sizeThatFits(in: CGSize(width: 320, height: CGFloat.greatestFiniteMagnitude))
+        #expect(size.height == 0)
+    }
+
+    #if DEBUG
+    @Test(arguments: [SidebarConnection.reconnecting, .unreachable], [false, true])
+    func catalogFailuresKeepTheirHeadingErrorRetryAndUnfoldedSettings(
+        connection: SidebarConnection, showsSettings: Bool
+    ) throws {
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 320, height: 400))
+        let host = UIHostingController(rootView: ChannelSidebarFailure(
+            connection: connection, error: "The server is unavailable.", canRetry: true,
+            retry: {}, openSettings: {}, showsSettingsButton: showsSettings
+        ))
+        window.rootViewController = host
+        window.isHidden = false
+        defer { window.isHidden = true }
+        host.view.frame = window.bounds
+        host.view.layoutIfNeeded()
+        let labels = MobileAutomationTree(windows: [window]).elements.map(\.label)
+        #expect(labels.contains(try #require(connection.heading)), "\(labels)")
+        #expect(labels.contains("The server is unavailable."), "\(labels)")
+        #expect(labels.contains("Retry"), "\(labels)")
+        #expect(labels.contains("Settings") == showsSettings, "\(labels)")
+        #expect(!labels.contains("Server connection") && !labels.contains("Server Settings"), "\(labels)")
+    }
+    #endif
 
     @Test(arguments: [240.0, 386.0])
     func channelRowsUseTwoLinesWithoutAnEmptyWorkingLine(width: Double) {

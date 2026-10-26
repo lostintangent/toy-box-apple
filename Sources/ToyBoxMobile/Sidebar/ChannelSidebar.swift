@@ -25,11 +25,6 @@ struct ChannelSidebar: View {
         model.catalog != nil && connection == .connecting
     }
 
-    private var busy: Bool {
-        guard let catalog = model.catalog else { return false }
-        return initialLoading || model.requestedRefresh.isRunning(for: catalog)
-    }
-
     private var canCreate: Bool { model.canCreateChannel }
 
     private var projection: ChannelSidebarProjection { model.sidebarProjection }
@@ -80,8 +75,8 @@ struct ChannelSidebar: View {
             emptyState
         }
         .safeAreaBar(edge: .bottom) {
-            ChannelSidebarFooter(
-                connection: connection, busy: busy, serverURL: model.serverURL,
+            ChannelSidebarFailure(
+                connection: connection,
                 error: model.configurationError ?? model.catalog?.error,
                 canRetry: model.catalog != nil && model.isActive,
                 retry: { Task { await model.refreshCatalog() } },
@@ -91,7 +86,7 @@ struct ChannelSidebar: View {
         }
         .navigationTitle("Toy Box")
         .navigationBarTitleDisplayMode(.large)
-        .searchable(text: $query, prompt: "Search Channels")
+        .searchable(text: $query, placement: .toolbar, prompt: "Search Channels")
         .searchFocused($searchFocused)
         .onChange(of: searchFocusRequest) { _, _ in searchFocused = true }
         .focusedValue(\.channelRefresh, model.isActive && model.catalog != nil ? .catalog(model) : nil)
@@ -112,11 +107,11 @@ struct ChannelSidebar: View {
                     .disabled(model.catalog == nil || !model.isActive)
                 }
             }
-            if sizeClass == .compact {
-                ToolbarItem(placement: .bottomBar) {
-                    Button("Settings", systemImage: "gear") { showsSettings = true }
-                }
+            ToolbarItem(placement: .bottomBar) {
+                Button("Settings", systemImage: "gear") { showsSettings = true }
             }
+            ToolbarSpacer(.flexible, placement: .bottomBar)
+            DefaultToolbarItem(kind: .search, placement: .bottomBar)
         }
     }
 
