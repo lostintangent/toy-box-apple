@@ -1,3 +1,6 @@
+import AVFoundation
+@testable import ChannelClient
+import ChannelKit
 import SwiftUI
 import Testing
 import ToyBoxUI
@@ -5,7 +8,7 @@ import UIKit
 import UniformTypeIdentifiers
 @testable import ToyBoxMobile
 
-@MainActor
+@MainActor @Suite(.timeLimit(.minutes(1)))
 struct ComposerTests {
     @Test func softwareReturnInsertsANewlineWhileHardwareReturnSendsUnlessCompletionConsumesIt() {
         let view = ComposerTextView()
@@ -231,6 +234,401 @@ struct ComposerTests {
         }
     }
 
+    @Test func tentativeDictationStaysOutOfTheBindingAndFinalWordsFormOneUndoStep() throws {
+        var text = "Hello old world"
+        let editor = ComposerEditorState()
+        let input = NativeComposerInput(
+            text: Binding(get: { text }, set: { text = $0 }), editor: editor,
+            onSend: {}, onCompletionKey: { _ in false }, onPasteImages: { _ in }
+        )
+        let coordinator = NativeComposerInput.Coordinator(parent: input)
+        let view = ComposerTextView()
+        view.font = .preferredFont(forTextStyle: .body)
+        view.delegate = coordinator
+        view.coordinator = coordinator
+        coordinator.input = view
+        editor.textView = view
+        view.text = text
+        view.selectedRange = NSRange(location: 6, length: 3)
+        coordinator.anchorDictation()
+        var transcript = DictationTranscript()
+        transcript.receive("new", isFinal: true)
+        transcript.receive("words", isFinal: false)
+        coordinator.showDictation(transcript)
+        #expect(view.text == "Hello new words world")
+        #expect(text == "Hello new world")
+        #expect(view.textStorage.attribute(.foregroundColor, at: 10, effectiveRange: nil) as? UIColor == .secondaryLabel)
+        coordinator.endDictation(transcript.visible)
+        #expect(text == "Hello new words world")
+        #expect(view.selectedRange == NSRange(location: 15, length: 0))
+        let undo = try #require(view.undoManager)
+        #expect(undo.undoActionName == "Dictation")
+        undo.undo()
+        #expect(view.text == "Hello old world")
+        #expect(text == view.text)
+        undo.redo()
+        #expect(view.text == "Hello new words world")
+        #expect(text == view.text)
+    }
+
+    @Test(arguments: [false, true])
+    func dictationDoesNotMergeWithAdjacentNativeTyping(typedBefore: Bool) throws {
+        var text = ""
+        let editor = ComposerEditorState()
+        let input = NativeComposerInput(
+            text: Binding(get: { text }, set: { text = $0 }), editor: editor,
+            onSend: {}, onCompletionKey: { _ in false }, onPasteImages: { _ in }
+        )
+        let coordinator = NativeComposerInput.Coordinator(parent: input)
+        let view = ComposerTextView()
+        view.delegate = coordinator
+        view.coordinator = coordinator
+        coordinator.input = view
+        if typedBefore { view.insertText("Typed") }
+        coordinator.anchorDictation()
+        var transcript = DictationTranscript()
+        transcript.receive("Spoken", isFinal: false)
+        coordinator.showDictation(transcript)
+        coordinator.endDictation(transcript.visible)
+        let dictated = typedBefore ? "Typed Spoken" : "Spoken"
+        view.insertText("!")
+        #expect(text == dictated + "!")
+        let undo = try #require(view.undoManager)
+        let groupingIssue: Comment = "t329: UIKit keeps dictation and adjacent typing in one automatic event group."
+        undo.undo()
+        withKnownIssue(groupingIssue) {
+            #expect(text == dictated, "Typing after dictation is its own undo step")
+        }
+        #expect(view.text == text)
+        undo.undo()
+        withKnownIssue(groupingIssue) {
+            #expect(text == (typedBefore ? "Typed" : ""), "Dictation is its own undo step")
+        } when: { typedBefore }
+        #expect(view.text == text)
+        if typedBefore {
+            withKnownIssue(groupingIssue) {
+                #expect(undo.canUndo)
+            }
+            undo.undo()
+            #expect(text.isEmpty, "Typing before dictation remains a separate undo step")
+            #expect(view.text.isEmpty)
+        }
+        undo.redo()
+        if typedBefore { undo.redo() }
+        withKnownIssue(groupingIssue) {
+            #expect(text == dictated)
+        }
+        undo.redo()
+        #expect(text == dictated + "!")
+        #expect(view.text == text)
+    }
+
+    @Test(arguments: [false, true])
+    func aFocusedNativeEditorKeepsDictationSeparateFromAdjacentTyping(typedBefore: Bool) throws {
+        var text = ""
+        let editor = ComposerEditorState()
+        let input = NativeComposerInput(
+            text: Binding(get: { text }, set: { text = $0 }), editor: editor,
+            onSend: {}, onCompletionKey: { _ in false }, onPasteImages: { _ in }
+        )
+        let coordinator = NativeComposerInput.Coordinator(parent: input)
+        let view = ComposerTextView()
+        view.delegate = coordinator
+        view.coordinator = coordinator
+        coordinator.input = view
+        editor.textView = view
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 440, height: 956))
+        let root = UIViewController()
+        window.rootViewController = root
+        root.view.addSubview(view)
+        view.frame = CGRect(x: 20, y: 100, width: 400, height: 120)
+        window.makeKeyAndVisible()
+        defer {
+            view.resignFirstResponder()
+            window.isHidden = true
+        }
+        try #require(view.becomeFirstResponder())
+        let undo = try #require(view.undoManager)
+        if typedBefore { view.insertText("Typed") }
+        try #require(coordinator.beginDictation())
+        var transcript = DictationTranscript()
+        transcript.receive("Spoken", isFinal: false)
+        coordinator.showDictation(transcript)
+        coordinator.endDictation(transcript.visible)
+        let dictated = typedBefore ? "Typed Spoken" : "Spoken"
+        view.insertText("!")
+        #expect(text == dictated + "!")
+        let groupingIssue: Comment = "t329: UIKit keeps dictation and adjacent typing in one automatic event group."
+        undo.undo()
+        withKnownIssue(groupingIssue) {
+            #expect(text == dictated, "Typing after dictation is its own undo step in the focused native editor")
+        }
+        #expect(view.text == text)
+        undo.undo()
+        withKnownIssue(groupingIssue) {
+            #expect(text == (typedBefore ? "Typed" : ""), "Dictation is its own undo step in the focused native editor")
+        } when: { typedBefore }
+        #expect(view.text == text)
+        if typedBefore {
+            withKnownIssue(groupingIssue) {
+                #expect(undo.canUndo)
+            }
+            undo.undo()
+            #expect(text.isEmpty)
+            #expect(view.text.isEmpty)
+        }
+        undo.redo()
+        if typedBefore { undo.redo() }
+        withKnownIssue(groupingIssue) {
+            #expect(text == dictated)
+        }
+        undo.redo()
+        #expect(text == dictated + "!")
+        #expect(view.text == text)
+    }
+
+    @Test(arguments: [false, true])
+    func losingTheNativeDictationRangePreservesRecognizedWordsThroughTheDraft(finalizes: Bool) {
+        var text = "Typed"
+        let editor = ComposerEditorState()
+        let input = NativeComposerInput(
+            text: Binding(get: { text }, set: { text = $0 }), editor: editor,
+            onSend: {}, onCompletionKey: { _ in false }, onPasteImages: { _ in }
+        )
+        let coordinator = NativeComposerInput.Coordinator(parent: input)
+        let view = ComposerTextView()
+        view.delegate = coordinator
+        view.coordinator = coordinator
+        coordinator.input = view
+        editor.textView = view
+        view.text = text
+        view.selectedRange = NSRange(location: text.utf16.count, length: 0)
+        coordinator.anchorDictation()
+        var transcript = DictationTranscript()
+        transcript.receive("Spoken", isFinal: false)
+        coordinator.showDictation(transcript)
+        #expect(view.text == "Typed Spoken")
+
+        view.text = ""
+        if finalizes { coordinator.endDictation(transcript.visible) }
+        else { coordinator.showDictation(transcript) }
+        #expect(text == "Typed Spoken")
+        #expect(view.text == text)
+        #expect(coordinator.lastModelText == text)
+        #expect(coordinator.dictationSession == nil)
+        #expect(!coordinator.isApplyingDictation)
+        #expect(view.undoManager?.isUndoRegistrationEnabled == true)
+    }
+
+    @Test func nativeUndoDuringLiveDictationEndsThatSessionWithoutRemovingEarlierTyping() async throws {
+        let recognizer = MobileTestRecognizer()
+        let (session, target) = try dictatingSession(recognizer)
+        defer { session.dictation.deactivate() }
+        target.input.insertText("Typed")
+        await session.dictation.refreshLanguageSupport()
+        session.dictation.toggleRecheckingInput()
+        await recognizer.waitUntilListening()
+        recognizer.send("Spoken", isFinal: false)
+        #expect(target.input.text == "Typed Spoken")
+
+        let undo = try #require(target.input.undoManager)
+        undo.undo()
+        #expect(!session.dictation.isSessionActive, "Native Undo must end the live dictation session")
+        #expect(recognizer.isCancelled)
+        #expect(target.input.text == "Typed", "The whole live session is one undo step, not the earlier typing")
+        #expect(session.draft.text == target.input.text)
+        recognizer.send("Late result", isFinal: true)
+        #expect(session.draft.text == "Typed", "A result arriving after Undo cannot restore the session")
+        #expect(target.input.text == session.draft.text)
+    }
+
+    @Test func redoingAnUndoneLiveDictationSessionRestoresWordsWithoutRestartingRecognition() async throws {
+        let recognizer = MobileTestRecognizer()
+        let (session, target) = try dictatingSession(recognizer)
+        defer { session.dictation.deactivate() }
+        target.input.insertText("Typed")
+        await session.dictation.refreshLanguageSupport()
+        session.dictation.toggleRecheckingInput()
+        await recognizer.waitUntilListening()
+        recognizer.send("Spoken", isFinal: false)
+        let undo = try #require(target.input.undoManager)
+        undo.undo()
+        #expect(target.input.text == "Typed")
+        undo.redo()
+        #expect(target.input.text == "Typed Spoken")
+        #expect(session.draft.text == target.input.text)
+        try #require(target.input.text.utf16.count > 6)
+        #expect(target.input.textStorage.attribute(.foregroundColor, at: 6, effectiveRange: nil) as? UIColor == .label)
+        #expect(!session.dictation.isSessionActive)
+        #expect(recognizer.isCancelled)
+        #expect(target.input.undoManager === undo)
+        undo.undo()
+        #expect(target.input.text == "Typed")
+        #expect(session.draft.text == target.input.text)
+    }
+
+    @Test func discardedTentativeWordsDoNotLeaveAnEmptyUndoStepOrRemoveEarlierHistory() throws {
+        var text = ""
+        let input = NativeComposerInput(
+            text: Binding(get: { text }, set: { text = $0 }), editor: ComposerEditorState(),
+            onSend: {}, onCompletionKey: { _ in false }, onPasteImages: { _ in }
+        )
+        let coordinator = NativeComposerInput.Coordinator(parent: input)
+        let view = ComposerTextView()
+        view.delegate = coordinator
+        view.coordinator = coordinator
+        coordinator.input = view
+        view.insertText("Typed")
+        let undo = try #require(view.undoManager)
+        coordinator.anchorDictation()
+        var transcript = DictationTranscript()
+        transcript.receive("Spoken", isFinal: false)
+        coordinator.showDictation(transcript)
+        coordinator.endDictation("")
+        #expect(view.text == "Typed")
+        undo.undo()
+        #expect(view.text.isEmpty)
+        #expect(text.isEmpty)
+        undo.redo()
+        #expect(view.text == "Typed")
+        #expect(text == view.text)
+    }
+
+    @Test func constructingAComposerDoesNotQuerySpeechAssetsDevicesOrPermissions() async throws {
+        let probe = MobileDictationProbe()
+        let recognizer = MobileTestRecognizer()
+        let (session, target) = try dictatingSession(recognizer, probe: probe)
+        #expect(probe.localeChecks == 0)
+        #expect(probe.deviceChecks == 0)
+        #expect(probe.accessChecks == 0)
+        #expect(probe.assetChecks == 0)
+        #expect(probe.sources == 0)
+        await session.dictation.refreshLanguageSupport()
+        #expect(probe.localeChecks == 1)
+        #expect(probe.deviceChecks == 0)
+        #expect(probe.accessChecks == 0)
+        #expect(probe.assetChecks == 0)
+        #expect(probe.sources == 0)
+        #expect(target.input.text.isEmpty)
+    }
+
+    @Test func sendWaitsForFinalWordsBeforeCreatingItsOnlyAttempt() async throws {
+        let recognizer = MobileTestRecognizer()
+        recognizer.finalWords = [("Final words.", true)]
+        let (session, target) = try dictatingSession(recognizer, allowsFinalizedPost: true)
+        defer { session.dictation.deactivate() }
+        await session.dictation.refreshLanguageSupport()
+        session.dictation.toggleRecheckingInput()
+        await recognizer.waitUntilListening()
+        recognizer.send("Uncertain words", isFinal: false)
+        #expect(session.draft.text.isEmpty)
+        #expect(session.canSend)
+        #expect(await !session.send(), "The fixture rejects the finalized POST with 422")
+        #expect(session.draft.text == "Final words.")
+        #expect(target.input.text == session.draft.text)
+        #expect(session.store.sendAttempts.count == 1)
+        #expect(session.store.sendAttempts.first?.phase == .notSent)
+        #expect(session.draft.sendAttemptID == session.store.sendAttempts.first?.id)
+        #expect(!session.dictation.isSessionActive)
+        #expect(!session.isFinalizingDictation)
+    }
+
+    @Test func unconfirmedDictationKeepsWordsWithoutPostingAndBlocksDuplicateSubmission() async throws {
+        let recognizer = MobileTestRecognizer()
+        recognizer.stalls = true
+        let (session, target) = try dictatingSession(recognizer)
+        defer { session.dictation.deactivate() }
+        await session.dictation.refreshLanguageSupport()
+        session.dictation.toggleRecheckingInput()
+        await recognizer.waitUntilListening()
+        recognizer.send("Keep these words", isFinal: false)
+        let send = Task { await session.send() }
+        await recognizer.waitUntilFinishing()
+        #expect(session.isFinalizingDictation)
+        #expect(!session.canSend)
+        #expect(await !session.send())
+        recognizer.rejectFinish()
+        #expect(await !send.value)
+        #expect(session.draft.text == "Keep these words")
+        #expect(target.input.text == session.draft.text)
+        #expect(session.store.sendAttempts.isEmpty)
+        #expect(session.draft.sendAttemptID == nil)
+        #expect(session.dictation.notice == .unsent(revision: session.draft.revision))
+        #expect(!session.isFinalizingDictation)
+    }
+
+    @Test(arguments: [false, true])
+    func leavingTheComposerCommitsItsWordsAndRejectsLateResults(dismantles: Bool) async throws {
+        let recognizer = MobileTestRecognizer()
+        let (session, target) = try dictatingSession(recognizer)
+        defer { session.dictation.deactivate() }
+        await session.dictation.refreshLanguageSupport()
+        session.dictation.toggleRecheckingInput()
+        await recognizer.waitUntilListening()
+        recognizer.send("Stay in this draft", isFinal: false)
+        if dismantles {
+            NativeComposerInput.dismantleUIView(target.input, coordinator: target.coordinator)
+            #expect(session.editor.textView == nil)
+        } else {
+            session.dictation.deactivate()
+        }
+        #expect(recognizer.isCancelled)
+        #expect(!session.dictation.isSessionActive)
+        #expect(session.draft.text == "Stay in this draft")
+        recognizer.send("Late result", isFinal: true)
+        #expect(session.draft.text == "Stay in this draft")
+        #expect(target.input.text == session.draft.text)
+        #expect(session.store.sendAttempts.isEmpty)
+    }
+
+    private func dictatingSession(
+        _ recognizer: MobileTestRecognizer, probe: MobileDictationProbe = .init(),
+        allowsFinalizedPost: Bool = false
+    ) throws -> (ComposerSession, MobileDictationTarget) {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [MobileDictationProtocol.self]
+        let host = allowsFinalizedPost ? "finalized-dictation.test" : "no-dictation-post.test"
+        let api = try ChannelAPI(serverURL: "https://\(host)", session: URLSession(configuration: configuration))
+        let store = ChannelStore(id: "test", api: api, sendJournal: nil)
+        _ = try store.apply(.init(type: "snapshot", state: .init(
+            revision: 1,
+            channel: .init(id: "test", name: "Test", model: .init(provider: "test", name: "test"),
+                           updatedAt: "2026-10-26T00:00:00Z"),
+            lead: .lead(id: "test", profile: .init(name: "Lead", role: "Coordinator",
+                                                  avatar: .init(mark: "M4 12H20", color: "#123456")))
+        )))
+        var system = DictationSystem(
+            supportedLocale: { probe.localeChecks += 1; return Locale(identifier: "en-US") },
+            hasMicrophone: { probe.deviceChecks += 1; return true },
+            microphoneAccess: { probe.accessChecks += 1; return .granted },
+            requestMicrophoneAccess: { Issue.record("Tests must not request microphone access"); return false },
+            speechRecognitionDenied: { false },
+            installAssets: { _, _ in probe.assetChecks += 1 },
+            makeSource: { probe.sources += 1; return MobileInertAudioSource() },
+            makeRecognizer: { _, _, _ in recognizer },
+            announce: { _ in },
+            openSettings: { _ in Issue.record("Tests must not open Settings") }
+        )
+        system.refreshNotifications = []
+        let draft = ComposerDraft(imageIsReadable: { _ in false })
+        let session = ComposerSession(store: store, draft: draft, dictationSystem: system)
+        let input = NativeComposerInput(
+            text: Binding(get: { draft.text }, set: { draft.text = $0 }), editor: session.editor,
+            onSend: {}, onCompletionKey: { _ in false }, onPasteImages: { _ in },
+            dictation: session.dictation
+        )
+        let coordinator = NativeComposerInput.Coordinator(parent: input)
+        let view = ComposerTextView()
+        view.font = .preferredFont(forTextStyle: .body)
+        view.delegate = coordinator
+        view.coordinator = coordinator
+        coordinator.input = view
+        session.editor.textView = view
+        let target = MobileDictationTarget(input: view, coordinator: coordinator)
+        session.dictation.target = target
+        return (session, target)
+    }
+
     @Test func aFailedRequestRevealRetainsItsQuestionThroughRetryUntilSettledSuccess() {
         var preview = ComposerRequestPreviewState()
         let question = ComposerRequestPreviewState.Question(sequence: 40, text: "The original question")
@@ -274,6 +672,138 @@ struct ComposerTests {
             #expect(preview.question == nil)
             #expect(preview.token == nil)
             #expect(!preview.isPresented)
+        }
+    }
+
+    @MainActor private final class MobileDictationProbe {
+        var localeChecks = 0
+        var deviceChecks = 0
+        var accessChecks = 0
+        var assetChecks = 0
+        var sources = 0
+    }
+
+    @MainActor private final class MobileDictationTarget: DictationTextTarget {
+        let input: ComposerTextView
+        let coordinator: NativeComposerInput.Coordinator
+        var isInKeyWindow: Bool { false }
+
+        init(input: ComposerTextView, coordinator: NativeComposerInput.Coordinator) {
+            self.input = input
+            self.coordinator = coordinator
+        }
+
+        func beginDictation() -> Bool {
+            coordinator.anchorDictation()
+            return coordinator.dictationSession != nil
+        }
+
+        func showDictation(_ transcript: DictationTranscript) { coordinator.showDictation(transcript) }
+        func endDictation(_ finalized: String) { coordinator.endDictation(finalized) }
+    }
+
+    private final class MobileInertAudioSource: DictationAudioSource {
+        func start(format: AVAudioFormat, handler: @escaping @Sendable (DictationAudioEvent) -> Void) throws {
+            Issue.record("Unit tests must not start audio capture")
+            throw ChannelAPIError.invalidResponse
+        }
+        func stop() {}
+    }
+
+    @MainActor private final class MobileTestRecognizer: DictationRecognizing {
+        var finalWords: [(String, Bool)] = []
+        var stalls = false
+        private(set) var isCancelled = false
+        private let listening = AsyncStream.makeStream(of: Void.self)
+        private let finishing = AsyncStream.makeStream(of: Void.self)
+        private var result: (@MainActor (String, Bool) -> Void)?
+        private var finishContinuation: CheckedContinuation<Void, any Error>?
+
+        func start(onListening: @escaping @MainActor () -> Void,
+                   onResult: @escaping @MainActor (String, Bool) -> Void,
+                   onLevel: @escaping @MainActor @Sendable (Double) -> Void,
+                   onInterruption: @escaping @MainActor @Sendable () -> Void,
+                   onFailure: @escaping @MainActor (any Error) -> Void) async throws {
+            result = onResult
+            onListening()
+            listening.continuation.yield()
+        }
+
+        func waitUntilListening() async {
+            var events = listening.stream.makeAsyncIterator()
+            _ = await events.next()
+        }
+
+        func waitUntilFinishing() async {
+            var events = finishing.stream.makeAsyncIterator()
+            _ = await events.next()
+        }
+
+        func send(_ text: String, isFinal: Bool) { result?(text, isFinal) }
+
+        func finish() async throws {
+            finishing.continuation.yield()
+            if stalls { try await withCheckedThrowingContinuation { finishContinuation = $0 } }
+            for (text, isFinal) in finalWords { result?(text, isFinal) }
+        }
+
+        func rejectFinish() {
+            finishContinuation?.resume(throwing: ChannelAPIError.invalidResponse)
+            finishContinuation = nil
+        }
+
+        func cancel() {
+            isCancelled = true
+            finishContinuation?.resume(throwing: CancellationError())
+            finishContinuation = nil
+        }
+    }
+
+    private final class MobileDictationProtocol: URLProtocol, @unchecked Sendable {
+        override class func canInit(with request: URLRequest) -> Bool { true }
+        override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+        override func startLoading() {
+            do {
+                #expect(request.url?.host == "finalized-dictation.test", "Unconfirmed dictation must not post")
+                #expect(request.httpMethod == "POST")
+                let payload = try JSONDecoder().decode(Payload.self, from: body())
+                #expect(payload.content == "Final words.", "The POST contains finalized words, never the tentative display")
+                #expect(UUID(uuidString: payload.id) != nil)
+                let url = try #require(request.url)
+                let response = try #require(HTTPURLResponse(
+                    url: url, statusCode: 422, httpVersion: nil,
+                    headerFields: ["Content-Type": "application/json"]
+                ))
+                client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+                client?.urlProtocol(self, didLoad: Data(#"{"error":"Rejected after finalization"}"#.utf8))
+                client?.urlProtocolDidFinishLoading(self)
+            } catch {
+                Issue.record(error)
+                client?.urlProtocol(self, didFailWithError: error)
+            }
+        }
+
+        override func stopLoading() {}
+
+        private func body() throws -> Data {
+            if let body = request.httpBody { return body }
+            let stream = try #require(request.httpBodyStream)
+            stream.open()
+            defer { stream.close() }
+            var data = Data()
+            var buffer = [UInt8](repeating: 0, count: 4096)
+            while true {
+                let count = stream.read(&buffer, maxLength: buffer.count)
+                guard count >= 0 else { throw stream.streamError ?? ChannelAPIError.invalidResponse }
+                if count == 0 { return data }
+                data.append(contentsOf: buffer.prefix(count))
+            }
+        }
+
+        private struct Payload: Decodable {
+            let id: String
+            let content: String
         }
     }
 
