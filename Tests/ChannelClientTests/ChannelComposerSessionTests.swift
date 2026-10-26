@@ -1,6 +1,8 @@
 import ChannelKit
 import Foundation
+import ImageIO
 import Testing
+import UniformTypeIdentifiers
 @testable import ChannelClient
 
 @MainActor
@@ -110,5 +112,69 @@ struct ChannelComposerSessionTests {
         #expect(draft.text == "A newer draft")
         #expect(!session.isSubmitting)
         #expect(mock.requests.filter { $0.httpMethod == "POST" }.count == 1)
+    }
+
+    @Test(arguments: [false, true])
+    func recoveredLegacyImagesOnlyChangeForANewAttempt(edited: Bool) async throws {
+        let image = try await Task.detached {
+            try ComposerDraftTests.generatedImage(width: 64, height: 32, type: .heic)
+        }.value
+        let mock = MockTransport { request, count in
+            guard request.httpMethod == "POST" else {
+                return try .stream([.init(type: "snapshot", state: testState())])
+            }
+            if count == 2 { return MockResponse(status: 503, body: Data(#"{"error":"Response lost"}"#.utf8)) }
+            let posted = try SendAttemptTests.posted(request)
+            let message = ChannelMessage(id: posted.id, sequence: 1, timestamp: "2026-10-01T00:00:00Z",
+                                         sender: .user, content: .text(posted.content))
+            return try .json(SendAttemptTests.MessageEnvelope(message: message), status: 201)
+        }
+        let store = ChannelStore(id: "test", api: try mock.api(), sendJournal: nil)
+        store.connect()
+        defer { store.disconnect() }
+        try await eventually { store.phase.isLive }
+        await #expect(throws: ChannelAPIError.http(status: 503, message: "Response lost")) {
+            try await store.post(id: "legacy", content: "Original", attachments: [image.attachment])
+        }
+        let draft = ComposerDraft(imageIsReadable: { data in
+            guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return false }
+            return CGImageSourceGetCount(source) > 0
+        })
+        let session = ChannelComposerSession(store: store, draft: draft)
+        #expect(session.edit(try #require(store.sendAttempts.first)))
+        #expect(!draft.isLoadingImages)
+        #expect(draft.images.first?.data == image.data)
+        if edited {
+            draft.text = "Edited"
+            #expect(draft.isLoadingImages)
+            #expect(!session.canSend())
+            try await eventually { !draft.isLoadingImages }
+        }
+        #expect(await session.send())
+        let posts = mock.requests.filter { $0.httpMethod == "POST" }
+        #expect(posts.count == 2)
+        let last = try #require(posts.last)
+        let posted = try JSONDecoder().decode(ImagePost.self, from: requestBody(last))
+        let attachment = try #require(posted.attachments.first)
+        let bytes = try #require(attachment.base64.flatMap { Data(base64Encoded: $0) })
+        if edited {
+            #expect(posted.id != "legacy")
+            #expect(posted.content == "Edited")
+            #expect(attachment.mimeType == "image/jpeg")
+            #expect(bytes != image.data)
+            let source = try #require(CGImageSourceCreateWithData(bytes as CFData, nil))
+            #expect(CGImageSourceGetType(source) as String? == UTType.jpeg.identifier)
+        } else {
+            #expect(posted.id == "legacy")
+            #expect(posted.content == "Original")
+            #expect(attachment == image.attachment)
+            #expect(bytes == image.data)
+        }
+    }
+
+    private struct ImagePost: Decodable {
+        let id: String
+        let content: String
+        let attachments: [ChannelAttachment]
     }
 }

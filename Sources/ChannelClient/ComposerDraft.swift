@@ -57,15 +57,19 @@ public final class ComposerDraft {
     public var text = "" {
         didSet {
             if text != oldValue {
+                let wasAttempted = sendAttemptID != nil
                 revision = UUID()
                 sendAttemptID = nil
                 save()
+                if wasAttempted { normalizeUnsentImages() }
             }
         }
     }
     public private(set) var images: [ComposerImage] = []
     public private(set) var revision = UUID()
     private var loadingImageCount = 0
+    private var failedImageIDs: Set<UUID> = []
+    private var changedImageIDs: Set<UUID> = []
     public private(set) var sendAttemptID: String?
     public private(set) var isSavedLocally = true
     public private(set) var isNew = true
@@ -138,20 +142,22 @@ public final class ComposerDraft {
             }
         }
         restoring = false
+        normalizeUnsentImages()
     }
 
     public var hasContent: Bool {
         !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !images.isEmpty
     }
 
-    public var hasUnreadableImage: Bool { images.contains { !imageIsReadable($0.data) } }
+    public var hasUnreadableImage: Bool {
+        images.contains { failedImageIDs.contains($0.id) || !imageIsReadable($0.data) }
+    }
     public var isLoadingImages: Bool { loadingImageCount > 0 }
 
     public func removeImage(id: UUID) {
         images.removeAll { $0.id == id }
-        revision = UUID()
-        sendAttemptID = nil
-        save()
+        failedImageIDs.remove(id)
+        editAsNewMessage()
     }
 
     public func append(_ image: ComposerImage) {
@@ -163,33 +169,63 @@ public final class ComposerDraft {
             appendPrepared(prepared)
         } else {
             editAsNewMessage()
-            loadingImageCount += 1
-            let rasterize = rasterizeImage
-            Task {
-                defer { loadingImageCount -= 1 }
-                do {
-                    let prepared = try await Task.detached {
-                        let fallback = ComposerImageEncoding.needsNativeRasterization(image.data)
-                            ? rasterize?(image.data, ComposerImageEncoding.maximumDimension) : nil
-                        return try ComposerImageEncoding.normalize(image, fallback: fallback)
-                    }.value
-                    appendPrepared(prepared)
-                } catch {
-                    self.error = "\(image.name): \(error.localizedDescription)"
-                }
-            }
+            normalize(image, replacingSavedImage: false)
         }
     }
 
     private func appendPrepared(_ image: ComposerImage) {
         images.append(image)
-        revision = UUID()
-        sendAttemptID = nil
-        save()
+        editAsNewMessage()
     }
 
     public func thumbnail(for image: ComposerImage) -> CGImage? {
-        ComposerThumbnails.image(for: image, rasterize: rasterizeImage)
+        failedImageIDs.contains(image.id) ? nil : ComposerThumbnails.image(for: image, rasterize: rasterizeImage)
+    }
+
+    private func normalizeUnsentImages() {
+        guard !restoring, sendAttemptID == nil else { return }
+        for image in images where imageIsReadable(image.data) {
+            if let prepared = ComposerImageEncoding.passthrough(image) {
+                if prepared != image { replacePrepared(prepared, original: image) }
+            } else {
+                normalize(image, replacingSavedImage: true)
+            }
+        }
+    }
+
+    private func normalize(_ image: ComposerImage, replacingSavedImage: Bool) {
+        loadingImageCount += 1
+        let rasterize = rasterizeImage
+        Task {
+            defer { loadingImageCount -= 1 }
+            do {
+                let prepared = try await Task.detached {
+                    let fallback = ComposerImageEncoding.needsNativeRasterization(image.data)
+                        ? rasterize?(image.data, ComposerImageEncoding.maximumDimension) : nil
+                    return try ComposerImageEncoding.normalize(image, fallback: fallback)
+                }.value
+                if replacingSavedImage { replacePrepared(prepared, original: image) }
+                else { appendPrepared(prepared) }
+            } catch {
+                if replacingSavedImage {
+                    guard images.contains(image), sendAttemptID == nil else { return }
+                    failedImageIDs.insert(image.id)
+                }
+                self.error = "\(image.name): \(error.localizedDescription)"
+            }
+        }
+    }
+
+    private func replacePrepared(_ image: ComposerImage, original: ComposerImage) {
+        guard sendAttemptID == nil, let index = images.firstIndex(of: original) else { return }
+        if image.data != original.data {
+            changedImageIDs.insert(image.id)
+            ComposerThumbnails.remove(id: original.id)
+        }
+        images[index] = image
+        failedImageIDs.remove(image.id)
+        revision = UUID()
+        save()
     }
 
     public func attachFiles(_ urls: [URL]) {
@@ -268,6 +304,7 @@ public final class ComposerDraft {
     }
 
     public func restore(content: String, attachments: [ChannelAttachment], sendAttemptID: String? = nil) {
+        restoring = true
         text = content
         images = attachments.map { attachment in
             let data: Data
@@ -282,18 +319,24 @@ public final class ComposerDraft {
         }
         revision = UUID()
         self.sendAttemptID = sendAttemptID
+        failedImageIDs = []
+        restoring = false
         if hasUnreadableImage {
             error = "Some images from this send are unavailable. Remove them and attach the images again before sending."
         }
+        normalizeUnsentImages()
         save()
     }
 
     public func clear(ifUnchanged revision: UUID) {
         guard self.revision == revision else { return }
+        restoring = true
         text = ""
         images = []
+        failedImageIDs = []
         sendAttemptID = nil
         self.revision = UUID()
+        restoring = false
         save()
     }
 
@@ -303,9 +346,11 @@ public final class ComposerDraft {
     }
 
     public func editAsNewMessage() {
+        let wasAttempted = sendAttemptID != nil
         sendAttemptID = nil
         revision = UUID()
         save()
+        if wasAttempted { normalizeUnsentImages() }
     }
 
     public func append(contentsOf other: ComposerDraft) {
@@ -318,8 +363,7 @@ public final class ComposerDraft {
             else { images.append(copy) }
         }
         if !other.images.isEmpty {
-            revision = UUID()
-            sendAttemptID = nil
+            editAsNewMessage()
         }
         if let error = other.error { self.error = error }
         save()
@@ -356,6 +400,8 @@ public final class ComposerDraft {
                             cost: thumbnail.map { $0.bytesPerRow * $0.height } ?? 0)
             return thumbnail
         }
+
+        static func remove(id: UUID) { cache.removeObject(forKey: id as NSUUID) }
     }
 
     public func retrySave() {
@@ -373,7 +419,7 @@ public final class ComposerDraft {
                                                     attributes: [.posixPermissions: 0o700])
             for image in images where !image.data.isEmpty {
                 let imageURL = imagesURL.appendingPathComponent(image.id.uuidString)
-                if !FileManager.default.fileExists(atPath: imageURL.path) {
+                if changedImageIDs.contains(image.id) || !FileManager.default.fileExists(atPath: imageURL.path) {
                     try image.data.write(to: imageURL, options: .atomic)
                     try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: imageURL.path)
                 }
@@ -388,6 +434,7 @@ public final class ComposerDraft {
                 where !retained.contains(url.lastPathComponent) {
                 try FileManager.default.removeItem(at: url)
             }
+            changedImageIDs = []
             isSavedLocally = true
         } catch {
             isSavedLocally = false
