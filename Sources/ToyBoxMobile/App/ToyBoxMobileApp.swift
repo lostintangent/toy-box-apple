@@ -12,6 +12,9 @@ struct ToyBoxMobileApp: App {
         WindowGroup {
             RootView()
                 .environment(model)
+                #if DEBUG
+                .task { await MobileAutomation.runIfRequested() }
+                #endif
         }
     }
 }

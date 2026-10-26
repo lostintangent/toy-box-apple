@@ -2,6 +2,7 @@ import { copyFile, lstat, mkdir, readlink, symlink, unlink } from "node:fs/promi
 import { join } from "node:path";
 import { parseArgs } from "node:util";
 import { command, machineLock, main, plist, root, scratchPath, text } from "../lib.ts";
+import { prepareMobileDrive, runMobileDrive, simulatorDriveHost } from "./mobile-drive.ts";
 
 export const mobileEnvironment = {
     ...process.env,
@@ -113,19 +114,31 @@ if (import.meta.main) await main(async () => {
         "build-only": { type: "boolean" }, device: { type: "boolean" }, shutdown: { type: "boolean" },
         screenshot: { type: "string" }, hold: { type: "boolean" }, display: { type: "string" },
         displays: { type: "boolean" }, server: { type: "string" },
+        drive: { type: "string" },
     } });
+    if (values.drive && (values.hold || values.screenshot || values.displays || values.shutdown)) {
+        throw new Error("--drive owns its captures and simulator lifetime; do not combine it with --hold, --screenshot, --displays or --shutdown.");
+    }
     if (values.display && !values.screenshot) throw new Error("--display requires --screenshot.");
     if (values.device || values["build-only"]) {
-        if (values.shutdown || values.screenshot || values.hold || values.displays || values.server) {
+        if (values.shutdown || values.screenshot || values.hold || values.displays || values.server || values.drive) {
             throw new Error("Build-only commands cannot use a simulator or set launch arguments.");
         }
         console.log(await bundleMobile(values.device));
         return;
     }
     const unlock = await machineLock("mobile-simulator");
+    let drivenSimulator: string | undefined;
+    const interruption = new AbortController();
+    const interrupt = () => interruption.abort();
+    if (values.drive) {
+        process.once("SIGINT", interrupt);
+        process.once("SIGTERM", interrupt);
+    }
     try {
         const simulator = await prepareMobileSimulator(true);
         if (!simulator) throw new Error("No iPhone simulator is available.");
+        if (values.drive) drivenSimulator = simulator.udid;
         if (values.displays) {
             const ports = await text(["xcrun", "simctl", "io", simulator.udid, "enumerate"],
                 { env: mobileEnvironment });
@@ -153,12 +166,19 @@ if (import.meta.main) await main(async () => {
         console.log(app);
         await command(["xcrun", "simctl", "install", simulator.udid, app], { env: mobileEnvironment });
         const server = values.server ?? process.env.TOY_BOX_SERVER_URL ?? "http://127.0.0.1:3210";
+        const drive = values.drive ? await prepareMobileDrive(values.drive,
+            await text(["xcrun", "simctl", "get_app_container", simulator.udid, mobileBundleID, "data"],
+                { env: mobileEnvironment }), join(scratchPath(), "mobile-drive", crypto.randomUUID())) : undefined;
         await command(["xcrun", "simctl", "launch", "--terminate-running-process", simulator.udid, mobileBundleID,
             "--server", server],
-            { env: mobileEnvironment });
+            { env: { ...mobileEnvironment, ...(drive ? { SIMCTL_CHILD_TOY_BOX_AUTOMATION_SCRIPT: drive.script } : {}) } });
         console.log(`Running on ${simulator.udid}, server ${server}`);
         console.log(`App data: ${await text(["xcrun", "simctl", "get_app_container", simulator.udid, mobileBundleID, "data"],
             { env: mobileEnvironment })}`);
+        if (drive) {
+            await runMobileDrive(drive, simulatorDriveHost(simulator.udid, mobileEnvironment), interruption.signal);
+            return;
+        }
         if (values.hold) {
             console.log("Simulator lock held for UI checks for at most 15 minutes. Ctrl-C releases it and shuts down.");
             if (values.screenshot) console.log(`The current pose will be captured to ${values.screenshot} before shutdown.`);
@@ -181,5 +201,13 @@ if (import.meta.main) await main(async () => {
                 await command(["xcrun", "simctl", "shutdown", simulator.udid], { env: mobileEnvironment });
             }
         }
-    } finally { unlock(); }
+    } finally {
+        process.removeListener("SIGINT", interrupt);
+        process.removeListener("SIGTERM", interrupt);
+        try {
+            if (drivenSimulator) {
+                await command(["xcrun", "simctl", "shutdown", drivenSimulator], { env: mobileEnvironment });
+            }
+        } finally { unlock(); }
+    }
 });
