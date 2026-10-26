@@ -145,6 +145,16 @@ final class ComposerTextView: UITextView {
     var onPasteImages: (([NSItemProvider]) -> Void)?
     var onEscape: (() -> Void)?
 
+    override init(frame: CGRect, textContainer: NSTextContainer?) {
+        super.init(frame: frame, textContainer: textContainer)
+        textColor = .label
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        textColor = .label
+    }
+
     override var keyCommands: [UIKeyCommand]? {
         var commands = [
             command("\r", action: #selector(hardwareReturn)),
