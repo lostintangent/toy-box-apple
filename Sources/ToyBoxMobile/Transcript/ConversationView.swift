@@ -645,7 +645,7 @@ private struct TranscriptWorkingNow: View {
                                 Text(agent.name).font(.body)
                                 Text(store.presence[agent.id]?.text ?? "Working")
                                     .font(.subheadline)
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(ChannelInk.secondary)
                                     .fixedSize(horizontal: false, vertical: true)
                             }
                         }
