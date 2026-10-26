@@ -161,11 +161,6 @@ final class TranscriptCatchUp {
         if results.updateValue(summary, forKey: key) == nil { resultOrder.append(key) }
         while resultOrder.count > 32 { results.removeValue(forKey: resultOrder.removeFirst()) }
     }
-
-    /// Whether you replied after the request, which is what turns the transcript's outline to Replied.
-    static func isReplied(_ sequence: Int, in messages: [ChannelMessage]) -> Bool {
-        messages.contains { $0.sender.type == "user" && $0.sequence > sequence }
-    }
 }
 
 /// Reads only the store's messages and roster, so it follows new messages but not every event.
@@ -248,7 +243,7 @@ struct TranscriptCatchUpCard: View {
             VStack(alignment: .leading, spacing: 2) {
                 if let line = summary.catchUp.needsYou, let source = line.sources.first {
                     TranscriptCatchUpLine(line: line, messages: messages, agents: agents,
-                                          isReplied: TranscriptCatchUp.isReplied(source, in: messages))
+                                          isReplied: ChannelWaitingRequest.isReplied(source, in: messages))
                 }
                 ForEach(Array(summary.catchUp.changes.enumerated()), id: \.offset) { _, line in
                     TranscriptCatchUpLine(line: line, messages: messages, agents: agents, isReplied: nil)

@@ -2675,14 +2675,6 @@ struct TranscriptCatchUpTests {
         #expect(service.catchUpCount == 3)
     }
 
-    @Test func newerMessagesAndRepliesCountOnlyWhatTheTranscriptShows() {
-        var state = catchUpTestState(users: [25])
-        state.messages.append(ChannelMessage(id: "s31", sequence: 31, timestamp: "2026-10-22T12:00:00Z",
-                                             sender: .system, content: .text("Joined")))
-        #expect(TranscriptCatchUp.isReplied(24, in: state.messages))
-        #expect(!TranscriptCatchUp.isReplied(25, in: state.messages))
-    }
-
     @Test func imagesAreDescribedOnlyForVoiceOverAndOnlyOnce() async throws {
         let descriptions = TranscriptImageDescriptions(observesVoiceOver: false)
         let service = StubChannelIntelligence(descriptions: ["chart": "A chart of weekly signups rising."])
@@ -2831,11 +2823,11 @@ func catchUpTestMessage(_ sequence: Int, sender: ChannelMessageSender = .agent("
                           content: .text(Array(repeating: sentence, count: repeats).joined(separator: " ")))
 }
 
-func catchUpTestState(through latest: Int = 30, seenThrough: Int = 10, users: Set<Int> = []) -> ChannelState {
+func catchUpTestState(through latest: Int = 30, seenThrough: Int = 10) -> ChannelState {
     let channel = Channel(id: "catch-up", name: "Catch-up", model: .init(provider: "test", name: "test"),
                           latestSequence: latest, seenThrough: seenThrough, updatedAt: "2026-10-22T12:00:00Z")
     return ChannelState(revision: 1, channel: channel, lead: .lead(id: "lead"), messages: (1...latest).map {
-        catchUpTestMessage($0, sender: users.contains($0) ? .user : .agent("lead"))
+        catchUpTestMessage($0, sender: .agent("lead"))
     })
 }
 
