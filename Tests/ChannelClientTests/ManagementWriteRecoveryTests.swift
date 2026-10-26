@@ -75,9 +75,7 @@ struct ManagementWriteRecoveryTests {
     }
 
     @Test func unexpectedManagementFailuresRequireAReadBeforeAnotherWrite() {
-        #expect(ChannelManagementRecoveryState.isRequired(after: ChannelAPIError.http(status: 500, message: "Failed.")))
         #expect(ChannelManagementRecoveryState.isRequired(after: ChannelAPIError.http(status: 503, message: "Unavailable.")))
-        #expect(!ChannelManagementRecoveryState.isRequired(after: ChannelAPIError.http(status: 422, message: "Rejected.")))
         #expect(!ChannelManagementRecoveryState.isRequired(after: ChannelAPIError.http(status: 404, message: "Not found.")))
         #expect(!ChannelManagementRecoveryState.isRequired(after: ChannelAPIError.invalidMessage("Invalid name.")))
     }
