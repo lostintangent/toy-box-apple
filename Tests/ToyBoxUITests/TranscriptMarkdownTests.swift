@@ -140,16 +140,10 @@ struct TranscriptMarkdownTests {
             .frame(width: width, height: 120, alignment: .topLeading)
             .background(.white)
         let image = try #require(ImageRenderer(content: content).cgImage)
-        let colorSpace = try #require(CGColorSpace(name: CGColorSpace.sRGB))
-        let context = try #require(CGContext(
-            data: nil, width: image.width, height: image.height, bitsPerComponent: 8, bytesPerRow: image.width * 4,
-            space: colorSpace, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-        ))
-        context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
-        let bytes = try #require(context.data).assumingMemoryBound(to: UInt8.self)
+        let bytes = try rgba(image)
         func containsTableInk(at x: Int) -> Bool {
             return (0..<image.height).contains { y in
-                let offset = y * context.bytesPerRow + x * 4
+                let offset = (y * image.width + x) * 4
                 return min(bytes[offset], bytes[offset + 1], bytes[offset + 2]) < 252
             }
         }
@@ -157,6 +151,36 @@ struct TranscriptMarkdownTests {
         #expect(!containsTableInk(at: Int(CGFloat(image.width) * 0.75)))
         let rightEdge = try #require((0..<image.width).last(where: containsTableInk))
         #expect((167...168).contains(rightEdge))
+    }
+
+    @MainActor
+    @Test func tableFillAndFinalRowStayInsideTheRoundedBorder() throws {
+        let markdown = TranscriptMarkdown(content: "", selectable: false,
+                                          copyCode: { _ in }, mentionInk: { _ in .purple })
+        let content = markdown.table([["A", "B"], ["1", "2"]], block: 0)
+            .foregroundStyle(.black)
+            .environment(\.colorScheme, .light)
+            .background(.white)
+        let image = try #require(ImageRenderer(content: content).cgImage)
+        let bytes = try rgba(image)
+        for x in [0, image.width - 1] {
+            for y in [0, image.height - 1] {
+                let offset = (y * image.width + x) * 4
+                #expect((0..<3).allSatisfy { bytes[offset + $0] >= 254 })
+            }
+        }
+        #expect(bytes[(10 * image.width + 10) * 4] < 252)
+    }
+
+    private func rgba(_ image: CGImage) throws -> [UInt8] {
+        let colorSpace = try #require(CGColorSpace(name: CGColorSpace.sRGB))
+        let context = try #require(CGContext(
+            data: nil, width: image.width, height: image.height, bitsPerComponent: 8, bytesPerRow: image.width * 4,
+            space: colorSpace, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ))
+        context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        let bytes = try #require(context.data).assumingMemoryBound(to: UInt8.self)
+        return Array(UnsafeBufferPointer(start: bytes, count: image.height * context.bytesPerRow))
     }
 
     @MainActor

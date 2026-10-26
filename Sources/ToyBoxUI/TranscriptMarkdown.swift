@@ -138,11 +138,14 @@ public struct TranscriptMarkdown: View {
                         .padding(.vertical, 7)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                         .background(row == 0 ? Color.primary.opacity(0.05) : .clear)
-                        .overlay(alignment: .bottom) { Divider() }
+                        .overlay(alignment: .bottom) {
+                            if row + 1 < rows.count { Divider() }
+                        }
                 }
             }
         }
         .fixedSize(horizontal: true, vertical: false)
+        .clipShape(RoundedRectangle(cornerRadius: 5))
         .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(.separator, lineWidth: 0.5))
     }
 
