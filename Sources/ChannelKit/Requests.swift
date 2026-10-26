@@ -22,6 +22,7 @@ public struct ChannelRequestMessage: Equatable, Sendable {
 }
 
 public struct ChannelWaitingRequest: Equatable, Identifiable, Sendable {
+    /// Canonical request lookup key, unlike `NeedsYouRequestLink`'s lossless saved server string.
     public struct Identity: Equatable, Hashable, Sendable {
         public let serverURL: String
         public let channelID: String

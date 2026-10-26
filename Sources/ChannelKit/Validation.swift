@@ -30,20 +30,3 @@ public enum ChannelValidation {
         return nil
     }
 }
-
-extension ChannelTask {
-    public var isExpandedByDefault: Bool { status != "done" }
-
-    public var showsChildProgress: Bool {
-        children?.isEmpty == false && status != "pending" && status != "done"
-    }
-
-    public var statusDescription: String {
-        switch status {
-        case "in_progress": "in progress"
-        case "done": "done"
-        case "blocked": "blocked"
-        default: "pending"
-        }
-    }
-}

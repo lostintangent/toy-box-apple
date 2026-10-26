@@ -11,10 +11,12 @@ public func channelAgentMessageCount(_ messages: [ChannelMessage], after sequenc
     }
 }
 
-public func channelCanSend(isLive: Bool, isSending: Bool, isSubmitting: Bool, hasContent: Bool,
-                           isLoadingImages: Bool, hasUnreadableImage: Bool, textUTF16Count: Int) -> Bool {
-    isLive && !isSending && !isSubmitting && hasContent && !isLoadingImages
-        && !hasUnreadableImage && textUTF16Count <= 12_000
+public func channelCanSend(isLive: Bool, isSending: @autoclosure () -> Bool,
+                           isSubmitting: @autoclosure () -> Bool, hasContent: @autoclosure () -> Bool,
+                           isLoadingImages: @autoclosure () -> Bool, hasUnreadableImage: @autoclosure () -> Bool,
+                           textUTF16Count: @autoclosure () -> Int) -> Bool {
+    isLive && !isSending() && !isSubmitting() && hasContent() && !isLoadingImages()
+        && !hasUnreadableImage() && textUTF16Count() <= 12_000
 }
 
 public func channelPurposePreview(_ text: String?) -> String? {

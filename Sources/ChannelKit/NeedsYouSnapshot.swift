@@ -55,6 +55,8 @@ public struct NeedsYouSnapshot: Codable, Equatable, Sendable {
     }
 }
 
+/// Lossless Mac route payload for exact saved-server matching, unlike the normalized
+/// `ChannelWaitingRequest.Identity` lookup key.
 public struct NeedsYouRequestLink: Equatable, Sendable {
     public var serverURL: String
     public var channelID: String
