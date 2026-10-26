@@ -113,6 +113,18 @@ final class TranscriptScroll {
         return (pending.token, Model.visibleRows(in: layout).contains(pending.row))
     }
 
+    /// The paging row's height, so older history loads as soon as that row starts to show.
+    static let pagingReach: CGFloat = 44
+
+    /// Whether the top of the content is in reach once geometry holds the model's placement. That
+    /// covers a drag to the top, a landing or filter that can't fill the screen, and a short page.
+    /// While a landing or page is still being placed, its old geometry says nothing.
+    var reachesOlder: Bool {
+        guard hasLanded, let metrics, metrics.top < Self.pagingReach, let layout,
+              let origin = Model.placement(for: intent, layout: layout).origin else { return false }
+        return abs(origin - layout.origin) <= 0.5
+    }
+
     var distanceToEnd: CGFloat { layout.map(Model.distanceToEnd(in:)) ?? 0 }
     var visibleRows: [String] { layout.map(Model.visibleRows(in:)) ?? [] }
 }
@@ -151,8 +163,6 @@ struct ConversationView: View {
     nonisolated private static let space = "transcript-content"
     private static let revealInterrupted = "Scrolling moved away before the message was revealed."
     private static let laneWidth: CGFloat = 720
-    /// The paging row's height, so older history loads as soon as that row starts to show.
-    private static let pagingReach: CGFloat = 44
 
     private var items: [TranscriptItem] {
         guard let lead = store.roster.first else { return [] }
@@ -220,11 +230,9 @@ struct ConversationView: View {
                                 height: geometry.containerSize.height + top + bottom,
                                 topInset: top, bottomInset: bottom),
                 origin: geometry.contentOffset.y, documentEnd: geometry.contentSize.height)
-        } action: { old, metrics in
+        } action: { _, metrics in
             scroll.metrics = metrics
             place(scroll.update())
-            // Page as the paging row comes into reach, as the Mac does.
-            if metrics.top < Self.pagingReach && old.top >= Self.pagingReach { Task { await loadOlder() } }
         }
         .onScrollPhaseChange { _, phase in
             scroll.isReaderScrolling = phase == .tracking || phase == .interacting || phase == .decelerating
@@ -355,6 +363,7 @@ struct ConversationView: View {
             if let reveal = scroll.finishedReveal() {
                 interaction.finishReveal(reveal.token, reveal.isRevealed ? .revealed : .failed(Self.revealInterrupted))
             }
+            if scroll.reachesOlder && !store.isLoadingOlder { Task { await loadOlder() } }
         }
     }
 

@@ -145,10 +145,37 @@ struct TranscriptTests {
         scroll.sync(paged)
         scroll.metrics?.documentEnd = 2500
         #expect(scroll.update()?.needsMeasurement == "r1")
+        #expect(!scroll.reachesOlder)
 
         for index in 0..<5 { scroll.measure("p\(index)", frame: CGRect(x: 0, y: CGFloat(index) * 100, width: 386, height: 100)) }
         for index in 0..<20 { scroll.measure("r\(index)", frame: CGRect(x: 0, y: CGFloat(index + 5) * 100, width: 386, height: 100)) }
         #expect(scroll.update()?.origin == 530)
+        #expect(!scroll.reachesOlder)
+    }
+
+    @Test func aLandingThatCantFillTheScreenReachesOlderHistoryOnceItsPlaced() {
+        let viewport = TranscriptScrollModel.Viewport(width: 386, height: 600, topInset: 0, bottomInset: 0)
+        let scroll = TranscriptScroll()
+        scroll.sync((0..<3).map { .init(id: "r\($0)", order: $0) })
+        for index in 0..<3 { scroll.measure("r\(index)", frame: CGRect(x: 0, y: CGFloat(index) * 100, width: 386, height: 100)) }
+        // Before landing, the initial offset says nothing about where the reader is.
+        scroll.metrics = .init(viewport: viewport, origin: 0, documentEnd: 300 + TranscriptScrollModel.endClearance)
+        #expect(!scroll.reachesOlder)
+        let landing = scroll.update(.land(.end))
+        #expect(landing?.origin == 0)
+        #expect(scroll.reachesOlder)
+
+        // A tall channel landed at its end is out of reach until the reader scrolls to the top.
+        let tall = TranscriptScroll()
+        tall.sync((0..<20).map { .init(id: "r\($0)", order: $0) })
+        for index in 0..<20 { tall.measure("r\(index)", frame: CGRect(x: 0, y: CGFloat(index) * 100, width: 386, height: 100)) }
+        tall.metrics = .init(viewport: viewport, origin: 1400, documentEnd: 2000)
+        _ = tall.update(.land(.end))
+        #expect(!tall.reachesOlder)
+        tall.isReaderScrolling = true
+        tall.metrics?.origin = 30
+        _ = tall.update()
+        #expect(tall.reachesOlder)
     }
 
     @Test func onlyANewSendFollowsToTheBottom() {
