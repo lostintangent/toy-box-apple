@@ -90,7 +90,7 @@ private struct OverviewArtifactRow: View {
             if let error { ManagementError(message: error) }
         }
         .quickLookPreview($preview)
-        .sheet(item: $sharing) { ArtifactShareSheet(file: $0.file) }
+        .sheet(item: $sharing) { ArtifactShareSheet(file: $0.file) { error = $0 } }
     }
 
     private func prepare(sharing: Bool) {
@@ -124,9 +124,14 @@ struct ArtifactShare: Identifiable {
 
 struct ArtifactShareSheet: UIViewControllerRepresentable {
     let file: URL
+    let onError: (String) -> Void
 
     func makeUIViewController(context: Context) -> UIActivityViewController {
-        UIActivityViewController(activityItems: [file], applicationActivities: nil)
+        let controller = UIActivityViewController(activityItems: [file], applicationActivities: nil)
+        controller.completionWithItemsHandler = { _, _, _, error in
+            if let error { onError(error.localizedDescription) }
+        }
+        return controller
     }
 
     func updateUIViewController(_ controller: UIActivityViewController, context: Context) {}

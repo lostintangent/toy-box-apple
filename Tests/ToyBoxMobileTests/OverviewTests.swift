@@ -4,6 +4,7 @@ import Foundation
 import Testing
 import SwiftUI
 import ToyBoxUI
+import UIKit
 @testable import ToyBoxMobile
 
 @Suite("Mobile Overview")
@@ -140,10 +141,163 @@ struct OverviewTests {
         #expect(replacement.server?.host == "replacement.example")
     }
 
+    @Test func artifactImagesFitIntrinsicPointsWithoutUpscalingAndResetZoomForAnotherFile() {
+        #expect(ArtifactImageScrollView.fitScale(image: CGSize(width: 64, height: 32),
+                                                viewport: CGSize(width: 320, height: 600)) == 1)
+        #expect(ArtifactImageScrollView.fitScale(image: CGSize(width: 1600, height: 800),
+                                                viewport: CGSize(width: 320, height: 600)) == 0.2)
+        let view = ArtifactImageScrollView(frame: CGRect(x: 0, y: 0, width: 320, height: 600))
+        let first = URL(fileURLWithPath: "/fixture/first.png")
+        view.configure(image: UIImage(), size: CGSize(width: 1600, height: 800), file: first, title: "First")
+        #expect(view.minimumZoomScale == 0.2)
+        #expect(abs(view.zoomScale - 0.2) < 0.001)
+        view.actualSize()
+        #expect(view.zoomScale == 1)
+        view.configure(image: UIImage(), size: CGSize(width: 1600, height: 800),
+                       file: URL(fileURLWithPath: "/fixture/second.png"), title: "Second")
+        #expect(abs(view.zoomScale - 0.2) < 0.001)
+        #expect(view.imageView.accessibilityLabel == "Second")
+        view.stop()
+        #expect(view.file == nil && view.imageView.image == nil)
+    }
+
+    @Test(arguments: [false, true])
+    func nativeArtifactOriginalPreparationCannotPublishIntoAnotherSelectionOrServer(changingServer: Bool) async throws {
+        let downloads = NativeArtifactOriginalDownloads()
+        let first = artifact("first.dat")
+        let second = artifact("second.dat")
+        let session = try artifactSession(artifacts: [first, second])
+        defer { session.close() }
+        session.open(first)
+        let reading = ArtifactReaderState(download: { _, _ in await downloads.file() })
+        reading.prepareOriginal(session: session, sharing: true)
+        let pending = try #require(reading.originalTask)
+        try await waitForOriginal(downloads)
+        if changingServer {
+            session.configure(api: try ChannelAPI(serverURL: "https://replacement.example"),
+                              channelID: "channel", artifacts: [first, second])
+            session.open(first)
+        } else { session.select(second.id) }
+        await downloads.release(URL(fileURLWithPath: "/fixture/first.dat"))
+        await pending.value
+        #expect(reading.sharing == nil && reading.preview == nil)
+        #expect(!reading.isPreparingOriginal)
+        #expect(session.artifact?.id == (changingServer ? first.id : second.id))
+        #expect(session.actionError == nil)
+    }
+
+    @Test func nativeArtifactOriginalCancellationCannotReopenASheetOrClearANewerAction() async throws {
+        let downloads = NativeArtifactOriginalDownloads()
+        let file = artifact("first.dat")
+        let session = try artifactSession(artifacts: [file])
+        defer { session.close() }
+        session.open(file)
+        let reading = ArtifactReaderState(download: { _, _ in await downloads.file() })
+        reading.prepareOriginal(session: session, sharing: true)
+        let pending = try #require(reading.originalTask)
+        try await waitForOriginal(downloads)
+        reading.cancelOriginal()
+        #expect(!reading.isPreparingOriginal)
+        reading.prepareOriginal(session: session, sharing: true)
+        let newer = try #require(reading.originalTask)
+        try await waitForOriginal(downloads, count: 2)
+        await downloads.release(URL(fileURLWithPath: "/fixture/first.dat"))
+        await pending.value
+        #expect(reading.sharing == nil && reading.preview == nil)
+        #expect(reading.isPreparingOriginal && reading.originalTask != nil)
+        let current = URL(fileURLWithPath: "/fixture/current.dat")
+        await downloads.release(current, request: 2)
+        await newer.value
+        #expect(reading.sharing?.file == current)
+        #expect(!reading.isPreparingOriginal && reading.originalTask == nil)
+        #expect(session.actionError == nil)
+    }
+
+    @Test func nativeArtifactOriginalFailureIsAnActionErrorWithoutClosingTheArtifact() async throws {
+        let file = artifact("first.dat")
+        let session = try artifactSession(artifacts: [file])
+        defer { session.close() }
+        session.open(file)
+        let reading = ArtifactReaderState(download: { _, _ in throw URLError(.timedOut) })
+        reading.prepareOriginal(session: session, sharing: true)
+        await reading.originalTask?.value
+        #expect(session.actionError == URLError(.timedOut).localizedDescription)
+        #expect(session.artifact?.id == file.id)
+        #expect(!reading.isPreparingOriginal)
+    }
+
+    @Test func artifactNativeReadingStateSurvivesPresentationCoverageButEndsWithTheVisit() {
+        let reading = ArtifactReaderState()
+        reading.markdownOffsets["artifact"] = 480
+        reading.sharing = ArtifactShare(file: URL(fileURLWithPath: "/fixture/document.md"))
+        reading.stopPendingOriginal()
+        #expect(reading.markdownOffsets["artifact"] == 480)
+        #expect(reading.sharing != nil)
+        reading.reset()
+        #expect(reading.markdownOffsets.isEmpty)
+        #expect(reading.sharing == nil && reading.preview == nil)
+    }
+
+    @Test func artifactFitCallbacksDistinguishZoomFromFitAndDoNotPublishAnObsoletePage() async {
+        let view = ArtifactImageScrollView(frame: CGRect(x: 0, y: 0, width: 320, height: 600))
+        var fitted: [Bool] = []
+        view.onFitChanged = { fitted.append($0) }
+        view.configure(image: UIImage(), size: CGSize(width: 1600, height: 800),
+                       file: URL(fileURLWithPath: "/fixture/first.png"), title: "First")
+        await view.fitPublication?.value
+        #expect(fitted == [true] && view.isAtFitScale)
+        view.actualSize()
+        await view.fitPublication?.value
+        #expect(fitted == [true, false] && !view.isAtFitScale)
+        view.fit()
+        view.actualSize()
+        await view.fitPublication?.value
+        #expect(fitted == [true, false, false])
+        view.fit()
+        view.stop()
+        await view.fitPublication?.value
+        #expect(fitted == [true, false, false])
+    }
+
+    private func artifact(_ path: String) -> ChannelArtifact {
+        ChannelArtifact(file: .init(kind: "machine", path: path), title: path, url: "/api/serve/test/\(path)")
+    }
+
+    private func artifactSession(artifacts: [ChannelArtifact]) throws -> ChannelArtifactSession {
+        let session = ChannelArtifactSession(decodeImage: { _, _, _ in throw ChannelAttachmentError.invalidImage },
+                                             download: { _, _ in throw URLError(.notConnectedToInternet) })
+        session.configure(api: try ChannelAPI(serverURL: "https://fixture.example"),
+                          channelID: "channel", artifacts: artifacts)
+        return session
+    }
+
+    private func waitForOriginal(_ downloads: NativeArtifactOriginalDownloads, count: Int = 1) async throws {
+        let deadline = ContinuousClock.now.advanced(by: .seconds(3))
+        while await downloads.requests < count, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        #expect(await downloads.requests == count)
+    }
+
     private func withModel(_ body: (AppModel) throws -> Void) throws {
         let suite = "mobile-overview-\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         try body(AppModel(arguments: ["--server", "https://fixture.example"], environment: [:], defaults: defaults))
+    }
+
+    private actor NativeArtifactOriginalDownloads {
+        private(set) var requests = 0
+        private var pending: [Int: CheckedContinuation<URL, Never>] = [:]
+
+        func file() async -> URL {
+            requests += 1
+            let request = requests
+            return await withCheckedContinuation { pending[request] = $0 }
+        }
+
+        func release(_ file: URL, request: Int = 1) {
+            pending.removeValue(forKey: request)?.resume(returning: file)
+        }
     }
 }
