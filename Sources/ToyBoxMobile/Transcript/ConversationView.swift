@@ -84,6 +84,13 @@ final class TranscriptScroll {
     var visibleRows: [String] { layout.map(Model.visibleRows(in:)) ?? [] }
 }
 
+/// Only a send made now follows the reader to the bottom. The outbox restored at launch can arrive
+/// after landing, and its attempts never start out sending.
+func startsOwnPost(after previous: [String], in attempts: [ChannelSendAttempt]) -> Bool {
+    let previous = Set(previous)
+    return attempts.contains { !previous.contains($0.id) && $0.phase == .sending }
+}
+
 struct ConversationView: View {
     let store: ChannelStore
     @Environment(AppModel.self) private var model
@@ -204,8 +211,8 @@ struct ConversationView: View {
             scroll.rows = items.map { .init(id: $0.id, order: $0.order) }
             land(items)
         }
-        .onChange(of: store.sendAttempts.count) { old, new in
-            if new > old { place(scroll.update(.ownPostConfirmed)) }
+        .onChange(of: store.sendAttempts.map(\.id)) { old, _ in
+            if startsOwnPost(after: old, in: store.sendAttempts) { place(scroll.update(.ownPostConfirmed)) }
         }
         .onChange(of: interaction.jumpToLatestRequest) { place(scroll.update(.jumpToLatest)) }
         .onChange(of: interaction.revealRequestToken) {

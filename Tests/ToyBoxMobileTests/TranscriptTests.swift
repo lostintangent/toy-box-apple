@@ -1,3 +1,4 @@
+@testable import ChannelClient
 import ChannelKit
 import CoreGraphics
 import Foundation
@@ -68,5 +69,16 @@ struct TranscriptTests {
         }
         // The first measured row starting below the top holds the reader's place.
         #expect(anchor.row == "p1" && anchor.offset == 100)
+    }
+
+    @Test func onlyANewSendFollowsToTheBottom() {
+        func attempt(_ id: String, _ phase: ChannelSendPhase) -> ChannelSendAttempt {
+            ChannelSendAttempt(id: id, content: id, attachments: [], timestamp: "2026-10-25T12:00:00Z", phase: phase)
+        }
+        // The restored outbox lands after the unread landing and must not move the reader.
+        #expect(!startsOwnPost(after: [], in: [attempt("old", .deliveryNotConfirmed), attempt("lost", .notSent)]))
+        #expect(startsOwnPost(after: ["old"], in: [attempt("old", .notSent), attempt("new", .sending)]))
+        // Send Again reuses its id, so it isn't a new post.
+        #expect(!startsOwnPost(after: ["old"], in: [attempt("old", .sending)]))
     }
 }
