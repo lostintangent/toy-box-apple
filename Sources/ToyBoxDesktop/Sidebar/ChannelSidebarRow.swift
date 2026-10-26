@@ -31,10 +31,6 @@ struct ChannelSidebarRow: View {
         return [full] + (1..<full).reversed().filter { count - $0 >= 2 }
     }
 
-    static func firstLine(_ text: String?) -> String? {
-        let line = text?.split(whereSeparator: \.isNewline).first?.trimmingCharacters(in: .whitespaces)
-        return line?.isEmpty == false ? line : nil
-    }
 }
 
 private struct ChannelSidebarRowContent: View {
@@ -143,7 +139,7 @@ private struct ChannelSidebarRowContent: View {
                 .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(Self.space)) } action: { folderFrame = $0 }
                 .padding(.leading, -6)
                 .layoutPriority(1)
-        } else if let purpose = ChannelSidebarRow.firstLine(channel.purpose) {
+        } else if let purpose = channelPurposePreview(channel.purpose) {
             Text(purpose).font(.system(size: 11 * scale)).foregroundStyle(.secondary)
                 .lineLimit(1).truncationMode(.tail)
                 .frame(minWidth: 0, idealWidth: yields ? nil : 60, maxWidth: .infinity, alignment: .leading)
@@ -176,7 +172,7 @@ private struct ChannelSidebarRowContent: View {
             case .missing: parts.append("Folder \(name), missing")
             default: parts.append("Folder \(name)")
             }
-        } else if let purpose = ChannelSidebarRow.firstLine(channel.purpose) {
+        } else if let purpose = channelPurposePreview(channel.purpose) {
             parts.append(purpose)
         }
         switch attention {
