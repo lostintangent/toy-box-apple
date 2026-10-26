@@ -162,7 +162,7 @@ final class ChannelIntentsContext {
 
     private func requireServer(_ request: WaitingRequestEntry) throws {
         guard let api = host.api() else { throw ChannelIntentError.noServer }
-        guard WaitingRequestEntry.normalizedServer(api.baseURL.absoluteString) == request.link.serverURL else {
+        guard ChannelWaitingRequest.normalizedServer(api.baseURL.absoluteString) == request.link.serverURL else {
             throw ChannelIntentError.differentServer
         }
     }

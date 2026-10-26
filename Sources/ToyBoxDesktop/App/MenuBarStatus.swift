@@ -51,7 +51,7 @@ struct MenuBarStatus: Equatable {
         /// Lead first, as the sidebar row's avatar stack orders them.
         var working: [ChannelAgent]
         /// The pending request's message, once it's known.
-        var request: ChannelNotifications.ResolvedRequest?
+        var request: ChannelRequestMessage?
     }
 
     static let workingLimit = 3
@@ -81,9 +81,7 @@ struct MenuBarStatus: Equatable {
             .sorted { $0.1 > $1.1 }
             .map { input, _ in
                 let request = input.request
-                let requester = request.flatMap { request in
-                    request.agents.first { $0.id == request.message.sender.agentId }
-                }
+                let requester = request?.requester
                 return Item(id: input.channel.id, name: input.channel.name,
                             subtitle: requester.map { NotificationText.subtitle(requester: $0.name) } ?? Self.needsReply,
                             agent: requester, sequence: input.channel.requestSequence,
@@ -149,7 +147,7 @@ struct MenuBarStatus: Equatable {
         }
     }
 
-    private static func quote(_ request: ChannelNotifications.ResolvedRequest) -> String {
+    private static func quote(_ request: ChannelRequestMessage) -> String {
         let text = NotificationText.plainText(request.message.text)
         return text.isEmpty ? NotificationText.requestBody(request.message, agents: request.agents) : text
     }
