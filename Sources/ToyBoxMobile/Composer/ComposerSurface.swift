@@ -115,10 +115,11 @@ struct ComposerSurface: View {
                 HStack(spacing: 4) {
                     Button { interaction.reveal(sequence: source.sequence) } label: {
                         Label("Replying to \(source.name)", systemImage: "arrowshape.turn.up.left")
+                            .foregroundStyle(Color.primary)
                             .lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
                     }
                     Button { composer.replySource = nil } label: {
-                        Image(systemName: "xmark").frame(width: 44, height: 44)
+                        Image(systemName: "xmark").foregroundStyle(Color.primary).frame(width: 44, height: 44)
                     }
                     .accessibilityLabel("Dismiss reply context")
                 }
@@ -133,7 +134,7 @@ struct ComposerSurface: View {
             ZStack(alignment: .topLeading) {
                 if draft.text.isEmpty {
                     Text("Message your team")
-                        .font(.body).foregroundStyle(.secondary).lineLimit(1)
+                        .font(.body).foregroundStyle(Color.primary).lineLimit(1)
                         .padding(.horizontal, 12).padding(.top, 10).accessibilityHidden(true)
                 }
                 NativeComposerInput(
@@ -146,7 +147,8 @@ struct ComposerSurface: View {
             .padding(.bottom, 6)
             controls.padding(.horizontal, 8).padding(.bottom, 6)
         }
-        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .glassEffect(.regular.tint(Color(uiColor: .systemBackground).opacity(0.3)),
+                     in: RoundedRectangle(cornerRadius: 24, style: .continuous))
         .overlay {
             if dragging {
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
@@ -186,7 +188,7 @@ struct ComposerSurface: View {
             Button("Choose Photos", systemImage: "photo.on.rectangle") { preparePresentation(); showPhotos = true }
             Button("Choose Files", systemImage: "folder") { preparePresentation(); showFiles = true }
         } label: {
-            Image(systemName: "photo.badge.plus").frame(width: 44, height: 44)
+            Image(systemName: "photo.badge.plus").foregroundStyle(Color.primary).frame(width: 44, height: 44)
         }
         .accessibilityLabel("Attach images")
     }
@@ -250,7 +252,7 @@ struct ComposerSurface: View {
     private func inputNeeded(_ request: ChannelMessage) -> some View {
         Button { interaction.reveal(sequence: request.sequence) } label: {
             Label {
-                Text("Input Needed")
+                Text("Input Needed").foregroundStyle(Color.primary)
             } icon: {
                 Image(systemName: "questionmark.bubble")
                     .foregroundStyle(ChannelAttentionStyle.color(for: .waiting, in: colorScheme))

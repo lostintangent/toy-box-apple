@@ -190,4 +190,17 @@ struct ComposerTests {
         editor.setReaderCovered(false, canRestoreFocus: true)
         #expect(!view.isEditable)
     }
+
+    @Test func theNativeDraftUsesOpaqueAdaptiveLabelInk() throws {
+        let input = ComposerTextView()
+        input.text = "Readable draft"
+        let ink = try #require(input.textColor)
+        #expect(input.text == "Readable draft")
+        for style in [UIUserInterfaceStyle.light, .dark] {
+            let traits = UITraitCollection(userInterfaceStyle: style)
+            let resolved = ink.resolvedColor(with: traits)
+            #expect(resolved == UIColor.label.resolvedColor(with: traits))
+            #expect(resolved.cgColor.alpha == 1)
+        }
+    }
 }
