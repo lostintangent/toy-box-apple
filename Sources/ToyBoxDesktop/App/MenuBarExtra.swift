@@ -18,20 +18,15 @@ final class MenuBarPresence {
     @ObservationIgnored private var isPopoverOpen = false
     /// The countdown after activity ends, awaitable so tests needn't race it.
     @ObservationIgnored private(set) var linger: Task<Void, Never>?
-    @ObservationIgnored private var observers: [NSObjectProtocol] = []
+    @ObservationIgnored private var observers: [NotificationCenter.ObservationToken] = []
     @ObservationIgnored private let lingerDuration: Duration
 
-    init(linger: Duration = MenuBarVisibility.linger) {
+    init(linger: Duration = MenuBarVisibility.linger, center: NotificationCenter = .default) {
         lingerDuration = linger
-        for (name, open) in [(NSMenu.didBeginTrackingNotification, true), (NSMenu.didEndTrackingNotification, false)] {
-            observers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated { self?.menuTracking(open) }
-            })
-        }
-    }
-
-    isolated deinit {
-        for observer in observers { NotificationCenter.default.removeObserver(observer) }
+        observers = [
+            center.addObserver(of: NSMenu.self, for: .didBeginTracking) { [weak self] _ in self?.menuTracking(true) },
+            center.addObserver(of: NSMenu.self, for: .didEndTracking) { [weak self] _ in self?.menuTracking(false) },
+        ]
     }
 
     func update(isActive: Bool) {
