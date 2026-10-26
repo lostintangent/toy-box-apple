@@ -117,28 +117,33 @@ public struct TranscriptMarkdown: View {
             .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 6))
         case .table(let rows):
             ScrollView(.horizontal) {
-                TranscriptMarkdownTableLayout(columns: rows.map(\.count).max() ?? 0) {
-                    ForEach(rows.indices, id: \.self) { row in
-                        ForEach(0..<(rows.map(\.count).max() ?? 0), id: \.self) { column in
-                            Text(inline(column < rows[row].count ? rows[row][column] : "", size: 13,
-                                        fragment: .init(block: block.id, row: row, column: column),
-                                        highlights: highlights))
-                                .font(.system(size: 13 * textScale,
-                                              weight: row == 0 ? .semibold : .regular))
-                                .fixedSize(horizontal: false, vertical: true)
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 7)
-                                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                                .background(row == 0 ? Color.primary.opacity(0.05) : .clear)
-                                .overlay(alignment: .bottom) { Divider() }
-                        }
-                    }
-                }
-                .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(.separator, lineWidth: 0.5))
+                table(rows, block: block.id, highlights: highlights)
             }
+            // Preserve the viewport's flexibility without stretching the measured rows.
+            .frame(maxHeight: .infinity, alignment: .topLeading)
         case .rule:
             Divider().padding(.vertical, 4)
         }
+    }
+
+    func table(_ rows: [[String]], block: Int, highlights: TranscriptMarkdownHighlights? = nil) -> some View {
+        TranscriptMarkdownTableLayout(columns: rows.map(\.count).max() ?? 0) {
+            ForEach(rows.indices, id: \.self) { row in
+                ForEach(0..<(rows.map(\.count).max() ?? 0), id: \.self) { column in
+                    Text(inline(column < rows[row].count ? rows[row][column] : "", size: 13,
+                                fragment: .init(block: block, row: row, column: column), highlights: highlights))
+                        .font(.system(size: 13 * textScale, weight: row == 0 ? .semibold : .regular))
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 7)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                        .background(row == 0 ? Color.primary.opacity(0.05) : .clear)
+                        .overlay(alignment: .bottom) { Divider() }
+                }
+            }
+        }
+        .fixedSize(horizontal: true, vertical: false)
+        .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(.separator, lineWidth: 0.5))
     }
 
     private func codeText(_ code: String, block: Int, highlights: TranscriptMarkdownHighlights?) -> some View {
