@@ -15,6 +15,7 @@ test("drive actions are strict and native display identifiers are normalized", (
         .toEqual([{ wait: "Replying to Lead", absent: true }]);
     expect(parseMobileDrive([{ posture: "folded" }, { posture: "unfolded", timeout: 60 }]))
         .toEqual([{ posture: "folded" }, { posture: "unfolded", timeout: 60 }]);
+    expect(parseMobileDrive([{ menuAction: "Edit Channel" }])).toEqual([{ menuAction: "Edit Channel" }]);
     for (const value of [[], {}, [{}], [{ tap: "x", wait: "x" }], [{ type: "" }], [{ back: false }],
         [{ fold: 1 }], [{ tap: "x", display: 1 }], [{ screenshot: "x", display: 0 }],
         [{ screenshot: "x", display: "primary" }], [{ wait: "x", timeout: 0 }],
@@ -22,7 +23,8 @@ test("drive actions are strict and native display identifiers are normalized", (
         [{ back: true, ifPresent: "yes" }], [{ action: "Reply" }], [{ action: "Reply", on: "" }],
         [{ tap: "Reply", on: "message-12" }], [{ wait: "x", absent: "yes" }], [{ tap: "x", absent: true }],
         [{ posture: "open" }], [{ posture: 0 }], [{ posture: "folded", fold: true }],
-        [{ posture: "folded", display: 1 }]]) {
+        [{ posture: "folded", display: 1 }], [{ menuAction: "" }], [{ menuAction: "Edit", on: "menu" }],
+        [{ menuAction: "Edit", tap: "Edit" }]]) {
         expect(() => parseMobileDrive(value)).toThrow();
     }
 });

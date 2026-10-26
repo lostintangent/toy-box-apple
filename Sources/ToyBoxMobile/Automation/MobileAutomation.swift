@@ -20,6 +20,7 @@ struct MobileAutomationStep: Decodable, Equatable {
         case tap(String), type(String), wait(String, absent: Bool), screenshot(String, String), back(ifPresent: Bool), fold(Bool)
         case customAction(String, on: String)
         case posture(MobileAutomationPosture)
+        case menuAction(String)
     }
 
     let action: Action
@@ -35,7 +36,7 @@ struct MobileAutomationStep: Decodable, Equatable {
     init(from decoder: any Decoder) throws {
         let values = try decoder.container(keyedBy: Key.self)
         let names = Set(values.allKeys.map(\.stringValue))
-        let actions = names.intersection(["tap", "type", "wait", "screenshot", "back", "fold", "action", "posture"])
+        let actions = names.intersection(["tap", "type", "wait", "screenshot", "back", "fold", "action", "posture", "menuAction"])
         guard actions.count == 1, names.isSubset(of: actions.union(["display", "timeout", "ifPresent", "on", "absent"])),
               let name = actions.first, let key = Key(stringValue: name),
               (!names.contains("display") || name == "screenshot"),
@@ -51,7 +52,7 @@ struct MobileAutomationStep: Decodable, Equatable {
                                                   debugDescription: "timeout must be greater than 0 and at most 60 seconds.")
         }
         switch name {
-        case "tap", "type", "wait", "screenshot", "action":
+        case "tap", "type", "wait", "screenshot", "action", "menuAction":
             let text = try values.decode(String.self, forKey: key)
             guard !text.isEmpty else {
                 throw DecodingError.dataCorruptedError(forKey: key, in: values,
@@ -60,6 +61,7 @@ struct MobileAutomationStep: Decodable, Equatable {
             switch name {
             case "tap": action = .tap(text)
             case "type": action = .type(text)
+            case "menuAction": action = .menuAction(text)
             case "wait":
                 action = .wait(text, absent: try values.decodeIfPresent(Bool.self, forKey: Key(stringValue: "absent")!) ?? false)
             case "action":
@@ -214,8 +216,9 @@ struct MobileAutomationTree {
     }
 
     var labels: [String] { elements.map(\.description) }
+    var primaryWindow: UIWindow? { windows.first(where: \.isKeyWindow) ?? windows.first }
     var viewport: [Double] {
-        guard let window = windows.first(where: \.isKeyWindow) ?? windows.first else { return [] }
+        guard let window = primaryWindow else { return [] }
         return [Double(window.bounds.width), Double(window.bounds.height)]
     }
 
@@ -353,6 +356,16 @@ private final class MobileAutomationRun {
         case .screenshot:
             try await settle(timeout: step.timeout)
             try await hostAction(timeout: step.timeout)
+        case .menuAction(let title):
+            let selection = try MobileAutomationMenu.select(title, in: .current)
+            selection.interaction.dismissMenu()
+            _ = try await wait(timeout: step.timeout) {
+                MobileAutomationMenu.snapshot(selection.interaction).isEmpty ? true : nil
+            }
+            try await settle(timeout: step.timeout)
+            try Task.checkCancellation()
+            guard ContinuousClock.now < deadline else { throw Failure("Menu dismissal exceeded the step deadline.") }
+            try selection.perform(in: .current)
         case .posture(let posture):
             do {
                 try await settle(timeout: step.timeout, posture: posture)

@@ -10,17 +10,46 @@ struct AutomationTests {
         @objc var accessibilityIdentifier: String?
     }
 
+    private final class MenuDelegate: NSObject, UIContextMenuInteractionDelegate {
+        func contextMenuInteraction(_ interaction: UIContextMenuInteraction,
+                                    configurationForMenuAtLocation location: CGPoint) -> UIContextMenuConfiguration? { nil }
+    }
+
+    private final class MenuInteraction: UIContextMenuInteraction {
+        private let retainedDelegate: MenuDelegate
+        var menu: UIMenu?
+        var dismissals = 0
+
+        init(menu: UIMenu) {
+            let delegate = MenuDelegate()
+            retainedDelegate = delegate
+            self.menu = menu
+            super.init(delegate: delegate)
+        }
+
+        override func updateVisibleMenu(_ block: (UIMenu) -> UIMenu) {
+            if let menu { self.menu = block(menu) }
+        }
+
+        override func dismissMenu() {
+            dismissals += 1
+            menu = nil
+        }
+    }
+
     @Test func scriptPreservesActionsAndRejectsUnknownOrContradictoryInputs() throws {
         let steps = try JSONDecoder().decode([MobileAutomationStep].self, from: Data("""
             [{"tap":"Studio demo"},{"type":"Hello"},{"wait":"Needs you","timeout":20},
              {"screenshot":"reply","display":"3"},{"back":true},{"fold":false},
              {"action":"Reply","on":"message-12"},{"back":true,"ifPresent":true},
-             {"wait":"Replying to Lead","absent":true},{"posture":"folded"},{"posture":"unfolded","timeout":60}]
+             {"wait":"Replying to Lead","absent":true},{"posture":"folded"},{"posture":"unfolded","timeout":60},
+             {"menuAction":"Edit Channel"}]
             """.utf8))
         #expect(steps.map(\.action) == [.tap("Studio demo"), .type("Hello"), .wait("Needs you", absent: false),
                                        .screenshot("reply", "3"), .back(ifPresent: false), .fold(false),
                                        .customAction("Reply", on: "message-12"), .back(ifPresent: true),
-                                       .wait("Replying to Lead", absent: true), .posture(.folded), .posture(.unfolded)])
+                                       .wait("Replying to Lead", absent: true), .posture(.folded), .posture(.unfolded),
+                                       .menuAction("Edit Channel")])
         #expect(steps[0].timeout == 12 && steps[2].timeout == 20)
         for invalid in [#"{"tap":"x","wait":"x"}"#, #"{"type":""}"#, #"{"back":false}"#,
                         #"{"fold":1}"#, #"{"tap":"x","display":"1"}"#,
@@ -28,11 +57,93 @@ struct AutomationTests {
                         #"{"action":"Reply"}"#, #"{"action":"Reply","on":""}"#,
                         #"{"tap":"Reply","on":"message-12"}"#, #"{"wait":"x","absent":"yes"}"#,
                         #"{"tap":"x","absent":true}"#, #"{"posture":"open"}"#, #"{"posture":0}"#,
-                        #"{"posture":"folded","fold":true}"#, #"{"posture":"folded","display":"1"}"#] {
+                        #"{"posture":"folded","fold":true}"#, #"{"posture":"folded","display":"1"}"#,
+                        #"{"menuAction":""}"#, #"{"menuAction":"Edit","on":"menu"}"#,
+                        #"{"menuAction":"Edit","tap":"Edit"}"#] {
             #expect(throws: DecodingError.self) {
                 try JSONDecoder().decode(MobileAutomationStep.self, from: Data(invalid.utf8))
             }
         }
+    }
+
+    @Test func menuDispatchExcludesDisabledHiddenOffscreenAndUnopenedSubmenuItems() throws {
+        let visible = UIAction(title: "Visible") { _ in }
+        let disabled = UIAction(title: "Disabled", attributes: .disabled) { _ in }
+        let hidden = UIAction(title: "Hidden", attributes: .hidden) { _ in }
+        let unopened = UIAction(title: "Unopened") { _ in }
+        let menu = UIMenu(children: [visible, disabled, hidden, UIMenu(title: "More", children: [unopened])])
+        let selected = try MobileAutomationMenu.leaf(named: "Visible", in: [menu], isVisible: true)
+        let matchesExpectedAction = selected === visible
+        #expect(matchesExpectedAction)
+        for title in ["Disabled", "Hidden", "Unopened", "Missing"] {
+            #expect(throws: MobileAutomationMenu.Failure.self) {
+                try MobileAutomationMenu.leaf(named: title, in: [menu], isVisible: true)
+            }
+        }
+        #expect(throws: MobileAutomationMenu.Failure.self) {
+            try MobileAutomationMenu.leaf(named: "Visible", in: [menu], isVisible: false)
+        }
+    }
+
+    @Test func inlineSectionsAreVisibleAndSeparateReportsDoNotDuplicateThem() throws {
+        let action = UIAction(title: "Edit") { _ in }
+        let inline = UIMenu(options: .displayInline, children: [action])
+        let root = UIMenu(children: [inline])
+        for menus in [[root], [root, inline]] {
+            let selected = try MobileAutomationMenu.leaf(named: "Edit", in: menus, isVisible: true)
+            let matchesExpectedAction = selected === action
+            #expect(matchesExpectedAction)
+        }
+    }
+
+    @Test func duplicateVisibleMenuLeavesAreRejectedWithoutDispatching() {
+        var performed = 0
+        let first = UIAction(title: "Edit") { _ in performed += 1 }
+        let second = UIAction(title: "Edit") { _ in performed += 1 }
+        let menu = UIMenu(children: [first, second])
+        #expect(throws: MobileAutomationMenu.Failure.self) {
+            try MobileAutomationMenu.leaf(named: "Edit", in: [menu], isVisible: true)
+        }
+        #expect(performed == 0)
+    }
+
+    @Test func menuVisibilityRequiresTheSelectedWindowAndUnclippedMeasuredCenter() {
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 386, height: 678))
+        window.isHidden = false
+        defer { window.isHidden = true }
+        let clip = UIView(frame: CGRect(x: 20, y: 20, width: 100, height: 100))
+        clip.clipsToBounds = true
+        window.addSubview(clip)
+        let item = UIView(frame: CGRect(x: 0, y: 10, width: 80, height: 40))
+        clip.addSubview(item)
+        func measured() -> MobileAutomationTree.Element {
+            .init(object: item, label: "Edit", value: "", identifier: "", traits: .button,
+                  frame: item.convert(item.bounds, to: nil))
+        }
+        #expect(MobileAutomationMenu.isVisible(measured(), in: [window]))
+        #expect(!MobileAutomationMenu.isVisible(measured(), in: []))
+        item.frame.origin.y = 150
+        #expect(!MobileAutomationMenu.isVisible(measured(), in: [window]))
+        item.frame.origin.y = 10
+        item.isHidden = true
+        #expect(!MobileAutomationMenu.isVisible(measured(), in: [window]))
+    }
+
+    @Test func dismissedMenusAreRejectedAndRetainedActionsUseThePublicLeafAPI() throws {
+        var performed = 0
+        let action = UIAction(title: "Edit") { _ in performed += 1 }
+        let interaction = MenuInteraction(menu: UIMenu(children: [action]))
+        let selected = try MobileAutomationMenu.leaf(named: "Edit",
+                                                    in: MobileAutomationMenu.snapshot(interaction), isVisible: true)
+        interaction.dismissMenu()
+        #expect(interaction.dismissals == 1)
+        #expect(throws: MobileAutomationMenu.Failure.self) {
+            try MobileAutomationMenu.leaf(named: "Edit",
+                                         in: MobileAutomationMenu.snapshot(interaction), isVisible: true)
+        }
+        #expect(performed == 0)
+        selected.performWithSender(nil, target: nil)
+        #expect(performed == 1)
     }
 
     @Test func postureRequiresTheVerifiedSceneSizeNotAnArbitraryResize() {
