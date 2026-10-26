@@ -139,8 +139,7 @@ struct TranscriptUserMessage: View {
                                           source: .init(messageID: message.id, sender: "You",
                                                         timestamp: message.timestamp))
                 }
-                TranscriptReactions(message: message, agents: context.agents, statusReactions: statusReactions,
-                                    alignment: .trailing)
+                TranscriptReactions(message: message, agents: context.agents, statusReactions: statusReactions)
             }
         }
         .accessibilityElement(children: .contain)
@@ -406,7 +405,6 @@ struct TranscriptReactions: View {
     let message: ChannelMessage
     let agents: [ChannelAgent]
     var statusReactions: [ChannelReaction] = []
-    var alignment: Alignment = .leading
 
     private var groups: [ChannelReactionGroup] {
         ChannelReactionGroup.groups(for: message, agents: agents, statusReactions: statusReactions)
@@ -419,7 +417,7 @@ struct TranscriptReactions: View {
                 ForEach(groups, id: \.reaction) { group in
                     let presentation = group.presentation
                     TranscriptReactionChip(emoji: presentation.emoji, label: presentation.label,
-                                           reactors: group.agents, alignment: alignment)
+                                           reactors: group.agents)
                 }
             }
         }
@@ -431,7 +429,6 @@ struct TranscriptReactionChip: View {
     let emoji: String
     let label: String
     let reactors: [ChannelAgent]
-    var alignment: Alignment = .leading
     @ViewState private var showsReactors = false
 
     var body: some View {
@@ -443,9 +440,10 @@ struct TranscriptReactionChip: View {
             .font(.caption)
             .padding(.horizontal, 6)
             .padding(.vertical, 4)
+            // The visible pill is the 44-point-wide target, so neighbors sit only the stack's gap apart.
+            .frame(minWidth: 44)
             .background(.quaternary.opacity(0.5), in: .capsule)
-            // The pill stays aligned with the bubble while its hit region reaches 44 points.
-            .frame(minWidth: 44, minHeight: 44, alignment: alignment)
+            .frame(minHeight: 44)
             .contentShape(.rect)
         }
         .buttonStyle(.plain)

@@ -206,6 +206,7 @@ struct ConversationView: View {
             .frame(maxWidth: .infinity)
             .coordinateSpace(.named(Self.space))
         }
+        .accessibilityIdentifier("conversation-transcript")
         .scrollPosition($position)
         .defaultScrollAnchor(.bottom, for: .initialOffset)
         .onScrollGeometryChange(for: TranscriptScroll.Metrics.self) { geometry in
@@ -224,8 +225,9 @@ struct ConversationView: View {
             scroll.isReaderScrolling = phase == .tracking || phase == .interacting || phase == .decelerating
             if phase == .tracking || phase == .interacting { find.resumeReading() }
         }
-        // An inset rather than an overlay, so the end of the conversation settles clear of them.
-        .safeAreaInset(edge: .bottom, spacing: 0) {
+        // A bar rather than an overlay, so the end of the conversation settles clear of them and
+        // the scroll edge effect reaches up behind them.
+        .safeAreaBar(edge: .bottom, spacing: 0) {
             TranscriptFloatingAccessories(store: store, showsJumpToLatest: showsJumpToLatest) {
                 jumpToLatest()
             }
@@ -498,16 +500,19 @@ private struct TranscriptFloatingAccessories: View {
 
     var body: some View {
         let working = working
-        // Side by side when the whole sentence fits, otherwise stacked, so the state never truncates.
+        // One row, with the working summary down to its avatars when Jump to Latest needs the room. Stacked only
+        // when even its avatars don't fit, at the largest text sizes.
         ViewThatFits(in: .horizontal) {
-            HStack(spacing: 8) {
-                status(working).fixedSize()
-                Spacer(minLength: 0)
-                jump.fixedSize()
+            ForEach(WorkingForm.allCases, id: \.self) { form in
+                HStack(spacing: 8) {
+                    status(working, form: form).fixedSize()
+                    Spacer(minLength: 0)
+                    jump.fixedSize()
+                }
             }
             VStack(alignment: .trailing, spacing: 8) {
                 jump
-                status(working).frame(maxWidth: .infinity, alignment: .leading)
+                status(working, form: .sentence).frame(maxWidth: .infinity, alignment: .leading)
             }
         }
         .padding(.horizontal, 16)
@@ -515,19 +520,25 @@ private struct TranscriptFloatingAccessories: View {
         .animation(.easeOut(duration: 0.2), value: working.map(\.id))
     }
 
-    @ViewBuilder private func status(_ working: [ChannelAgent]) -> some View {
+    private enum WorkingForm: CaseIterable { case sentence, avatars }
+
+    @ViewBuilder private func status(_ working: [ChannelAgent], form: WorkingForm) -> some View {
         if !working.isEmpty {
             HStack(spacing: 8) {
                 HStack(spacing: -6) {
                     ForEach(working.prefix(3)) { AgentAvatarView(agent: $0, size: 20) }
                 }
-                Text(summary(working)).font(.footnote).fixedSize(horizontal: false, vertical: true)
+                switch form {
+                case .sentence: Text(summary(working)).font(.footnote).fixedSize(horizontal: false, vertical: true)
+                case .avatars: EmptyView()
+                }
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
             .frame(minHeight: 44)
             .glassEffect(.transcriptFloating, in: .rect(cornerRadius: 22))
-            .accessibilityElement(children: .combine)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(summary(working))
             .transition(rises)
         }
     }
