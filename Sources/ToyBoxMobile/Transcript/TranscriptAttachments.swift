@@ -7,12 +7,28 @@ struct TranscriptAttachments: View {
     let attachments: [ChannelAttachment]
     let api: ChannelAPI
     let alignment: HorizontalAlignment
+    /// The message the images belong to, which the gallery names.
+    let source: TranscriptGalleryPresenter.Source
+    @Environment(TranscriptGalleryPresenter.self) private var gallery: TranscriptGalleryPresenter?
 
     var body: some View {
+        let images = TranscriptGalleryPresenter.images(in: attachments)
         VStack(alignment: alignment, spacing: 8) {
-            ForEach(Array(attachments.enumerated()), id: \.offset) { _, attachment in
-                if attachment.contentType?.conforms(to: .image) == true {
-                    TranscriptImage(attachment: attachment, api: api)
+            ForEach(Array(attachments.enumerated()), id: \.offset) { offset, attachment in
+                if TranscriptGalleryPresenter.isGalleryImage(attachment) {
+                    let position = attachments[..<offset].count(where: TranscriptGalleryPresenter.isGalleryImage)
+                    if let gallery {
+                        Button {
+                            gallery.open(images: images, at: position, source: source, api: api)
+                        } label: {
+                            TranscriptImage(attachment: attachment, api: api)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(attachment.displayName)
+                        .accessibilityHint("Opens the image")
+                    } else {
+                        TranscriptImage(attachment: attachment, api: api)
+                    }
                 } else if attachment.contentType?.conforms(to: .movie) == true,
                           let address = attachment.url, let url = api.resourceURL(address) {
                     TranscriptVideo(url: url, name: attachment.displayName)

@@ -69,4 +69,53 @@ struct TranscriptTests {
         // The first measured row starting below the top holds the reader's place.
         #expect(anchor.row == "p1" && anchor.offset == 100)
     }
+
+    @Test func theGalleryShowsOnlyTheMessagesImagesAndNeverWraps() throws {
+        let attachments = [
+            ChannelAttachment(name: "one.png", url: "/files/one.png", mimeType: "image/png"),
+            ChannelAttachment(name: "notes.txt", url: "/files/notes.txt", mimeType: "text/plain"),
+            ChannelAttachment(name: "diagram.svg", url: "/files/diagram.svg", mimeType: "image/svg+xml"),
+            ChannelAttachment(name: "two.jpg", url: "/files/two.jpg", mimeType: "image/jpeg"),
+            ChannelAttachment(name: "three.heic", url: "/files/three.heic"),
+        ]
+        let images = TranscriptGalleryPresenter.images(in: attachments)
+        #expect(images.map(\.name) == ["one.png", "two.jpg", "three.heic"])
+
+        let gallery = TranscriptGalleryPresenter()
+        let api = try ChannelAPI(serverURL: "http://127.0.0.1:3210")
+        let source = TranscriptGalleryPresenter.Source(messageID: "m1", sender: "Lead",
+                                                       timestamp: "2026-10-25T12:00:00Z")
+        gallery.open(images: images, at: 7, source: source, api: api)
+        #expect(gallery.session?.index == 2)
+        #expect(gallery.session?.canShowNext == false)
+        gallery.move(by: 1)
+        #expect(gallery.session?.index == 2)
+        gallery.select(0)
+        #expect(gallery.session?.index == 0)
+        #expect(gallery.session?.direction == -1)
+        #expect(gallery.session?.canShowPrevious == false)
+        gallery.move(by: -1)
+        #expect(gallery.session?.index == 0)
+        #expect(gallery.session.map(TranscriptGalleryPresenter.accessibilityLabel) == "Image 1 of 3 from Lead, one.png")
+
+        gallery.close()
+        #expect(gallery.session == nil)
+        gallery.open(images: [], at: 0, source: source, api: api)
+        #expect(gallery.session == nil)
+    }
+
+    @Test func theGallerySubtitleCountsOnlySeveralImages() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try #require(TimeZone(identifier: "UTC"))
+        calendar.locale = Locale(identifier: "en_US")
+        let sent = try #require(ChannelDates.date("2026-10-25T17:23:00Z"))
+        let now = try #require(ChannelDates.date("2026-10-25T20:00:00Z"))
+        func subtitle(_ index: Int, _ count: Int) -> String {
+            TranscriptGalleryPresenter.subtitle(sentAt: sent, index: index, count: count, now: now, calendar: calendar)
+                .replacingOccurrences(of: "\u{202F}", with: " ")
+        }
+        #expect(subtitle(1, 4) == "Today at 5:23 PM · 2 of 4")
+        #expect(subtitle(0, 1) == "Today at 5:23 PM")
+        #expect(TranscriptGalleryPresenter.subtitle(sentAt: nil, index: 2, count: 3) == "3 of 3")
+    }
 }
