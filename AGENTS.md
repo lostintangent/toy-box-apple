@@ -260,6 +260,11 @@ Agents never create these accounts, accept agreements, read private keys or set 
   an explicit stream completion after the first snapshot applies. The controlled recovery case
   also loads older history before EOF and checks that the recovery snapshot replaces it.
   These input-order regressions do not lift either historical quarantine.
+  The original quarantined cases record opt-in mock callback submissions with monotonic elapsed
+  times. A failed readiness wait includes those calls and the store's final phase, applied revision,
+  presence and transport counters before disconnecting. Callback submission does not prove that
+  URLSession or the event iterator consumed it. Diagnostic state is read only after the wait fails,
+  outside readiness Observation tracking, so it cannot add dependencies that mask a missed wakeup.
 - `ChannelArtifactSessionTests.switchingScopeDiscardsTheVisitAndCancelsItsPendingLoad` is quarantined
   behind `TOY_BOX_TEST_ARTIFACT_SCOPE_TIMING=1`. Its `changingServer: false` argument failed the
   unchanged private three-second polling helper at line 81 in the 2026-10-26 Client diagnostic run
