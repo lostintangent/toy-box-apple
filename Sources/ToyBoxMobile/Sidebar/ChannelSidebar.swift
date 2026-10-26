@@ -208,7 +208,6 @@ private struct ChannelSidebarPlaceholder: View {
             VStack(alignment: .leading, spacing: 8) {
                 RoundedRectangle(cornerRadius: 4).fill(.quaternary).frame(width: 128, height: 12)
                 RoundedRectangle(cornerRadius: 4).fill(.quaternary).frame(width: 96, height: 8)
-                RoundedRectangle(cornerRadius: 4).fill(.quaternary).frame(width: 64, height: 8)
             }
             Spacer()
         }
