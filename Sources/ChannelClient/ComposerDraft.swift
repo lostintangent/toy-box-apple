@@ -70,6 +70,7 @@ public final class ComposerDraft {
     private var loadingImageCount = 0
     private var failedImageIDs: Set<UUID> = []
     private var changedImageIDs: Set<UUID> = []
+    private var reattachments: [UUID: UUID] = [:]
     public private(set) var sendAttemptID: String?
     public private(set) var isSavedLocally = true
     public private(set) var isNew = true
@@ -157,7 +158,52 @@ public final class ComposerDraft {
     public func removeImage(id: UUID) {
         images.removeAll { $0.id == id }
         failedImageIDs.remove(id)
+        reattachments[id] = nil
         editAsNewMessage()
+    }
+
+    /// Keeps the original slot and attempted payload until preparation succeeds.
+    /// A removed or superseded slot is never restored by an older operation.
+    @discardableResult
+    public func reattachImage(id: UUID, from url: URL) async -> Bool {
+        guard let original = images.first(where: { $0.id == id }) else {
+            error = "\(url.lastPathComponent) could not be reattached because the original attachment was removed."
+            return false
+        }
+        let token = UUID()
+        let previousError = error
+        reattachments[id] = token
+        loadingImageCount += 1
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer {
+            if scoped { url.stopAccessingSecurityScopedResource() }
+            loadingImageCount -= 1
+            if reattachments[id] == token { reattachments[id] = nil }
+        }
+        do {
+            let reading = Task.detached { try Self.importFile(url, allowingLocalPaths: false) }
+            let imported = try await withTaskCancellationHandler {
+                try await reading.value
+            } onCancel: {
+                reading.cancel()
+            }
+            try Task.checkCancellation()
+            guard case .image(var image) = imported else { throw ImageError.unsupported }
+            guard imageIsReadable(image.data) else { throw ImageError.unreadable }
+            image.id = id
+            let prepared = try await prepareImage(image)
+            try Task.checkCancellation()
+            guard reattachments[id] == token, images.contains(original) else { return false }
+            replacePrepared(prepared, original: original, asNewMessage: true)
+            if !hasUnreadableImage, error == previousError, fileURL == nil || isSavedLocally { error = nil }
+            return true
+        } catch {
+            guard reattachments[id] == token, images.contains(original) else { return false }
+            self.error = error is CancellationError
+                ? "\(url.lastPathComponent) was not reattached because image preparation was cancelled."
+                : "\(url.lastPathComponent): \(error.localizedDescription)"
+            return false
+        }
     }
 
     public func append(_ image: ComposerImage) {
@@ -195,15 +241,10 @@ public final class ComposerDraft {
 
     private func normalize(_ image: ComposerImage, replacingSavedImage: Bool) {
         loadingImageCount += 1
-        let rasterize = rasterizeImage
         Task {
             defer { loadingImageCount -= 1 }
             do {
-                let prepared = try await Task.detached {
-                    let fallback = ComposerImageEncoding.needsNativeRasterization(image.data)
-                        ? rasterize?(image.data, ComposerImageEncoding.maximumDimension) : nil
-                    return try ComposerImageEncoding.normalize(image, fallback: fallback)
-                }.value
+                let prepared = try await prepareImage(image)
                 if replacingSavedImage { replacePrepared(prepared, original: image) }
                 else { appendPrepared(prepared) }
             } catch {
@@ -216,16 +257,41 @@ public final class ComposerDraft {
         }
     }
 
-    private func replacePrepared(_ image: ComposerImage, original: ComposerImage) {
-        guard sendAttemptID == nil, let index = images.firstIndex(of: original) else { return }
+    private func prepareImage(_ image: ComposerImage) async throws -> ComposerImage {
+        let rasterize = rasterizeImage
+        let preparing = Task.detached {
+            try Task.checkCancellation()
+            if let prepared = ComposerImageEncoding.passthrough(image) {
+                try Task.checkCancellation()
+                return prepared
+            }
+            let fallback = ComposerImageEncoding.needsNativeRasterization(image.data)
+                ? rasterize?(image.data, ComposerImageEncoding.maximumDimension) : nil
+            try Task.checkCancellation()
+            let prepared = try ComposerImageEncoding.normalize(image, fallback: fallback)
+            try Task.checkCancellation()
+            return prepared
+        }
+        return try await withTaskCancellationHandler {
+            try await preparing.value
+        } onCancel: {
+            preparing.cancel()
+        }
+    }
+
+    private func replacePrepared(_ image: ComposerImage, original: ComposerImage, asNewMessage: Bool = false) {
+        guard asNewMessage || sendAttemptID == nil, let index = images.firstIndex(of: original) else { return }
         if image.data != original.data {
             changedImageIDs.insert(image.id)
             ComposerThumbnails.remove(id: original.id)
         }
         images[index] = image
         failedImageIDs.remove(image.id)
-        revision = UUID()
-        save()
+        if asNewMessage { editAsNewMessage() }
+        else {
+            revision = UUID()
+            save()
+        }
     }
 
     public func attachFiles(_ urls: [URL]) {
@@ -241,17 +307,7 @@ public final class ComposerDraft {
                 let scoped = url.startAccessingSecurityScopedResource()
                 do {
                     let imported = try await Task.detached {
-                        let resource = try url.resourceValues(forKeys: [.contentTypeKey, .isRegularFileKey])
-                        guard url.isFileURL, resource.isRegularFile == true else {
-                            throw ImageError.unsupported
-                        }
-                        if let type = resource.contentType, type.conforms(to: .image),
-                           let mime = type.preferredMIMEType {
-                            return ImportedFile.image(ComposerImage(name: url.lastPathComponent, mimeType: mime,
-                                                                    data: try Data(contentsOf: url)))
-                        }
-                        guard allowingLocalPaths else { throw ImageError.unsupported }
-                        return .path(url.path)
+                        try Self.importFile(url, allowingLocalPaths: allowingLocalPaths)
                     }.value
                     switch imported {
                     case .image(let image): append(image)
@@ -447,11 +503,29 @@ public final class ComposerDraft {
         case path(String)
     }
 
+    private nonisolated static func importFile(_ url: URL, allowingLocalPaths: Bool) throws -> ImportedFile {
+        try Task.checkCancellation()
+        guard url.isFileURL else { throw ImageError.unsupported }
+        let resource = try url.resourceValues(forKeys: [.contentTypeKey, .isRegularFileKey])
+        guard resource.isRegularFile == true else { throw ImageError.unsupported }
+        let imported: ImportedFile
+        if let type = resource.contentType, type.conforms(to: .image), let mime = type.preferredMIMEType {
+            imported = .image(ComposerImage(name: url.lastPathComponent, mimeType: mime,
+                                           data: try Data(contentsOf: url)))
+        } else {
+            guard allowingLocalPaths else { throw ImageError.unsupported }
+            imported = .path(url.path)
+        }
+        try Task.checkCancellation()
+        return imported
+    }
+
     private enum ImageError: LocalizedError {
-        case unsupported
+        case unsupported, unreadable
         var errorDescription: String? {
             switch self {
             case .unsupported: "Only images can be attached."
+            case .unreadable: "This file cannot be decoded as an image. Attach a readable image file."
             }
         }
     }
