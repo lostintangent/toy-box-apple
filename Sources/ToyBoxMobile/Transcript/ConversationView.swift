@@ -173,7 +173,8 @@ struct ConversationView: View {
         .onScrollPhaseChange { _, phase in
             scroll.isReaderScrolling = phase == .tracking || phase == .interacting || phase == .decelerating
         }
-        .overlay(alignment: .bottom) {
+        // An inset rather than an overlay, so the end of the conversation settles clear of them.
+        .safeAreaInset(edge: .bottom, spacing: 0) {
             TranscriptFloatingAccessories(store: store, showsJumpToLatest: showsJumpToLatest) {
                 place(scroll.update(.jumpToLatest))
             }
