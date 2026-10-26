@@ -103,7 +103,7 @@ struct ConversationView: View {
     @ViewState private var isPagingVisible = false
     @ViewState private var expanded: Set<String> = []
 
-    private static let space = "transcript-content"
+    nonisolated private static let space = "transcript-content"
     private static let laneWidth: CGFloat = 720
 
     private var items: [TranscriptItem] {
@@ -382,36 +382,52 @@ private struct TranscriptFloatingAccessories: View {
 
     var body: some View {
         let working = working
-        HStack(spacing: 8) {
-            if !working.isEmpty {
-                HStack(spacing: 8) {
-                    HStack(spacing: -6) {
-                        ForEach(working.prefix(3)) { AgentAvatarView(agent: $0, size: 20) }
-                    }
-                    Text(summary(working)).font(.footnote).lineLimit(1)
-                }
-                .padding(.horizontal, 12)
-                .frame(minHeight: 44)
-                .glassEffect(.regular, in: .capsule)
-                .accessibilityElement(children: .combine)
-                .transition(.opacity.combined(with: .offset(y: 4)))
+        // Side by side when the whole sentence fits, otherwise stacked, so the state never truncates.
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 8) {
+                status(working).fixedSize()
+                Spacer(minLength: 0)
+                jump.fixedSize()
             }
-            Spacer(minLength: 0)
-            if showsJumpToLatest {
-                Button(action: jumpToLatest) {
-                    Label("Jump to Latest", systemImage: "arrow.down")
-                        .font(.footnote.weight(.semibold))
-                        .padding(.horizontal, 14)
-                        .frame(minHeight: 44)
-                }
-                .buttonStyle(.plain)
-                .glassEffect(.regular.interactive(), in: .capsule)
-                .transition(.opacity.combined(with: .offset(y: 4)))
+            VStack(alignment: .trailing, spacing: 8) {
+                jump
+                status(working).frame(maxWidth: .infinity, alignment: .leading)
             }
         }
         .padding(.horizontal, 16)
         .padding(.bottom, 8)
         .animation(.easeOut(duration: 0.2), value: working.map(\.id))
+    }
+
+    @ViewBuilder private func status(_ working: [ChannelAgent]) -> some View {
+        if !working.isEmpty {
+            HStack(spacing: 8) {
+                HStack(spacing: -6) {
+                    ForEach(working.prefix(3)) { AgentAvatarView(agent: $0, size: 20) }
+                }
+                Text(summary(working)).font(.footnote).fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .frame(minHeight: 44)
+            .glassEffect(.regular, in: .rect(cornerRadius: 22))
+            .accessibilityElement(children: .combine)
+            .transition(.opacity.combined(with: .offset(y: 4)))
+        }
+    }
+
+    @ViewBuilder private var jump: some View {
+        if showsJumpToLatest {
+            Button(action: jumpToLatest) {
+                Label("Jump to Latest", systemImage: "arrow.down")
+                    .font(.footnote.weight(.semibold))
+                    .padding(.horizontal, 14)
+                    .frame(minHeight: 44)
+            }
+            .buttonStyle(.plain)
+            .glassEffect(.regular.interactive(), in: .capsule)
+            .transition(.opacity.combined(with: .offset(y: 4)))
+        }
     }
 
     private func summary(_ agents: [ChannelAgent]) -> String {

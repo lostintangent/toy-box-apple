@@ -34,6 +34,20 @@ struct ChannelAttachmentTests {
         #expect(ChannelImageDecoder.thumbnail(data: Data("not an image".utf8), maxPixelSize: 224) == nil)
     }
 
+    @Test func thumbnailKeySpacesStaySeparateAndAFailedDecodeIsRemembered() throws {
+        let id = UUID()
+        let data = try #require(Data(base64Encoded: try encodedImage(width: 40, height: 20, type: .png)))
+        let image = try #require(ChannelImageDecoder.thumbnail(data: data, maxPixelSize: 40))
+        ChannelThumbnailCache.remember(image, for: .attachment(id.uuidString))
+        #expect(ChannelThumbnailCache.image(for: .draftImage(id)) == nil)
+        var decodes = 0
+        for _ in 0..<2 {
+            #expect(ChannelThumbnailCache.image(for: .draftImage(id)) { decodes += 1; return nil } == nil)
+        }
+        #expect(decodes == 1)
+        #expect(ChannelThumbnailCache.image(for: .attachment(id.uuidString)) === image)
+    }
+
     @Test func inlineAttachmentsBecomeLocalQuickLookFiles() async throws {
         let data = Data("Quick Look test \(UUID().uuidString)".utf8)
         let attachment = ChannelAttachment(name: "notes.txt", mimeType: "text/plain", base64: data.base64EncodedString())

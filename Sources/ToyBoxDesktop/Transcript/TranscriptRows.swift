@@ -640,7 +640,6 @@ struct TranscriptReactions: View {
             TranscriptReactionChip(emoji: presentation.emoji, label: presentation.label, reactors: group.agents)
         }
     }
-
 }
 
 struct TranscriptReactionChip: View {

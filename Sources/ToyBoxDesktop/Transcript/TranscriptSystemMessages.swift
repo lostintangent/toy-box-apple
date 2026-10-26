@@ -149,7 +149,6 @@ struct TranscriptSystemMessages: View {
         }
     }
 
-
     private func eventLabel(_ event: String, value: String?) -> Text {
         guard let value else { return findText(event) }
         var detail = AttributedString(ChannelSystemText.value(value))

@@ -178,6 +178,104 @@ public enum ChannelImageDecoder {
     }
 }
 
+/// Every decoded thumbnail, kept within one memory budget so a row or tray item that comes back
+/// draws at once. Transcript attachments and draft images are separate key spaces. A failed
+/// decode is remembered too, so it isn't retried on every build. Each app wraps the `CGImage`.
+public enum ChannelThumbnailCache {
+    public enum Key: Sendable {
+        case attachment(String)
+        case draftImage(UUID)
+
+        fileprivate var name: NSString {
+            switch self {
+            case .attachment(let identity): "attachment:" + identity as NSString
+            case .draftImage(let id): "draft:" + id.uuidString as NSString
+            }
+        }
+    }
+
+    private final class Entry {
+        let image: CGImage?
+        init(_ image: CGImage?) { self.image = image }
+    }
+
+    nonisolated(unsafe) private static let storage: NSCache<NSString, Entry> = {
+        let cache = NSCache<NSString, Entry>()
+        cache.totalCostLimit = 64 << 20
+        return cache
+    }()
+
+    /// The remembered thumbnail, or nil when there is none, including after a failed decode.
+    public static func image(for key: Key) -> CGImage? {
+        storage.object(forKey: key.name)?.image
+    }
+
+    /// The remembered result for `key`, or `decode`'s result, which is remembered even when nil.
+    public static func image(for key: Key, decode: () -> CGImage?) -> CGImage? {
+        let name = key.name
+        if let entry = storage.object(forKey: name) { return entry.image }
+        let image = decode()
+        store(image, name: name)
+        return image
+    }
+
+    @discardableResult
+    public static func remember(_ image: CGImage, for key: Key) -> CGImage {
+        store(image, name: key.name)
+        return image
+    }
+
+    private static func store(_ image: CGImage?, name: NSString) {
+        // The cache keeps its key alive, which for an inline image is the whole payload.
+        storage.setObject(Entry(image), forKey: name,
+                          cost: (image.map { $0.bytesPerRow * $0.height } ?? 0) + name.length * 2)
+    }
+}
+
+/// Transcript thumbnails: decoded to fill the transcript's box at the display's scale, off the
+/// caller's actor, and remembered in the shared `ChannelThumbnailCache`.
+public enum ChannelThumbnails {
+    /// Rasterizes a format ImageIO can't decode, such as SVG, within a pixel bound.
+    public typealias Fallback = @Sendable (_ file: URL, _ maxPixelSize: Int) throws -> (image: CGImage, pixelSize: CGSize)
+
+    /// The longest side a thumbnail needs to fill the transcript's 240-point box at `scale`.
+    public static func maxPixelSize(scale: CGFloat) -> Int {
+        Int((240 * max(scale, 1)).rounded(.up))
+    }
+
+    public static func remembered(for attachment: ChannelAttachment, api: ChannelAPI) -> CGImage? {
+        ChannelAttachmentCache.identity(for: attachment, api: api).flatMap {
+            ChannelThumbnailCache.image(for: .attachment($0))
+        }
+    }
+
+    @discardableResult
+    public static func remember(_ image: CGImage, for attachment: ChannelAttachment, api: ChannelAPI) -> CGImage {
+        guard let identity = ChannelAttachmentCache.identity(for: attachment, api: api) else { return image }
+        return ChannelThumbnailCache.remember(image, for: .attachment(identity))
+    }
+
+    public static func decode(_ file: URL, scale: CGFloat,
+                              fallback: Fallback? = nil) throws -> (image: CGImage, pixelSize: CGSize) {
+        let bound = maxPixelSize(scale: scale)
+        if let decoded = ChannelImageDecoder.thumbnail(file: file, maxPixelSize: bound) { return decoded }
+        guard let fallback else { throw ChannelAttachmentError.invalidImage }
+        return try fallback(file, bound)
+    }
+
+    /// Decoding a large image takes tens of milliseconds, so it runs off the caller's actor. The
+    /// decode records the image's pixel size, so the next build of its row reserves it.
+    public static func image(at file: URL, for attachment: ChannelAttachment, api: ChannelAPI, scale: CGFloat,
+                             reload: Bool = false, fallback: Fallback? = nil) async throws -> CGImage {
+        if !reload, let image = remembered(for: attachment, api: api) { return image }
+        let decoded = try await Task.detached(priority: .userInitiated) {
+            try decode(file, scale: scale, fallback: fallback)
+        }.value
+        ChannelImageDecoder.rememberPixelSize(decoded.pixelSize, for: attachment, api: api)
+        return remember(decoded.image, for: attachment, api: api)
+    }
+}
+
 /// An inline transcript image's box: at most 240 by 160 points, never upscaled.
 public func transcriptThumbnailSize(_ original: CGSize) -> CGSize {
     guard original.width > 0, original.height > 0,

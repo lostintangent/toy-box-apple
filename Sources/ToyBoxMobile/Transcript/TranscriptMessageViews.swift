@@ -393,7 +393,6 @@ struct TranscriptReactions: View {
             }
         }
     }
-
 }
 
 /// A display-only reaction. Tapping lists who reacted, in a popover that becomes a sheet when compact.

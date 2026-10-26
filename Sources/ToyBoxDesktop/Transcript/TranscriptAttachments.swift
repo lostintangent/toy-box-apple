@@ -101,6 +101,7 @@ private struct TranscriptAttachment: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
     @Environment(\.channelIntelligence) private var intelligence
+    @Environment(\.displayScale) private var displayScale
     @AppStorage(TranscriptIntelligenceSettings.describesImages) private var describesImages = true
 
     private var name: String { imageName ?? attachment.displayName }
@@ -260,7 +261,7 @@ private struct TranscriptAttachment: View {
             localURL = file
             if isImage {
                 let image = try await TranscriptThumbnails.image(at: file, for: attachment, api: api,
-                                                                 reload: retry > 0)
+                                                                 scale: displayScale, reload: retry > 0)
                 guard !Task.isCancelled else { return }
                 thumbnail = image
             } else if isVideo {
@@ -333,46 +334,31 @@ private struct TranscriptVideo: View {
 /// Previews are keyed by the address or inline payload itself rather than its digest. `body` looks
 /// them up, and hashing a multi-megabyte payload there costs milliseconds, while an `NSString`
 /// lookup samples the string and compares the payload's storage.
+/// Wraps the shared thumbnails in `NSImage` and adds the SVG rasterizer ImageIO lacks.
 @MainActor
 enum TranscriptThumbnails {
-    private static let cache: NSCache<NSString, NSImage> = {
-        let cache = NSCache<NSString, NSImage>()
-        cache.totalCostLimit = 64 << 20
-        return cache
-    }()
-
     static func remembered(for attachment: ChannelAttachment, api: ChannelAPI) -> NSImage? {
-        ChannelAttachmentCache.identity(for: attachment, api: api).flatMap { cache.object(forKey: $0 as NSString) }
+        ChannelThumbnails.remembered(for: attachment, api: api).map { NSImage(cgImage: $0, size: .zero) }
     }
 
-    /// Decoding a large image takes tens of milliseconds, so it runs off the main actor.
-    static func image(at file: URL, for attachment: ChannelAttachment, api: ChannelAPI,
+    static func image(at file: URL, for attachment: ChannelAttachment, api: ChannelAPI, scale: CGFloat,
                       reload: Bool = false) async throws -> NSImage {
-        if !reload, let image = remembered(for: attachment, api: api) { return image }
-        let decoded = try await Task.detached(priority: .userInitiated) { try Self.decoded(file) }.value
-        ChannelImageDecoder.rememberPixelSize(decoded.pixelSize, for: attachment, api: api)
-        return remember(decoded.image, for: attachment, api: api)
+        NSImage(cgImage: try await ChannelThumbnails.image(at: file, for: attachment, api: api, scale: scale,
+                                                           reload: reload, fallback: svg),
+                size: .zero)
     }
 
-    nonisolated static func decode(_ file: URL) throws -> CGImage {
-        try decoded(file).image
-    }
-
-    private nonisolated static func decoded(_ file: URL) throws -> TranscriptSVGImage.Decoded {
-        if let decoded = ChannelImageDecoder.thumbnail(file: file, maxPixelSize: 640) {
-            return TranscriptSVGImage.Decoded(image: decoded.image, pixelSize: decoded.pixelSize)
-        }
-        return try TranscriptSVGImage.decode(file, maximumPixelSize: 640)
+    nonisolated static func decode(_ file: URL, scale: CGFloat) throws -> CGImage {
+        try ChannelThumbnails.decode(file, scale: scale, fallback: svg).image
     }
 
     static func remember(_ image: CGImage, for attachment: ChannelAttachment, api: ChannelAPI) -> NSImage {
-        let thumbnail = NSImage(cgImage: image, size: .zero)
-        if let identity = ChannelAttachmentCache.identity(for: attachment, api: api) {
-            // The cache keeps its key alive, which for an inline image is the whole payload.
-            cache.setObject(thumbnail, forKey: identity as NSString,
-                            cost: image.bytesPerRow * image.height + identity.utf8.count)
-        }
-        return thumbnail
+        NSImage(cgImage: ChannelThumbnails.remember(image, for: attachment, api: api), size: .zero)
+    }
+
+    nonisolated private static let svg: ChannelThumbnails.Fallback = { file, bound in
+        let decoded = try TranscriptSVGImage.decode(file, maximumPixelSize: bound)
+        return (decoded.image, decoded.pixelSize)
     }
 }
 
