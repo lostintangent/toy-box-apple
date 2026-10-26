@@ -257,6 +257,127 @@ struct ComposerTests {
         }
     }
 
+    @Test(arguments: [ColorScheme.light, .dark], [DynamicTypeSize.large, .accessibility5])
+    func hintFitsAtItsNativeFontWithoutEllipsis(scheme: ColorScheme, size: DynamicTypeSize) throws {
+        let actual = try render(ComposerPlaceholder(isListening: false)
+            .frame(width: 340, alignment: .leading)
+            .environment(\.colorScheme, scheme).dynamicTypeSize(size), width: 340)
+        let expected = try render(Text(size == .accessibility5 ? "Message" : "Message your team")
+            .font(.body).foregroundStyle(ChannelInk.secondary)
+            .frame(width: 340, alignment: .leading)
+            .environment(\.colorScheme, scheme).dynamicTypeSize(size), width: 340)
+        #expect(actual.width == expected.width)
+        #expect(actual.height == expected.height)
+        #expect(try renderedPixels(actual) == renderedPixels(expected))
+    }
+
+    @Test(arguments: [ColorScheme.light, .dark])
+    func largestTypeContextUsesSeparateFullHeightRowsWhenBothLabelsDoNotFit(scheme: ColorScheme) throws {
+        let lead = ChannelAgent.lead(id: "test", profile: .init(
+            name: "Lead", role: "Coordinator", avatar: .init(mark: "M4 12H20", color: "#123456")
+        ))
+        let audience = ComposerAudienceView(text: "", agents: [lead], acknowledgesRequest: true)
+        let request = ComposerRequestLabel(wraps: true).font(.footnote)
+        for width: CGFloat in [220, 340, 426] {
+            let context = try render(ComposerContextLayout { audience; request }
+                .environment(\.colorScheme, scheme).dynamicTypeSize(.accessibility5), width: width)
+            let reference = try render(VStack(alignment: .leading, spacing: 4) {
+                audience
+                request
+            }.environment(\.colorScheme, scheme).dynamicTypeSize(.accessibility5), width: width)
+            #expect(abs(context.height - reference.height) <= 1,
+                    "The complete wrapping request and audience each retain their measured row")
+            #expect(context.width <= Int(width))
+        }
+        let wrapped = try render(request.dynamicTypeSize(.accessibility5), width: 220)
+        let unwrapped = try render(request.dynamicTypeSize(.accessibility5))
+        #expect(wrapped.height > unwrapped.height, "The full request wraps rather than truncating")
+        let wide = try render(ComposerContextLayout { audience; request }
+            .dynamicTypeSize(.accessibility5), width: 720)
+        let inline = try render(HStack(spacing: 4) { audience; request }
+            .dynamicTypeSize(.accessibility5), width: 720)
+        #expect(wide.height == inline.height, "Fitting context stays on one row")
+    }
+
+    @Test(arguments: [DynamicTypeSize.large, .accessibility5])
+    func attachmentGlyphStays17PointsInsideIts44PointTarget(size: DynamicTypeSize) throws {
+        let image = try render(ComposerAttachmentLabel().dynamicTypeSize(size))
+        #expect(image.width == 44 && image.height == 44)
+        let pixels = try renderedPixels(image)
+        let occupiedRows = (0..<image.height).filter { y in
+            (0..<image.width).contains { pixels[(y * image.width + $0) * 4 + 3] > 0 }
+        }
+        let first = try #require(occupiedRows.first)
+        let last = try #require(occupiedRows.last)
+        #expect(last - first + 1 <= 22, "A symbol image may extend slightly beyond its 17-point font")
+        #expect(first >= 10 && last < 34)
+    }
+
+    @Test func upperContextCompressesBeforeTheNativeEditorAndActionRow() throws {
+        let editor = ComposerEditorState()
+        var text = "A draft"
+        func content(height: CGFloat) -> some View {
+            VStack(spacing: 0) {
+                ComposerUpperRegion {
+                    ComposerRequestLabel(wraps: true).font(.footnote)
+                    Text("Images are still loading. You can keep editing your message.")
+                        .font(.body)
+                }
+                NativeComposerInput(
+                    text: Binding(get: { text }, set: { text = $0 }), editor: editor,
+                    onSend: {}, onCompletionKey: { _ in false }, onPasteImages: { _ in }
+                ).layoutPriority(1)
+                HStack {
+                    ComposerAttachmentLabel()
+                    Spacer()
+                    Image(systemName: "arrow.up").frame(width: 44, height: 44)
+                }.fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(width: 340, height: height)
+            .dynamicTypeSize(.accessibility5)
+        }
+        let host = UIHostingController(rootView: content(height: 210))
+        host.traitOverrides.preferredContentSizeCategory = .accessibilityExtraExtraExtraLarge
+        host.view.frame = CGRect(x: 0, y: 0, width: 340, height: 210)
+        host.view.layoutIfNeeded()
+        let window = UIWindow(frame: host.view.frame)
+        window.rootViewController = host
+        window.isHidden = false
+        defer { window.isHidden = true }
+        window.layoutIfNeeded()
+        host.view.layoutIfNeeded()
+        let input = try #require(editor.textView)
+        editor.selection = NSRange(location: 3, length: 0)
+        input.selectedRange = NSRange(location: 3, length: 0)
+        let scroll = try #require(descendants(of: host.view).compactMap { $0 as? UIScrollView }
+            .first { !($0 is UITextView) })
+        let oneLine = ceil(try #require(input.font).lineHeight + NativeComposerInput.textInsets.top)
+        let inputFrame = input.convert(input.bounds, to: host.view)
+        #expect(inputFrame.height >= oneLine)
+        #expect(inputFrame.maxY <= host.view.bounds.height - 44)
+        #expect(scroll.bounds.height > 0 && scroll.bounds.height < scroll.contentSize.height)
+        host.rootView = content(height: 600)
+        window.frame.size.height = 600
+        window.setNeedsLayout()
+        window.layoutIfNeeded()
+        host.view.setNeedsLayout()
+        host.view.layoutIfNeeded()
+        #expect(editor.textView === input)
+        #expect(input.text == "A draft")
+        #expect(input.selectedRange == NSRange(location: 3, length: 0))
+    }
+
+    private func descendants(of view: UIView) -> [UIView] {
+        view.subviews.flatMap { [$0] + descendants(of: $0) }
+    }
+
+    private func render<Content: View>(_ content: Content, width: CGFloat? = nil) throws -> CGImage {
+        let renderer = ImageRenderer(content: content)
+        renderer.scale = 1
+        renderer.proposedSize = .init(width: width, height: nil)
+        return try #require(renderer.uiImage?.cgImage)
+    }
+
     private func renderedPixels(_ image: CGImage) throws -> [UInt8] {
         let colorSpace = try #require(CGColorSpace(name: CGColorSpace.sRGB))
         var pixels = [UInt8](repeating: 0, count: image.width * image.height * 4)
@@ -274,7 +395,9 @@ struct ComposerTests {
     }
 
     @Test func editorFitsOneThroughThreeMeasuredLinesWithoutChangingItsTextOrCaret() throws {
-        for pointSize: CGFloat in [17, 40] {
+        let largest = UIFont.preferredFont(forTextStyle: .body, compatibleWith:
+            UITraitCollection(preferredContentSizeCategory: .accessibilityExtraExtraExtraLarge))
+        for pointSize: CGFloat in [17, 40, largest.pointSize] {
             let view = ComposerTextView()
             let font = UIFont.systemFont(ofSize: pointSize)
             view.font = font

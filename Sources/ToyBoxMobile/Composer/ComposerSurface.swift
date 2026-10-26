@@ -13,6 +13,7 @@ struct ComposerSurface: View {
     @Environment(ManagementPresenter.self) private var management
     @Environment(OverviewPresentation.self) private var overviewPresentation
     @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.scenePhase) private var scenePhase
     @ViewState private var showPhotos = false
     @ViewState private var showFiles = false
@@ -160,7 +161,12 @@ struct ComposerSurface: View {
     private var container: some View {
         VStack(spacing: 0) {
             if showsTray { ComposerTaskProgress(store: store, showTasks: showTasks) }
-            if hasNotices || composer.replySource != nil || !draft.images.isEmpty {
+            if dynamicTypeSize.isAccessibilitySize {
+                ComposerUpperRegion {
+                    accessories
+                    context.padding(.horizontal, 8)
+                }
+            } else if hasNotices || composer.replySource != nil || !draft.images.isEmpty {
                 ViewThatFits(in: .vertical) {
                     accessories
                     ScrollView { accessories }
@@ -236,33 +242,45 @@ struct ComposerSurface: View {
         .fixedSize(horizontal: false, vertical: true)
     }
 
+    @ViewBuilder
     private var controls: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 4) {
-                attachmentMenu
-                context
-                Spacer(minLength: 0)
-                ComposerDictateButton(dictation: dictation)
-                sendButton
-            }
-            VStack(spacing: 0) {
-                HStack(spacing: 4) { context; Spacer(minLength: 0) }.frame(minHeight: 44)
+        if dynamicTypeSize.isAccessibilitySize {
+            actionControls
+        } else {
+            ViewThatFits(in: .horizontal) {
                 HStack(spacing: 4) {
                     attachmentMenu
+                    context
                     Spacer(minLength: 0)
                     ComposerDictateButton(dictation: dictation)
                     sendButton
+                }
+                VStack(spacing: 0) {
+                    HStack(spacing: 4) { context; Spacer(minLength: 0) }.frame(minHeight: 44)
+                    actionControls
                 }
             }
         }
     }
 
-    private var context: some View {
+    private var actionControls: some View {
         HStack(spacing: 4) {
+            attachmentMenu
+            Spacer(minLength: 0)
+            ComposerDictateButton(dictation: dictation)
+            sendButton
+        }
+    }
+
+    private var context: some View {
+        let layout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(ComposerContextLayout()) : AnyLayout(HStackLayout(spacing: 4))
+        return layout {
             ComposerAudienceView(text: draft.text, agents: store.roster,
                                  acknowledgesRequest: store.requestSequence != nil)
             if let request = store.request {
                 ComposerRequestButton(request: request, allowsPresentation: canPresentRequestPreview,
+                                      wrapsLabel: dynamicTypeSize.isAccessibilitySize,
                                       willPresent: preparePresentation, didDismiss: restoreFocus)
                     .id(request.sequence)
                     .id(draftID)
@@ -279,9 +297,10 @@ struct ComposerSurface: View {
                 showFiles = true
             }
         } label: {
-            Image(systemName: "photo.badge.plus").foregroundStyle(Color.primary).frame(width: 44, height: 44)
+            ComposerAttachmentLabel()
         }
         .accessibilityLabel("Attach images")
+        .accessibilityShowsLargeContentViewer()
     }
 
     private var sendButton: some View {
@@ -304,6 +323,7 @@ struct ComposerSurface: View {
         .disabled(!session.canSend || scenePhase != .active)
         .keyboardShortcut(.return, modifiers: .command)
         .accessibilityLabel(composer.attempt?.canRetry == true ? "Send Again" : "Send message")
+        .accessibilityShowsLargeContentViewer()
     }
 
     private var notices: some View {
@@ -465,9 +485,75 @@ struct ComposerPlaceholder: View {
     let isListening: Bool
 
     var body: some View {
-        Text(isListening ? "Listening\u{2026}" : "Message your team")
-            .font(.body)
-            .foregroundStyle(ChannelInk.secondary)
-            .lineLimit(1)
+        ViewThatFits(in: .horizontal) {
+            Text(isListening ? "Listening\u{2026}" : "Message your team")
+                .fixedSize(horizontal: true, vertical: false)
+            Text(isListening ? "Listening" : "Message")
+                .fixedSize(horizontal: true, vertical: false)
+        }
+        .font(.body)
+        .foregroundStyle(ChannelInk.secondary)
+    }
+}
+
+struct ComposerAttachmentLabel: View {
+    var body: some View {
+        Image(systemName: "photo.badge.plus")
+            .font(.system(size: 17))
+            .foregroundStyle(Color.primary)
+            .frame(width: 44, height: 44)
+    }
+}
+
+struct ComposerUpperRegion<Content: View>: View {
+    @ViewState private var contentHeight: CGFloat?
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 0) { content }
+                .fixedSize(horizontal: false, vertical: true)
+                .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { contentHeight = $0 }
+        }
+        .scrollBounceBehavior(.basedOnSize)
+        .frame(maxHeight: contentHeight)
+    }
+}
+
+struct ComposerContextLayout: Layout {
+    private let spacing: CGFloat = 4
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        measurement(proposal: proposal, subviews: subviews).size
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let measured = measurement(proposal: .init(width: bounds.width, height: nil), subviews: subviews)
+        var origin = bounds.origin
+        for (subview, size) in zip(subviews, measured.children) {
+            if measured.isHorizontal {
+                subview.place(at: .init(x: origin.x, y: bounds.midY), anchor: .leading,
+                              proposal: .init(size))
+                origin.x += size.width + spacing
+            } else {
+                subview.place(at: origin, anchor: .topLeading,
+                              proposal: .init(width: bounds.width, height: size.height))
+                origin.y += size.height + spacing
+            }
+        }
+    }
+
+    private func measurement(
+        proposal: ProposedViewSize, subviews: Subviews
+    ) -> (size: CGSize, children: [CGSize], isHorizontal: Bool) {
+        let ideal = subviews.map { $0.sizeThatFits(.unspecified) }
+        let gaps = CGFloat(max(0, ideal.count - 1)) * spacing
+        let idealWidth = ideal.reduce(0) { $0 + $1.width } + gaps
+        let width = max(0, proposal.width ?? idealWidth)
+        if idealWidth <= width {
+            return (.init(width: idealWidth, height: ideal.map(\.height).max() ?? 0), ideal, true)
+        }
+        let fitted = subviews.map { $0.sizeThatFits(.init(width: width, height: nil)) }
+        return (.init(width: width, height: fitted.reduce(0) { $0 + $1.height } + gaps), fitted, false)
     }
 }

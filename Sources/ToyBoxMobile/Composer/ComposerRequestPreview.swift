@@ -62,10 +62,10 @@ struct ComposerRequestPreviewState {
 struct ComposerRequestButton: View {
     let request: ChannelMessage
     let allowsPresentation: Bool
+    var wrapsLabel = false
     var willPresent: () -> Void
     var didDismiss: () -> Void
     @Environment(ChannelInteraction.self) private var interaction
-    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.scenePhase) private var scenePhase
     @ViewState private var preview = ComposerRequestPreviewState()
 
@@ -80,13 +80,7 @@ struct ComposerRequestButton: View {
 
     var body: some View {
         Button(action: reveal) {
-            Label {
-                Text("Input Needed").foregroundStyle(Color.primary)
-            } icon: {
-                Image(systemName: "questionmark.circle.fill")
-                    .foregroundStyle(ChannelAttentionStyle.color(for: .waiting, in: colorScheme))
-            }
-            .lineLimit(1).frame(minHeight: 44)
+            ComposerRequestLabel(wraps: wrapsLabel)
         }
         .font(.footnote)
         .buttonStyle(.borderless)
@@ -165,6 +159,23 @@ struct ComposerRequestButton: View {
         preview.update(interaction.revealProgress, requestSequence: request.sequence,
                        currentToken: interaction.revealRequestToken)
         if !allowsPresentation { preview.dismiss() }
+    }
+}
+
+struct ComposerRequestLabel: View {
+    var wraps = false
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        Label {
+            Text("Input Needed").foregroundStyle(Color.primary)
+        } icon: {
+            Image(systemName: "questionmark.circle.fill")
+                .foregroundStyle(ChannelAttentionStyle.color(for: .waiting, in: colorScheme))
+        }
+        .lineLimit(wraps ? nil : 1)
+        .fixedSize(horizontal: false, vertical: wraps)
+        .frame(minHeight: 44)
     }
 }
 
