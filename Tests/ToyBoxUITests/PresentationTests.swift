@@ -7,6 +7,13 @@ import UIKit
 #endif
 
 struct PresentationTests {
+    @Test(arguments: [
+        (-1, [Int]()), (0, []), (1, [1]), (2, [2]), (3, [3, 1]), (4, [3, 2, 1]), (8, [3, 2, 1]),
+    ])
+    func smallerAvatarStacksOnlyReplaceAtLeastTwoFaces(count: Int, limits: [Int]) {
+        #expect(AgentAvatarStack.faceLimits(for: count) == limits)
+    }
+
     @Test @MainActor func sharedSecondaryInkPreservesMacAndClearsPhoneTextContrast() {
         #if canImport(UIKit)
         func rgb(_ color: UIColor, traits: UITraitCollection) -> TranscriptRGB {

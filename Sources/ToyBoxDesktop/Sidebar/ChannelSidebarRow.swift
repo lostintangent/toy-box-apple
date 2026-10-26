@@ -22,14 +22,6 @@ struct ChannelSidebarRow: View {
         }
     }
 
-    /// Face counts line 2 tries, most first. A smaller count is offered only while its `+N` stands
-    /// for at least two agents, because `+1` is wider than the face it replaces.
-    static func faceLimits(working count: Int) -> [Int] {
-        guard count > 0 else { return [] }
-        let full = min(count, 3)
-        return [full] + (1..<full).reversed().filter { count - $0 >= 2 }
-    }
-
 }
 
 private struct ChannelSidebarRowContent: View {
@@ -92,7 +84,7 @@ private struct ChannelSidebarRowContent: View {
     /// The stack gives up faces before the folder or purpose gives up letters. Only the candidate
     /// that fits is placed, so only its folder token reports a frame.
     private var secondLine: some View {
-        let limits = ChannelSidebarRow.faceLimits(working: working.count)
+        let limits = AgentAvatarStack.faceLimits(for: working.count)
         return ViewThatFits(in: .horizontal) {
             ForEach(limits, id: \.self) { limit in
                 secondLine(faces: limit, detailYields: false)
