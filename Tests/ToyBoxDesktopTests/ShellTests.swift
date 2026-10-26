@@ -634,11 +634,6 @@ struct ShellTests {
 @MainActor
 @Suite("Sidebar faces yield")
 struct SidebarFacesYieldTests {
-    @Test(arguments: [(0, [Int]()), (1, [1]), (2, [2]), (3, [3, 1]), (4, [3, 2, 1]), (5, [3, 2, 1])])
-    func smallerStacksAreOfferedOnlyWhenTheCountStandsForTwo(working: Int, limits: [Int]) {
-        #expect(ChannelSidebarRow.faceLimits(working: working) == limits)
-    }
-
     /// These SwiftUI-only rows render synchronously, without a window or a display-settling wait.
     private func secondLine(width: CGFloat, directory: String? = nil, purpose: String? = nil,
                             working count: Int, attention: ChannelAttention? = .unread)

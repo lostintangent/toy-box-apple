@@ -254,13 +254,20 @@ struct ShellTests {
             defer { model.setActive(false) }
             #expect(model.sidebarConnection == .connecting)
             #expect(!model.canCreateChannel)
+            #expect(!model.canManageChannels)
             await model.refreshCatalog()
             #expect(model.sidebarConnection == .connected)
             #expect(!model.canCreateChannel)
+            #expect(!model.canManageChannels)
             model.setActive(true)
             #expect(model.canCreateChannel)
+            #expect(model.selectedChannelID == nil)
+            #expect(model.canManageChannels)
+            model.selectedChannelID = "second"
+            #expect(model.canManageChannels)
             model.setActive(false)
             #expect(!model.canCreateChannel)
+            #expect(!model.canManageChannels)
         }
     }
 

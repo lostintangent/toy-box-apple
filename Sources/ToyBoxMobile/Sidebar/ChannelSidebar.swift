@@ -51,6 +51,14 @@ struct ChannelSidebar: View {
                     } preview: {
                         ChannelSidebarPreview(channel: projection.channel(channel), agents: projection.agents(channel))
                     }
+                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                        Button(role: .destructive) {
+                            management.present(.deleteChannel(channelId: channel.id))
+                        } label: {
+                            Label("Delete", systemImage: "trash")
+                        }
+                        .disabled(!model.canManageChannels)
+                    }
                     .listRowBackground(Color.clear)
                 }
             }
@@ -151,16 +159,12 @@ struct ChannelSidebar: View {
         Button("Edit Channel", systemImage: "pencil") {
             management.present(.editChannel(channelId: channel.id))
         }
-        .disabled(!canManage(channelID: channel.id))
+        .disabled(!model.canManageChannels)
         Divider()
         Button("Delete Channel", systemImage: "trash", role: .destructive) {
             management.present(.deleteChannel(channelId: channel.id))
         }
-        .disabled(!canManage(channelID: channel.id))
-    }
-
-    private func canManage(channelID: String) -> Bool {
-        model.isActive && model.selectedStore?.id == channelID && model.selectedStore?.phase.isLive == true
+        .disabled(!model.canManageChannels)
     }
 }
 
@@ -179,7 +183,7 @@ private struct ChannelSidebarPreview: View {
             }
             Text("Team: " + agents.map(\.name).formatted(.list(type: .and)))
                 .font(.footnote)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(ChannelInk.secondary)
         }
         .padding(16)
     }
