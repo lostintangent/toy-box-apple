@@ -163,8 +163,15 @@ struct ReadinessTests {
             let decoded = try #require(stages.firstIndex(of: .eventDecoded(type: "snapshot", revision: 5)))
             let received = try #require(stages.firstIndex(of: .eventReceived(type: "snapshot")))
             let applied = try #require(stages.firstIndex(of: .eventApplied(type: "snapshot", revision: 5)))
+            let handled = try #require(stages.firstIndex(of: .eventHandled(type: "snapshot")))
+            let pending = try #require(stages.firstIndex(of: .reconnectPending(attempt: 0)))
+            let scheduled = try #require(stages.firstIndex(of: .reconnectScheduled(
+                attempt: 0, delay: 0.01, after: 5
+            )))
+            let elapsed = try #require(stages.firstIndex(of: .reconnectDelayElapsed))
             let reconnect = try #require(stages.firstIndex(of: .reconnectRequested(after: 5)))
-            #expect(decoded < received && received < applied && applied < reconnect)
+            #expect(decoded < received && received < applied && applied < handled)
+            #expect(handled < pending && pending < scheduled && scheduled < elapsed && elapsed < reconnect)
             #expect(stages.contains(.streamRequested(after: nil)))
             #expect(stages.contains(.responseReceived(status: 200)))
             #expect(stages.contains(.reconnectScheduled(attempt: 0, delay: 0.01, after: 5)))
