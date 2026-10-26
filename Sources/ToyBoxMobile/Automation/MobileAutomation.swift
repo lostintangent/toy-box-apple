@@ -307,9 +307,14 @@ private final class MobileAutomationRun {
         case .fold:
             let before = MobileAutomationTree.current.viewport
             try await hostAction(timeout: step.timeout)
-            _ = try await wait(timeout: step.timeout) {
-                let after = MobileAutomationTree.current.viewport
-                return !after.isEmpty && after != before ? after : nil
+            do {
+                _ = try await wait(timeout: step.timeout) {
+                    let after = MobileAutomationTree.current.viewport
+                    return !after.isEmpty && after != before ? after : nil
+                }
+            } catch let failure as Failure {
+                throw Failure("Native display power did not change the app scene from \(before). "
+                              + "No fold continuity proof was produced. \(failure)")
             }
         }
         try await settle(timeout: step.timeout)

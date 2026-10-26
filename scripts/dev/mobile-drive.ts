@@ -1,6 +1,6 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { basename, isAbsolute, join, resolve } from "node:path";
-import { command, isMissing, text } from "../lib.ts";
+import { command, isMissing } from "../lib.ts";
 
 type Timed = { timeout?: number };
 export type MobileDriveStep = Timed & (
@@ -186,12 +186,14 @@ export function simulatorDriveHost(udid: string, env: NodeJS.ProcessEnv): DriveH
             await command(["xcrun", "simctl", "io", udid, "screenshot", `--display=${display}`, path], { env });
         },
         async fold(closed) {
+            const helpResult = await command(["xcrun", "simctl", "io", udid, "screenConfig", "--help"],
+                { env, quiet: true, allowFailure: true });
+            const help = (helpResult.stdout.toString() + helpResult.stderr.toString()).trim();
+            console.log(`Native display control:\n${help}`);
             for (const [display, power] of [["1", closed ? "on" : "off"], ["3", closed ? "off" : "on"]]) {
                 const result = await command(["xcrun", "simctl", "io", udid, "screenConfig",
                     `--display=${display}`, "power", power], { env, quiet: true, allowFailure: true });
                 if (result.exitCode) {
-                    const help = await text(["xcrun", "simctl", "io", udid, "screenConfig", "--help"],
-                        { env, allowFailure: true });
                     throw new Error(`Simulator fold control is unavailable: ${result.stderr.toString().trim()}\n${help}\n`
                         + "No fold continuity proof was produced. Capture each supported launch posture separately.");
                 }
