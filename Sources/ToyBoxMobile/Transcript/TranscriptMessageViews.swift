@@ -1,4 +1,5 @@
 import ChannelClient
+import ChannelIntelligence
 import ChannelKit
 import SwiftUI
 import ToyBoxUI
@@ -20,18 +21,31 @@ struct TranscriptItemView: View, @MainActor Equatable {
     let isHighlighted: Bool
     var isExpanded = false
     var findHighlight: TranscriptFindHighlight?
+    /// The landing's summary, which only the New divider's item draws above itself.
+    var catchUp: (session: TranscriptCatchUpSession, store: ChannelStore)?
     var setExpanded: (Bool) -> Void = { _ in }
+    @AppStorage(TranscriptIntelligenceSettings.summarizesNewMessages) private var summarizes = true
+    @AccessibilityFocusState private var focusesDivider: Bool
 
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.item == rhs.item && lhs.context == rhs.context && lhs.statusReactions == rhs.statusReactions
             && lhs.isHighlighted == rhs.isHighlighted && lhs.isExpanded == rhs.isExpanded
-            && lhs.findHighlight == rhs.findHighlight
+            && lhs.findHighlight == rhs.findHighlight && lhs.catchUp?.session === rhs.catchUp?.session
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             if let divider = item.divider {
+                if divider.unread, summarizes, let catchUp, catchUp.session.phase != .collapsed {
+                    TranscriptCatchUpCard(catchUp: catchUp.session, store: catchUp.store) {
+                        catchUp.session.dismiss()
+                        focusesDivider = true
+                    }
+                    .padding(.bottom, 12)
+                    .transition(.opacity)
+                }
                 TranscriptRule(divider: divider)
+                    .accessibilityFocused($focusesDivider)
                     .padding(.bottom, item.spacing > 0 ? TranscriptItem.runGap : 0)
             }
             content
