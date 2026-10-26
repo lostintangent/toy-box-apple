@@ -11,6 +11,8 @@ public final class ChannelInteraction {
     public var isInspectorPresented: Bool
     public var isArtifactViewerPresented = false
     public private(set) var overviewTasksRequest: UUID?
+    private var requestPreviewCoverage: UUID?
+    public var isRequestPreviewPresented: Bool { requestPreviewCoverage != nil }
 
     /// The composer consumes these. `token` changes on every request so repeats still fire.
     public private(set) var replyRequest: (agent: ChannelAgent, sequence: Int?, token: UUID)?
@@ -58,6 +60,10 @@ public final class ChannelInteraction {
 
     public func consumeRevealRequest(_ token: UUID) {
         if revealRequest?.token == token { revealRequest = nil }
+    }
+    public func requestPreviewDidAppear(_ token: UUID) { requestPreviewCoverage = token }
+    public func requestPreviewDidDisappear(_ token: UUID) {
+        if requestPreviewCoverage == token { requestPreviewCoverage = nil }
     }
     public func jumpToLatest() { jumpToLatestRequest = UUID() }
     public func findInChannel() { findRequest = UUID() }

@@ -12,7 +12,6 @@ struct ComposerSurface: View {
     @Environment(ManagementPresenter.self) private var management
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.scenePhase) private var scenePhase
-    @Environment(\.colorScheme) private var colorScheme
     @ViewState private var showPhotos = false
     @ViewState private var showFiles = false
     @ViewState private var reattachingImageID: UUID?
@@ -213,7 +212,11 @@ struct ComposerSurface: View {
         HStack(spacing: 4) {
             ComposerAudienceView(text: draft.text, agents: store.roster,
                                  acknowledgesRequest: store.requestSequence != nil)
-            if let request = store.request { inputNeeded(request) }
+            if let request = store.request {
+                ComposerRequestButton(request: request, willPresent: preparePresentation, didDismiss: restoreFocus)
+                    .id(request.sequence)
+                    .id(draftID)
+            }
         }
     }
 
@@ -285,33 +288,6 @@ struct ComposerSurface: View {
         } icon: {
             Image(systemName: "exclamationmark.circle").foregroundStyle(.red)
         }
-    }
-
-    private func inputNeeded(_ request: ChannelMessage) -> some View {
-        Button { interaction.reveal(sequence: request.sequence) } label: {
-            Label {
-                Text("Input Needed").foregroundStyle(Color.primary)
-            } icon: {
-                Image(systemName: "questionmark.bubble")
-                    .foregroundStyle(ChannelAttentionStyle.color(for: .waiting, in: colorScheme))
-            }
-            .lineLimit(1).frame(minHeight: 44)
-        }
-        .font(.footnote)
-        .buttonStyle(.borderless)
-        .contextMenu {
-            Button(store.historyError == nil ? "Reveal in Conversation" : "Retry Reveal") {
-                interaction.reveal(sequence: request.sequence)
-            }
-        } preview: {
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Input Needed").font(.headline)
-                ScrollView { Text(request.text).frame(maxWidth: .infinity, alignment: .leading) }
-                if let error = store.historyError { Text(error).font(.footnote) }
-            }
-            .padding(16).frame(width: 320)
-        }
-        .accessibilityLabel("Input needed. Reveal the unanswered request.")
     }
 
     private var completion: some View {
@@ -394,7 +370,9 @@ struct ComposerSurface: View {
 
     private func preparePresentation() { restoresFocus = editor.isFocused }
     private func restoreFocus() {
-        if restoresFocus { editor.focus() }
+        if restoresFocus && scenePhase == .active && management.flow == nil && !showPhotos && !showFiles {
+            editor.focus()
+        }
         restoresFocus = false
     }
     private func registerDraft() {

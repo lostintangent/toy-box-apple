@@ -1,5 +1,6 @@
 import SwiftUI
 import Testing
+import ToyBoxUI
 import UIKit
 import UniformTypeIdentifiers
 @testable import ToyBoxMobile
@@ -230,4 +231,102 @@ struct ComposerTests {
         }
     }
 
+    @Test func aFailedRequestRevealRetainsItsQuestionThroughRetryUntilSettledSuccess() {
+        var preview = ComposerRequestPreviewState()
+        let question = ComposerRequestPreviewState.Question(sequence: 40, text: "The original question")
+        let first = UUID()
+        preview.begin(question, token: first)
+        preview.update(.init(token: first, sequence: 40, outcome: .failed("Page returned 503")),
+                       requestSequence: 40, currentToken: first)
+        #expect(preview.isPresented)
+        #expect(preview.question == question)
+        #expect(preview.outcome == .failed("Page returned 503"))
+        let retry = UUID()
+        preview.begin(question, token: retry)
+        #expect(preview.isPresented)
+        #expect(preview.outcome == .loading)
+        preview.update(.init(token: first, sequence: 40, outcome: .failed("An obsolete failure")),
+                       requestSequence: 40, currentToken: retry)
+        #expect(preview.outcome == .loading)
+        preview.update(.init(token: retry, sequence: 41, outcome: .failed("A different request")),
+                       requestSequence: 40, currentToken: retry)
+        #expect(preview.outcome == .loading)
+        preview.update(.init(token: retry, sequence: 40, outcome: .revealed),
+                       requestSequence: 40, currentToken: retry)
+        #expect(!preview.isPresented)
+        #expect(preview.outcome == .revealed)
+    }
+
+    @Test func dismissedAndSupersededRequestFailuresNeverReopenTheirPreview() {
+        for supersedesRequest in [false, true] {
+            var preview = ComposerRequestPreviewState()
+            let token = UUID()
+            preview.begin(.init(sequence: 40, text: "Retained"), token: token)
+            preview.update(.init(token: token, sequence: 40, outcome: .failed("Failure")),
+                           requestSequence: 40, currentToken: token)
+            preview.dismiss()
+            preview.update(.init(token: token, sequence: 40, outcome: .failed("Later failure")),
+                           requestSequence: 40, currentToken: token)
+            #expect(!preview.isPresented)
+            preview.update(.init(token: token, sequence: 40, outcome: .failed("Obsolete")),
+                           requestSequence: supersedesRequest ? 41 : 40,
+                           currentToken: supersedesRequest ? token : UUID())
+            #expect(preview.question == nil)
+            #expect(preview.token == nil)
+            #expect(!preview.isPresented)
+        }
+    }
+
+    @Test func contextAndPopoverFailuresUseOneSurfaceAndNavigationInvalidatesIt() {
+        var preview = ComposerRequestPreviewState()
+        let token = UUID()
+        preview.contextAppeared()
+        preview.begin(.init(sequence: 40, text: "Question"), token: token)
+        preview.update(.init(token: token, sequence: 40, outcome: .failed("Failure")),
+                       requestSequence: 40, currentToken: token)
+        #expect(!preview.isPresented, "The native context preview already shows the failure")
+        #expect(preview.outcome == .failed("Failure"))
+        preview.contextDisappeared()
+        preview.update(.init(token: token, sequence: 40, outcome: .failed("Late failure")),
+                       requestSequence: 40, currentToken: token)
+        #expect(!preview.isPresented)
+        preview.invalidate()
+        preview.update(.init(token: token, sequence: 40, outcome: .failed("After navigation")),
+                       requestSequence: 40, currentToken: token)
+        #expect(preview.question == nil)
+        #expect(!preview.isPresented)
+    }
+
+    @Test func anObsoleteRequestPreviewDismissalCannotUncoverItsReplacement() {
+        let interaction = ChannelInteraction()
+        let first = UUID()
+        let replacement = UUID()
+        interaction.requestPreviewDidAppear(first)
+        #expect(interaction.isRequestPreviewPresented)
+        interaction.requestPreviewDidAppear(replacement)
+        interaction.requestPreviewDidDisappear(first)
+        #expect(interaction.isRequestPreviewPresented)
+        interaction.requestPreviewDidDisappear(replacement)
+        #expect(!interaction.isRequestPreviewPresented)
+        interaction.requestPreviewDidDisappear(first)
+        #expect(!interaction.isRequestPreviewPresented)
+    }
+
+    @Test func supersessionKeepsClosingPreviewContentButRejectsLateResults() {
+        var preview = ComposerRequestPreviewState()
+        let question = ComposerRequestPreviewState.Question(sequence: 40, text: "Closing question")
+        let token = UUID()
+        preview.begin(question, token: token)
+        preview.update(.init(token: token, sequence: 40, outcome: .failed("Failure")),
+                       requestSequence: 40, currentToken: token)
+        #expect(preview.isPresented)
+        preview.update(nil, requestSequence: 41, currentToken: UUID())
+        #expect(!preview.isPresented)
+        #expect(preview.question == question)
+        #expect(preview.token == nil)
+        #expect(preview.outcome == nil)
+        preview.update(.init(token: token, sequence: 40, outcome: .failed("Late failure")),
+                       requestSequence: 40, currentToken: token)
+        #expect(!preview.isPresented)
+    }
 }
