@@ -137,13 +137,7 @@ struct NativeComposerInput: UIViewRepresentable {
 
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: ComposerTextView,
                       context: Context) -> CGSize? {
-        guard let width = proposal.width, width > 0, let font = uiView.font else { return nil }
-        let natural = uiView.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude))
-        let insets = uiView.textContainerInset.top + uiView.textContainerInset.bottom
-        let minimum = ceil(font.lineHeight + insets)
-        let maximum = ceil(3 * font.lineHeight + insets)
-        uiView.isScrollEnabled = natural.height > maximum
-        return CGSize(width: width, height: min(maximum, max(minimum, natural.height)))
+        uiView.composerSizeThatFits(proposal)
     }
 
     private func configure(_ view: ComposerTextView) {
@@ -239,6 +233,17 @@ final class ComposerTextView: UITextView {
             return
         }
         onPasteImages(providers)
+    }
+
+    func composerSizeThatFits(_ proposal: ProposedViewSize) -> CGSize? {
+        guard let width = proposal.width, width > 0, let font else { return nil }
+        let natural = sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude))
+        let insets = textContainerInset.top + textContainerInset.bottom
+        let minimum = ceil(font.lineHeight + insets)
+        let maximum = ceil(3 * font.lineHeight + insets)
+        let available = max(minimum, min(maximum, proposal.height ?? maximum))
+        isScrollEnabled = natural.height > available
+        return CGSize(width: width, height: min(available, max(minimum, natural.height)))
     }
 
     private var imageProviders: [NSItemProvider] {

@@ -21,6 +21,8 @@ struct ComposerSurface: View {
     @ViewState private var highlightedChoice: String?
     @ViewState private var dismissedCompletion: ChannelMentionContext?
     @ViewState private var connectionGrace = ConnectGrace()
+    @ViewState private var accessoryHeight: CGFloat = 0
+    @ScaledMetric(relativeTo: .body) private var completionRowHeight = 56
 
     private var draft: ComposerDraft { session.draft }
     private var store: ChannelStore { session.store }
@@ -110,6 +112,47 @@ struct ComposerSurface: View {
 
     private var container: some View {
         VStack(spacing: 0) {
+            if hasNotices || composer.replySource != nil || !draft.images.isEmpty {
+                ScrollView {
+                    accessories
+                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { accessoryHeight = $0 }
+                }
+                .frame(minHeight: 0, idealHeight: accessoryHeight, maxHeight: accessoryHeight)
+                .scrollBounceBehavior(.basedOnSize)
+            }
+            ZStack(alignment: .topLeading) {
+                if draft.text.isEmpty {
+                    Text("Message your team")
+                        .font(.body).foregroundStyle(Color.primary).lineLimit(1)
+                        .padding(.horizontal, 12).padding(.top, 10).accessibilityHidden(true)
+                }
+                NativeComposerInput(
+                    text: Bindable(draft).text, editor: editor, completionIsVisible: !choices.isEmpty,
+                    onSend: send, onCompletionKey: handleCompletionKey,
+                    onPasteImages: { providers in for provider in providers { draft.attachProvider(provider) } },
+                    onEscape: composer.replySource == nil ? nil : { composer.replySource = nil }
+                )
+            }
+            .padding(.bottom, 6)
+            .layoutPriority(1)
+            controls.padding(.horizontal, 8).padding(.bottom, 6)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .glassEffect(.regular.tint(Color(uiColor: .systemBackground).opacity(0.3)),
+                     in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .overlay {
+            if dragging {
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .strokeBorder(.tint, lineWidth: 2).allowsHitTesting(false)
+            }
+        }
+        .onDrop(of: [UTType.fileURL, .image], isTargeted: $dragging) { providers in
+            providers.map { draft.attachProvider($0) }.contains(true)
+        }
+    }
+
+    private var accessories: some View {
+        VStack(spacing: 0) {
             if hasNotices { notices.padding(.vertical, 8) }
             if let source = composer.replySource {
                 HStack(spacing: 4) {
@@ -131,33 +174,9 @@ struct ComposerSurface: View {
             if !draft.images.isEmpty {
                 ComposerImageStrip(draft: draft) { preparePresentation(); showFiles = true }
             }
-            ZStack(alignment: .topLeading) {
-                if draft.text.isEmpty {
-                    Text("Message your team")
-                        .font(.body).foregroundStyle(Color.primary).lineLimit(1)
-                        .padding(.horizontal, 12).padding(.top, 10).accessibilityHidden(true)
-                }
-                NativeComposerInput(
-                    text: Bindable(draft).text, editor: editor, completionIsVisible: !choices.isEmpty,
-                    onSend: send, onCompletionKey: handleCompletionKey,
-                    onPasteImages: { providers in for provider in providers { draft.attachProvider(provider) } },
-                    onEscape: composer.replySource == nil ? nil : { composer.replySource = nil }
-                )
-            }
-            .padding(.bottom, 6)
-            controls.padding(.horizontal, 8).padding(.bottom, 6)
         }
-        .glassEffect(.regular.tint(Color(uiColor: .systemBackground).opacity(0.3)),
-                     in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .overlay {
-            if dragging {
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .strokeBorder(.tint, lineWidth: 2).allowsHitTesting(false)
-            }
-        }
-        .onDrop(of: [UTType.fileURL, .image], isTargeted: $dragging) { providers in
-            providers.map { draft.attachProvider($0) }.contains(true)
-        }
+        .frame(maxWidth: .infinity)
+        .fixedSize(horizontal: false, vertical: true)
     }
 
     private var controls: some View {
@@ -291,7 +310,7 @@ struct ComposerSurface: View {
         }
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
         .frame(maxWidth: 320)
-        .frame(height: min(264, CGFloat(choices.count) * 56))
+        .frame(minHeight: 0, idealHeight: min(264, CGFloat(choices.count) * completionRowHeight), maxHeight: 264)
     }
 
     private func completionRow(_ choice: ChannelMentionChoice) -> some View {
