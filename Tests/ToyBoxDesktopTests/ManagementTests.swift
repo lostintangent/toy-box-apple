@@ -234,22 +234,6 @@ struct ManagementTests {
         #expect(OverviewPurpose.requiresExpansion(longer + "\u{2026} More", width: CGFloat(width), fontSize: 13))
     }
 
-    @Test func emptyAndOversizedNamesAreRejected() {
-        #expect(MemberValidation.nameError(" \n ", agents: []) == "Enter an agent name.")
-        #expect(MemberValidation.nameError(String(repeating: "a", count: 80), agents: []) == nil)
-        #expect(MemberValidation.nameError(String(repeating: "a", count: 81), agents: []) != nil)
-        #expect(MemberValidation.nameError(String(repeating: "\u{1F680}", count: 40), agents: []) == nil)
-        #expect(MemberValidation.nameError(String(repeating: "\u{1F680}", count: 41), agents: []) != nil)
-    }
-
-    @Test func duplicateMentionsUseTheCanonicalHandle() {
-        let agents = [ChannelAgent.lead(id: "channel"), ChannelAgent(id: "member", name: "Caf\u{00E9} Critic")]
-        #expect(MemberValidation.nameError(" lead ", agents: agents) != nil)
-        #expect(MemberValidation.nameError("CAFE-critic", agents: agents) != nil)
-        #expect(MemberValidation.nameError("Caf\u{00E9} Critic", agents: agents, excludingID: "member") == nil)
-        #expect(MemberValidation.nameError("Another critic", agents: agents) == nil)
-    }
-
     @Test func finishingMemberCreationDismissesOnlyTheMatchingSheet() {
         let presenter = ManagementPresenter()
         presenter.present(.addMember(channelId: "channel", name: "Moss"))
@@ -293,6 +277,26 @@ struct ManagementTests {
             #expect(error == .disconnected)
         }
         #expect(presenter.flow == .addMember(channelId: "not-connected", name: "Finch"))
+    }
+
+    @Test(arguments: [" \n ", String(repeating: "\u{1F680}", count: 41), " lead "])
+    func inlineCreationValidatesBeforeWriting(_ name: String) async throws {
+        let fixture = try ManagementRecoveryFixture()
+        defer { fixture.close() }
+        let store = ChannelStore(id: "channel", api: fixture.api, sendJournal: nil)
+        let channel = Channel(id: store.id, name: "Workshop", model: .init(provider: "test", name: "test"),
+                              updatedAt: "2026-10-25T12:00:00Z")
+        _ = try store.apply(.init(type: "snapshot", state: .init(
+            revision: 1, channel: channel, lead: .lead(id: store.id))))
+        let presenter = ManagementPresenter()
+        do {
+            _ = try await presenter.createMentionMember(name: name, store: store)
+            Issue.record("Invalid inline names must fail before making a request.")
+        } catch let error as ChannelAPIError {
+            #expect(error == .invalidMessage(
+                try #require(ChannelValidation.memberNameError(name, agents: store.roster))))
+        }
+        #expect(fixture.requests.isEmpty)
     }
 
     @Test(arguments: [280, 328])
