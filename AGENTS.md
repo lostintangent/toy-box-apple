@@ -246,7 +246,7 @@ Agents never create these accounts, accept agreements, read private keys or set 
   and WindowServer-event checks remain opt-in and must run locally before changes to their behavior.
 - Restore a quarantined test to CI only after identifying the cause and adding deterministic
   regression coverage. Do not loosen assertions or add retries to turn an unexplained failure green.
-- The four `MainActorTurnTests` occupancy probes are quarantined behind
+- The three `MainActorTurnTests` occupancy probes remain quarantined behind
   `TOY_BOX_TEST_MAIN_ACTOR_TIMING=1 bun run test --filter MainActorTurnTests`.
   The 2026-10-26 Mac run of `c4c761d` recorded nine Client readiness failures in
   `t338-full-mac.log`. The probes deliberately sleep and wait synchronously on the shared main actor
@@ -254,6 +254,10 @@ Agents never create these accounts, accept agreements, read private keys or set 
   changing launch network work. Core owns t340 (`client-test-actor-isolation`): isolate these probes
   and replace timing-dependent readiness with controlled events before restoring their merge-gate
   coverage. No functional assertion or deadline was changed.
+  The former outbox-order probe is now `SendAttemptTests.restoredAttemptsReconcileWithTheFirstSnapshot`.
+  It controls the journal read and observes the store receiving the decoded snapshot before releasing
+  that read, rather than assuming a 300 ms sleep establishes the order. The opposite restore-first
+  order is covered too. Neither case blocks the main actor or asserts an elapsed-time threshold.
 - `TransportTests.storeReconnectsFromAppliedRevisionZero` and
   `recoverySnapshotReplacesCachedHistory` are quarantined behind `TOY_BOX_TEST_RECONNECT_TIMING=1`.
   Both again exceeded the unchanged three-second readiness deadline in the 2026-10-26 full Mac
@@ -286,6 +290,11 @@ Agents never create these accounts, accept agreements, read private keys or set 
   presence and transport counters before disconnecting. Callback submission does not prove that
   URLSession or the event iterator consumed it. Diagnostic state is read only after the wait fails,
   outside readiness Observation tracking, so it cannot add dependencies that mask a missed wakeup.
+  Opt-in traces also distinguish the client's received HTTP response, decoded SSE event, store
+  receive/apply and scheduled/requested reconnect. Those stages are separate from submitted URL
+  callbacks. The trace is an internal per-API sink, unset in ordinary clients, and recording it
+  does not send mock readiness notifications. This closes a diagnostic gap, not the historical
+  reconnect incident or its quarantine.
 - `ChannelArtifactSessionTests.switchingScopeDiscardsTheVisitAndCancelsItsPendingLoad` is quarantined
   behind `TOY_BOX_TEST_ARTIFACT_SCOPE_TIMING=1`. Its `changingServer: false` argument failed the
   unchanged private three-second polling helper at line 81 in the 2026-10-26 Client diagnostic run

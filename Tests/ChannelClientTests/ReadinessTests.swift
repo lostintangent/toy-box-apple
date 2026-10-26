@@ -144,6 +144,43 @@ struct ReadinessTests {
         }
     }
 
+    @Test(arguments: [false, true])
+    func consumerTracingDistinguishesDecodingApplicationAndReconnect(recording: Bool) async throws {
+        let mock = MockTransport(recordingLifecycle: recording) { _, count in
+            if count == 1 { return try .stream([.init(type: "snapshot", state: testState(revision: 5))]) }
+            return try .stream([.init(type: "resumed", presence: ["test": .init(state: "working")])])
+        }
+        let store = ChannelStore(id: "test", api: try mock.api(),
+                                 reconnectPolicy: .init(initialDelay: 0.01), sendJournal: nil)
+        store.connect()
+        defer { store.disconnect() }
+        try await eventually(observing: mock) { store.phase.isLive && mock.pendingResponseCount == 1 }
+        #expect(mock.finishPendingResponses() == 1)
+        try await eventually { store.phase.isLive && store.presence["test"]?.state == "working" }
+        let entries = mock.observationLifecycle
+        if recording {
+            let stages = entries.map(\.stage)
+            let decoded = try #require(stages.firstIndex(of: .eventDecoded(type: "snapshot", revision: 5)))
+            let received = try #require(stages.firstIndex(of: .eventReceived(type: "snapshot")))
+            let applied = try #require(stages.firstIndex(of: .eventApplied(type: "snapshot", revision: 5)))
+            let reconnect = try #require(stages.firstIndex(of: .reconnectRequested(after: 5)))
+            #expect(decoded < received && received < applied && applied < reconnect)
+            #expect(stages.contains(.streamRequested(after: nil)))
+            #expect(stages.contains(.responseReceived(status: 200)))
+            #expect(stages.contains(.reconnectScheduled(attempt: 0, delay: 0.01, after: 5)))
+            #expect(stages.contains(.streamRequested(after: 5)))
+            #expect(stages.contains(.eventApplied(type: "resumed", revision: 5)))
+            #expect(entries.allSatisfy { $0.elapsed >= .zero })
+            #expect(zip(entries, entries.dropFirst()).allSatisfy { $0.elapsed <= $1.elapsed })
+            let diagnostic = reconnectReadinessDiagnostics(store: store, transport: mock)
+            #expect(diagnostic.contains("Client consumer stages:"))
+            #expect(diagnostic.contains("eventDecoded"))
+            #expect(diagnostic.contains("eventApplied"))
+        } else {
+            #expect(entries.isEmpty)
+        }
+    }
+
     @Test func reconnectDiagnosticsIncludeTheAppliedStateAndAnAtomicTransportSnapshot() throws {
         let mock = MockTransport(recordingLifecycle: true) { _, _ in MockResponse() }
         let store = ChannelStore(id: "test", api: try mock.api(), sendJournal: nil)
@@ -154,5 +191,6 @@ struct ReadinessTests {
         #expect(diagnostic.contains("Requests=1, held=0, stopped=0"))
         #expect(diagnostic.contains("GET /api/v1/channels/test/events?after=0: request received"))
         #expect(diagnostic.contains("not evidence of consumer ingestion"))
+        #expect(diagnostic.contains("Client consumer stages:\n(none)"))
     }
 }
