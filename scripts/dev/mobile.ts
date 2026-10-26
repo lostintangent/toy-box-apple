@@ -35,7 +35,9 @@ export async function buildMobile(device = false, tests = false) {
     const platform = device ? "iphoneos" : "iphonesimulator";
     const sdk = await text(["xcrun", "--sdk", platform, "--show-sdk-path"], { env: mobileEnvironment });
     const version = await text(["xcrun", "--sdk", platform, "--show-sdk-version"], { env: mobileEnvironment });
-    if (Number(version.split(".")[0]) < 27) throw new Error("Toy Box Mobile requires iOS SDK 27 or later.");
+    if (!/^\d+(?:\.\d+)*$/.test(version) || Number(version.split(".")[0]) < 27) {
+        throw new Error("Toy Box Mobile requires iOS SDK 27 or later.");
+    }
     const scratch = join(scratchPath(), device ? "mobile-device" : "mobile-simulator");
     const workspace = join(scratch, "package");
     await linkMobileWorkspace(root, workspace);
@@ -94,6 +96,25 @@ export async function prepareMobileSimulator(duo: boolean, ifAvailable = false) 
     return { udid: simulator.udid, bootedHere };
 }
 
+export function checkMobileBuildVersion(output: string, device: boolean, minimumOS: string, sdkVersion: string) {
+    if (output.match(/^\s*cmd LC_BUILD_VERSION\s*$/gm)?.length !== 1) {
+        throw new Error("Toy Box Mobile must have exactly one LC_BUILD_VERSION command.");
+    }
+    const normalize = (value: string) => /^\d+(?:\.\d+)*$/.test(value)
+        ? value.replace(/(?:\.0)+$/, "") : undefined;
+    for (const [field, expected] of Object.entries({
+        platform: device ? "IOS" : "IOSSIMULATOR", minos: minimumOS, sdk: sdkVersion,
+    })) {
+        const values = [...output.matchAll(new RegExp(`^\\s*${field}\\s+(\\S+)\\s*$`, "gm"))]
+            .map(match => match[1]);
+        const actual = values.length === 1 ? values[0] : undefined;
+        if (actual === undefined || (field === "platform" ? actual !== expected
+            : normalize(expected) === undefined || normalize(actual) !== normalize(expected))) {
+            throw new Error(`Toy Box Mobile executable ${field}: expected ${expected}, found ${values.join(", ") || "no value"}.`);
+        }
+    }
+}
+
 export async function bundleMobile(device = false) {
     const { bin, scratch, version } = await buildMobile(device);
     const app = join(scratch, "Toy Box.app");
@@ -105,6 +126,12 @@ export async function bundleMobile(device = false) {
         `Add :CFBundleSupportedPlatforms:0 string ${device ? "iPhoneOS" : "iPhoneSimulator"}`,
         `Add :DTSDKName string ${device ? "iphoneos" : "iphonesimulator"}${version}`,
     ]);
+    const binary = join(app, "ToyBoxMobile");
+    const minimumOS = await plist(join(app, "Info.plist"), ["Print :MinimumOSVersion"]);
+    await command(["xcrun", "vtool", "-set-build-version", device ? "ios" : "iossim", minimumOS, version,
+        "-replace", "-output", binary, binary], { env: mobileEnvironment });
+    checkMobileBuildVersion(await text(["xcrun", "vtool", "-show-build", binary], { env: mobileEnvironment }),
+        device, minimumOS, version);
     if (!device) await command(["codesign", "--force", "--sign", "-", app]);
     return app;
 }

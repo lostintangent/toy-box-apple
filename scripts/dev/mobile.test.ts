@@ -2,7 +2,39 @@ import { expect, test } from "bun:test";
 import { mkdir, mkdtemp, readFile, readlink, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { linkMobileWorkspace } from "./mobile.ts";
+import { checkMobileBuildVersion, linkMobileWorkspace } from "./mobile.ts";
+
+function buildVersion(platform = "IOSSIMULATOR", minimumOS = "27.0", sdk = "27.1") {
+    return `Load command 10
+          cmd LC_BUILD_VERSION
+      cmdsize 32
+     platform ${platform}
+        minos ${minimumOS}
+          sdk ${sdk}
+       ntools 1`;
+}
+
+test("mobile bundles must record their real SDK and preserve their deployment target and platform", () => {
+    expect(() => checkMobileBuildVersion(buildVersion(), false, "27.0", "27.1")).not.toThrow();
+    expect(() => checkMobileBuildVersion(buildVersion("IOS"), true, "27.0", "27.1")).not.toThrow();
+    expect(() => checkMobileBuildVersion(buildVersion("IOS", "27", "27.1.0"), true, "27.0", "27.1")).not.toThrow();
+    expect(() => checkMobileBuildVersion(buildVersion("IOSSIMULATOR", "27.0", "27.1.2"),
+        false, "27.0", "27.1.2")).not.toThrow();
+    for (const output of [
+        buildVersion("IOSSIMULATOR", "27.0", "27.0"),
+        buildVersion("IOS"),
+        buildVersion("MACOS"),
+        buildVersion("IOSSIMULATOR", "27.1"),
+        buildVersion("IOSSIMULATOR", "27.0", "unknown"),
+        buildVersion().replace("          sdk 27.1", ""),
+        `${buildVersion()}\n${buildVersion()}`,
+        buildVersion().replace("LC_BUILD_VERSION", "LC_VERSION_MIN_IPHONEOS"),
+        "",
+    ]) {
+        expect(() => checkMobileBuildVersion(output, false, "27.0", "27.1")).toThrow();
+    }
+    expect(() => checkMobileBuildVersion(buildVersion(), true, "27.0", "27.1")).toThrow();
+});
 
 test("a reused mobile workspace links the requested checkout, including after the old one is removed", async () => {
     const scratch = await mkdtemp(join(tmpdir(), "toy-box-mobile-workspace-"));
