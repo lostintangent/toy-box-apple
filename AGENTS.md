@@ -105,6 +105,12 @@ view.
   optional Back before tapping its row, so restoration has a chance to finish.
   Wait accepts `absent: true` to wait for a label/value to disappear.
   Tap also matches an exact accessibility value when its element has no label, as with native Search.
+  `{"menuAction":"Edit Channel"}` is explicitly **visible-menu action dispatch**, not a tap.
+  It requires one active menu in the current scene and one enabled, visible matching leaf.
+  Hidden items and unopened submenus are excluded. It dismisses through UIKit, waits within
+  the same deadline for dismissal and settled layout, then performs the retained leaf through the public
+  `UIMenuLeaf` API. Missing, dismissed, ambiguous or changed-scene menus fail explicitly.
+  This does not prove finger selection, menu accessibility or hardware-key delivery.
   Other actions are never skipped or retried. Each step accepts a
   timeout in seconds (default 12, maximum 60). Screenshots are acknowledged by the host only after
   the app reports a settled accessibility/layout snapshot and go under `SCRATCH_PATH/mobile-drive/`.
