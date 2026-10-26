@@ -274,6 +274,9 @@ struct OverviewTests {
         let store = ChannelStore(id: "channel", api: try ChannelAPI(serverURL: "https://fixture.example"))
         let session = OverviewSession(store: store)
         session.expandedSections[.tasks] = false
+        session.scrollPosition.scrollTo(point: CGPoint(x: 0, y: 244))
+        session.scrollOffset = 244
+        session.prepareForPresentation()
         let host = UIHostingController(rootView:
             ScrollViewReader { proxy in
                 OverviewList {
@@ -294,9 +297,13 @@ struct OverviewTests {
                         }
                     }
                 }
+                .scrollPosition(Binding(
+                    get: { session.scrollPosition },
+                    set: { session.scrollPosition = $0 }))
+                .onAppear { session.prepareForTaskReveal() }
                 .task {
-                    session.prepareForTaskReveal()
                     await Task.yield()
+                    session.prepareForTaskReveal()
                     proxy.scrollTo("overview-tasks", anchor: .top)
                 }
             }
