@@ -1,6 +1,7 @@
 import ChannelKit
 import CryptoKit
 import Foundation
+import Synchronization
 import ImageIO
 import UniformTypeIdentifiers
 
@@ -232,6 +233,22 @@ public enum ChannelThumbnailCache {
         return image
     }
 
+    /// Remembers `image` unless a larger one is already kept, and returns whichever is kept. The
+    /// comparison and store are one step, so overlapping decodes can't replace a sharper result.
+    public static func rememberSharper(_ image: CGImage, for key: Key) -> CGImage {
+        sharperWrites.withLock { _ in
+            let object = key.object
+            if let kept = storage.object(forKey: object)?.image,
+               max(kept.width, kept.height) > max(image.width, image.height) {
+                return kept
+            }
+            store(image, for: object)
+            return image
+        }
+    }
+
+    private static let sharperWrites = Mutex(())
+
     private static func store(_ image: CGImage?, for key: AnyObject) {
         // The cache keeps its key alive, which for an inline image is the whole payload.
         let keyCost = (key as? NSString).map { $0.length * 2 } ?? 0
@@ -272,11 +289,7 @@ public enum ChannelThumbnails {
     @discardableResult
     public static func remember(_ image: CGImage, for attachment: ChannelAttachment, api: ChannelAPI) -> CGImage {
         guard let identity = ChannelAttachmentCache.identity(for: attachment, api: api) else { return image }
-        if let kept = ChannelThumbnailCache.image(for: .attachment(identity)),
-           max(kept.width, kept.height) > max(image.width, image.height) {
-            return kept
-        }
-        return ChannelThumbnailCache.remember(image, for: .attachment(identity))
+        return ChannelThumbnailCache.rememberSharper(image, for: .attachment(identity))
     }
 
     public static func decode(_ file: URL, scale: CGFloat,
