@@ -128,6 +128,91 @@ struct TranscriptTests {
         }
     }
 
+    @Test func aPageArrivingAtTheTopKeepsTheReadersRowInsteadOfItsOldFrame() {
+        let viewport = TranscriptScrollModel.Viewport(width: 386, height: 600, topInset: 0, bottomInset: 0)
+        let scroll = TranscriptScroll()
+        let loaded: [TranscriptScrollModel.RowIdentity] = (0..<20).map { .init(id: "r\($0)", order: $0 + 5) }
+        scroll.sync(loaded)
+        for index in 0..<20 { scroll.measure("r\(index)", frame: CGRect(x: 0, y: CGFloat(index) * 100, width: 386, height: 100)) }
+        scroll.metrics = .init(viewport: viewport, origin: 1400, documentEnd: 2000)
+        _ = scroll.update(.land(.end))
+        scroll.metrics?.origin = 30
+        scroll.isReaderScrolling = true
+        _ = scroll.update()
+
+        // UIKit keeps the offset as the page lands above, so r1's old frame would say nothing moved.
+        let paged = (0..<5).map { TranscriptScrollModel.RowIdentity(id: "p\($0)", order: $0) } + loaded
+        scroll.sync(paged)
+        scroll.metrics?.documentEnd = 2500
+        #expect(scroll.update()?.needsMeasurement == "r1")
+        #expect(!scroll.reachesOlder)
+
+        for index in 0..<5 { scroll.measure("p\(index)", frame: CGRect(x: 0, y: CGFloat(index) * 100, width: 386, height: 100)) }
+        for index in 0..<20 { scroll.measure("r\(index)", frame: CGRect(x: 0, y: CGFloat(index + 5) * 100, width: 386, height: 100)) }
+        #expect(scroll.update()?.origin == 530)
+        #expect(!scroll.reachesOlder)
+    }
+
+    @Test func aMergedPageLoadsOnceEvenWhenGeometryArrivesBeforeItsRows() {
+        let viewport = TranscriptScrollModel.Viewport(width: 386, height: 600, topInset: 0, bottomInset: 0)
+        let scroll = TranscriptScroll()
+        let loaded: [TranscriptScrollModel.RowIdentity] = (0..<20).map { .init(id: "r\($0)", order: $0 + 5) }
+        scroll.sync(loaded)
+        for index in 0..<20 { scroll.measure("r\(index)", frame: CGRect(x: 0, y: CGFloat(index) * 100, width: 386, height: 100)) }
+        scroll.metrics = .init(viewport: viewport, origin: 1400, documentEnd: 2000)
+        _ = scroll.update(.land(.end))
+        var store = loaded
+        var loads = 0
+        func geometry(origin: CGFloat, documentEnd: CGFloat) {
+            scroll.metrics?.origin = origin
+            scroll.metrics?.documentEnd = documentEnd
+            _ = scroll.update()
+            if scroll.loadsOlder(with: store) { loads += 1 }
+        }
+
+        scroll.isReaderScrolling = true
+        geometry(origin: 40, documentEnd: 2000)
+        #expect(loads == 1)
+
+        // The page merges, and geometry reports the grown content before `onChange(items)` syncs it.
+        store = (0..<5).map { .init(id: "p\($0)", order: $0) } + loaded
+        for origin in stride(from: 39, through: 28, by: -1) { geometry(origin: CGFloat(origin), documentEnd: 2500) }
+        #expect(scroll.reachesOlder, "The old rows make the grown content look settled.")
+        #expect(loads == 1)
+
+        scroll.sync(store)
+        for index in 0..<5 { scroll.measure("p\(index)", frame: CGRect(x: 0, y: CGFloat(index) * 100, width: 386, height: 100)) }
+        for index in 0..<20 { scroll.measure("r\(index)", frame: CGRect(x: 0, y: CGFloat(index + 5) * 100, width: 386, height: 100)) }
+        geometry(origin: 28, documentEnd: 2500)
+        geometry(origin: 528, documentEnd: 2500)
+        #expect(loads == 1)
+    }
+
+    @Test func aLandingThatCantFillTheScreenReachesOlderHistoryOnceItsPlaced() {
+        let viewport = TranscriptScrollModel.Viewport(width: 386, height: 600, topInset: 0, bottomInset: 0)
+        let scroll = TranscriptScroll()
+        scroll.sync((0..<3).map { .init(id: "r\($0)", order: $0) })
+        for index in 0..<3 { scroll.measure("r\(index)", frame: CGRect(x: 0, y: CGFloat(index) * 100, width: 386, height: 100)) }
+        // Before landing, the initial offset says nothing about where the reader is.
+        scroll.metrics = .init(viewport: viewport, origin: 0, documentEnd: 300 + TranscriptScrollModel.endClearance)
+        #expect(!scroll.reachesOlder)
+        let landing = scroll.update(.land(.end))
+        #expect(landing?.origin == 0)
+        #expect(scroll.reachesOlder)
+
+        // A tall channel landed at its end is out of reach until the reader scrolls to the top.
+        let tall = TranscriptScroll()
+        tall.sync((0..<20).map { .init(id: "r\($0)", order: $0) })
+        for index in 0..<20 { tall.measure("r\(index)", frame: CGRect(x: 0, y: CGFloat(index) * 100, width: 386, height: 100)) }
+        tall.metrics = .init(viewport: viewport, origin: 1400, documentEnd: 2000)
+        _ = tall.update(.land(.end))
+        #expect(!tall.reachesOlder)
+        tall.isReaderScrolling = true
+        tall.metrics?.origin = 30
+        _ = tall.update()
+        #expect(tall.reachesOlder)
+    }
+
     @Test func onlyANewSendFollowsToTheBottom() {
         func attempt(_ id: String, _ phase: ChannelSendPhase) -> ChannelSendAttempt {
             ChannelSendAttempt(id: id, content: id, attachments: [], timestamp: "2026-10-25T12:00:00Z", phase: phase)

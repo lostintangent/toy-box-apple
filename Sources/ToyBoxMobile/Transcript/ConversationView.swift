@@ -13,6 +13,8 @@ final class TranscriptScroll {
         var viewport: Model.Viewport
         var origin: CGFloat
         var documentEnd: CGFloat
+        /// How far the top of the content sits above the top of the unobscured viewport.
+        var top: CGFloat { origin + viewport.topInset }
     }
 
     var rows: [Model.RowIdentity] = []
@@ -36,6 +38,8 @@ final class TranscriptScroll {
             // Older history arrived above: keep the reader's row where it was.
             _ = update(.holdCurrentPosition)
             holdsAnchorThroughInput = true
+            // The page moved every row down, so the old frames would hold the anchor at the top.
+            frames.removeAll()
         }
         rows = current
     }
@@ -109,6 +113,24 @@ final class TranscriptScroll {
         return (pending.token, Model.visibleRows(in: layout).contains(pending.row))
     }
 
+    /// The paging row's height, so older history loads as soon as that row starts to show.
+    static let pagingReach: CGFloat = 44
+
+    /// Whether the top of the content is in reach once geometry holds the model's placement. That
+    /// covers a drag to the top, a landing or filter that can't fill the screen, and a short page.
+    /// While a landing or page is still being placed, its old geometry says nothing.
+    var reachesOlder: Bool {
+        guard hasLanded, let metrics, metrics.top < Self.pagingReach, let layout,
+              let origin = Model.placement(for: intent, layout: layout).origin else { return false }
+        return abs(origin - layout.origin) <= 0.5
+    }
+
+    /// Whether to page now. Geometry can report a merged page before `onChange(items)` syncs it,
+    /// and the old rows would make that grown content look settled with the top still in reach.
+    func loadsOlder(with current: @autoclosure () -> [Model.RowIdentity]) -> Bool {
+        reachesOlder && current() == rows
+    }
+
     var distanceToEnd: CGFloat { layout.map(Model.distanceToEnd(in:)) ?? 0 }
     var visibleRows: [String] { layout.map(Model.visibleRows(in:)) ?? [] }
 }
@@ -137,7 +159,6 @@ struct ConversationView: View {
     @ViewState private var highlightedSequence: Int?
     @ViewState private var revealError: String?
     @ViewState private var requestedRead = 0
-    @ViewState private var isPagingVisible = false
     @ViewState private var expanded: Set<String> = []
     @ViewState private var find: TranscriptFind = {
         let find = TranscriptFind()
@@ -170,8 +191,6 @@ struct ConversationView: View {
                     TranscriptPagingAccessory(isLoading: store.isLoadingOlder, error: store.historyError) {
                         Task { await store.loadOlder() }
                     }
-                    // A lazy stack creates rows before they're on screen, so page on real visibility.
-                    .onScrollVisibilityChange(threshold: 0.01) { isPagingVisible = $0 }
                 }
                 ForEach(items) { item in
                     TranscriptItemView(item: item, context: context, statusReactions: statusReactions,
@@ -277,7 +296,6 @@ struct ConversationView: View {
             guard let request = interaction.revealRequest else { return }
             Task { await reveal(sequence: request.sequence, token: request.token) }
         }
-        .onChange(of: isPagingVisible) { if isPagingVisible { Task { await loadOlder() } } }
         .onChange(of: scenePhase) { markRead() }
         .onChange(of: isUncovered) { markRead() }
     }
@@ -324,7 +342,6 @@ struct ConversationView: View {
         let target = items.first { $0.divider?.unread == true }
             .map { TranscriptScrollModel.Target.row($0.id, order: $0.order) } ?? .end
         place(scroll.update(.land(target)))
-        if isPagingVisible { Task { await loadOlder() } }
     }
 
     private func place(_ placement: TranscriptScrollModel.Placement?) {
@@ -351,6 +368,10 @@ struct ConversationView: View {
             markRead()
             if let reveal = scroll.finishedReveal() {
                 interaction.finishReveal(reveal.token, reveal.isRevealed ? .revealed : .failed(Self.revealInterrupted))
+            }
+            if !store.isLoadingOlder, store.hasOlderMessages, store.historyError == nil,
+               scroll.loadsOlder(with: rowIdentities) {
+                Task { await loadOlder() }
             }
         }
     }
