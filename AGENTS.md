@@ -224,6 +224,15 @@ Agents never create these accounts, accept agreements, read private keys or set 
   Core owns `artifact-scope-readiness` under t340: capture the stalled stage, identify its cause and
   add deterministic scope-replacement coverage before restoring this case. Both argument bodies
   and the deadline remain unchanged. Do not clear the incident by retrying the original candidate.
+- `ChannelArtifactSessionTests.removingAnArtifactDuringLoadingRetainsItsIdentityWithoutPublishingTheResponse`
+  is also quarantined behind `TOY_BOX_TEST_ARTIFACT_SCOPE_TIMING=1`. It failed the unchanged
+  three-second polling helper at line 82 in the 2026-10-26 Mac integration run of `a65267d`
+  (`/tmp/lead-int8-mac.log`, issue at line 2088, failure after 7.537 seconds at line 2130).
+  Core preserved that run as `artifact-removal-readiness-failed-a65267d.log` in its session files.
+  An iOS build was compiling concurrently, but neither the cause nor the failed wait stage is
+  established. Core owns `artifact-removal-readiness` under t340: capture the stalled stage,
+  identify its cause and add deterministic removal-during-load coverage before restoring this case.
+  The test body and deadline are unchanged. Do not restore it based on passing reruns.
 
 ## Validating the running app
 

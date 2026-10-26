@@ -42,7 +42,8 @@ struct ChannelArtifactSessionTests {
         #expect(session.pages == nil)
     }
 
-    @Test func removingAnArtifactDuringLoadingRetainsItsIdentityWithoutPublishingTheResponse() async throws {
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["TOY_BOX_TEST_ARTIFACT_SCOPE_TIMING"] == "1"))
+    func removingAnArtifactDuringLoadingRetainsItsIdentityWithoutPublishingTheResponse() async throws {
         let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try Data("Removed".utf8).write(to: file)
         defer { try? FileManager.default.removeItem(at: file) }
