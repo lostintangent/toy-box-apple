@@ -1426,7 +1426,9 @@ struct MenuBarExtraTests {
     }
 
     @Test func whenActiveLingersAfterActivityAndHoldsWhileAMenuIsOpen() async throws {
-        let presence = MenuBarPresence(linger: .milliseconds(50))
+        let center = NotificationCenter()
+        let menu = NSMenu()
+        let presence = MenuBarPresence(linger: .milliseconds(50), center: center)
         #expect(!presence.isInserted)
         presence.update(isActive: true)
         #expect(presence.isInserted)
@@ -1437,18 +1439,26 @@ struct MenuBarExtraTests {
 
         presence.update(isActive: true)
         presence.update(isActive: false)
-        presence.menuTracking(true)
+        center.post(name: NSMenu.didBeginTrackingNotification, object: menu)
         await presence.linger?.value
         #expect(presence.isInserted)
-        presence.menuTracking(false)
+        center.post(name: NSMenu.didEndTrackingNotification, object: menu)
+        #expect(!presence.isInserted)
+
+        presence.update(isActive: true)
+        presence.update(isActive: false)
+        center.post(NSMenu.DidBeginTrackingMessage(menu: menu), subject: menu)
+        await presence.linger?.value
+        #expect(presence.isInserted)
+        center.post(NSMenu.DidEndTrackingMessage(menu: menu), subject: menu)
         #expect(!presence.isInserted)
 
         presence.update(isActive: true)
         presence.popoverVisibilityChanged(true)
         presence.update(isActive: false)
         await presence.linger?.value
-        presence.menuTracking(true)
-        presence.menuTracking(false)
+        center.post(NSMenu.DidBeginTrackingMessage(menu: menu), subject: menu)
+        center.post(NSMenu.DidEndTrackingMessage(menu: menu), subject: menu)
         #expect(presence.isInserted)
         presence.popoverVisibilityChanged(false)
         #expect(!presence.isInserted)
