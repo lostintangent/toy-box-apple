@@ -62,16 +62,18 @@ struct ChannelEditor: View {
             Section {
                 Text(channel == nil ? "The lead starts right away and adds specialists as needed."
                      : "Name and purpose changes appear in the conversation.")
-                    .font(.footnote).foregroundStyle(.secondary)
+                    .font(.footnote).foregroundStyle(ChannelInk.secondary)
             }
             Section {
-                TextField("Name", text: $session.name, prompt: Text("Required"))
+                TextField("Name", text: $session.name,
+                          prompt: Text("Required").foregroundStyle(ChannelInk.secondary))
                     .focused($focus, equals: .name)
                     .submitLabel(.next)
                     .onSubmit { focus = .purpose }
                     .accessibilityIdentifier("channel-name")
                 TextField("Purpose", text: $session.purpose,
-                          prompt: Text("What should this team work toward?"), axis: .vertical)
+                          prompt: Text("What should this team work toward?").foregroundStyle(ChannelInk.secondary),
+                          axis: .vertical)
                     .lineLimit(3...6)
                     .focused($focus, equals: .purpose)
                     .accessibilityIdentifier("channel-purpose")
@@ -83,7 +85,8 @@ struct ChannelEditor: View {
                                  allowsInheritance: false, title: "Lead model")
             Section {
                 if channel == nil {
-                    TextField("Working directory", text: $session.directory, prompt: Text("Optional"))
+                    TextField("Working directory", text: $session.directory,
+                              prompt: Text("Optional").foregroundStyle(ChannelInk.secondary))
                         .focused($focus, equals: .directory)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
@@ -93,7 +96,7 @@ struct ChannelEditor: View {
                         Text("Folder on Mac")
                         Text(directory.isEmpty ? "None" : directory)
                             .font(.footnote.monospaced())
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(ChannelInk.secondary)
                             .textSelection(.enabled)
                     }
                 }
@@ -101,6 +104,7 @@ struct ChannelEditor: View {
                 Text(channel == nil
                      ? "A folder on the server. Leave it empty for a discussion-only channel."
                      : "Only the lead can change the directory. Model changes apply the next time the lead works.")
+                    .foregroundStyle(ChannelInk.secondary)
             }
         }
         .accessibilityIdentifier("channel-editor-form")
