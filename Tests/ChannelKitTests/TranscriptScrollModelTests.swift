@@ -421,6 +421,16 @@ struct TranscriptScrollModelTests {
         #expect(missing.unavailableTarget == "deleted")
     }
 
+    @Test func aRevealTallerThanTheUnobscuredAreaStartsBelowTheTopInset() {
+        // 600 points tall, minus a 50-point top bar and a 150-point bottom overlay, leaves 400.
+        // m8 starts at 8 × 401 = 3,208, so its top sits just below the bar.
+        let tall = Model.reduce(.following, .reveal("m8"), rows: frames(height: 401), viewport: viewport, origin: 0)
+        #expect(tall.origin == 3_158)
+        let fits = Model.reduce(.following, .reveal("m8"), rows: frames(height: 400), viewport: viewport, origin: 0)
+        // A 400-point row still centers: 3,200 + 200 − (50 + 200).
+        #expect(fits.origin == 3_150)
+    }
+
     @Test func aHiddenAnchorUsesTheNearestSuccessorThenPredecessorThenTheEnd() {
         let intent = Model.Intent.reading(.init(row: "m5", order: 5, offset: 30))
         let filtered = frames().filter { $0.order != 5 && $0.order != 6 }
