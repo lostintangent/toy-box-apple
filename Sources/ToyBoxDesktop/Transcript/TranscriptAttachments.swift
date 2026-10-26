@@ -134,7 +134,7 @@ private struct TranscriptAttachment: View {
     }
 
     var body: some View {
-        let thumbnail = thumbnail ?? TranscriptThumbnails.remembered(for: attachment, api: api)
+        let thumbnail = thumbnail ?? ChannelThumbnails.remembered(for: attachment, api: api)
         VStack(alignment: .leading, spacing: 5) {
             if isImage, thumbnail != nil || error == nil {
                 imageTile(thumbnail)
@@ -272,7 +272,7 @@ private struct TranscriptAttachment: View {
                 do {
                     let image = try await generator.image(at: .zero).image
                     guard !Task.isCancelled else { return }
-                    thumbnail = TranscriptThumbnails.remember(image, for: attachment, api: api)
+                    thumbnail = ChannelThumbnails.remember(image, for: attachment, api: api)
                 } catch {
                     // A missing poster must not prevent playback of a valid video.
                     self.error = "Video preview unavailable. Use Play to open the video."
@@ -334,10 +334,6 @@ private struct TranscriptVideo: View {
 /// The shared thumbnails, with the SVG rasterizer ImageIO lacks.
 @MainActor
 enum TranscriptThumbnails {
-    static func remembered(for attachment: ChannelAttachment, api: ChannelAPI) -> CGImage? {
-        ChannelThumbnails.remembered(for: attachment, api: api)
-    }
-
     static func image(at file: URL, for attachment: ChannelAttachment, api: ChannelAPI, scale: CGFloat,
                       reload: Bool = false) async throws -> CGImage {
         try await ChannelThumbnails.image(at: file, for: attachment, api: api, scale: scale,
@@ -346,10 +342,6 @@ enum TranscriptThumbnails {
 
     nonisolated static func decode(_ file: URL, scale: CGFloat) throws -> CGImage {
         try ChannelThumbnails.decode(file, scale: scale, fallback: svg).image
-    }
-
-    static func remember(_ image: CGImage, for attachment: ChannelAttachment, api: ChannelAPI) -> CGImage {
-        ChannelThumbnails.remember(image, for: attachment, api: api)
     }
 
     nonisolated private static let svg: ChannelThumbnails.Fallback = { file, bound in

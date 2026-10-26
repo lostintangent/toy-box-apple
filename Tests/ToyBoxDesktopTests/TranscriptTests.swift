@@ -1095,7 +1095,7 @@ struct TranscriptTests {
         let payload = try encodedImage(width: 600, height: 300, type: .png)
         let attachment = ChannelAttachment(name: "wide.png", mimeType: "image/png", base64: payload)
         let api = try ChannelAPI(serverURL: "http://localhost:3210")
-        #expect(TranscriptThumbnails.remembered(for: attachment, api: api) == nil)
+        #expect(ChannelThumbnails.remembered(for: attachment, api: api) == nil)
         let view = NSHostingView(rootView: TranscriptAttachments(attachments: [attachment], api: api)
             .fixedSize())
         view.layoutSubtreeIfNeeded()
@@ -1132,7 +1132,7 @@ struct TranscriptTests {
         }
         let api = try ChannelAPI(serverURL: "http://localhost:3210")
         for attachment in attachments {
-            let thumbnail = TranscriptThumbnails.remember(image, for: attachment, api: api)
+            let thumbnail = ChannelThumbnails.remember(image, for: attachment, api: api)
             #expect(CGSize(width: thumbnail.width, height: thumbnail.height) == CGSize(width: 120, height: 80))
         }
 
