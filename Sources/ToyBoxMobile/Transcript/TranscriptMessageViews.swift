@@ -19,17 +19,31 @@ struct TranscriptItemView: View, @MainActor Equatable {
     let statusReactions: [Int: [ChannelReaction]]
     let isHighlighted: Bool
     var isExpanded = false
+    /// The landing's summary, which only the New divider's item draws above itself.
+    var catchUp: (summary: TranscriptCatchUp, store: ChannelStore)?
     var setExpanded: (Bool) -> Void = { _ in }
+    @AppStorage("summarizeNewMessages") private var summarizes = true
+    @AccessibilityFocusState private var focusesDivider: Bool
 
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.item == rhs.item && lhs.context == rhs.context && lhs.statusReactions == rhs.statusReactions
             && lhs.isHighlighted == rhs.isHighlighted && lhs.isExpanded == rhs.isExpanded
+            && lhs.catchUp?.summary === rhs.catchUp?.summary
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             if let divider = item.divider {
+                if divider.unread, summarizes, let catchUp, catchUp.summary.phase != .collapsed {
+                    TranscriptCatchUpCard(catchUp: catchUp.summary, store: catchUp.store) {
+                        catchUp.summary.dismiss()
+                        focusesDivider = true
+                    }
+                    .padding(.bottom, 12)
+                    .transition(.opacity)
+                }
                 TranscriptRule(divider: divider)
+                    .accessibilityFocused($focusesDivider)
                     .padding(.bottom, item.spacing > 0 ? TranscriptItem.runGap : 0)
             }
             content

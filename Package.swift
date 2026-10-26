@@ -26,7 +26,7 @@ let package = Package(
         .target(name: "ChannelKit"),
         .target(name: "ChannelClient", dependencies: ["ChannelKit"]),
         .target(name: "ChannelIntelligence", dependencies: ["ChannelKit"]),
-        .target(name: "ToyBoxUI", dependencies: ["ChannelKit", "ChannelClient"]),
+        .target(name: "ToyBoxUI", dependencies: ["ChannelKit", "ChannelClient", "ChannelIntelligence"]),
     ] + (mobile ? [
         .executableTarget(name: "ToyBoxMobile", dependencies: ["ChannelClient", "ChannelIntelligence", "ToyBoxUI"]),
         .testTarget(name: "ToyBoxMobileTests", dependencies: ["ToyBoxMobile"]),

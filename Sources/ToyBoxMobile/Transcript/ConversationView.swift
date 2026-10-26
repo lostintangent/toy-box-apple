@@ -1,4 +1,5 @@
 import ChannelClient
+import ChannelIntelligence
 import ChannelKit
 import SwiftUI
 import ToyBoxUI
@@ -98,6 +99,7 @@ struct ConversationView: View {
     @Environment(ChannelInteraction.self) private var interaction
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.channelIntelligence) private var intelligence
     @ViewState private var rowBuilder = TranscriptRowBuilder()
     @ViewState private var scroll = TranscriptScroll()
     @ViewState private var position = ScrollPosition()
@@ -109,6 +111,7 @@ struct ConversationView: View {
     @ViewState private var requestedRead = 0
     @ViewState private var isPagingVisible = false
     @ViewState private var expanded: Set<String> = []
+    @ViewState private var catchUp: TranscriptCatchUp?
 
     nonisolated private static let space = "transcript-content"
     private static let laneWidth: CGFloat = 720
@@ -125,6 +128,7 @@ struct ConversationView: View {
         let items = items
         let context = TranscriptRowContext(agents: store.roster, api: store.api)
         let statusReactions = statusReactions
+        let card = interaction.messageView == .all ? catchUp.map { (summary: $0, store: store) } : nil
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
                 if store.hasOlderMessages && !items.isEmpty {
@@ -137,7 +141,8 @@ struct ConversationView: View {
                 ForEach(items) { item in
                     TranscriptItemView(item: item, context: context, statusReactions: statusReactions,
                                        isHighlighted: item.messages.contains { $0.sequence == highlightedSequence },
-                                       isExpanded: expanded.contains(item.id)) { expands in
+                                       isExpanded: expanded.contains(item.id),
+                                       catchUp: item.divider?.unread == true ? card : nil) { expands in
                         // Keep the tapped message's top where it is, or bring it back when it collapses.
                         place(scroll.update(.toggledExpansion(item.id, expanded: expands)))
                         if expands { expanded.insert(item.id) } else { expanded.remove(item.id) }
@@ -166,6 +171,8 @@ struct ConversationView: View {
             .coordinateSpace(.named(Self.space))
         }
         .scrollPosition($position)
+        // The conversation owns the generation, so a card that leaves the lazy stack never cancels it.
+        .task(id: catchUp?.generation) { await catchUp?.run(using: intelligence) }
         .defaultScrollAnchor(.bottom, for: .initialOffset)
         .onScrollGeometryChange(for: TranscriptScroll.Metrics.self) { geometry in
             // The container size excludes the content insets, but the model's viewport spans them.
@@ -241,8 +248,15 @@ struct ConversationView: View {
             arrivalUnreadAfter = store.unreadAfter
             capturedArrival = true
         }
-        let target = items.first { $0.divider?.unread == true }
-            .map { TranscriptScrollModel.Target.row($0.id, order: $0.order) } ?? .end
+        let divider = items.first { $0.divider?.unread == true }
+        // The summary sits in the New divider's item, so landing on that item holds the card's top.
+        if divider != nil, catchUp == nil, let state = store.state {
+            catchUp = TranscriptCatchUp.make(
+                server: store.api.baseURL, state: state, unreadAfter: arrivalUnreadAfter,
+                view: interaction.messageView, availability: intelligence.availability,
+                isOn: UserDefaults.standard.object(forKey: "summarizeNewMessages") as? Bool ?? true)
+        }
+        let target = divider.map { TranscriptScrollModel.Target.row($0.id, order: $0.order) } ?? .end
         place(scroll.update(.land(target)))
         if isPagingVisible { Task { await loadOlder() } }
     }
