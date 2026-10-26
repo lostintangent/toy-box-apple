@@ -476,6 +476,8 @@ struct TranscriptTests {
         let host = UIHostingController(rootView: TranscriptAttachments(
             attachments: attachments, api: api, alignment: .trailing,
             source: .init(messageID: "m1", sender: "Lead", timestamp: "2026-10-26T12:00:00Z")))
+        // Measure the strip alone, without the window's home indicator inset.
+        host.safeAreaRegions = []
         let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 402, height: 874))
         window.rootViewController = host
         window.isHidden = false
@@ -489,11 +491,12 @@ struct TranscriptTests {
             (view as? UIScrollView).map { [$0] } ?? view.subviews.flatMap(scrollViews)
         }
         let strip = try #require(scrollViews(host.view).first)
-        // Three images and the capped file row, 8 points apart, overflow and scroll sideways.
-        let content = strip.contentSize.width
-        #expect(content > 402)
-        #expect(content >= 3 * tile.width + 3 * 8 + 44)
-        #expect(content <= 3 * tile.width + 3 * 8 + 240 + 8.5)
+        // Three images and the file row, 8 points apart with 4 points of shadow room at each end,
+        // overflow and scroll sideways.
+        #expect(strip.contentSize.width > 402)
+        let fileRow = strip.contentSize.width - 3 * tile.width - 3 * 8 - 2 * 4
+        // The long name truncates at 200 points, so the row is its label plus the icon and padding.
+        #expect(fileRow > 200 && fileRow < 260, "file row \(fileRow)")
     }
 }
 

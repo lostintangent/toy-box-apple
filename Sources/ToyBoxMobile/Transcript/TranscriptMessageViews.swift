@@ -511,7 +511,6 @@ struct TranscriptReactionChip: View {
     }
 }
 
-/// Gives its content at most a fraction of the lane and aligns it trailing.
 extension View {
     /// Fills a bubble with its shared surface and, under Increase Contrast, outlines it with the Mac's edge.
     func transcriptBubble(_ surface: TranscriptSurface) -> some View {
