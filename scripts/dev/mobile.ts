@@ -101,7 +101,20 @@ export async function linkMobileWorkspace(sourceRoot: string, workspace: string)
     }
 }
 
+export function mobileBuildConfiguration(device: boolean, tests: boolean, requested = process.env.CONFIGURATION) {
+    if (device) return "release";
+    if (tests) return "debug";
+    const configuration = requested || "debug";
+    if (configuration !== "debug" && configuration !== "release") {
+        throw new Error("CONFIGURATION must be debug or release for a Simulator app build.");
+    }
+    return configuration;
+}
+
 export async function buildMobile(device = false, tests = false) {
+    const configuration = mobileBuildConfiguration(device, tests);
+    console.log(`Building iOS ${device ? "device" : "Simulator"} ${tests ? "tests" : "app"} `
+        + `(${configuration}${tests ? "" : configuration === "release" ? ", optimized" : ", unoptimized; not for performance review"}).`);
     const platform = device ? "iphoneos" : "iphonesimulator";
     const sdk = await text(["xcrun", "--sdk", platform, "--show-sdk-path"], { env: mobileEnvironment });
     const version = await text(["xcrun", "--sdk", platform, "--show-sdk-version"], { env: mobileEnvironment });
@@ -112,6 +125,7 @@ export async function buildMobile(device = false, tests = false) {
     const workspace = join(scratch, "package");
     await linkMobileWorkspace(root, workspace);
     const args = ["xcrun", "swift", "build", "--package-path", workspace, "--scratch-path", scratch,
+        "--configuration", configuration,
         "--sdk", sdk, "--triple", `arm64-apple-ios27.0${device ? "" : "-simulator"}`, "--jobs", "4"];
     await command([...args, ...(tests ? ["--build-tests"] : ["--product", "ToyBoxMobile"])],
         { env: mobileEnvironment });

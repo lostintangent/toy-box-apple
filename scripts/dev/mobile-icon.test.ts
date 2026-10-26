@@ -41,7 +41,8 @@ if (output === "failure") process.exit(17);
 }
 
 for (const device of [false, true]) {
-    test(`mobile ${device ? "device" : "Simulator"} icons compile the shared document and merge native metadata`, async () => {
+    test.skipIf(!device && process.env.TOY_BOX_TEST_MOBILE_ICON_TIMING !== "1")(
+        `mobile ${device ? "device" : "Simulator"} icons compile the shared document and merge native metadata`, async () => {
         await temporary("toy-box-mobile-icon-test.", async directory => {
             const fixture = await iconFixture(directory);
             await embedMobileAppIcon(fixture.resources, fixture.app, device, "27.0", fixture.env);
@@ -59,7 +60,7 @@ for (const device of [false, true]) {
                 ["Print :CFBundleIcons:CFBundlePrimaryIcon:CFBundleIconName"])).toBe("AppIcon");
             expect(await plist(join(fixture.app, "Info.plist"),
                 ["Print :CFBundleIcons:CFBundlePrimaryIcon:CFBundleIconFiles:0"])).toBe("AppIcon60x60");
-        });
+    });
     });
 }
 

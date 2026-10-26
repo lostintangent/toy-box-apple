@@ -2,7 +2,9 @@ import { expect, test } from "bun:test";
 import { mkdir, mkdtemp, readFile, readlink, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { checkMobileBuildVersion, linkMobileWorkspace, mobileLaunchOptions, withMobileAppearance } from "./mobile.ts";
+import {
+    checkMobileBuildVersion, linkMobileWorkspace, mobileBuildConfiguration, mobileLaunchOptions, withMobileAppearance,
+} from "./mobile.ts";
 
 function buildVersion(platform = "IOSSIMULATOR", minimumOS = "27.0", sdk = "27.1") {
     return `Load command 10
@@ -13,6 +15,17 @@ function buildVersion(platform = "IOSSIMULATOR", minimumOS = "27.0", sdk = "27.1
           sdk ${sdk}
        ntools 1`;
 }
+
+test("phone builds are always optimized while Simulator tests stay debug", () => {
+    for (const requested of [undefined, "", "debug", "release"]) {
+        expect(mobileBuildConfiguration(true, false, requested)).toBe("release");
+        expect(mobileBuildConfiguration(false, true, requested)).toBe("debug");
+    }
+    expect(mobileBuildConfiguration(false, false, "")).toBe("debug");
+    expect(mobileBuildConfiguration(false, false, "debug")).toBe("debug");
+    expect(mobileBuildConfiguration(false, false, "release")).toBe("release");
+    expect(() => mobileBuildConfiguration(false, false, "profile")).toThrow("CONFIGURATION");
+});
 
 for (const [platform, path] of [["phone", "Mobile/Info.plist"], ["Mac", "Info.plist"]] as const) {
     test(`${platform} ATS allows user-selected HTTP servers without a local-only override`, async () => {
