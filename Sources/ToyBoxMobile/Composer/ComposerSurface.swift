@@ -71,7 +71,6 @@ struct ComposerSurface: View {
             }
         }
         .padding(.horizontal, sizeClass == .compact ? 12 : 16)
-        .frame(maxWidth: 720)
         .padding(.bottom, 8)
         .frame(maxWidth: .infinity)
         .photosPicker(isPresented: $showPhotos, selection: $photoItems, matching: .images,

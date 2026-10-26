@@ -273,6 +273,38 @@ struct ComposerTests {
         return pixels
     }
 
+    @Test(arguments: [UserInterfaceSizeClass.compact, .regular], [CGFloat(390), 466, 951, 1194])
+    func composerUsesTheWholeProposedLaneWithoutChangingItsEdgeInsets(
+        sizeClass: UserInterfaceSizeClass, width: CGFloat
+    ) throws {
+        let suite = "composer-lane-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let app = AppModel(arguments: ["--server", "https://composer-lane.invalid"],
+                           environment: [:], defaults: defaults)
+        let (session, target) = try dictatingSession(MobileTestRecognizer())
+        defer { session.dictation.deactivate() }
+        let host = UIHostingController(rootView: ComposerSurface(session: session, showsTray: false)
+            .environment(app)
+            .environment(ChannelInteraction(isInspectorPresented: false))
+            .environment(ManagementPresenter())
+            .environment(OverviewPresentation())
+            .environment(\.horizontalSizeClass, sizeClass)
+            .dynamicTypeSize(.large))
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: width, height: 400))
+        window.rootViewController = host
+        window.isHidden = false
+        defer { window.isHidden = true }
+        host.view.layoutIfNeeded()
+        let input = try #require(session.editor.textView)
+        let frame = input.convert(input.bounds, to: host.view)
+        let inset: CGFloat = sizeClass == .compact ? 12 : 16
+        #expect(abs(frame.minX - inset) <= 0.5)
+        #expect(abs(frame.width - (width - 2 * inset)) <= 0.5)
+        #expect(abs(host.view.bounds.maxX - frame.maxX - inset) <= 0.5)
+        withExtendedLifetime(target) {}
+    }
+
     @Test func editorFitsOneThroughThreeMeasuredLinesWithoutChangingItsTextOrCaret() throws {
         for pointSize: CGFloat in [17, 40] {
             let view = ComposerTextView()
