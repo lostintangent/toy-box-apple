@@ -80,6 +80,9 @@ public final class ComposerDraft {
     private let imageIsReadable: @MainActor (Data) -> Bool
     // AppKit also renders SVG sources for which ImageIO reports zero images.
     private let rasterizeImage: (@Sendable (Data, Int) -> CGImage?)?
+    @ObservationIgnored var thumbnailDecoder: @Sendable (Data, Int) -> CGImage? = {
+        ChannelImageDecoder.thumbnail(data: $0, maxPixelSize: $1)
+    }
     private var restoring = true
 
     public static func storageKey(serverURL: URL, channelID: String, scope: Scope = .conversation) -> String {
@@ -156,6 +159,7 @@ public final class ComposerDraft {
     public var isLoadingImages: Bool { loadingImageCount > 0 }
 
     public func removeImage(id: UUID) {
+        ComposerThumbnails.remove(id: id)
         images.removeAll { $0.id == id }
         failedImageIDs.remove(id)
         reattachments[id] = nil
@@ -224,8 +228,15 @@ public final class ComposerDraft {
         editAsNewMessage()
     }
 
+    /// Only looks up a completed thumbnail. Decoding belongs in `loadThumbnail(for:)`.
     public func thumbnail(for image: ComposerImage) -> CGImage? {
-        failedImageIDs.contains(image.id) ? nil : ComposerThumbnails.image(for: image, rasterize: rasterizeImage)
+        failedImageIDs.contains(image.id) ? nil : ComposerThumbnails.image(for: image)
+    }
+
+    public func loadThumbnail(for image: ComposerImage) async -> CGImage? {
+        guard !Task.isCancelled, !failedImageIDs.contains(image.id) else { return nil }
+        let thumbnail = await ComposerThumbnails.load(for: image, decode: thumbnailDecoder, rasterize: rasterizeImage)
+        return Task.isCancelled || failedImageIDs.contains(image.id) ? nil : thumbnail
     }
 
     private func normalizeUnsentImages() {
@@ -360,6 +371,7 @@ public final class ComposerDraft {
     }
 
     public func restore(content: String, attachments: [ChannelAttachment], sendAttemptID: String? = nil) {
+        for image in images { ComposerThumbnails.remove(id: image.id) }
         restoring = true
         text = content
         images = attachments.map { attachment in
@@ -386,6 +398,7 @@ public final class ComposerDraft {
 
     public func clear(ifUnchanged revision: UUID) {
         guard self.revision == revision else { return }
+        for image in images { ComposerThumbnails.remove(id: image.id) }
         restoring = true
         text = ""
         images = []
@@ -438,6 +451,14 @@ public final class ComposerDraft {
             init(_ image: CGImage?) { self.image = image }
         }
 
+        private final class Pending {
+            let task: Task<CGImage?, Never>
+            var cancelled = false
+            init(task: Task<CGImage?, Never>) { self.task = task }
+        }
+
+        private static var pending: [UUID: Pending] = [:]
+
         private static let cache: NSCache<NSUUID, Entry> = {
             let cache = NSCache<NSUUID, Entry>()
             cache.countLimit = 128
@@ -445,19 +466,43 @@ public final class ComposerDraft {
             return cache
         }()
 
-        static func image(for image: ComposerImage,
-                          rasterize: (@Sendable (Data, Int) -> CGImage?)?) -> CGImage? {
-            let key = image.id as NSUUID
-            if let cached = cache.object(forKey: key) { return cached.image }
-            let thumbnail = ChannelImageDecoder.thumbnail(
-                data: image.data, maxPixelSize: ComposerImageEncoding.thumbnailDimension
-            ) ?? rasterize?(image.data, ComposerImageEncoding.thumbnailDimension)
-            cache.setObject(Entry(thumbnail), forKey: key,
-                            cost: thumbnail.map { $0.bytesPerRow * $0.height } ?? 0)
-            return thumbnail
+        static func image(for image: ComposerImage) -> CGImage? {
+            cache.object(forKey: image.id as NSUUID)?.image
         }
 
-        static func remove(id: UUID) { cache.removeObject(forKey: id as NSUUID) }
+        static func load(for image: ComposerImage, decode: @escaping @Sendable (Data, Int) -> CGImage?,
+                         rasterize: (@Sendable (Data, Int) -> CGImage?)?) async -> CGImage? {
+            let key = image.id as NSUUID
+            if let cached = cache.object(forKey: key) { return cached.image }
+            let work: Pending
+            if let existing = pending[image.id] {
+                work = existing
+            } else {
+                work = Pending(task: Task.detached(priority: .userInitiated) {
+                    guard !Task.isCancelled else { return nil }
+                    let bound = ComposerImageEncoding.thumbnailDimension
+                    let thumbnail = decode(image.data, bound) ?? rasterize?(image.data, bound)
+                    return Task.isCancelled ? nil : thumbnail
+                })
+                pending[image.id] = work
+            }
+            let thumbnail = await work.task.value
+            guard !work.cancelled else { return nil }
+            if pending[image.id] === work {
+                pending[image.id] = nil
+                cache.setObject(Entry(thumbnail), forKey: key,
+                                cost: thumbnail.map { $0.bytesPerRow * $0.height } ?? 0)
+            }
+            return Task.isCancelled ? nil : thumbnail
+        }
+
+        static func remove(id: UUID) {
+            if let work = pending.removeValue(forKey: id) {
+                work.cancelled = true
+                work.task.cancel()
+            }
+            cache.removeObject(forKey: id as NSUUID)
+        }
     }
 
     public func retrySave() {
