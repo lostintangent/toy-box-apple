@@ -14,6 +14,8 @@ struct ComposerSurface: View {
     @Environment(\.colorScheme) private var colorScheme
     @ViewState private var showPhotos = false
     @ViewState private var showFiles = false
+    @ViewState private var reattachingImageID: UUID?
+    @ViewState private var reattachment: Task<Void, Never>?
     @ViewState private var photoItems: [PhotosPickerItem] = []
     @ViewState private var restoresFocus = false
     @ViewState private var dragging = false
@@ -54,11 +56,20 @@ struct ComposerSurface: View {
         .photosPicker(isPresented: $showPhotos, selection: $photoItems, matching: .images,
                       preferredItemEncoding: .current)
         .fileImporter(isPresented: $showFiles, allowedContentTypes: [.image],
-                      allowsMultipleSelection: true) { result in
+                      allowsMultipleSelection: reattachingImageID == nil) { [draft] result in
             switch result {
-            case .success(let urls): draft.attachFiles(urls)
+            case .success(let urls):
+                if let id = reattachingImageID {
+                    if let url = urls.first {
+                        reattachment?.cancel()
+                        reattachment = Task { _ = await draft.reattachImage(id: id, from: url) }
+                    }
+                } else {
+                    draft.attachFiles(urls)
+                }
             case .failure(let error): draft.error = "Images could not be attached: \(error.localizedDescription)"
             }
+            reattachingImageID = nil
             restoreFocus()
         }
         .onChange(of: photoItems) { _, items in
@@ -68,6 +79,7 @@ struct ComposerSurface: View {
             Task { await session.importPhotos(items) }
         }
         .onChange(of: showPhotos) { _, presented in if !presented { restoreFocus() } }
+        .onChange(of: showFiles) { _, presented in if !presented { restoreFocus() } }
         .onChange(of: management.flow?.id) { _, id in if id == nil { restoreFocus() } }
         .onChange(of: mentionContext) { _, _ in
             dismissedCompletion = nil
@@ -88,6 +100,7 @@ struct ComposerSurface: View {
         }
         .onChange(of: draft.revision) { _, _ in registerDraft() }
         .onAppear { composer.reconcile(); registerDraft() }
+        .onDisappear { reattachment?.cancel() }
         .task(id: store.phase) { await connectionGrace.watch(store.phase, for: draftID) }
         .confirmationDialog("Keep your current draft?", isPresented: Binding(
             get: { composer.pendingEdit != nil },
@@ -160,7 +173,11 @@ struct ComposerSurface: View {
                 .padding(.leading, 12)
             }
             if !draft.images.isEmpty {
-                ComposerImageStrip(draft: draft) { preparePresentation(); showFiles = true }
+                ComposerImageStrip(draft: draft) { id in
+                    preparePresentation()
+                    reattachingImageID = id
+                    showFiles = true
+                }
             }
         }
         .frame(maxWidth: .infinity)
@@ -193,7 +210,11 @@ struct ComposerSurface: View {
     private var attachmentMenu: some View {
         Menu {
             Button("Choose Photos", systemImage: "photo.on.rectangle") { preparePresentation(); showPhotos = true }
-            Button("Choose Files", systemImage: "folder") { preparePresentation(); showFiles = true }
+            Button("Choose Files", systemImage: "folder") {
+                preparePresentation()
+                reattachingImageID = nil
+                showFiles = true
+            }
         } label: {
             Image(systemName: "photo.badge.plus").frame(width: 44, height: 44)
         }
