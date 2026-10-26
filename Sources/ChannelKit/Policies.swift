@@ -44,6 +44,23 @@ public func channelTasksProgress(_ tasks: [ChannelTask]) -> TaskProgress {
     TaskProgress(done: tasks.filter { $0.status == "done" }.count, total: tasks.count)
 }
 
+extension ChannelTask {
+    public var isExpandedByDefault: Bool { status != "done" }
+
+    public var showsChildProgress: Bool {
+        children?.isEmpty == false && status != "pending" && status != "done"
+    }
+
+    public var statusDescription: String {
+        switch status {
+        case "in_progress": "in progress"
+        case "done": "done"
+        case "blocked": "blocked"
+        default: "pending"
+        }
+    }
+}
+
 public struct ChannelTaskTiming: Equatable, Sendable {
     public let elapsedMinutes: Int
     public let checkInMinutes: Int?
