@@ -1,5 +1,6 @@
 import ChannelClient
 import SwiftUI
+import ToyBoxUI
 
 struct RootView: View {
     @Environment(AppModel.self) private var model
