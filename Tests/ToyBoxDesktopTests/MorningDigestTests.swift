@@ -12,7 +12,9 @@ struct MorningDigestTests {
                                  sender: .agent("lead"), content: .text("Finished the layout."))])
         let line = try #require(MorningDigest.line(state))
         #expect(line.text == "1 new message" && line.count == 1)
-        #expect(MorningDigest.line(self.state([])) == nil)
+        var userOnly = state
+        userOnly.messages[0].sender = .user
+        #expect(MorningDigest.line(userOnly) == nil)
         let summary = CatchUp(needsYou: nil, changes: [.init(text: "Fixed the layout.", sources: [2])], through: 2)
         #expect(MorningDigest.line(state, summary: summary)?.text == "Fixed the layout.")
         let content = MorningDigest.ordered([line, .init(channelID: "busy", name: "Busy", count: 12,
