@@ -64,7 +64,7 @@ struct TranscriptFindAccessory: View {
     private var field: some View {
         HStack(spacing: 6) {
             Image(systemName: "magnifyingglass")
-                .foregroundStyle(.secondary)
+                .foregroundStyle(TranscriptInk.secondary)
                 .accessibilityHidden(true)
             TextField("Search this channel", text: $find.query, selection: $selection)
                 .focused($isFocused)
@@ -93,7 +93,7 @@ struct TranscriptFindAccessory: View {
     private var count: some View {
         Text(find.phoneCountLabel)
             .font(.footnote.monospacedDigit())
-            .foregroundStyle(.secondary)
+            .foregroundStyle(TranscriptInk.secondary)
             .lineLimit(1)
             .layoutPriority(1)
             .accessibilityLabel("Matching messages: \(find.phoneCountLabel)")
@@ -126,7 +126,7 @@ struct TranscriptFindAccessory: View {
             HStack(spacing: 8) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Couldn't search older messages")
-                    Text(error).foregroundStyle(.secondary)
+                    Text(error).foregroundStyle(TranscriptInk.secondary)
                 }
                 Spacer(minLength: 0)
                 Button("Retry") { find.retryHistory() }
@@ -139,7 +139,7 @@ struct TranscriptFindAccessory: View {
                 Text("Searching older messages…")
             }
             .font(.footnote)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(TranscriptInk.secondary)
             .frame(minHeight: 28)
         }
     }

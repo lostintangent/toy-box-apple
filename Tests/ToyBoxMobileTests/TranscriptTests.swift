@@ -207,17 +207,20 @@ struct TranscriptTests {
         #expect(TranscriptGalleryPresenter.subtitle(sentAt: nil, index: 2, count: 3) == "3 of 3")
     }
 
-    @Test func theGallerySubtitleClearsTextContrastInBothAppearances() {
+    @Test func transcriptMetadataInkClearsTextContrastOnItsBackgroundsInBothAppearances() {
         func rgb(_ style: UIUserInterfaceStyle, _ color: UIColor) -> TranscriptRGB {
             var (red, green, blue, alpha): (CGFloat, CGFloat, CGFloat, CGFloat) = (0, 0, 0, 0)
             color.resolvedColor(with: UITraitCollection(userInterfaceStyle: style))
                 .getRed(&red, green: &green, blue: &blue, alpha: &alpha)
             return TranscriptRGB(red: red, green: green, blue: blue, alpha: alpha)
         }
-        let ink = UIColor(TranscriptImageGallery.subtitleInk)
+        let ink = UIColor(TranscriptInk.secondary)
         for style in [UIUserInterfaceStyle.light, .dark] {
-            let background = rgb(style, .systemBackground)
-            #expect(background.under(rgb(style, ink)).contrast(with: background) >= 4.5)
+            let base = rgb(style, .systemBackground)
+            // The transcript and gallery, Find's filled field and attachment cards.
+            for background in [base, base.under(rgb(style, .tertiarySystemFill)), rgb(style, .secondarySystemBackground)] {
+                #expect(background.under(rgb(style, ink)).contrast(with: background) >= 4.5)
+            }
         }
     }
 

@@ -412,7 +412,7 @@ private struct TranscriptPagingAccessory: View {
             if let error {
                 VStack(spacing: 4) {
                     Text("Couldn't load older messages").font(.footnote.weight(.semibold))
-                    Text(error).font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                    Text(error).font(.caption).foregroundStyle(TranscriptInk.secondary).multilineTextAlignment(.center)
                     Button("Retry", action: load).font(.footnote.weight(.semibold)).frame(minHeight: 44)
                 }
                 .padding(.top, 8)
@@ -442,7 +442,7 @@ private struct TranscriptSendAttempt: View {
                                   identifier: "send-\(attempt.id)")
                 .opacity(attempt.phase == .sending ? 0.65 : 1)
             if let error = actionError ?? attempt.error {
-                Text(error).font(.footnote).foregroundStyle(.secondary)
+                Text(error).font(.footnote).foregroundStyle(TranscriptInk.secondary)
             }
             if attempt.canRetry {
                 HStack(spacing: 12) {
@@ -550,7 +550,7 @@ private struct TranscriptReconnecting: View {
             ProgressView().controlSize(.small)
             VStack(alignment: .leading, spacing: 0) {
                 Text("Reconnecting").font(.footnote.weight(.semibold))
-                Text("Messages may be out of date").font(.caption).foregroundStyle(.secondary)
+                Text("Messages may be out of date").font(.caption).foregroundStyle(TranscriptInk.secondary)
             }
             Button("Retry", action: retry).font(.footnote.weight(.semibold)).frame(minHeight: 44)
         }
@@ -610,7 +610,7 @@ private struct TranscriptState: View {
             } else {
                 VStack(spacing: 12) {
                     if showsProgress { ProgressView() }
-                    Text("Connecting").font(.footnote).foregroundStyle(.secondary)
+                    Text("Connecting").font(.footnote).foregroundStyle(TranscriptInk.secondary)
                 }
                 .task {
                     try? await Task.sleep(for: .milliseconds(300))
