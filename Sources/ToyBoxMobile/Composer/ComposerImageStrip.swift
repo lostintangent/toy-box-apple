@@ -3,7 +3,7 @@ import SwiftUI
 
 struct ComposerImageStrip: View {
     let draft: ComposerDraft
-    let onReattach: () -> Void
+    let onReattach: (UUID) -> Void
 
     var body: some View {
         ScrollView(.horizontal) {
@@ -14,7 +14,7 @@ struct ComposerImageStrip: View {
                             if let bitmap = draft.thumbnail(for: image) {
                                 Image(decorative: bitmap, scale: 1).resizable().scaledToFill()
                             } else {
-                                Button(action: onReattach) {
+                                Button { onReattach(image.id) } label: {
                                     Image(systemName: "exclamationmark.triangle")
                                         .frame(width: 56, height: 56)
                                 }
