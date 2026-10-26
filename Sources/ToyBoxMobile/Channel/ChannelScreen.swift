@@ -89,41 +89,63 @@ struct ChannelScreen: View {
 
     @ToolbarContentBuilder
     private var conversationToolbar: some ToolbarContent {
+        if sizeClass == .compact {
+            ToolbarItemGroup(placement: .primaryAction) {
+                overviewButton
+                channelActions
+            }
+            ToolbarItem(placement: .bottomBar) {
+                messageView
+            }
+        } else {
+            ToolbarItemGroup(placement: .primaryAction) {
+                messageView
+                channelActions
+                overviewButton
+            }
+        }
+    }
+
+    private var messageView: some View {
         @Bindable var interaction = interaction
-        ToolbarItemGroup(placement: .primaryAction) {
-            Menu("Message View", systemImage: "line.3.horizontal.decrease") {
-                Picker("Message View", selection: $interaction.messageView) {
-                    Text("All Messages").tag(TranscriptView.all)
-                    Text("Your Messages").tag(TranscriptView.yours)
-                }
-                .disabled(store.phase == .deleted)
-            }
-            Menu("Channel Actions", systemImage: "ellipsis") {
-                Button("Find in Conversation", systemImage: "magnifyingglass") {
-                    interaction.findInChannel()
-                }
-                .disabled(store.phase == .deleted)
-                Button("Refresh", systemImage: "arrow.clockwise") { store.reconnect() }
-                    .disabled(!model.isActive || store.phase == .deleted)
-                Button("Open in Toy Box", systemImage: "arrow.up.forward.square") {
-                    model.openInToyBox(channelID: store.id)
-                }
-                .disabled(store.phase == .deleted)
-                Divider()
-                Button("Edit Channel", systemImage: "pencil") {
-                    management.present(.editChannel(channelId: store.id))
-                }
-                .disabled(!store.phase.isLive)
-                Button("Delete Channel", systemImage: "trash", role: .destructive) {
-                    management.present(.deleteChannel(channelId: store.id))
-                }
-                .disabled(!store.phase.isLive)
-            }
-            Button("Overview", systemImage: "sidebar.trailing") {
-                interaction.isInspectorPresented.toggle()
+        return Menu("Message View", systemImage: "line.3.horizontal.decrease") {
+            Picker("Message View", selection: $interaction.messageView) {
+                Text("All Messages").tag(TranscriptView.all)
+                Text("Your Messages").tag(TranscriptView.yours)
             }
             .disabled(store.phase == .deleted)
         }
+    }
+
+    private var channelActions: some View {
+        Menu("Channel Actions", systemImage: "ellipsis") {
+            Button("Find in Conversation", systemImage: "magnifyingglass") {
+                interaction.findInChannel()
+            }
+            .disabled(store.phase == .deleted)
+            Button("Refresh", systemImage: "arrow.clockwise") { store.reconnect() }
+                .disabled(!model.isActive || store.phase == .deleted)
+            Button("Open in Toy Box", systemImage: "arrow.up.forward.square") {
+                model.openInToyBox(channelID: store.id)
+            }
+            .disabled(store.phase == .deleted)
+            Divider()
+            Button("Edit Channel", systemImage: "pencil") {
+                management.present(.editChannel(channelId: store.id))
+            }
+            .disabled(!store.phase.isLive)
+            Button("Delete Channel", systemImage: "trash", role: .destructive) {
+                management.present(.deleteChannel(channelId: store.id))
+            }
+            .disabled(!store.phase.isLive)
+        }
+    }
+
+    private var overviewButton: some View {
+        Button("Overview", systemImage: "sidebar.trailing") {
+            interaction.isInspectorPresented.toggle()
+        }
+        .disabled(store.phase == .deleted)
     }
 }
 

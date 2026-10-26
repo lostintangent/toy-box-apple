@@ -9,6 +9,7 @@ struct ChannelSidebarFooter: View {
     let canRetry: Bool
     let retry: () -> Void
     let openSettings: () -> Void
+    var showsSettingsButton = true
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ViewState private var showsProgress = false
 
@@ -26,38 +27,23 @@ struct ChannelSidebarFooter: View {
                         if canRetry {
                             Button("Retry", action: retry).frame(minHeight: 44)
                         }
-                        Button("Settings", action: openSettings).frame(minHeight: 44)
+                        if showsSettingsButton {
+                            Button("Settings", action: openSettings).frame(minHeight: 44)
+                        }
                     }
                 }
             }
-            Button(action: openSettings) {
-                HStack(spacing: 8) {
-                    Circle()
-                        .fill(serverURL.isEmpty && error == nil ? .secondary : connection.dot)
-                        .frame(width: 7, height: 7)
-                        .opacity(showsProgress ? 0 : 1)
-                        .overlay {
-                            if showsProgress {
-                                ProgressView().controlSize(.mini).fixedSize()
-                            }
-                        }
-                    Text(serverURL.isEmpty ? "Choose a Server"
-                         : "\(connection.verb) \(SidebarConnection.server(serverURL))")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                    Spacer(minLength: 0)
-                    Image(systemName: "gear")
-                        .foregroundStyle(.secondary)
-                }
-                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                .contentShape(Rectangle())
+            if showsSettingsButton {
+                Button(action: openSettings) { connectionStatus }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Server Settings")
+                    .accessibilityValue(connectionDescription)
+            } else {
+                connectionStatus
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("Server connection")
+                    .accessibilityValue(connectionDescription)
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Server Settings")
-            .accessibilityValue(serverURL.isEmpty ? "No server configured"
-                                : "\(SidebarConnection.server(serverURL)), \(connection.accessibilityValue)")
         }
         .padding(.horizontal)
         .padding(.vertical, 8)
@@ -68,5 +54,37 @@ struct ChannelSidebarFooter: View {
             }
             withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) { showsProgress = busy }
         }
+    }
+
+    private var connectionDescription: String {
+        serverURL.isEmpty ? "No server configured"
+            : "\(SidebarConnection.server(serverURL)), \(connection.accessibilityValue)"
+    }
+
+    private var connectionStatus: some View {
+        HStack(spacing: 8) {
+            Circle()
+                .fill(serverURL.isEmpty && error == nil ? .secondary : connection.dot)
+                .frame(width: 7, height: 7)
+                .opacity(showsProgress ? 0 : 1)
+                .overlay {
+                    if showsProgress {
+                        ProgressView().controlSize(.mini).fixedSize()
+                    }
+                }
+            Text(serverURL.isEmpty ? "Choose a Server"
+                 : "\(connection.verb) \(SidebarConnection.server(serverURL))")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Spacer(minLength: 0)
+            if showsSettingsButton {
+                Image(systemName: "gear")
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+        .contentShape(Rectangle())
     }
 }
