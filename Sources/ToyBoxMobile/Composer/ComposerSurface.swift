@@ -7,6 +7,7 @@ import UniformTypeIdentifiers
 
 struct ComposerSurface: View {
     @Bindable var session: ComposerSession
+    let showsTray: Bool
     @Environment(AppModel.self) private var model
     @Environment(ChannelInteraction.self) private var interaction
     @Environment(ManagementPresenter.self) private var management
@@ -139,7 +140,7 @@ struct ComposerSurface: View {
 
     private var container: some View {
         VStack(spacing: 0) {
-            ComposerTaskProgress(store: store, showTasks: showTasks)
+            if showsTray { ComposerTaskProgress(store: store, showTasks: showTasks) }
             if hasNotices || composer.replySource != nil || !draft.images.isEmpty {
                 ViewThatFits(in: .vertical) {
                     accessories
