@@ -354,6 +354,9 @@ extension NativeComposerInput.Coordinator: DictationTextTarget {
             Self.logger.error("Dictation could not register its native undo operation.")
             return
         }
+        let ownsGroup = undo.groupingLevel == 0 && !undo.groupsByEvent
+        if ownsGroup { undo.beginUndoGrouping() }
+        defer { if ownsGroup { undo.endUndoGrouping() } }
         // Keep the action's range alive without retaining the coordinator or text view.
         undo.registerUndo(withTarget: edit) { [weak self, edit] _ in
             self?.applyDictationUndo(edit)
