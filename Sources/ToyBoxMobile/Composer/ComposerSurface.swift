@@ -101,8 +101,9 @@ struct ComposerSurface: View {
         .onChange(of: showPhotos) { _, presented in if !presented { restoreFocus() } }
         .onChange(of: showFiles) { _, presented in if !presented { restoreFocus() } }
         .onChange(of: management.flow?.id) { _, id in if id == nil { restoreFocus() } }
-        .onChange(of: isReaderCovered, initial: true) { _, covered in
+        .onChange(of: isReaderCovered, initial: true) { wasCovered, covered in
             if covered { dictation.deactivate() }
+            else if wasCovered { Task { await dictation.refreshLanguageSupport() } }
             editor.setReaderCovered(covered, canRestoreFocus: canRestoreReaderFocus && !interaction.isRequestPreviewPresented)
         }
         .onChange(of: interaction.isRequestPreviewPresented) { _, covered in
@@ -140,7 +141,9 @@ struct ComposerSurface: View {
             reattachment?.cancel()
             dictation.deactivate()
         }
-        .task { await dictation.refreshLanguageSupport() }
+        .task(id: scenePhase) {
+            if scenePhase == .active, !isReaderCovered { await dictation.refreshLanguageSupport() }
+        }
         .task(id: store.phase) { await connectionGrace.watch(store.phase, for: draftID) }
         .confirmationDialog("Keep your current draft?", isPresented: Binding(
             get: { composer.pendingEdit != nil },
@@ -445,6 +448,7 @@ struct ComposerSurface: View {
     }
     private func restoreFocus() {
         guard !interaction.isRequestPreviewPresented else { return }
+        if scenePhase == .active { Task { await dictation.refreshLanguageSupport() } }
         if restoresFocus && canPresentRequestPreview { editor.focus() }
         restoresFocus = false
     }
