@@ -3,6 +3,7 @@ import AVFoundation
 @testable import ChannelClient
 import ChannelKit
 import Foundation
+import Observation
 import Speech
 import SwiftUI
 import Synchronization
@@ -168,6 +169,33 @@ struct ComposerTests {
             #expect(session.error?.contains("request changed") == true)
             #expect(store.state?.channel.seenThrough == 0)
         }
+    }
+
+    @Test func auxiliaryEligibilityStopsObservingAfterItsFirstBlocker() throws {
+        let draft = ComposerDraft()
+        let store = ChannelStore(id: "test", api: try ChannelAPI(serverURL: "http://localhost:3210"),
+                                 sendJournal: nil)
+        let session = AuxiliaryComposerSession(store: store, scope: .inboxReply(sequence: 8), draft: draft)
+        let offlineChanges = Mutex(0)
+        let offline = withObservationTracking { session.canSend } onChange: {
+            offlineChanges.withLock { $0 += 1 }
+        }
+        #expect(!offline)
+        session.invalidateRequest()
+        draft.text = "An offline reply"
+        #expect(offlineChanges.withLock { $0 } == 0)
+        let channel = Channel(id: "test", name: "Test", model: .init(provider: "test", name: "test"),
+                              requestSequence: 8, updatedAt: "2026-10-24T00:00:00Z")
+        let state = ChannelState(revision: 1, channel: channel, lead: .lead(id: "lead"))
+        _ = try store.apply(.init(type: "snapshot", state: state))
+        #expect(offlineChanges.withLock { $0 } == 1)
+        let staleChanges = Mutex(0)
+        let stale = withObservationTracking { session.canSend } onChange: {
+            staleChanges.withLock { $0 += 1 }
+        }
+        #expect(!stale)
+        draft.text = "A newer reply to the stale request"
+        #expect(staleChanges.withLock { $0 } == 0)
     }
 
     @Test func quickSendPrefillPreservesDraftsAndIsAppliedOnlyOnce() async throws {
@@ -429,8 +457,11 @@ struct ComposerTests {
             #expect(session.takeConfirmationPresentation() == nil)
             #expect(!draft.hasContent)
             #expect(draft.sendAttemptID == nil)
+            draft.text = "A new draft after confirmation"
+            #expect(!session.canSend)
             session.beginPresentation()
             #expect(session.confirmation == nil)
+            #expect(session.canSend)
             draft.text = "A different unconfirmed message"
             draft.associateSend(id: "second")
             let editedSession = AuxiliaryComposerSession(store: store, scope: .quickSend, draft: draft)

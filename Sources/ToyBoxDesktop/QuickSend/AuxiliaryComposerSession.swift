@@ -78,9 +78,12 @@ final class AuxiliaryComposerSession {
     var isReadOnly: Bool { submission != nil && draft.sendAttemptID == submission?.id }
 
     var canSend: Bool {
-        store.phase.isLive && !store.isSending && !isSubmitting && !requestChanged
-            && confirmation == nil && draft.hasContent && !draft.isLoadingImages
-            && !draft.hasUnreadableImage && draft.text.utf16.count <= 12_000
+        channelCanSend(
+            isLive: store.phase.isLive, isSending: store.isSending, isSubmitting: isSubmitting,
+            hasContent: !requestChanged && confirmation == nil && draft.hasContent,
+            isLoadingImages: draft.isLoadingImages, hasUnreadableImage: draft.hasUnreadableImage,
+            textUTF16Count: draft.text.utf16.count
+        )
     }
 
     var isUnconfirmed: Bool {
