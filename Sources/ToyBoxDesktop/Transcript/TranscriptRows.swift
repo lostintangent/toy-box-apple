@@ -182,8 +182,6 @@ private struct TranscriptRule: View {
     }
 }
 
-/// System rows that directly follow another system row without a divider, which stack 4 points
-/// apart as one group instead of taking the 20-point run spacing.
 /// The gap above each row after the first, which keeps the run gap.
 func transcriptRowGaps(_ rows: [TranscriptRow]) -> [String: CGFloat] {
     Dictionary(zip(rows, rows.dropFirst()).map { ($1.id, TranscriptSpacing.between($0, $1)) },
