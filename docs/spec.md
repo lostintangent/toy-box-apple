@@ -448,6 +448,22 @@ composer's leading edge sits on the avatars' leading edge. At the default 720-po
 width, W is 672, agent surfaces reach 628 and your messages 538. Do not let modifier order
 produce a composer wider than the lane.
 
+On the phone, use the same full-available-lane behavior, preserving its accepted native edge
+insets. Do not cap the overall transcript, activity controls or composer at 720 points in a
+wide scene. Remove that independent container limit from transcript and composer together,
+without changing folded horizontal geometry or document-reader widths. The Mac's 720-point
+example above is a sample conversation width, not a lane cap.
+In an unfolded phone scene, share the Mac's text-scaled individual surface caps: agents up to
+760, yours up to the lesser of 80% of the available lane or 640. Keep the existing phone
+identity gutter. Folded message limits remain unchanged.
+Verify wide unfolded landscape layout and repeated Overview close/reopen separately. The user
+reports an approximately two-second delay, not a failed close action. A header change alone
+does not establish that this delay is fixed.
+Folded with the software keyboard down, remove the extra 8-point bottom gap so the composer's
+bottom edge meets the bottom safe area. Add no toolbar-frame geometry seam or measured offset.
+Always keep the existing 8-point clearance above a visible keyboard, native keyboard avoidance
+and all control targets. Unfolded keeps its existing bottom spacing.
+
 Normal agent surfaces use a visible neutral tonal fill, not an almost invisible outline on the
 same color as the conversation. Derive the fill from primary ink over the opaque conversation
 background: approximately 4.5% in light appearance and 7% in dark. Preserve normal primary text,
@@ -687,6 +703,18 @@ Opening a channel selects it in the current window. Command-click or Open in New
 separate window for that channel and leaves the current window's channel and selection unchanged. Windows share the same channel store and draft. Only a key,
 visible conversation actively acknowledges reading. Restoring a window must not send a message or
 silently mark its unseen content as read.
+
+**Phone channel search, user 3501 and Lead 3503.** Use the native bottom-bar search item beside
+Settings in the channel-list column, folded and unfolded. Search raises the keyboard with its
+field above it, and Cancel restores the bar. No hand-built safe-area text field or duplicate
+gear in the rail. Keep the large Toy Box title, New Channel and More at the top. Report a native
+placement limitation in the unfolded column instead of substituting custom controls.
+Remove the healthy/connecting connection dot, server label and busy footer spinner. Settings
+owns server identity and connection details. Keep pull to refresh and the shared name/purpose/
+directory filtering unchanged. Command-F focuses channel search when the list is active,
+without replacing in-conversation Find. A catalog failure still shows its heading, useful error,
+Retry and reachable Settings at the bottom. Cached rows alone do not prove a live connection.
+First-launch Connect to Toy Box and the Mac sidebar remain unchanged.
 
 ### Visual system
 
@@ -1452,25 +1480,31 @@ with a zero-spacing `VStack` and 16-point horizontal insets. Order: About (untit
 Tasks, Artifacts, Routines. Separate sections with a native `Divider()` across the content
 width, with 2 points of vertical padding. No cards, count capsules, section fills or uppercase.
 
-**Phone Overview, user feedback 3332 and design 3339/3344.** Use a plain native list,
-including expanded work rows. Opening purpose and details sit directly on the sheet background,
-without an enclosing card. Preserve native row separators, navigation, swipe actions and the
-existing task/team anatomy. Apply the leading content rail once, 16 points inside compact safe
-content or 20 in regular width, not the old 44-point combined grouped-list and row inset.
-Section headings are real minimum-44 button rows, not padded native
-section-header slots over empty bodies. At Large, measure these gaps between layout bounds:
-12 points from the inline navigation bar's bottom safe-area edge to the first purpose text;
-16 from the purpose block to details; 4 between folder label and wrapping path; 8 from folder
-block to Preview; 16 after opening information to the first heading; 4 from an expanded
-heading to content; 16 after expanded content to the next heading; 8 between collapsed
-heading targets. Consecutive collapsed headings are therefore 52 points top-to-top, not 87.
-More/Less belongs to the purpose block, stays minimum 44 and has no extra spacer above it.
-Omit absent content and its gaps. Grow rows and headings with Dynamic Type, never enforce
-52 as a fixed height or add another native section gap. Mac geometry stays unchanged.
+**Phone Overview, user 3484/3506 and design 3510.** Keep the plain native background.
+Section distinction comes from larger headings and deliberate space, not grouped cards.
+This supersedes the interim grouped-background recommendation in 3485/3489. Do not change
+accepted Team/Tasks/Routines content or row anatomy. No colored panels, glass, shadows,
+section fills or nested task cards. Keep count, diff and disclosure in the same minimum-44
+heading button.
+Separators appear only between rows, never below a group's final row. Preserve native
+navigation, swipe actions, task guides, disclosure, retained scroll and actual Tasks reveal.
+
+Remove the root Overview title bar without reserving its empty height. Keep the native Close
+and channel-actions menu as compact top-right controls, with purpose starting beside them
+at the top safe content edge. Folder and Preview use the full content width below. All opening
+information stays outside cards. Retain the Overview accessibility label, native sheet
+dismissal, nested agent/task navigation and the same behavior in both presentations.
+Apply the compact 16-point / regular 20-point outer rail once, without the old compounded
+44-point list margin. At Large, use 16 points from purpose to details, 4 from folder label
+to wrapping path, 8 from folder block to Preview, 16 after opening information to the first
+heading, 4 from heading to content, and 24 from an expanded section's end to the next heading.
+Consecutive collapsed headings have a 12-point gap. More/Less stays minimum 44 with no
+extra spacer above it. Omit absent content and its gaps. Headings and rows grow with
+Dynamic Type. Mac container geometry stays unchanged.
 
 **Section headers: names lead, facts follow.** The name is the primary anchor and its count is
 quiet supporting information, never a badge or part of the name. Mac uses 13 semibold primary
-and 13 regular readable secondary; phone uses native subheadline 15 semibold primary and
+and 13 regular readable secondary; phone uses native title3 20 semibold primary and
 footnote 13 regular readable secondary at Large. Baseline-align name/count with a 6-point gap
 and tabular digits. Set both text styles explicitly, not through inherited Form header ink.
 Use package-scoped ToyBoxUI `ChannelOverviewInk.secondary(in:)`, opaque sRGB `#636366` Light /
@@ -1658,8 +1692,7 @@ Update once a minute only while the timed row
 is visible. VoiceOver uses expanded units, with no live announcements. These rules apply
 to the shared tray rows too.
 
-**Artifacts.** Rows are at least 40 high: the file's real Finder icon at 28 points
-(`NSWorkspace.shared.icon(for:)` with the UTType from its extension), a 10-point gap, the title
+**Artifacts.** Mac rows are at least 40 high: a 28-point native Finder file icon, a 10-point gap, the title
 in 13 regular on one line, and an 11-point secondary line, "Kit · 3 hr. ago", with the full date
 in help. Format the time with `RelativeDateTimeFormatter`, `.named` and `.short` ("3 hr. ago",
 "yesterday"). The sharer is the actor of the latest matching `artifact_shared` event. Until Core
@@ -1671,6 +1704,23 @@ Copy Link. Markdown, HTML, SVG and image artifacts open the in-window artifact v
 not a reader sheet. Other types retain Quick Look and the default application. Show actual
 fetching and error states, and never open a blank success-shaped reader. Load content from the
 server resource URL, never by assuming the file is local.
+
+Mac preserves the existing Finder-provided, file-type-specific icons. Do not substitute the
+phone's monochrome symbols in Mac Overview or the artifact pager.
+The phone Overview list uses one pure file-type-to-SF-Symbol mapping: Markdown and unknown
+types keep `doc.text`, HTML uses `chevron.left.forwardslash.chevron.right`, SVG uses
+`square.on.circle`, and raster images use `photo`. Preserve the phone's symbol lane, ink and
+row geometry. Use the same mapping in phone artifact-viewer pager tiles so a file's symbol matches
+its list entry. Classify SVG before generic images using the existing content-kind policy.
+Keep every phone symbol within the same 24-point icon lane and the current document icon's
+visual size. Bound wider HTML and SVG artwork to that footprint without stretching its aspect
+ratio, enlarging the column or adopting the Mac's 28-point size.
+Phone artifact rows match Team's compact two-line rhythm: body title and footnote date,
+2-point interline gap, 24-point icon lane and the existing 12-point icon/text gap. Remove the
+64-point content minimum rather than adding native row padding around it. Aim for Team's
+60-point total at Large, keep a full minimum-44 target and grow for wrapping or larger text.
+This is the Artifacts section, not the separate task-artifact link whose compact 35-point
+candidate remains subject to native padded-area and neighboring-action review.
 
 **Routines.** Rows share the artifact geometry: a 28-point icon cell with a 15-point secondary
 `calendar.badge.clock`, the title in 13 regular, and the schedule in words in 11 secondary:
@@ -1777,6 +1827,15 @@ default button sit trailing. Command-Return submits a valid sheet, Escape cancel
 leaves all fields and the sheet intact. After a 500, say the change may have been applied, block
 resubmitting against the old baseline, and refresh from the server. Then either show the
 reconciled state or offer a reviewed retry.
+
+**Phone channel forms, user 3490 and Lead 3497.** Neither New Channel nor Edit Channel shows
+a Folder/Working directory field. Phone creation omits the directory from its request and
+creates a discussion-only channel. Editing must preserve any existing server directory
+without exposing or writing it. New Channel removes the recruiting-agent introduction.
+Its Name row has a visible "Name" label aligned like Lead model, with "Required" as the field
+prompt. Leave Purpose, model/options, validation, focus, cancellation and write recovery
+unchanged. Edit Channel retains its own explanatory note. These changes do not alter the
+Mac forms or the read-only folder information in phone Overview.
 
 New Channel, Edit Channel, Add Agent and Edit Member share one sheet language:
 
