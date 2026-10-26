@@ -50,6 +50,22 @@ struct OverviewTests {
         #expect(!presentation.isCompactSheetPresented)
     }
 
+    @Test func tasksRevealReplacesQueuedScrollRestorationAndAgentNavigation() throws {
+        let api = try ChannelAPI(serverURL: "https://fixture.example")
+        let session = OverviewSession(store: ChannelStore(id: "channel", api: api))
+        session.navigationPath = ["agent"]
+        session.scrollOffset = 244
+        session.prepareForPresentation()
+        session.restoreScroll()
+        #expect(session.scrollPosition.point?.y == 244)
+        session.prepareForPresentation()
+        session.prepareForTaskReveal()
+        session.restoreScroll()
+        #expect(session.navigationPath.isEmpty)
+        #expect(session.restorationOffset == nil)
+        #expect(session.scrollPosition.point == nil)
+    }
+
     @Test func managementReconstructionRetainsEntriesPendingAndFocus() throws {
         try withModel { app in
             let catalog = try #require(app.catalog)
