@@ -180,6 +180,9 @@ view.
   `bun run mobile --shutdown` shuts it down. `MOBILE_SIMULATOR=<UDID>` is only for selecting an
   agreed shared device, not for creating one per agent.
 - `bun run mobile --build-only` builds the Simulator bundle without booting a device.
+  Device builds always use the optimized release configuration. Simulator test bundles always
+  remain debug. Simulator app builds default to debug, with `CONFIGURATION=release` for native
+  performance comparisons. The build output states the configuration and whether it is optimized.
   `bun run mobile --device --build-only` builds an **unsigned** arm64 device bundle, without
   reading signing identities or provisioning profiles.
   Both stamp and verify the executable's real selected iOS SDK in `LC_BUILD_VERSION`, preserving
@@ -237,6 +240,12 @@ Agents never create these accounts, accept agreements, read private keys or set 
 
 ## Test reliability
 
+- The Simulator fake-compiler icon case in `scripts/dev/mobile-icon.test.ts` is quarantined behind
+  `TOY_BOX_TEST_MOBILE_ICON_TIMING=1`. On 2026-10-26, the device-release tooling check on `ec34039`
+  plus the configuration-only change exceeded Bun's unchanged 5,000 ms test watchdog at 5,005.64 ms.
+  The device counterpart and all other 29 tooling cases passed. No icon code changed and no cause
+  is established. Core owns `mobile-icon-tooling-readiness`: identify the stalled command and add
+  deterministic completion coverage before restoring it. Do not retry the same candidate to green.
 - A test that fails on main without an identified code cause must be quarantined behind an
   explicit opt-in the same day. Do not leave it in the merge gate while rerunning CI or patching
   timing races in place. Record the failed run, test case and diagnostics, with an owner and
