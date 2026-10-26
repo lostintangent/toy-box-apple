@@ -22,6 +22,57 @@ struct OverviewArtifactsSection: View {
     }
 }
 
+struct OverviewArtifactList: View {
+    let store: ChannelStore
+    let onOpen: (ChannelArtifact) -> Void
+
+    var body: some View {
+        Group {
+            if store.artifacts.isEmpty {
+                ContentUnavailableView("No Artifacts Yet", systemImage: "doc",
+                                       description: Text("Files shared by this team will appear here."))
+            } else {
+                List(channelArtifactsNewestFirst(store.artifacts)) { artifact in
+                    Button { onOpen(artifact) } label: {
+                        OverviewArtifactLabel(artifact: artifact, share: store.artifactShares[artifact.file.id])
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("artifact-list-\(artifact.id)")
+                }
+            }
+        }
+        .accessibilityIdentifier("overview-artifact-list")
+    }
+}
+
+private struct OverviewArtifactLabel: View {
+    let artifact: ChannelArtifact
+    let share: ChannelArtifactShare?
+    var preparing = false
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: ArtifactContentKind(artifact) == .image ? "photo" : "doc.text")
+                .font(.title2)
+                .frame(width: 24)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(artifact.title).font(.body).lineLimit(2)
+                if let date = (share?.sharedAt ?? artifact.sharedAt).flatMap(ChannelDates.date) {
+                    Text(date, format: .dateTime.month(.abbreviated).day().hour().minute())
+                        .font(.footnote).foregroundStyle(.secondary)
+                } else {
+                    Text("Share date unavailable").font(.footnote).foregroundStyle(.secondary)
+                }
+            }
+            Spacer(minLength: 0)
+            if preparing { ProgressView().accessibilityLabel("Preparing original file") }
+        }
+        .frame(minHeight: 64, alignment: .leading)
+        .contentShape(Rectangle())
+    }
+}
+
 private struct OverviewArtifactRow: View {
     let artifact: ChannelArtifact
     let share: ChannelArtifactShare?
@@ -41,25 +92,7 @@ private struct OverviewArtifactRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Button { viewer.open(artifact) } label: {
-                HStack(spacing: 12) {
-                    Image(systemName: ArtifactContentKind(artifact) == .image ? "photo" : "doc.text")
-                        .font(.title2)
-                        .frame(width: 24)
-                        .accessibilityHidden(true)
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(artifact.title).font(.body).lineLimit(2)
-                        if let date = (share?.sharedAt ?? artifact.sharedAt).flatMap(ChannelDates.date) {
-                            Text(date, format: .dateTime.month(.abbreviated).day().hour().minute())
-                                .font(.footnote).foregroundStyle(.secondary)
-                        } else {
-                            Text("Share date unavailable").font(.footnote).foregroundStyle(.secondary)
-                        }
-                    }
-                    Spacer(minLength: 0)
-                    if preparing { ProgressView().accessibilityLabel("Preparing original file") }
-                }
-                .frame(minHeight: 64, alignment: .leading)
-                .contentShape(Rectangle())
+                OverviewArtifactLabel(artifact: artifact, share: share, preparing: preparing)
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("artifact-\(artifact.id)")
