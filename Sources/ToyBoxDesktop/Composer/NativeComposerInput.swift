@@ -4,22 +4,6 @@ import Observation
 import SwiftUI
 import UniformTypeIdentifiers
 
-struct ComposerMentionContext {
-    let query: String
-    let range: NSRange
-
-    static func match(text: String, selection: NSRange) -> ComposerMentionContext? {
-        guard selection.length == 0, selection.location >= 0, selection.location <= text.utf16.count else { return nil }
-        let prefix = (text as NSString).substring(to: selection.location)
-        guard let regex = try? NSRegularExpression(pattern: "(?:^|[^a-zA-Z0-9-])@([a-zA-Z0-9-]*)\\z"),
-              let match = regex.firstMatch(in: prefix, range: NSRange(location: 0, length: prefix.utf16.count))
-        else { return nil }
-        let queryRange = match.range(at: 1)
-        return .init(query: (prefix as NSString).substring(with: queryRange).lowercased(),
-                     range: NSRange(location: queryRange.location - 1, length: queryRange.length + 1))
-    }
-}
-
 struct ComposerFailureFeedback: Equatable {
     let id: String
     let message: String
@@ -454,11 +438,11 @@ struct NativeComposerInput: NSViewRepresentable {
                 dismissCompletion()
                 return
             }
-            guard let context = ComposerMentionContext.match(text: input.string, selection: input.selectedRange())
+            guard let context = ChannelMentionContext.match(text: input.string, selection: input.selectedRange())
             else { dismissCompletion(); return }
             mentionRange = context.range
-            let items = MentionChoice.items(query: context.query, agents: parent.agents,
-                                            allowsCreation: parent.agentManagement.isVisible)
+            let items = ChannelMentionChoice.choices(matching: context.query, among: parent.agents,
+                                                     allowsCreation: parent.agentManagement.isVisible)
             guard !items.isEmpty else { dismissCompletion(); return }
             if completion.items.map(\.id) != items.map(\.id) { completion.selected = 0 }
             if completion.items != items { completion.items = items }
@@ -485,7 +469,7 @@ struct NativeComposerInput: NSViewRepresentable {
             }
         }
 
-        private func accept(_ item: MentionChoice) {
+        private func accept(_ item: ChannelMentionChoice) {
             guard let input, let range = mentionRange, completion.creatingID == nil else { return }
             if item.isCreate {
                 guard case .enabled(let create, _) = parent.agentManagement else { return }
@@ -865,46 +849,14 @@ extension NativeComposerInput.Coordinator: DictationTextTarget {
     }
 }
 
-struct MentionChoice: Identifiable, Equatable {
-    let id: String
-    let name: String
-    let detail: String
-    let handle: String
-    var agent: ChannelAgent?
-    var isCreate = false
-    var isMember = false
-
-    static func items(query: String, agents: [ChannelAgent], allowsCreation: Bool = true) -> [MentionChoice] {
-        var items: [MentionChoice] = []
-        if query.isEmpty || "everyone".contains(query) {
-            items.append(.init(id: "everyone", name: "Everyone", detail: "Notify everyone in the channel",
-                               handle: "@everyone"))
-        }
-        for agent in Array(agents.prefix(1)) + agents.dropFirst().sorted(by: {
-            $0.name.localizedStandardCompare($1.name) == .orderedAscending
-        }) where agent.deleted != true && agentMatchesMentionQuery(agent, query: query) {
-            items.append(.init(id: agent.id, name: agent.name, detail: agent.role ?? "Onboarding",
-                               handle: "@\(agentHandleFromName(agent.name))", agent: agent,
-                               isMember: agent.id != agents.first?.id))
-        }
-        let words = query.split(separator: "-")
-        if allowsCreation, !words.isEmpty && !items.contains(where: { $0.handle == "@\(query)" }) {
-            let name = words.map { $0.prefix(1).uppercased() + $0.dropFirst() }.joined(separator: " ")
-            items.append(.init(id: "create-\(query)", name: name, detail: "Creates and starts a new agent",
-                               handle: "@\(query)", isCreate: true))
-        }
-        return items
-    }
-}
-
 @MainActor @Observable private final class MentionMenuModel {
-    var items: [MentionChoice] = []
+    var items: [ChannelMentionChoice] = []
     var selected = 0
     var canManage = false
     var showsManagement = true
     var creatingID: String?
     var error: String?
-    @ObservationIgnored var onAccept: ((MentionChoice) -> Void)?
+    @ObservationIgnored var onAccept: ((ChannelMentionChoice) -> Void)?
     @ObservationIgnored var onEdit: ((ChannelAgent) -> Void)?
 }
 
@@ -943,7 +895,7 @@ private struct MentionCompletionMenu: View {
         .frame(maxHeight: 320)
     }
 
-    private func choiceRow(_ item: MentionChoice, index: Int) -> some View {
+    private func choiceRow(_ item: ChannelMentionChoice, index: Int) -> some View {
         HStack(spacing: 6) {
             Button {
                 model.onAccept?(item)
@@ -982,7 +934,7 @@ private struct MentionCompletionMenu: View {
                     in: RoundedRectangle(cornerRadius: 6))
     }
 
-    private func title(_ item: MentionChoice) -> String {
+    private func title(_ item: ChannelMentionChoice) -> String {
         if model.creatingID == item.id { return "Creating \(item.name)..." }
         return item.isCreate ? "Create \(item.name)" : item.name
     }
