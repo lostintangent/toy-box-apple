@@ -136,6 +136,7 @@ struct TranscriptUserMessage: View {
             }
         }
         .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("message-\(message.sequence)")
         .accessibilityLabel(transcriptMessageAccessibilityLabel(
             author: "You", timestamp: message.timestamp, delivery: deliveryLabel))
         .accessibilityAction(named: "Copy Message") { UIPasteboard.general.string = message.text }
@@ -225,6 +226,7 @@ struct TranscriptAgentMessage: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("message-\(entry.message.sequence)")
         .accessibilityLabel(transcriptMessageAccessibilityLabel(
             author: agent.name, timestamp: entry.message.timestamp,
             addressee: entry.addressee, request: entry.request))

@@ -98,6 +98,7 @@ struct ConversationView: View {
     @ViewState private var capturedArrival = false
     @ViewState private var showsJumpToLatest = false
     @ViewState private var highlightedSequence: Int?
+    @ViewState private var revealError: String?
     @ViewState private var requestedRead = 0
     @ViewState private var isPagingVisible = false
     @ViewState private var expanded: Set<String> = []
@@ -178,6 +179,8 @@ struct ConversationView: View {
         .overlay(alignment: .top) {
             if store.isLoaded, let message = store.phase.message {
                 TranscriptReconnecting(message: message) { store.reconnect() }
+            } else if let revealError {
+                TranscriptRevealNotice(message: revealError) { self.revealError = nil }
             }
         }
         .overlay {
@@ -281,12 +284,18 @@ struct ConversationView: View {
     private func reveal(sequence: Int, token: UUID) async {
         defer { interaction.consumeRevealRequest(token) }
         func target() -> TranscriptItem? { items.first { $0.messages.contains { $0.sequence == sequence } } }
+        revealError = nil
         await store.loadHistory(through: sequence)
         guard !Task.isCancelled, interaction.revealRequestToken == token else { return }
-        if target() == nil, store.messages.contains(where: { $0.sequence == sequence }) {
-            interaction.messageView = .all
+        guard store.messages.contains(where: { $0.sequence == sequence }) else {
+            revealError = store.historyError ?? "This message is no longer available."
+            return
         }
-        guard let item = target() else { return }
+        if target() == nil { interaction.messageView = .all }
+        guard let item = target() else {
+            revealError = "This message is no longer available."
+            return
+        }
         place(scroll.update(.reveal(item.id)))
         highlightedSequence = sequence
         try? await Task.sleep(for: .seconds(2))
@@ -435,6 +444,28 @@ private struct TranscriptReconnecting: View {
         .accessibilityHint(message)
         .padding(.top, 8)
         .transition(.opacity.combined(with: .offset(y: -4)))
+    }
+}
+
+/// Why a reveal couldn't land. It stays until dismissed or the next reveal, like the Mac's notice.
+private struct TranscriptRevealNotice: View {
+    let message: String
+    let dismiss: () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Label(message, systemImage: "exclamationmark.triangle")
+                .font(.footnote)
+                .lineLimit(2)
+            Button("Dismiss", action: dismiss).font(.footnote.weight(.semibold)).frame(minHeight: 44)
+        }
+        .padding(.horizontal, 14)
+        .frame(minHeight: 44)
+        .glassEffect(.regular, in: .capsule)
+        .padding(.top, 8)
+        .padding(.horizontal, 16)
+        .transition(.opacity.combined(with: .offset(y: -4)))
+        .onAppear { AccessibilityNotification.Announcement(message).post() }
     }
 }
 
