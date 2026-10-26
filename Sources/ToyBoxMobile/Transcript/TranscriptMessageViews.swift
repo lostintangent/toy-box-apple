@@ -126,10 +126,13 @@ struct TranscriptUserMessage: View {
     var identifier: String?
     var findHighlight: TranscriptFindHighlight?
     @Environment(\.horizontalSizeClass) private var sizeClass
+    /// Scales the Mac's reading caps with Dynamic Type.
+    @ScaledMetric(relativeTo: .body) private var textScale: CGFloat = 1
     @ViewState private var selectsText = false
 
     var body: some View {
-        TranscriptTrailingLane(fraction: sizeClass == .regular ? 0.8 : 0.88)() {
+        TranscriptUserLane(maxWidth: TranscriptUserLane.maximumWidth * textScale,
+                           fraction: sizeClass == .regular ? 0.8 : 0.88) {
             VStack(alignment: .trailing, spacing: 4) {
                 HStack(spacing: 6) {
                     Text("You").fontWeight(.semibold)
@@ -175,6 +178,7 @@ struct TranscriptAgentMessage: View {
     var findHighlight: TranscriptFindHighlight?
     var setExpanded: (Bool) -> Void = { _ in }
     @Environment(ChannelInteraction.self) private var interaction
+    @ScaledMetric(relativeTo: .body) private var textScale: CGFloat = 1
     @ViewState private var selectsText = false
     private var surface: TranscriptSurface { entry.request == .pending ? .pendingAgent : .agent }
 
@@ -212,6 +216,7 @@ struct TranscriptAgentMessage: View {
                     }
                         .padding(.horizontal, 12)
                         .transcriptBubble(surface)
+                        .transcriptWidthCap(TranscriptWidthCap.agentSurface * textScale)
                         .contentShape(.contextMenuPreview, .rect(cornerRadius: 12, style: .continuous))
                         .contextMenu {
                             if agent.deleted != true {
@@ -507,23 +512,6 @@ struct TranscriptReactionChip: View {
 }
 
 /// Gives its content at most a fraction of the lane and aligns it trailing.
-struct TranscriptTrailingLane: Layout {
-    let fraction: CGFloat
-
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let width = proposal.width ?? .infinity
-        let size = subviews.first?.sizeThatFits(.init(width: width * fraction, height: nil)) ?? .zero
-        return CGSize(width: proposal.width ?? size.width, height: size.height)
-    }
-
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        guard let subview = subviews.first else { return }
-        let size = subview.sizeThatFits(.init(width: bounds.width * fraction, height: nil))
-        subview.place(at: CGPoint(x: bounds.maxX - size.width, y: bounds.minY),
-                      proposal: .init(width: size.width, height: size.height))
-    }
-}
-
 extension View {
     /// Fills a bubble with its shared surface and, under Increase Contrast, outlines it with the Mac's edge.
     func transcriptBubble(_ surface: TranscriptSurface) -> some View {
