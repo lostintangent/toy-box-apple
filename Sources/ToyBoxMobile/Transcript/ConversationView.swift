@@ -161,10 +161,12 @@ struct ConversationView: View {
         .scrollPosition($position)
         .defaultScrollAnchor(.bottom, for: .initialOffset)
         .onScrollGeometryChange(for: TranscriptScroll.Metrics.self) { geometry in
-            TranscriptScroll.Metrics(
-                viewport: .init(width: geometry.containerSize.width, height: geometry.containerSize.height,
-                                topInset: max(0, geometry.contentInsets.top),
-                                bottomInset: max(0, geometry.contentInsets.bottom)),
+            // The container size excludes the content insets, but the model's viewport spans them.
+            let top = max(0, geometry.contentInsets.top), bottom = max(0, geometry.contentInsets.bottom)
+            return TranscriptScroll.Metrics(
+                viewport: .init(width: geometry.containerSize.width,
+                                height: geometry.containerSize.height + top + bottom,
+                                topInset: top, bottomInset: bottom),
                 origin: geometry.contentOffset.y, documentEnd: geometry.contentSize.height)
         } action: { _, metrics in
             scroll.metrics = metrics
