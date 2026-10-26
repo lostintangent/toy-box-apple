@@ -33,6 +33,32 @@ struct ContentPolicyTests {
         }
     }
 
+    @Test func sendEligibilityReadsEachInputOnceInOrderAndStopsAtTheFirstBlocker() {
+        let inputs = ["isLive", "isSending", "isSubmitting", "hasContent",
+                      "isLoadingImages", "hasUnreadableImage", "textUTF16Count"]
+        for stoppedAt in 0...inputs.count {
+            var reads: [String] = []
+            func read(_ index: Int, _ value: Bool) -> Bool {
+                reads.append(inputs[index])
+                return value
+            }
+            func length() -> Int {
+                reads.append(inputs[6])
+                return stoppedAt == 6 ? 12_001 : 12_000
+            }
+            let eligible = channelCanSend(
+                isLive: read(0, stoppedAt != 0),
+                isSending: read(1, stoppedAt == 1),
+                isSubmitting: read(2, stoppedAt == 2),
+                hasContent: read(3, stoppedAt != 3),
+                isLoadingImages: read(4, stoppedAt == 4),
+                hasUnreadableImage: read(5, stoppedAt == 5),
+                textUTF16Count: length())
+            #expect(eligible == (stoppedAt == inputs.count))
+            #expect(reads == Array(inputs.prefix(min(stoppedAt + 1, inputs.count))))
+        }
+    }
+
     @Test func purposePreviewKeepsTheOriginalFirstLineSemantics() {
         #expect(channelPurposePreview("  Ship the demo  \nThen the docs") == "Ship the demo")
         #expect(channelPurposePreview("\n\nFirst\r\nSecond") == "First")
