@@ -179,44 +179,63 @@ struct OverviewTests {
         #expect(image.size.height > 10 && image.size.height < 50)
     }
 
-    @Test func artifactActionKeepsPrimaryInkAndAnUncentered44PointTargetUnderLinkTint() throws {
-        for scheme in [ColorScheme.light, .dark] {
-            let renderer = ImageRenderer(content:
-                OverviewTaskArtifactLabel(title: "Plan")
-                    .foregroundStyle(Color.blue)
-                    .tint(.blue)
-                    .background(scheme == .dark ? Color.black : Color.white)
-                    .dynamicTypeSize(.large)
-                    .environment(\.colorScheme, scheme))
-            renderer.proposedSize = ProposedViewSize(width: 220, height: nil)
-            renderer.scale = 1
-            let image = try #require(renderer.uiImage)
-            let cgImage = try #require(image.cgImage)
-            #expect(image.size.height == 44)
-            let colorSpace = try #require(CGColorSpace(name: CGColorSpace.sRGB))
-            var pixels = [UInt8](repeating: 0, count: cgImage.width * cgImage.height * 4)
-            try pixels.withUnsafeMutableBytes { bytes in
-                let context = try #require(CGContext(
-                    data: bytes.baseAddress, width: cgImage.width, height: cgImage.height,
-                    bitsPerComponent: 8, bytesPerRow: cgImage.width * 4,
-                    space: colorSpace,
-                    bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue
-                        | CGImageAlphaInfo.premultipliedLast.rawValue))
-                context.draw(cgImage, in: CGRect(
-                    x: 0, y: 0, width: CGFloat(cgImage.width), height: CGFloat(cgImage.height)))
+    @Test(arguments: [ColorScheme.light, .dark], [true, false])
+    func artifactActionKeepsItsEnabledInkAndAnUncentered44PointTargetUnderLinkTint(
+        scheme: ColorScheme, enabled: Bool
+    ) throws {
+        let renderer = ImageRenderer(content:
+            Button {} label: {
+                OverviewTaskArtifactLabel(title: enabled ? "Plan" : "Artifact unavailable")
             }
-            var inkRows: [Int] = []
-            var tintedPixels = 0
-            for offset in stride(from: 0, to: pixels.count, by: 4) {
-                if abs(Int(pixels[offset]) - Int(pixels[offset + 2])) > 1 { tintedPixels += 1 }
-                let isInk = scheme == .dark ? pixels[offset] > 240 : pixels[offset] < 15
-                if isInk { inkRows.append(offset / (cgImage.width * 4)) }
-            }
-            #expect(tintedPixels == 0)
-            let first = try #require(inkRows.min())
-            let last = try #require(inkRows.max())
-            #expect(min(first, cgImage.height - 1 - last) < 8)
+            .buttonStyle(.borderless)
+            .disabled(!enabled)
+            .foregroundStyle(Color.blue)
+            .tint(.blue)
+            .background(scheme == .dark ? Color.black : Color.white)
+            .dynamicTypeSize(.large)
+            .environment(\.colorScheme, scheme))
+        renderer.proposedSize = ProposedViewSize(width: 220, height: nil)
+        renderer.scale = 1
+        let image = try #require(renderer.uiImage)
+        let cgImage = try #require(image.cgImage)
+        #expect(image.size.height == 44)
+        let colorSpace = try #require(CGColorSpace(name: CGColorSpace.sRGB))
+        var pixels = [UInt8](repeating: 0, count: cgImage.width * cgImage.height * 4)
+        try pixels.withUnsafeMutableBytes { bytes in
+            let context = try #require(CGContext(
+                data: bytes.baseAddress, width: cgImage.width, height: cgImage.height,
+                bitsPerComponent: 8, bytesPerRow: cgImage.width * 4,
+                space: colorSpace,
+                bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue
+                    | CGImageAlphaInfo.premultipliedLast.rawValue))
+            context.draw(cgImage, in: CGRect(
+                x: 0, y: 0, width: CGFloat(cgImage.width), height: CGFloat(cgImage.height)))
         }
+        var inkRows: [Int] = []
+        var tintedPixels = 0
+        let background = scheme == .dark ? 0 : 255
+        let traits = UITraitCollection(userInterfaceStyle: scheme == .dark ? .dark : .light)
+        let color = (enabled ? UIColor.label : .tertiaryLabel).resolvedColor(with: traits)
+        var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
+        #expect(color.getRed(&red, green: &green, blue: &blue, alpha: &alpha))
+        let expected = [red, green, blue].map {
+            Int(($0 * alpha * 255 + CGFloat(background) * (1 - alpha)).rounded())
+        }
+        let inkThreshold = abs(expected[0] - background) / 2
+        var strongestOffset = 0
+        for offset in stride(from: 0, to: pixels.count, by: 4) {
+            if abs(Int(pixels[offset]) - Int(pixels[offset + 2])) > 1 { tintedPixels += 1 }
+            let distance = abs(Int(pixels[offset]) - background)
+            if distance > inkThreshold { inkRows.append(offset / (cgImage.width * 4)) }
+            if distance > abs(Int(pixels[strongestOffset]) - background) { strongestOffset = offset }
+        }
+        if enabled { #expect(tintedPixels == 0) }
+        for component in 0..<3 {
+            #expect(abs(Int(pixels[strongestOffset + component]) - expected[component]) <= 2)
+        }
+        let first = try #require(inkRows.min())
+        let last = try #require(inkRows.max())
+        #expect(min(first, cgImage.height - 1 - last) < 8)
     }
 
     @Test func cancellingRemovalRestoresTheEditorAndOldSessionsCannotCompleteANewFlow() throws {

@@ -328,6 +328,7 @@ private struct OverviewTaskNode: View {
 
 struct OverviewTaskArtifactLabel: View {
     let title: String
+    @Environment(\.isEnabled) private var isEnabled
     @ScaledMetric(relativeTo: .footnote) private var iconWidth = 16
 
     var body: some View {
@@ -341,7 +342,7 @@ struct OverviewTaskArtifactLabel: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .font(.footnote)
-        .foregroundStyle(Color(uiColor: .label))
+        .foregroundStyle(Color(uiColor: isEnabled ? .label : .tertiaryLabel))
         .frame(maxWidth: .infinity, minHeight: 44, alignment: .topLeading)
         .contentShape(Rectangle())
     }
