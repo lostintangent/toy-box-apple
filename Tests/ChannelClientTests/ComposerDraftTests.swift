@@ -3,6 +3,7 @@ import ChannelKit
 import CoreGraphics
 import Foundation
 import ImageIO
+import Synchronization
 import Testing
 import UniformTypeIdentifiers
 
@@ -239,6 +240,26 @@ struct ComposerDraftTests {
             #expect(max(width, height) <= 8_000)
             #expect(draft.error == nil)
         }
+    }
+
+    @Test func nativeRasterizationRunsOffTheMainActorWithTheProviderBound() async throws {
+        let context = try #require(CGContext(
+            data: nil, width: 2, height: 2, bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ))
+        let bitmap = try #require(context.makeImage())
+        let observed = Mutex<(mainThread: Bool?, bound: Int?)>((nil, nil))
+        let draft = ComposerDraft(imageIsReadable: { _ in true }, rasterizeImage: { _, bound in
+            observed.withLock { $0 = (Thread.isMainThread, bound) }
+            return bitmap
+        })
+        draft.append(.init(name: "Native.svg", mimeType: "image/svg+xml", data: Data("<svg/>".utf8)))
+        try await finishLoading(draft)
+        let result = observed.withLock { $0 }
+        #expect(result.mainThread == false)
+        #expect(result.bound == 8_000)
+        #expect(draft.images.first?.mimeType == "image/jpeg")
+        #expect(draft.error == nil)
     }
 
     private func imageIODraft() -> ComposerDraft {
