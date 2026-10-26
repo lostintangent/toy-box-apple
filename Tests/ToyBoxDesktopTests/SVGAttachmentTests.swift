@@ -66,7 +66,7 @@ struct SVGAttachmentTests {
         let file = try await ChannelAttachmentCache.shared.file(for: attachment, api: api)
         defer { try? FileManager.default.removeItem(at: file) }
         let thumbnail = try await TranscriptThumbnails.image(at: file, for: attachment, api: api, scale: 2)
-        #expect(thumbnail.size == CGSize(width: 480, height: 240))
+        #expect(CGSize(width: thumbnail.width, height: thumbnail.height) == CGSize(width: 480, height: 240))
         #expect(ChannelImageDecoder.pixelSize(for: attachment, api: api) == CGSize(width: 800, height: 400))
         #expect(ImageViewer.knownPixelSize(of: attachment, api: api) == CGSize(width: 800, height: 400))
     }

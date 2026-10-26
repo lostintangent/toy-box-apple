@@ -87,7 +87,7 @@ private struct TranscriptAttachment: View {
     var imageName: String?
     var viewing: TranscriptAttachmentViewing?
     @ViewState private var localURL: URL?
-    @ViewState private var thumbnail: NSImage?
+    @ViewState private var thumbnail: CGImage?
     @ViewState private var error: String?
     @ViewState private var isLoading = false
     @ViewState private var previewURL: URL?
@@ -142,7 +142,7 @@ private struct TranscriptAttachment: View {
                 Button { isPlaying = true } label: {
                     VStack(spacing: 10) {
                         if let thumbnail {
-                            Image(nsImage: thumbnail).resizable().scaledToFit()
+                            Image(decorative: thumbnail, scale: 1).resizable().scaledToFit()
                                 .frame(maxWidth: 240, maxHeight: 120)
                         }
                         Label("Play \(name)", systemImage: "play.circle.fill")
@@ -194,16 +194,16 @@ private struct TranscriptAttachment: View {
     /// A loading image holds its final size, from its inline header or from the cached file of an
     /// earlier load, so the row never grows when the preview lands. Only a remote image the app has
     /// never loaded resizes, once.
-    private func imageTile(_ thumbnail: NSImage?) -> some View {
+    private func imageTile(_ thumbnail: CGImage?) -> some View {
         let pixels = ChannelImageDecoder.pixelSize(for: attachment, api: api)
-            ?? thumbnail?.size ?? CGSize(width: 120, height: 90)
+            ?? thumbnail.map { CGSize(width: $0.width, height: $0.height) } ?? CGSize(width: 120, height: 90)
         let size = transcriptThumbnailSize(pixels)
         let tile = RoundedRectangle(cornerRadius: 8)
         return Button(action: view) {
             ZStack {
                 tile.fill(.quaternary.opacity(0.3))
                 if let thumbnail {
-                    Image(nsImage: thumbnail)
+                    Image(decorative: thumbnail, scale: 1)
                         .resizable()
                         .scaledToFit()
                         .frame(width: size.width, height: size.height)
@@ -331,29 +331,25 @@ private struct TranscriptVideo: View {
 /// second window or when paging, lays out at its final height on its first pass instead of
 /// starting as a file chip and growing when its decode lands.
 ///
-/// Previews are keyed by the address or inline payload itself rather than its digest. `body` looks
-/// them up, and hashing a multi-megabyte payload there costs milliseconds, while an `NSString`
-/// lookup samples the string and compares the payload's storage.
-/// Wraps the shared thumbnails in `NSImage` and adds the SVG rasterizer ImageIO lacks.
+/// The shared thumbnails, with the SVG rasterizer ImageIO lacks.
 @MainActor
 enum TranscriptThumbnails {
-    static func remembered(for attachment: ChannelAttachment, api: ChannelAPI) -> NSImage? {
-        ChannelThumbnails.remembered(for: attachment, api: api).map { NSImage(cgImage: $0, size: .zero) }
+    static func remembered(for attachment: ChannelAttachment, api: ChannelAPI) -> CGImage? {
+        ChannelThumbnails.remembered(for: attachment, api: api)
     }
 
     static func image(at file: URL, for attachment: ChannelAttachment, api: ChannelAPI, scale: CGFloat,
-                      reload: Bool = false) async throws -> NSImage {
-        NSImage(cgImage: try await ChannelThumbnails.image(at: file, for: attachment, api: api, scale: scale,
-                                                           reload: reload, fallback: svg),
-                size: .zero)
+                      reload: Bool = false) async throws -> CGImage {
+        try await ChannelThumbnails.image(at: file, for: attachment, api: api, scale: scale,
+                                          reload: reload, fallback: svg)
     }
 
     nonisolated static func decode(_ file: URL, scale: CGFloat) throws -> CGImage {
         try ChannelThumbnails.decode(file, scale: scale, fallback: svg).image
     }
 
-    static func remember(_ image: CGImage, for attachment: ChannelAttachment, api: ChannelAPI) -> NSImage {
-        NSImage(cgImage: ChannelThumbnails.remember(image, for: attachment, api: api), size: .zero)
+    static func remember(_ image: CGImage, for attachment: ChannelAttachment, api: ChannelAPI) -> CGImage {
+        ChannelThumbnails.remember(image, for: attachment, api: api)
     }
 
     nonisolated private static let svg: ChannelThumbnails.Fallback = { file, bound in

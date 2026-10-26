@@ -179,17 +179,22 @@ public enum ChannelImageDecoder {
 }
 
 /// Every decoded thumbnail, kept within one memory budget so a row or tray item that comes back
-/// draws at once. Transcript attachments and draft images are separate key spaces. A failed
-/// decode is remembered too, so it isn't retried on every build. Each app wraps the `CGImage`.
+/// draws at once. A failed decode is remembered too, so it isn't retried on every build. Each app
+/// draws the `CGImage` itself.
+///
+/// Attachments are keyed by their address or inline payload itself rather than its digest. `body`
+/// looks them up, and hashing a multi-megabyte payload there costs milliseconds, while an
+/// `NSString` lookup samples the string and compares the payload's storage. Draft images are keyed
+/// by `NSUUID`, so the two key spaces can't collide and no key is ever copied.
 public enum ChannelThumbnailCache {
     public enum Key: Sendable {
         case attachment(String)
         case draftImage(UUID)
 
-        fileprivate var name: NSString {
+        fileprivate var object: AnyObject {
             switch self {
-            case .attachment(let identity): "attachment:" + identity as NSString
-            case .draftImage(let id): "draft:" + id.uuidString as NSString
+            case .attachment(let identity): identity as NSString
+            case .draftImage(let id): id as NSUUID
             }
         }
     }
@@ -199,36 +204,37 @@ public enum ChannelThumbnailCache {
         init(_ image: CGImage?) { self.image = image }
     }
 
-    nonisolated(unsafe) private static let storage: NSCache<NSString, Entry> = {
-        let cache = NSCache<NSString, Entry>()
+    nonisolated(unsafe) private static let storage: NSCache<AnyObject, Entry> = {
+        let cache = NSCache<AnyObject, Entry>()
         cache.totalCostLimit = 64 << 20
         return cache
     }()
 
     /// The remembered thumbnail, or nil when there is none, including after a failed decode.
     public static func image(for key: Key) -> CGImage? {
-        storage.object(forKey: key.name)?.image
+        storage.object(forKey: key.object)?.image
     }
 
     /// The remembered result for `key`, or `decode`'s result, which is remembered even when nil.
     public static func image(for key: Key, decode: () -> CGImage?) -> CGImage? {
-        let name = key.name
-        if let entry = storage.object(forKey: name) { return entry.image }
+        let object = key.object
+        if let entry = storage.object(forKey: object) { return entry.image }
         let image = decode()
-        store(image, name: name)
+        store(image, for: object)
         return image
     }
 
     @discardableResult
     public static func remember(_ image: CGImage, for key: Key) -> CGImage {
-        store(image, name: key.name)
+        store(image, for: key.object)
         return image
     }
 
-    private static func store(_ image: CGImage?, name: NSString) {
+    private static func store(_ image: CGImage?, for key: AnyObject) {
         // The cache keeps its key alive, which for an inline image is the whole payload.
-        storage.setObject(Entry(image), forKey: name,
-                          cost: (image.map { $0.bytesPerRow * $0.height } ?? 0) + name.length * 2)
+        let keyCost = (key as? NSString).map { $0.length * 2 } ?? 0
+        storage.setObject(Entry(image), forKey: key,
+                          cost: (image.map { $0.bytesPerRow * $0.height } ?? 0) + keyCost)
     }
 }
 

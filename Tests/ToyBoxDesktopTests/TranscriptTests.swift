@@ -1133,7 +1133,7 @@ struct TranscriptTests {
         let api = try ChannelAPI(serverURL: "http://localhost:3210")
         for attachment in attachments {
             let thumbnail = TranscriptThumbnails.remember(image, for: attachment, api: api)
-            #expect(thumbnail.size == CGSize(width: 120, height: 80))
+            #expect(CGSize(width: thumbnail.width, height: thumbnail.height) == CGSize(width: 120, height: 80))
         }
 
         for width: CGFloat in [160, 328] {

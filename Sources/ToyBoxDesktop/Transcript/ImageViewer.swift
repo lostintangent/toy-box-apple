@@ -315,7 +315,8 @@ final class ImageViewer {
         } else {
             // A remote image of unknown size fills the area at its thumbnail's aspect until it decodes.
             let aspect = session.flatMap { session in
-                TranscriptThumbnails.remembered(for: session.images[index], api: session.api)?.size
+                TranscriptThumbnails.remembered(for: session.images[index], api: session.api)
+                    .map { CGSize(width: $0.width, height: $0.height) }
             }.flatMap { $0.width > 0 && $0.height > 0 ? $0 : nil } ?? CGSize(width: 4, height: 3)
             let scale = min(area.width / aspect.width, area.height / aspect.height)
             size = CGSize(width: aspect.width * scale, height: aspect.height * scale)
@@ -926,9 +927,10 @@ private struct ImageViewerStage: View {
 
     @ViewBuilder
     private func picture(_ position: Int) -> some View {
-        if let image = viewer.items[position]?.image
-            ?? TranscriptThumbnails.remembered(for: session.images[position], api: session.api) {
+        if let image = viewer.items[position]?.image {
             Image(nsImage: image).resizable().interpolation(.high)
+        } else if let image = TranscriptThumbnails.remembered(for: session.images[position], api: session.api) {
+            Image(decorative: image, scale: 1).resizable().interpolation(.high)
         } else if viewer.items[position]?.failure == nil {
             Rectangle().fill(.quaternary.opacity(0.3))
         } else {
@@ -1040,8 +1042,9 @@ private struct ImageViewerCapsule: View {
         let shape = RoundedRectangle(cornerRadius: 6, style: .continuous)
         return Button { viewer.show(position) } label: {
             ZStack {
-                if let image = TranscriptThumbnails.remembered(for: session.images[position], api: session.api)
-                    ?? viewer.items[position]?.image {
+                if let image = TranscriptThumbnails.remembered(for: session.images[position], api: session.api) {
+                    Image(decorative: image, scale: 1).resizable().aspectRatio(contentMode: .fill)
+                } else if let image = viewer.items[position]?.image {
                     Image(nsImage: image).resizable().aspectRatio(contentMode: .fill)
                 } else {
                     shape.fill(.quaternary.opacity(0.3))
