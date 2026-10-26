@@ -16,8 +16,9 @@ struct ComposerTray: View {
     @ViewState private var artifactsChannel: ObjectIdentifier?
     @ViewState private var tasksChannel: ObjectIdentifier?
 
-    private var artifacts: [ChannelArtifact] { channelArtifactsNewestFirst(store.artifacts) }
-    private var progress: TaskProgress { channelTasksProgress(store.tasks) }
+    private var projection: ChannelTrayProjection {
+        ChannelTrayProjection(artifacts: store.artifacts, tasks: store.tasks, preview: store.details?.resolvedPreview)
+    }
     private var showArtifacts: Binding<Bool> { presented($artifactsChannel) }
     private var showTasks: Binding<Bool> { presented($tasksChannel) }
 
@@ -35,10 +36,10 @@ struct ComposerTray: View {
     }
 
     var body: some View {
-        let preview = store.details?.resolvedPreview
+        let tray = projection
         VStack(spacing: 0) {
-            if Self.isVisible(artifacts: store.artifacts, tasks: store.tasks, preview: preview) {
-                row(preview: preview)
+            if tray.isVisible {
+                row(tray)
                 ComposerHairline()
             }
         }
@@ -49,8 +50,10 @@ struct ComposerTray: View {
         }
     }
 
-    private func row(preview: ChannelPreview?) -> some View {
-        HStack(spacing: 8) {
+    private func row(_ tray: ChannelTrayProjection) -> some View {
+        let artifacts = tray.artifacts
+        let progress = tray.taskProgress
+        return HStack(spacing: 8) {
             if let newest = artifacts.first {
                 ViewThatFits(in: .horizontal) {
                     Button { artifactOpener.open(newest) } label: {
@@ -71,7 +74,7 @@ struct ComposerTray: View {
                 }
             }
             Spacer(minLength: 0)
-            if !store.tasks.isEmpty {
+            if tray.hasTasks {
                 Button { showTasks.wrappedValue.toggle() } label: {
                     Label("Tasks \(progress.done)/\(progress.total)", systemImage: "checklist")
                         .lineLimit(1)
@@ -89,7 +92,7 @@ struct ComposerTray: View {
                 .accessibilityLabel("Tasks")
                 .accessibilityValue("\(progress.done) of \(progress.total) done")
             }
-            if let preview { previewButton(preview) }
+            if let preview = tray.preview { previewButton(preview) }
         }
         .buttonStyle(.borderless)
         .font(.system(size: 12))
@@ -118,12 +121,12 @@ struct ComposerTray: View {
     }
 
     static func isVisible(artifacts: [ChannelArtifact], tasks: [ChannelTask], preview: ChannelPreview?) -> Bool {
-        !artifacts.isEmpty || !tasks.isEmpty || preview != nil
+        ChannelTrayProjection(artifacts: artifacts, tasks: tasks, preview: preview).isVisible
     }
 
     private var artifactOverflow: some View {
         Menu {
-            ForEach(artifacts) { artifact in
+            ForEach(projection.artifacts) { artifact in
                 Button(artifact.title) { artifactOpener.open(artifact) }
             }
         } label: {
@@ -136,7 +139,8 @@ struct ComposerTray: View {
     }
 
     private var artifactList: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        let artifacts = projection.artifacts
+        return VStack(alignment: .leading, spacing: 12) {
             Text("Artifacts").font(.headline)
             ScrollView {
                 VStack(alignment: .leading, spacing: 2) {

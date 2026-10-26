@@ -10,6 +10,7 @@ struct ComposerSurface: View {
     @Environment(AppModel.self) private var model
     @Environment(ChannelInteraction.self) private var interaction
     @Environment(ManagementPresenter.self) private var management
+    @Environment(OverviewPresentation.self) private var overviewPresentation
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.scenePhase) private var scenePhase
     @ViewState private var showPhotos = false
@@ -29,6 +30,10 @@ struct ComposerSurface: View {
     private var composer: ChannelComposerSession { session.composer }
     private var editor: ComposerEditorState { session.editor }
     private var draftID: ObjectIdentifier { ObjectIdentifier(draft) }
+    private var isReaderCovered: Bool {
+        interaction.isArtifactViewerPresented || overviewPresentation.isCompactSheetPresented
+            || (sizeClass == .compact && interaction.isInspectorPresented)
+    }
     private var canRestoreReaderFocus: Bool {
         scenePhase == .active && model.isActive && model.selectedStore === store
             && model.visibleChannelID == store.id && store.phase != .deleted
@@ -36,7 +41,7 @@ struct ComposerSurface: View {
             && !(sizeClass == .compact && interaction.isInspectorPresented)
     }
     private var canPresentRequestPreview: Bool {
-        canRestoreReaderFocus && !interaction.isArtifactViewerPresented
+        canRestoreReaderFocus && !isReaderCovered
     }
     private var mentionContext: ChannelMentionContext? {
         guard editor.isFocused, !editor.hasMarkedText else { return nil }
@@ -89,7 +94,7 @@ struct ComposerSurface: View {
         .onChange(of: showPhotos) { _, presented in if !presented { restoreFocus() } }
         .onChange(of: showFiles) { _, presented in if !presented { restoreFocus() } }
         .onChange(of: management.flow?.id) { _, id in if id == nil { restoreFocus() } }
-        .onChange(of: interaction.isArtifactViewerPresented, initial: true) { _, covered in
+        .onChange(of: isReaderCovered, initial: true) { _, covered in
             editor.setReaderCovered(covered, canRestoreFocus: canRestoreReaderFocus && !interaction.isRequestPreviewPresented)
         }
         .onChange(of: interaction.isRequestPreviewPresented) { _, covered in
@@ -129,6 +134,7 @@ struct ComposerSurface: View {
 
     private var container: some View {
         VStack(spacing: 0) {
+            ComposerTaskProgress(store: store, showTasks: showTasks)
             if hasNotices || composer.replySource != nil || !draft.images.isEmpty {
                 ViewThatFits(in: .vertical) {
                     accessories
@@ -332,6 +338,7 @@ struct ComposerSurface: View {
             .frame(minHeight: 44).contentShape(Rectangle())
         }
         .disabled(choice.isCreate && !store.phase.isLive)
+        .accessibilityIdentifier("composer-mention-\(choice.id)")
         .listRowInsets(EdgeInsets(top: 6, leading: 12, bottom: 6, trailing: 12))
         .contextMenu {
             if let agent = choice.agent, choice.isMember {
@@ -373,6 +380,11 @@ struct ComposerSurface: View {
         guard scenePhase == .active, session.canSend else { return }
         interaction.jumpToLatest()
         Task { if await session.send() { interaction.jumpToLatest() } }
+    }
+
+    private func showTasks() {
+        if sizeClass == .compact { editor.setReaderCovered(true, canRestoreFocus: false) }
+        interaction.showOverviewTasks()
     }
 
     private func preparePresentation() { restoresFocus = editor.isFocused }
