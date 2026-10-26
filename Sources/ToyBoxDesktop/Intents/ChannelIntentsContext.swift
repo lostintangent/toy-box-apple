@@ -234,7 +234,7 @@ final class ChannelIntentsContext {
         guard let api = host.api(), let unreadAfter = channelUnreadAfter(channel) else { return nil }
         let page = try await api.history(channelId: channel.id, before: channel.latestSequence + 1)
         guard let oldest = page.messages.first?.sequence, oldest <= unreadAfter + 1 else { return nil }
-        return page.messages.filter { $0.sequence > unreadAfter && !$0.isSystem && $0.sender.type == "agent" }.count
+        return channelAgentMessageCount(page.messages, after: unreadAfter)
     }
 
     // MARK: Send Message
