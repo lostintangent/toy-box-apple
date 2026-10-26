@@ -408,6 +408,10 @@ private final class MobileAutomationRun {
             try await hostAction(timeout: step.timeout)
         case .menuAction(let title):
             let selection = try MobileAutomationMenu.select(title, in: .current)
+            defer { selection.marked.restoreIdentifier() }
+            _ = try await wait(timeout: step.timeout) {
+                try selection.isVisible(in: .current) ? true : nil
+            }
             selection.interaction.dismissMenu()
             _ = try await wait(timeout: step.timeout) {
                 MobileAutomationMenu.snapshot(selection.interaction).isEmpty ? true : nil
