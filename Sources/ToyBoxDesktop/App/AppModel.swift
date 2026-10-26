@@ -394,8 +394,8 @@ final class AppModel {
         if let known = ChannelWaitingRequest.message(at: sequence, live: nil, agents: [],
                                                      cached: menuBarRequests[channel.id]) { return known }
         if let state = connections.stores.first(where: { $0.id == channel.id })?.state,
-           let request = ChannelRequestMessage(sequence: sequence, in: state) {
-            return request
+           let message = ChannelWaitingRequest.message(at: sequence, in: state) {
+            return .init(message: message, agents: state.agents)
         }
         guard let catalog else { return nil }
         let agents = catalogAgents(channelID: channel.id)
