@@ -1898,6 +1898,69 @@ struct ImageViewerTests {
         #expect(ImageViewer.export(file, named: "photo.jpeg")?.lastPathComponent == "photo.jpeg")
     }
 
+    @Test func onlyTheCurrentImageAndItsNeighborsKeepABitmap() async throws {
+        let sizes = (0..<5).map { CGSize(width: 800 + $0, height: 600) }
+        let viewer = try openViewer(sizes)
+        defer { viewer.close(animated: false) }
+        await finishLoads(viewer)
+        let file = try #require(viewer.items[0]?.file)
+        #expect(decoded(viewer) == [0, 1])
+        // A jump drops the bitmaps it leaves behind, and each image keeps its file and size.
+        viewer.show(3)
+        #expect(viewer.items[0]?.image == nil && viewer.items[0]?.bitmap == nil)
+        #expect(viewer.items[0]?.file == file && viewer.items[0]?.pixelSize == sizes[0])
+        await finishLoads(viewer)
+        #expect(decoded(viewer) == [2, 3, 4])
+        // One step lands on an image that's already decoded, so it never flashes blank.
+        viewer.show(2)
+        #expect(viewer.items[2]?.image != nil)
+        await finishLoads(viewer)
+        #expect(decoded(viewer) == [1, 2, 3])
+        // Coming back decodes again from the same cached file.
+        viewer.show(0)
+        await finishLoads(viewer)
+        #expect(decoded(viewer) == [0, 1])
+        #expect(viewer.items[0]?.file == file)
+    }
+
+    @Test func aCanceledLoadNeverPublishes() async throws {
+        let viewer = try openViewer((0..<5).map { CGSize(width: 800 + $0, height: 600) })
+        defer { viewer.close(animated: false) }
+        let canceled = try #require(viewer.loads[0])
+        viewer.show(4)
+        #expect(viewer.loads[0] == nil)
+        await canceled.value
+        await finishLoads(viewer)
+        #expect(decoded(viewer) == [3, 4])
+        #expect(viewer.items[0]?.failure == nil)
+    }
+
+    @Test func aReplacedLoadLeavesTheNewerLoadAlone() async throws {
+        let viewer = try openViewer([Self.screenshot])
+        defer { viewer.close(animated: false) }
+        await finishLoads(viewer)
+        // Both loads decode the same file, so either can finish first. Repeating makes sure the
+        // replaced one finishes first in some rounds, where it used to clear the newer handle.
+        for _ in 0..<20 {
+            viewer.retry()
+            let replaced = try #require(viewer.loads[0])
+            viewer.retry()
+            let newer = try #require(viewer.loads[0])
+            await replaced.value
+            if let current = viewer.loads[0] { #expect(current == newer) }
+            await newer.value
+            #expect(viewer.loads[0] == nil && viewer.items[0]?.bitmap != nil)
+        }
+    }
+
+    private func finishLoads(_ viewer: ImageViewer) async {
+        for load in viewer.loads.values { await load.value }
+    }
+
+    private func decoded(_ viewer: ImageViewer) -> [Int] {
+        viewer.items.filter { $0.value.bitmap != nil }.keys.sorted()
+    }
+
     /// Opens inline PNGs whose sizes come from their headers, so the fit is known before decoding.
     private func openViewer(_ sizes: [CGSize], at index: Int = 0, names: [String?]? = nil,
                             thumbnails: ImageViewerThumbnailFrames? = nil) throws -> ImageViewer {
