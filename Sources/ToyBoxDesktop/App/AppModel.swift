@@ -49,6 +49,7 @@ final class AppModel {
     @ObservationIgnored private var dockBadgeLabel: String?
     @ObservationIgnored private var catalogGeneration = UUID()
     @ObservationIgnored private var applicationObservers: [NSObjectProtocol] = []
+    @ObservationIgnored private var composerSessions: [String: ChannelComposerSession] = [:]
 
     init(launchOptions: LaunchOptions = .init()) {
         self.launchOptions = launchOptions
@@ -141,6 +142,15 @@ final class AppModel {
 
     var api: ChannelAPI? { catalog?.api }
 
+    func composerSession(for store: ChannelStore, draft: ComposerDraft) -> ChannelComposerSession {
+        if let session = composerSessions[store.id], session.store === store, session.draft === draft {
+            return session
+        }
+        let session = ChannelComposerSession(store: store, draft: draft)
+        composerSessions[store.id] = session
+        return session
+    }
+
     var lastUsedChannelID: String? {
         activeChannelID ?? launchChannel.channelID(serverURL: serverURL)
     }
@@ -151,6 +161,7 @@ final class AppModel {
             if self.serverURL != api.baseURL.absoluteString { quickSend.dismiss() }
             catalog?.stopPolling()
             connections.disconnectAll()
+            composerSessions = [:]
             self.serverURL = api.baseURL.absoluteString
             if persist, !launchOptions.isSnapshot {
                 UserDefaults.standard.set(self.serverURL, forKey: AppConfiguration.serverURLKey)
