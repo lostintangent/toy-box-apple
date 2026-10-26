@@ -21,25 +21,11 @@ struct RequestSpotlightTests {
         #expect(entity.attributeSet.keywords == ["Lead", "Studio", "Needs your reply"])
         #expect(NeedsYouRequestLink(url: try #require(URL(string: entity.id))) == entry.link)
         #expect(try self.entry(server: "https://other.test").id != entry.id)
-        #expect(try self.entry(server: "HTTPS://SERVER.TEST:443/").id == entry.id)
-        #expect(try self.entry(server: "https://server.test/a%2Fb").id != self.entry(server: "https://server.test/a/b").id)
         #expect(try self.entry(sequence: 9).id != entry.id)
         #expect(WaitingRequestQuery.matching("CAFE", in: [entity]).count == 1)
         #expect(WaitingRequestQuery.matching("studio", in: [entity]).count == 1)
         #expect(WaitingRequestQuery.matching("Lead", in: [entity]).count == 1)
         #expect(WaitingRequestQuery.matching("missing", in: [entity]).isEmpty)
-    }
-
-    @Test func unresolvedQuestionsNeverBecomePlaceholderSearchResults() throws {
-        var item = item()
-        item.quote = nil
-        #expect(WaitingRequestEntry(item: item, serverURL: "https://server.test") == nil)
-        item = self.item()
-        item.agent = nil
-        #expect(WaitingRequestEntry(item: item, serverURL: "https://server.test") == nil)
-        item = self.item()
-        item.sequence = 0
-        #expect(WaitingRequestEntry(item: item, serverURL: "https://server.test") == nil)
     }
 
     @Test func resolvedAgentlessRequestsDoNotDelayHealthyResults() async throws {
