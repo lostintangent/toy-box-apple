@@ -22,8 +22,9 @@ struct ComposerSurface: View {
     @ViewState private var dragging = false
     @ViewState private var highlightedChoice: String?
     @ViewState private var dismissedCompletion: ChannelMentionContext?
+    @ViewState private var completionHeight: CGFloat = 264
+    @ViewState private var completionViewportHeight: CGFloat = 0
     @ViewState private var connectionGrace = ConnectGrace()
-    @ScaledMetric(relativeTo: .body) private var completionRowHeight = 56
 
     private var draft: ComposerDraft { session.draft }
     private var store: ChannelStore { session.store }
@@ -58,9 +59,13 @@ struct ComposerSurface: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            if !choices.isEmpty { completion.padding(.horizontal, 12) }
-            container
+        container
+        .overlay(alignment: .topLeading) {
+            if !choices.isEmpty {
+                completion
+                    .padding(.horizontal, 12)
+                    .offset(y: -completionViewportHeight - 8)
+            }
         }
         .padding(.horizontal, sizeClass == .compact ? 12 : 16)
         .frame(maxWidth: 720)
@@ -305,20 +310,32 @@ struct ComposerSurface: View {
 
     private var completion: some View {
         ScrollViewReader { proxy in
-            List(selection: $highlightedChoice) {
-                ForEach(choices) { choice in
-                    completionRow(choice).tag(choice.id).id(choice.id)
+            ScrollView {
+                VStack(spacing: 0) {
+                    ForEach(choices) { choice in
+                        completionRow(choice)
+                            .overlay(alignment: .bottom) {
+                                if choice.id != choices.last?.id {
+                                    Divider().padding(.leading, 46)
+                                }
+                            }
+                            .id(choice.id)
+                    }
                 }
+                .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { completionHeight = $0 }
             }
-            .listStyle(.plain)
-            .scrollContentBackground(.hidden)
+            .scrollBounceBehavior(.basedOnSize)
+            .buttonStyle(.plain)
             .onChange(of: highlightedChoice) { _, id in
                 if let id { proxy.scrollTo(id, anchor: .center) }
             }
         }
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
         .frame(maxWidth: 320)
-        .frame(minHeight: 0, idealHeight: min(264, CGFloat(choices.count) * completionRowHeight), maxHeight: 264)
+        .frame(maxHeight: min(264, completionHeight))
+        .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { completionViewportHeight = $0 }
+        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .glassEffect(.regular.tint(Color(uiColor: .systemBackground).opacity(0.3)),
+                     in: RoundedRectangle(cornerRadius: 24, style: .continuous))
     }
 
     private func completionRow(_ choice: ChannelMentionChoice) -> some View {
@@ -330,8 +347,8 @@ struct ComposerSurface: View {
                         .frame(width: 24, height: 24)
                 }
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(choice.isCreate ? "Create \(choice.name)" : choice.name).font(.headline)
-                    Text(choice.detail).font(.caption).foregroundStyle(.secondary)
+                    Text(choice.isCreate ? "Create \(choice.name)" : choice.name).font(.headline).lineLimit(1)
+                    Text(choice.detail).font(.caption).foregroundStyle(ChannelInk.secondary).lineLimit(1)
                 }
                 Spacer(minLength: 0)
             }
@@ -339,7 +356,9 @@ struct ComposerSurface: View {
         }
         .disabled(choice.isCreate && !store.phase.isLive)
         .accessibilityIdentifier("composer-mention-\(choice.id)")
-        .listRowInsets(EdgeInsets(top: 6, leading: 12, bottom: 6, trailing: 12))
+        .padding(.vertical, 6)
+        .padding(.horizontal, 12)
+        .background(highlightedChoice == choice.id ? Color(uiColor: .secondarySystemFill) : .clear)
         .contextMenu {
             if let agent = choice.agent, choice.isMember {
                 Button("Edit Agent") {
