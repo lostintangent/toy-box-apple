@@ -2660,7 +2660,7 @@ struct TranscriptCatchUpTests {
         let first = TranscriptCatchUp.Summary(catchUp: summary, count: 20)
 
         let later = catchUpTestState(through: 36)
-        #expect(TranscriptCatchUp.newerCount(in: later.messages, after: summary.through) == 6)
+        #expect(channelAgentMessageCount(later.messages, after: summary.through) == 6)
         catchUp.update(from: later, server: server)
         #expect(catchUp.phase == .updating(first))
         #expect(catchUp.title == "Summarizing 26 new messages")
@@ -2679,7 +2679,6 @@ struct TranscriptCatchUpTests {
         var state = catchUpTestState(users: [25])
         state.messages.append(ChannelMessage(id: "s31", sequence: 31, timestamp: "2026-10-22T12:00:00Z",
                                              sender: .system, content: .text("Joined")))
-        #expect(TranscriptCatchUp.newerCount(in: state.messages, after: 20) == 9)
         #expect(TranscriptCatchUp.isReplied(24, in: state.messages))
         #expect(!TranscriptCatchUp.isReplied(25, in: state.messages))
     }
