@@ -24,22 +24,44 @@ struct MockResponse: Sendable {
 
 final class MockTransport: Sendable {
     typealias Handler = @Sendable (URLRequest, Int) throws -> MockResponse
+    struct LifecycleEntry: Sendable {
+        let elapsed: Duration
+        let request: String
+        let event: String
+    }
+
     struct State {
         var requests: [URLRequest] = []
         var stops = 0
         var pending: [ObjectIdentifier: MockURLProtocol] = [:]
         var observers: [UUID: AsyncStream<Void>.Continuation] = [:]
+        var lifecycle: [LifecycleEntry] = []
     }
     let state = Mutex(State())
     let handler: Handler
     let host = UUID().uuidString.lowercased() + ".example"
+    private let recordingLifecycle: Bool
+    private let started = ContinuousClock.now
 
-    init(handler: @escaping Handler) { self.handler = handler }
+    init(recordingLifecycle: Bool = false, handler: @escaping Handler) {
+        self.recordingLifecycle = recordingLifecycle
+        self.handler = handler
+    }
 
     var requests: [URLRequest] { state.withLock { $0.requests } }
     var stops: Int { state.withLock { $0.stops } }
     var pendingResponseCount: Int { state.withLock { $0.pending.count } }
     var changeObserverCount: Int { state.withLock { $0.observers.count } }
+    var lifecycle: [LifecycleEntry] { state.withLock { $0.lifecycle } }
+
+    func recordLifecycle(_ event: String, for request: URLRequest) {
+        guard recordingLifecycle else { return }
+        let target = (request.url?.path ?? "<missing URL>") + (request.url?.query.map { "?\($0)" } ?? "")
+        state.withLock {
+            $0.lifecycle.append(.init(elapsed: started.duration(to: .now),
+                                      request: "\(request.httpMethod ?? "GET") \(target)", event: event))
+        }
+    }
 
     func observeChanges(_ continuation: AsyncStream<Void>.Continuation) -> UUID {
         let id = UUID()
@@ -58,6 +80,7 @@ final class MockTransport: Sendable {
 
     func hold(_ response: MockURLProtocol) {
         state.withLock { $0.pending[ObjectIdentifier(response)] = response }
+        recordLifecycle("holding response", for: response.request)
         changed()
     }
 
@@ -66,6 +89,7 @@ final class MockTransport: Sendable {
             $0.stops += 1
             $0.pending.removeValue(forKey: ObjectIdentifier(response))
         }
+        recordLifecycle("request stopped", for: response.request)
         changed()
     }
 
@@ -77,7 +101,10 @@ final class MockTransport: Sendable {
             return pending
         }
         changed()
-        for response in pending { response.client?.urlProtocolDidFinishLoading(response) }
+        for response in pending {
+            recordLifecycle("submitting EOF", for: response.request)
+            response.client?.urlProtocolDidFinishLoading(response)
+        }
         return pending.count
     }
 
@@ -86,6 +113,7 @@ final class MockTransport: Sendable {
             state.requests.append(request)
             return state.requests.count
         }
+        recordLifecycle("request received", for: request)
         changed()
         return try handler(request, count)
     }
@@ -116,14 +144,22 @@ final class MockURLProtocol: URLProtocol, @unchecked Sendable {
             let response = HTTPURLResponse(url: url, statusCode: value.status,
                                            httpVersion: "HTTP/1.1",
                                            headerFields: ["Content-Type": value.contentType])!
+            transport.recordLifecycle("submitting headers: \(value.status)", for: request)
             client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-            if !value.body.isEmpty { client?.urlProtocol(self, didLoad: value.body) }
+            if !value.body.isEmpty {
+                transport.recordLifecycle("submitting body: \(value.body.count) bytes", for: request)
+                client?.urlProtocol(self, didLoad: value.body)
+            }
             if value.keepOpen {
                 transport.hold(self)
             } else {
+                transport.recordLifecycle("submitting EOF", for: request)
                 client?.urlProtocolDidFinishLoading(self)
             }
-        } catch { client?.urlProtocol(self, didFailWithError: error) }
+        } catch {
+            transport.recordLifecycle("submitting error: \(error)", for: request)
+            client?.urlProtocol(self, didFailWithError: error)
+        }
     }
 
     override func stopLoading() {
@@ -166,7 +202,8 @@ func testMessage(_ sequence: Int, id: String? = nil, text: String = "Progress") 
 
 @MainActor
 /// Reads observable main-actor state. Supply the transport when reading its locked counters.
-func eventually(observing transport: MockTransport? = nil, _ condition: () -> Bool) async throws {
+func eventually(observing transport: MockTransport? = nil, diagnostics: (() -> String)? = nil,
+                _ condition: () -> Bool) async throws {
     let changes = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
     let observer = transport?.observeChanges(changes.continuation)
     defer {
@@ -174,9 +211,36 @@ func eventually(observing transport: MockTransport? = nil, _ condition: () -> Bo
         changes.continuation.finish()
     }
     var iterator = changes.stream.makeAsyncIterator()
-    while true {
-        try Task.checkCancellation()
-        if withObservationTracking(condition, onChange: { changes.continuation.yield(()) }) { return }
-        guard await iterator.next() != nil else { throw CancellationError() }
+    do {
+        while true {
+            try Task.checkCancellation()
+            if withObservationTracking(condition, onChange: { changes.continuation.yield(()) }) { return }
+            guard await iterator.next() != nil else { throw CancellationError() }
+        }
+    } catch {
+        guard let diagnostics else { throw error }
+        throw ClientReadinessFailure(underlying: error, context: diagnostics())
     }
+}
+
+struct ClientReadinessFailure: Error, CustomStringConvertible {
+    let underlying: any Error
+    let context: String
+    var description: String { "\(underlying)\n\(context)" }
+}
+
+@MainActor
+func reconnectReadinessDiagnostics(store: ChannelStore, transport: MockTransport) -> String {
+    let revision = store.state.map { String($0.revision) } ?? "none"
+    let recorded = transport.state.withLock {
+        (requests: $0.requests.count, held: $0.pending.count, stopped: $0.stops, lifecycle: $0.lifecycle)
+    }
+    let callbacks = recorded.lifecycle.map { "\($0.elapsed): \($0.request): \($0.event)" }
+    return """
+    Reconnect readiness failed: phase=\(store.phase), appliedRevision=\(revision), \
+    presence=\(store.presence["test"]?.state ?? "none").
+    Requests=\(recorded.requests), held=\(recorded.held), stopped=\(recorded.stopped).
+    Mock callback submissions (not evidence of consumer ingestion):
+    \(callbacks.isEmpty ? "(none)" : callbacks.joined(separator: "\n"))
+    """
 }
