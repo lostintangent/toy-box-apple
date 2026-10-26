@@ -118,4 +118,76 @@ struct ComposerTests {
         #expect(view.text == "Keep this draft")
     }
 
+    @Test func readerFocusReturnsOnlyOnceToItsPreviouslyOwnedUncoveredConversation() {
+        var focus = ComposerReaderFocus()
+        focus.cover(ownsFocus: true)
+        focus.cover(ownsFocus: false)
+        #expect(focus.isCovered)
+        var restored = focus.uncover(canRestoreFocus: true)
+        #expect(restored)
+        #expect(!focus.isCovered)
+        restored = focus.uncover(canRestoreFocus: true)
+        #expect(!restored)
+
+        focus.cover(ownsFocus: false)
+        restored = focus.uncover(canRestoreFocus: true)
+        #expect(!restored)
+        focus.cover(ownsFocus: true)
+        restored = focus.uncover(canRestoreFocus: false)
+        #expect(!restored)
+        restored = focus.uncover(canRestoreFocus: true)
+        #expect(!restored)
+    }
+
+    @Test func dismantlingTheCoveredEditorCancelsItsFocusReturn() {
+        var focus = ComposerReaderFocus()
+        focus.cover(ownsFocus: true)
+        focus.cancelRestoration()
+        #expect(focus.isCovered)
+        let restored = focus.uncover(canRestoreFocus: true)
+        #expect(!restored)
+    }
+
+    @Test func readerCoverageRetainsTheNativeEditorTextSelectionAndUndo() throws {
+        var text = ""
+        let editor = ComposerEditorState()
+        let input = NativeComposerInput(
+            text: Binding(get: { text }, set: { text = $0 }), editor: editor,
+            onSend: {}, onCompletionKey: { _ in false }, onPasteImages: { _ in }
+        )
+        let coordinator = NativeComposerInput.Coordinator(parent: input)
+        let view = ComposerTextView()
+        editor.textView = view
+        view.delegate = coordinator
+        view.insertText("Keep this draft")
+        view.selectedRange = NSRange(location: 2, length: 3)
+        coordinator.textViewDidChangeSelection(view)
+        let undo = try #require(view.undoManager)
+        #expect(undo.canUndo)
+
+        editor.setReaderCovered(true, canRestoreFocus: false)
+        #expect(editor.isReaderCovered)
+        #expect(!view.isEditable)
+        #expect(editor.textView === view)
+        #expect(text == "Keep this draft")
+        #expect(view.text == text)
+        #expect(editor.selection == NSRange(location: 2, length: 3))
+        #expect(view.selectedRange == editor.selection)
+        #expect(!view.canPerformAction(#selector(ComposerTextView.hardwareReturn), withSender: nil))
+
+        editor.setReaderCovered(false, canRestoreFocus: true)
+        #expect(!editor.isReaderCovered)
+        #expect(view.isEditable)
+        #expect(editor.textView === view)
+        #expect(editor.selection == NSRange(location: 2, length: 3))
+        #expect(undo.canUndo)
+        undo.undo()
+        #expect(text.isEmpty)
+        #expect(view.text == text)
+
+        editor.setReaderCovered(true, canRestoreFocus: false)
+        editor.setEditingAllowed(false)
+        editor.setReaderCovered(false, canRestoreFocus: true)
+        #expect(!view.isEditable)
+    }
 }

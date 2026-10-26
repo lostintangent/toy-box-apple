@@ -7,6 +7,7 @@ import UniformTypeIdentifiers
 
 struct ComposerSurface: View {
     @Bindable var session: ComposerSession
+    @Environment(AppModel.self) private var model
     @Environment(ChannelInteraction.self) private var interaction
     @Environment(ManagementPresenter.self) private var management
     @Environment(\.horizontalSizeClass) private var sizeClass
@@ -26,6 +27,12 @@ struct ComposerSurface: View {
     private var composer: ChannelComposerSession { session.composer }
     private var editor: ComposerEditorState { session.editor }
     private var draftID: ObjectIdentifier { ObjectIdentifier(draft) }
+    private var canRestoreReaderFocus: Bool {
+        scenePhase == .active && model.isActive && model.selectedStore === store
+            && model.visibleChannelID == store.id && store.phase != .deleted
+            && !model.isSettingsPresented && management.flow == nil && !showPhotos && !showFiles
+            && !(sizeClass == .compact && interaction.isInspectorPresented)
+    }
     private var mentionContext: ChannelMentionContext? {
         guard editor.isFocused, !editor.hasMarkedText else { return nil }
         return .match(text: draft.text, selection: editor.selection)
@@ -67,6 +74,9 @@ struct ComposerSurface: View {
         }
         .onChange(of: showPhotos) { _, presented in if !presented { restoreFocus() } }
         .onChange(of: management.flow?.id) { _, id in if id == nil { restoreFocus() } }
+        .onChange(of: interaction.isArtifactViewerPresented, initial: true) { _, covered in
+            editor.setReaderCovered(covered, canRestoreFocus: canRestoreReaderFocus)
+        }
         .onChange(of: mentionContext) { _, _ in
             dismissedCompletion = nil
             highlightedChoice = choices.first?.id
