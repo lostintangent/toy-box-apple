@@ -46,7 +46,7 @@ struct TranscriptItemView: View, @MainActor Equatable {
                 }
                 TranscriptRule(divider: divider)
                     .accessibilityFocused($focusesDivider)
-                    .padding(.bottom, item.spacing > 0 ? TranscriptItem.runGap : 0)
+                    .padding(.bottom, TranscriptSpacing.divider)
             }
             content
                 .background(isHighlighted ? ChannelColors.sourceHighlight : .clear,

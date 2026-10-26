@@ -301,7 +301,7 @@ struct ConversationTranscript: View {
 
     private func conversationRows(proxy: ScrollViewProxy) -> some View {
         let rows = rows
-        let stacked = transcriptStackedSystemRowIDs(rows)
+        let gaps = transcriptRowGaps(rows)
         let context = TranscriptRowContext(agents: store.roster, channelID: store.id,
                                            historyStart: store.messages.first?.sequence ?? 0, api: store.api)
         let statusReactions = statusReactions
@@ -341,11 +341,11 @@ struct ConversationTranscript: View {
                                          }
                                      })
                     .equatable()
-                    .padding(.top, stacked.contains(row.id) ? 4 : 20)
+                    .padding(.top, gaps[row.id] ?? TranscriptSpacing.run)
             }
             ForEach(store.sendAttempts) { attempt in
                 sendAttempt(attempt, statusReactions: statusReactions[attempt.message.sequence] ?? [])
-                    .padding(.top, 20)
+                    .padding(.top, TranscriptSpacing.run)
                     .id("attempt-\(attempt.id)")
             }
             Color.clear.frame(height: 16).id("transcript-end")

@@ -67,7 +67,7 @@ struct TranscriptRowContent: View, @MainActor Equatable {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: TranscriptSpacing.divider) {
             if let divider = row.divider {
                 // A frame, so a card starting in the viewport keeps the reader's place and grows downward.
                 TranscriptDividerStack(divider: divider, catchUp: catchUp, store: store)
@@ -88,7 +88,7 @@ struct TranscriptRowContent: View, @MainActor Equatable {
                 let agent = channelAgentIdentity(context.agents, id: agentId)
                 HStack(alignment: .top, spacing: 12) {
                     AgentAvatarView(agent: agent, size: 32)
-                    VStack(alignment: .leading, spacing: 8) {
+                    VStack(alignment: .leading, spacing: TranscriptSpacing.entry) {
                         ForEach(entries) { entry in
                             TranscriptAgentMessage(entry: entry, agent: agent, agents: context.agents,
                                                    api: context.api, interaction: interaction,
@@ -184,12 +184,10 @@ private struct TranscriptRule: View {
 
 /// System rows that directly follow another system row without a divider, which stack 4 points
 /// apart as one group instead of taking the 20-point run spacing.
-func transcriptStackedSystemRowIDs(_ rows: [TranscriptRow]) -> Set<String> {
-    var stacked: Set<String> = []
-    for (previous, row) in zip(rows, rows.dropFirst()) where row.divider == nil {
-        if case .system = previous.content, case .system = row.content { stacked.insert(row.id) }
-    }
-    return stacked
+/// The gap above each row after the first, which keeps the run gap.
+func transcriptRowGaps(_ rows: [TranscriptRow]) -> [String: CGFloat] {
+    Dictionary(zip(rows, rows.dropFirst()).map { ($1.id, TranscriptSpacing.between($0, $1)) },
+               uniquingKeysWith: { $1 })
 }
 
 struct TranscriptUserMessage: View {

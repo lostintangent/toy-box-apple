@@ -34,7 +34,7 @@ struct TranscriptTests {
         #expect(items.map(\.id) == ["m1", "m2", "m3", "m4"])
         #expect(items.map(\.order) == [0, 1, 2, 3])
         #expect(items.map(\.sequence) == [1, 2, 3, 4])
-        #expect(items.map(\.spacing) == [0, TranscriptItem.runGap, TranscriptItem.entryGap, TranscriptItem.runGap])
+        #expect(items.map(\.spacing) == [0, TranscriptSpacing.run, TranscriptSpacing.entry, TranscriptSpacing.run])
         guard case .agent(_, _, let firstStarts) = items[1].content,
               case .agent(_, _, let secondStarts) = items[2].content else {
             Issue.record("Lead's run should become two agent entries.")
