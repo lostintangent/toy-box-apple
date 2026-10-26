@@ -33,6 +33,21 @@ struct TranscriptTests {
     }
 
     @MainActor
+    @Test func longMessagesCollapseInTheSamePassThatMeasuresThem() {
+        func height(_ view: some View) -> CGFloat { NSHostingView(rootView: view.frame(width: 300)).fittingSize.height }
+        func collapsed(_ text: String, expanded: Bool) -> CGFloat {
+            height(TranscriptCollapsibleBody(isExpanded: expanded, spacing: 6) { Text(text) } toggle: {
+                Text("Show More").frame(height: 20)
+            })
+        }
+        let long = Array(repeating: "A line that wraps across the bubble.", count: 30).joined(separator: "\n")
+        // A first measurement that comes back clamped means the row never changes height after it's placed.
+        #expect(collapsed(long, expanded: false) == TranscriptCollapsibleBody<Text, Text>.clampHeight + 26)
+        #expect(abs(collapsed(long, expanded: true) - (height(Text(long)) + 26)) < 1)
+        #expect(abs(collapsed("Short", expanded: false) - height(Text("Short"))) < 1)
+    }
+
+    @MainActor
     @Test func onlyACodeBlockTooWideToFitBuildsAScrollViewAndCopyCodeIsNoAppKitControl() {
         func platformViews(_ markdown: String) -> [NSView] {
             let host = NSHostingView(rootView: TranscriptMarkdown(content: markdown).frame(width: 400)

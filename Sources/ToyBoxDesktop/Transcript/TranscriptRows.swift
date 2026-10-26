@@ -264,16 +264,11 @@ struct TranscriptAgentMessage: View, @MainActor Equatable {
     var onSetExpanded: (String, Bool) -> Void
     @Environment(\.channelTextScale) private var textScale
     @Environment(\.transcriptPointer) private var pointer
-    /// Whether a collapsible message runs past the clamp. Others never measure, so a new message
-    /// lays out once instead of again when its height arrives.
-    @ViewState private var overflows = false
     @ViewState private var isHovered = false
     /// Stays on once the pointer has reached the message, so a selection outlasts the pointer leaving.
     @ViewState private var selectsText = false
     @FocusState private var isFocused: Bool
 
-    private static let clampHeight: CGFloat = 160
-    private var isClamped: Bool { entry.collapsible && !expanded && overflows }
 
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.entry == rhs.entry && lhs.agent == rhs.agent && lhs.agents == rhs.agents
@@ -288,28 +283,15 @@ struct TranscriptAgentMessage: View, @MainActor Equatable {
             if !entry.body.isEmpty {
                 VStack(alignment: .leading, spacing: 6) {
                     if entry.collapsible {
-                        markdown
-                            .onGeometryChange(for: Bool.self, of: { $0.size.height > Self.clampHeight }) {
-                                overflows = $0
-                            }
-                            .frame(height: isClamped ? Self.clampHeight : nil, alignment: .top)
-                            .clipped()
-                            .mask(alignment: .bottom) {
-                                if isClamped {
-                                    VStack(spacing: 0) {
-                                        Rectangle()
-                                        LinearGradient(colors: [.black, .clear], startPoint: .top, endPoint: .bottom)
-                                            .frame(height: 24)
-                                    }
-                                } else { Rectangle() }
-                            }
+                        TranscriptCollapsibleBody(isExpanded: expanded, spacing: 6) {
+                            markdown
+                        } toggle: {
+                            Button(expanded ? "Show Less" : "Show More") { onSetExpanded(entry.id, !expanded) }
+                                .buttonStyle(.borderless)
+                                .font(.system(size: 12 * textScale))
+                        }
                     } else {
                         markdown
-                    }
-                    if entry.collapsible && overflows {
-                        Button(expanded ? "Show Less" : "Show More") { onSetExpanded(entry.id, !expanded) }
-                            .buttonStyle(.borderless)
-                            .font(.system(size: 12 * textScale))
                     }
                     if isPending && agent.deleted != true {
                         Button("Reply", systemImage: "arrowshape.turn.up.left") {
