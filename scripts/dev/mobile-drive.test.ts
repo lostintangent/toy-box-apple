@@ -1,4 +1,7 @@
 import { expect, test } from "bun:test";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { MobileDriveSession, parseMobileDrive, parseMobileDriveStatus, runMobileDriveCommand } from "./mobile-drive.ts";
 
 test("drive actions are strict and native display identifiers are normalized", () => {
@@ -54,31 +57,63 @@ test("malformed app statuses never look like completion", () => {
 
 const frame = { step: 0, labels: ["Message"], viewport: [440, 956] };
 const unexpected = async () => { throw new Error("Unexpected host action"); };
-function drive(steps: unknown) {
-    return { steps: parseMobileDrive(steps), directory: "", script: "", output: "/captures" };
+function drive(steps: unknown, output = "/captures") {
+    return { steps: parseMobileDrive(steps), directory: "", script: "", output };
 }
 
-test("settled capture completes before acknowledgement and never repeats", async () => {
-    const captures: string[] = [];
-    let finish!: () => void;
-    const captured = new Promise<void>(resolve => { finish = resolve; });
-    const session = new MobileDriveSession(drive([{ screenshot: "reply" }]), {
-        async capture(path, display) {
-            captures.push(`${display}:${path}`);
-            await captured;
-        },
-        fold: unexpected,
-    });
-    const acknowledgement = session.accept({ ...frame, state: "ready" });
-    expect(session.screenshots).toEqual([]);
-    expect(session.completed).toBe(false);
-    finish();
-    expect(await acknowledgement).toEqual({ step: 0 });
-    expect(await session.accept({ ...frame, state: "ready" })).toBeUndefined();
-    await session.accept({ ...frame, state: "completed" });
-    expect(session.completed).toBe(true);
-    expect(session.screenshots).toEqual(["/captures/reply.png"]);
-    expect(captures).toEqual(["1:/captures/reply.png"]);
+test("settled captures preserve each frame before acknowledgement and never repeat", async () => {
+    const output = await mkdtemp(join(tmpdir(), "tbm-mobile-drive-state-"));
+    try {
+        const captures: string[] = [];
+        let finish!: () => void;
+        const captured = new Promise<void>(resolve => { finish = resolve; });
+        const session = new MobileDriveSession(drive([
+            { screenshot: "reply" }, { screenshot: "keyboard.png", display: 3 },
+        ], output), {
+            async capture(path, display) {
+                captures.push(`${display}:${path}`);
+                await captured;
+            },
+            fold: unexpected,
+        });
+        const first = { ...frame, state: "ready" as const };
+        const acknowledgement = session.accept(first);
+        expect(session.screenshots).toEqual([]);
+        expect(session.completed).toBe(false);
+        expect(await Bun.file(join(output, "reply.json")).exists()).toBe(false);
+        finish();
+        expect(await acknowledgement).toEqual({ step: 0 });
+        expect(await session.accept(first)).toBeUndefined();
+        const second = { ...frame, state: "ready" as const, step: 1, labels: ["Message", "Keyboard shown"] };
+        expect(await session.accept(second)).toEqual({ step: 1 });
+        await session.accept({ ...second, state: "completed", labels: ["Later state"], viewport: [956, 440] });
+        expect(session.completed).toBe(true);
+        expect(session.screenshots).toEqual([join(output, "reply.png"), join(output, "keyboard.png")]);
+        expect(captures).toEqual([`1:${join(output, "reply.png")}`, `3:${join(output, "keyboard.png")}`]);
+        expect(JSON.parse(await readFile(join(output, "reply.json"), "utf8"))).toEqual(first);
+        expect(JSON.parse(await readFile(join(output, "keyboard.json"), "utf8"))).toEqual(second);
+    } finally {
+        await rm(output, { recursive: true, force: true });
+    }
+});
+
+test("a screenshot companion write failure cannot acknowledge success or repeat the capture", async () => {
+    const output = await mkdtemp(join(tmpdir(), "tbm-mobile-drive-state-failure-"));
+    try {
+        let captures = 0;
+        const session = new MobileDriveSession(drive([{ screenshot: "reply" }], join(output, "missing")), {
+            async capture() { captures++; }, fold: unexpected,
+        });
+        const acknowledgement = await session.accept({ ...frame, state: "ready" });
+        expect(acknowledgement?.error).toContain("ENOENT");
+        expect(session.screenshots).toEqual([]);
+        expect(await session.accept({ ...frame, state: "ready" })).toBeUndefined();
+        expect(captures).toBe(1);
+        await expect(session.accept({ ...frame, state: "completed" })).rejects.toThrow("ENOENT");
+        expect(session.completed).toBe(false);
+    } finally {
+        await rm(output, { recursive: true, force: true });
+    }
 });
 
 test("an app failure reports its exact step and accessible labels", async () => {
