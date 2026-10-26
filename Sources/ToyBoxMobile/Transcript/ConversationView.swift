@@ -145,8 +145,10 @@ struct ConversationView: View {
                         .id(item.id)
                 }
                 ForEach(store.sendAttempts) { attempt in
+                    // The committed row takes the attempt's UUID, so keep the two identities apart.
                     TranscriptSendAttempt(attempt: attempt, store: store, context: context)
                         .padding(.top, TranscriptItem.runGap)
+                        .id("attempt-\(attempt.id)")
                 }
             }
             .padding(.top, 12)
