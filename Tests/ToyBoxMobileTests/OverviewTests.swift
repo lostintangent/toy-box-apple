@@ -288,7 +288,9 @@ struct OverviewTests {
         let close = try #require(MobileAutomationTree(windows: [window]).elements.first {
             $0.label == "Close Overview" && $0.traits.contains(.button)
         })
-        #expect(close.frame.minY - window.safeAreaInsets.top <= 12)
+        #expect(close.frame.width >= 44 && close.frame.height >= 44)
+        #expect(abs(close.frame.minY - window.safeAreaInsets.top - 12) < 0.5,
+                "Close \(close.frame), window safe area \(window.safeAreaInsets), host safe area \(host.view.safeAreaInsets), navigation \(navigation.view.frame), bar \(navigation.navigationBar.frame)")
         session.navigationPath = [.agent("agent")]
         let deadline = ContinuousClock.now.advanced(by: .seconds(2))
         while navigation.isNavigationBarHidden || navigation.topViewController?.navigationItem.title != "About Agent",
