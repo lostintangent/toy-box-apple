@@ -47,7 +47,9 @@ struct SettingsView: View {
         .navigationTitle("Settings")
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
-                Button("Done") { model.isSettingsPresented = false }.disabled(isApplying)
+                Button(role: .close) { model.isSettingsPresented = false }
+                    .accessibilityLabel("Close Settings")
+                    .disabled(isApplying)
             }
         }
         .onAppear {
