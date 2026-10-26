@@ -9,6 +9,12 @@ struct OverviewAboutSection: View {
     @Bindable var session: OverviewSession
     @Environment(\.openURL) private var openURL
 
+    static func hasInformation(_ details: ChannelDetails?) -> Bool {
+        guard let details else { return false }
+        return details.purpose?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+            || details.directory?.isEmpty == false || details.resolvedPreview != nil
+    }
+
     var body: some View {
         if let details = store.details {
             let purpose = details.purpose.flatMap { value in
@@ -18,25 +24,38 @@ struct OverviewAboutSection: View {
             let preview = details.resolvedPreview
             if purpose != nil || directory != nil || preview != nil {
                 Section {
-                    if let purpose {
-                        OverviewPurpose(purpose: purpose, expanded: $session.purposeExpanded)
-                    }
-                    if let directory {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Label("Folder on Mac", systemImage: "folder")
-                            Text(directory)
-                                .font(.footnote.monospaced())
-                                .textSelection(.enabled)
-                                .fixedSize(horizontal: false, vertical: true)
-                            Button("Copy Folder Path") { UIPasteboard.general.string = directory }
-                                .frame(minHeight: 44)
+                    VStack(alignment: .leading, spacing: 16) {
+                        if let purpose {
+                            OverviewPurpose(purpose: purpose, expanded: $session.purposeExpanded)
+                        }
+                        if directory != nil || preview != nil {
+                            VStack(alignment: .leading, spacing: 8) {
+                                if let directory {
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Label("Folder on Mac", systemImage: "folder")
+                                        Text(directory)
+                                            .font(.footnote.monospaced())
+                                            .textSelection(.enabled)
+                                            .fixedSize(horizontal: false, vertical: true)
+                                        Button("Copy Folder Path") { UIPasteboard.general.string = directory }
+                                            .frame(minHeight: 44)
+                                    }
+                                }
+                                if let preview {
+                                    previewRow(preview)
+                                    if let error = session.previewError { ManagementError(message: error) }
+                                }
+                            }
                         }
                     }
-                    if let preview {
-                        previewRow(preview)
-                        if let error = session.previewError { ManagementError(message: error) }
-                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .buttonStyle(.borderless)
                 }
+                .listRowInsets(.vertical, 0)
+                .listRowSeparator(.hidden)
+                .listSectionMargins(.vertical, 0)
+                .listSectionMargins(.top, 12)
+                .listSectionMargins(.bottom, 16)
             }
         }
     }

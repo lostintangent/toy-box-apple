@@ -10,24 +10,18 @@ struct OverviewTasksSection: View {
 
     var body: some View {
         let progress = channelTasksProgress(store.tasks)
-        Section {
-            if session.isExpanded(.tasks) {
-                if store.tasks.isEmpty {
-                    Text("No tasks yet").foregroundStyle(ChannelInk.secondary)
-                } else {
-                    ForEach(store.tasks) { task in
-                        OverviewTaskTree(task: task, store: store, session: session)
-                            .listRowSeparator(.hidden)
-                            .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
-                            .padding(.bottom, 8)
-                    }
+        OverviewSectionRows(summary: .tasks(progress), section: .tasks, session: session,
+                            diff: channelTasksDiff(store.tasks)) {
+            if store.tasks.isEmpty {
+                Text("No tasks yet").foregroundStyle(ChannelInk.secondary)
+            } else {
+                ForEach(store.tasks) { task in
+                    OverviewTaskTree(task: task, store: store, session: session)
+                        .listRowSeparator(.hidden)
+                        .listRowInsets(.vertical, 0)
+                        .padding(.bottom, 8)
                 }
             }
-        } header: {
-            OverviewSectionHeader(summary: .tasks(progress),
-                                  section: .tasks, session: session, diff: channelTasksDiff(store.tasks))
-                .accessibilityIdentifier("overview-tasks")
-                .id("overview-tasks")
         }
     }
 }
@@ -131,14 +125,13 @@ private struct OverviewTaskTree: View {
     }
 }
 
-private struct OverviewTaskNode: View {
+struct OverviewTaskNode: View {
     let task: ChannelTask
     let store: ChannelStore
     let session: OverviewSession
     let depth: Int
     let layout: OverviewTaskReadingLayout
     @Environment(ChannelArtifactSession.self) private var viewer
-    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ViewState private var isVisible = false
 
@@ -167,7 +160,6 @@ private struct OverviewTaskNode: View {
                 .buttonStyle(.borderless)
                 .disabled(artifact == nil)
                 .padding(.leading, layout.accessibility ? 0 : layout.statusWidth + layout.titleGap)
-                .padding(.top, 4)
                 .accessibilityLabel(artifact.map { "Open \($0.title)" } ?? "Artifact unavailable")
                 .accessibilityIdentifier("overview-task-artifact-\(task.id)")
             }
@@ -179,6 +171,9 @@ private struct OverviewTaskNode: View {
                         }
                     }
                     .padding(.leading, layout.indent)
+                    .overlay {
+                        ChannelTaskAncestryGuide(statusWidth: layout.statusWidth)
+                    }
                 } else {
                     NavigationLink(value: OverviewRoute.subtasks(task.id)) {
                         HStack {
@@ -294,17 +289,9 @@ private struct OverviewTaskNode: View {
     }
 
     private var status: some View {
-        Image(systemName: task.status == "done" ? "checkmark.circle.fill"
-              : task.status == "blocked" ? "exclamationmark.circle.fill"
-              : task.status == "in_progress" ? "circle.lefthalf.filled" : "circle")
-            .symbolRenderingMode(task.status == "blocked" ? .palette : .monochrome)
-            .foregroundStyle(task.status == "blocked" ? Color.white
-                             : task.status == "done" ? ChannelTaskColors.changes(in: colorScheme).added
-                             : ChannelInk.secondary, Color.red)
-            .font(.system(size: layout.statusWidth * 0.875,
-                          weight: task.status == "done" || task.status == "blocked" ? .semibold : .regular))
+        ChannelTaskStatusSymbol(status: task.status, secondary: ChannelInk.secondary)
+            .font(.system(size: layout.statusWidth * 0.875))
             .frame(width: layout.statusWidth, height: layout.statusWidth)
-            .accessibilityHidden(true)
     }
 
     private func toggle() {
@@ -343,7 +330,9 @@ struct OverviewTaskArtifactLabel: View {
         }
         .font(.footnote)
         .foregroundStyle(Color(uiColor: isEnabled ? .label : .tertiaryLabel))
-        .frame(maxWidth: .infinity, minHeight: 44, alignment: .topLeading)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.top, ChannelOverviewFactsLayout.titleGap)
+        .padding(.bottom, 12)
         .contentShape(Rectangle())
     }
 }

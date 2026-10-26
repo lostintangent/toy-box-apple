@@ -122,6 +122,9 @@ struct OverviewTaskRow: View {
                     }
                 }
                 .padding(.leading, OverviewTaskList.depthIndent)
+                .overlay {
+                    ChannelTaskAncestryGuide(statusWidth: Self.statusSize)
+                }
             }
         }
         .accessibilityElement(children: .contain)
@@ -272,35 +275,12 @@ private struct OverviewTaskRowRole: ViewModifier {
 /// A read-only 16-point status cell, never a toggleable checkbox.
 struct OverviewTaskStatusIcon: View {
     @Environment(\.channelTextScale) private var textScale
-    @Environment(\.colorScheme) private var colorScheme
     let status: String
 
     var body: some View {
-        icon
+        ChannelTaskStatusSymbol(status: status)
             .font(.system(size: 14 * textScale))
             .frame(width: OverviewTaskRow.statusSize, height: OverviewTaskRow.statusSize)
-            .accessibilityHidden(true)
-    }
-
-    @ViewBuilder
-    private var icon: some View {
-        switch status {
-        case "done":
-            // Monochrome knocks the check out to the inspector, which a white check on green can't match.
-            Image(systemName: "checkmark.circle.fill")
-                .symbolRenderingMode(.monochrome)
-                .fontWeight(.semibold)
-                .foregroundStyle(ChannelTaskColors.changes(in: colorScheme).added)
-        case "blocked":
-            Image(systemName: "exclamationmark.circle.fill")
-                .symbolRenderingMode(.palette)
-                .fontWeight(.semibold)
-                .foregroundStyle(.white, .red)
-        case "in_progress":
-            Image(systemName: "circle.lefthalf.filled").foregroundStyle(.secondary)
-        default:
-            Image(systemName: "circle").foregroundStyle(.secondary)
-        }
     }
 }
 
