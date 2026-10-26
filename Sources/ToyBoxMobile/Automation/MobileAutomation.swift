@@ -2,6 +2,19 @@
 import Foundation
 import UIKit
 
+enum MobileAutomationPosture: String, Decodable {
+    case folded, unfolded
+
+    var viewport: [Double] {
+        switch self {
+        case .folded: [386, 678]
+        case .unfolded: [871, 669]
+        }
+    }
+
+    func matches(_ measured: [Double]) -> Bool { measured == viewport }
+}
+
 struct MobileAutomationStep: Decodable, Equatable {
     enum ScrollDirection: String, Decodable {
         case up, down, left, right
@@ -20,6 +33,7 @@ struct MobileAutomationStep: Decodable, Equatable {
         case tap(String), type(String), wait(String, absent: Bool), screenshot(String, String), back(ifPresent: Bool), fold(Bool)
         case customAction(String, on: String)
         case scroll(ScrollDirection, on: String)
+        case posture(MobileAutomationPosture)
     }
 
     let action: Action
@@ -35,7 +49,7 @@ struct MobileAutomationStep: Decodable, Equatable {
     init(from decoder: any Decoder) throws {
         let values = try decoder.container(keyedBy: Key.self)
         let names = Set(values.allKeys.map(\.stringValue))
-        let actions = names.intersection(["tap", "type", "wait", "screenshot", "back", "fold", "action", "scroll"])
+        let actions = names.intersection(["tap", "type", "wait", "screenshot", "back", "fold", "action", "scroll", "posture"])
         guard actions.count == 1, names.isSubset(of: actions.union(["display", "timeout", "ifPresent", "on", "absent"])),
               let name = actions.first, let key = Key(stringValue: name),
               (!names.contains("display") || name == "screenshot"),
@@ -87,6 +101,8 @@ struct MobileAutomationStep: Decodable, Equatable {
                 throw DecodingError.dataCorruptedError(forKey: key, in: values, debugDescription: "back must be true.")
             }
             action = .back(ifPresent: try values.decodeIfPresent(Bool.self, forKey: Key(stringValue: "ifPresent")!) ?? false)
+        case "posture":
+            action = .posture(try values.decode(MobileAutomationPosture.self, forKey: key))
         default:
             action = .fold(try values.decode(Bool.self, forKey: key))
         }
@@ -387,6 +403,14 @@ private final class MobileAutomationRun {
         case .screenshot:
             try await settle(timeout: step.timeout)
             try await hostAction(timeout: step.timeout)
+        case .posture(let posture):
+            do {
+                try await settle(timeout: step.timeout, posture: posture)
+            } catch {
+                throw Failure("Expected \(posture.rawValue) scene \(posture.viewport), "
+                              + "but measured \(MobileAutomationTree.current.viewport). \(error)")
+            }
+            return
         case .fold:
             let before = MobileAutomationTree.current.viewport
             try await hostAction(timeout: step.timeout)
@@ -425,14 +449,15 @@ private final class MobileAutomationRun {
         throw Failure("Timed out after \(timeout) seconds at step \(index + 1).")
     }
 
-    private func settle(timeout: TimeInterval) async throws {
+    private func settle(timeout: TimeInterval, posture: MobileAutomationPosture? = nil) async throws {
         var previous: [String] = []
         var stable = 0
         _ = try await wait(timeout: timeout) {
             let tree = MobileAutomationTree.current
             for window in tree.windows { window.layoutIfNeeded() }
             let measured = tree.elements.map { "\($0.description) \($0.frame)" } + [String(describing: tree.viewport)]
-            stable = measured == previous && !tree.viewport.isEmpty ? stable + 1 : 0
+            let expected = posture?.matches(tree.viewport) ?? true
+            stable = measured == previous && !tree.viewport.isEmpty && expected ? stable + 1 : 0
             previous = measured
             return stable >= 4 ? true : nil
         }

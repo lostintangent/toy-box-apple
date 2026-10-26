@@ -17,6 +17,8 @@ test("drive actions are strict and native display identifiers are normalized", (
         expect(parseMobileDrive([{ scroll: direction, on: "overview-form", timeout: 20 }]))
             .toEqual([{ scroll: direction, on: "overview-form", timeout: 20 }]);
     }
+    expect(parseMobileDrive([{ posture: "folded" }, { posture: "unfolded", timeout: 60 }]))
+        .toEqual([{ posture: "folded" }, { posture: "unfolded", timeout: 60 }]);
     for (const value of [[], {}, [{}], [{ tap: "x", wait: "x" }], [{ type: "" }], [{ back: false }],
         [{ fold: 1 }], [{ tap: "x", display: 1 }], [{ screenshot: "x", display: 0 }],
         [{ screenshot: "x", display: "primary" }], [{ wait: "x", timeout: 0 }],
@@ -24,9 +26,21 @@ test("drive actions are strict and native display identifiers are normalized", (
         [{ back: true, ifPresent: "yes" }], [{ action: "Reply" }], [{ action: "Reply", on: "" }],
         [{ tap: "Reply", on: "message-12" }], [{ wait: "x", absent: "yes" }], [{ tap: "x", absent: true }],
         [{ scroll: "down" }], [{ scroll: "down", on: "" }], [{ scroll: "forward", on: "form" }],
-        [{ scroll: "up", on: "form", display: 1 }]]) {
+        [{ scroll: "up", on: "form", display: 1 }],
+        [{ posture: "open" }], [{ posture: 0 }], [{ posture: "folded", fold: true }],
+        [{ posture: "folded", display: 1 }], [{ posture: "folded", scroll: "down", on: "form" }],
+        [{ posture: "folded", on: "form" }]]) {
         expect(() => parseMobileDrive(value)).toThrow();
     }
+});
+
+test("posture is observed by the app and never invokes a host fold command", async () => {
+    const session = new MobileDriveSession(drive([{ posture: "unfolded" }]), { capture: unexpected, fold: unexpected });
+    expect(await session.accept({ ...frame, state: "running" })).toBeUndefined();
+    expect(session.completed).toBe(false);
+    await session.accept({ ...frame, state: "completed", viewport: [871, 669] });
+    expect(session.completed).toBe(true);
+    expect(session.screenshots).toEqual([]);
 });
 
 test("malformed app statuses never look like completion", () => {

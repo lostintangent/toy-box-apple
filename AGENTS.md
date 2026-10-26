@@ -81,7 +81,7 @@ view.
 - `SCRATCH_PATH=/tmp/tbm-<you> bun run mobile` builds and bundles the app, installs it
   and launches `dev.toybox.mobile` on the shared **Toy Box Mobile** iPhone Duo simulator.
   It does not open or focus Device Hub (`com.apple.dt.Devices`). Choose that device there to
-  view it, using the native Closed / Open controls to fold or unfold.
+  view it, using its native hinge-posture slider to fold or unfold.
   Only one agent may use the simulator at a time. Every simulator command takes a machine-wide
   `flock` and waits its turn, printing the holder's PID, command and worktree. Use
   `bun run mobile --hold` to keep that lock during manual UI checks. Ctrl-C or the 15-minute
@@ -98,8 +98,9 @@ view.
   `--drive <steps.json>` runs a DEBUG-only accessibility script under the same lease and shuts down
   on completion or failure. Steps are `{"tap":"exact label or identifier"}`, `{"type":"text"}`,
   `{"wait":"label or value fragment"}`, `{"screenshot":"name","display":1}`, `{"back":true}`
-  and `{"fold":false}`. `{"action":"Reply","on":"message-12"}` activates a named accessibility
-  custom action on one exact label or identifier. Back accepts `ifPresent: true` for an explicitly
+  and `{"posture":"unfolded","timeout":60}`.
+  `{"action":"Reply","on":"message-12"}` activates a named accessibility custom action on one
+  exact label or identifier. Back accepts `ifPresent: true` for an explicitly
   optional initial return from restored navigation. Wait for the channel name first, then use
   optional Back before tapping its row, so restoration has a chance to finish.
   Wait accepts `absent: true` to wait for a label/value to disappear.
@@ -118,13 +119,24 @@ view.
   This drives accessibility activation, native control primary actions and text insertion, not
   finger touch. Rerunning a
   script repeats its actions, including sends. Use demo servers only for write scripts.
-  Fold currently fails explicitly with native display-control diagnostics. The display-power
+  Posture does not move the hinge itself. While the driver owns the lease, use Computer Use on
+  Device Hub and confirm that its window and selected device identify the leased simulator before
+  setting `deviceChrome.poseHingeSlider`. The app waits for a settled **386x678-point folded**
+  or **871x669-point unfolded** scene, not merely a different size. A timeout reports the expected
+  and measured scene. `scripts/fixtures/mobile-drive-posture.json` checks folded, unfolded and
+  folded again without sending or editing a draft.
+  Slider value **0** was observed with the folded scene. The unfolded value is not yet verified:
+  Computer Use refused both setting a value and the advertised increment action. A requested value
+  is not a measured result.
+  The legacy `{"fold":false}` action still fails explicitly with native display-control diagnostics.
+  The display-power
   command did not change the app scene and can crash SpringBoard, so the driver never uses it.
-  Native posture interaction still needs Device Hub. Release builds have neither the startup hook nor
+  Release builds have neither the startup hook nor
   driver, and no script runs without the explicit per-launch environment.
   `scripts/fixtures/mobile-drive-demo.json` demonstrates a real request reply/send and both display
   captures. It requires the message-row identifiers and the demo baseline's request at sequence 15.
-  It sends a message on every run and stops, without retrying, if native fold control is unsupported.
+  It sends a message on every run and requires the same live Device Hub posture actions.
+  A posture timeout stops the script without retrying.
   `bun run mobile --shutdown` shuts it down. `MOBILE_SIMULATOR=<UDID>` is only for selecting an
   agreed shared device, not for creating one per agent.
 - `bun run mobile --build-only` builds the Simulator bundle without booting a device.
