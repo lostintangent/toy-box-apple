@@ -4,7 +4,7 @@ import Observation
 import ToyBoxUI
 
 enum ManagementField: Hashable {
-    case name, purpose, role, directory
+    case name, purpose, role
 }
 
 @MainActor @Observable
@@ -16,7 +16,6 @@ final class ManagementSession {
     var name = ""
     var purpose = ""
     var role = ""
-    var directory = ""
     var model: ModelConfiguration?
     private(set) var openingModel: ModelConfiguration?
     var pending = false {
@@ -47,7 +46,6 @@ final class ManagementSession {
         case .editChannel:
             name = channel.name
             purpose = channel.purpose ?? ""
-            directory = channel.directory ?? ""
             model = channel.model
         case .editMember:
             name = member?.name ?? ""

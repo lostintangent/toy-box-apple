@@ -17,7 +17,6 @@ struct ChannelEditor: View {
     private var channel: ChannelDetails? { session.channel }
     private var name: String { session.name }
     private var purpose: String { session.purpose }
-    private var directory: String { session.directory }
     private var model: ModelConfiguration? { session.model }
     private var saving: Bool { session.pending }
     private var recovery: ChannelManagementWriteRecovery { session.recovery }
@@ -26,10 +25,8 @@ struct ChannelEditor: View {
 
     private var nextName: String { name.trimmingCharacters(in: .whitespacesAndNewlines) }
     private var nextPurpose: String { purpose.trimmingCharacters(in: .whitespacesAndNewlines) }
-    private var nextDirectory: String { directory.trimmingCharacters(in: .whitespacesAndNewlines) }
     private var violation: String? {
         (nextName.isEmpty ? nil : ChannelValidation.channelNameError(nextName)) ?? ChannelValidation.purposeError(nextPurpose)
-            ?? (channel == nil ? ChannelValidation.directoryError(nextDirectory) : nil)
     }
     private var changed: Bool {
         guard let channel else { return true }
@@ -59,18 +56,25 @@ struct ChannelEditor: View {
                     }
                 }
             }
-            Section {
-                Text(channel == nil ? "The lead starts right away and adds specialists as needed."
-                     : "Name and purpose changes appear in the conversation.")
-                    .font(.footnote).foregroundStyle(ChannelInk.secondary)
+            if channel != nil {
+                Section {
+                    Text("Name and purpose changes appear in the conversation.")
+                        .font(.footnote).foregroundStyle(ChannelInk.secondary)
+                }
             }
             Section {
-                TextField("Name", text: $session.name,
-                          prompt: Text("Required").foregroundStyle(ChannelInk.secondary))
-                    .focused($focus, equals: .name)
-                    .submitLabel(.next)
-                    .onSubmit { focus = .purpose }
-                    .accessibilityIdentifier("channel-name")
+                LabeledContent {
+                    TextField("Name", text: $session.name,
+                              prompt: Text("Required").foregroundStyle(ChannelInk.secondary))
+                        .labelsHidden()
+                        .multilineTextAlignment(.trailing)
+                        .focused($focus, equals: .name)
+                        .submitLabel(.next)
+                        .onSubmit { focus = .purpose }
+                        .accessibilityIdentifier("channel-name")
+                } label: {
+                    Text("Name").accessibilityIdentifier("channel-name-label")
+                }
                 TextField("Purpose", text: $session.purpose,
                           prompt: Text("What should this team work toward?").foregroundStyle(ChannelInk.secondary),
                           axis: .vertical)
@@ -82,30 +86,8 @@ struct ChannelEditor: View {
             }
             ModelSelectionFields(model: $session.model, openingModel: session.openingModel,
                                  api: api, provider: channel?.model.provider,
-                                 allowsInheritance: false, title: "Lead model")
-            Section {
-                if channel == nil {
-                    TextField("Working directory", text: $session.directory,
-                              prompt: Text("Optional").foregroundStyle(ChannelInk.secondary))
-                        .focused($focus, equals: .directory)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .accessibilityIdentifier("channel-directory")
-                } else {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Folder on Mac")
-                        Text(directory.isEmpty ? "None" : directory)
-                            .font(.footnote.monospaced())
-                            .foregroundStyle(ChannelInk.secondary)
-                            .textSelection(.enabled)
-                    }
-                }
-            } footer: {
-                Text(channel == nil
-                     ? "A folder on the server. Leave it empty for a discussion-only channel."
-                     : "Only the lead can change the directory. Model changes apply the next time the lead works.")
-                    .foregroundStyle(ChannelInk.secondary)
-            }
+                                 allowsInheritance: false, title: "Lead model",
+                                 help: channel == nil ? [] : ["Model changes apply the next time the lead works."])
         }
         .accessibilityIdentifier("channel-editor-form")
         .disabled(saving)
@@ -157,9 +139,7 @@ struct ChannelEditor: View {
                             model: model == channel.model ? nil : model))
                     if isCurrent { presenter.flow = nil }
                 } else {
-                    let created = try await api.createChannel(
-                        .init(name: nextName, purpose: nextPurpose.isEmpty ? nil : nextPurpose,
-                              directory: nextDirectory.isEmpty ? nil : nextDirectory, model: model))
+                    let created = try await api.createChannel(creationInput(model: model))
                     if isCurrent { presenter.didCreate(created) }
                 }
                 await catalog?.refresh()
@@ -174,6 +154,10 @@ struct ChannelEditor: View {
                 session.focus = submittedFocus
             }
         }
+    }
+
+    func creationInput(model: ModelConfiguration) -> CreateChannelInput {
+        .init(name: nextName, purpose: nextPurpose.isEmpty ? nil : nextPurpose, model: model)
     }
 
     private func check(catalog: ChannelCatalogStore?) async {
@@ -191,7 +175,6 @@ struct ChannelEditor: View {
         session.channel = ChannelDetails(current)
         session.name = current.name
         session.purpose = current.purpose ?? ""
-        session.directory = current.directory ?? ""
         session.model = current.model
         recovery.finishReview()
     }
