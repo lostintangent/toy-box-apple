@@ -131,6 +131,15 @@ struct ShellTests {
         #expect(accessible.height > regular.height)
     }
 
+    @Test func channelRowsUseTheMacWorkingFaceLimitsWithoutReplacingOneFaceWithPlusOne() {
+        #expect(ChannelSidebarRow.faceLimits(working: 0).isEmpty)
+        #expect(ChannelSidebarRow.faceLimits(working: 1) == [1])
+        #expect(ChannelSidebarRow.faceLimits(working: 2) == [2])
+        #expect(ChannelSidebarRow.faceLimits(working: 3) == [3, 1])
+        #expect(ChannelSidebarRow.faceLimits(working: 4) == [3, 2, 1])
+        #expect(ChannelSidebarRow.faceLimits(working: 8) == [3, 2, 1])
+    }
+
     @Test(arguments: [false, true])
     func aReaderWaitsForActualCompactOverviewDismissalNotJustTheClosedIntent(imageReader: Bool) {
         let overview = OverviewPresentation()
@@ -254,13 +263,20 @@ struct ShellTests {
             defer { model.setActive(false) }
             #expect(model.sidebarConnection == .connecting)
             #expect(!model.canCreateChannel)
+            #expect(!model.canManageChannels)
             await model.refreshCatalog()
             #expect(model.sidebarConnection == .connected)
             #expect(!model.canCreateChannel)
+            #expect(!model.canManageChannels)
             model.setActive(true)
             #expect(model.canCreateChannel)
+            #expect(model.selectedChannelID == nil)
+            #expect(model.canManageChannels)
+            model.selectedChannelID = "second"
+            #expect(model.canManageChannels)
             model.setActive(false)
             #expect(!model.canCreateChannel)
+            #expect(!model.canManageChannels)
         }
     }
 
