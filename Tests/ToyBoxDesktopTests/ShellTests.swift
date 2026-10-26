@@ -308,6 +308,12 @@ struct QuickSendIntakeTests {
 
 @Suite("Shell launch configuration")
 struct ShellTests {
+    @Test func avatarHexColorsKeepShorthandAndInvalidInputRules() {
+        let expected = Color(.sRGB, red: 170.0 / 255, green: 187.0 / 255, blue: 204.0 / 255)
+        #expect(["#abc", "abc", "#aAbBcC", "AABBCC"].allSatisfy { Color(hex: $0) == expected })
+        #expect(["", "#12", "#12345", "#1234567", "#12ggff"].allSatisfy { Color(hex: $0) == nil })
+    }
+
     @Test func ordinaryLaunchKeepsNativeDefaults() throws {
         let options = try LaunchOptions.parse([])
         #expect(options.serverURL == nil)

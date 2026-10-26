@@ -58,15 +58,10 @@ private struct AvatarMark: Shape {
 extension Color {
     /// Parses `#rgb` or `#rrggbb` agent colors.
     init?(hex: String) {
-        guard let rgb = Self.rgb(hex) else { return nil }
-        self.init(.sRGB, red: rgb.r, green: rgb.g, blue: rgb.b)
-    }
-
-    private static func rgb(_ hex: String) -> (r: Double, g: Double, b: Double)? {
         var digits = hex.hasPrefix("#") ? String(hex.dropFirst()) : hex
         if digits.count == 3 { digits = digits.map { "\($0)\($0)" }.joined() }
         guard digits.count == 6, let value = UInt32(digits, radix: 16) else { return nil }
-        return (Double((value >> 16) & 0xFF) / 255, Double((value >> 8) & 0xFF) / 255,
-                Double(value & 0xFF) / 255)
+        self.init(.sRGB, red: Double((value >> 16) & 0xFF) / 255,
+                  green: Double((value >> 8) & 0xFF) / 255, blue: Double(value & 0xFF) / 255)
     }
 }
