@@ -141,10 +141,10 @@ struct MemberEditor: View {
                                        model: model == member.model ? nil : model.map { .set($0) } ?? .clear))
                     presenter.flow = nil
                 } else {
-                    let created = try await api.createMember(
+                    _ = try await api.createMember(
                         channelId: channel.id,
                         input: .init(name: nextName, role: nextRole.isEmpty ? nil : nextRole, model: model))
-                    presenter.didCreate(created, channelId: channel.id)
+                    presenter.finishAddingMember(channelId: channel.id)
                 }
                 await app.catalog?.refresh()
             } catch {

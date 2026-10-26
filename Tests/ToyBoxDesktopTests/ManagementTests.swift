@@ -1,5 +1,5 @@
 import AppKit
-import ChannelClient
+@testable import ChannelClient
 import ChannelKit
 import Foundation
 import SwiftUI
@@ -87,11 +87,11 @@ struct ManagementTests {
         private let session: URLSession
         private let host: String
 
-        init(catalogStatus: Int = 200) throws {
+        init(catalogStatus: Int = 200, memberStatus: Int = 500) throws {
             let fixtureHost = "management-\(UUID().uuidString.lowercased()).invalid"
             host = fixtureHost
             ManagementRecoveryProtocol.fixtures.withLock {
-                $0[fixtureHost] = .init(catalogStatus: catalogStatus)
+                $0[fixtureHost] = .init(catalogStatus: catalogStatus, memberStatus: memberStatus)
             }
             let configuration = URLSessionConfiguration.ephemeral
             configuration.protocolClasses = [ManagementRecoveryProtocol.self]
@@ -116,6 +116,7 @@ struct ManagementTests {
     private final class ManagementRecoveryProtocol: URLProtocol, @unchecked Sendable {
         struct Fixture: Sendable {
             var catalogStatus: Int
+            let memberStatus: Int
             var requests: [String] = []
         }
         static let fixtures = Mutex<[String: Fixture]>([:])
@@ -132,7 +133,8 @@ struct ManagementTests {
                 guard var fixture = fixtures[host] else { return nil }
                 fixture.requests.append("\(request.httpMethod ?? "GET") \(url.path)")
                 fixtures[host] = fixture
-                return request.httpMethod == "GET" ? fixture.catalogStatus : 500
+                if request.httpMethod == "GET" { return fixture.catalogStatus }
+                return request.httpMethod == "POST" ? fixture.memberStatus : 500
             }
             guard let status, let response = HTTPURLResponse(
                 url: url, statusCode: status, httpVersion: "HTTP/1.1",
@@ -140,9 +142,15 @@ struct ManagementTests {
                 client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
                 return
             }
-            let body = status == 200
-                ? ##"{"version":1,"channels":[],"members":[],"working":[],"lead":{"name":"Lead","role":"Coordinates the channel.","avatar":{"mark":"M12 3L15 9L21 10L16.5 14.5L18 21L12 18L6 21L7.5 14.5L3 10L9 9Z","color":"#1E3A8A","ink":"#FACC15"}}}"##
-                : #"{"error":"Management failed."}"#
+            let body: String
+            switch status {
+            case 200:
+                body = ##"{"version":1,"channels":[],"members":[],"working":[],"lead":{"name":"Lead","role":"Coordinates the channel.","avatar":{"mark":"M12 3L15 9L21 10L16.5 14.5L18 21L12 18L6 21L7.5 14.5L3 10L9 9Z","color":"#1E3A8A","ink":"#FACC15"}}}"##
+            case 201:
+                body = #"{"version":1,"member":{"id":"moss","name":"Moss"}}"#
+            default:
+                body = #"{"error":"Management failed."}"#
+            }
             client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
             client?.urlProtocol(self, didLoad: Data(body.utf8))
             client?.urlProtocolDidFinishLoading(self)
@@ -242,45 +250,48 @@ struct ManagementTests {
         #expect(MemberValidation.nameError("Another critic", agents: agents) == nil)
     }
 
-    @Test func memberResultsDismissOnlyTheMatchingCreationSheet() throws {
+    @Test func finishingMemberCreationDismissesOnlyTheMatchingSheet() {
         let presenter = ManagementPresenter()
-        let member = ChannelMember(id: "member", name: "Moss")
         presenter.present(.addMember(channelId: "channel", name: "Moss"))
-        presenter.didCreate(member, channelId: "channel")
+        presenter.finishAddingMember(channelId: "channel")
         #expect(presenter.flow == nil)
-        #expect(presenter.createdMember?.member == member)
-        let token = try #require(presenter.createdMember?.token)
 
         presenter.present(.editChannel(channelId: "another"))
-        presenter.didCreate(member, channelId: "channel")
+        presenter.finishAddingMember(channelId: "channel")
         #expect(presenter.flow == .editChannel(channelId: "another"))
-        #expect(presenter.createdMember?.token != token)
 
         presenter.present(.addMember(channelId: "another", name: "Finch"))
-        presenter.didCreate(member, channelId: "channel")
+        presenter.finishAddingMember(channelId: "channel")
         #expect(presenter.flow == .addMember(channelId: "another", name: "Finch"))
     }
 
-    @Test func inlineCreationNeverDismissesAnUnrelatedSheet() {
+    @Test func inlineCreationReturnsTheMemberWithoutDismissingAnUnrelatedSheet() async throws {
+        let fixture = try ManagementRecoveryFixture(memberStatus: 201)
+        defer { fixture.close() }
+        let store = ChannelStore(id: "channel", api: fixture.api, sendJournal: nil)
+        let channel = Channel(id: store.id, name: "Workshop", model: .init(provider: "test", name: "test"))
+        _ = try store.apply(.init(type: "snapshot", state: .init(
+            revision: 1, channel: channel, lead: .lead(id: store.id))))
         let presenter = ManagementPresenter()
         presenter.present(.addMember(channelId: "channel", name: "Finch"))
-        presenter.didCreate(ChannelMember(id: "moss", name: "Moss"),
-                            channelId: "channel", dismissSheet: false)
+        let member = try await presenter.createMentionMember(name: "Moss", store: store)
+        #expect(member == ChannelMember(id: "moss", name: "Moss"))
         #expect(presenter.flow == .addMember(channelId: "channel", name: "Finch"))
-        #expect(presenter.createdMember?.member.name == "Moss")
+        #expect(fixture.requests == ["POST /api/v1/channels/channel/members"])
     }
 
     @Test func inlineCreationRefusesAnUnconnectedStore() async throws {
         let api = try ChannelAPI(serverURL: "http://localhost:3210")
         let store = ChannelStore(id: "not-connected", api: api)
         let presenter = ManagementPresenter()
+        presenter.present(.addMember(channelId: "not-connected", name: "Finch"))
         do {
             _ = try await presenter.createMentionMember(name: "Moss", store: store)
             Issue.record("Disconnected inline creation must fail before making a request.")
         } catch let error as ChannelAPIError {
             #expect(error == .disconnected)
         }
-        #expect(presenter.createdMember == nil)
+        #expect(presenter.flow == .addMember(channelId: "not-connected", name: "Finch"))
     }
 
     @Test(arguments: [280, 328])

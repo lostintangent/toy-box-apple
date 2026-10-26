@@ -31,7 +31,6 @@ enum ManagementFlow: Identifiable, Equatable {
 final class ManagementPresenter {
     var flow: ManagementFlow?
     private(set) var createdChannel: (channel: Channel, token: UUID)?
-    private(set) var createdMember: (channelId: String, member: ChannelMember, token: UUID)?
     @ObservationIgnored private var creatingMentions: Set<String> = []
     @ObservationIgnored private var uncertainMentions: Set<String> = []
 
@@ -42,9 +41,8 @@ final class ManagementPresenter {
         flow = nil
     }
 
-    func didCreate(_ member: ChannelMember, channelId: String, dismissSheet: Bool = true) {
-        createdMember = (channelId, member, UUID())
-        if dismissSheet, case .addMember(let presentedChannelId, _) = flow, presentedChannelId == channelId {
+    func finishAddingMember(channelId: String) {
+        if case .addMember(let presentedChannelId, _) = flow, presentedChannelId == channelId {
             flow = nil
         }
     }
@@ -66,9 +64,7 @@ final class ManagementPresenter {
         }
         defer { creatingMentions.remove(key) }
         do {
-            let member = try await store.api.createMember(channelId: store.id, input: .init(name: trimmed))
-            didCreate(member, channelId: store.id, dismissSheet: false)
-            return member
+            return try await store.api.createMember(channelId: store.id, input: .init(name: trimmed))
         } catch {
             guard ManagementRecoveryState.isRequired(after: error) else { throw error }
             uncertainMentions.insert(key)
