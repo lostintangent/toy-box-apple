@@ -518,55 +518,6 @@ struct TranscriptHoverActionsLayout: Layout {
     }
 }
 
-/// Wraps content at a readable line without stretching it there, so a surface still hugs a short
-/// message and a wider lane adds air rather than longer lines.
-struct TranscriptWidthCap: Layout {
-    /// About 115 characters of body text at the default Text Size.
-    static let agentSurface: CGFloat = 760
-    var maxWidth: CGFloat
-
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        subviews.first?.sizeThatFits(capped(proposal)) ?? .zero
-    }
-
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        subviews.first?.place(at: bounds.origin, proposal: capped(proposal))
-    }
-
-    private func capped(_ proposal: ProposedViewSize) -> ProposedViewSize {
-        ProposedViewSize(width: min(proposal.width ?? maxWidth, maxWidth), height: proposal.height)
-    }
-}
-
-extension View {
-    func transcriptWidthCap(_ maxWidth: CGFloat) -> some View {
-        TranscriptWidthCap(maxWidth: maxWidth) { self }
-    }
-}
-
-/// Pins your messages to the trailing edge, hugging them up to 80% of the lane or `maxWidth`.
-struct TranscriptUserLane: Layout {
-    static let maximumWidth: CGFloat = 640
-    var maxWidth: CGFloat
-
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let width = proposal.width ?? 600
-        let size = subviews.first?.sizeThatFits(contentProposal(width)) ?? .zero
-        return CGSize(width: width, height: size.height)
-    }
-
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        guard let content = subviews.first else { return }
-        let proposal = contentProposal(bounds.width)
-        let size = content.sizeThatFits(proposal)
-        content.place(at: CGPoint(x: bounds.maxX - size.width, y: bounds.minY), proposal: proposal)
-    }
-
-    private func contentProposal(_ width: CGFloat) -> ProposedViewSize {
-        ProposedViewSize(width: min(width * 0.8, maxWidth), height: nil)
-    }
-}
-
 private struct TranscriptTimestamp: View {
     let timestamp: String
 

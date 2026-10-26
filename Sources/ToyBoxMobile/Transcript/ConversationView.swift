@@ -172,7 +172,6 @@ struct ConversationView: View {
 
     nonisolated private static let space = "transcript-content"
     private static let revealInterrupted = "Scrolling moved away before the message was revealed."
-    private static let laneWidth: CGFloat = 720
 
     private var items: [TranscriptItem] {
         guard let lead = store.roster.first else { return [] }
@@ -226,9 +225,8 @@ struct ConversationView: View {
             }
             .padding(.top, 12)
             .padding(.bottom, TranscriptScrollModel.endClearance)
-            .frame(maxWidth: Self.laneWidth)
-            .padding(.horizontal, sizeClass == .regular ? 20 : 16)
-            .frame(maxWidth: .infinity)
+            // The whole column, like the Mac. Each message caps its own line length instead.
+            .padding(.horizontal, transcriptEdgeInset(sizeClass))
             // Rows, links and controls sit above this, so only a tap on empty space reaches it.
             .background {
                 Color.clear.contentShape(.rect).onTapGesture {
@@ -529,12 +527,16 @@ private struct TranscriptSendAttempt: View {
     }
 }
 
+/// The transcript's inset from the column's edges.
+func transcriptEdgeInset(_ sizeClass: UserInterfaceSizeClass?) -> CGFloat { sizeClass == .regular ? 20 : 16 }
+
 /// The working summary and Jump to Latest, floating in glass just above the composer.
 private struct TranscriptFloatingAccessories: View {
     let store: ChannelStore
     let showsJumpToLatest: Bool
     @Binding var showsWorkingNow: Bool
     let jumpToLatest: () -> Void
+    @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private var rises: AnyTransition { reduceMotion ? .opacity : .opacity.combined(with: .offset(y: 4)) }
 
@@ -560,7 +562,8 @@ private struct TranscriptFloatingAccessories: View {
                 status(working, form: .sentence).frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-        .padding(.horizontal, 16)
+        // Aligned with the messages' edges.
+        .padding(.horizontal, transcriptEdgeInset(sizeClass))
         .padding(.bottom, 8)
         .animation(.easeOut(duration: 0.2), value: working.map(\.id))
         // The popover's anchor leaves with the last working agent, so it can't stay presented.

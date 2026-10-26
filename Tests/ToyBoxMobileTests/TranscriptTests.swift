@@ -420,4 +420,43 @@ struct TranscriptTests {
         #expect(TranscriptImageGallery.pageAnimation(reduceMotion: false) == .smooth(duration: 0.3))
         #expect(TranscriptImageGallery.pageAnimation(reduceMotion: true) == .easeInOut(duration: 0.2))
     }
+
+    @Test func unfoldedMessagesUseTheWholeColumnUpToTheMacsReadingCaps() throws {
+        #expect(TranscriptWidthCap.agentSurface == 760)
+        #expect(TranscriptUserLane.maximumWidth == 640)
+        #expect(transcriptEdgeInset(.compact) == 16)
+        #expect(transcriptEdgeInset(.regular) == 20)
+        final class Frames { var agent = CGRect.zero, mine = CGRect.zero }
+        // Folded keeps 88% for your messages. Unfolded, a wide column adds air instead of longer lines.
+        let cases: [(width: CGFloat, fraction: CGFloat, agent: CGFloat, mine: CGFloat)] = [
+            (402, 0.88, 402, 353.76), (700, 0.8, 700, 560), (1_000, 0.8, 760, 640), (1_400, 0.8, 760, 640),
+        ]
+        for (width, fraction, agent, mine) in cases {
+            let frames = Frames()
+            // Greedy stand-ins take every point offered, so they measure each cap itself.
+            let view = VStack(spacing: 0) {
+                Color.clear.frame(height: 20)
+                    .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frames.agent = $0 }
+                    .transcriptWidthCap(TranscriptWidthCap.agentSurface)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                TranscriptUserLane(maxWidth: TranscriptUserLane.maximumWidth, fraction: fraction) {
+                    Color.clear.frame(height: 20)
+                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frames.mine = $0 }
+                }
+            }
+            .frame(width: width)
+            let window = UIWindow(frame: CGRect(x: 0, y: 0, width: width, height: 200))
+            let host = UIHostingController(rootView: view)
+            window.rootViewController = host
+            window.isHidden = false
+            host.view.layoutIfNeeded()
+            RunLoop.main.run(until: .now + 0.05)
+            window.isHidden = true
+            #expect(abs(frames.agent.width - agent) < 0.5, "\(width): agent \(frames.agent)")
+            #expect(abs(frames.agent.minX) < 0.5)
+            #expect(abs(frames.mine.width - mine) < 0.5, "\(width): mine \(frames.mine)")
+            #expect(abs(frames.mine.maxX - width) < 0.5)
+        }
+    }
 }
+
