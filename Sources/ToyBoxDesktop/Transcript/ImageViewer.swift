@@ -572,13 +572,14 @@ final class ImageViewer {
         let api = session.api
         let pixelsPerPoint = max(1, layout?.displayScale ?? 2)
         let rasterPixels = desiredVectorPixels(at: position)
+        let space = NSScreen.main?.colorSpace?.cgColorSpace
         loads[position] = Task { [weak self] in
             let result: Result<(URL, CGImage, ImageViewerCornerTone?, CGSize?), any Error>
             do {
                 let file = try await TranscriptAttachmentCache.shared.file(for: attachment, api: api, reload: reload)
                 let (image, tone, vectorSize) = try await Task.detached(priority: .userInitiated) {
                     let decoded = try ImageViewer.decoded(file, maximumPixelSize: rasterPixels)
-                    let image = decoded.image
+                    let image = ImageViewer.displayReady(decoded.image, in: space)
                     let vectorSize = decoded.vectorSize
                     return (image, ImageViewerCornerTone(image, pixelsPerPoint: pixelsPerPoint), vectorSize)
                 }.value
@@ -641,6 +642,17 @@ final class ImageViewer {
         ] as CFDictionary) { return (image, nil) }
         let decoded = try TranscriptSVGImage.decode(file, maximumPixelSize: maximumPixelSize)
         return (decoded.image, decoded.pixelSize)
+    }
+
+    /// Redraws a decoded image in the display's color space and native BGRA layout. Otherwise
+    /// Core Animation color-matches the whole bitmap during commit and freezes the main thread.
+    nonisolated static func displayReady(_ image: CGImage, in space: CGColorSpace?) -> CGImage {
+        guard let space, let context = CGContext(
+            data: nil, width: image.width, height: image.height, bitsPerComponent: 8, bytesPerRow: 0, space: space,
+            bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
+        ) else { return image }
+        context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        return context.makeImage() ?? image
     }
 
     private func desiredVectorPixels(at position: Int) -> Int {

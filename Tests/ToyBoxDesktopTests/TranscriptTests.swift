@@ -1958,6 +1958,23 @@ struct ImageViewerTests {
         }
     }
 
+    @Test func viewerBitmapsArriveInTheDisplaySpaceSoCommitHasNothingToConvert() throws {
+        let srgb = try #require(CGColorSpace(name: CGColorSpace.sRGB))
+        let p3 = try #require(CGColorSpace(name: CGColorSpace.displayP3))
+        let context = try #require(CGContext(data: nil, width: 4, height: 2, bitsPerComponent: 8, bytesPerRow: 0,
+                                             space: srgb, bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue))
+        context.setFillColor(CGColor(srgbRed: 1, green: 0, blue: 0, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: 4, height: 2))
+        let source = try #require(context.makeImage())
+
+        let ready = ImageViewer.displayReady(source, in: p3)
+        #expect(ready.width == 4 && ready.height == 2 && ready.colorSpace?.name == CGColorSpace.displayP3)
+        #expect(ready.alphaInfo == .premultipliedFirst && ready.byteOrderInfo == .order32Little)
+        let bgra = try #require(ready.dataProvider?.data as Data?)
+        #expect(abs(Int(bgra[2]) - 234) <= 3 && abs(Int(bgra[1]) - 51) <= 3 && abs(Int(bgra[0]) - 35) <= 3)
+        #expect(ImageViewer.displayReady(source, in: nil) === source)
+    }
+
     private func finishLoads(_ viewer: ImageViewer) async {
         for load in viewer.loads.values { await load.value }
     }
