@@ -84,7 +84,7 @@ private struct OverviewForm: View {
                 }
                 OverviewAboutSection(store: store, session: session)
                 OverviewTeamSection(store: store)
-                OverviewTasksSection(store: store, session: session).id("overview-tasks")
+                OverviewTasksSection(store: store, session: session)
                 OverviewArtifactsSection(store: store)
                 OverviewRoutinesSection(store: store, session: session)
             }

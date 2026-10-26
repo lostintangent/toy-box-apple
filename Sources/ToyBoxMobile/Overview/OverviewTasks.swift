@@ -24,6 +24,8 @@ struct OverviewTasksSection: View {
                 if let diff = channelTasksDiff(store.tasks) { OverviewTaskDiff(diff: diff) }
             }
             .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("overview-tasks")
+            .id("overview-tasks")
         }
     }
 }
