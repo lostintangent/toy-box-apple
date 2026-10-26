@@ -34,12 +34,6 @@ public func channelTasksDiff(_ tasks: [ChannelTask]) -> DiffStats? {
     return total
 }
 
-public func channelTasksComplete(_ tasks: [ChannelTask]) -> Bool {
-    !tasks.isEmpty && tasks.allSatisfy {
-        $0.status == "done" && ($0.children?.isEmpty != false || channelTasksComplete($0.children ?? []))
-    }
-}
-
 public struct TaskProgress: Equatable, Sendable {
     public var done: Int
     public var total: Int
