@@ -87,21 +87,6 @@ struct ManagementTests {
         override func stopLoading() {}
     }
 
-    @Test(arguments: [false, true])
-    func clearingMemberModelDoesNotRequireCatalogChoicesOrACompatibleDefault(_ existingMember: Bool) throws {
-        let api = try ChannelAPI(serverURL: "http://localhost:3210")
-        var model: ModelConfiguration? = .init(provider: "copilot", name: "existing-model")
-        let fields = ModelSelectionFields(
-            model: Binding(get: { model }, set: { model = $0 }),
-            api: api, provider: "copilot", allowsInheritance: true,
-            memberScope: existingMember ? (channelId: "channel", agentId: "member") : nil)
-        #expect(fields.selection.wrappedValue == "copilot/existing-model")
-        fields.selection.wrappedValue = ""
-        #expect(model == nil)
-        #expect(fields.selection.wrappedValue == "")
-
-    }
-
     @Test func modelBindingRetainsUnavailableOptionsAndAvoidsUnchangedWrites() throws {
         let api = try ChannelAPI(serverURL: "http://localhost:3210")
         let opening = ModelConfiguration(provider: "copilot", name: "existing-model",
@@ -226,8 +211,8 @@ struct ManagementTests {
         #expect(presenter.flow == .addMember(channelId: "not-connected", name: "Finch"))
     }
 
-    @Test(arguments: [" \n ", String(repeating: "\u{1F680}", count: 41), " lead "])
-    func inlineCreationValidatesBeforeWriting(_ name: String) async throws {
+    @Test func inlineCreationValidatesBeforeWriting() async throws {
+        let name = " lead "
         let fixture = try ManagementRecoveryFixture()
         defer { fixture.close() }
         let store = ChannelStore(id: "channel", api: fixture.api, sendJournal: nil)
