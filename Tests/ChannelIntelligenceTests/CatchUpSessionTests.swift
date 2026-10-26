@@ -61,6 +61,28 @@ struct CatchUpSessionTests {
         #expect(await service.count == 1)
     }
 
+    @Test func aCachedUpdateIsReadySynchronouslyWithoutAnotherGeneration() async throws {
+        let service = SessionSummaryService(results: [
+            .ready(summarySessionResult()), .ready(summarySessionResult(through: 36)),
+        ])
+        let session = try #require(make())
+        await session.run(using: service)
+        let newer = summarySessionState(through: 36)
+        let anotherLanding = try #require(make(newer))
+        await anotherLanding.run(using: service)
+        let generation = session.generation
+
+        session.update(from: newer, server: server)
+
+        #expect(session.phase == anotherLanding.phase)
+        #expect(session.request.through == 36)
+        #expect(session.summary?.count == 26)
+        #expect(!session.isGenerating)
+        #expect(session.generation == generation)
+        await session.run(using: service)
+        #expect(await service.count == 2)
+    }
+
     @Test func dismissalsAreScopedToServerChannelAndUnreadBoundary() async throws {
         let session = try #require(make())
         session.dismiss()

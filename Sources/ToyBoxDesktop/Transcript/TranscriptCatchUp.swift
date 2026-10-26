@@ -55,7 +55,7 @@ final class TranscriptCatchUp {
 
     /// Regenerates through the newest message, keeping this landing's boundary.
     func update(from state: ChannelState, server: URL) {
-        withAnimation(.easeOut(duration: 0.2)) { session.update(from: state, server: server) }
+        session.update(from: state, server: server)
     }
 
     /// The summary stays gone for this channel and boundary for the rest of the session.
