@@ -92,7 +92,6 @@ struct WaitingRequestQuery: EntityStringQuery, EnumerableEntityQuery, IndexedEnt
         Self.matching(string, in: try await context.waitingRequests())
     }
 
-    func suggestedEntities() async throws -> [WaitingRequestEntity] { try await context.waitingRequests() }
     func allEntities() async throws -> [WaitingRequestEntity] { try await context.waitingRequests() }
 
     func reindexAllEntities(indexDescription: CSSearchableIndexDescription) async throws {
