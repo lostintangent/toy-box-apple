@@ -15,7 +15,7 @@ struct ChannelSidebarRow: View {
     var body: some View {
         HStack(spacing: 12) {
             ChannelMark(size: 28, emphasized: prominence == .increased)
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 8) {
                 heading
                 if dynamicTypeSize.isAccessibilitySize {
                     detail(yields: true)
@@ -88,7 +88,10 @@ struct ChannelSidebarRow: View {
 
     @ViewBuilder private func detail(yields: Bool) -> some View {
         if let path = channel.directory, !path.isEmpty {
-            Label((path as NSString).lastPathComponent, systemImage: "folder")
+            HStack(alignment: .firstTextBaseline, spacing: 4) {
+                Image(systemName: "folder")
+                Text((path as NSString).lastPathComponent)
+            }
                 .font(.footnote)
                 .foregroundStyle(ChannelInk.secondary)
                 .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
