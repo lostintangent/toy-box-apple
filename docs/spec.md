@@ -1480,27 +1480,36 @@ with a zero-spacing `VStack` and 16-point horizontal insets. Order: About (untit
 Tasks, Artifacts, Routines. Separate sections with a native `Divider()` across the content
 width, with 2 points of vertical padding. No cards, count capsules, section fills or uppercase.
 
-**Phone Overview, user 3484/3506 and design 3510.** Keep the plain native background.
+**Phone Overview, user 3484/3506/3572/3575 and design 3510/3600.** Keep the plain native background.
 Section distinction comes from larger headings and deliberate space, not grouped cards.
 This supersedes the interim grouped-background recommendation in 3485/3489. Do not change
-accepted Team/Tasks/Routines content or row anatomy. No colored panels, glass, shadows,
+accepted Team/Tasks/Routines content or interactions. No colored panels, glass, shadows,
 section fills or nested task cards. Keep count, diff and disclosure in the same minimum-44
 heading button.
 Separators appear only between rows, never below a group's final row. Preserve native
 navigation, swipe actions, task guides, disclosure, retained scroll and actual Tasks reveal.
 
-Remove the root Overview title bar without reserving its empty height. Keep the native Close
-and channel-actions menu as compact top-right controls, with purpose starting beside them
-at the top safe content edge. Folder and Preview use the full content width below. All opening
-information stays outside cards. Retain the Overview accessibility label, native sheet
-dismissal, nested agent/task navigation and the same behavior in both presentations.
+Remove the root Overview title bar without reserving its empty height. Keep Close and the
+channel-actions menu as icon-only top-right controls with full minimum-44 targets and retained
+accessible names. At default text size, their top is exactly 12 points below the safe content
+edge, with the purpose's first line vertically centered on that control row. At accessibility
+sizes, retain the native extra top inset within 12–24 points and preserve first-line alignment.
+Never render the control titles beside the purpose. Folder and Preview use the full content
+width below. All opening information stays outside cards. Retain the Overview accessibility
+label, native sheet dismissal, nested agent/task navigation and the same behavior in both
+presentations.
 Apply the compact 16-point / regular 20-point outer rail once, without the old compounded
-44-point list margin. At Large, use 16 points from purpose to details, 4 from folder label
-to wrapping path, 8 from folder block to Preview, 16 after opening information to the first
-heading, 4 from heading to content, and 24 from an expanded section's end to the next heading.
-Consecutive collapsed headings have a 12-point gap. More/Less stays minimum 44 with no
-extra spacer above it. Omit absent content and its gaps. Headings and rows grow with
-Dynamic Type. Mac container geometry stays unchanged.
+44-point list margin. Treat purpose, folder and Preview as the headerless first section.
+Use one 24-point section-gap constant from that block's last row to Team and between every
+pair of sections, whether collapsed or expanded. This replaces the earlier 16-point opening
+gap and 12-point collapsed gap. At Large, keep 16 points from purpose to details, 4 from folder
+label to wrapping path, 8 from folder block to Preview, and 4 from heading to content.
+More/Less stays minimum 44 with no extra spacer above it. Omit absent content and its gaps.
+Headings and rows grow with Dynamic Type. Mac container geometry stays unchanged.
+
+Phone Team avatars are 28 points at default text size, scaling natively up to a 36-point cap.
+Keep the accepted name/single-status hierarchy, text sizing, row growth and agent actions.
+This changes only the phone Team row, not message, completion, task or Mac avatars.
 
 **Section headers: names lead, facts follow.** The name is the primary anchor and its count is
 quiet supporting information, never a badge or part of the name. Mac uses 13 semibold primary
@@ -1717,8 +1726,10 @@ visual size. Bound wider HTML and SVG artwork to that footprint without stretchi
 ratio, enlarging the column or adopting the Mac's 28-point size.
 Phone artifact rows match Team's compact two-line rhythm: body title and footnote date,
 2-point interline gap, 24-point icon lane and the existing 12-point icon/text gap. Remove the
-64-point content minimum rather than adding native row padding around it. Aim for Team's
-60-point total at Large, keep a full minimum-44 target and grow for wrapping or larger text.
+64-point content minimum. Add exactly 6 points of native vertical row inset above and below
+the minimum-44 label, for both short and two-line titles. This replaces the earlier total-height
+target: preserve readable content and the full target rather than squeezing the row to 60.
+Grow for wrapping or larger text.
 This is the Artifacts section, not the separate task-artifact link whose compact 35-point
 candidate remains subject to native padded-area and neighboring-action review.
 
