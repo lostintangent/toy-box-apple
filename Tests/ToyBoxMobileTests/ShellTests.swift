@@ -148,9 +148,14 @@ struct ShellTests {
             host.loadViewIfNeeded()
             return host.sizeThatFits(in: CGSize(width: width, height: CGFloat.greatestFiniteMagnitude)).height
         }
+        let title = UIHostingController(rootView: Text(channel.name).font(.headline)
+            .environment(\.dynamicTypeSize, .large))
+        title.loadViewIfNeeded()
+        let titleHeight = title.sizeThatFits(in: CGSize(width: width, height: CGFloat.greatestFiniteMagnitude)).height
+        let workingHeight = max(72, titleHeight + 8 + 20 + 24)
         #expect(height(working: [], attention: nil) == 72)
-        #expect(height(working: agents, attention: nil) == 72)
-        #expect(height(working: agents, attention: .waiting) == 72)
+        #expect(height(working: agents, attention: nil) == workingHeight)
+        #expect(height(working: agents, attention: .waiting) == workingHeight)
     }
 
     @Test(arguments: [false, true])
