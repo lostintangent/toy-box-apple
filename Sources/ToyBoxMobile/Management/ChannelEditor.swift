@@ -45,6 +45,20 @@ struct ChannelEditor: View {
 
     var body: some View {
         Form {
+            if let store, !store.phase.isLive {
+                Section { ManagementConnectionNotice(store: store) }
+            }
+            if recovery.error != nil || recovery.state != nil {
+                Section {
+                    if let error = recovery.error { ManagementError(message: error) }
+                    if let state = recovery.state {
+                        ManagementRecoveryNotice(
+                            state: state,
+                            reviewTitle: recovery.result?.state == nil ? nil : "Use Current Server Values",
+                            onCheck: { Task { await check(catalog: catalog) } }, onReview: useCurrentValues)
+                    }
+                }
+            }
             Section {
                 Text(channel == nil ? "The lead starts right away and adds specialists as needed."
                      : "Name and purpose changes appear in the conversation.")
@@ -62,7 +76,7 @@ struct ChannelEditor: View {
                     .focused($focus, equals: .purpose)
                     .accessibilityIdentifier("channel-purpose")
             } footer: {
-                if let violation { Label(violation, systemImage: "exclamationmark.circle.fill").foregroundStyle(.red) }
+                if let violation { ManagementError(message: violation, systemImage: "exclamationmark.circle.fill") }
             }
             ModelSelectionFields(model: $session.model, openingModel: session.openingModel,
                                  api: api, provider: channel?.model.provider,
@@ -87,20 +101,6 @@ struct ChannelEditor: View {
                 Text(channel == nil
                      ? "A folder on the server. Leave it empty for a discussion-only channel."
                      : "Only the lead can change the directory. Model changes apply the next time the lead works.")
-            }
-            if let store, !store.phase.isLive {
-                Section { ManagementConnectionNotice(store: store) }
-            }
-            if let error = recovery.error {
-                Section { ManagementError(message: error) }
-            }
-            if let state = recovery.state {
-                Section {
-                    ManagementRecoveryNotice(
-                        state: state,
-                        reviewTitle: recovery.result?.state == nil ? nil : "Use Current Server Values",
-                        onCheck: { Task { await check(catalog: catalog) } }, onReview: useCurrentValues)
-                }
             }
         }
         .accessibilityIdentifier("channel-editor-form")

@@ -3,13 +3,17 @@ import SwiftUI
 
 struct ManagementError: View {
     let message: String
+    var systemImage = "exclamationmark.triangle"
 
     var body: some View {
-        Label(message, systemImage: "exclamationmark.triangle")
-            .font(.footnote)
-            .foregroundStyle(.red)
-            .fixedSize(horizontal: false, vertical: true)
-            .accessibilityAddTraits(.updatesFrequently)
+        Label {
+            Text(message).foregroundStyle(.primary)
+        } icon: {
+            Image(systemName: systemImage).foregroundStyle(.red)
+        }
+        .font(.footnote)
+        .fixedSize(horizontal: false, vertical: true)
+        .accessibilityAddTraits(.updatesFrequently)
     }
 }
 

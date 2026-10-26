@@ -47,6 +47,17 @@ struct MemberEditor: View {
 
     var body: some View {
         Form {
+            if !store.phase.isLive { Section { ManagementConnectionNotice(store: store) } }
+            if recovery.error != nil || recovery.state != nil {
+                Section {
+                    if let error = recovery.error { ManagementError(message: error) }
+                    if let state = recovery.state {
+                        ManagementRecoveryNotice(
+                            state: state, reviewTitle: refreshedMember == nil ? nil : "Use Current Server Values",
+                            onCheck: { Task { await check(catalog: catalog) } }, onReview: useCurrentValues)
+                    }
+                }
+            }
             Section {
                 Text(member == nil ? "Joins \(channel.name) and starts onboarding right away." : "Member of \(channel.name).")
                     .font(.footnote).foregroundStyle(.secondary)
@@ -63,7 +74,7 @@ struct MemberEditor: View {
                     .focused($focus, equals: .role)
                     .accessibilityIdentifier("member-role")
             } footer: {
-                if let violation { Label(violation, systemImage: "exclamationmark.circle.fill").foregroundStyle(.red) }
+                if let violation { ManagementError(message: violation, systemImage: "exclamationmark.circle.fill") }
                 Text(nextName.isEmpty ? "Names are unique in this channel."
                      : "Mentioned as @\(agentHandleFromName(nextName)). Names are unique in this channel.")
             }
@@ -77,15 +88,6 @@ struct MemberEditor: View {
                         presenter.present(.removeMember(channelId: channel.id, agentId: member.id))
                     }
                     .disabled(recovery.blocksWrites || !store.phase.isLive)
-                }
-            }
-            if !store.phase.isLive { Section { ManagementConnectionNotice(store: store) } }
-            if let error = recovery.error { Section { ManagementError(message: error) } }
-            if let state = recovery.state {
-                Section {
-                    ManagementRecoveryNotice(
-                        state: state, reviewTitle: refreshedMember == nil ? nil : "Use Current Server Values",
-                        onCheck: { Task { await check(catalog: catalog) } }, onReview: useCurrentValues)
                 }
             }
         }
