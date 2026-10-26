@@ -42,6 +42,7 @@ struct NativeComposerInput: UIViewRepresentable {
     var onSend: () -> Void
     var onCompletionKey: (ComposerCompletionKey) -> Bool
     var onPasteImages: ([NSItemProvider]) -> Void
+    var onEscape: (() -> Void)? = nil
 
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
 
@@ -103,6 +104,7 @@ struct NativeComposerInput: UIViewRepresentable {
         view.onSend = onSend
         view.onCompletionKey = onCompletionKey
         view.onPasteImages = onPasteImages
+        view.onEscape = onEscape
     }
 
     private func clampedSelection(for view: UITextView) -> NSRange {
@@ -141,6 +143,7 @@ final class ComposerTextView: UITextView {
     var onSend: (() -> Void)?
     var onCompletionKey: ((ComposerCompletionKey) -> Bool)?
     var onPasteImages: (([NSItemProvider]) -> Void)?
+    var onEscape: (() -> Void)?
 
     override var keyCommands: [UIKeyCommand]? {
         var commands = [
@@ -152,8 +155,10 @@ final class ComposerTextView: UITextView {
                 command(UIKeyCommand.inputUpArrow, action: #selector(previousCompletion)),
                 command(UIKeyCommand.inputDownArrow, action: #selector(nextCompletion)),
                 command("\t", action: #selector(acceptCompletion)),
-                command(UIKeyCommand.inputEscape, action: #selector(dismissCompletion)),
             ]
+        }
+        if completionIsVisible || onEscape != nil {
+            commands.append(command(UIKeyCommand.inputEscape, action: #selector(dismissCompletion)))
         }
         return commands + (super.keyCommands ?? [])
     }
@@ -190,7 +195,7 @@ final class ComposerTextView: UITextView {
 
     @objc func hardwareReturn() {
         guard markedTextRange == nil else { return }
-        if completionIsVisible, onCompletionKey?(.accept) == true { return }
+        if onCompletionKey?(.accept) == true { return }
         onSend?()
     }
 
@@ -202,5 +207,7 @@ final class ComposerTextView: UITextView {
     @objc private func previousCompletion() { _ = onCompletionKey?(.previous) }
     @objc private func nextCompletion() { _ = onCompletionKey?(.next) }
     @objc private func acceptCompletion() { _ = onCompletionKey?(.accept) }
-    @objc private func dismissCompletion() { _ = onCompletionKey?(.dismiss) }
+    @objc private func dismissCompletion() {
+        if onCompletionKey?(.dismiss) != true { onEscape?() }
+    }
 }
