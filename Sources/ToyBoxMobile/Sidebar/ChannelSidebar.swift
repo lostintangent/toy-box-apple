@@ -7,6 +7,7 @@ import UIKit
 struct ChannelSidebar: View {
     @Environment(AppModel.self) private var model
     @Environment(ManagementPresenter.self) private var management
+    @Environment(\.horizontalSizeClass) private var sizeClass
     @Binding var showsSettings: Bool
     let searchFocusRequest: UUID
     @ViewState private var query = ""
@@ -36,32 +37,37 @@ struct ChannelSidebar: View {
     private func channelList(now: Date) -> some View {
         @Bindable var model = model
         return List(selection: $model.selectedChannelID) {
-            if initialLoading {
-                ForEach(0..<3) { _ in
-                    ChannelSidebarPlaceholder()
-                        .listRowSeparator(.hidden)
-                }
-            } else {
-                ForEach(channels) { channel in
-                    NavigationLink(value: channel.id) {
-                        row(channel, now: now)
+            Section {
+                if initialLoading {
+                    ForEach(0..<3) { _ in
+                        ChannelSidebarPlaceholder()
+                            .listRowInsets(.vertical, 0)
+                            .listRowSeparator(.hidden)
                     }
-                    .contextMenu {
-                        contextMenu(channel)
-                    } preview: {
-                        ChannelSidebarPreview(channel: projection.channel(channel), agents: projection.agents(channel))
-                    }
-                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                        Button(role: .destructive) {
-                            management.present(.deleteChannel(channelId: channel.id))
-                        } label: {
-                            Label("Delete", systemImage: "trash")
+                } else {
+                    ForEach(channels) { channel in
+                        NavigationLink(value: channel.id) {
+                            row(channel, now: now)
                         }
-                        .disabled(!model.canManageChannels)
+                        .listRowInsets(.vertical, 0)
+                        .contextMenu {
+                            contextMenu(channel)
+                        } preview: {
+                            ChannelSidebarPreview(channel: projection.channel(channel), agents: projection.agents(channel))
+                        }
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            Button(role: .destructive) {
+                                management.present(.deleteChannel(channelId: channel.id))
+                            } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
+                            .disabled(!model.canManageChannels)
+                        }
+                        .listRowBackground(Color.clear)
                     }
-                    .listRowBackground(Color.clear)
                 }
             }
+            .listSectionSeparator(.hidden)
         }
     }
 
@@ -79,10 +85,11 @@ struct ChannelSidebar: View {
                 error: model.configurationError ?? model.catalog?.error,
                 canRetry: model.catalog != nil && model.isActive,
                 retry: { Task { await model.refreshCatalog() } },
-                openSettings: { showsSettings = true }
+                openSettings: { showsSettings = true },
+                showsSettingsButton: sizeClass != .compact
             )
         }
-        .navigationTitle("Channels")
+        .navigationTitle("Toy Box")
         .navigationBarTitleDisplayMode(.large)
         .searchable(text: $query, prompt: "Search Channels")
         .searchFocused($searchFocused)
@@ -96,11 +103,18 @@ struct ChannelSidebar: View {
             }
             ToolbarItem(placement: .primaryAction) {
                 Menu("More", systemImage: "ellipsis") {
-                    Button("Settings", systemImage: "gear") { showsSettings = true }
+                    if sizeClass != .compact {
+                        Button("Settings", systemImage: "gear") { showsSettings = true }
+                    }
                     Button("Refresh", systemImage: "arrow.clockwise") {
                         Task { await model.refreshCatalog() }
                     }
                     .disabled(model.catalog == nil || !model.isActive)
+                }
+            }
+            if sizeClass == .compact {
+                ToolbarItem(placement: .bottomBar) {
+                    Button("Settings", systemImage: "gear") { showsSettings = true }
                 }
             }
         }
@@ -196,12 +210,11 @@ private struct ChannelSidebarPlaceholder: View {
             VStack(alignment: .leading, spacing: 8) {
                 RoundedRectangle(cornerRadius: 4).fill(.quaternary).frame(width: 128, height: 12)
                 RoundedRectangle(cornerRadius: 4).fill(.quaternary).frame(width: 96, height: 8)
-                RoundedRectangle(cornerRadius: 4).fill(.quaternary).frame(width: 64, height: 8)
             }
             Spacer()
         }
         .padding(.vertical, 12)
-        .frame(minHeight: 96)
+        .frame(minHeight: 72)
         .accessibilityHidden(true)
     }
 }

@@ -43,7 +43,12 @@ public struct AgentAvatarStack: View {
             if showsOverflow && agents.count > faces.count {
                 Text("+\(agents.count - faces.count)")
                     .font(.system(size: 9, weight: .medium)).monospacedDigit()
-                    .padding(.leading, 7).foregroundStyle(.secondary)
+                    .padding(.leading, 7)
+                    #if os(iOS)
+                    .foregroundStyle(ChannelInk.secondary)
+                    #else
+                    .foregroundStyle(.secondary)
+                    #endif
             }
         }
         .accessibilityLabel(agents.map(\.name).joined(separator: ", "))

@@ -15,42 +15,21 @@ struct ChannelSidebarRow: View {
     var body: some View {
         HStack(spacing: 12) {
             ChannelMark(size: 28, emphasized: prominence == .increased)
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 8) {
                 heading
-                if let path = channel.directory, !path.isEmpty {
-                    Label((path as NSString).lastPathComponent, systemImage: "folder")
-                        .font(.footnote)
-                        .foregroundStyle(ChannelInk.secondary)
-                        .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
-                        .truncationMode(.middle)
-                } else if let purpose = channelPurposePreview(channel.purpose) {
-                    Text(purpose)
-                        .font(.footnote)
-                        .foregroundStyle(ChannelInk.secondary)
-                        .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
-                }
                 if dynamicTypeSize.isAccessibilitySize {
+                    detail(yields: true)
                     if !working.isEmpty {
                         AgentAvatarStack(agents: working, size: 20, limit: 3)
                     }
                     attentionLabel
                 } else {
-                    ViewThatFits(in: .horizontal) {
-                        ForEach(AgentAvatarStack.faceLimits(for: working.count), id: \.self) { limit in
-                            teamAndStatus(faceLimit: limit)
-                        }
-                        VStack(alignment: .leading, spacing: 4) {
-                            if let limit = AgentAvatarStack.faceLimits(for: working.count).last {
-                                AgentAvatarStack(agents: working, size: 20, limit: limit)
-                            }
-                            attentionLabel
-                        }
-                    }
+                    secondLine
                 }
             }
         }
         .padding(.vertical, 12)
-        .frame(minHeight: 96)
+        .frame(minHeight: 72)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(channel.name)
         .accessibilityValue(accessibilityDetails)
@@ -85,12 +64,47 @@ struct ChannelSidebarRow: View {
         }
     }
 
-    private func teamAndStatus(faceLimit: Int) -> some View {
+    private var secondLine: some View {
+        let limits = AgentAvatarStack.faceLimits(for: working.count)
+        return ViewThatFits(in: .horizontal) {
+            ForEach(limits, id: \.self) { limit in
+                secondLine(faceLimit: limit, detailYields: false)
+            }
+            secondLine(faceLimit: limits.last ?? 0, detailYields: true)
+        }
+    }
+
+    private func secondLine(faceLimit: Int, detailYields: Bool) -> some View {
         HStack(spacing: 8) {
-            AgentAvatarStack(agents: working, size: 20, limit: faceLimit)
-                .fixedSize()
-            attentionLabel.fixedSize()
+            detail(yields: detailYields)
             Spacer(minLength: 0)
+            if faceLimit > 0 {
+                AgentAvatarStack(agents: working, size: 20, limit: faceLimit)
+                    .fixedSize()
+            }
+            attentionLabel.fixedSize()
+        }
+    }
+
+    @ViewBuilder private func detail(yields: Bool) -> some View {
+        if let path = channel.directory, !path.isEmpty {
+            HStack(alignment: .firstTextBaseline, spacing: 4) {
+                Image(systemName: "folder")
+                Text((path as NSString).lastPathComponent)
+            }
+                .font(.footnote)
+                .foregroundStyle(ChannelInk.secondary)
+                .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
+                .truncationMode(.middle)
+                .fixedSize(horizontal: !yields, vertical: false)
+                .layoutPriority(1)
+        } else if let purpose = channelPurposePreview(channel.purpose) {
+            Text(purpose)
+                .font(.footnote)
+                .foregroundStyle(ChannelInk.secondary)
+                .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
+                .frame(minWidth: 0, idealWidth: yields ? nil : 60, maxWidth: .infinity, alignment: .leading)
+                .layoutPriority(1)
         }
     }
 
