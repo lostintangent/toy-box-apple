@@ -35,29 +35,6 @@ public struct ChannelHistoryPage: Codable, Sendable {
     public var messages: [ChannelMessage]
 }
 
-public struct ProviderModel: Codable, Identifiable, Sendable {
-    public var id: String
-    public var name: String
-    public var provider: String
-    public var providerName: String?
-    public var supportedReasoningEfforts: [String]?
-    public var supportedContextTiers: [ContextTier]?
-
-    public struct ContextTier: Codable, Sendable {
-        public var name: String
-        public var tokenWindow: Int?
-    }
-
-    public var configuration: ModelConfiguration { .init(provider: provider, name: id) }
-}
-
-public struct ModelCatalog: Codable, Sendable {
-    public var version: Int
-    public var models: [ProviderModel]
-    public var defaultModel: ModelConfiguration?
-    public var provider: String?
-}
-
 public struct CreateChannelInput: Encodable, Sendable {
     public var name: String
     public var purpose: String?
