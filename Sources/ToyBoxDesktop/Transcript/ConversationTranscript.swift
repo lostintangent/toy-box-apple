@@ -860,10 +860,12 @@ struct ConversationTranscript: View {
         revealError = nil
         pagingAnchor = nil
         defer { if interaction.revealRequestToken == token { isRevealing = false } }
-        await store.loadHistory(through: sequence)
+        let failure = await store.loadHistory(through: sequence)
         guard revealIsCurrent(token, findToken: findToken) else { return }
         guard let message = store.state?.messages.first(where: { $0.sequence == sequence }) else {
-            revealError = store.historyError ?? "This message is no longer available."
+            let message = failure ?? "This message is no longer available."
+            revealError = message
+            interaction.finishReveal(token, .failed(message))
             return
         }
         if !rows.contains(where: { $0.messages.contains { $0.id == message.id } }) {
@@ -872,6 +874,7 @@ struct ConversationTranscript: View {
         if find.isPresented { expandedMessageIds.insert(message.id) }
         guard let row = rows.first(where: { $0.messages.contains { $0.id == message.id } }) else {
             revealError = "This message is no longer available."
+            interaction.finishReveal(token, .failed("This message is no longer available."))
             return
         }
         let membership = message.system?.type == "member_joined" || message.system?.type == "member_left"
@@ -880,6 +883,7 @@ struct ConversationTranscript: View {
         let targetID = message.isSystem && !individualSystem ? row.id : message.id
         guard await settleReveal(targetID: targetID, rowID: row.id, token: token,
                                  findToken: findToken, using: proxy) else { return }
+        interaction.finishReveal(token, .revealed)
         highlightedSequence = find.isPresented ? nil : sequence
         hasLanded = true
         guard !find.isPresented else { return }

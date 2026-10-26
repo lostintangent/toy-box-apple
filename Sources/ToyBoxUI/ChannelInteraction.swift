@@ -20,6 +20,9 @@ public final class ChannelInteraction {
 
     /// The transcript consumes this to scroll to, page toward and briefly highlight a message.
     public private(set) var revealRequest: (sequence: Int, token: UUID)?
+    /// How the latest reveal went. A caller compares the token `reveal(sequence:)` returned, so it
+    /// never mistakes another reveal or an unrelated paging error for its own.
+    public private(set) var revealProgress: RevealProgress?
     /// Consuming the request must not cancel the task handling it.
     public private(set) var revealRequestToken = UUID()
     public private(set) var jumpToLatestRequest = UUID()
@@ -37,9 +40,19 @@ public final class ChannelInteraction {
 
     public func focusComposer() { composerFocusRequest = UUID() }
     public func editSendAttempt(id: String) { editSendAttemptRequest = (id, UUID()) }
-    public func reveal(sequence: Int) {
+    @discardableResult
+    public func reveal(sequence: Int) -> UUID {
         revealRequestToken = UUID()
         revealRequest = (sequence, revealRequestToken)
+        revealProgress = RevealProgress(token: revealRequestToken, sequence: sequence, outcome: .loading)
+        return revealRequestToken
+    }
+
+    /// The transcript reports its reveal here. A later reveal replaces the progress, so a stale
+    /// completion is ignored.
+    public func finishReveal(_ token: UUID, _ outcome: RevealProgress.Outcome) {
+        guard revealProgress?.token == token else { return }
+        revealProgress?.outcome = outcome
     }
 
     public func consumeRevealRequest(_ token: UUID) {
@@ -48,4 +61,23 @@ public final class ChannelInteraction {
     public func jumpToLatest() { jumpToLatestRequest = UUID() }
     public func findInChannel() { findRequest = UUID() }
     public func findNext(_ direction: Int) { findNavigation = (direction, UUID()) }
+}
+
+public struct RevealProgress: Equatable, Sendable {
+    public enum Outcome: Equatable, Sendable {
+        case loading
+        /// The message is in place and highlighted, not merely loaded.
+        case revealed
+        case failed(String)
+    }
+
+    public let token: UUID
+    public let sequence: Int
+    public var outcome: Outcome
+
+    public init(token: UUID, sequence: Int, outcome: Outcome) {
+        self.token = token
+        self.sequence = sequence
+        self.outcome = outcome
+    }
 }

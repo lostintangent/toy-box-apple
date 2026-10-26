@@ -248,9 +248,26 @@ struct TransportTests {
         store.connect()
         defer { store.disconnect() }
         try await eventually { store.phase.isLive }
-        await store.loadHistory(through: 95)
+        #expect(await store.loadHistory(through: 95) == nil)
         #expect(store.state?.messages.first?.sequence == 94)
         #expect(mock.requests.filter { $0.url?.path.hasSuffix("/messages") == true }.count == 3)
+    }
+
+    @Test @MainActor func loadingHistoryThroughASequenceReturnsThePageFailureThatStoppedIt() async throws {
+        let initial = testState(revision: 10, messages: [testMessage(100)])
+        let mock = MockTransport { request, _ in
+            if request.url?.path.hasSuffix("/messages") == true {
+                return MockResponse(status: 503, body: Data(#"{"error":"History unavailable."}"#.utf8))
+            }
+            return try .stream([.init(type: "snapshot", state: initial)])
+        }
+        let store = ChannelStore(id: "test", api: try mock.api(), sendJournal: nil)
+        store.connect()
+        defer { store.disconnect() }
+        try await eventually { store.phase.isLive }
+        let failure = await store.loadHistory(through: 95)
+        #expect(failure != nil && failure == store.historyError)
+        #expect(mock.requests.filter { $0.url?.path.hasSuffix("/messages") == true }.count == 1)
     }
 
     @Test @MainActor func loadingHistoryThroughASequenceStopsWhenASnapshotReplacesItsHistory() async throws {

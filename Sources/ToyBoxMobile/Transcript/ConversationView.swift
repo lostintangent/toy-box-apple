@@ -296,19 +296,20 @@ struct ConversationView: View {
     private func reveal(sequence: Int, token: UUID) async {
         defer { interaction.consumeRevealRequest(token) }
         func target() -> TranscriptItem? { items.first { $0.messages.contains { $0.sequence == sequence } } }
+        func fail(_ message: String) {
+            revealError = message
+            interaction.finishReveal(token, .failed(message))
+        }
         revealError = nil
-        await store.loadHistory(through: sequence)
+        let failure = await store.loadHistory(through: sequence)
         guard !Task.isCancelled, interaction.revealRequestToken == token else { return }
         guard store.messages.contains(where: { $0.sequence == sequence }) else {
-            revealError = store.historyError ?? "This message is no longer available."
-            return
+            return fail(failure ?? "This message is no longer available.")
         }
         if target() == nil { interaction.messageView = .all }
-        guard let item = target() else {
-            revealError = "This message is no longer available."
-            return
-        }
+        guard let item = target() else { return fail("This message is no longer available.") }
         place(scroll.update(.reveal(item.id)))
+        interaction.finishReveal(token, .revealed)
         highlightedSequence = sequence
         try? await Task.sleep(for: .seconds(2))
         if highlightedSequence == sequence { highlightedSequence = nil }

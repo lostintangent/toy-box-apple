@@ -211,17 +211,21 @@ public final class ChannelStore {
 
     /// Pages back until `sequence` is loaded. Stops when history ends, a page fails, a page adds
     /// nothing or a snapshot replaces the history it started paging, so a reveal can never spin.
-    public func loadHistory(through sequence: Int) async {
+    /// Returns the failure of the page that stopped it.
+    @discardableResult
+    public func loadHistory(through sequence: Int) async -> String? {
         let generation = historyGeneration
         while let first = state?.messages.first, first.sequence > sequence && hasOlderMessages {
             let before = first.sequence
             if isLoadingOlder {
                 do { try await Task.sleep(for: .milliseconds(40)) }
-                catch { return }
+                catch { return nil }
             } else { await loadOlder() }
-            guard !Task.isCancelled, historyError == nil, historyGeneration == generation else { return }
-            if !isLoadingOlder && state?.messages.first?.sequence == before { return }
+            guard !Task.isCancelled, historyGeneration == generation else { return nil }
+            if let historyError { return historyError }
+            if !isLoadingOlder && state?.messages.first?.sequence == before { return nil }
         }
+        return nil
     }
 
     @discardableResult
