@@ -35,6 +35,7 @@ struct AutomationTests {
         window.isHidden = false
         defer { window.isHidden = true }
         let root = UIView()
+        root.accessibilityIdentifier = "message-12"
         let shown = UILabel()
         shown.text = "Studio demo"
         shown.accessibilityIdentifier = "channel-studio"
@@ -53,6 +54,7 @@ struct AutomationTests {
         let tree = MobileAutomationTree(windows: [window])
         #expect(tree.elements.filter { $0.label == "Studio demo" }.count == 1)
         #expect(tree.matching("channel-studio").first?.object === shown)
+        #expect(tree.matching("message-12").first?.object === shown)
         #expect(tree.contains("studio"))
         #expect(!tree.contains("Hidden"))
         let element = tree.matching("channel-studio").first!
@@ -71,6 +73,21 @@ struct AutomationTests {
         #expect(presses == 1)
         button.isEnabled = false
         #expect(!element.activate())
+        #expect(presses == 1)
+    }
+
+    @Test func virtualAccessibilityElementsActivateTheirMeasuredNativeControl() {
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 440, height: 956))
+        window.isHidden = false
+        defer { window.isHidden = true }
+        var presses = 0
+        let button = UIButton(frame: CGRect(x: 20, y: 30, width: 80, height: 44))
+        button.addAction(UIAction { _ in presses += 1 }, for: .primaryActionTriggered)
+        window.addSubview(button)
+        let virtual = UIAccessibilityElement(accessibilityContainer: window)
+        let element = MobileAutomationTree.Element(object: virtual, label: "Back", value: "", identifier: "",
+                                                   traits: .button, frame: button.frame)
+        #expect(element.activate(in: [window]))
         #expect(presses == 1)
     }
 }

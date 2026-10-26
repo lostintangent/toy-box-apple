@@ -92,10 +92,12 @@ struct MobileAutomationTree {
         let identifier: String
         let traits: UIAccessibilityTraits
         let frame: CGRect
+        var containerIdentifiers: [String] = []
         var actions: [UIAccessibilityCustomAction] { object.accessibilityCustomActions ?? [] }
 
         var description: String {
             [label, value.isEmpty ? "" : "value: \(value)", identifier.isEmpty ? "" : "id: \(identifier)",
+             containerIdentifiers.isEmpty ? "" : "within: \(containerIdentifiers.joined(separator: "/"))",
              actions.isEmpty ? "" : "actions: \(actions.map { $0.name }.joined(separator: ", "))"]
                 .filter { !$0.isEmpty }.joined(separator: " | ")
         }
@@ -106,18 +108,37 @@ struct MobileAutomationTree {
             return UIApplication.shared.sendAction(action.selector, to: target, from: action, for: nil)
         }
 
-        func activate() -> Bool {
+        private func nativeTarget(in windows: [UIWindow]) -> NSObject? {
+            if object is any UIKeyInput || object is UIControl || object is UIBarButtonItem { return object }
+            if let container = (object as? UIAccessibilityElement)?.accessibilityContainer as? UIControl {
+                return container
+            }
+            guard !frame.isEmpty, !frame.isInfinite, !frame.isNull else { return nil }
+            for window in windows.reversed() {
+                let point = window.convert(CGPoint(x: frame.midX, y: frame.midY), from: nil)
+                guard window.bounds.contains(point) else { continue }
+                var view = window.hitTest(point, with: nil)
+                while let current = view {
+                    if current is any UIKeyInput || current is UIControl { return current }
+                    view = current.superview
+                }
+            }
+            return nil
+        }
+
+        func activate(in windows: [UIWindow] = []) -> Bool {
+            if traits.contains(.notEnabled) { return false }
             if let control = object as? UIControl, !control.isEnabled { return false }
             if object.accessibilityActivate() { return true }
-            if let input = object as? UIResponder, input is any UIKeyInput { return input.becomeFirstResponder() }
-            if let control = object as? UIControl
-                ?? (object as? UIAccessibilityElement)?.accessibilityContainer as? UIControl {
+            guard let target = nativeTarget(in: windows) else { return false }
+            if let input = target as? UIResponder, input is any UIKeyInput { return input.becomeFirstResponder() }
+            if let control = target as? UIControl {
                 if control.isEnabled && (control is UIButton || traits.contains(.button)) {
                     control.performPrimaryAction()
                     return true
                 }
             }
-            if let item = object as? UIBarButtonItem, item.isEnabled, let action = item.action {
+            if let item = target as? UIBarButtonItem, item.isEnabled, let action = item.action {
                 return UIApplication.shared.sendAction(action, to: item.target, from: item, for: nil)
             }
             return false
@@ -131,33 +152,35 @@ struct MobileAutomationTree {
         self.windows = windows.filter { !$0.isHidden && $0.alpha > 0 }
         var seen = Set<ObjectIdentifier>()
         var elements: [Element] = []
-        func visit(_ object: NSObject) {
+        func visit(_ object: NSObject, containers: [String]) {
             guard seen.count < 5_000, seen.insert(ObjectIdentifier(object)).inserted else { return }
             if let view = object as? UIView, view.isHidden || view.alpha == 0 { return }
             guard !object.accessibilityElementsHidden else { return }
+            let identifier = (object as? any UIAccessibilityIdentification)?.accessibilityIdentifier ?? ""
+            let descendants = identifier.isEmpty ? containers : containers + [identifier]
             if object.isAccessibilityElement || !(object.accessibilityCustomActions ?? []).isEmpty {
                 let element = Element(object: object, label: object.accessibilityLabel ?? "",
                                       value: object.accessibilityValue ?? "",
-                                      identifier: (object as? any UIAccessibilityIdentification)?.accessibilityIdentifier ?? "",
-                                      traits: object.accessibilityTraits, frame: object.accessibilityFrame)
+                                      identifier: identifier, traits: object.accessibilityTraits,
+                                      frame: object.accessibilityFrame, containerIdentifiers: containers)
                 if !element.description.isEmpty { elements.append(element) }
                 if object.isAccessibilityElement { return }
             }
             if let children = object.accessibilityElements {
-                for case let child as NSObject in children { visit(child) }
+                for case let child as NSObject in children { visit(child, containers: descendants) }
             } else {
                 let count = object.accessibilityElementCount()
                 if count > 0 && count < 5_000 {
                     for index in 0..<count {
-                        if let child = object.accessibilityElement(at: index) as? NSObject { visit(child) }
+                        if let child = object.accessibilityElement(at: index) as? NSObject { visit(child, containers: descendants) }
                     }
                 }
             }
             if let view = object as? UIView {
-                for child in view.subviews { visit(child) }
+                for child in view.subviews { visit(child, containers: descendants) }
             }
         }
-        for window in self.windows { visit(window) }
+        for window in self.windows { visit(window, containers: []) }
         self.elements = elements
     }
 
@@ -174,13 +197,14 @@ struct MobileAutomationTree {
     }
 
     func matching(_ target: String) -> [Element] {
-        let identifiers = elements.filter { $0.identifier == target }
+        let identifiers = elements.filter { $0.identifier == target || $0.containerIdentifiers.contains(target) }
         return identifiers.isEmpty ? elements.filter { $0.label == target } : identifiers
     }
 
     func contains(_ target: String) -> Bool {
         elements.contains { $0.label.localizedCaseInsensitiveContains(target)
-            || $0.value.localizedCaseInsensitiveContains(target) || $0.identifier == target }
+            || $0.value.localizedCaseInsensitiveContains(target) || $0.identifier == target
+            || $0.containerIdentifiers.contains(target) }
     }
 
     var firstResponder: UIResponder? {
@@ -256,7 +280,7 @@ private final class MobileAutomationRun {
                 guard choices.count <= 1 else { throw Failure("Ambiguous accessibility target: \(target)") }
                 return choices.first
             }
-            guard element.activate() else {
+            guard element.activate(in: MobileAutomationTree.current.windows) else {
                 throw Failure("Accessibility activation was not handled by \(target) (\(type(of: element.object))).")
             }
         case .type(let text):
@@ -288,7 +312,7 @@ private final class MobileAutomationRun {
             }
             let back = tree.matching("BackButton").first
             if back == nil && ifPresent { break }
-            let performed = back?.activate()
+            let performed = back?.activate(in: tree.windows)
                 ?? tree.windows.reversed().contains { $0.accessibilityPerformEscape() }
             guard performed else {
                 let details = back.map { " Back target: \(type(of: $0.object))." } ?? ""
