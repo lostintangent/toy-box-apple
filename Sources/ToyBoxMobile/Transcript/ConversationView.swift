@@ -380,6 +380,8 @@ private struct TranscriptFloatingAccessories: View {
     let store: ChannelStore
     let showsJumpToLatest: Bool
     let jumpToLatest: () -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    private var rises: AnyTransition { reduceMotion ? .opacity : .opacity.combined(with: .offset(y: 4)) }
 
     private var working: [ChannelAgent] {
         guard store.phase.isLive else { return [] }
@@ -418,7 +420,7 @@ private struct TranscriptFloatingAccessories: View {
             .frame(minHeight: 44)
             .glassEffect(.regular, in: .rect(cornerRadius: 22))
             .accessibilityElement(children: .combine)
-            .transition(.opacity.combined(with: .offset(y: 4)))
+            .transition(rises)
         }
     }
 
@@ -432,7 +434,7 @@ private struct TranscriptFloatingAccessories: View {
             }
             .buttonStyle(.plain)
             .glassEffect(.regular.interactive(), in: .capsule)
-            .transition(.opacity.combined(with: .offset(y: 4)))
+            .transition(rises)
         }
     }
 
@@ -449,6 +451,7 @@ private struct TranscriptFloatingAccessories: View {
 private struct TranscriptReconnecting: View {
     let message: String
     let retry: () -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         HStack(spacing: 8) {
@@ -465,7 +468,7 @@ private struct TranscriptReconnecting: View {
         .accessibilityElement(children: .combine)
         .accessibilityHint(message)
         .padding(.top, 8)
-        .transition(.opacity.combined(with: .offset(y: -4)))
+        .transition(reduceMotion ? .opacity : .opacity.combined(with: .offset(y: -4)))
     }
 }
 
@@ -473,6 +476,7 @@ private struct TranscriptReconnecting: View {
 private struct TranscriptRevealNotice: View {
     let message: String
     let dismiss: () -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         HStack(spacing: 8) {
@@ -486,7 +490,7 @@ private struct TranscriptRevealNotice: View {
         .glassEffect(.regular, in: .capsule)
         .padding(.top, 8)
         .padding(.horizontal, 16)
-        .transition(.opacity.combined(with: .offset(y: -4)))
+        .transition(reduceMotion ? .opacity : .opacity.combined(with: .offset(y: -4)))
         .onAppear { AccessibilityNotification.Announcement(message).post() }
     }
 }
