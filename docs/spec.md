@@ -1156,6 +1156,14 @@ Other files show document icon, name and Open. Resolve resources against the ser
 An unavailable file keeps its name and an explicit retryable error, not a blank thumbnail.
 Opening remote URLs must not assume a matching local filesystem path.
 
+**Phone attachment parity.** The entire attachment set occupies one horizontally scrolling
+row, with 8-point gaps and no stacking or wrapping. Preserve the existing shared
+`ChannelClient.transcriptThumbnailSize` image cap of 240 x 160. The 240 x 120 video-preview cap
+is not an image-size change. Keep attachment order, leading/trailing alignment, the correct
+image index on opening, and the presented tile in view when returning. Share the portable
+strip container where practical while each host retains its native tiles. File and video
+actions keep minimum-44 targets.
+
 **Image viewer.** Images open in place, as in Photos, never in another app or a floating Quick
 Look panel. The viewer pages through the clicked message's images in attachment order and
 doesn't cross into other messages. Videos and files keep their own actions.
@@ -1174,6 +1182,13 @@ doesn't cross into other messages. Videos and files keep their own actions.
 
 Transcript owns the viewer and its transition. Shell routes the viewing toolbar and the zoom
 and close commands.
+
+The phone image gallery's pager capsule and both arrow targets stay anchored across page
+changes, loading, and different image aspect ratios. Only the image, selected outline and
+thumbnail scroll position change. End arrows stay in place, disabled rather than removed.
+Use the artifact viewer's stable presentation as the comparison, not a reason to change it.
+Confirm the actual moving component in before/after Next and swipe recordings and protect
+the capsule and toolbar geometry deterministically.
 
 **SVG attachments.** SVGs are images throughout the transcript filmstrip, viewer and gallery
 capsule, with the same loading, error and keyboard behavior as raster images. Read their intrinsic
@@ -1254,6 +1269,15 @@ announcement, not an announcement for every older page.
 Use the same semantic colors in both appearances and the normal system focus ring. Reduce Motion
 uses the reveal path's nonmoving alternative.
 
+### Phone sheet semantics
+
+Working Now, Select Text, reactors, system-message details, Overview in both presentations,
+and Settings use native `Button(role: .close)`. iOS supplies the X. Keep the existing native
+toolbar placement and an explicit accessible close label, without a custom circle or blue
+fill. Settings changes remain applied on closing. Save, Create and Switch Server remain
+genuine confirmation actions. Mac keeps Done. Swipe dismissal, focus/draft restoration and
+read blocking are unchanged.
+
 ### Composer and tray
 
 **Phone input refinement.** Native input text and placeholder share 16-point horizontal and
@@ -1272,6 +1296,8 @@ substitute. Attach uses an explicit 17-point symbol within its 44-point target, 
 rather than inheriting an overflowing body glyph. When the full ordinary hint cannot fit at
 the actual body font, use the short visual hint "Message", preserving the native editor's
 full accessibility label and any real dictation state. Do not shrink or ellipsize the hint.
+Attach, Dictate and Send expose the native large-content viewer for enlarged labeled
+controls on long press at large text sizes.
 At short keyboard heights, let the upper context/accessory region scroll while retaining one
 measured editor line and the Send row. No font caps, fixed composer height or extra glass.
 
