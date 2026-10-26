@@ -19,7 +19,7 @@ export type Snapshot = Omit<typeof fixture, "lead" | "members" | "messages" | "r
         requestSequence: number | null; completedSequence: number | null;
     };
 };
-type Demo = { server: Server; snapshot(): Snapshot; replace(snapshot: Snapshot): void; close(): Promise<void> };
+export type Demo = { server: Server; snapshot(): Snapshot; replace(snapshot: Snapshot): void; close(): Promise<void> };
 type Factory = (snapshot?: Snapshot, now?: number) => Demo;
 export type Response = ServerResponse;
 
