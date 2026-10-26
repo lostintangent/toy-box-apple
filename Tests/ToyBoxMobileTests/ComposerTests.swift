@@ -305,6 +305,24 @@ struct ComposerTests {
         withExtendedLifetime(target) {}
     }
 
+    @Test(arguments: [false, true], [false, true])
+    func onlyCompactWithTheKeyboardDownRemovesTheBottomGap(compact: Bool, keyboardVisible: Bool) {
+        #expect(ComposerBottomSpacing.value(compact: compact, keyboardVisible: keyboardVisible)
+                == (compact && !keyboardVisible ? 0 : 8))
+    }
+
+    @Test func keyboardOcclusionDoesNotMistakeTheHomeIndicatorSafeAreaForAVisibleKeyboard() {
+        let bounds = CGRect(x: 0, y: 0, width: 466, height: 900)
+        #expect(!ComposerBottomSpacing.keyboardIsVisible(
+            frame: CGRect(x: 0, y: 866, width: 466, height: 34), in: bounds, safeAreaBottom: 34))
+        #expect(!ComposerBottomSpacing.keyboardIsVisible(
+            frame: CGRect(x: 0, y: 900, width: 466, height: 300), in: bounds, safeAreaBottom: 34))
+        #expect(ComposerBottomSpacing.keyboardIsVisible(
+            frame: CGRect(x: 0, y: 600, width: 466, height: 300), in: bounds, safeAreaBottom: 34))
+        #expect(!ComposerBottomSpacing.keyboardIsVisible(
+            frame: CGRect(x: 500, y: 600, width: 466, height: 300), in: bounds, safeAreaBottom: 34))
+    }
+
     @Test func editorFitsOneThroughThreeMeasuredLinesWithoutChangingItsTextOrCaret() throws {
         for pointSize: CGFloat in [17, 40] {
             let view = ComposerTextView()
