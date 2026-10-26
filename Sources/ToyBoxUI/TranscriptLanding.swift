@@ -1,31 +1,37 @@
 import ChannelKit
 import Foundation
 
-enum TranscriptLanding {
-    enum Target: Equatable {
+public enum TranscriptLanding {
+    public enum Target: Equatable {
         case latest
         case unread(String)
     }
 
-    struct Opening: Equatable {
-        var rowID: String
-        var unreadAfter: Int
-        var seeds: Bool
+    public struct Opening: Equatable {
+        public var rowID: String
+        public var unreadAfter: Int
+        public var seeds: Bool
+
+        public init(rowID: String, unreadAfter: Int, seeds: Bool) {
+            self.rowID = rowID
+            self.unreadAfter = unreadAfter
+            self.seeds = seeds
+        }
     }
 
-    enum Step: Equatable {
+    public enum Step: Equatable {
         case waitForJump
         case placeColdOpening
         case correctPosition
         case settled
     }
 
-    static func target(unreadAfter: Int?, rows: [TranscriptRow]) -> Target {
+    public static func target(unreadAfter: Int?, rows: [TranscriptRow]) -> Target {
         guard let index = unreadIndex(after: unreadAfter, in: rows) else { return .latest }
         return .unread(rows[index].id)
     }
 
-    static func opening(unreadAfter: Int?, oldestSequence: Int?, hasOlderMessages: Bool,
+    public static func opening(unreadAfter: Int?, oldestSequence: Int?, hasOlderMessages: Bool,
                         rows: [TranscriptRow]) -> Opening? {
         guard let unreadAfter, let oldestSequence,
               oldestSequence <= unreadAfter + 1 || !hasOlderMessages,
@@ -34,7 +40,7 @@ enum TranscriptLanding {
         return Opening(rowID: rows[index].id, unreadAfter: unreadAfter, seeds: rows.count - index > 8)
     }
 
-    static func step(on row: TranscriptRow, frames: [String: TranscriptMessageFrame],
+    public static func step(on row: TranscriptRow, frames: [String: TranscriptMessageFrame],
                      viewport: TranscriptViewport, isColdOpening: Bool, jumps: Int, hasPendingJump: Bool) -> Step {
         if hasPendingJump { return .waitForJump }
         if isColdOpening && jumps == 0 { return .placeColdOpening }

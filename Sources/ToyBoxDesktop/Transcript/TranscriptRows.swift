@@ -182,11 +182,6 @@ private struct TranscriptRule: View {
     }
 }
 
-func transcriptDividerAccessibilityLabel(_ divider: TranscriptDivider, now: Date = .now) -> String {
-    [divider.day.map { transcriptDayLabel($0, now: now) }, divider.unread ? "New messages" : nil]
-        .compactMap { $0 }.joined(separator: ", ")
-}
-
 /// System rows that directly follow another system row without a divider, which stack 4 points
 /// apart as one group instead of taking the 20-point run spacing.
 func transcriptStackedSystemRowIDs(_ rows: [TranscriptRow]) -> Set<String> {
@@ -605,15 +600,6 @@ private struct TranscriptTimestamp: View {
                 .help(date.formatted(date: .complete, time: .complete))
         }
     }
-}
-
-func transcriptMessageAccessibilityLabel(author: String, timestamp: String, addressee: String? = nil,
-                                         request: ChannelRequestState? = nil, delivery: String? = nil) -> String {
-    [author, ChannelDates.date(timestamp)?.formatted(date: .abbreviated, time: .shortened) ?? timestamp,
-     addressee.map { "To \($0)" },
-     request.map { $0 == .pending ? "Needs your reply" : "Replied" }, delivery]
-        .compactMap { $0 }
-        .joined(separator: ", ")
 }
 
 struct TranscriptReactions: View {
