@@ -28,7 +28,6 @@ struct AuxiliaryComposer: View {
 
     @Environment(\.channelTextScale) private var textScale
     @ViewState private var inputHeight: CGFloat = 84
-    @ViewState private var focused = false
     @ViewState private var dragging = false
     @ViewState private var showPicker = false
     @ViewState private var focusRequest = UUID()
@@ -126,7 +125,7 @@ struct AuxiliaryComposer: View {
                     .accessibilityHidden(true)
             }
             NativeComposerInput(
-                text: $draft.text, document: draftID, height: $inputHeight, focused: $focused, dragging: $dragging,
+                text: $draft.text, document: draftID, height: $inputHeight, dragging: $dragging,
                 fontSize: (style == .quickSend ? 16 : 14) * textScale, focusRequest: focusRequest,
                 agents: store.roster, canManage: false, onSend: { send(opensChannel: false) },
                 onFiles: draft.attachFiles, onImage: draft.append, onError: { draft.error = $0 },

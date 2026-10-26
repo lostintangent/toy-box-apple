@@ -554,7 +554,7 @@ struct ComposerTests {
         var sends = 0
         let parent = NativeComposerInput(
             text: .init(get: { text }, set: { text = $0 }), height: .constant(44),
-            focused: .constant(false), dragging: .constant(false), fontSize: 14,
+            dragging: .constant(false), fontSize: 14,
             focusRequest: UUID(), agents: [.lead(id: "lead")], canManage: false,
             onSend: { sends += 1 }, onFiles: { _ in }, onImage: { _ in },
             onError: { _ in }, onCreate: { .init(id: "created", name: $0) }, onEdit: { _ in }
@@ -642,7 +642,7 @@ struct ComposerTests {
         var files: [URL] = []
         var errors: [String] = []
         let parent = NativeComposerInput(
-            text: .constant(""), height: .constant(44), focused: .constant(false),
+            text: .constant(""), height: .constant(44),
             dragging: .constant(false), fontSize: 14, focusRequest: UUID(),
             agents: [], canManage: false, onSend: {}, onFiles: { files += $0 },
             onImage: { images.append($0) }, onError: { errors.append($0) },
@@ -799,7 +799,7 @@ struct ComposerTests {
         draft.text = "Seed"
         let parent = NativeComposerInput(
             text: .init(get: { draft.text }, set: { draft.text = $0 }), height: .constant(44),
-            focused: .constant(false), dragging: .constant(false), fontSize: 14, focusRequest: UUID(),
+            dragging: .constant(false), fontSize: 14, focusRequest: UUID(),
             agents: [], canManage: false, onSend: {}, onFiles: { _ in }, onImage: { _ in },
             onError: { _ in }, onCreate: { .init(id: "created", name: $0) }, onEdit: { _ in }
         )
@@ -1440,13 +1440,12 @@ struct ComposerTests {
         var dictation: ComposerDictation? = nil
         var startsAtEnd = false
         @ViewState private var height: CGFloat = 44
-        @ViewState private var focused = false
         @ViewState private var dragging = false
         private let focusRequest = UUID()
 
         var body: some View {
             NativeComposerInput(
-                text: $draft.text, document: ObjectIdentifier(draft), height: $height, focused: $focused,
+                text: $draft.text, document: ObjectIdentifier(draft), height: $height,
                 dragging: $dragging, fontSize: 14, focusRequest: focusRequest, agents: [.lead(id: "lead")],
                 canManage: false, onSend: {}, onFiles: { _ in }, onImage: { _ in }, onError: { _ in },
                 onCreate: { .init(id: "created", name: $0) }, onEdit: { _ in }, dictation: dictation,

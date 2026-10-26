@@ -97,7 +97,6 @@ private struct ChannelComposer: View {
     @Environment(\.windowSnapshot) private var snapshot
     @Environment(\.colorSchemeContrast) private var contrast
     @ViewState private var inputHeight: CGFloat = 44
-    @ViewState private var isFocused = false
     @ViewState private var isDragging = false
     @ViewState private var showPicker = false
     @ViewState private var focusRequest = UUID()
@@ -372,7 +371,7 @@ private struct ChannelComposer: View {
                         .accessibilityHidden(true)
                 }
                 NativeComposerInput(text: $draft.text, document: draftID, height: $inputHeight,
-                                    focused: $isFocused, dragging: $isDragging, fontSize: 14 * textScale,
+                                    dragging: $isDragging, fontSize: 14 * textScale,
                                     focusRequest: focusRequest,
                                     agents: store.roster, canManage: store.phase.isLive,
                                     onSend: send, onFiles: draft.attachFiles, onImage: draft.append,
