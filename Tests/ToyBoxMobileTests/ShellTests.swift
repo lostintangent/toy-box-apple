@@ -127,8 +127,30 @@ struct ShellTests {
         }
         let regular = fitted(.large)
         let accessible = fitted(.accessibility5)
-        #expect(regular.height >= 96)
+        #expect(regular.height >= 72)
         #expect(accessible.height > regular.height)
+    }
+
+    @Test(arguments: [240.0, 386.0])
+    func channelRowsUseTwoLinesWithoutAnEmptyWorkingLine(width: Double) {
+        let channel = Channel(id: "layout", name: "Workshop", directory: "/Projects/Workshop",
+                              model: .init(provider: "test", name: "test"), updatedAt: "2026-10-25T12:00:00Z")
+        let agents = (0..<4).map { index in
+            ChannelAgent.lead(id: "agent-\(index)", profile: .init(
+                name: "Agent \(index)", role: "Coordinator", avatar: .init(mark: "M4 12H20", color: "#123456")
+            ))
+        }
+        func height(working: [ChannelAgent], attention: ChannelAttention?) -> CGFloat {
+            let host = UIHostingController(rootView: ChannelSidebarRow(
+                channel: channel, agents: agents, working: working, attention: attention,
+                now: Date(timeIntervalSince1970: 1_793_000_000)
+            ).environment(\.dynamicTypeSize, .large))
+            host.loadViewIfNeeded()
+            return host.sizeThatFits(in: CGSize(width: width, height: CGFloat.greatestFiniteMagnitude)).height
+        }
+        #expect(height(working: [], attention: nil) == 72)
+        #expect(height(working: agents, attention: nil) == 72)
+        #expect(height(working: agents, attention: .waiting) == 72)
     }
 
     @Test(arguments: [false, true])

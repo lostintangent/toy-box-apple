@@ -73,7 +73,7 @@ struct ChannelSidebarFooter: View {
                     }
                 }
             Text(serverURL.isEmpty ? "Choose a Server"
-                 : "\(connection.verb) \(SidebarConnection.server(serverURL))")
+                 : SidebarConnection.server(serverURL))
                 .font(.footnote)
                 .foregroundStyle(ChannelInk.secondary)
                 .lineLimit(1)
