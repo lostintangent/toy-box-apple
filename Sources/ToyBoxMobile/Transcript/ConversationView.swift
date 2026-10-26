@@ -27,6 +27,19 @@ final class TranscriptScroll {
     private var frames: [String: CGRect] = [:]
     private var lastLayout: Model.Layout?
 
+    /// Adopts the transcript's current rows once. A reveal syncs before placing, because it can
+    /// resume after a page lands but before SwiftUI reports the change.
+    func sync(_ current: [Model.RowIdentity]) {
+        guard current != rows else { return }
+        if let anchor = rows.first?.id, current.first?.id != anchor, current.contains(where: { $0.id == anchor }),
+           hasLanded {
+            // Older history arrived above: keep the reader's row where it was.
+            _ = update(.holdCurrentPosition)
+            holdsAnchorThroughInput = true
+        }
+        rows = current
+    }
+
     func measure(_ id: String, frame: CGRect) { frames[id] = frame }
     func forget(_ id: String) { frames[id] = nil }
 
@@ -230,13 +243,8 @@ struct ConversationView: View {
                 }
             }
         }
-        .onChange(of: items.map(\.id), initial: true) { old, new in
-            if let anchor = old.first, new.first != anchor, new.contains(anchor), scroll.hasLanded {
-                // Older history arrived above: keep the reader's row where it was.
-                _ = scroll.update(.holdCurrentPosition)
-                scroll.holdsAnchorThroughInput = true
-            }
-            scroll.rows = items.map { .init(id: $0.id, order: $0.order) }
+        .onChange(of: items.map(\.id), initial: true) {
+            scroll.sync(rowIdentities)
             land(items)
         }
         .onChange(of: store.sendAttempts.map(\.id)) { old, _ in
@@ -368,6 +376,10 @@ struct ConversationView: View {
         await store.loadOlder()
     }
 
+    private var rowIdentities: [TranscriptScrollModel.RowIdentity] {
+        items.map { .init(id: $0.id, order: $0.order) }
+    }
+
     private func reveal(sequence: Int, token: UUID) async {
         defer { interaction.consumeRevealRequest(token) }
         func target() -> TranscriptItem? { items.first { $0.messages.contains { $0.sequence == sequence } } }
@@ -385,6 +397,7 @@ struct ConversationView: View {
         guard let item = target() else { return fail("This message is no longer available.") }
         // A match below a collapsed message's fold would otherwise stay hidden.
         if find.isPresented { expanded.insert(item.id) }
+        scroll.sync(rowIdentities)
         scroll.pendingReveal = (token, item.id)
         let placement = scroll.update(.reveal(item.id))
         guard placement != nil, placement?.unavailableTarget == nil else {
