@@ -12,10 +12,18 @@ struct ChannelScreen: View {
 
     var body: some View {
         @Bindable var interaction = interaction
-        ConversationView(store: store)
-            .safeAreaBar(edge: .bottom, spacing: 0) {
-                ComposerView(store: store)
+        Group {
+            if store.phase == .deleted {
+                DeletedChannelView(draft: model.composerSession(for: store).draft) {
+                    model.selectedChannelID = nil
+                }
+            } else {
+                ConversationView(store: store)
+                    .safeAreaBar(edge: .bottom, spacing: 0) {
+                        ComposerView(store: store)
+                    }
             }
+        }
             .navigationTitle(store.details?.name ?? model.catalog?.channels.first { $0.id == store.id }?.name ?? "")
             .navigationBarTitleDisplayMode(.inline)
             .onAppear { model.visibleChannelID = store.id }
@@ -23,12 +31,18 @@ struct ChannelScreen: View {
             .onChange(of: store.artifacts, initial: true) { _, current in
                 artifacts.configure(api: store.api, channelID: store.id, artifacts: current)
             }
-            .onChange(of: store.phase) { _, phase in
-                if phase == .deleted { artifacts.close() }
+            .onChange(of: store.phase, initial: true) { _, phase in
+                if phase == .deleted {
+                    artifacts.close()
+                    interaction.isInspectorPresented = false
+                }
             }
             .onDisappear {
                 if model.visibleChannelID == store.id { model.visibleChannelID = nil }
             }
+            .focusedValue(\.channelRefresh, model.isActive && store.phase != .deleted ? {
+                store.reconnect()
+            } : nil)
             .toolbar {
                 ToolbarItemGroup(placement: .primaryAction) {
                     Menu("Message View", systemImage: "line.3.horizontal.decrease") {
@@ -36,13 +50,15 @@ struct ChannelScreen: View {
                             Text("All Messages").tag(TranscriptView.all)
                             Text("Your Messages").tag(TranscriptView.yours)
                         }
+                        .disabled(store.phase == .deleted)
                     }
                     Menu("Channel Actions", systemImage: "ellipsis") {
                         Button("Refresh", systemImage: "arrow.clockwise") { store.reconnect() }
-                            .disabled(!model.isActive)
+                            .disabled(!model.isActive || store.phase == .deleted)
                         Button("Open in Toy Box", systemImage: "arrow.up.forward.square") {
                             model.openInToyBox(channelID: store.id)
                         }
+                        .disabled(store.phase == .deleted)
                         Divider()
                         Button("Edit Channel", systemImage: "pencil") {
                             management.present(.editChannel(channelId: store.id))
@@ -56,6 +72,7 @@ struct ChannelScreen: View {
                     Button("Overview", systemImage: "sidebar.trailing") {
                         interaction.isInspectorPresented.toggle()
                     }
+                    .disabled(store.phase == .deleted)
                 }
             }
     }
