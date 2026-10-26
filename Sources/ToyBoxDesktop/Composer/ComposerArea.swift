@@ -127,9 +127,12 @@ private struct ChannelComposer: View {
     }
 
     private var canSend: Bool {
-        store.phase.isLive && !store.isSending && !isSubmitting && (draft.hasContent || dictation.hasWords)
-            && !draft.isLoadingImages && !draft.hasUnreadableImage && draft.text.utf16.count <= 12_000
-            && associatedAttempt?.phase != .confirmed
+        channelCanSend(
+            isLive: store.phase.isLive, isSending: store.isSending, isSubmitting: isSubmitting,
+            hasContent: draft.hasContent || dictation.hasWords,
+            isLoadingImages: draft.isLoadingImages, hasUnreadableImage: draft.hasUnreadableImage,
+            textUTF16Count: draft.text.utf16.count
+        ) && associatedAttempt?.phase != .confirmed
     }
 
     private var associatedAttempt: ChannelSendAttempt? {
