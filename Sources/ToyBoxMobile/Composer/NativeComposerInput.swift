@@ -296,7 +296,7 @@ extension NativeComposerInput.Coordinator: DictationTextTarget {
                   let range = input.textRange(from: start, to: end) else {
                 preconditionFailure("Final dictation must replace a valid native text range.")
             }
-            input.replace(range, withAttributedText: NSAttributedString(string: words, attributes: session.attributes))
+            input.replace(range, withText: words)
             input.undoManager?.setActionName("Dictation")
         }
         restoreSelection(
