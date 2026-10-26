@@ -11,7 +11,7 @@ struct OverviewTasksSection: View {
         let progress = channelTasksProgress(store.tasks)
         Section {
             if store.tasks.isEmpty {
-                Text("No tasks yet").foregroundStyle(.secondary)
+                Text("No tasks yet").foregroundStyle(ChannelInk.secondary)
             } else {
                 ForEach(store.tasks) { task in
                     OverviewTaskRow(task: task, agents: store.roster, artifacts: store.artifacts, session: session)
@@ -19,7 +19,7 @@ struct OverviewTasksSection: View {
             }
         } header: {
             HStack {
-                Text("Tasks · \(progress.done)/\(progress.total)")
+                Text("Tasks · \(progress.done)/\(progress.total)").foregroundStyle(ChannelInk.secondary)
                 Spacer()
                 if let diff = channelTasksDiff(store.tasks) { OverviewTaskDiff(diff: diff) }
             }
@@ -62,10 +62,10 @@ private struct OverviewTaskRow: View {
             HStack(alignment: .top, spacing: 8) {
                 status.accessibilityLabel(task.statusDescription)
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(task.title).foregroundStyle(task.status == "done" ? .secondary : .primary)
+                    Text(task.title).foregroundStyle(task.status == "done" ? ChannelInk.secondary : .primary)
                     if task.showsChildProgress {
                         let progress = channelTasksProgress(task.children ?? [])
-                        Text("\(progress.done)/\(progress.total) subtasks").font(.footnote).foregroundStyle(.secondary)
+                        Text("\(progress.done)/\(progress.total) subtasks").font(.footnote).foregroundStyle(ChannelInk.secondary)
                     }
                 }
             }
@@ -73,7 +73,7 @@ private struct OverviewTaskRow: View {
                 let owner = channelAgentIdentity(agents, id: id)
                 HStack(spacing: 6) {
                     AgentAvatarView(agent: owner, size: 16)
-                    Text(owner.name).font(.footnote).foregroundStyle(.secondary)
+                    Text(owner.name).font(.footnote).foregroundStyle(ChannelInk.secondary)
                 }
             }
             if task.status != "pending", let diff = channelTasksDiff([task]) { OverviewTaskDiff(diff: diff) }
@@ -87,7 +87,7 @@ private struct OverviewTaskRow: View {
                             }
                         }
                         .font(.footnote)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(ChannelInk.secondary)
                         .monospacedDigit()
                     }
                 }
@@ -122,9 +122,9 @@ private struct OverviewTaskRow: View {
                 .symbolRenderingMode(.palette)
                 .foregroundStyle(.white, .red)
         case "in_progress":
-            Image(systemName: "circle.lefthalf.filled").foregroundStyle(.secondary)
+            Image(systemName: "circle.lefthalf.filled").foregroundStyle(ChannelInk.secondary)
         default:
-            Image(systemName: "circle").foregroundStyle(.secondary)
+            Image(systemName: "circle").foregroundStyle(ChannelInk.secondary)
         }
     }
 }

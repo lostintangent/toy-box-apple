@@ -9,15 +9,17 @@ struct OverviewArtifactsSection: View {
     let store: ChannelStore
 
     var body: some View {
-        Section("Artifacts · \(store.artifacts.count)") {
+        Section {
             if store.artifacts.isEmpty {
-                Text("Nothing shared yet").foregroundStyle(.secondary)
+                Text("Nothing shared yet").foregroundStyle(ChannelInk.secondary)
             } else {
                 ForEach(channelArtifactsNewestFirst(store.artifacts)) { artifact in
                     OverviewArtifactRow(artifact: artifact, share: store.artifactShares[artifact.file.id],
                                         api: store.api, channelID: store.id)
                 }
             }
+        } header: {
+            Text("Artifacts · \(store.artifacts.count)").foregroundStyle(ChannelInk.secondary)
         }
     }
 }
@@ -30,7 +32,8 @@ struct OverviewArtifactList: View {
         Group {
             if store.artifacts.isEmpty {
                 ContentUnavailableView("No Artifacts Yet", systemImage: "doc",
-                                       description: Text("Files shared by this team will appear here."))
+                                       description: Text("Files shared by this team will appear here.")
+                                        .foregroundStyle(ChannelInk.secondary))
             } else {
                 List(channelArtifactsNewestFirst(store.artifacts)) { artifact in
                     Button { onOpen(artifact) } label: {
@@ -60,9 +63,9 @@ private struct OverviewArtifactLabel: View {
                 Text(artifact.title).font(.body).lineLimit(2)
                 if let date = (share?.sharedAt ?? artifact.sharedAt).flatMap(ChannelDates.date) {
                     Text(date, format: .dateTime.month(.abbreviated).day().hour().minute())
-                        .font(.footnote).foregroundStyle(.secondary)
+                        .font(.footnote).foregroundStyle(ChannelInk.secondary)
                 } else {
-                    Text("Share date unavailable").font(.footnote).foregroundStyle(.secondary)
+                    Text("Share date unavailable").font(.footnote).foregroundStyle(ChannelInk.secondary)
                 }
             }
             Spacer(minLength: 0)
