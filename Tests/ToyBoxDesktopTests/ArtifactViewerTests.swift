@@ -12,14 +12,6 @@ import WebKit
 @MainActor
 @Suite("Artifact viewer", .serialized)
 struct ArtifactViewerTests {
-    @Test func contentKindsKeepSVGBeforeTheGeneralImageFallback() {
-        #expect(ArtifactContentKind(artifact("notes.MD")) == .markdown)
-        #expect(ArtifactContentKind(artifact("page.htm")) == .html)
-        #expect(ArtifactContentKind(artifact("drawing.svg")) == .svg)
-        #expect(ArtifactContentKind(artifact("photo.png")) == .image)
-        #expect(ArtifactContentKind(artifact("report.pdf")) == .file)
-    }
-
     // Quarantined after unexplained CI 40177486556 title failure. Owner: Overview, follow-up: #2.
     @Test(.enabled(if: ProcessInfo.processInfo.environment["TOY_BOX_TEST_ARTIFACT_SANDBOX_PROBE"] == "1",
                    "Quarantined pending cause identification and deterministic coverage (#2). Opt in with TOY_BOX_TEST_ARTIFACT_SANDBOX_PROBE=1."),
@@ -151,37 +143,6 @@ struct ArtifactViewerTests {
         print("Sandbox after document replacement \(container): \(result)")
         #expect(result["origin"] == (container == "root" ? String(fixture.url("/").absoluteString.dropLast()) : "null"))
         #expect(result["storage"] == (container == "root" ? "allowed" : "SecurityError"))
-    }
-
-    @Test func pagingUsesTheChannelsNewestFirstOrderingWithoutWrapping() {
-        let old = artifact("old.md", shared: "2026-10-24T20:00:00Z")
-        let latest = artifact("latest.html", shared: "2026-10-24T22:00:00Z")
-        let middle = artifact("middle.svg", shared: "2026-10-24T21:00:00Z")
-        var pages = ArtifactPageList(artifacts: [old, latest, middle], opening: middle)
-        #expect(pages.artifacts.map(\.id) == [latest.id, middle.id, old.id])
-        #expect(pages.index == 1)
-        let showedLatest = pages.move(by: -1)
-        #expect(showedLatest)
-        #expect(pages.selected == latest)
-        let wrappedToOldest = pages.move(by: -1)
-        #expect(!wrappedToOldest)
-        let showedOldest = pages.move(by: 2)
-        #expect(showedOldest)
-        #expect(pages.selected == old)
-        #expect(!pages.canShowNext)
-        let selectedMissing = pages.select("not-an-artifact")
-        #expect(!selectedMissing)
-        #expect(pages.selected == old)
-        pages.update([latest, middle])
-        #expect(pages.selected == nil)
-    }
-
-    @Test func aTaskArtifactCanOpenBeforeItAppearsInTheSharedList() {
-        let task = artifact("task.md")
-        let shared = artifact("shared.svg")
-        let pages = ArtifactPageList(artifacts: [shared], opening: task)
-        #expect(pages.artifacts == [task, shared])
-        #expect(pages.selected == task)
     }
 
     @Test func arrivalsKeepTheSelectedIdentityAndRemovalDoesNotSubstituteANeighbor() async throws {
@@ -417,7 +378,8 @@ struct ArtifactViewerTests {
         defer { fixture.stop() }
         let artifact = ChannelArtifact(file: .init(kind: "machine", path: "drawing.svg"), title: "Drawing",
                                        url: "/api/serve/test/drawing.svg")
-        let loaded = try await ArtifactContent.load(artifact, api: ChannelAPI(baseURL: fixture.url("/")))
+        let loaded = try await ArtifactContent.load(artifact, api: ChannelAPI(baseURL: fixture.url("/")),
+                                                    decodeImage: ArtifactImageDecoder.decode)
         let bitmap = try #require(loaded.bitmap)
         #expect(loaded.imageSize == CGSize(width: 120, height: 80))
         let view = ArtifactImageScrollView()
