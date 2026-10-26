@@ -190,6 +190,7 @@ private struct OverviewAgentStatus: View {
             if status.cue == .working {
                 OverviewWorkingEllipsis(size: cueSize, active: active)
                     .frame(width: cueWidth, height: cueSize)
+                    .alignmentGuide(.firstTextBaseline) { $0[.bottom] }
                     .accessibilityHidden(true)
             } else if status.cue == .waiting {
                 Image(systemName: "pause.fill")
