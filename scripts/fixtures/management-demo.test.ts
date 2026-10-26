@@ -4,6 +4,7 @@ import { createManagementFixture } from "./management-demo.ts";
 
 const configured = fixture.channel.model;
 const channelPath = "/api/v1/channels/management-demo";
+const routinePath = `${channelPath}/routines/management-routine`;
 
 function harness() {
     const demo = createManagementFixture();
@@ -85,12 +86,17 @@ test("snapshot streams publish committed state and deletion, without inherited c
         }
         const first = await next();
         expect(first).toMatchObject({
-            type: "snapshot", state: { revision: 0, request: null, messages: [], routines: [], artifacts: [],
+            type: "snapshot", state: { revision: 0, request: null, messages: [], artifacts: [],
                 members: [], presence: {}, lead: { id: "management-demo" } },
+        });
+        expect(first.state.routines).toEqual([{ ...fixture.routines[0], id: "management-routine" }]);
+        expect((await demo.call(routinePath, "DELETE")).status).toBe(204);
+        expect(await next()).toMatchObject({
+            type: "snapshot", state: { revision: 1, routines: [] },
         });
         expect((await demo.call(channelPath, "PATCH", { name: "Renamed" })).status).toBe(200);
         expect(await next()).toMatchObject({
-            type: "snapshot", state: { revision: 1, channel: { id: "management-demo", name: "Renamed" } },
+            type: "snapshot", state: { revision: 2, channel: { id: "management-demo", name: "Renamed" } },
         });
         expect((await demo.call(channelPath, "DELETE")).status).toBe(204);
         expect(await next()).toEqual({ type: "deleted", channelId: "management-demo" });
@@ -101,6 +107,67 @@ test("snapshot streams publish committed state and deletion, without inherited c
         await reader?.cancel();
         await demo.close();
     }
+});
+
+for (const operation of ["run", "delete"] as const) {
+    for (const mode of [undefined, "reject422", "commit500"] as const) {
+        test(`routine ${operation}: ${mode ?? "normal"} is bodyless, journaled and exactly once`, async () => {
+            const demo = harness();
+            try {
+                const path = operation === "run" ? `${routinePath}/run` : routinePath;
+                const method = operation === "run" ? "POST" : "DELETE";
+                const before = await (await demo.call("/_fixture/state")).json();
+                expect(before.channels[0].routines).toHaveLength(1);
+                expect(before.routineRuns).toEqual([]);
+                if (mode) {
+                    expect((await demo.call("/_fixture/fault", "POST", { method, path, mode })).status).toBe(204);
+                    const unrelated = await demo.call(`${channelPath}/routines/missing/run`, "POST");
+                    expect(unrelated.status).toBe(404);
+                    await demo.call("/api/v1/channels");
+                    expect((await (await demo.call("/_fixture/state")).json()).fault).toEqual({ method, path, mode });
+                }
+                const response = await demo.call(path, method);
+                const status = mode === "reject422" ? 422 : mode === "commit500" ? 500 : 204;
+                expect(response.status).toBe(status);
+                const after = await (await demo.call("/_fixture/state")).json();
+                const committed = mode !== "reject422";
+                expect(after.fault).toBeNull();
+                expect(after.writes.at(-1)).toEqual({ method, path, status, committed });
+                expect(after.routineRuns).toEqual(operation === "run" && committed
+                    ? [{ channelId: "management-demo", routineId: "management-routine" }] : []);
+                expect(after.channels[0].routines).toHaveLength(operation === "delete" && committed ? 0 : 1);
+                expect(after.channels[0].revision).toBe(operation === "delete" && committed ? 1 : 0);
+                expect(after.channels[0].messages).toEqual([]);
+                expect(after.channels[0].members).toEqual([]);
+                expect(after.channels[0].presence).toEqual({});
+                await demo.call("/api/v1/channels");
+                expect((await (await demo.call("/_fixture/state")).json()).routineRuns).toEqual(after.routineRuns);
+                if (operation === "run") {
+                    expect((await demo.call(path, method)).status).toBe(204);
+                    expect((await (await demo.call("/_fixture/state")).json()).routineRuns)
+                        .toHaveLength(committed ? 2 : 1);
+                } else {
+                    expect((await demo.call(path, method)).status).toBe(committed ? 404 : 204);
+                }
+            } finally { await demo.close(); }
+        });
+    }
+}
+
+test("new channels do not inherit the seed routine and unsupported routine writes stay unavailable", async () => {
+    const demo = harness();
+    try {
+        const created = await (await demo.call("/api/v1/channels", "POST", {
+            name: "Blank", model: configured,
+        })).json();
+        const state = await (await demo.call("/_fixture/state")).json();
+        expect(state.channels.find((s: { channel: { id: string } }) => s.channel.id === created.channel.id).routines)
+            .toEqual([]);
+        expect((await demo.call(`${routinePath}/run`, "PATCH", {})).status).toBe(404);
+        expect((await demo.call(routinePath, "POST", {})).status).toBe(404);
+        expect((await demo.call(`${channelPath}/routines/missing`, "DELETE")).status).toBe(404);
+        expect((await (await demo.call("/_fixture/state")).json()).routineRuns).toEqual([]);
+    } finally { await demo.close(); }
 });
 
 for (const mode of ["reject422", "commit500"] as const) {

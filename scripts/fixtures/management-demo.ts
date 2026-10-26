@@ -43,13 +43,16 @@ function managementWrite(method: string, path: string[]) {
     return path[0] === "api" && path[1] === "v1" && path[2] === "channels"
         && (method === "POST" && (path.length === 3 || path.length === 5 && path[4] === "members")
             || ["PATCH", "DELETE"].includes(method) && (path.length === 4
-                || path.length === 6 && path[4] === "members"));
+                || path.length === 6 && path[4] === "members")
+            || method === "DELETE" && path.length === 6 && path[4] === "routines"
+            || method === "POST" && path.length === 7 && path[4] === "routines" && path[6] === "run");
 }
 
 export function createManagementFixture(port = 0, source: Snapshot = { ...fixture, messages: [], request: null }) {
     const states = new Map<string, State>();
     const clients = new Map<string, Set<Client>>();
     const writes: Write[] = [];
+    const routineRuns: { channelId: string; routineId: string }[] = [];
     const encoder = new TextEncoder();
     let fault: Fault | undefined;
     const lead = { name: source.lead.name, role: source.lead.role, avatar: source.lead.avatar };
@@ -76,6 +79,7 @@ export function createManagementFixture(port = 0, source: Snapshot = { ...fixtur
         return state;
     }
     const initial = makeChannel("management-demo", { name: "Management Scratch", model: source.channel.model });
+    initial.routines = [{ ...structuredClone(fixture.routines[0]!), id: "management-routine" }];
     states.set(initial.channel.id, initial);
 
     function publish(id: string, event: unknown, close = false) {
@@ -106,6 +110,17 @@ export function createManagementFixture(port = 0, source: Snapshot = { ...fixtur
         const id = path[3]!;
         const state = states.get(id);
         if (!state) throw new Rejection(404, "Channel not found.");
+        if (path[4] === "routines") {
+            const routine = state.routines.find(routine => routine.id === path[5]);
+            if (!routine) throw new Rejection(404, "Routine not found.");
+            if (method === "POST") {
+                routineRuns.push({ channelId: id, routineId: routine.id });
+            } else {
+                state.routines = state.routines.filter(candidate => candidate !== routine);
+                changed(state);
+            }
+            return { status: 204, value: undefined };
+        }
         if (path.length === 4) {
             if (method === "DELETE") {
                 states.delete(id);
@@ -173,7 +188,7 @@ export function createManagementFixture(port = 0, source: Snapshot = { ...fixtur
                 const path = url.pathname.split("/").filter(Boolean).map(decodeURIComponent);
                 isWrite = managementWrite(method, path);
                 if (url.pathname === "/_fixture/state" && method === "GET") {
-                    return json(200, { channels: [...states.values()], writes, fault: fault ?? null });
+                    return json(200, { channels: [...states.values()], writes, routineRuns, fault: fault ?? null });
                 }
                 if (url.pathname === "/_fixture/fault" && method === "DELETE") {
                     fault = undefined;
@@ -208,7 +223,7 @@ export function createManagementFixture(port = 0, source: Snapshot = { ...fixtur
                         models: [{ id: selected.name, name: selected.name, provider: selected.provider }] });
                 }
                 if (isWrite) {
-                    const input = method === "DELETE" ? {} : await body(request);
+                    const input = method === "DELETE" || path[4] === "routines" ? {} : await body(request);
                     const injected = fault?.method === method && fault.path === url.pathname ? fault : undefined;
                     if (injected) fault = undefined;
                     if (injected?.mode === "reject422") throw new Rejection(422, "Fixture rejection. No change was applied.");
@@ -248,7 +263,7 @@ export function createManagementFixture(port = 0, source: Snapshot = { ...fixtur
                         return json(200, { version: 1, seenThrough: state.channel.seenThrough });
                     }
                 }
-                return json(404, { error: "This private fixture supports channel/member management, catalog, history and read receipts only." });
+                return json(404, { error: "This private fixture supports channel/member management, routine Run/Delete, catalog, history and read receipts only." });
             } catch (error) {
                 const status = error instanceof Rejection ? error.status
                     : error instanceof SyntaxError || error instanceof URIError ? 400 : 500;
@@ -287,7 +302,8 @@ if (import.meta.main) {
     }
     const demo = createManagementFixture(port);
     console.log(`Private management fixture: ${demo.server.url} · Management Scratch (management-demo)`);
-    console.log("Channel/member CRUD only. Arm exact one-shot faults at /_fixture/fault; inspect /_fixture/state.");
+    console.log("Channel/member CRUD and simulated routine Run/Delete. No agent or model runs.");
+    console.log("Arm exact one-shot faults at /_fixture/fault; inspect /_fixture/state, including routineRuns.");
     for (const signal of ["SIGINT", "SIGTERM"] as const) {
         process.once(signal, () => { void demo.close().catch(error => { console.error(error); process.exitCode = 1; }); });
     }

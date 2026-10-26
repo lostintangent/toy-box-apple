@@ -47,8 +47,12 @@ view.
 - `bun run management-demo` serves a separate in-memory management fixture on 3240
   (`TOY_BOX_MANAGEMENT_PORT`), initially `management-demo` / “Management Scratch”. It supports
   channel/member create, edit and delete, catalog/models/member-models, snapshot/deleted SSE,
-  empty history and read receipts. New channels are blank. It does not run agents, send messages,
-  or implement routines/resources. Restart to reset. Never use the shared 3210 or live 3100 for
+  empty history and read receipts. The initial channel has `management-routine` / “Daily review”,
+  with bodyless POST `.../routines/management-routine/run` and DELETE `.../routines/management-routine`.
+  Run is simulated and recorded in `/_fixture/state.routineRuns`; it never starts an agent or model.
+  Both routes use the same exact-path one-shot faults and write journal. Delete publishes a snapshot.
+  New channels remain blank and do not inherit routines. Resources are unavailable.
+  Restart to reset. Never use the shared 3210 or live 3100 for
   these destructive native checks.
   `POST /_fixture/fault` with JSON `{method,path,mode}` arms one exact management write:
   `reject422` rejects without mutation, `commit500` applies once then returns a generic 500.
