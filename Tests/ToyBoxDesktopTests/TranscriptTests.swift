@@ -2676,13 +2676,13 @@ struct TranscriptCatchUpTests {
                                   isReplied: isReplied)
         }
         #expect(slot(12) == .event("tasks_completed"))
-        #expect(TranscriptSystemMessages.symbol(for: "tasks_completed") == "checkmark.circle.fill")
+        #expect(ChannelSystemEventStyle.symbol(for: "tasks_completed") == "checkmark.circle.fill")
         for scheme in [ColorScheme.light, .dark] {
-            #expect(TranscriptSystemMessages.symbolColor(for: "tasks_completed", in: scheme)
+            #expect(ChannelSystemEventStyle.symbolColor(for: "tasks_completed", in: scheme)
                     == ChannelTaskColors.changes(in: scheme).added)
         }
         #expect(slot(13) == .event("a_future_event"))
-        #expect(TranscriptSystemMessages.symbol(for: "a_future_event") == "info.circle")
+        #expect(ChannelSystemEventStyle.symbol(for: "a_future_event") == "info.circle")
         #expect(slot(11) == .avatar("lead"))
         #expect(slot(12, isReplied: true) == .need(isReplied: true))
         #expect(slot(99) == .unknown)

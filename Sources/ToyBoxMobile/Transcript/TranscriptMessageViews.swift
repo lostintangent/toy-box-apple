@@ -338,10 +338,14 @@ struct TranscriptSystemMessages: View {
     let agents: [ChannelAgent]
 
     @ViewState private var showsDetails = false
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
+        let type = messages.first?.system?.type
         Button { showsDetails = true } label: {
-            Text(text)
+            let symbol = Text(Image(systemName: ChannelSystemEventStyle.symbol(for: type)))
+                .foregroundStyle(ChannelSystemEventStyle.symbolColor(for: type, in: colorScheme))
+            Text("\(symbol) \(text)")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -349,6 +353,7 @@ struct TranscriptSystemMessages: View {
                 .contentShape(.rect)
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(text)
         .accessibilityHint("Shows details")
         .sheet(isPresented: $showsDetails) {
             TranscriptSystemDetails(messages: messages, agents: agents)
@@ -370,15 +375,8 @@ struct TranscriptReactions: View {
     var statusReactions: [ChannelReaction] = []
     var alignment: Alignment = .leading
 
-    private var groups: [(reaction: String, agents: [ChannelAgent])] {
-        let reactions = channelMessageReactions(message, status: [message.sequence: statusReactions])
-        var order: [String] = []
-        var grouped: [String: [ChannelAgent]] = [:]
-        for entry in reactions {
-            if grouped[entry.reaction] == nil { order.append(entry.reaction) }
-            grouped[entry.reaction, default: []].append(channelAgentIdentity(agents, id: entry.agentId))
-        }
-        return order.map { ($0, grouped[$0] ?? []) }
+    private var groups: [ChannelReactionGroup] {
+        ChannelReactionGroup.groups(for: message, agents: agents, statusReactions: statusReactions)
     }
 
     var body: some View {
@@ -386,7 +384,7 @@ struct TranscriptReactions: View {
         if !groups.isEmpty {
             HStack(spacing: 6) {
                 ForEach(groups, id: \.reaction) { group in
-                    let presentation = Self.presentation(group.reaction)
+                    let presentation = group.presentation
                     TranscriptReactionChip(emoji: presentation.emoji, label: presentation.label,
                                            reactors: group.agents, alignment: alignment)
                 }
@@ -394,18 +392,6 @@ struct TranscriptReactions: View {
         }
     }
 
-    static func presentation(_ reaction: String) -> (emoji: String, label: String) {
-        switch reaction {
-        case "looking": ("\u{1f440}", "Looking")
-        case "working": ("\u{1f3c3}", "In progress")
-        case "done": ("\u{2705}", "Done")
-        case "agree": ("\u{1f44d}", "Agreed")
-        case "celebrate": ("\u{1f389}", "Celebrated")
-        case "love": ("\u{2764}\u{fe0f}", "Loved this")
-        case "laugh": ("\u{1f602}", "Laughed")
-        default: ("\u{2022}", reaction)
-        }
-    }
 }
 
 /// A display-only reaction. Tapping lists who reacted, in a popover that becomes a sheet when compact.

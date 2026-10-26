@@ -357,9 +357,9 @@ private struct TranscriptCatchUpLine: View {
         case .avatar(let agentId):
             AgentAvatarView(agent: channelAgentIdentity(agents, id: agentId), size: 16)
         case .event(let type):
-            Image(systemName: TranscriptSystemMessages.symbol(for: type))
+            Image(systemName: ChannelSystemEventStyle.symbol(for: type))
                 .font(.system(size: 13))
-                .foregroundStyle(TranscriptSystemMessages.symbolColor(for: type, in: colorScheme))
+                .foregroundStyle(ChannelSystemEventStyle.symbolColor(for: type, in: colorScheme))
         case .unknown:
             Image(systemName: "info.circle")
                 .font(.system(size: 12))
