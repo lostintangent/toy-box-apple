@@ -3,6 +3,7 @@ import SwiftUI
 
 public enum ChannelColors {
     public static let userWash = Color.accentColor.opacity(0.09)
+    public static let sourceHighlight = Color.accentColor.opacity(0.09)
     public static let requestWash = Color.orange.opacity(0.10)
     public static let newRule = Color.blue.opacity(0.7)
 }
