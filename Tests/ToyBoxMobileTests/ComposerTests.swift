@@ -118,4 +118,31 @@ struct ComposerTests {
         #expect(view.text == "Keep this draft")
     }
 
+    @Test func editorFitsOneThroughThreeMeasuredLinesWithoutChangingItsTextOrCaret() throws {
+        for pointSize: CGFloat in [17, 40] {
+            let view = ComposerTextView()
+            let font = UIFont.systemFont(ofSize: pointSize)
+            view.font = font
+            view.textContainerInset = UIEdgeInsets(top: 10, left: 12, bottom: 0, right: 12)
+            view.text = "One\nTwo\nThree\nFour"
+            view.selectedRange = NSRange(location: 2, length: 0)
+            let oneLine = ceil(font.lineHeight + 10)
+            let threeLines = ceil(3 * font.lineHeight + 10)
+            let full = try #require(view.composerSizeThatFits(.init(width: 320, height: nil)))
+            #expect(full.height == threeLines)
+            #expect(view.isScrollEnabled)
+            let compact = try #require(view.composerSizeThatFits(.init(width: 320, height: oneLine)))
+            #expect(compact.height == oneLine)
+            #expect(view.isScrollEnabled)
+            let smaller = try #require(view.composerSizeThatFits(.init(width: 320, height: 0)))
+            #expect(smaller.height == oneLine)
+            #expect(view.text == "One\nTwo\nThree\nFour")
+            #expect(view.selectedRange == NSRange(location: 2, length: 0))
+            view.text = "One"
+            let short = try #require(view.composerSizeThatFits(.init(width: 320, height: nil)))
+            #expect(short.height == oneLine)
+            #expect(!view.isScrollEnabled)
+        }
+    }
+
 }
