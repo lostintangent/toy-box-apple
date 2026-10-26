@@ -62,6 +62,7 @@ private struct OverviewArtifactRow: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .accessibilityIdentifier("artifact-\(artifact.id)")
             .contextMenu {
                 if let share {
                     Button("Show in Conversation", systemImage: "bubble") {
