@@ -18,7 +18,7 @@ public struct ChannelMentionContext: Equatable, Sendable {
 }
 
 public struct ChannelMentionChoice: Equatable, Identifiable, Sendable {
-    public enum Kind: Equatable, Sendable {
+    private enum Kind: Equatable, Sendable {
         case everyone
         case lead(ChannelAgent)
         case member(ChannelAgent)
@@ -29,7 +29,7 @@ public struct ChannelMentionChoice: Equatable, Identifiable, Sendable {
     public let name: String
     public let detail: String
     public let handle: String
-    public let kind: Kind
+    private let kind: Kind
 
     public var agent: ChannelAgent? {
         switch kind {

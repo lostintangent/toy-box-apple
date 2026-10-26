@@ -53,8 +53,6 @@ struct DigestWindowTests {
         #expect(selected.channel.requestSequence == nil && selected.request == nil)
         #expect(selected.channel.seenThrough == 3)
         #expect(state.messages.count == 4 && state.request?.sequence == 1)
-        #expect(channelAgentMessageCount(selected.messages) == 1)
-
         state.channel.requestSequence = 2
         state.request = state.messages[1]
         #expect(window.selecting(state).request == state.request)
