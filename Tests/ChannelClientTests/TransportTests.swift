@@ -253,6 +253,57 @@ struct TransportTests {
         #expect(mock.requests.filter { $0.url?.path.hasSuffix("/messages") == true }.count == 3)
     }
 
+    @Test @MainActor func loadingHistoryThroughASequenceStopsWhenASnapshotReplacesItsHistory() async throws {
+        let initial = testState(revision: 10, messages: [testMessage(100)])
+        let release = DispatchSemaphore(value: 0)
+        let mock = MockTransport { request, _ in
+            if request.url?.path.hasSuffix("/messages") == true {
+                let before = Int(request.url?.query?.replacingOccurrences(of: "before=", with: "") ?? "") ?? 0
+                if before == 100 { _ = release.wait(timeout: .now() + 5) }
+                return try .json(ChannelHistoryPage(version: 1, revision: 10,
+                                                     messages: [testMessage(before - 2), testMessage(before - 1)]))
+            }
+            return try .stream([.init(type: "snapshot", state: initial)])
+        }
+        let store = ChannelStore(id: "test", api: try mock.api(), sendJournal: nil)
+        store.connect()
+        defer { store.disconnect() }
+        try await eventually { store.phase.isLive }
+        let reveal = Task { await store.loadHistory(through: 5) }
+        try await eventually { store.isLoadingOlder }
+        _ = try store.apply(.init(type: "snapshot", state: testState(revision: 11, messages: [testMessage(200)])))
+        release.signal()
+        await reveal.value
+        #expect(store.state?.messages.map(\.sequence) == [200])
+        #expect(mock.requests.filter { $0.url?.path.hasSuffix("/messages") == true }.count == 1)
+    }
+
+    @Test @MainActor func loadingHistoryThroughASequenceJoinsAPageAlreadyLoading() async throws {
+        let initial = testState(revision: 10, messages: [testMessage(100)])
+        let release = DispatchSemaphore(value: 0)
+        let mock = MockTransport { request, _ in
+            if request.url?.path.hasSuffix("/messages") == true {
+                _ = release.wait(timeout: .now() + 5)
+                return try .json(ChannelHistoryPage(version: 1, revision: 10, messages: [testMessage(100)]))
+            }
+            return try .stream([.init(type: "snapshot", state: initial)])
+        }
+        let store = ChannelStore(id: "test", api: try mock.api(), sendJournal: nil)
+        store.connect()
+        defer { store.disconnect() }
+        try await eventually { store.phase.isLive }
+        let paging = Task { await store.loadOlder() }
+        try await eventually { store.isLoadingOlder }
+        let reveal = Task { await store.loadHistory(through: 5) }
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(mock.requests.filter { $0.url?.path.hasSuffix("/messages") == true }.count == 1)
+        release.signal()
+        await paging.value
+        await reveal.value
+        #expect(store.state?.messages.map(\.sequence) == [100])
+        #expect(mock.requests.filter { $0.url?.path.hasSuffix("/messages") == true }.count == 1)
+    }
+
     @Test @MainActor func serverFailurePreservesUncertainAttemptOutsideCanonicalState() async throws {
         let initial = testState(revision: 10, messages: [testMessage(1)])
         let mock = MockTransport { request, _ in
