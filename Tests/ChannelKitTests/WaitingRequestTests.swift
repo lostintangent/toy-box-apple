@@ -22,6 +22,24 @@ struct WaitingRequestTests {
         #expect(ChannelWaitingRequest.Identity(serverURL: "https://server.test", channelID: "", sequence: 8) == nil)
     }
 
+    @Test func macLinksKeepTheRawServerSpellingThatRoutingMatchesExactly() throws {
+        for (server, normalized) in [
+            ("http://127.0.0.1:3210/", "http://127.0.0.1:3210"),
+            ("http://SERVER.TEST:80/base///", "http://server.test/base"),
+            ("https://SERVER.TEST:443/", "https://server.test")
+        ] {
+            let link = NeedsYouRequestLink(serverURL: server, channelID: "studio", sequence: 8)
+            let canonical = try #require(ChannelWaitingRequest.Identity(serverURL: server, channelID: "studio", sequence: 8))
+            let openURL = try #require(link.url)
+            let replyURL = try #require(link.replyURL)
+            let open = try #require(NeedsYouRequestLink(url: openURL))
+            let reply = try #require(NeedsYouRequestLink(replyURL: replyURL))
+            #expect(open.serverURL == server && reply.serverURL == server)
+            #expect(open == link && reply == link)
+            #expect(canonical.serverURL == normalized)
+        }
+    }
+
     @Test func unresolvedQuestionsNeverBecomePlaceholderEntries() throws {
         let agent = ChannelAgent(id: "lead", name: "Lead", role: "Coordinates", deleted: false)
         func entry(sequence: Int? = 8, question: String? = "Should we ship the caf\u{00e9} layout?",
