@@ -139,7 +139,6 @@ private struct OverviewTaskNode: View {
     @Environment(ChannelArtifactSession.self) private var viewer
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.layoutDirection) private var layoutDirection
     @ViewState private var isVisible = false
 
     private var children: [ChannelTask] { task.children ?? [] }
@@ -162,10 +161,17 @@ private struct OverviewTaskNode: View {
                 Button {
                     if let artifact { viewer.open(artifact) }
                 } label: {
-                    Label(artifact?.title ?? "Artifact unavailable", systemImage: "doc.text")
-                        .font(.footnote)
-                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                        .fixedSize(horizontal: false, vertical: true)
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Image(systemName: "doc.text")
+                            .frame(width: 16)
+                            .accessibilityHidden(true)
+                        Text(artifact?.title ?? "Artifact unavailable")
+                            .multilineTextAlignment(.leading)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .font(.footnote)
+                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
                 }
                 .buttonStyle(.borderless)
                 .disabled(artifact == nil)
@@ -260,25 +266,7 @@ private struct OverviewTaskNode: View {
                 firstLine.fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 if timing != nil || diff != nil {
-                    OverviewMetadataLayout(direction: layoutDirection) {
-                        if let timing {
-                            let presentation = ChannelTaskTimingPresentation(timing: timing)
-                            Label(presentation.elapsedText, systemImage: "clock")
-                            if let remaining = presentation.checkInText {
-                                Label(remaining, systemImage: "bell")
-                            }
-                        }
-                        if let diff {
-                            let colors = ChannelTaskColors.changes(in: colorScheme)
-                            Text("+\(diff.added.formatted(.number.notation(.compactName).precision(.fractionLength(0...1))))")
-                                .foregroundStyle(colors.added)
-                            Text("\u{2212}\(diff.removed.formatted(.number.notation(.compactName).precision(.fractionLength(0...1))))")
-                                .foregroundStyle(colors.removed)
-                        }
-                    }
-                    .font(.footnote)
-                    .foregroundStyle(ChannelInk.secondary)
-                    .monospacedDigit()
+                    OverviewTaskMetadata(timing: timing, diff: diff)
                 }
             }
         }
@@ -344,6 +332,29 @@ private struct OverviewTaskNode: View {
     }
 }
 
+struct OverviewTaskMetadata: View {
+    let timing: ChannelTaskTiming?
+    let diff: DiffStats?
+    @Environment(\.layoutDirection) private var layoutDirection
+
+    var body: some View {
+        OverviewMetadataLayout(direction: layoutDirection) {
+            if let timing {
+                let presentation = ChannelTaskTimingPresentation(timing: timing)
+                Label(presentation.elapsedText, systemImage: "clock")
+                if let remaining = presentation.checkInText {
+                    Label(remaining, systemImage: "bell")
+                }
+            }
+            if let diff { OverviewTaskDiff(diff: diff) }
+        }
+        .font(.footnote)
+        .labelStyle(.titleAndIcon)
+        .foregroundStyle(ChannelInk.secondary)
+        .monospacedDigit()
+    }
+}
+
 private struct OverviewMetadataLayout: Layout {
     let direction: LayoutDirection
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
@@ -366,8 +377,7 @@ private struct OverviewMetadataLayout: Layout {
         var x: CGFloat = 0, y: CGFloat = 0, height: CGFloat = 0, measuredWidth: CGFloat = 0
         var frames: [CGRect] = []
         for subview in subviews {
-            let natural = subview.sizeThatFits(.unspecified)
-            let size = subview.sizeThatFits(.init(width: min(natural.width, max(0, width)), height: nil))
+            let size = subview.sizeThatFits(.init(width: width.isFinite ? max(0, width) : nil, height: nil))
             if x > 0, x + size.width > width { x = 0; y += height + 3; height = 0 }
             frames.append(CGRect(origin: CGPoint(x: x, y: y), size: size))
             measuredWidth = max(measuredWidth, x + size.width)

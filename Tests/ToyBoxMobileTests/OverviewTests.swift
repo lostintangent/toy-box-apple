@@ -164,6 +164,21 @@ struct OverviewTests {
         #expect(view.pulse.segments.allSatisfy { $0.animationKeys()?.isEmpty != false && $0.opacity == 1 })
     }
 
+    @Test func taskTimingMetadataKeepsItsTextWithoutAnOversizedEmptyRow() throws {
+        let renderer = ImageRenderer(content:
+            Button {} label: {
+                OverviewTaskMetadata(timing: .init(elapsedMinutes: 86, checkInMinutes: 31), diff: nil)
+            }
+            .buttonStyle(.plain)
+            .dynamicTypeSize(.large)
+            .environment(\.colorScheme, .light))
+        renderer.proposedSize = ProposedViewSize(width: 300, height: nil)
+        renderer.scale = 1
+        let image = try #require(renderer.uiImage)
+        #expect(image.size.width > 100 && image.size.width <= 300)
+        #expect(image.size.height > 10 && image.size.height < 50)
+    }
+
     @Test func cancellingRemovalRestoresTheEditorAndOldSessionsCannotCompleteANewFlow() throws {
         try withModel { app in
             let catalog = try #require(app.catalog)
