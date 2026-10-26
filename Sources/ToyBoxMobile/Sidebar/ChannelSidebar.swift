@@ -37,32 +37,35 @@ struct ChannelSidebar: View {
     private func channelList(now: Date) -> some View {
         @Bindable var model = model
         return List(selection: $model.selectedChannelID) {
-            if initialLoading {
-                ForEach(0..<3) { _ in
-                    ChannelSidebarPlaceholder()
-                        .listRowSeparator(.hidden)
-                }
-            } else {
-                ForEach(channels) { channel in
-                    NavigationLink(value: channel.id) {
-                        row(channel, now: now)
+            Section {
+                if initialLoading {
+                    ForEach(0..<3) { _ in
+                        ChannelSidebarPlaceholder()
+                            .listRowSeparator(.hidden)
                     }
-                    .contextMenu {
-                        contextMenu(channel)
-                    } preview: {
-                        ChannelSidebarPreview(channel: projection.channel(channel), agents: projection.agents(channel))
-                    }
-                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                        Button(role: .destructive) {
-                            management.present(.deleteChannel(channelId: channel.id))
-                        } label: {
-                            Label("Delete", systemImage: "trash")
+                } else {
+                    ForEach(channels) { channel in
+                        NavigationLink(value: channel.id) {
+                            row(channel, now: now)
                         }
-                        .disabled(!model.canManageChannels)
+                        .contextMenu {
+                            contextMenu(channel)
+                        } preview: {
+                            ChannelSidebarPreview(channel: projection.channel(channel), agents: projection.agents(channel))
+                        }
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            Button(role: .destructive) {
+                                management.present(.deleteChannel(channelId: channel.id))
+                            } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
+                            .disabled(!model.canManageChannels)
+                        }
+                        .listRowBackground(Color.clear)
                     }
-                    .listRowBackground(Color.clear)
                 }
             }
+            .listSectionSeparator(.hidden)
         }
     }
 
@@ -84,7 +87,7 @@ struct ChannelSidebar: View {
                 showsSettingsButton: sizeClass != .compact
             )
         }
-        .navigationTitle("Channels")
+        .navigationTitle("Toy Box")
         .navigationBarTitleDisplayMode(.large)
         .searchable(text: $query, prompt: "Search Channels")
         .searchFocused($searchFocused)
@@ -210,7 +213,7 @@ private struct ChannelSidebarPlaceholder: View {
             Spacer()
         }
         .padding(.vertical, 12)
-        .frame(minHeight: 96)
+        .frame(minHeight: 72)
         .accessibilityHidden(true)
     }
 }
