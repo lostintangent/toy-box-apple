@@ -111,8 +111,7 @@ final class ImageViewer {
     var layout: Layout? {
         didSet { if layout != oldValue { refreshVectorRaster() } }
     }
-    /// The height of the window's toolbar over the canvas, measured from AppKit because the
-    /// overlay's safe area doesn't carry it.
+    /// The height of the window's toolbar over the canvas.
     var toolbarInset: CGFloat = 0
     @ObservationIgnored var reducesMotion = false
     @ObservationIgnored weak var anchorView: NSView?
@@ -725,7 +724,11 @@ struct ImageViewerCanvas: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background { ImageViewerToolbarInset(viewer: viewer).ignoresSafeArea(edges: .top) }
+        // The canvas runs under the glass toolbar but stops at the sidebar, whose glass would
+        // otherwise pick up the canvas. It reads the toolbar's inset first, while no image is
+        // open, so the inset is already known when one opens.
+        .ignoresSafeArea(edges: .top)
+        .onGeometryChange(for: CGFloat.self) { $0.safeAreaInsets.top } action: { viewer.toolbarInset = $0 }
         .allowsHitTesting(viewer.session != nil)
         .onAppear { viewer.canvasAppeared() }
         .onDisappear { viewer.canvasDisappeared() }
@@ -760,7 +763,7 @@ private struct ImageViewerStage: View {
     var body: some View {
         GeometryReader { proxy in
             let layout = ImageViewer.Layout(size: proxy.size,
-                                            topInset: max(proxy.safeAreaInsets.top, viewer.toolbarInset),
+                                            topInset: viewer.toolbarInset,
                                             displayScale: displayScale, origin: proxy.frame(in: .global).origin)
             stage(layout: layout)
                 .onChange(of: layout, initial: true) { viewer.layout = layout }
@@ -768,9 +771,6 @@ private struct ImageViewerStage: View {
                     if closing { animateClose() }
                 }
         }
-        // The canvas runs under the glass toolbar but stops at the sidebar, whose glass would
-        // otherwise pick up the canvas.
-        .ignoresSafeArea(edges: .top)
         .clipped()
         .onAppear {
             viewer.reducesMotion = reduceMotion
@@ -1041,56 +1041,6 @@ private struct ImageViewerCapsule: View {
         .accessibilityLabel("Image \(position + 1) of \(session.images.count)"
                             + (transcriptAttachmentFilename(session.images[position]).map { ", \($0)" } ?? ""))
         .accessibilityAddTraits(isCurrent ? .isSelected : [])
-    }
-}
-
-/// Tracks how far the window's toolbar reaches into the canvas. It stays mounted while no image is
-/// open, so the inset is already known when one opens.
-private struct ImageViewerToolbarInset: NSViewRepresentable {
-    let viewer: ImageViewer
-
-    func makeNSView(context: Context) -> ImageViewerToolbarInsetView {
-        let view = ImageViewerToolbarInsetView()
-        view.viewer = viewer
-        return view
-    }
-
-    func updateNSView(_ view: ImageViewerToolbarInsetView, context: Context) {
-        view.viewer = viewer
-    }
-}
-
-final class ImageViewerToolbarInsetView: NSView {
-    weak var viewer: ImageViewer?
-    private var observation: NSKeyValueObservation?
-
-    override var isFlipped: Bool { true }
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
-
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        observation = window?.observe(\.contentLayoutRect) { [weak self] _, _ in
-            Task { @MainActor in self?.measure() }
-        }
-        measure()
-    }
-
-    override func setFrameSize(_ newSize: NSSize) {
-        super.setFrameSize(newSize)
-        measure()
-    }
-
-    override func setFrameOrigin(_ newOrigin: NSPoint) {
-        super.setFrameOrigin(newOrigin)
-        measure()
-    }
-
-    private func measure() {
-        guard let window else { return }
-        let inset = max(0, convert(window.contentLayoutRect, from: nil).minY - bounds.minY)
-        guard inset != viewer?.toolbarInset else { return }
-        // Layout can run inside a SwiftUI update, so the model changes on the next turn.
-        Task { @MainActor [weak self] in self?.viewer?.toolbarInset = inset }
     }
 }
 
