@@ -1,6 +1,7 @@
 import AVKit
 import ChannelClient
 import ChannelKit
+import QuickLook
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -82,24 +83,29 @@ private struct TranscriptImage: View {
     }
 }
 
+/// Opens the file in Quick Look from the shared attachment cache, inline or remote.
 private struct TranscriptFileRow: View {
     let attachment: ChannelAttachment
     let api: ChannelAPI
-    @Environment(\.openURL) private var openURL
+    @ViewState private var preview: URL?
+    @ViewState private var isLoading = false
+    @ViewState private var failed = false
 
     var body: some View {
         Button {
-            if let address = attachment.url, let url = api.resourceURL(address) { openURL(url) }
+            Task { await open() }
         } label: {
             Label {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(attachment.displayName).lineLimit(1).truncationMode(.middle)
-                    if let kind = attachment.contentType?.localizedDescription {
+                    if failed {
+                        Text("Couldn't open. Tap to try again.").font(.caption).foregroundStyle(.red)
+                    } else if let kind = attachment.contentType?.localizedDescription {
                         Text(kind).font(.caption).foregroundStyle(.secondary)
                     }
                 }
             } icon: {
-                Image(systemName: "doc")
+                if isLoading { ProgressView() } else { Image(systemName: "doc") }
             }
             .font(.subheadline)
             .padding(.horizontal, 12)
@@ -108,7 +114,19 @@ private struct TranscriptFileRow: View {
             .background(Color(.secondarySystemBackground), in: .rect(cornerRadius: 10, style: .continuous))
         }
         .buttonStyle(.plain)
-        .disabled(attachment.url == nil)
+        .disabled(isLoading)
+        .quickLookPreview($preview)
+    }
+
+    private func open() async {
+        isLoading = true
+        defer { isLoading = false }
+        do {
+            preview = try await ChannelAttachmentCache.shared.file(for: attachment, api: api, reload: failed)
+            failed = false
+        } catch {
+            failed = true
+        }
     }
 }
 
