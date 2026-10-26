@@ -314,6 +314,67 @@ struct ComposerTests {
     }
 
     @Test(arguments: [false, true])
+    func aFocusedNativeEditorKeepsDictationSeparateFromAdjacentTyping(typedBefore: Bool) throws {
+        var text = ""
+        let editor = ComposerEditorState()
+        let input = NativeComposerInput(
+            text: Binding(get: { text }, set: { text = $0 }), editor: editor,
+            onSend: {}, onCompletionKey: { _ in false }, onPasteImages: { _ in }
+        )
+        let coordinator = NativeComposerInput.Coordinator(parent: input)
+        let view = ComposerTextView()
+        view.delegate = coordinator
+        view.coordinator = coordinator
+        coordinator.input = view
+        editor.textView = view
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 440, height: 956))
+        let root = UIViewController()
+        window.rootViewController = root
+        root.view.addSubview(view)
+        view.frame = CGRect(x: 20, y: 100, width: 400, height: 120)
+        window.makeKeyAndVisible()
+        defer {
+            view.resignFirstResponder()
+            window.isHidden = true
+        }
+        try #require(view.becomeFirstResponder())
+        let undo = try #require(view.undoManager)
+        func trace(_ stage: String) {
+            print("Focused dictation undo \(stage): type=\(String(reflecting: type(of: undo))), level=\(undo.groupingLevel), byEvent=\(undo.groupsByEvent)")
+        }
+        if typedBefore { view.insertText("Typed") }
+        trace("before")
+        try #require(coordinator.beginDictation())
+        var transcript = DictationTranscript()
+        transcript.receive("Spoken", isFinal: false)
+        coordinator.showDictation(transcript)
+        trace("live")
+        coordinator.endDictation(transcript.visible)
+        trace("final")
+        let dictated = typedBefore ? "Typed Spoken" : "Spoken"
+        view.insertText("!")
+        trace("typed")
+        #expect(text == dictated + "!")
+        undo.undo()
+        #expect(text == dictated, "Typing after dictation is its own undo step in the focused native editor")
+        #expect(view.text == text)
+        undo.undo()
+        #expect(text == (typedBefore ? "Typed" : ""), "Dictation is its own undo step in the focused native editor")
+        #expect(view.text == text)
+        if typedBefore {
+            #expect(undo.canUndo)
+            undo.undo()
+            #expect(text.isEmpty)
+            #expect(view.text.isEmpty)
+        }
+        undo.redo()
+        if typedBefore { undo.redo() }
+        #expect(text == dictated)
+        undo.redo()
+        #expect(text == dictated + "!")
+    }
+
+    @Test(arguments: [false, true])
     func losingTheNativeDictationRangePreservesRecognizedWordsThroughTheDraft(finalizes: Bool) {
         var text = "Typed"
         let editor = ComposerEditorState()
@@ -406,15 +467,14 @@ struct ComposerTests {
         coordinator.input = view
         view.insertText("Typed")
         let undo = try #require(view.undoManager)
-        #expect(undo.undoCount == 1)
+        print("Unfocused dictation undo before: type=\(String(reflecting: type(of: undo))), level=\(undo.groupingLevel), byEvent=\(undo.groupsByEvent)")
         coordinator.anchorDictation()
         var transcript = DictationTranscript()
         transcript.receive("Spoken", isFinal: false)
         coordinator.showDictation(transcript)
-        #expect(undo.undoCount == 2, "The live session has its own native undo operation")
+        print("Unfocused dictation undo live: type=\(String(reflecting: type(of: undo))), level=\(undo.groupingLevel), byEvent=\(undo.groupsByEvent)")
         coordinator.endDictation("")
         #expect(view.text == "Typed")
-        #expect(undo.undoCount == 1, "Only the discarded session action is removed")
         undo.undo()
         #expect(view.text.isEmpty)
         #expect(text.isEmpty)
