@@ -16,6 +16,7 @@ struct ComposerDictateButton: View {
                       || dictation.availability == .noMicrophone && dictation.phase == .idle)
             .accessibilityLabel(accessibilityLabel)
             .accessibilityValue(accessibilityValue)
+            .accessibilityShowsLargeContentViewer()
             .sheet(isPresented: $dictation.showsAccessExplanation) {
                 if let access = dictation.accessOff {
                     NavigationStack {

@@ -300,6 +300,7 @@ struct ComposerSurface: View {
             ComposerAttachmentLabel()
         }
         .accessibilityLabel("Attach images")
+        .accessibilityShowsLargeContentViewer()
     }
 
     private var sendButton: some View {
@@ -322,6 +323,7 @@ struct ComposerSurface: View {
         .disabled(!session.canSend || scenePhase != .active)
         .keyboardShortcut(.return, modifiers: .command)
         .accessibilityLabel(composer.attempt?.canRetry == true ? "Send Again" : "Send message")
+        .accessibilityShowsLargeContentViewer()
     }
 
     private var notices: some View {
