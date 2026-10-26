@@ -360,6 +360,7 @@ struct ConversationView: View {
             && management.flow == nil && !interaction.isArtifactViewerPresented
             && !overviewPresentation.isCompactSheetPresented
             && !(sizeClass == .compact && interaction.isInspectorPresented)
+            && !interaction.isRequestPreviewPresented
     }
 
     /// Reads advance only for committed rows the reader can see in an active scene.

@@ -10,28 +10,38 @@ struct ComposerSurface: View {
     @Environment(AppModel.self) private var model
     @Environment(ChannelInteraction.self) private var interaction
     @Environment(ManagementPresenter.self) private var management
+    @Environment(OverviewPresentation.self) private var overviewPresentation
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.scenePhase) private var scenePhase
-    @Environment(\.colorScheme) private var colorScheme
     @ViewState private var showPhotos = false
     @ViewState private var showFiles = false
+    @ViewState private var reattachingImageID: UUID?
+    @ViewState private var reattachment: Task<Void, Never>?
     @ViewState private var photoItems: [PhotosPickerItem] = []
     @ViewState private var restoresFocus = false
     @ViewState private var dragging = false
     @ViewState private var highlightedChoice: String?
     @ViewState private var dismissedCompletion: ChannelMentionContext?
     @ViewState private var connectionGrace = ConnectGrace()
+    @ScaledMetric(relativeTo: .body) private var completionRowHeight = 56
 
     private var draft: ComposerDraft { session.draft }
     private var store: ChannelStore { session.store }
     private var composer: ChannelComposerSession { session.composer }
     private var editor: ComposerEditorState { session.editor }
     private var draftID: ObjectIdentifier { ObjectIdentifier(draft) }
+    private var isReaderCovered: Bool {
+        interaction.isArtifactViewerPresented || overviewPresentation.isCompactSheetPresented
+            || (sizeClass == .compact && interaction.isInspectorPresented)
+    }
     private var canRestoreReaderFocus: Bool {
         scenePhase == .active && model.isActive && model.selectedStore === store
             && model.visibleChannelID == store.id && store.phase != .deleted
             && !model.isSettingsPresented && management.flow == nil && !showPhotos && !showFiles
             && !(sizeClass == .compact && interaction.isInspectorPresented)
+    }
+    private var canPresentRequestPreview: Bool {
+        canRestoreReaderFocus && !isReaderCovered
     }
     private var mentionContext: ChannelMentionContext? {
         guard editor.isFocused, !editor.hasMarkedText else { return nil }
@@ -59,11 +69,20 @@ struct ComposerSurface: View {
         .photosPicker(isPresented: $showPhotos, selection: $photoItems, matching: .images,
                       preferredItemEncoding: .current)
         .fileImporter(isPresented: $showFiles, allowedContentTypes: [.image],
-                      allowsMultipleSelection: true) { result in
+                      allowsMultipleSelection: reattachingImageID == nil) { [draft] result in
             switch result {
-            case .success(let urls): draft.attachFiles(urls)
+            case .success(let urls):
+                if let id = reattachingImageID {
+                    if let url = urls.first {
+                        reattachment?.cancel()
+                        reattachment = Task { _ = await draft.reattachImage(id: id, from: url) }
+                    }
+                } else {
+                    draft.attachFiles(urls)
+                }
             case .failure(let error): draft.error = "Images could not be attached: \(error.localizedDescription)"
             }
+            reattachingImageID = nil
             restoreFocus()
         }
         .onChange(of: photoItems) { _, items in
@@ -73,9 +92,13 @@ struct ComposerSurface: View {
             Task { await session.importPhotos(items) }
         }
         .onChange(of: showPhotos) { _, presented in if !presented { restoreFocus() } }
+        .onChange(of: showFiles) { _, presented in if !presented { restoreFocus() } }
         .onChange(of: management.flow?.id) { _, id in if id == nil { restoreFocus() } }
-        .onChange(of: interaction.isArtifactViewerPresented, initial: true) { _, covered in
-            editor.setReaderCovered(covered, canRestoreFocus: canRestoreReaderFocus)
+        .onChange(of: isReaderCovered, initial: true) { _, covered in
+            editor.setReaderCovered(covered, canRestoreFocus: canRestoreReaderFocus && !interaction.isRequestPreviewPresented)
+        }
+        .onChange(of: interaction.isRequestPreviewPresented) { _, covered in
+            if !covered { restoreFocus() }
         }
         .onChange(of: mentionContext) { _, _ in
             dismissedCompletion = nil
@@ -96,6 +119,7 @@ struct ComposerSurface: View {
         }
         .onChange(of: draft.revision) { _, _ in registerDraft() }
         .onAppear { composer.reconcile(); registerDraft() }
+        .onDisappear { reattachment?.cancel() }
         .task(id: store.phase) { await connectionGrace.watch(store.phase, for: draftID) }
         .confirmationDialog("Keep your current draft?", isPresented: Binding(
             get: { composer.pendingEdit != nil },
@@ -109,6 +133,47 @@ struct ComposerSurface: View {
     }
 
     private var container: some View {
+        VStack(spacing: 0) {
+            ComposerTaskProgress(store: store, showTasks: showTasks)
+            if hasNotices || composer.replySource != nil || !draft.images.isEmpty {
+                ViewThatFits(in: .vertical) {
+                    accessories
+                    ScrollView { accessories }
+                        .scrollBounceBehavior(.basedOnSize)
+                }
+            }
+            ZStack(alignment: .topLeading) {
+                if draft.text.isEmpty {
+                    Text("Message your team")
+                        .font(.body).foregroundStyle(Color.primary).lineLimit(1)
+                        .padding(.horizontal, 12).padding(.top, 10).accessibilityHidden(true)
+                }
+                NativeComposerInput(
+                    text: Bindable(draft).text, editor: editor, completionIsVisible: !choices.isEmpty,
+                    onSend: send, onCompletionKey: handleCompletionKey,
+                    onPasteImages: { providers in for provider in providers { draft.attachProvider(provider) } },
+                    onEscape: composer.replySource == nil ? nil : { composer.replySource = nil }
+                )
+            }
+            .padding(.bottom, 6)
+            .layoutPriority(1)
+            controls.padding(.horizontal, 8).padding(.bottom, 6)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .glassEffect(.regular.tint(Color(uiColor: .systemBackground).opacity(0.3)),
+                     in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .overlay {
+            if dragging {
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .strokeBorder(.tint, lineWidth: 2).allowsHitTesting(false)
+            }
+        }
+        .onDrop(of: [UTType.fileURL, .image], isTargeted: $dragging) { providers in
+            providers.map { draft.attachProvider($0) }.contains(true)
+        }
+    }
+
+    private var accessories: some View {
         VStack(spacing: 0) {
             if hasNotices { notices.padding(.vertical, 8) }
             if let source = composer.replySource {
@@ -129,35 +194,15 @@ struct ComposerSurface: View {
                 .padding(.leading, 12)
             }
             if !draft.images.isEmpty {
-                ComposerImageStrip(draft: draft) { preparePresentation(); showFiles = true }
-            }
-            ZStack(alignment: .topLeading) {
-                if draft.text.isEmpty {
-                    Text("Message your team")
-                        .font(.body).foregroundStyle(Color.primary).lineLimit(1)
-                        .padding(.horizontal, 12).padding(.top, 10).accessibilityHidden(true)
+                ComposerImageStrip(draft: draft) { id in
+                    preparePresentation()
+                    reattachingImageID = id
+                    showFiles = true
                 }
-                NativeComposerInput(
-                    text: Bindable(draft).text, editor: editor, completionIsVisible: !choices.isEmpty,
-                    onSend: send, onCompletionKey: handleCompletionKey,
-                    onPasteImages: { providers in for provider in providers { draft.attachProvider(provider) } },
-                    onEscape: composer.replySource == nil ? nil : { composer.replySource = nil }
-                )
-            }
-            .padding(.bottom, 6)
-            controls.padding(.horizontal, 8).padding(.bottom, 6)
-        }
-        .glassEffect(.regular.tint(Color(uiColor: .systemBackground).opacity(0.3)),
-                     in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .overlay {
-            if dragging {
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .strokeBorder(.tint, lineWidth: 2).allowsHitTesting(false)
             }
         }
-        .onDrop(of: [UTType.fileURL, .image], isTargeted: $dragging) { providers in
-            providers.map { draft.attachProvider($0) }.contains(true)
-        }
+        .frame(maxWidth: .infinity)
+        .fixedSize(horizontal: false, vertical: true)
     }
 
     private var controls: some View {
@@ -179,14 +224,23 @@ struct ComposerSurface: View {
         HStack(spacing: 4) {
             ComposerAudienceView(text: draft.text, agents: store.roster,
                                  acknowledgesRequest: store.requestSequence != nil)
-            if let request = store.request { inputNeeded(request) }
+            if let request = store.request {
+                ComposerRequestButton(request: request, allowsPresentation: canPresentRequestPreview,
+                                      willPresent: preparePresentation, didDismiss: restoreFocus)
+                    .id(request.sequence)
+                    .id(draftID)
+            }
         }
     }
 
     private var attachmentMenu: some View {
         Menu {
             Button("Choose Photos", systemImage: "photo.on.rectangle") { preparePresentation(); showPhotos = true }
-            Button("Choose Files", systemImage: "folder") { preparePresentation(); showFiles = true }
+            Button("Choose Files", systemImage: "folder") {
+                preparePresentation()
+                reattachingImageID = nil
+                showFiles = true
+            }
         } label: {
             Image(systemName: "photo.badge.plus").foregroundStyle(Color.primary).frame(width: 44, height: 44)
         }
@@ -249,33 +303,6 @@ struct ComposerSurface: View {
         }
     }
 
-    private func inputNeeded(_ request: ChannelMessage) -> some View {
-        Button { interaction.reveal(sequence: request.sequence) } label: {
-            Label {
-                Text("Input Needed").foregroundStyle(Color.primary)
-            } icon: {
-                Image(systemName: "questionmark.bubble")
-                    .foregroundStyle(ChannelAttentionStyle.color(for: .waiting, in: colorScheme))
-            }
-            .lineLimit(1).frame(minHeight: 44)
-        }
-        .font(.footnote)
-        .buttonStyle(.borderless)
-        .contextMenu {
-            Button(store.historyError == nil ? "Reveal in Conversation" : "Retry Reveal") {
-                interaction.reveal(sequence: request.sequence)
-            }
-        } preview: {
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Input Needed").font(.headline)
-                ScrollView { Text(request.text).frame(maxWidth: .infinity, alignment: .leading) }
-                if let error = store.historyError { Text(error).font(.footnote) }
-            }
-            .padding(16).frame(width: 320)
-        }
-        .accessibilityLabel("Input needed. Reveal the unanswered request.")
-    }
-
     private var completion: some View {
         ScrollViewReader { proxy in
             List(selection: $highlightedChoice) {
@@ -291,7 +318,7 @@ struct ComposerSurface: View {
         }
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
         .frame(maxWidth: 320)
-        .frame(height: min(264, CGFloat(choices.count) * 56))
+        .frame(minHeight: 0, idealHeight: min(264, CGFloat(choices.count) * completionRowHeight), maxHeight: 264)
     }
 
     private func completionRow(_ choice: ChannelMentionChoice) -> some View {
@@ -311,6 +338,7 @@ struct ComposerSurface: View {
             .frame(minHeight: 44).contentShape(Rectangle())
         }
         .disabled(choice.isCreate && !store.phase.isLive)
+        .accessibilityIdentifier("composer-mention-\(choice.id)")
         .listRowInsets(EdgeInsets(top: 6, leading: 12, bottom: 6, trailing: 12))
         .contextMenu {
             if let agent = choice.agent, choice.isMember {
@@ -354,9 +382,15 @@ struct ComposerSurface: View {
         Task { if await session.send() { interaction.jumpToLatest() } }
     }
 
+    private func showTasks() {
+        if sizeClass == .compact { editor.setReaderCovered(true, canRestoreFocus: false) }
+        interaction.showOverviewTasks()
+    }
+
     private func preparePresentation() { restoresFocus = editor.isFocused }
     private func restoreFocus() {
-        if restoresFocus { editor.focus() }
+        guard !interaction.isRequestPreviewPresented else { return }
+        if restoresFocus && canPresentRequestPreview { editor.focus() }
         restoresFocus = false
     }
     private func registerDraft() {
