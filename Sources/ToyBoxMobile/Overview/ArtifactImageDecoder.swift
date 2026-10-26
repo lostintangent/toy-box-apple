@@ -4,8 +4,6 @@ import Foundation
 import WebKit
 
 enum ArtifactImageDecoder {
-    static let svgUnavailableMessage = "SVG previews are not available on this iPhone. Use Quick Look or Share Original."
-
     static func decode(_ file: URL, kind: ArtifactContentKind, maximumPixelSize: Int?) async throws -> ArtifactDecodedImage {
         let limit = min(8192, max(1, maximumPixelSize ?? 8192))
         if kind == .svg {
