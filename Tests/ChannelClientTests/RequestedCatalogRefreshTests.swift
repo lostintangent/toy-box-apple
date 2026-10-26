@@ -12,7 +12,7 @@ struct RequestedCatalogRefreshTests {
         let catalog = ChannelCatalogStore(api: try mock.api())
         let requested = RequestedCatalogRefresh()
         let poll = Task { await catalog.refresh() }
-        try await eventually { mock.pendingResponseCount == 1 }
+        try await eventually(observing: mock) { mock.pendingResponseCount == 1 }
         #expect(catalog.isLoading && !requested.isRunning(for: catalog), "Background polling shows progress")
 
         let retry = Task { await requested.run(catalog) }
@@ -34,7 +34,7 @@ struct RequestedCatalogRefreshTests {
         let catalog = ChannelCatalogStore(api: try mock.api())
         let requested = RequestedCatalogRefresh()
         let retry = Task { await requested.run(catalog) }
-        try await eventually { mock.pendingResponseCount == 1 }
+        try await eventually(observing: mock) { mock.pendingResponseCount == 1 }
         #expect(requested.isRunning(for: catalog))
         #expect(mock.finishPendingResponses() == 1)
         await retry.value

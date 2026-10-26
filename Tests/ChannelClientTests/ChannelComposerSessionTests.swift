@@ -6,6 +6,7 @@ import UniformTypeIdentifiers
 @testable import ChannelClient
 
 @MainActor
+@Suite(.timeLimit(.minutes(1)))
 struct ChannelComposerSessionTests {
     @Test func replyContextUsesTheSourceAndAnOldEchoCannotClearNewerWords() throws {
         let draft = ComposerDraft(imageIsReadable: { _ in false })
@@ -102,7 +103,7 @@ struct ChannelComposerSessionTests {
         draft.text = "Original words"
         let session = ChannelComposerSession(store: store, draft: draft)
         let send = Task { await session.send() }
-        try await eventually { mock.pendingResponseCount == 2 }
+        try await eventually(observing: mock) { mock.pendingResponseCount == 2 }
         #expect(session.isSubmitting)
         #expect(!session.canSend())
         #expect(await !session.send())

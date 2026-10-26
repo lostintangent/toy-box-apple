@@ -1,5 +1,6 @@
 import ChannelKit
 import Foundation
+import Observation
 import Synchronization
 import Testing
 @testable import ChannelClient
@@ -27,6 +28,7 @@ final class MockTransport: Sendable {
         var requests: [URLRequest] = []
         var stops = 0
         var pending: [ObjectIdentifier: MockURLProtocol] = [:]
+        var observers: [UUID: AsyncStream<Void>.Continuation] = [:]
     }
     let state = Mutex(State())
     let handler: Handler
@@ -37,6 +39,35 @@ final class MockTransport: Sendable {
     var requests: [URLRequest] { state.withLock { $0.requests } }
     var stops: Int { state.withLock { $0.stops } }
     var pendingResponseCount: Int { state.withLock { $0.pending.count } }
+    var changeObserverCount: Int { state.withLock { $0.observers.count } }
+
+    func observeChanges(_ continuation: AsyncStream<Void>.Continuation) -> UUID {
+        let id = UUID()
+        state.withLock { $0.observers[id] = continuation }
+        return id
+    }
+
+    func stopObservingChanges(_ id: UUID) {
+        state.withLock { $0.observers[id] = nil }
+    }
+
+    private func changed() {
+        let observers = state.withLock { Array($0.observers.values) }
+        for observer in observers { observer.yield(()) }
+    }
+
+    func hold(_ response: MockURLProtocol) {
+        state.withLock { $0.pending[ObjectIdentifier(response)] = response }
+        changed()
+    }
+
+    func stop(_ response: MockURLProtocol) {
+        state.withLock {
+            $0.stops += 1
+            $0.pending.removeValue(forKey: ObjectIdentifier(response))
+        }
+        changed()
+    }
 
     @discardableResult
     func finishPendingResponses() -> Int {
@@ -45,6 +76,7 @@ final class MockTransport: Sendable {
             state.pending.removeAll()
             return pending
         }
+        changed()
         for response in pending { response.client?.urlProtocolDidFinishLoading(response) }
         return pending.count
     }
@@ -54,6 +86,7 @@ final class MockTransport: Sendable {
             state.requests.append(request)
             return state.requests.count
         }
+        changed()
         return try handler(request, count)
     }
 
@@ -86,7 +119,7 @@ final class MockURLProtocol: URLProtocol, @unchecked Sendable {
             client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
             if !value.body.isEmpty { client?.urlProtocol(self, didLoad: value.body) }
             if value.keepOpen {
-                transport.state.withLock { $0.pending[ObjectIdentifier(self)] = self }
+                transport.hold(self)
             } else {
                 client?.urlProtocolDidFinishLoading(self)
             }
@@ -95,10 +128,7 @@ final class MockURLProtocol: URLProtocol, @unchecked Sendable {
 
     override func stopLoading() {
         if let host = request.url?.host, let transport = Self.registry.withLock({ $0[host] }) {
-            transport.state.withLock {
-                $0.stops += 1
-                $0.pending.removeValue(forKey: ObjectIdentifier(self))
-            }
+            transport.stop(self)
         }
     }
 }
@@ -135,13 +165,18 @@ func testMessage(_ sequence: Int, id: String? = nil, text: String = "Progress") 
 }
 
 @MainActor
-func eventually(_ condition: () -> Bool, timeout: TimeInterval = 3) async throws {
-    let deadline = ContinuousClock.now.advanced(by: .seconds(timeout))
-    while !condition() {
-        guard ContinuousClock.now < deadline else {
-            Issue.record("Condition was not reached within \(timeout) seconds.")
-            throw ChannelAPIError.invalidResponse
-        }
-        try await Task.sleep(for: .milliseconds(10))
+/// Reads observable main-actor state. Supply the transport when reading its locked counters.
+func eventually(observing transport: MockTransport? = nil, _ condition: () -> Bool) async throws {
+    let changes = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
+    let observer = transport?.observeChanges(changes.continuation)
+    defer {
+        if let observer { transport?.stopObservingChanges(observer) }
+        changes.continuation.finish()
+    }
+    var iterator = changes.stream.makeAsyncIterator()
+    while true {
+        try Task.checkCancellation()
+        if withObservationTracking(condition, onChange: { changes.continuation.yield(()) }) { return }
+        guard await iterator.next() != nil else { throw CancellationError() }
     }
 }

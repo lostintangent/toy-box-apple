@@ -3,6 +3,7 @@ import Foundation
 import Testing
 @testable import ChannelClient
 
+@Suite(.timeLimit(.minutes(1)))
 struct HistoryFixtureTests {
     private struct Failure: Decodable { var error: String }
 

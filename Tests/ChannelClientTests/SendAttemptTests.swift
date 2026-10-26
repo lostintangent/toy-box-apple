@@ -3,6 +3,7 @@ import Foundation
 import Testing
 @testable import ChannelClient
 
+@Suite(.timeLimit(.minutes(1)))
 struct SendAttemptTests {
     struct Posted: Decodable { var id: String; var content: String }
     struct MessageEnvelope: Encodable { var version = 1; var message: ChannelMessage }

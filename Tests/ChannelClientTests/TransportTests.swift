@@ -3,6 +3,7 @@ import Foundation
 import Testing
 @testable import ChannelClient
 
+@Suite(.timeLimit(.minutes(1)))
 struct TransportTests {
     @Test func messageConflictIsNeverRetried() async throws {
         let mock = MockTransport { _, _ in
@@ -103,7 +104,7 @@ struct TransportTests {
             for try await _ in api.observe(channelId: "test", heartbeatTimeout: 0.15) {}
         }
         // URLSession queues stopLoading after the throwing byte iterator has terminated.
-        try await eventually { mock.stops == 1 }
+        try await eventually(observing: mock) { mock.stops == 1 }
         #expect(mock.requests.count == 1)
     }
 
@@ -118,7 +119,7 @@ struct TransportTests {
                                  reconnectPolicy: .init(initialDelay: 0.01), sendJournal: nil)
         store.connect()
         defer { store.disconnect() }
-        try await eventually { mock.requests.count == 2 && store.phase.isLive }
+        try await eventually(observing: mock) { mock.requests.count == 2 && store.phase.isLive }
         #expect(mock.requests[0].url?.query == nil)
         #expect(mock.requests[1].url?.query == "after=0")
         #expect(mock.requests[1].value(forHTTPHeaderField: "Last-Event-ID") == "0")
@@ -134,7 +135,7 @@ struct TransportTests {
         store.connect()
         defer { store.disconnect() }
         try await eventually { store.phase.message != nil }
-        try await eventually { mock.stops == 1 }
+        try await eventually(observing: mock) { mock.stops == 1 }
         #expect(mock.requests.count == 1)
     }
 
@@ -192,7 +193,7 @@ struct TransportTests {
         try await eventually { store?.phase.isLive == true }
         store = nil
         #expect(weakStore == nil)
-        try await eventually { mock.stops == 1 }
+        try await eventually(observing: mock) { mock.stops == 1 }
     }
 
     @Test @MainActor func historyMergesWithoutReplacingNewerMessagesOrCursor() async throws {

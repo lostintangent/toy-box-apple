@@ -4,6 +4,7 @@ import Synchronization
 import Testing
 @testable import ChannelClient
 
+@Suite(.timeLimit(.minutes(1)))
 struct ManagementReconciliationTests {
     enum Write: CaseIterable, Sendable {
         case createChannel, editChannel, deleteChannel, createMember, editMember, removeMember, runRoutine, deleteRoutine
@@ -85,7 +86,7 @@ struct ManagementReconciliationTests {
         #expect(result == snapshot)
         #expect(mock.requests.first?.url?.query == nil)
         #expect(mock.requests.first?.value(forHTTPHeaderField: "Last-Event-ID") == nil)
-        try await eventually { mock.stops == 1 }
+        try await eventually(observing: mock) { mock.stops == 1 }
     }
 
     @Test func snapshotReadRejectsMissingMismatchedAndNonSnapshotState() async throws {
@@ -315,7 +316,7 @@ struct ManagementReconciliationTests {
         }
         let catalog = ChannelCatalogStore(api: try mock.api())
         let first = Task { try await catalog.reconcileManagementWrite() }
-        try await eventually { mock.requests.count == 1 }
+        try await eventually(observing: mock) { mock.requests.count == 1 }
         await #expect(throws: ChannelAPIError.self) {
             try await catalog.reconcileManagementWrite(channelId: "test")
         }
@@ -338,7 +339,7 @@ struct ManagementReconciliationTests {
         }
         let catalog = ChannelCatalogStore(api: try mock.api())
         let poll = Task { await catalog.refresh() }
-        try await eventually { mock.requests.count == 1 }
+        try await eventually(observing: mock) { mock.requests.count == 1 }
         let review = try await catalog.reconcileManagementWrite()
         poll.cancel()
         await poll.value
