@@ -213,7 +213,9 @@ private struct TranscriptTextSelection: ViewModifier {
     let enabled: Bool
 
     func body(content: Content) -> some View {
-        if enabled { content.textSelection(.enabled) } else { content }
+        // Selectable text exposes a platform text element under a copy of itself, and an AX read
+        // of that pair can recurse inside SwiftUI. Accessibility gets the plain, unselectable text.
+        if enabled { content.textSelection(.enabled).accessibilityRepresentation { content } } else { content }
     }
 }
 
