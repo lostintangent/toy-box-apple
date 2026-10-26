@@ -295,6 +295,11 @@ Agents never create these accounts, accept agreements, read private keys or set 
   callbacks. The trace is an internal per-API sink, unset in ordinary clients, and recording it
   does not send mock readiness notifications. This closes a diagnostic gap, not the historical
   reconnect incident or its quarantine.
+  The store's detached consumer records event-handled and reconnect-pending immediately before
+  hopping back to the main actor. Compare these with event-applied and reconnect-scheduled to
+  distinguish a delayed consumer turn from a delayed main-actor turn after an already-decoded EOF.
+  Reconnect-delay-elapsed also separates the backoff sleeper's resumed turn from the main-actor
+  turn that issues the next request.
 - `ChannelArtifactSessionTests.switchingScopeDiscardsTheVisitAndCancelsItsPendingLoad` is quarantined
   behind `TOY_BOX_TEST_ARTIFACT_SCOPE_TIMING=1`. Its `changingServer: false` argument failed the
   unchanged private three-second polling helper at line 81 in the 2026-10-26 Client diagnostic run

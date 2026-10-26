@@ -106,6 +106,7 @@ public final class ChannelStore {
         let token = generation
         phase = .connecting
         let restore = attemptsRestored ? nil : restoreSendAttemptsConcurrently()
+        let trace = api.observationTrace
         var first: AsyncThrowingStream<ChannelObservationEvent, any Error>? =
             api.observe(channelId: id, after: state?.revision)
         observation = Task.detached(priority: Task.currentPriority) { [weak self] in
@@ -117,15 +118,18 @@ public final class ChannelStore {
                     guard let events = next.take() else { return }
                     for try await event in events {
                         guard try await self?.receive(event, token: token, after: restore) == true else { return }
+                        trace?(.eventHandled(type: event.type))
                         if event.type == "snapshot" || event.type == "resumed" { attempt = 0 }
                     }
                     throw ChannelAPIError.streamEnded
                 } catch {
+                    trace?(.reconnectPending(attempt: attempt))
                     guard let delay = await self?.scheduleReconnect(after: error, attempt: attempt, token: token)
                     else { return }
                     attempt += 1
                     do { try await Task.sleep(for: .seconds(delay)) }
                     catch { return }
+                    trace?(.reconnectDelayElapsed)
                     next = await self?.resumeObservation(token: token)
                 }
             }

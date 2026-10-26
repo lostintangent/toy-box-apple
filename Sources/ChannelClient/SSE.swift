@@ -97,8 +97,11 @@ enum ChannelObservationStage: Equatable, Sendable {
     case eventDecoded(type: String, revision: Int?)
     case eventReceived(type: String)
     case eventApplied(type: String, revision: Int?)
+    case eventHandled(type: String)
     case streamFinished(error: String?)
+    case reconnectPending(attempt: Int)
     case reconnectScheduled(attempt: Int, delay: TimeInterval, after: Int?)
+    case reconnectDelayElapsed
     case reconnectRequested(after: Int?)
 }
 
