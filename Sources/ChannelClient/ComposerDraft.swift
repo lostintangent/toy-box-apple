@@ -291,6 +291,12 @@ public final class ComposerDraft {
         save()
     }
 
+    func append(content: String, attachments: [ChannelAttachment]) {
+        let recovered = ComposerDraft(imageIsReadable: imageIsReadable)
+        recovered.restore(content: content, attachments: attachments)
+        append(contentsOf: recovered)
+    }
+
     public func retrySave() {
         error = nil
         save()
