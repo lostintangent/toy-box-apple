@@ -20,7 +20,10 @@ final class AppModel {
     var selectedChannelID: String? {
         didSet {
             guard oldValue != selectedChannelID else { return }
-            if let selectedStore { artifactSessions[selectedStore.id]?.session.close() }
+            if let selectedStore {
+                artifactSessions[selectedStore.id]?.session.close()
+                interactions[selectedStore.id]?.isArtifactViewerPresented = false
+            }
             if holdsSelectedConnection, let selectedStore { connections.release(selectedStore) }
             holdsSelectedConnection = false
             selectedStore = selectedChannelID.flatMap { catalog?.channel(id: $0) }

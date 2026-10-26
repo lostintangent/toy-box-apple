@@ -256,11 +256,12 @@ struct ConversationView: View {
         if !isMoving { markRead() }
     }
 
-    /// Nothing covers the conversation: Settings, a management sheet and the compact Overview
-    /// sheet all hide it, while the regular-width Overview column sits beside it.
+    /// Readers, Settings, management and compact Overview cover the conversation.
+    /// The regular-width Overview column sits beside it.
     private var isUncovered: Bool {
         model.isActive && model.visibleChannelID == store.id && !model.isSettingsPresented
-            && management.flow == nil && !overviewPresentation.isCompactSheetPresented
+            && management.flow == nil && !interaction.isArtifactViewerPresented
+            && !overviewPresentation.isCompactSheetPresented
             && !(sizeClass == .compact && interaction.isInspectorPresented)
     }
 

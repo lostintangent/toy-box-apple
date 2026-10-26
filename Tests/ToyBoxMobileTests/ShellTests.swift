@@ -131,6 +131,40 @@ struct ShellTests {
         #expect(accessible.height > regular.height)
     }
 
+    @Test func aReaderWaitsForActualCompactOverviewDismissalNotJustTheClosedIntent() {
+        let overview = OverviewPresentation()
+        overview.compactSheetDidAppear()
+        func visibility(requested: Bool = true, overviewRequested: Bool) -> ChannelReaderVisibility {
+            ChannelReaderVisibility(requested: requested, compactOverviewRequested: overviewRequested,
+                                    compactOverviewPresented: overview.isCompactSheetPresented)
+        }
+        #expect(!visibility(overviewRequested: true).isVisible)
+        #expect(!visibility(overviewRequested: false).isVisible)
+        overview.compactSheetDidDismiss(isRequested: false)
+        #expect(visibility(overviewRequested: false).isVisible)
+        #expect(!visibility(requested: false, overviewRequested: false).isVisible)
+    }
+
+    @Test func changingChannelsClearsReaderCoverageWithoutReplacingTheConversationState() async throws {
+        try await withDefaults { defaults in
+            let model = AppModel(arguments: ["--server", "https://fixture.example"], environment: [:],
+                                 defaults: defaults, session: fixtureSession())
+            model.selectedChannelID = "first"
+            let store = try #require(model.selectedStore)
+            let interaction = model.interaction(for: store.id)
+            let composer = model.composerSession(for: store)
+            let artifacts = model.artifactSession(for: store)
+            interaction.isArtifactViewerPresented = true
+            model.selectedChannelID = "second"
+            #expect(!interaction.isArtifactViewerPresented)
+            model.selectedChannelID = "first"
+            #expect(model.selectedStore === store)
+            #expect(model.interaction(for: store.id) === interaction)
+            #expect(model.composerSession(for: store) === composer)
+            #expect(model.artifactSession(for: store) === artifacts)
+        }
+    }
+
     @Test func storesAndInteractionSurviveNavigationAndInactiveStopsTheConnection() async throws {
         await withDefaults { defaults in
             let model = AppModel(arguments: ["--server", "https://fixture.example"], environment: [:],
