@@ -256,11 +256,10 @@ struct TranscriptCatchUpCard: View {
             VStack(alignment: .leading, spacing: 2) {
                 if let line = summary.catchUp.needsYou, let source = line.sources.first {
                     TranscriptCatchUpLine(line: line, messages: messages, agents: agents,
-                                          need: TranscriptCatchUpLine.Need(
-                                              isReplied: TranscriptCatchUp.isReplied(source, in: messages)))
+                                          isReplied: TranscriptCatchUp.isReplied(source, in: messages))
                 }
                 ForEach(Array(summary.catchUp.changes.enumerated()), id: \.offset) { _, line in
-                    TranscriptCatchUpLine(line: line, messages: messages, agents: agents, need: nil)
+                    TranscriptCatchUpLine(line: line, messages: messages, agents: agents, isReplied: nil)
                 }
             }
             .opacity(isUpdating ? 0.5 : 1)
@@ -304,14 +303,11 @@ enum TranscriptCatchUpSlot: Equatable {
 }
 
 private struct TranscriptCatchUpLine: View {
-    struct Need {
-        var isReplied: Bool
-    }
-
     let line: CatchUp.Line
     let messages: [ChannelMessage]
     let agents: [ChannelAgent]
-    let need: Need?
+    /// Nil unless this is the Needs You line.
+    let isReplied: Bool?
     @Environment(ChannelInteraction.self) private var interaction
     @Environment(\.channelTextScale) private var textScale
     @Environment(\.colorScheme) private var colorScheme
@@ -326,14 +322,14 @@ private struct TranscriptCatchUpLine: View {
             HStack(alignment: .top, spacing: 8) {
                 slot.frame(width: 16, height: 16 * max(1, textScale))
                 Text(line.text)
-                    .font(.system(size: 13 * textScale, weight: need == nil ? .regular : .medium))
-                    .foregroundStyle(need?.isReplied == true ? .secondary : .primary)
+                    .font(.system(size: 13 * textScale, weight: isReplied == nil ? .regular : .medium))
+                    .foregroundStyle(isReplied == true ? .secondary : .primary)
                     .lineLimit(3)
                     .multilineTextAlignment(.leading)
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { shownHeight = $0 }
                     .background(alignment: .topLeading) {
                         Text(line.text)
-                            .font(.system(size: 13 * textScale, weight: need == nil ? .regular : .medium))
+                            .font(.system(size: 13 * textScale, weight: isReplied == nil ? .regular : .medium))
                             .fixedSize(horizontal: false, vertical: true)
                             .hidden()
                             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { fullHeight = $0 }
@@ -360,12 +356,12 @@ private struct TranscriptCatchUpLine: View {
     }
 
     private var accessibilityText: String {
-        guard let need else { return line.text }
-        return (need.isReplied ? "Replied: " : "Needs your reply: ") + line.text
+        guard let isReplied else { return line.text }
+        return (isReplied ? "Replied: " : "Needs your reply: ") + line.text
     }
 
     @ViewBuilder private var slot: some View {
-        switch TranscriptCatchUpSlot(line: line, messages: messages, isReplied: need?.isReplied) {
+        switch TranscriptCatchUpSlot(line: line, messages: messages, isReplied: isReplied) {
         case .need(let isReplied):
             Image(systemName: isReplied ? "checkmark" : "questionmark.bubble.fill")
                 .font(.system(size: 13, weight: isReplied ? .semibold : .regular))
