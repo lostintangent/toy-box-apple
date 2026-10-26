@@ -283,7 +283,7 @@ final class ChannelIntentsContext {
         guard let channelID = card.channelID, let request = card.reply?.request else { return card }
         var card = card
         card.isReplied = replies[channelID]?.contains(request) == true
-            || host.store(channelID)?.state.map { TranscriptCatchUp.isReplied(request, in: $0.messages) } == true
+            || host.store(channelID)?.state.map { ChannelWaitingRequest.isReplied(request, in: $0.messages) } == true
         return card
     }
 
