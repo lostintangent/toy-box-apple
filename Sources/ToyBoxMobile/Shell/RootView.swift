@@ -1,6 +1,7 @@
 import ChannelClient
 import SwiftUI
 import ToyBoxUI
+import UIKit
 
 struct RootView: View {
     @Environment(AppModel.self) private var model
@@ -17,7 +18,8 @@ struct RootView: View {
                 ChannelScreen(store: store)
                     .environment(model.interaction(for: store.id))
             } else {
-                ContentUnavailableView("Choose a channel", systemImage: "bubble.left.and.bubble.right")
+                ContentUnavailableView("Choose a channel", systemImage: "bubble.left.and.bubble.right",
+                                       description: Text("Open a channel from the list to join the conversation."))
             }
         }
         .environment(management)
@@ -57,6 +59,17 @@ struct RootView: View {
             Button("OK") { model.navigationNotice = nil }
         } message: {
             Text(model.navigationNotice ?? "")
+        }
+        .alert("Can't Open Toy Box", isPresented: Binding(
+            get: { model.browserFailure != nil },
+            set: { if !$0 { model.browserFailure = nil } }
+        ), presenting: model.browserFailure) { failure in
+            if let url = failure.url {
+                Button("Copy Link") { UIPasteboard.general.url = url }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: { failure in
+            Text(failure.message)
         }
     }
 }
