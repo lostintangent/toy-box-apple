@@ -162,11 +162,6 @@ final class TranscriptCatchUp {
         while resultOrder.count > 32 { results.removeValue(forKey: resultOrder.removeFirst()) }
     }
 
-    /// Messages from others after the summary's last one. Four or more make it stale.
-    static func newerCount(in messages: [ChannelMessage], after through: Int) -> Int {
-        messages.filter { $0.sequence > through && !$0.isSystem && $0.sender.type == "agent" }.count
-    }
-
     /// Whether you replied after the request, which is what turns the transcript's outline to Replied.
     static func isReplied(_ sequence: Int, in messages: [ChannelMessage]) -> Bool {
         messages.contains { $0.sender.type == "user" && $0.sequence > sequence }
@@ -247,7 +242,7 @@ struct TranscriptCatchUpCard: View {
     private func content(_ summary: TranscriptCatchUp.Summary) -> some View {
         let messages = store.messages
         let agents = store.roster
-        let newer = TranscriptCatchUp.newerCount(in: messages, after: summary.catchUp.through)
+        let newer = channelAgentMessageCount(messages, after: summary.catchUp.through)
         let isUpdating = catchUp.isGenerating
         return VStack(alignment: .leading, spacing: 8) {
             VStack(alignment: .leading, spacing: 2) {
