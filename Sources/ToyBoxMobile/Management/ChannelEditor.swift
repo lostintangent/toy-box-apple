@@ -175,7 +175,6 @@ struct ChannelEditor: View {
         session.channel = ChannelDetails(current)
         session.name = current.name
         session.purpose = current.purpose ?? ""
-        session.directory = current.directory ?? ""
         session.model = current.model
         recovery.finishReview()
     }

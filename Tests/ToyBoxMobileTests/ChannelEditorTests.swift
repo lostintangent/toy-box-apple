@@ -14,7 +14,6 @@ struct ChannelEditorTests {
             let model = ModelConfiguration(provider: "test", name: "test")
             session.name = "  Discussion  "
             session.purpose = purpose
-            session.directory = "/An/old/server/folder"
             let input = editor.creationInput(model: model)
             let payload = try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(input))
             let trimmed = purpose.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -25,7 +24,6 @@ struct ChannelEditorTests {
             if !trimmed.isEmpty { expected["purpose"] = .string(trimmed) }
             #expect(payload == .object(expected))
             #expect(input.directory == nil)
-            #expect(session.directory == "/An/old/server/folder")
         }
     }
 
@@ -33,7 +31,7 @@ struct ChannelEditorTests {
     @Test(arguments: [false, true], [ColorScheme.light, .dark])
     func phoneFormsLabelNameAndNeverShowAFolderRow(editing: Bool, scheme: ColorScheme) async throws {
         try await withFixture(editing: editing) { app, session, sessions, editor in
-            let originalDirectory = session.directory
+            let originalDirectory = session.channel?.directory
             session.focus = nil
             let host = UIHostingController(rootView: editor
                 .environment(app)
@@ -61,8 +59,7 @@ struct ChannelEditorTests {
                 #expect(!labels.contains { $0.contains(removed) })
             }
             #expect(labels.contains("Name and purpose changes appear in the conversation.") == editing)
-            #expect(session.directory == originalDirectory)
-            #expect(session.channel?.directory == (editing ? originalDirectory : nil))
+            #expect(session.channel?.directory == originalDirectory)
         }
     }
     #endif
