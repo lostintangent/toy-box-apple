@@ -7,6 +7,7 @@ import UIKit
 struct ChannelSidebar: View {
     @Environment(AppModel.self) private var model
     @Environment(ManagementPresenter.self) private var management
+    @Environment(\.horizontalSizeClass) private var sizeClass
     @Binding var showsSettings: Bool
     let searchFocusRequest: UUID
     @ViewState private var query = ""
@@ -79,7 +80,8 @@ struct ChannelSidebar: View {
                 error: model.configurationError ?? model.catalog?.error,
                 canRetry: model.catalog != nil && model.isActive,
                 retry: { Task { await model.refreshCatalog() } },
-                openSettings: { showsSettings = true }
+                openSettings: { showsSettings = true },
+                showsSettingsButton: sizeClass != .compact
             )
         }
         .navigationTitle("Channels")
@@ -96,11 +98,18 @@ struct ChannelSidebar: View {
             }
             ToolbarItem(placement: .primaryAction) {
                 Menu("More", systemImage: "ellipsis") {
-                    Button("Settings", systemImage: "gear") { showsSettings = true }
+                    if sizeClass != .compact {
+                        Button("Settings", systemImage: "gear") { showsSettings = true }
+                    }
                     Button("Refresh", systemImage: "arrow.clockwise") {
                         Task { await model.refreshCatalog() }
                     }
                     .disabled(model.catalog == nil || !model.isActive)
+                }
+            }
+            if sizeClass == .compact {
+                ToolbarItem(placement: .bottomBar) {
+                    Button("Settings", systemImage: "gear") { showsSettings = true }
                 }
             }
         }
