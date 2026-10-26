@@ -12,6 +12,7 @@
     "benchmark": "bun scripts/dev/benchmark.ts",
     "icon": "bun scripts/dev/icon.ts",
     "demo": "bun scripts/fixtures/demo.ts",
+    "management-demo": "bun scripts/fixtures/management-demo.ts",
     "history-demo": "bun scripts/fixtures/history-demo.ts",
     "perf-demo": "bun scripts/fixtures/perf-demo.ts",
     "generate-cron-fixtures": "bun scripts/fixtures/generate-cron-fixtures.ts",
