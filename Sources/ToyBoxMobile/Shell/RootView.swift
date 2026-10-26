@@ -34,7 +34,6 @@ struct RootView: View {
         .environment(management)
         .environment(overview)
         .environment(managementSessions)
-        .focusedSceneValue(\.channelCommands, commandActions)
         .accessibilityHidden(overview.isCompactSheetPresented
                              || (overview.placement == .sheet && selectedInteraction?.isInspectorPresented == true))
         .inspector(isPresented: Binding(
@@ -51,6 +50,7 @@ struct RootView: View {
             overview.compactSheetDidDismiss(isRequested: selectedInteraction?.isInspectorPresented == true)
         }) {
             overviewContent(at: .sheet)
+                .focusedSceneValue(\.channelCommands, commandActions)
                 .onAppear { overview.compactSheetDidAppear() }
                 .presentationDetents([.large])
                 .presentationBackgroundInteraction(.disabled)
@@ -63,6 +63,7 @@ struct RootView: View {
     var body: some View {
         @Bindable var model = model
         navigationWithOverview
+        .focusedSceneValue(\.channelCommands, commandActions)
         .onChange(of: model.serverURL) { _, _ in
             management.flow = nil
             managementSessions.reset()
@@ -145,7 +146,6 @@ struct RootView: View {
                 .environment(management)
                 .environment(overview)
                 .environment(managementSessions)
-                .focusedSceneValue(\.channelCommands, commandActions)
                 .accessibilityHidden(false)
         }
     }
