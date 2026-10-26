@@ -95,6 +95,16 @@ view.
   `--display <ID>` chooses one for a screenshot, including a secondary Duo display.
   Wait until the app is visibly drawn before ending the lease. Launch returning a PID does not
   mean its first frame is ready.
+  `--content-size <category>` uses UIKit's process-only preferred-category launch argument.
+  Categories are `extraSmall`, `small`, `medium`, `large`, `extraLarge`, `extraExtraLarge`,
+  `extraExtraExtraLarge`, `accessibilityMedium`, `accessibilityLarge`, `accessibilityExtraLarge`,
+  `accessibilityExtraExtraLarge` and `accessibilityExtraExtraExtraLarge`.
+  `--appearance light|dark` requires `--hold` or `--drive`. This is a lease-scoped simulator
+  preference change, not a process-only override. The prior appearance is captured, restored
+  and read back before shutdown, including failure and interruption. Unknown prior values fail
+  before mutation. A drive verifies requested effective native content traits before captures
+  and completion. An incompatible saved app appearance override fails without changing it.
+  Build-only, capture-only, display-list-only and shutdown-only commands reject launch options.
   `--drive <steps.json>` runs a DEBUG-only accessibility script under the same lease and shuts down
   on completion or failure. Steps are `{"tap":"exact label or identifier"}`, `{"type":"text"}`,
   `{"wait":"label or value fragment"}`, `{"screenshot":"name","display":1}`, `{"back":true}`
@@ -108,6 +118,10 @@ view.
   actions, not physical touch.
   Wait accepts `absent: true` to wait for a label/value to disappear.
   Tap also matches an exact accessibility value when its element has no label, as with native Search.
+  DEBUG status reports effective loaded-content `traits.contentSizeCategory` and
+  `traits.interfaceStyle`, or an explicit `traitsError`. Active presented content takes priority.
+  Multiple visible controllers must agree. Reporting never forces view loading or substitutes
+  screen traits or requested launch arguments for measured content.
   Other actions are never skipped or retried. Each step accepts a
   timeout in seconds (default 12, maximum 60). Screenshots are acknowledged by the host only after
   the app reports a settled accessibility/layout snapshot and go under `SCRATCH_PATH/mobile-drive/`.
