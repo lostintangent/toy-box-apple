@@ -22,6 +22,8 @@ final class TranscriptScroll {
     var holdsAnchorThroughInput = false
     private(set) var intent: Model.Intent = .landing(.end)
     private(set) var hasLanded = false
+    /// The reveal still waiting for native geometry to hold its row.
+    var pendingReveal: (token: UUID, row: String)?
     private var frames: [String: CGRect] = [:]
     private var lastLayout: Model.Layout?
 
@@ -80,8 +82,29 @@ final class TranscriptScroll {
             || Model.firstRowStartingInView(metrics.origin, rows: measured, viewport: metrics.viewport) != nil
     }
 
+    /// A reveal finishes once geometry holds its row where the model places it. Reader input or a
+    /// jump that replaces it first finishes it too, revealed only if the row is in view.
+    func finishedReveal() -> (token: UUID, isRevealed: Bool)? {
+        guard let pending = pendingReveal, let layout else { return nil }
+        if case .revealing(let id, _) = intent, id == pending.row {
+            guard let origin = Model.placement(for: intent, layout: layout).origin,
+                  abs(origin - layout.origin) <= 0.5 else { return nil }
+            pendingReveal = nil
+            return (pending.token, true)
+        }
+        pendingReveal = nil
+        return (pending.token, Model.visibleRows(in: layout).contains(pending.row))
+    }
+
     var distanceToEnd: CGFloat { layout.map(Model.distanceToEnd(in:)) ?? 0 }
     var visibleRows: [String] { layout.map(Model.visibleRows(in:)) ?? [] }
+}
+
+/// Only a send made now follows the reader to the bottom. The outbox restored at launch can arrive
+/// after landing, and its attempts never start out sending.
+func startsOwnPost(after previous: [String], in attempts: [ChannelSendAttempt]) -> Bool {
+    let previous = Set(previous)
+    return attempts.contains { !previous.contains($0.id) && $0.phase == .sending }
 }
 
 struct ConversationView: View {
@@ -99,11 +122,18 @@ struct ConversationView: View {
     @ViewState private var capturedArrival = false
     @ViewState private var showsJumpToLatest = false
     @ViewState private var highlightedSequence: Int?
+    @ViewState private var revealError: String?
     @ViewState private var requestedRead = 0
     @ViewState private var isPagingVisible = false
     @ViewState private var expanded: Set<String> = []
+    @ViewState private var find: TranscriptFind = {
+        let find = TranscriptFind()
+        find.revealsWhileTyping = false
+        return find
+    }()
 
-    private static let space = "transcript-content"
+    nonisolated private static let space = "transcript-content"
+    private static let revealInterrupted = "Scrolling moved away before the message was revealed."
     private static let laneWidth: CGFloat = 720
 
     private var items: [TranscriptItem] {
@@ -118,6 +148,9 @@ struct ConversationView: View {
         let items = items
         let context = TranscriptRowContext(agents: store.roster, api: store.api)
         let statusReactions = statusReactions
+        let findMatches = find.isPresented
+            ? Dictionary(uniqueKeysWithValues: find.matches.map { ($0.sequence, $0.sequence == find.selectedSequence) })
+            : [:]
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
                 if store.hasOlderMessages && !items.isEmpty {
@@ -130,7 +163,9 @@ struct ConversationView: View {
                 ForEach(items) { item in
                     TranscriptItemView(item: item, context: context, statusReactions: statusReactions,
                                        isHighlighted: item.messages.contains { $0.sequence == highlightedSequence },
-                                       isExpanded: expanded.contains(item.id)) { expands in
+                                       isExpanded: expanded.contains(item.id),
+                                       findHighlight: item.messages.lazy.compactMap { findMatches[$0.sequence] }.first
+                                           .map { TranscriptFindHighlight.phone(query: find.query, isCurrent: $0) }) { expands in
                         // Keep the tapped message's top where it is, or bring it back when it collapses.
                         place(scroll.update(.toggledExpansion(item.id, expanded: expands)))
                         if expands { expanded.insert(item.id) } else { expanded.remove(item.id) }
@@ -145,8 +180,10 @@ struct ConversationView: View {
                         .id(item.id)
                 }
                 ForEach(store.sendAttempts) { attempt in
+                    // The committed row takes the attempt's UUID, so keep the two identities apart.
                     TranscriptSendAttempt(attempt: attempt, store: store, context: context)
                         .padding(.top, TranscriptItem.runGap)
+                        .id("attempt-\(attempt.id)")
                 }
             }
             .padding(.top, 12)
@@ -159,10 +196,12 @@ struct ConversationView: View {
         .scrollPosition($position)
         .defaultScrollAnchor(.bottom, for: .initialOffset)
         .onScrollGeometryChange(for: TranscriptScroll.Metrics.self) { geometry in
-            TranscriptScroll.Metrics(
-                viewport: .init(width: geometry.containerSize.width, height: geometry.containerSize.height,
-                                topInset: max(0, geometry.contentInsets.top),
-                                bottomInset: max(0, geometry.contentInsets.bottom)),
+            // The container size excludes the content insets, but the model's viewport spans them.
+            let top = max(0, geometry.contentInsets.top), bottom = max(0, geometry.contentInsets.bottom)
+            return TranscriptScroll.Metrics(
+                viewport: .init(width: geometry.containerSize.width,
+                                height: geometry.containerSize.height + top + bottom,
+                                topInset: top, bottomInset: bottom),
                 origin: geometry.contentOffset.y, documentEnd: geometry.contentSize.height)
         } action: { _, metrics in
             scroll.metrics = metrics
@@ -170,15 +209,19 @@ struct ConversationView: View {
         }
         .onScrollPhaseChange { _, phase in
             scroll.isReaderScrolling = phase == .tracking || phase == .interacting || phase == .decelerating
+            if phase == .tracking || phase == .interacting { find.resumeReading() }
         }
-        .overlay(alignment: .bottom) {
+        // An inset rather than an overlay, so the end of the conversation settles clear of them.
+        .safeAreaInset(edge: .bottom, spacing: 0) {
             TranscriptFloatingAccessories(store: store, showsJumpToLatest: showsJumpToLatest) {
-                place(scroll.update(.jumpToLatest))
+                jumpToLatest()
             }
         }
         .overlay(alignment: .top) {
             if store.isLoaded, let message = store.phase.message {
                 TranscriptReconnecting(message: message) { store.reconnect() }
+            } else if let revealError {
+                TranscriptRevealNotice(message: revealError) { self.revealError = nil }
             }
         }
         .overlay {
@@ -197,10 +240,29 @@ struct ConversationView: View {
             scroll.rows = items.map { .init(id: $0.id, order: $0.order) }
             land(items)
         }
-        .onChange(of: store.sendAttempts.count) { old, new in
-            if new > old { place(scroll.update(.ownPostConfirmed)) }
+        .onChange(of: store.sendAttempts.map(\.id)) { old, _ in
+            if startsOwnPost(after: old, in: store.sendAttempts) { place(scroll.update(.ownPostConfirmed)) }
         }
-        .onChange(of: interaction.jumpToLatestRequest) { place(scroll.update(.jumpToLatest)) }
+        // A bar rather than an overlay, so the scroll edge effect extends under it and a reveal clears it.
+        .safeAreaBar(edge: .top, spacing: 0) {
+            if find.isPresented {
+                TranscriptFindAccessory(find: find, focusRequest: interaction.findRequest,
+                                        navigate: navigateFind, close: { find.close() })
+            }
+        }
+        .onChange(of: interaction.findRequest) { openFind() }
+        .onChange(of: interaction.findNavigation?.token) {
+            openFind()
+            navigateFind(interaction.findNavigation?.direction ?? 1)
+        }
+        .onChange(of: store.messages) { if find.isPresented { prepareFind() } }
+        .task(id: find.work) {
+            guard find.isPresented else { return }
+            prepareFind()
+            await find.searchOlder { try await store.api.history(channelId: store.id, before: $0).messages }
+        }
+        .onDisappear { find.close() }
+        .onChange(of: interaction.jumpToLatestRequest) { jumpToLatest() }
         .onChange(of: interaction.revealRequestToken) {
             guard let request = interaction.revealRequest else { return }
             Task { await reveal(sequence: request.sequence, token: request.token) }
@@ -219,6 +281,28 @@ struct ConversationView: View {
             return agent
         }
         return channelStatusReactions(agents: agents, presence: store.presence)
+    }
+
+    private func openFind() {
+        prepareFind()
+        find.present()
+    }
+
+    private func prepareFind() {
+        find.prepare(messages: store.messages.filter { !store.optimisticMessageIds.contains($0.id) },
+                     agents: store.roster, hasOlder: store.hasOlderMessages)
+    }
+
+    /// Only Next and Previous reveal. Typing, progress and closing leave the reader where they are.
+    private func navigateFind(_ direction: Int) {
+        find.move(direction)
+        if let request = find.revealRequest { interaction.reveal(sequence: request.sequence) }
+    }
+
+    private func jumpToLatest() {
+        find.close()
+        find.resumeReading()
+        place(scroll.update(.jumpToLatest))
     }
 
     private func land(_ items: [TranscriptItem]) {
@@ -253,7 +337,12 @@ struct ConversationView: View {
             withAnimation(.easeOut(duration: 0.2)) { showsJumpToLatest = away }
         }
         // The current geometry is about to be replaced, so it says nothing about what the reader saw.
-        if !isMoving { markRead() }
+        if !isMoving {
+            markRead()
+            if let reveal = scroll.finishedReveal() {
+                interaction.finishReveal(reveal.token, reveal.isRevealed ? .revealed : .failed(Self.revealInterrupted))
+            }
+        }
     }
 
     /// Readers, Settings, management and compact Overview cover the conversation.
@@ -267,7 +356,7 @@ struct ConversationView: View {
 
     /// Reads advance only for committed rows the reader can see in an active scene.
     private func markRead() {
-        guard scroll.hasLanded, scenePhase == .active, store.phase.isLive, isUncovered else { return }
+        guard scroll.hasLanded, scenePhase == .active, store.phase.isLive, isUncovered, !find.blocksRead else { return }
         let visible = Set(scroll.visibleRows)
         guard !visible.isEmpty else { return }
         let sequence = items.lazy.filter { visible.contains($0.id) }.map(\.sequence).max() ?? 0
@@ -284,13 +373,29 @@ struct ConversationView: View {
     private func reveal(sequence: Int, token: UUID) async {
         defer { interaction.consumeRevealRequest(token) }
         func target() -> TranscriptItem? { items.first { $0.messages.contains { $0.sequence == sequence } } }
-        await store.loadHistory(through: sequence)
-        guard !Task.isCancelled, interaction.revealRequestToken == token else { return }
-        if target() == nil, store.messages.contains(where: { $0.sequence == sequence }) {
-            interaction.messageView = .all
+        func fail(_ message: String) {
+            revealError = message
+            interaction.finishReveal(token, .failed(message))
         }
-        guard let item = target() else { return }
-        place(scroll.update(.reveal(item.id)))
+        revealError = nil
+        let failure = await store.loadHistory(through: sequence)
+        guard !Task.isCancelled, interaction.revealRequestToken == token else { return }
+        guard store.messages.contains(where: { $0.sequence == sequence }) else {
+            return fail(failure ?? "This message is no longer available.")
+        }
+        if target() == nil { interaction.messageView = .all }
+        guard let item = target() else { return fail("This message is no longer available.") }
+        // A match below a collapsed message's fold would otherwise stay hidden.
+        if find.isPresented { expanded.insert(item.id) }
+        scroll.pendingReveal = (token, item.id)
+        let placement = scroll.update(.reveal(item.id))
+        guard placement != nil, placement?.unavailableTarget == nil else {
+            scroll.pendingReveal = nil
+            return fail("This message is no longer available.")
+        }
+        place(placement)
+        // Find's own highlight marks the current match.
+        guard !find.isPresented else { return }
         highlightedSequence = sequence
         try? await Task.sleep(for: .seconds(2))
         if highlightedSequence == sequence { highlightedSequence = nil }
@@ -335,7 +440,8 @@ private struct TranscriptSendAttempt: View {
 
     var body: some View {
         VStack(alignment: .trailing, spacing: 6) {
-            TranscriptUserMessage(message: attempt.message, context: context, deliveryLabel: attempt.phase.label)
+            TranscriptUserMessage(message: attempt.message, context: context, deliveryLabel: attempt.phase.label,
+                                  identifier: "send-\(attempt.id)")
                 .opacity(attempt.phase == .sending ? 0.65 : 1)
             if let error = actionError ?? attempt.error {
                 Text(error).font(.footnote).foregroundStyle(.secondary)
@@ -368,6 +474,8 @@ private struct TranscriptFloatingAccessories: View {
     let store: ChannelStore
     let showsJumpToLatest: Bool
     let jumpToLatest: () -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    private var rises: AnyTransition { reduceMotion ? .opacity : .opacity.combined(with: .offset(y: 4)) }
 
     private var working: [ChannelAgent] {
         guard store.phase.isLive else { return [] }
@@ -376,36 +484,52 @@ private struct TranscriptFloatingAccessories: View {
 
     var body: some View {
         let working = working
-        HStack(spacing: 8) {
-            if !working.isEmpty {
-                HStack(spacing: 8) {
-                    HStack(spacing: -6) {
-                        ForEach(working.prefix(3)) { AgentAvatarView(agent: $0, size: 20) }
-                    }
-                    Text(summary(working)).font(.footnote).lineLimit(1)
-                }
-                .padding(.horizontal, 12)
-                .frame(minHeight: 44)
-                .glassEffect(.regular, in: .capsule)
-                .accessibilityElement(children: .combine)
-                .transition(.opacity.combined(with: .offset(y: 4)))
+        // Side by side when the whole sentence fits, otherwise stacked, so the state never truncates.
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 8) {
+                status(working).fixedSize()
+                Spacer(minLength: 0)
+                jump.fixedSize()
             }
-            Spacer(minLength: 0)
-            if showsJumpToLatest {
-                Button(action: jumpToLatest) {
-                    Label("Jump to Latest", systemImage: "arrow.down")
-                        .font(.footnote.weight(.semibold))
-                        .padding(.horizontal, 14)
-                        .frame(minHeight: 44)
-                }
-                .buttonStyle(.plain)
-                .glassEffect(.regular.interactive(), in: .capsule)
-                .transition(.opacity.combined(with: .offset(y: 4)))
+            VStack(alignment: .trailing, spacing: 8) {
+                jump
+                status(working).frame(maxWidth: .infinity, alignment: .leading)
             }
         }
         .padding(.horizontal, 16)
         .padding(.bottom, 8)
         .animation(.easeOut(duration: 0.2), value: working.map(\.id))
+    }
+
+    @ViewBuilder private func status(_ working: [ChannelAgent]) -> some View {
+        if !working.isEmpty {
+            HStack(spacing: 8) {
+                HStack(spacing: -6) {
+                    ForEach(working.prefix(3)) { AgentAvatarView(agent: $0, size: 20) }
+                }
+                Text(summary(working)).font(.footnote).fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .frame(minHeight: 44)
+            .glassEffect(.regular, in: .rect(cornerRadius: 22))
+            .accessibilityElement(children: .combine)
+            .transition(rises)
+        }
+    }
+
+    @ViewBuilder private var jump: some View {
+        if showsJumpToLatest {
+            Button(action: jumpToLatest) {
+                Label("Jump to Latest", systemImage: "arrow.down")
+                    .font(.footnote.weight(.semibold))
+                    .padding(.horizontal, 14)
+                    .frame(minHeight: 44)
+            }
+            .buttonStyle(.plain)
+            .glassEffect(.regular.interactive(), in: .capsule)
+            .transition(rises)
+        }
     }
 
     private func summary(_ agents: [ChannelAgent]) -> String {
@@ -421,6 +545,7 @@ private struct TranscriptFloatingAccessories: View {
 private struct TranscriptReconnecting: View {
     let message: String
     let retry: () -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         HStack(spacing: 8) {
@@ -437,7 +562,30 @@ private struct TranscriptReconnecting: View {
         .accessibilityElement(children: .combine)
         .accessibilityHint(message)
         .padding(.top, 8)
-        .transition(.opacity.combined(with: .offset(y: -4)))
+        .transition(reduceMotion ? .opacity : .opacity.combined(with: .offset(y: -4)))
+    }
+}
+
+/// Why a reveal couldn't land. It stays until dismissed or the next reveal, like the Mac's notice.
+private struct TranscriptRevealNotice: View {
+    let message: String
+    let dismiss: () -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Label(message, systemImage: "exclamationmark.triangle")
+                .font(.footnote)
+                .lineLimit(2)
+            Button("Dismiss", action: dismiss).font(.footnote.weight(.semibold)).frame(minHeight: 44)
+        }
+        .padding(.horizontal, 14)
+        .frame(minHeight: 44)
+        .glassEffect(.regular, in: .capsule)
+        .padding(.top, 8)
+        .padding(.horizontal, 16)
+        .transition(reduceMotion ? .opacity : .opacity.combined(with: .offset(y: -4)))
+        .onAppear { AccessibilityNotification.Announcement(message).post() }
     }
 }
 

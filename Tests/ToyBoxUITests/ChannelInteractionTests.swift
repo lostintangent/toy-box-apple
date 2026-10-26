@@ -43,4 +43,16 @@ struct ChannelInteractionTests {
         #expect(interaction.overviewTasksRequest == nil)
         #expect(interaction.isInspectorPresented)
     }
+
+    @Test func aRevealReportsOnlyItsOwnOutcome() {
+        let interaction = ChannelInteraction()
+        let first = interaction.reveal(sequence: 20)
+        #expect(interaction.revealProgress == RevealProgress(token: first, sequence: 20, outcome: .loading))
+        let second = interaction.reveal(sequence: 30)
+        // The first reveal finishing late can't overwrite the second's progress.
+        interaction.finishReveal(first, .failed("History unavailable."))
+        #expect(interaction.revealProgress?.token == second && interaction.revealProgress?.outcome == .loading)
+        interaction.finishReveal(second, .revealed)
+        #expect(interaction.revealProgress == RevealProgress(token: second, sequence: 30, outcome: .revealed))
+    }
 }

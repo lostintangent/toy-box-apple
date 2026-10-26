@@ -115,8 +115,8 @@ struct TranscriptSystemMessages: View {
     }
 
     private var icon: Text {
-        Text(Image(systemName: Self.symbol(for: first?.type)))
-            .foregroundStyle(Self.symbolColor(for: first?.type, in: colorScheme))
+        Text(Image(systemName: ChannelSystemEventStyle.symbol(for: first?.type)))
+            .foregroundStyle(ChannelSystemEventStyle.symbolColor(for: first?.type, in: colorScheme))
     }
 
     /// The sentence led by its symbol. VoiceOver reads only the words, since the symbol would
@@ -147,25 +147,6 @@ struct TranscriptSystemMessages: View {
             sentence(phrase, in: findText).lineLimit(1).layoutPriority(1)
             value()
         }
-    }
-
-    /// The symbol that leads an event's sentence, which a catch-up line from that event shares.
-    static func symbol(for type: String?) -> String {
-        switch type {
-        case "tasks_completed": "checkmark.circle.fill"
-        case "member_joined": "person.badge.plus"
-        case "member_left": "person.badge.minus"
-        case "channel_renamed", "channel_purpose_changed": "pencil"
-        case "channel_directory_changed": "folder"
-        case "preview_changed": "play.rectangle"
-        case "artifact_shared": "doc.badge.arrow.up"
-        case "routine_scheduled", "routine_edited", "routine_deleted": "calendar.badge.clock"
-        default: "info.circle"
-        }
-    }
-
-    static func symbolColor(for type: String?, in colorScheme: ColorScheme) -> Color {
-        type == "tasks_completed" ? ChannelTaskColors.changes(in: colorScheme).added : .secondary
     }
 
     private func eventLabel(_ event: String, value: String?) -> Text {

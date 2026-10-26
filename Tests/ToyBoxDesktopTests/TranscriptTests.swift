@@ -637,6 +637,30 @@ struct TranscriptTests {
     }
 
     @MainActor
+    @Test func aRevealReportsRevealedOnlyOnceItsMessageIsInView() async throws {
+        let harness = try await TranscriptHarness(messages: (1...90).map(transcriptTestMessage))
+        defer { harness.close() }
+        try await harness.settled()
+        let token = harness.interaction.reveal(sequence: 20)
+        #expect(harness.interaction.revealProgress?.outcome == .loading)
+        try await harness.waitUntil { harness.interaction.revealProgress?.outcome != .loading }
+        #expect(harness.interaction.revealProgress == RevealProgress(token: token, sequence: 20, outcome: .revealed))
+        #expect(harness.visibleWindowFrames()["m20"] != nil)
+    }
+
+    @MainActor
+    @Test func aRevealThatNeverSettlesReportsItsFailure() async throws {
+        // No time to settle, so the reveal times out on its first check.
+        let harness = try await TranscriptHarness(messages: (1...90).map(transcriptTestMessage), revealTimeout: .zero)
+        defer { harness.close() }
+        try await harness.settled()
+        let token = harness.interaction.reveal(sequence: 20)
+        try await harness.waitUntil { harness.interaction.revealProgress?.outcome != .loading }
+        #expect(harness.interaction.revealProgress == RevealProgress(
+            token: token, sequence: 20, outcome: .failed("Couldn't reveal this message. Try Reveal again.")))
+    }
+
+    @MainActor
     @Test func closingFindAtTheBottomRestoresFollowingButKeepsReadSuspended() async throws {
         let find = TranscriptFind()
         let harness = try await TranscriptHarness(messages: transcriptFindTestMessages(1...90), find: find)
@@ -865,7 +889,7 @@ struct TranscriptTests {
         let payload = try encodedImage(width: 600, height: 300, type: .png)
         let attachment = ChannelAttachment(name: "wide.png", mimeType: "image/png", base64: payload)
         let api = try ChannelAPI(serverURL: "http://localhost:3210")
-        #expect(TranscriptThumbnails.remembered(for: attachment, api: api) == nil)
+        #expect(ChannelThumbnails.remembered(for: attachment, api: api) == nil)
         let view = NSHostingView(rootView: TranscriptAttachments(attachments: [attachment], api: api)
             .fixedSize())
         view.layoutSubtreeIfNeeded()
@@ -902,8 +926,8 @@ struct TranscriptTests {
         }
         let api = try ChannelAPI(serverURL: "http://localhost:3210")
         for attachment in attachments {
-            let thumbnail = TranscriptThumbnails.remember(image, for: attachment, api: api)
-            #expect(thumbnail.size == CGSize(width: 120, height: 80))
+            let thumbnail = ChannelThumbnails.remember(image, for: attachment, api: api)
+            #expect(CGSize(width: thumbnail.width, height: thumbnail.height) == CGSize(width: 120, height: 80))
         }
 
         for width: CGFloat in [160, 328] {
@@ -2225,13 +2249,13 @@ struct TranscriptCatchUpTests {
                                   isReplied: isReplied)
         }
         #expect(slot(12) == .event("tasks_completed"))
-        #expect(TranscriptSystemMessages.symbol(for: "tasks_completed") == "checkmark.circle.fill")
+        #expect(ChannelSystemEventStyle.symbol(for: "tasks_completed") == "checkmark.circle.fill")
         for scheme in [ColorScheme.light, .dark] {
-            #expect(TranscriptSystemMessages.symbolColor(for: "tasks_completed", in: scheme)
+            #expect(ChannelSystemEventStyle.symbolColor(for: "tasks_completed", in: scheme)
                     == ChannelTaskColors.changes(in: scheme).added)
         }
         #expect(slot(13) == .event("a_future_event"))
-        #expect(TranscriptSystemMessages.symbol(for: "a_future_event") == "info.circle")
+        #expect(ChannelSystemEventStyle.symbol(for: "a_future_event") == "info.circle")
         #expect(slot(11) == .avatar("lead"))
         #expect(slot(12, isReplied: true) == .need(isReplied: true))
         #expect(slot(99) == .unknown)
@@ -2458,7 +2482,7 @@ private final class TranscriptHarness {
          seenThrough: Int? = nil, height: CGFloat = 480, resizable: Bool = false, warm: Bool = false,
          legacyScrollers: Bool = false,
          intelligence: any ChannelIntelligenceService = LiveChannelIntelligence.shared,
-         find: TranscriptFind = TranscriptFind(),
+         find: TranscriptFind = TranscriptFind(), revealTimeout: Duration = .seconds(2),
          onTurn: (@MainActor (TranscriptHarness) -> Void)? = nil) async throws {
         let host = "transcript-\(UUID().uuidString.lowercased()).invalid"
         let latest = messages.last?.sequence ?? 0
@@ -2485,7 +2509,7 @@ private final class TranscriptHarness {
             }
             try #require(store.isLoaded && store.phase.isLive)
         }
-        let view = NSHostingView(rootView: ConversationTranscript(store: store, find: find)
+        let view = NSHostingView(rootView: ConversationTranscript(store: store, find: find, revealTimeout: revealTimeout)
             .onPreferenceChange(TranscriptMessageFrames.self) { capture.frames = $0 }
             .onPreferenceChange(TranscriptLanded.self) { capture.hasLanded = $0 }
             .onPreferenceChange(TranscriptRestoringHistory.self) { capture.isRestoringHistory = $0 }

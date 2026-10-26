@@ -608,15 +608,8 @@ struct TranscriptReactions: View {
     /// The looking and working reactions that agents' statuses put on this message.
     var statusReactions: [ChannelReaction] = []
 
-    private var groups: [(reaction: String, agents: [ChannelAgent])] {
-        let reactions = channelMessageReactions(message, status: [message.sequence: statusReactions])
-        var order: [String] = []
-        var grouped: [String: [ChannelAgent]] = [:]
-        for entry in reactions {
-            if grouped[entry.reaction] == nil { order.append(entry.reaction) }
-            grouped[entry.reaction, default: []].append(channelAgentIdentity(agents, id: entry.agentId))
-        }
-        return order.map { ($0, grouped[$0] ?? []) }
+    private var groups: [ChannelReactionGroup] {
+        ChannelReactionGroup.groups(for: message, agents: agents, statusReactions: statusReactions)
     }
 
     var body: some View {
@@ -630,21 +623,8 @@ struct TranscriptReactions: View {
 
     private var chips: some View {
         ForEach(groups, id: \.reaction) { group in
-            let presentation = Self.presentation(group.reaction)
+            let presentation = group.presentation
             TranscriptReactionChip(emoji: presentation.emoji, label: presentation.label, reactors: group.agents)
-        }
-    }
-
-    private static func presentation(_ reaction: String) -> (emoji: String, label: String) {
-        switch reaction {
-        case "looking": ("\u{1f440}", "Looking")
-        case "working": ("\u{1f3c3}", "In progress")
-        case "done": ("\u{2705}", "Done")
-        case "agree": ("\u{1f44d}", "Agreed")
-        case "celebrate": ("\u{1f389}", "Celebrated")
-        case "love": ("\u{2764}\u{fe0f}", "Loved this")
-        case "laugh": ("\u{1f602}", "Laughed")
-        default: ("\u{2022}", reaction)
         }
     }
 }
