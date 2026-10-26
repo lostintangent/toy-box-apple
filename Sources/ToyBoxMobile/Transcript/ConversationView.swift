@@ -525,7 +525,7 @@ private struct TranscriptFloatingAccessories: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
             .frame(minHeight: 44)
-            .glassEffect(.regular, in: .rect(cornerRadius: 22))
+            .glassEffect(.transcriptFloating, in: .rect(cornerRadius: 22))
             .accessibilityElement(children: .combine)
             .transition(rises)
         }
@@ -540,7 +540,7 @@ private struct TranscriptFloatingAccessories: View {
                     .frame(minHeight: 44)
             }
             .buttonStyle(.plain)
-            .glassEffect(.regular.interactive(), in: .capsule)
+            .glassEffect(.transcriptFloating.interactive(), in: .capsule)
             .transition(rises)
         }
     }
@@ -571,7 +571,7 @@ private struct TranscriptReconnecting: View {
         }
         .padding(.horizontal, 14)
         .frame(minHeight: 44)
-        .glassEffect(.regular, in: .capsule)
+        .glassEffect(.transcriptFloating, in: .capsule)
         .accessibilityElement(children: .combine)
         .accessibilityHint(message)
         .padding(.top, 8)
@@ -594,7 +594,7 @@ private struct TranscriptRevealNotice: View {
         }
         .padding(.horizontal, 14)
         .frame(minHeight: 44)
-        .glassEffect(.regular, in: .capsule)
+        .glassEffect(.transcriptFloating, in: .capsule)
         .padding(.top, 8)
         .padding(.horizontal, 16)
         .transition(reduceMotion ? .opacity : .opacity.combined(with: .offset(y: -4)))
