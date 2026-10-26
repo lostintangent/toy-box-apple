@@ -451,18 +451,18 @@ produce a composer wider than the lane.
 On the phone, use the same full-available-lane behavior, preserving its accepted native edge
 insets. Do not cap the overall transcript, activity controls or composer at 720 points in a
 wide scene. Remove that independent container limit from transcript and composer together,
-without changing folded horizontal geometry or document-reader
-widths. The Mac's 720-point example above is a sample conversation width, not a lane cap.
+without changing folded horizontal geometry or document-reader widths. The Mac's 720-point
+example above is a sample conversation width, not a lane cap.
 In an unfolded phone scene, share the Mac's text-scaled individual surface caps: agents up to
 760, yours up to the lesser of 80% of the available lane or 640. Keep the existing phone
 identity gutter. Folded message limits remain unchanged.
-Verify wide unfolded layout and repeated Overview close/reopen after an unfolded launch
-separately. A header change alone does not establish that the reported Close defect is fixed.
-Folded with the software keyboard down, align the composer's bottom edge with the native
-Message View toolbar button. Keep the existing 8-point clearance above a visible keyboard,
-native keyboard avoidance and all control targets. Do not copy the screenshot's approximate
-14-point discrepancy into a fixed offset. This alignment does not apply to unfolded scenes,
-where Message View has no bottom toolbar button.
+Verify wide unfolded landscape layout and repeated Overview close/reopen separately. The user
+reports an approximately two-second delay, not a failed close action. A header change alone
+does not establish that this delay is fixed.
+Folded with the software keyboard down, remove the extra 8-point bottom gap so the composer's
+bottom edge meets the bottom safe area. Add no toolbar-frame geometry seam or measured offset.
+Always keep the existing 8-point clearance above a visible keyboard, native keyboard avoidance
+and all control targets. Unfolded keeps its existing bottom spacing.
 
 Normal agent surfaces use a visible neutral tonal fill, not an almost invisible outline on the
 same color as the conversation. Derive the fill from primary ink over the opaque conversation
@@ -1692,7 +1692,7 @@ Update once a minute only while the timed row
 is visible. VoiceOver uses expanded units, with no live announcements. These rules apply
 to the shared tray rows too.
 
-**Artifacts.** Mac rows are at least 40 high: a 28-point file-symbol lane, a 10-point gap, the title
+**Artifacts.** Mac rows are at least 40 high: a 28-point native Finder file icon, a 10-point gap, the title
 in 13 regular on one line, and an 11-point secondary line, "Kit · 3 hr. ago", with the full date
 in help. Format the time with `RelativeDateTimeFormatter`, `.named` and `.short` ("3 hr. ago",
 "yesterday"). The sharer is the actor of the latest matching `artifact_shared` event. Until Core
@@ -1705,10 +1705,12 @@ not a reader sheet. Other types retain Quick Look and the default application. S
 fetching and error states, and never open a blank success-shaped reader. Load content from the
 server resource URL, never by assuming the file is local.
 
-Both Overview lists use one pure shared file-type-to-SF-Symbol mapping: Markdown and unknown
+Mac preserves the existing Finder-provided, file-type-specific icons. Do not substitute the
+phone's monochrome symbols in Mac Overview or the artifact pager.
+The phone Overview list uses one pure file-type-to-SF-Symbol mapping: Markdown and unknown
 types keep `doc.text`, HTML uses `chevron.left.forwardslash.chevron.right`, SVG uses
-`square.on.circle`, and raster images use `photo`. Preserve each host's symbol lane, ink and
-row geometry. Use the same mapping in artifact-viewer pager tiles so a file's symbol matches
+`square.on.circle`, and raster images use `photo`. Preserve the phone's symbol lane, ink and
+row geometry. Use the same mapping in phone artifact-viewer pager tiles so a file's symbol matches
 its list entry. Classify SVG before generic images using the existing content-kind policy.
 Phone artifact rows match Team's compact two-line rhythm: body title and footnote date,
 2-point interline gap, 24-point icon lane and the existing 12-point icon/text gap. Remove the
