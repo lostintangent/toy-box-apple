@@ -101,8 +101,15 @@ public struct ModelSelectionFields<ExtraRows: View>: View {
                                 #endif
                         }
                         if failure.canRetry {
-                            Button("Retry") { Task { await load() } }
-                                .controlSize(.small)
+                            Button {
+                                Task { await load() }
+                            } label: {
+                                Text("Retry")
+                                    #if os(iOS)
+                                    .foregroundStyle(Color.primary)
+                                    #endif
+                            }
+                            .controlSize(.small)
                         }
                     }
                 }
