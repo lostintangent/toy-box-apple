@@ -116,7 +116,7 @@ final class ImageViewer {
     @ObservationIgnored var reducesMotion = false
     @ObservationIgnored weak var anchorView: NSView?
     @ObservationIgnored private var canvases = 0
-    @ObservationIgnored private var loads: [Int: Task<Void, Never>] = [:]
+    @ObservationIgnored private(set) var loads: [Int: Task<Void, Never>] = [:]
     @ObservationIgnored private var vectorRasterTask: Task<Void, Never>?
     @ObservationIgnored private var vectorRasterPixels = 0
     /// The Live Text view over the presented image, which holds its text selection.
@@ -547,7 +547,15 @@ final class ImageViewer {
 
     func retry() { load(index, reload: true) }
 
+    /// Only the current image and its neighbors keep a decoded bitmap. The others keep their file
+    /// and size, and decode again from the attachment cache when they come back.
     private func loadAround(_ index: Int) {
+        let kept = index - 1 ... index + 1
+        for position in loads.keys where !kept.contains(position) { loads.removeValue(forKey: position)?.cancel() }
+        for (position, item) in items where !kept.contains(position) && item.bitmap != nil {
+            items[position]?.image = nil
+            items[position]?.bitmap = nil
+        }
         for position in [index, index + 1, index - 1] { load(position) }
     }
 
@@ -560,7 +568,6 @@ final class ImageViewer {
         let attachment = session.images[position]
         let name = session.names[position]
         let api = session.api
-        let id = session.id
         let pixelsPerPoint = max(1, layout?.displayScale ?? 2)
         let rasterPixels = desiredVectorPixels(at: position)
         loads[position] = Task { [weak self] in
@@ -577,7 +584,8 @@ final class ImageViewer {
             } catch {
                 result = .failure(error)
             }
-            guard let self, self.session?.id == id else { return }
+            // Replacing, evicting or ending the session cancels a load before it can publish.
+            guard let self, !Task.isCancelled else { return }
             self.loads[position] = nil
             switch result {
             case .success(let (file, image, tone, vectorSize)):
