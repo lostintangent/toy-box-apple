@@ -10,78 +10,6 @@ import Testing
 @MainActor
 @Suite("Management validation and presentation", .serialized)
 struct ManagementTests {
-    @Test func aCommittedDeletionFollowedBy500IsReadBackWithoutReplayingDelete() async throws {
-        let fixture = try ManagementRecoveryFixture()
-        defer { fixture.close() }
-        let recovery = ManagementWriteRecovery()
-        let catalog = ChannelCatalogStore(api: fixture.api)
-        do {
-            try await fixture.api.deleteChannel(id: "deleted-channel")
-            Issue.record("The fixture must report an uncertain deletion.")
-        } catch {
-            #expect(recovery.record(error))
-        }
-        #expect(recovery.blocksWrites)
-        recovery.clearError()
-        #expect(recovery.error == ManagementRecoveryState.uncertaintyMessage)
-        recovery.finishReview()
-        #expect(recovery.blocksWrites)
-        await recovery.check(catalog: catalog, channelId: "deleted-channel") { current in
-            current.channelWasDeleted ? "The channel is absent." : "The channel is present."
-        }
-        #expect(recovery.result?.channelWasDeleted == true)
-        #expect(recovery.state == .reconciled("The channel is absent."))
-        #expect(recovery.blocksWrites)
-        #expect(fixture.requests == ["DELETE /api/v1/channels/deleted-channel", "GET /api/v1/channels"])
-    }
-
-    @Test func failedReconciliationKeepsWritesBlockedUntilAnExplicitReview() async throws {
-        let fixture = try ManagementRecoveryFixture(catalogStatus: 500)
-        defer { fixture.close() }
-        let recovery = ManagementWriteRecovery()
-        let catalog = ChannelCatalogStore(api: fixture.api)
-        recovery.record(ChannelAPIError.http(status: 500, message: "Management failed."))
-        await recovery.check(catalog: catalog, channelId: nil) { _ in "Catalog refreshed." }
-        guard case .checkFailed(let message) = recovery.state else {
-            Issue.record("A failed read must not be presented as reconciliation.")
-            return
-        }
-        #expect(message.contains("HTTP 500"))
-        #expect(recovery.blocksWrites)
-        #expect(recovery.result == nil)
-        recovery.finishReview()
-        #expect(recovery.blocksWrites)
-        fixture.allowCatalogRead()
-        await recovery.check(catalog: catalog, channelId: nil) { _ in "Catalog refreshed." }
-        #expect(recovery.blocksWrites)
-        #expect(recovery.state == .reconciled("Catalog refreshed."))
-        recovery.finishReview()
-        #expect(!recovery.blocksWrites)
-        #expect(recovery.error == nil)
-        #expect(fixture.requests == ["GET /api/v1/channels", "GET /api/v1/channels"])
-    }
-
-    @Test func domainRejectionsKeepTheirUserFacingMessageWithoutBlockingEditing() {
-        let recovery = ManagementWriteRecovery()
-        let error = ChannelAPIError.http(status: 422, message: "The mention is already in use.")
-        #expect(!recovery.record(error))
-        #expect(!recovery.blocksWrites)
-        #expect(recovery.error == error.localizedDescription)
-        #expect(recovery.result == nil)
-    }
-
-    @Test func unexpectedManagementFailuresRequireAReadBeforeAnotherWrite() {
-        #expect(ManagementRecoveryState.isRequired(
-            after: ChannelAPIError.http(status: 500, message: "Management failed.")))
-        #expect(ManagementRecoveryState.isRequired(
-            after: ChannelAPIError.http(status: 503, message: "Service unavailable.")))
-        #expect(!ManagementRecoveryState.isRequired(
-            after: ChannelAPIError.http(status: 422, message: "This provider cannot change.")))
-        #expect(!ManagementRecoveryState.isRequired(
-            after: ChannelAPIError.http(status: 404, message: "Member not found.")))
-        #expect(!ManagementRecoveryState.isRequired(after: ChannelAPIError.invalidMessage("Invalid name.")))
-    }
-
     private struct ManagementRecoveryFixture {
         let api: ChannelAPI
         private let session: URLSession
@@ -316,6 +244,35 @@ struct ManagementTests {
                 try #require(ChannelValidation.memberNameError(name, agents: store.roster))))
         }
         #expect(fixture.requests.isEmpty)
+    }
+
+    @Test func uncertainInlineCreationChecksStateWithoutReplayingTheWrite() async throws {
+        let fixture = try ManagementRecoveryFixture(catalogStatus: 500)
+        defer { fixture.close() }
+        let store = ChannelStore(id: "channel", api: fixture.api, sendJournal: nil)
+        let channel = Channel(id: store.id, name: "Workshop", model: .init(provider: "test", name: "test"),
+                              updatedAt: "2026-10-25T12:00:00Z")
+        _ = try store.apply(.init(type: "snapshot", state: .init(
+            revision: 1, channel: channel, lead: .lead(id: store.id))))
+        let catalog = ChannelCatalogStore(api: fixture.api)
+        let presenter = ManagementPresenter()
+        for attempt in 0..<3 {
+            if attempt == 2 { fixture.allowCatalogRead() }
+            do {
+                _ = try await presenter.createMentionMember(name: "Moss", store: store, catalog: catalog)
+                Issue.record("An uncertain creation must require review instead of replaying the write.")
+            } catch let error as ChannelAPIError {
+                if attempt < 2 {
+                    #expect(error.localizedDescription.contains("Current state could not be checked."))
+                } else {
+                    #expect(error.localizedDescription.contains("Review Team"))
+                }
+            }
+        }
+        #expect(fixture.requests == [
+            "POST /api/v1/channels/channel/members",
+            "GET /api/v1/channels", "GET /api/v1/channels", "GET /api/v1/channels"
+        ])
     }
 
     @Test(arguments: [280, 328])

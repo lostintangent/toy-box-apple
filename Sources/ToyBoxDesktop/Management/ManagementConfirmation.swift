@@ -10,7 +10,7 @@ struct ManagementConfirmation: View {
     let api: ChannelAPI
     let presenter: ManagementPresenter
     @ViewState private var isDeleting = false
-    @ViewState private var recovery = ManagementWriteRecovery()
+    @ViewState private var recovery = ChannelManagementWriteRecovery()
 
     private var member: ChannelMember? {
         guard case .removeMember(_, let id) = flow else { return nil }
