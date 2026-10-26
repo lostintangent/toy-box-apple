@@ -34,7 +34,7 @@ struct TranscriptTests {
         #expect(items.map(\.id) == ["m1", "m2", "m3", "m4"])
         #expect(items.map(\.order) == [0, 1, 2, 3])
         #expect(items.map(\.sequence) == [1, 2, 3, 4])
-        #expect(items.map(\.spacing) == [0, TranscriptItem.runGap, TranscriptItem.entryGap, TranscriptItem.runGap])
+        #expect(items.map(\.spacing) == [0, TranscriptSpacing.run, TranscriptSpacing.entry, TranscriptSpacing.run])
         guard case .agent(_, _, let firstStarts) = items[1].content,
               case .agent(_, _, let secondStarts) = items[2].content else {
             Issue.record("Lead's run should become two agent entries.")
@@ -357,6 +357,44 @@ struct TranscriptTests {
                 #expect(background.under(rgb(traits, ink)).contrast(with: background) >= 4.5)
             }
         }
+    }
+
+    @Test func mentionsUseTheAgentsInkAtTextContrastOnEveryBubble() throws {
+        let pale = ChannelAgent(id: "ada", name: "Ada", avatar: .init(mark: "M0 0", color: "#facc15"))
+        let text = transcriptInlineMarkdown("Thanks @ada and @everyone, not @nobody", agents: [pale],
+                                            mentionInk: { _ in .red })
+        let styled = text.runs.filter { $0.foregroundColor != nil }.map { String(text[$0.range].characters) }
+        #expect(styled == ["@ada", "@everyone"])
+        for dark in [false, true] {
+            for increased in [false, true] {
+                // The same traits production resolves with, so 7:1 is measured on the high-contrast canvas.
+                let traits = UITraitCollection {
+                    $0.userInterfaceStyle = dark ? .dark : .light
+                    $0.accessibilityContrast = increased ? .high : .normal
+                }
+                func rgb(_ color: Color) -> TranscriptRGB {
+                    var (red, green, blue, alpha): (CGFloat, CGFloat, CGFloat, CGFloat) = (0, 0, 0, 0)
+                    UIColor(color).resolvedColor(with: traits).getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+                    return TranscriptRGB(red: red, green: green, blue: blue, alpha: alpha)
+                }
+                for surface in [TranscriptSurface.agent, .pendingAgent, .user] {
+                    let ink = rgb(TranscriptMentionInk(surface: surface, isDark: dark, isContrastIncreased: increased)
+                        .color(for: pale))
+                    let background = surface.fills(isDark: dark)
+                        .reduce(rgb(Color(uiColor: .systemBackground))) { $0.under(rgb($1)) }
+                    #expect(ink.contrast(with: background) >= (increased ? 7 : 4.5))
+                }
+            }
+        }
+    }
+
+    @Test func messagesRenderMarkdownBlocksLikeTheMac() {
+        func height(_ text: String) -> CGFloat {
+            UIHostingController(rootView: TranscriptBody(text: text))
+                .sizeThatFits(in: CGSize(width: 300, height: CGFloat.infinity)).height
+        }
+        let line = height("Pass 300")
+        #expect(height("## Pass 300") > line * 1.2)
     }
 
     @Test func longMessagesCollapseInTheSamePassThatMeasuresThem() {

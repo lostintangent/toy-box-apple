@@ -46,7 +46,7 @@ struct TranscriptItemView: View, @MainActor Equatable {
                 }
                 TranscriptRule(divider: divider)
                     .accessibilityFocused($focusesDivider)
-                    .padding(.bottom, item.spacing > 0 ? TranscriptItem.runGap : 0)
+                    .padding(.bottom, TranscriptSpacing.divider)
             }
             content
                 .background(isHighlighted ? ChannelColors.sourceHighlight : .clear,
@@ -139,7 +139,8 @@ struct TranscriptUserMessage: View {
                 .font(.footnote)
                 .accessibilityHidden(true)
                 if !message.text.isEmpty {
-                    TranscriptBody(text: message.text, findHighlight: findHighlight)
+                    TranscriptBody(text: message.text, agents: context.agents, baseURL: context.api.baseURL,
+                                   surface: .user, findHighlight: findHighlight)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 10)
                         .transcriptBubble(.user)
@@ -175,6 +176,7 @@ struct TranscriptAgentMessage: View {
     var setExpanded: (Bool) -> Void = { _ in }
     @Environment(ChannelInteraction.self) private var interaction
     @ViewState private var selectsText = false
+    private var surface: TranscriptSurface { entry.request == .pending ? .pendingAgent : .agent }
 
     private static let avatarSize: CGFloat = 32
     private static let avatarGap: CGFloat = 8
@@ -193,7 +195,8 @@ struct TranscriptAgentMessage: View {
                         if entry.collapsible {
                             // Show More's 44pt target is the bubble's footer, so it replaces the bottom padding.
                             TranscriptCollapsibleBody(isExpanded: isExpanded, endPadding: 10) {
-                                TranscriptBody(text: entry.body, findHighlight: findHighlight)
+                                TranscriptBody(text: entry.body, agents: context.agents, baseURL: context.api.baseURL,
+                                               surface: surface, findHighlight: findHighlight)
                             } toggle: {
                                 Button(isExpanded ? "Show Less" : "Show More") { setExpanded(!isExpanded) }
                                     .font(.footnote.weight(.semibold))
@@ -202,12 +205,13 @@ struct TranscriptAgentMessage: View {
                             }
                             .padding(.top, 10)
                         } else {
-                            TranscriptBody(text: entry.body, findHighlight: findHighlight)
+                            TranscriptBody(text: entry.body, agents: context.agents, baseURL: context.api.baseURL,
+                                               surface: surface, findHighlight: findHighlight)
                                 .padding(.vertical, 10)
                         }
                     }
                         .padding(.horizontal, 12)
-                        .transcriptBubble(entry.request == .pending ? .pendingAgent : .agent)
+                        .transcriptBubble(surface)
                         .contentShape(.contextMenuPreview, .rect(cornerRadius: 12, style: .continuous))
                         .contextMenu {
                             if agent.deleted != true {
@@ -312,23 +316,54 @@ private struct TranscriptSelectTextSheet: View {
     }
 }
 
-/// Inline Markdown until the shared renderer moves to ToyBoxUI.
+/// The Mac's Markdown renderer, scaled from its 14pt body to the phone's Dynamic Type body.
+/// Text is selected in the Select Text sheet, so rows stay plain `Text`.
 struct TranscriptBody: View {
     let text: String
+    var agents: [ChannelAgent] = []
+    var baseURL: URL?
+    var surface = TranscriptSurface.canvas
     var findHighlight: TranscriptFindHighlight?
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.colorSchemeContrast) private var contrast
+    @ScaledMetric(relativeTo: .body) private var bodySize: CGFloat = 17
 
     var body: some View {
-        let attributed = Self.attributed(text)
-        Text(findHighlight?.applying(to: attributed) ?? attributed)
-            .font(.body)
+        let ink = TranscriptMentionInk(surface: surface, isDark: colorScheme == .dark,
+                                       isContrastIncreased: contrast == .increased)
+        TranscriptMarkdown(content: text, agents: agents, baseURL: baseURL, selectable: false,
+                           findHighlight: findHighlight, lineSpacing: 0, textScale: bodySize / 14,
+                           copyCode: { UIPasteboard.general.string = $0 }, mentionInk: ink.color)
             .foregroundStyle(.primary)
-            .fixedSize(horizontal: false, vertical: true)
     }
+}
 
-    private static func attributed(_ text: String) -> AttributedString {
-        (try? AttributedString(markdown: text, options: .init(
-            interpretedSyntax: .inlineOnlyPreservingWhitespace, failurePolicy: .returnPartiallyParsedIfPossible)))
-            ?? AttributedString(text)
+/// The Mac's mention ink: the agent's identity color, moved toward the text color only as far as it
+/// takes to clear 4.5:1, or 7:1 with Increase Contrast, over the bubble it sits on.
+struct TranscriptMentionInk: Equatable {
+    var surface = TranscriptSurface.canvas
+    var isDark = false
+    var isContrastIncreased = false
+
+    func color(for agent: ChannelAgent?) -> Color {
+        let identity = agent?.avatar.flatMap { Color(hex: $0.color) } ?? .accentColor
+        let traits = UITraitCollection {
+            $0.userInterfaceStyle = isDark ? .dark : .light
+            $0.accessibilityContrast = isContrastIncreased ? .high : .normal
+        }
+        func rgb(_ color: Color) -> TranscriptRGB? {
+            var (red, green, blue, alpha): (CGFloat, CGFloat, CGFloat, CGFloat) = (0, 0, 0, 0)
+            guard UIColor(color).resolvedColor(with: traits).getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+            else { return nil }
+            return TranscriptRGB(red: red, green: green, blue: blue, alpha: alpha)
+        }
+        guard let base = rgb(identity), let canvas = rgb(Color(uiColor: .systemBackground)) else { return .primary }
+        let background = surface.fills(isDark: isDark).reduce(canvas) { below, fill in
+            rgb(fill).map { below.under($0) } ?? below
+        }
+        let ink = TranscriptMentionContrast.adjusted(base, backgrounds: [background], isDark: isDark,
+                                                     isContrastIncreased: isContrastIncreased)
+        return Color(.sRGB, red: ink.red, green: ink.green, blue: ink.blue)
     }
 }
 

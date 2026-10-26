@@ -1040,7 +1040,7 @@ struct TranscriptTests {
         ], lead: .lead(id: "lead"), members: [])
         try #require(rows.count == 7)
         #expect(rows[3].divider?.day != nil)
-        #expect(transcriptStackedSystemRowIDs(rows) == [rows[2].id, rows[4].id])
+        #expect(rows.dropFirst().map { transcriptRowGaps(rows)[$0.id] } == [20, 4, 20, 4, 20, 20])
     }
 
     @Test func coincidingDayAndUnreadDividersReadAsOneHeader() throws {

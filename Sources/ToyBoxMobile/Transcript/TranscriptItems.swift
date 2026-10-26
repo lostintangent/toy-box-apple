@@ -1,5 +1,6 @@
 import ChannelKit
 import CoreGraphics
+import ToyBoxUI
 
 /// One lazy stack child: a user message, one entry of an agent run, or a system group. Splitting
 /// runs into entries keeps a long run lazy and lets reveal, landing and reads target one message.
@@ -28,10 +29,6 @@ struct TranscriptItem: Equatable, Identifiable {
 
     /// The newest sequence this item shows, which seeing it marks read.
     var sequence: Int { messages.map(\.sequence).max() ?? 0 }
-
-    static let runGap: CGFloat = 20
-    static let entryGap: CGFloat = 8
-    static let stackedSystemGap: CGFloat = 4
 }
 
 func transcriptItems(_ rows: [TranscriptRow]) -> [TranscriptItem] {
@@ -39,14 +36,7 @@ func transcriptItems(_ rows: [TranscriptRow]) -> [TranscriptItem] {
     items.reserveCapacity(rows.count)
     var previous: TranscriptRow?
     for row in rows {
-        let rowGap: CGFloat
-        if previous == nil {
-            rowGap = 0
-        } else if row.divider == nil, case .system = row.content, case .system = previous?.content {
-            rowGap = TranscriptItem.stackedSystemGap
-        } else {
-            rowGap = TranscriptItem.runGap
-        }
+        let rowGap = previous.map { TranscriptSpacing.between($0, row) } ?? 0
         switch row.content {
         case .user(let message):
             items.append(.init(id: message.id, content: .user(message), divider: row.divider,
@@ -56,7 +46,7 @@ func transcriptItems(_ rows: [TranscriptRow]) -> [TranscriptItem] {
                 items.append(.init(id: entry.message.id,
                                    content: .agent(agentId: agentId, entry: entry, startsRow: index == 0),
                                    divider: index == 0 ? row.divider : nil,
-                                   spacing: index == 0 ? rowGap : TranscriptItem.entryGap, order: items.count))
+                                   spacing: index == 0 ? rowGap : TranscriptSpacing.entry, order: items.count))
             }
         case .system(let messages):
             items.append(.init(id: row.id, content: .system(messages), divider: row.divider,
