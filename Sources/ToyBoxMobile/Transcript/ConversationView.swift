@@ -369,7 +369,10 @@ struct ConversationView: View {
             if let reveal = scroll.finishedReveal() {
                 interaction.finishReveal(reveal.token, reveal.isRevealed ? .revealed : .failed(Self.revealInterrupted))
             }
-            if !store.isLoadingOlder && scroll.loadsOlder(with: rowIdentities) { Task { await loadOlder() } }
+            if !store.isLoadingOlder, store.hasOlderMessages, store.historyError == nil,
+               scroll.loadsOlder(with: rowIdentities) {
+                Task { await loadOlder() }
+            }
         }
     }
 
