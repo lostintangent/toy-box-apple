@@ -43,12 +43,12 @@ struct AuxiliaryComposer: View {
     private var noticeRegionHeight: CGFloat { noticeHeight > 0 ? min(noticeHeight, 84) + 16 : 0 }
     private var canEdit: Bool { !session.isReadOnly && session.confirmation == nil }
     private var canSend: Bool {
-        !finalizing && (session.canSend || channelCanSend(
-            isLive: store.phase.isLive, isSending: store.isSending, isSubmitting: false,
-            hasContent: dictation.hasWords && !session.requestChanged,
+        !finalizing && (session.canSend || (dictation.hasWords && !store.isSending && channelCanSend(
+            isLive: store.phase.isLive, isSending: false, isSubmitting: false,
+            hasContent: !session.requestChanged,
             isLoadingImages: draft.isLoadingImages, hasUnreadableImage: draft.hasUnreadableImage,
             textUTF16Count: draft.text.utf16.count
-        ))
+        )))
     }
 
     var body: some View {
