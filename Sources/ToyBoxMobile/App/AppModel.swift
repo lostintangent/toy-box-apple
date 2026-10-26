@@ -32,6 +32,7 @@ final class AppModel {
     @ObservationIgnored private var restoredSelection = false
     @ObservationIgnored private var serverIdentity = ""
     @ObservationIgnored private var interactions: [String: ChannelInteraction] = [:]
+    @ObservationIgnored private var composerSessions: [String: ComposerSession] = [:]
 
     init(arguments: [String] = ProcessInfo.processInfo.arguments,
          environment: [String: String] = ProcessInfo.processInfo.environment,
@@ -66,6 +67,7 @@ final class AppModel {
         selectedChannelID = nil
         visibleChannelID = nil
         interactions = [:]
+        composerSessions = [:]
         self.serverURL = api.baseURL.absoluteString
         serverIdentity = identity
         catalog = ChannelCatalogStore(api: api)
@@ -123,6 +125,13 @@ final class AppModel {
         let interaction = ChannelInteraction(isInspectorPresented: false)
         interactions[channelID] = interaction
         return interaction
+    }
+
+    func composerSession(for store: ChannelStore) -> ComposerSession {
+        if let session = composerSessions[store.id], session.store === store { return session }
+        let session = ComposerSession(store: store)
+        composerSessions[store.id] = session
+        return session
     }
 
     private var rememberedSelections: [String: String] {
