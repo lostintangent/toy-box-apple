@@ -12,7 +12,6 @@ struct ArtifactViewerCanvas: View {
     @Environment(ArtifactOpener.self) private var opener
     @Environment(ChannelInteraction.self) private var interaction
     @Environment(ImageViewer.self) private var images
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         ZStack {
