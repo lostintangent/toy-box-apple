@@ -1712,6 +1712,9 @@ types keep `doc.text`, HTML uses `chevron.left.forwardslash.chevron.right`, SVG 
 `square.on.circle`, and raster images use `photo`. Preserve the phone's symbol lane, ink and
 row geometry. Use the same mapping in phone artifact-viewer pager tiles so a file's symbol matches
 its list entry. Classify SVG before generic images using the existing content-kind policy.
+Keep every phone symbol within the same 24-point icon lane and the current document icon's
+visual size. Bound wider HTML and SVG artwork to that footprint without stretching its aspect
+ratio, enlarging the column or adopting the Mac's 28-point size.
 Phone artifact rows match Team's compact two-line rhythm: body title and footnote date,
 2-point interline gap, 24-point icon lane and the existing 12-point icon/text gap. Remove the
 64-point content minimum rather than adding native row padding around it. Aim for Team's
