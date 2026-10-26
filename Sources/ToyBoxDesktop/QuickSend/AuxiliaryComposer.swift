@@ -127,10 +127,9 @@ struct AuxiliaryComposer: View {
             NativeComposerInput(
                 text: $draft.text, document: draftID, height: $inputHeight, dragging: $dragging,
                 fontSize: (style == .quickSend ? 16 : 14) * textScale, focusRequest: focusRequest,
-                agents: store.roster, canManage: false, onSend: { send(opensChannel: false) },
+                agents: store.roster, onSend: { send(opensChannel: false) },
                 onFiles: draft.attachFiles, onImage: draft.append, onError: { draft.error = $0 },
-                onCreate: { _ in throw AuxiliaryEditingError.managementUnavailable }, onEdit: { _ in },
-                dictation: dictation, allowsAgentManagement: false, isEditable: canEdit,
+                dictation: dictation, isEditable: canEdit,
                 minimumHeight: style == .quickSend ? 100 : 84, maximumLineCount: style == .quickSend ? 10 : 3,
                 startsAtEnd: true,
                 onSendAndOpen: { send(opensChannel: true) }, onEscape: dismissOrStopDictation,
@@ -282,9 +281,4 @@ struct AuxiliaryComposer: View {
         if dictation.phase != .idle { dictation.commitNow() }
         else { onDismiss() }
     }
-}
-
-private enum AuxiliaryEditingError: LocalizedError {
-    case managementUnavailable
-    var errorDescription: String? { "Open the channel to manage agents." }
 }
