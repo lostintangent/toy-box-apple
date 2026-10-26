@@ -304,7 +304,8 @@ private struct TranscriptSelectTextSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Done", systemImage: "checkmark") { dismiss() }
+                    Button(role: .close) { dismiss() }
+                        .accessibilityLabel("Close Select Text")
                 }
             }
         }
@@ -459,7 +460,8 @@ struct TranscriptReactionChip: View {
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .confirmationAction) {
-                        Button("Done", systemImage: "checkmark") { showsReactors = false }
+                        Button(role: .close) { showsReactors = false }
+                            .accessibilityLabel("Close Reactions")
                     }
                 }
             }
@@ -545,7 +547,8 @@ struct TranscriptSystemDetails: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Done", systemImage: "checkmark") { dismiss() }
+                    Button(role: .close) { dismiss() }
+                        .accessibilityLabel("Close Details")
                 }
             }
         }
