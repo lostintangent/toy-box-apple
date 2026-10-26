@@ -62,6 +62,20 @@ final class AppModel {
 
     var api: ChannelAPI? { catalog?.api }
 
+    var sidebarConnection: SidebarConnection {
+        SidebarConnection(
+            loaded: catalog?.hasLoaded == true, failing: catalog?.error != nil,
+            fatal: catalog == nil || SidebarConnection.isFatal(catalog?.failure)
+        )
+    }
+
+    var canCreateChannel: Bool { isActive && sidebarConnection == .connected }
+
+    var sidebarProjection: ChannelSidebarProjection {
+        let visible = isActive ? visibleChannelID : nil
+        return ChannelSidebarProjection(catalog: catalog, openChannelIDs: Set(visible.map { [$0] } ?? []))
+    }
+
     func acquire(_ store: ChannelStore) {
         connections.acquire(store)
         if !isActive { store.disconnect() }

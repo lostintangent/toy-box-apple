@@ -3,6 +3,7 @@ import ChannelKit
 import Foundation
 import SwiftUI
 import Testing
+import UniformTypeIdentifiers
 @testable import ToyBoxMobile
 
 @Suite("Mobile Shell")
@@ -127,6 +128,23 @@ struct ShellTests {
         }
     }
 
+    @Test func creationAvailabilityUsesTheSameCatalogConnectionAsTheSidebar() async throws {
+        await withDefaults { defaults in
+            let model = AppModel(arguments: ["--server", "https://fixture.example"], environment: [:],
+                                 defaults: defaults, session: fixtureSession())
+            defer { model.setActive(false) }
+            #expect(model.sidebarConnection == .connecting)
+            #expect(!model.canCreateChannel)
+            await model.refreshCatalog()
+            #expect(model.sidebarConnection == .connected)
+            #expect(!model.canCreateChannel)
+            model.setActive(true)
+            #expect(model.canCreateChannel)
+            model.setActive(false)
+            #expect(!model.canCreateChannel)
+        }
+    }
+
     @Test func restorationWaitsForTheCatalogAndUsesTheNormalizedServer() async throws {
         await withDefaults { defaults in
             defaults.set(["https://fixture.example/prefix": "second"], forKey: "lastChannelByServer")
@@ -197,6 +215,55 @@ struct ShellTests {
             let changedServer = try #require(model.selectedStore)
             #expect(model.composerSession(for: changedServer) !== session)
             #expect(model.composerSession(for: changedServer).store === changedServer)
+        }
+    }
+
+    @Test func draftCopyPreservesTextAndOriginalImageBytesWithoutChangingTheDraft() async throws {
+        let draft = ComposerDraft(imageIsReadable: { _ in true })
+        draft.text = "A draft to keep\nwith its original spacing."
+        let bytes = Data([0, 1, 2, 3, 254, 255])
+        draft.append(.init(name: "Original image.png", mimeType: "image/png", data: bytes))
+        draft.associateSend(id: "unconfirmed-attempt")
+        let revision = draft.revision
+        let providers = DraftPasteboard.itemProviders(for: draft)
+        #expect(providers.count == 2)
+        let text = try await copiedData(from: providers[0], type: .utf8PlainText)
+        #expect(String(data: text, encoding: .utf8) == draft.text)
+        #expect(providers[1].suggestedName == "Original image.png")
+        let image = try await copiedData(from: providers[1], type: .png)
+        #expect(image == bytes)
+        #expect(draft.revision == revision)
+        #expect(draft.sendAttemptID == "unconfirmed-attempt")
+        #expect(draft.images.first?.data == bytes)
+    }
+
+    @Test func imageOnlyDraftsRemainCopyableAndEmptyDraftsHaveNothingToCopy() async throws {
+        let draft = ComposerDraft(imageIsReadable: { _ in true })
+        #expect(!draft.hasContent)
+        #expect(DraftPasteboard.itemProviders(for: draft).isEmpty)
+        let bytes = Data([1, 2, 3])
+        draft.append(.init(name: "Draft image.jpg", mimeType: "image/jpeg", data: bytes))
+        #expect(draft.hasContent)
+        let providers = DraftPasteboard.itemProviders(for: draft)
+        #expect(providers.count == 1)
+        let provider = try #require(providers.first)
+        #expect(provider.suggestedName == "Draft image.jpg")
+        let copied = try await copiedData(from: provider, type: .jpeg)
+        #expect(copied == bytes)
+        #expect(draft.images.count == 1)
+    }
+
+    private func copiedData(from provider: NSItemProvider, type: UTType) async throws -> Data {
+        try await withCheckedThrowingContinuation { continuation in
+            _ = provider.loadDataRepresentation(forTypeIdentifier: type.identifier) { data, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                } else if let data {
+                    continuation.resume(returning: data)
+                } else {
+                    continuation.resume(throwing: CocoaError(.fileReadUnknown))
+                }
+            }
         }
     }
 
