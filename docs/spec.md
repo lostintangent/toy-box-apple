@@ -1554,8 +1554,9 @@ native footnote 13 and explicit primary label ink for readable text under native
 Top-align the phone label within that growing target. No stretched icon/title gap or centered
 title. Keep the action outside the parent toggle target: opening never toggles, toggling never
 opens. Speak "Open [artifact title]" and use the existing reader route. No reference means no
-empty artifact lane; a missing reference keeps disabled "Artifact unavailable", never a
-descendant's file. These row rules also apply to Mac's shared Tasks popover.
+empty artifact lane; a missing reference keeps disabled "Artifact unavailable" in tertiary
+label ink on both hosts, never a descendant's file. These row rules also apply to Mac's shared
+Tasks popover.
 
 Tasks with a valid server-owned `startedAt` show elapsed in the metadata lane:
 a small `clock` before "1h 26m", with monospaced digits. Use "59m" below an hour,

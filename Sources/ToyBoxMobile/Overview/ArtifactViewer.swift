@@ -122,20 +122,6 @@ struct ArtifactViewer: View {
             case .file:
                 unsupported(content)
             }
-        } else if session.kind == .svg, session.loadError == ArtifactImageDecoder.svgUnavailableMessage {
-            ContentUnavailableView {
-                Label("SVG Preview Unavailable", systemImage: "doc")
-            } description: {
-                Text(ArtifactImageDecoder.svgUnavailableMessage)
-            } actions: {
-                Button("Quick Look", systemImage: "eye") { reading.prepareOriginal(session: session, sharing: false) }
-                    .disabled(!canPrepareOriginal)
-                Button("Share Original", systemImage: "square.and.arrow.up") {
-                    reading.prepareOriginal(session: session, sharing: true)
-                }
-                .disabled(!canPrepareOriginal)
-            }
-            .padding(.bottom, bottomClearance)
         } else if let error = session.loadError {
             failure(error)
         } else if session.artifact == nil {
