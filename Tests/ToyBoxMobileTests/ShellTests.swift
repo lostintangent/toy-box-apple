@@ -33,14 +33,56 @@ struct ShellTests {
             defaults.set("https://saved.example/prefix", forKey: "serverURL")
             let command = AppModel(arguments: ["app", "--server", "https://argument.example/prefix"],
                                    environment: ["TOY_BOX_SERVER_URL": "https://environment.example"],
+                                   bundleDefaultServerURL: "https://bundle.example",
                                    defaults: defaults)
             #expect(command.serverURL == "https://argument.example/prefix")
             let environment = AppModel(arguments: [], environment: ["TOY_BOX_SERVER_URL": "https://environment.example"],
+                                       bundleDefaultServerURL: "https://bundle.example",
                                        defaults: defaults)
             #expect(environment.serverURL == "https://environment.example")
-            let saved = AppModel(arguments: [], environment: [:], defaults: defaults)
+            let saved = AppModel(arguments: [], environment: [:], bundleDefaultServerURL: "https://bundle.example",
+                                 defaults: defaults)
             #expect(saved.serverURL == "https://saved.example/prefix")
             #expect(defaults.string(forKey: "serverURL") == "https://saved.example/prefix")
+        }
+    }
+
+    @Test func theBundleServerDefaultIsUsedWithoutPersistingAndSavedSettingsWinOnRelaunch() async throws {
+        try await withDefaults { defaults in
+            let installed = AppModel(arguments: [], environment: [:],
+                                     bundleDefaultServerURL: "http://fixture.local:3100/prefix", defaults: defaults)
+            #expect(installed.serverURL == "http://fixture.local:3100/prefix")
+            #expect(installed.configurationError == nil)
+            #expect(installed.catalog != nil)
+            #expect(defaults.string(forKey: "serverURL") == nil)
+            try installed.configure(serverURL: "https://chosen.example")
+            let relaunched = AppModel(arguments: [], environment: [:],
+                                      bundleDefaultServerURL: "http://fixture.local:3100/prefix", defaults: defaults)
+            #expect(relaunched.serverURL == "https://chosen.example")
+            #expect(defaults.string(forKey: "serverURL") == "https://chosen.example")
+        }
+    }
+
+    @Test(arguments: ["", "not-a-server"])
+    func invalidBundleDefaultsReportConfigurationErrors(address: String) async {
+        await withDefaults { defaults in
+            let model = AppModel(arguments: [], environment: [:], bundleDefaultServerURL: address, defaults: defaults)
+            #expect(model.catalog == nil)
+            #expect(model.configurationError != nil)
+            #expect(model.serverURL == address)
+            #expect(defaults.string(forKey: "serverURL") == nil)
+        }
+    }
+
+    @Test func anInvalidSavedServerNeverFallsBackToTheBundle() async {
+        await withDefaults { defaults in
+            defaults.set("not-a-server", forKey: "serverURL")
+            let model = AppModel(arguments: [], environment: [:],
+                                 bundleDefaultServerURL: "https://bundle.example", defaults: defaults)
+            #expect(model.catalog == nil)
+            #expect(model.configurationError != nil)
+            #expect(model.serverURL == "not-a-server")
+            #expect(defaults.string(forKey: "serverURL") == "not-a-server")
         }
     }
 
@@ -48,12 +90,14 @@ struct ShellTests {
         await withDefaults { defaults in
             defaults.set("https://saved.example", forKey: "serverURL")
             for arguments in [["--server"], ["--server", ""], ["--server", "not-a-server"]] {
-                let model = AppModel(arguments: arguments, environment: [:], defaults: defaults)
+                let model = AppModel(arguments: arguments, environment: [:],
+                                     bundleDefaultServerURL: "https://bundle.example", defaults: defaults)
                 #expect(model.catalog == nil)
                 #expect(model.configurationError != nil)
                 #expect(defaults.string(forKey: "serverURL") == "https://saved.example")
             }
             let emptyEnvironment = AppModel(arguments: [], environment: ["TOY_BOX_SERVER_URL": ""],
+                                            bundleDefaultServerURL: "https://bundle.example",
                                             defaults: defaults)
             #expect(emptyEnvironment.catalog == nil)
             #expect(emptyEnvironment.configurationError != nil)
@@ -62,7 +106,7 @@ struct ShellTests {
 
     @Test func firstLaunchAndUnavailableBrowserLinksStayExplicit() async throws {
         try await withDefaults { defaults in
-            let model = AppModel(arguments: [], environment: [:], defaults: defaults)
+            let model = AppModel(arguments: [], environment: [:], bundleDefaultServerURL: nil, defaults: defaults)
             #expect(model.catalog == nil)
             #expect(model.configurationError == nil)
             model.openInToyBox(channelID: "first")

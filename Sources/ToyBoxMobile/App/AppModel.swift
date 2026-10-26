@@ -44,6 +44,7 @@ final class AppModel {
 
     init(arguments: [String] = ProcessInfo.processInfo.arguments,
          environment: [String: String] = ProcessInfo.processInfo.environment,
+         bundleDefaultServerURL: String? = Bundle.main.object(forInfoDictionaryKey: "ToyBoxDefaultServerURL") as? String,
          defaults: UserDefaults = .standard, session: URLSession = .shared) {
         self.defaults = defaults
         self.session = session
@@ -55,7 +56,7 @@ final class AppModel {
             }
             address = arguments[index + 1]
         } else {
-            address = environment["TOY_BOX_SERVER_URL"] ?? defaults.string(forKey: "serverURL")
+            address = environment["TOY_BOX_SERVER_URL"] ?? defaults.string(forKey: "serverURL") ?? bundleDefaultServerURL
         }
         guard let address else { return }
         do { try configure(serverURL: address, persist: false) }
