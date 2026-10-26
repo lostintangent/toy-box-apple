@@ -269,7 +269,8 @@ struct ManagementTests {
         let fixture = try ManagementRecoveryFixture(memberStatus: 201)
         defer { fixture.close() }
         let store = ChannelStore(id: "channel", api: fixture.api, sendJournal: nil)
-        let channel = Channel(id: store.id, name: "Workshop", model: .init(provider: "test", name: "test"))
+        let channel = Channel(id: store.id, name: "Workshop", model: .init(provider: "test", name: "test"),
+                              updatedAt: "2026-10-25T12:00:00Z")
         _ = try store.apply(.init(type: "snapshot", state: .init(
             revision: 1, channel: channel, lead: .lead(id: store.id))))
         let presenter = ManagementPresenter()
