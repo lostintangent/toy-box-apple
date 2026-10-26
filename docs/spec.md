@@ -996,6 +996,14 @@ Only coordination entries marked collapsible truncate, at 160 points of body tex
 user and all flagged requests always remain expanded. User-initiated expansion is preserved while
 rows update. The copy action copies the original full message, including its leading mentions.
 
+On the phone, a Show More/Less footer occupies 44 points total at Large and grows with its
+text at larger Dynamic Type. Center the footnote semibold label vertically and align it to
+the body's leading edge. There is no additional 4-point body/footer gap or 10-point bubble
+padding below that target. Retain 12-point horizontal and 10-point top body padding and the
+24-point fade. Do not shrink the tap target or overlap links in the body. Bubbles without
+this action retain their normal bottom padding. Phone mentions follow the identity-ink and
+contrast policy above, not generic primary text.
+
 A pending request asks the user for something, so it offers an action rather than an alarm.
 Never outline it. The bubble keeps its normal shape and padding, but trades the neutral fill
 for a warm wash. In light, use `Color.orange` at 10%. In dark, keep the 7% neutral fill and layer
@@ -1148,6 +1156,14 @@ Other files show document icon, name and Open. Resolve resources against the ser
 An unavailable file keeps its name and an explicit retryable error, not a blank thumbnail.
 Opening remote URLs must not assume a matching local filesystem path.
 
+**Phone attachment parity.** The entire attachment set occupies one horizontally scrolling
+row, with 8-point gaps and no stacking or wrapping. Preserve the existing shared
+`ChannelClient.transcriptThumbnailSize` image cap of 240 x 160. The 240 x 120 video-preview cap
+is not an image-size change. Keep attachment order, leading/trailing alignment, the correct
+image index on opening, and the presented tile in view when returning. Share the portable
+strip container where practical while each host retains its native tiles. File and video
+actions keep minimum-44 targets.
+
 **Image viewer.** Images open in place, as in Photos, never in another app or a floating Quick
 Look panel. The viewer pages through the clicked message's images in attachment order and
 doesn't cross into other messages. Videos and files keep their own actions.
@@ -1166,6 +1182,13 @@ doesn't cross into other messages. Videos and files keep their own actions.
 
 Transcript owns the viewer and its transition. Shell routes the viewing toolbar and the zoom
 and close commands.
+
+The phone image gallery's pager capsule and both arrow targets stay anchored across page
+changes, loading, and different image aspect ratios. Only the image, selected outline and
+thumbnail scroll position change. End arrows stay in place, disabled rather than removed.
+Use the artifact viewer's stable presentation as the comparison, not a reason to change it.
+Confirm the actual moving component in before/after Next and swipe recordings and protect
+the capsule and toolbar geometry deterministically.
 
 **SVG attachments.** SVGs are images throughout the transcript filmstrip, viewer and gallery
 capsule, with the same loading, error and keyboard behavior as raster images. Read their intrinsic
@@ -1246,7 +1269,47 @@ announcement, not an announcement for every older page.
 Use the same semantic colors in both appearances and the normal system focus ring. Reduce Motion
 uses the reveal path's nonmoving alternative.
 
+### Phone sheet semantics
+
+Working Now, Select Text, reactors, system-message details, Overview in both presentations,
+and Settings use native `Button(role: .close)`. iOS supplies the X. Keep the existing native
+toolbar placement and an explicit accessible close label, without a custom circle or blue
+fill. Settings changes remain applied on closing. Save, Create and Switch Server remain
+genuine confirmation actions. Mac keeps Done. Swipe dismissal, focus/draft restoration and
+read blocking are unchanged.
+
 ### Composer and tray
+
+**Phone input refinement.** Native input text and placeholder share 16-point horizontal and
+14-point top insets, applied once. This is a 4-point increase in each direction, not a change
+to the accepted action-row padding. Keep measured one-to-three-line growth. The placeholder
+uses muted readable-secondary ink rather than primary draft ink and must reach 4.5:1 over
+actual Light/Dark glass. The static audience preview matches the Mac's capsule: 7-point horizontal
+inset, minimum-24 visual height growing with text, neutral secondary at 8% fill, in the existing
+44-point row. Input Needed stays unfilled with the Mac's filled orange question-circle.
+
+At larger phone text sizes, measure the full context without truncation. If audience and
+Input Needed cannot fit together, put the audience on its own row and the full wrapping
+request label on a separate minimum-44 row above Attach, Dictate and Send. Neither context
+row has a fixed height. Keep Input Needed's orange question-circle and text, not an icon-only
+substitute. Attach uses an explicit 17-point symbol within its 44-point target, like Send,
+rather than inheriting an overflowing body glyph. When the full ordinary hint cannot fit at
+the actual body font, use the short visual hint "Message", preserving the native editor's
+full accessibility label and any real dictation state. Do not shrink or ellipsize the hint.
+Attach, Dictate and Send expose the native large-content viewer for enlarged labeled
+controls on long press at large text sizes.
+At short keyboard heights, let the upper context/accessory region scroll while retaining one
+measured editor line and the Send row. No font caps, fixed composer height or extra glass.
+
+Phone conversation dragging dismisses the keyboard interactively. Tapping genuinely empty
+transcript space dismisses it too, without swallowing links, message controls or selection.
+Keep draft, caret and undo. After an explicit dismissal, do not refocus until the user chooses
+the composer or Reply. The working capsule is a minimum-44 button opening Working Now in an
+anchored native popover with compact sheet adaptation: actual working agents, 24-point
+avatars, body-17 names, wrapping subheadline-15 status and 12-point row gaps. No navigation or
+management action is implied by these informational rows. Status uses existing opaque
+readable-secondary ink locally, with at least 4.5:1 contrast against the actual Light/Dark
+presentation, not translucent secondary that fades into the sheet's glass.
 
 The composer floats over the conversation in a bottom `safeAreaBar`, as one glass surface
 spanning the full conversation lane from the avatars' leading edge, 16 points above the window's bottom
@@ -1389,6 +1452,22 @@ with a zero-spacing `VStack` and 16-point horizontal insets. Order: About (untit
 Tasks, Artifacts, Routines. Separate sections with a native `Divider()` across the content
 width, with 2 points of vertical padding. No cards, count capsules, section fills or uppercase.
 
+**Phone Overview, user feedback 3332 and design 3339/3344.** Use a plain native list,
+including expanded work rows. Opening purpose and details sit directly on the sheet background,
+without an enclosing card. Preserve native row separators, navigation, swipe actions and the
+existing task/team anatomy. Apply the leading content rail once, 16 points inside compact safe
+content or 20 in regular width, not the old 44-point combined grouped-list and row inset.
+Section headings are real minimum-44 button rows, not padded native
+section-header slots over empty bodies. At Large, measure these gaps between layout bounds:
+12 points from the inline navigation bar's bottom safe-area edge to the first purpose text;
+16 from the purpose block to details; 4 between folder label and wrapping path; 8 from folder
+block to Preview; 16 after opening information to the first heading; 4 from an expanded
+heading to content; 16 after expanded content to the next heading; 8 between collapsed
+heading targets. Consecutive collapsed headings are therefore 52 points top-to-top, not 87.
+More/Less belongs to the purpose block, stays minimum 44 and has no extra spacer above it.
+Omit absent content and its gaps. Grow rows and headings with Dynamic Type, never enforce
+52 as a fixed height or add another native section gap. Mac geometry stays unchanged.
+
 **Section headers: names lead, facts follow.** The name is the primary anchor and its count is
 quiet supporting information, never a badge or part of the name. Mac uses 13 semibold primary
 and 13 regular readable secondary; phone uses native subheadline 15 semibold primary and
@@ -1412,8 +1491,8 @@ footnote 13 phone, with its readable colors, tabular digits and 6-point pair gap
 Mac header minimum 28, not fixed height: 8 below divider, 4 to content, 12 after section.
 Keep the Finder convention: trailing 10-point semibold `chevron.down` appears on hover or
 keyboard focus; collapsed `chevron.right` stays visible. Reserve the 16-point lane when hidden
-so nothing jumps. Phone minimum 44 with an always-visible 11-point semibold chevron and native
-Form section spacing. Scale text and symbols with host text sizing, growing the lane as needed.
+so nothing jumps. Phone minimum 44 with an always-visible 11-point semibold chevron and the
+explicit plain-list rhythm above. Scale text and symbols with host text sizing, growing the lane as needed.
 When the complete baseline row cannot fit, move the whole diff to a leading-aligned second
 line, 4 points below. If name/count cannot fit together, keep name and top-trailing disclosure
 first, count next, diff last. Phone accessibility sizes deliberately use this single column.
@@ -1496,6 +1575,15 @@ regular weight. Never render toggleable checkboxes. Root
 status icons sit on the 16-point content rail, aligned with the section heading, with the title
 6 points after. Nothing hangs in the leading margin. Each nesting level indents 22 points, so a
 child's status icon sits directly under its parent's title, as in Reminders.
+
+Expanded inline child groups on both Mac and phone have a native separator-colored ancestry
+hairline, one physical pixel wide, in the existing indent gutter at the parent's status-column
+center. It spans that child group's bounds with 4-point clearance at each end. Nested expanded
+groups add their own guide. No horizontal elbows, root-level rule, extra indent or title-width
+loss. Collapsing removes it with the children. Do not draw a dangling guide to a phone
+"View N subtasks" link; its scoped list starts a fresh local tree. Guides never hit-test or
+enter accessibility. Include the shared Mac Tasks popover, and preserve all disclosure,
+hierarchy and row-action semantics.
 
 A parent's disclosure trails its title inline, as macOS sidebar section headers and the pane do.
 Build the first line as one wrapping `Text`: the title, then two spaces and the progress count
@@ -1626,7 +1714,7 @@ their channel and can move between its artifacts without closing and reopening f
 | --- | --- |
 | Markdown | Render natively with `TranscriptMarkdown`, selectable text, normal links, code and tables. Use a centered text lane at most 720 points wide, at least 24-point side insets and 32-point top padding. Body is 15-point system text with 4-point additional line spacing; code is 13-point monospaced. Follow the app's Text Size setting. Do not display source syntax or put prose inside a web view. Keep document scroll position when revisiting it during this viewer visit |
 | HTML | Display the authored page as the root `WKWebView` document, not an iframe. Extend its background beneath the native bars while its unobscured viewport excludes the toolbar and floating capsule, preserving responsive layout, `100vh` and fixed headers. Use the native hard top scroll edge. The capsule floats over HTML without a bottom soft edge, but final content still clears it by at least 16 points. Preserve in-page forms and interactions; forms that navigate and other replacement-document navigation remain blocked. Use a non-persistent data store and the reference pane's CSP sandbox with scripts, forms, modals, popups and user-activated external navigation, but no same-origin permission. Its origin is opaque, and it must have no Toy Box server cookies, API access or privileged host bridge. Relative resources resolve from the artifact's directory. User-activated links and new-window requests open in the default browser, never replace the Toy Box channel. Leave ordinary text input, selection and scrolling with the web view. Restore its reading position when revisiting it during this viewer visit |
-| SVG | Use the shared `TranscriptSVGImage` bounded native decoder, not a web renderer. Decode off the main thread and rerasterize for the effective display size and scale, within the 8192-pixel cap. Fit without cropping, using intrinsic dimensions as logical points: large drawings fit down and small icons stay at natural point size. Preserve transparency and allow magnification and pan. Never execute scripts or request external resources to display a drawing. This is a viewing surface, not an SVG editor |
+| SVG | Mac uses the shared `TranscriptSVGImage` bounded native decoder, not a web renderer. Its off-main-thread decode and display-size rerasterization remain unchanged. The phone-only `ArtifactImageDecoder` adapter uses script-disabled, nonpersistent WebKit to export a local PDF from an inert SVG image, then CoreGraphics to produce a bounded bitmap for the native canvas. Block every non-data request; no web view is presented. Both hosts retain the 8192-pixel cap, fit without cropping and intrinsic logical dimensions: large drawings fit down and small icons stay at natural point size. Preserve transparency, magnification and pan. Never execute scripts or request external resources to display a drawing. This is a viewing surface, not an SVG editor |
 | Raster images | Use the native image rendering and zoom/pan behavior of the image gallery, including Live Text when available. Changing artifacts resets image zoom as changing gallery images does. Do not fabricate a transcript message to represent an artifact |
 | Other files | Keep the artifact title, type and gallery position visible. Center the real file icon, a short explanation, Quick Look and Open in the default application. Unsupported content is an honest fallback, not a failed Markdown page. Quick Look may use its normal system panel |
 
