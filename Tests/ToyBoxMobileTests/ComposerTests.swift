@@ -329,4 +329,17 @@ struct ComposerTests {
                        requestSequence: 40, currentToken: token)
         #expect(!preview.isPresented)
     }
+
+    @Test func leavingTheRequestContextBeforeFailureKeepsItsErrorWithoutOpeningAPreview() {
+        var preview = ComposerRequestPreviewState()
+        let question = ComposerRequestPreviewState.Question(sequence: 40, text: "Retained question")
+        let token = UUID()
+        preview.begin(question, token: token)
+        preview.dismiss()
+        preview.update(.init(token: token, sequence: 40, outcome: .failed("Actual operation error")),
+                       requestSequence: 40, currentToken: token)
+        #expect(!preview.isPresented)
+        #expect(preview.question == question)
+        #expect(preview.outcome == .failed("Actual operation error"))
+    }
 }

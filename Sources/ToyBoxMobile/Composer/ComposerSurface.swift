@@ -35,6 +35,9 @@ struct ComposerSurface: View {
             && !model.isSettingsPresented && management.flow == nil && !showPhotos && !showFiles
             && !(sizeClass == .compact && interaction.isInspectorPresented)
     }
+    private var canPresentRequestPreview: Bool {
+        canRestoreReaderFocus && !interaction.isArtifactViewerPresented
+    }
     private var mentionContext: ChannelMentionContext? {
         guard editor.isFocused, !editor.hasMarkedText else { return nil }
         return .match(text: draft.text, selection: editor.selection)
@@ -87,7 +90,10 @@ struct ComposerSurface: View {
         .onChange(of: showFiles) { _, presented in if !presented { restoreFocus() } }
         .onChange(of: management.flow?.id) { _, id in if id == nil { restoreFocus() } }
         .onChange(of: interaction.isArtifactViewerPresented, initial: true) { _, covered in
-            editor.setReaderCovered(covered, canRestoreFocus: canRestoreReaderFocus)
+            editor.setReaderCovered(covered, canRestoreFocus: canRestoreReaderFocus && !interaction.isRequestPreviewPresented)
+        }
+        .onChange(of: interaction.isRequestPreviewPresented) { _, covered in
+            if !covered { restoreFocus() }
         }
         .onChange(of: mentionContext) { _, _ in
             dismissedCompletion = nil
@@ -213,7 +219,8 @@ struct ComposerSurface: View {
             ComposerAudienceView(text: draft.text, agents: store.roster,
                                  acknowledgesRequest: store.requestSequence != nil)
             if let request = store.request {
-                ComposerRequestButton(request: request, willPresent: preparePresentation, didDismiss: restoreFocus)
+                ComposerRequestButton(request: request, allowsPresentation: canPresentRequestPreview,
+                                      willPresent: preparePresentation, didDismiss: restoreFocus)
                     .id(request.sequence)
                     .id(draftID)
             }
@@ -370,9 +377,8 @@ struct ComposerSurface: View {
 
     private func preparePresentation() { restoresFocus = editor.isFocused }
     private func restoreFocus() {
-        if restoresFocus && scenePhase == .active && management.flow == nil && !showPhotos && !showFiles {
-            editor.focus()
-        }
+        guard !interaction.isRequestPreviewPresented else { return }
+        if restoresFocus && canPresentRequestPreview { editor.focus() }
         restoresFocus = false
     }
     private func registerDraft() {

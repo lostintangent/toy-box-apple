@@ -61,6 +61,7 @@ struct ComposerRequestPreviewState {
 
 struct ComposerRequestButton: View {
     let request: ChannelMessage
+    let allowsPresentation: Bool
     var willPresent: () -> Void
     var didDismiss: () -> Void
     @Environment(ChannelInteraction.self) private var interaction
@@ -89,7 +90,7 @@ struct ComposerRequestButton: View {
         }
         .font(.footnote)
         .buttonStyle(.borderless)
-        .disabled(scenePhase != .active)
+        .disabled(!allowsPresentation)
         .contextMenu {
             Button(revealTitle, action: reveal).disabled(isLoading)
                 .menuActionDismissBehavior(.disabled)
@@ -109,6 +110,7 @@ struct ComposerRequestButton: View {
         }
         .onChange(of: interaction.revealProgress) { _, _ in synchronize() }
         .onChange(of: request.sequence) { _, _ in preview.invalidate() }
+        .onChange(of: allowsPresentation) { _, allowed in if !allowed { preview.dismiss() } }
         .onChange(of: scenePhase) { _, phase in if phase == .active { synchronize() } }
         .onChange(of: preview.isPresented) { _, presented in if presented { willPresent() } }
         .onDisappear { preview.invalidate() }
@@ -162,6 +164,7 @@ struct ComposerRequestButton: View {
         guard scenePhase == .active else { return }
         preview.update(interaction.revealProgress, requestSequence: request.sequence,
                        currentToken: interaction.revealRequestToken)
+        if !allowsPresentation { preview.dismiss() }
     }
 }
 
