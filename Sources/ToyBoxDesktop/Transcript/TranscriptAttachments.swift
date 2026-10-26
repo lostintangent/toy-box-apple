@@ -7,6 +7,7 @@ import CryptoKit
 import ImageIO
 import QuickLook
 import SwiftUI
+import ToyBoxUI
 import UniformTypeIdentifiers
 
 struct TranscriptAttachments: View {
@@ -19,43 +20,9 @@ struct TranscriptAttachments: View {
     @ViewState private var thumbnailFrames = ImageViewerThumbnailFrames()
 
     var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView(.horizontal) {
-                HStack(alignment: .top, spacing: 8) { items }
-                    // Room for the tiles' shadows inside the strip's clip, without moving its edges.
-                    .padding(Self.shadowRoom)
-            }
-            .fixedSize(horizontal: false, vertical: true)
-            .padding(-Self.shadowRoom)
-            // Never, not hidden: with a mouse or "Always" scroll bars, hidden still shows a legacy
-            // scroller, which would make an overflowing strip 17 points taller than a fitting one.
-            .scrollIndicators(.never)
-            .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
-            .defaultScrollAnchor(alignment, for: .alignment)
-            // The viewer closes into the current image's tile, so the strip keeps that tile in view.
-            .onChange(of: presentedAttachment) { _, position in
-                guard let position else { return }
-                withAnimation(.smooth(duration: 0.3)) { proxy.scrollTo(position) }
-            }
-        }
-    }
-
-    private static let shadowRoom: CGFloat = 4
-
-    private var imagePositions: [Int] { attachments.indices.filter { attachments[$0].isImage } }
-
-    /// The attachment the viewer presents from this message, if any.
-    private var presentedAttachment: Int? {
-        guard let viewer, let source, let session = viewer.session,
-              session.source.messageID == source.messageID else { return nil }
-        return imagePositions.dropFirst(viewer.index).first
-    }
-
-    @ViewBuilder
-    private var items: some View {
         let positions = imagePositions
         let images = positions.map { attachments[$0] }
-        ForEach(attachments.indices, id: \.self) { index in
+        TranscriptAttachmentStrip(count: attachments.count, alignment: alignment, presented: presentedAttachment) { index in
             let imageIndex = positions.firstIndex(of: index)
             TranscriptAttachment(attachment: attachments[index], api: api,
                                  imageName: imageIndex.map {
@@ -67,8 +34,16 @@ struct TranscriptAttachments: View {
                                                                      imageIndex: imageIndex, frames: thumbnailFrames)
                                      }
                                  })
-            .id(index)
         }
+    }
+
+    private var imagePositions: [Int] { attachments.indices.filter { attachments[$0].isImage } }
+
+    /// The attachment the viewer presents from this message, if any.
+    private var presentedAttachment: Int? {
+        guard let viewer, let source, let session = viewer.session,
+              session.source.messageID == source.messageID else { return nil }
+        return imagePositions.dropFirst(viewer.index).first
     }
 }
 
