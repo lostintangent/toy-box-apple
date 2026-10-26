@@ -139,90 +139,50 @@ struct CatchUpGeneration: Sendable {
 /// The catch-up response schema. The needs-you sentence is requested only while a request waits,
 /// so the model is never asked to imagine one.
 enum CatchUpSchema {
-    static func schema(needsYou: Bool) -> GenerationSchema {
-        needsYou ? CatchUpWithRequestContent.generationSchema : CatchUpContent.generationSchema
+    private static let withoutRequest = Result { try makeSchema(needsYou: false) }
+    private static let withRequest = Result { try makeSchema(needsYou: true) }
+
+    static func schema(needsYou: Bool) throws -> GenerationSchema {
+        try (needsYou ? withRequest : withoutRequest).get()
     }
 
-    static func draft(_ content: GeneratedContent) throws -> CatchUpDraft {
-        let changes = try content.value([CatchUpChangeContent].self, forProperty: "changes")
-        let needsYou = try? content.value(String.self, forProperty: "needsYou")
-        return CatchUpDraft(needsYou: needsYou,
-                            changes: changes.map { CatchUpDraft.Change(summary: $0.summary, sources: $0.sources) })
-    }
-
-    static let changesDescription = """
-        At most three meaningful changes from the unread messages, most important first. Empty when \
-        nothing meaningful happened.
-        """
-    static let needsYouDescription = """
-        One sentence of at most 20 words that opens with the waiting message's speaker and says \
-        exactly what they asked you to do, answer or decide. The ask often comes last, after an \
-        update. Don't add how to reply. Use only the waiting message.
-        """
-}
-
-struct CatchUpChangeContent: Generable {
-    var sources: [Int]
-    var summary: String
-
-    static var generationSchema: GenerationSchema {
-        GenerationSchema(type: Self.self, description: "One meaningful change", properties: [
+    private static func makeSchema(needsYou: Bool) throws -> GenerationSchema {
+        // Schema names and property order are model input, independent of the Swift draft types.
+        let change = DynamicGenerationSchema(name: "CatchUpChangeContent", description: "One meaningful change", properties: [
             .init(name: "sources", description: "Numbers of the unread messages this change comes from",
-                  type: [Int].self, guides: [.minimumCount(1), .maximumCount(4)]),
+                  schema: .init(type: [Int].self, guides: [.minimumCount(1), .maximumCount(4)])),
             .init(name: "summary", description: """
                 One past-tense sentence of at most 16 words naming who did what. Only facts from the \
                 cited messages.
-                """, type: String.self),
+                """, schema: .init(type: String.self)),
         ])
+        var properties = [
+            DynamicGenerationSchema.Property(name: "changes", description: """
+                At most three meaningful changes from the unread messages, most important first. Empty when \
+                nothing meaningful happened.
+                """, schema: .init(arrayOf: change, maximumElements: 3)),
+        ]
+        if needsYou {
+            properties.insert(.init(name: "needsYou", description: """
+                One sentence of at most 20 words that opens with the waiting message's speaker and says \
+                exactly what they asked you to do, answer or decide. The ask often comes last, after an \
+                update. Don't add how to reply. Use only the waiting message.
+                """, schema: .init(type: String.self)), at: 0)
+        }
+        return try GenerationSchema(root: .init(
+            name: needsYou ? "CatchUpWithRequestContent" : "CatchUpContent",
+            description: "What changed since the reader's last visit", properties: properties), dependencies: [])
     }
 
+    static func draft(_ content: GeneratedContent) throws -> CatchUpDraft {
+        CatchUpDraft(needsYou: try? content.value(String.self, forProperty: "needsYou"),
+                     changes: try content.value([CatchUpDraft.Change].self, forProperty: "changes"))
+    }
+}
+
+extension CatchUpDraft.Change: ConvertibleFromGeneratedContent {
     init(_ content: GeneratedContent) throws {
         sources = try content.value([Int].self, forProperty: "sources")
         summary = try content.value(String.self, forProperty: "summary")
-    }
-
-    var generatedContent: GeneratedContent {
-        GeneratedContent(properties: ["sources": GeneratedContent(elements: sources), "summary": summary])
-    }
-}
-
-struct CatchUpContent: Generable {
-    var changes: [CatchUpChangeContent]
-
-    static var generationSchema: GenerationSchema {
-        GenerationSchema(type: Self.self, description: "What changed since the reader's last visit", properties: [
-            .init(name: "changes", description: CatchUpSchema.changesDescription,
-                  type: [CatchUpChangeContent].self, guides: [.maximumCount(3)]),
-        ])
-    }
-
-    init(_ content: GeneratedContent) throws {
-        changes = try content.value([CatchUpChangeContent].self, forProperty: "changes")
-    }
-
-    var generatedContent: GeneratedContent {
-        GeneratedContent(properties: ["changes": GeneratedContent(elements: changes)])
-    }
-}
-
-struct CatchUpWithRequestContent: Generable {
-    var needsYou: String
-    var changes: [CatchUpChangeContent]
-
-    static var generationSchema: GenerationSchema {
-        GenerationSchema(type: Self.self, description: "What changed since the reader's last visit", properties: [
-            .init(name: "needsYou", description: CatchUpSchema.needsYouDescription, type: String.self),
-            .init(name: "changes", description: CatchUpSchema.changesDescription,
-                  type: [CatchUpChangeContent].self, guides: [.maximumCount(3)]),
-        ])
-    }
-
-    init(_ content: GeneratedContent) throws {
-        needsYou = try content.value(String.self, forProperty: "needsYou")
-        changes = try content.value([CatchUpChangeContent].self, forProperty: "changes")
-    }
-
-    var generatedContent: GeneratedContent {
-        GeneratedContent(properties: ["needsYou": needsYou, "changes": GeneratedContent(elements: changes)])
     }
 }
