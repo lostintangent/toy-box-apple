@@ -23,6 +23,7 @@ struct ComposerSurface: View {
     @ViewState private var highlightedChoice: String?
     @ViewState private var dismissedCompletion: ChannelMentionContext?
     @ViewState private var completionHeight: CGFloat = 264
+    @ViewState private var completionViewportHeight: CGFloat = 0
     @ViewState private var connectionGrace = ConnectGrace()
 
     private var draft: ComposerDraft { session.draft }
@@ -63,7 +64,7 @@ struct ComposerSurface: View {
             if !choices.isEmpty {
                 completion
                     .padding(.horizontal, 12)
-                    .alignmentGuide(.top) { $0[.bottom] + 8 }
+                    .offset(y: -completionViewportHeight - 8)
             }
         }
         .padding(.horizontal, sizeClass == .compact ? 12 : 16)
@@ -331,6 +332,7 @@ struct ComposerSurface: View {
         }
         .frame(maxWidth: 320)
         .frame(maxHeight: min(264, completionHeight))
+        .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { completionViewportHeight = $0 }
         .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
         .glassEffect(.regular.tint(Color(uiColor: .systemBackground).opacity(0.3)),
                      in: RoundedRectangle(cornerRadius: 24, style: .continuous))
