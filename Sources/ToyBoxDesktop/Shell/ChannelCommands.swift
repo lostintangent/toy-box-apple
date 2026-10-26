@@ -31,7 +31,7 @@ struct WindowCommandActions {
     var toggleInspector: () -> Void
     var setMessageView: (TranscriptView) -> Void
     var refresh: () -> Void
-    var nextChannel: (Int) -> Void
+    var nextChannel: (ChannelNavigation.Direction) -> Void
     var nextAttention: () -> Void
     var focusComposer: () -> Void
     var jumpToLatest: () -> Void
@@ -132,9 +132,9 @@ struct ChannelCommands: Commands {
             }
         }
         CommandMenu("Channel") {
-            Button("Next Channel") { actions?.nextChannel(1) }
+            Button("Next Channel") { actions?.nextChannel(.next) }
                 .keyboardShortcut(.tab, modifiers: .control).disabled(actions == nil)
-            Button("Previous Channel") { actions?.nextChannel(-1) }
+            Button("Previous Channel") { actions?.nextChannel(.previous) }
                 .keyboardShortcut(.tab, modifiers: [.control, .shift]).disabled(actions == nil)
             Button("Next Channel Needing Attention") { actions?.nextAttention() }
                 .keyboardShortcut("u", modifiers: [.command, .shift]).disabled(actions == nil)
