@@ -7,14 +7,17 @@ import UniformTypeIdentifiers
 
 struct ComposerArea: View {
     let store: ChannelStore
+    @Environment(AppModel.self) private var app
     @Environment(\.windowSnapshot) private var snapshot
     @ViewState private var snapshotDraft = ComposerDraft()
 
     /// One composer serves the window. A switch hands it the next channel's draft, so its text view
     /// is kept rather than rebuilt.
     var body: some View {
-        ChannelComposer(store: store, draft: snapshot == nil
-                        ? .shared(serverURL: store.api.baseURL, channelID: store.id) : snapshotDraft)
+        ChannelComposer(session: app.composerSession(
+            for: store, draft: snapshot == nil
+                ? .shared(serverURL: store.api.baseURL, channelID: store.id) : snapshotDraft
+        ))
     }
 }
 
@@ -46,8 +49,8 @@ struct ComposerImageStrip: View {
                     VStack(spacing: 4) {
                         ZStack(alignment: .topTrailing) {
                             Group {
-                                if let thumbnail = image.image {
-                                    Image(nsImage: thumbnail).resizable().scaledToFill()
+                                if let thumbnail = draft.thumbnail(for: image) {
+                                    Image(decorative: thumbnail, scale: 1).resizable().scaledToFill()
                                 } else {
                                     Image(systemName: "exclamationmark.triangle").foregroundStyle(.orange)
                                 }
@@ -67,7 +70,7 @@ struct ComposerImageStrip: View {
                         }
                         Text(image.name).font(.system(size: 10)).lineLimit(1).frame(width: 68)
                     }
-                    .help(image.image == nil ? "\(image.name) must be reattached" : image.name)
+                    .help(draft.thumbnail(for: image) == nil ? "\(image.name) must be reattached" : image.name)
                 }
             }
             .padding(12)
@@ -89,8 +92,7 @@ struct ComposerHairline: View {
 }
 
 private struct ChannelComposer: View {
-    let store: ChannelStore
-    @Bindable var draft: ComposerDraft
+    @Bindable var session: ChannelComposerSession
     @Environment(AppModel.self) private var app
     @Environment(ChannelInteraction.self) private var interaction
     @Environment(ManagementPresenter.self) private var management
@@ -103,17 +105,14 @@ private struct ChannelComposer: View {
     @ViewState private var focusRequest = UUID()
     @ViewState private var requestPreview = false
     @ViewState private var requestHoverTask: Task<Void, Never>?
-    /// A send in flight and a failure the store didn't record stay with the draft they came from,
-    /// so a switch doesn't hold back or misreport the next channel's Send.
-    @ViewState private var submitting: ObjectIdentifier?
-    @ViewState private var unrecordedFailure: (draft: ObjectIdentifier, message: String)?
-    @ViewState private var pendingEdit: ChannelSendAttempt?
     @ViewState private var showAppendConfirmation = false
     @ViewState private var dictation = ComposerDictation()
     @ViewState private var sendsAfterDictation = false
     @ViewState private var connectGrace = ConnectGrace()
 
     /// The draft's identity. There's one draft per server and channel.
+    private var store: ChannelStore { session.store }
+    private var draft: ComposerDraft { session.draft }
     private var draftID: ObjectIdentifier { ObjectIdentifier(draft) }
 
     private var explainsConnection: Bool { connectGrace.explains(store.phase, for: draftID) }
@@ -122,36 +121,21 @@ private struct ChannelComposer: View {
         let draft: ObjectIdentifier
         let isConnecting: Bool
     }
-    private var isSubmitting: Bool { submitting == draftID }
-    private var submissionError: String? {
-        unrecordedFailure.flatMap { $0.draft == draftID ? $0.message : nil }
-    }
+    private var isSubmitting: Bool { session.isSubmitting }
+    private var submissionError: String? { session.error }
 
     private var canSend: Bool {
-        channelCanSend(
-            isLive: store.phase.isLive, isSending: store.isSending, isSubmitting: isSubmitting,
-            hasContent: draft.hasContent || dictation.hasWords,
-            isLoadingImages: draft.isLoadingImages, hasUnreadableImage: draft.hasUnreadableImage,
-            textUTF16Count: draft.text.utf16.count
-        ) && associatedAttempt?.phase != .confirmed
+        session.canSend(hasAdditionalContent: dictation.hasWords)
     }
 
     private var associatedAttempt: ChannelSendAttempt? {
-        guard let id = draft.sendAttemptID else { return nil }
-        return store.sendAttempts.first { $0.id == id }
+        session.attempt
     }
 
     private var failureFeedback: ComposerFailureFeedback? {
         store.lastSendFailure.map { failure in
             .init(id: failure.id, message: "\(failure.phase.label). \(failure.error)")
         }
-    }
-
-    /// Whether the message this draft sent has arrived. It reads `messages` only while a send is
-    /// pending, so other messages don't re-render the composer.
-    private var sentMessageArrived: Bool {
-        guard let id = draft.sendAttemptID else { return false }
-        return store.messages.reversed().contains { $0.id == id }
     }
 
     private var placeholder: String {
@@ -179,44 +163,27 @@ private struct ChannelComposer: View {
         }
         .onChange(of: interaction.composerFocusRequest) { _, _ in focusRequest = UUID() }
         .onChange(of: interaction.replyRequest?.token) { _, _ in
-            guard let agent = interaction.replyRequest?.agent else { return }
+            guard let reply = interaction.replyRequest else { return }
             dictation.commitNow()
-            let mention = "@\(agentHandleFromName(agent.name)) "
-            if !draft.text.hasPrefix(mention) { draft.text = mention + draft.text }
+            session.reply(to: reply.agent, sequence: reply.sequence)
             focusRequest = UUID()
         }
         .onChange(of: interaction.editSendAttemptRequest?.token) { _, _ in
             guard let request = interaction.editSendAttemptRequest,
                   let attempt = store.sendAttempts.first(where: { $0.id == request.id }) else { return }
             dictation.commitNow()
-            if draft.hasContent && (draft.text.trimmingCharacters(in: .whitespacesAndNewlines) != attempt.content
-                                    || draft.images.map(\.attachment) != attempt.attachments) {
-                pendingEdit = attempt
-                showAppendConfirmation = true
-            } else {
-                restore(attempt)
-            }
+            if session.edit(attempt) { focusRequest = UUID() }
+            else { showAppendConfirmation = true }
         }
         .confirmationDialog("Keep your current draft?", isPresented: $showAppendConfirmation,
                             titleVisibility: .visible) {
             Button("Append Unsent Message") {
-                guard let attempt = pendingEdit else { return }
-                if !draft.text.isEmpty { draft.text += "\n\n" }
-                draft.text += attempt.content
-                for attachment in attempt.attachments {
-                    guard let encoded = attachment.base64, let data = Data(base64Encoded: encoded),
-                          let mimeType = attachment.mimeType else {
-                        draft.error = "An image from the unsent message is unavailable. Attach it again."
-                        continue
-                    }
-                    draft.append(.init(name: attachment.name ?? "Attached image", mimeType: mimeType, data: data))
-                }
-                pendingEdit = nil
+                guard session.appendPendingEdit() else { return }
                 focusRequest = UUID()
             }
-            Button("Cancel", role: .cancel) { pendingEdit = nil }
+            Button("Cancel", role: .cancel) { session.pendingEdit = nil }
         } message: {
-            Text("Your newer draft will not be replaced. Appending preserves both messages. Sending edited text creates a new message, and an earlier unconfirmed send may already have arrived.")
+            Text(ChannelComposerSession.appendExplanation)
         }
         .onAppear {
             adoptDraft()
@@ -229,7 +196,6 @@ private struct ChannelComposer: View {
             requestPreview = false
             showPicker = false
             isDragging = false
-            pendingEdit = nil
             showAppendConfirmation = false
             connectGrace.reset()
             adoptDraft()
@@ -241,8 +207,7 @@ private struct ChannelComposer: View {
             registerDraft()
             dictation.draftChanged(to: revision)
         }
-        .onChange(of: sentMessageArrived) { _, _ in reconcileDraft() }
-        .onChange(of: associatedAttempt?.phase) { _, _ in reconcileDraft() }
+        .onChange(of: session.isConfirmed) { _, _ in session.reconcile() }
         .onChange(of: associatedAttempt?.id) { old, new in
             if old == nil, new != nil, isSubmitting { interaction.jumpToLatest() }
         }
@@ -374,7 +339,7 @@ private struct ChannelComposer: View {
                         // redraw this text on every live-resize frame and stall each commit.
                         .accessibilityHidden(true)
                 }
-                NativeComposerInput(text: $draft.text, document: draftID, height: $inputHeight,
+                NativeComposerInput(text: Bindable(draft).text, document: draftID, height: $inputHeight,
                                     dragging: $isDragging, fontSize: 14 * textScale,
                                     focusRequest: focusRequest,
                                     agents: store.roster,
@@ -539,47 +504,17 @@ private struct ChannelComposer: View {
             return
         }
         dictation.draftSent()
-        let content = draft.text
-        let images = draft.images.map(\.attachment)
-        let revision = draft.revision
-        let id = draft.sendAttemptID ?? UUID().uuidString
-        draft.associateSend(id: id)
-        let draftID = draftID
-        if unrecordedFailure?.draft == draftID { unrecordedFailure = nil }
-        submitting = draftID
+        let session = session
         interaction.jumpToLatest()
         Task {
-            do {
-                _ = try await store.post(id: id, content: content, attachments: images)
-                draft.clear(ifUnchanged: revision)
-                interaction.jumpToLatest()
-            } catch {
-                // A failed attempt shows its error in the transcript beside Edit and Send Again.
-                if store.sendAttempts.first(where: { $0.id == id })?.error == nil {
-                    unrecordedFailure = (draftID, error.localizedDescription)
-                }
-            }
-            if submitting == draftID { submitting = nil }
-        }
-    }
-
-    private func restore(_ attempt: ChannelSendAttempt) {
-        draft.restore(content: attempt.content, attachments: attempt.attachments, sendAttemptID: attempt.id)
-        focusRequest = UUID()
-    }
-
-    private func reconcileDraft() {
-        guard draft.sendAttemptID != nil else { return }
-        if sentMessageArrived || associatedAttempt?.phase == .confirmed {
-            draft.clear(ifUnchanged: draft.revision)
-            if unrecordedFailure?.draft == draftID { unrecordedFailure = nil }
+            if await session.send() { interaction.jumpToLatest() }
         }
     }
 
     /// Points the window's interaction and dictation at the draft being composed.
     private func adoptDraft() {
         registerDraft()
-        reconcileDraft()
+        session.reconcile()
         dictation.draftRevision = { [draft] in draft.revision }
     }
 

@@ -101,6 +101,7 @@ public final class ChannelComposerSession {
             return false
         }
         draft.restore(content: attempt.content, attachments: attempt.attachments, sendAttemptID: attempt.id)
+        pendingEdit = nil
         return true
     }
 

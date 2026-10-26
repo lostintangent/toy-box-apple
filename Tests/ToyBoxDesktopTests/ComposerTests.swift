@@ -14,7 +14,7 @@ import UniformTypeIdentifiers
 
 @MainActor @Suite(.timeLimit(.minutes(1)))
 struct ComposerTests {
-    @Test func sharedDraftKeepsTheMacsNativeSVGValidation() {
+    @Test func sharedDraftNormalizesTheMacsNativeSVGInsteadOfLosingIt() async throws {
         let data = Data("""
             <svg xmlns="http://www.w3.org/2000/svg" width="2" height="2">
             <rect width="2" height="2" fill="red"/>
@@ -22,9 +22,16 @@ struct ComposerTests {
             """.utf8)
         let draft = ComposerDraft()
         draft.append(.init(name: "Mark.svg", mimeType: "image/svg+xml", data: data))
+        try await finishLoading(draft)
         #expect(draft.images.count == 1)
+        #expect(draft.images.first?.name == "Mark.jpg")
+        #expect(draft.images.first?.mimeType == "image/jpeg")
         #expect(!draft.hasUnreadableImage)
         #expect(draft.error == nil)
+        let thumbnail = try #require(draft.images.first.flatMap { draft.thumbnail(for: $0) })
+        let color = try #require(NSBitmapImageRep(cgImage: thumbnail).colorAt(x: 0, y: 0)?.usingColorSpace(.deviceRGB))
+        #expect(color.redComponent > 0.9)
+        #expect(color.greenComponent < 0.1)
     }
 
     @Test func auxiliaryRepliesSeedOnceAndKeepStaleRequestsUnsent() async throws {

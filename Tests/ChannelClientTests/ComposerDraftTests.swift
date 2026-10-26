@@ -1,6 +1,8 @@
 import ChannelClient
 import ChannelKit
+import CoreGraphics
 import Foundation
+import ImageIO
 import Testing
 import UniformTypeIdentifiers
 
@@ -180,6 +182,93 @@ struct ComposerDraftTests {
         let restored = makeDraft(fileURL: url)
         #expect(restored.text == "Keep this text")
         #expect(restored.sendAttemptID == "original")
+    }
+
+    @Test func cameraPhotosBecomeOrientedJPEGAndThumbnailsStayCachedWhileTyping() async throws {
+        let image = try generatedImage(width: 6_000, height: 2_000, type: .heic, orientation: 6)
+        let draft = imageIODraft()
+        draft.text = "Keep this photo caption"
+        draft.associateSend(id: "earlier")
+        let earlierRevision = draft.revision
+        draft.append(image)
+        draft.clear(ifUnchanged: earlierRevision)
+        #expect(draft.isLoadingImages)
+        try await finishLoading(draft)
+        #expect(draft.text == "Keep this photo caption")
+        #expect(draft.sendAttemptID == nil)
+        let prepared = try #require(draft.images.first)
+        #expect(prepared.id == image.id)
+        #expect(prepared.name == "Generated.jpg")
+        #expect(prepared.mimeType == "image/jpeg")
+        #expect(prepared.data.count <= 5_000_000)
+        let source = try #require(CGImageSourceCreateWithData(prepared.data as CFData, nil))
+        let properties = try #require(CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any])
+        #expect(properties[kCGImagePropertyPixelWidth] as? Int == 2_000)
+        #expect(properties[kCGImagePropertyPixelHeight] as? Int == 6_000)
+        let thumbnail = try #require(draft.thumbnail(for: prepared))
+        #expect(max(thumbnail.width, thumbnail.height) <= 224)
+        draft.text = "Typing must not decode this photo again"
+        #expect(draft.thumbnail(for: prepared) === thumbnail)
+        let unchanged = try sampleImage()
+        draft.append(unchanged)
+        #expect(draft.images.last?.data == unchanged.data)
+        #expect(draft.error == nil)
+    }
+
+    @Test func oversizedImagesRespectBothProviderLimits() async throws {
+        for image in [
+            try generatedImage(width: 9_001, height: 2, type: .png),
+            try generatedImage(width: 3_600, height: 2_600, type: .jpeg, noisy: true),
+        ] {
+            if image.mimeType == "image/jpeg" { try #require(image.data.count > 5_000_000) }
+            let draft = imageIODraft()
+            draft.append(image)
+            try await finishLoading(draft)
+            let prepared = try #require(draft.images.first)
+            #expect(prepared.data.count <= 5_000_000)
+            #expect(prepared.mimeType == "image/jpeg")
+            let source = try #require(CGImageSourceCreateWithData(prepared.data as CFData, nil))
+            let properties = try #require(CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any])
+            let width = try #require(properties[kCGImagePropertyPixelWidth] as? Int)
+            let height = try #require(properties[kCGImagePropertyPixelHeight] as? Int)
+            #expect(max(width, height) <= 8_000)
+            #expect(draft.error == nil)
+        }
+    }
+
+    private func imageIODraft() -> ComposerDraft {
+        ComposerDraft(imageIsReadable: { data in
+            guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return false }
+            return CGImageSourceGetCount(source) > 0
+        })
+    }
+
+    private func generatedImage(width: Int, height: Int, type: UTType,
+                                orientation: Int = 1, noisy: Bool = false) throws -> ComposerImage {
+        var pixels = Data(count: width * height * 4)
+        pixels.withUnsafeMutableBytes { bytes in
+            let words = bytes.bindMemory(to: UInt32.self)
+            var random: UInt32 = 1
+            for index in words.indices {
+                random = random &* 1_664_525 &+ 1_013_904_223
+                words[index] = noisy ? random | 0xFF000000 : 0xFF0000FF
+            }
+        }
+        let provider = try #require(CGDataProvider(data: pixels as CFData))
+        let bitmap = try #require(CGImage(
+            width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: width * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
+            provider: provider, decode: nil, shouldInterpolate: true, intent: .defaultIntent
+        ))
+        let data = NSMutableData()
+        let destination = try #require(CGImageDestinationCreateWithData(data, type.identifier as CFString, 1, nil))
+        CGImageDestinationAddImage(destination, bitmap, [
+            kCGImageDestinationLossyCompressionQuality: 0.85, kCGImagePropertyOrientation: orientation,
+        ] as CFDictionary)
+        try #require(CGImageDestinationFinalize(destination))
+        return ComposerImage(name: "Generated.\(type.preferredFilenameExtension ?? "image")",
+                             mimeType: try #require(type.preferredMIMEType), data: data as Data)
     }
 
     private func makeDraft(fileURL: URL? = nil) -> ComposerDraft {
