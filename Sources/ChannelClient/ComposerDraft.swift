@@ -228,9 +228,10 @@ public final class ComposerDraft {
         editAsNewMessage()
     }
 
-    /// Only looks up a completed thumbnail. Decoding belongs in `loadThumbnail(for:)`.
-    public func thumbnail(for image: ComposerImage) -> CGImage? {
-        failedImageIDs.contains(image.id) ? nil : ComposerThumbnails.image(for: image)
+    /// Only looks up a completed thumbnail, rejecting retained results after preparation failure.
+    /// Decoding belongs in `loadThumbnail(for:)`.
+    public func thumbnail(for image: ComposerImage, retaining loaded: CGImage? = nil) -> CGImage? {
+        failedImageIDs.contains(image.id) ? nil : ComposerThumbnails.image(for: image) ?? loaded
     }
 
     public func loadThumbnail(for image: ComposerImage) async -> CGImage? {

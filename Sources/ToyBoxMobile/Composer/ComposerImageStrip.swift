@@ -27,14 +27,16 @@ private struct ComposerImageTile: View {
     @ViewState private var loaded: (image: ComposerImage, bitmap: CGImage?)?
 
     var body: some View {
-        let thumbnail = (loaded?.image == image ? loaded?.bitmap : nil) ?? draft.thumbnail(for: image)
+        let retained = loaded?.image == image ? loaded?.bitmap : nil
+        let thumbnail = draft.thumbnail(for: image, retaining: retained)
         let unavailable = loaded?.image == image && thumbnail == nil
         VStack(spacing: 4) {
             Group {
                 if let bitmap = thumbnail {
                     Image(decorative: bitmap, scale: 1).resizable().scaledToFill()
                 } else if !unavailable {
-                    ProgressView().controlSize(.small).accessibilityLabel("Loading \(image.name)")
+                    RoundedRectangle(cornerRadius: 8).fill(.quaternary)
+                        .accessibilityLabel("Loading \(image.name)")
                 } else {
                     Button { onReattach(image.id) } label: {
                         Image(systemName: "exclamationmark.triangle")

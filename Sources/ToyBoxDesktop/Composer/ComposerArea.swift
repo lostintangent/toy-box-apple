@@ -62,7 +62,8 @@ private struct ComposerImageTile: View {
     @ViewState private var loaded: (image: ComposerImage, bitmap: CGImage?)?
 
     var body: some View {
-        let thumbnail = (loaded?.image == image ? loaded?.bitmap : nil) ?? draft.thumbnail(for: image)
+        let retained = loaded?.image == image ? loaded?.bitmap : nil
+        let thumbnail = draft.thumbnail(for: image, retaining: retained)
         let unavailable = loaded?.image == image && thumbnail == nil
         VStack(spacing: 4) {
             ZStack(alignment: .topTrailing) {
@@ -70,7 +71,8 @@ private struct ComposerImageTile: View {
                     if let thumbnail {
                         Image(decorative: thumbnail, scale: 1).resizable().scaledToFill()
                     } else if !unavailable {
-                        ProgressView().controlSize(.small).accessibilityLabel("Loading \(image.name)")
+                        RoundedRectangle(cornerRadius: 7).fill(.quaternary)
+                            .accessibilityLabel("Loading \(image.name)")
                     } else {
                         Image(systemName: "exclamationmark.triangle").foregroundStyle(.orange)
                     }

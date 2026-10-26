@@ -1,6 +1,7 @@
 import ChannelKit
 import CoreGraphics
 import Foundation
+import Observation
 import Synchronization
 import Testing
 @testable import ChannelClient
@@ -99,6 +100,35 @@ struct ComposerThumbnailTests {
         #expect(draft.thumbnail(for: image) === nextBitmap)
         #expect(calls.withLock { $0 } == 2)
         #expect(draft.images == [image])
+    }
+
+    @Test func aRetainedThumbnailCannotHideALaterPreparationFailure() async throws {
+        let image = ComposerImage(name: "Unreadable.heic", mimeType: "image/heic", data: Data("Unreadable".utf8))
+        let bitmap = try fixtureBitmap()
+        let draft = ComposerDraft(imageIsReadable: { _ in true })
+        draft.thumbnailDecoder = { _, _ in bitmap }
+        draft.restore(content: "Keep this caption", attachments: [image.attachment], sendAttemptID: "previous-send")
+        let restored = try #require(draft.images.first)
+        #expect(!draft.isLoadingImages)
+        let retained = try #require(await draft.loadThumbnail(for: restored))
+        #expect(retained === bitmap)
+        let lookupChanged = Mutex(false)
+        withObservationTracking {
+            #expect(draft.thumbnail(for: restored, retaining: retained) === bitmap)
+        } onChange: {
+            lookupChanged.withLock { $0 = true }
+        }
+
+        draft.text = "Edited caption"
+        #expect(draft.isLoadingImages)
+        try await eventually { !draft.isLoadingImages }
+        #expect(draft.images == [restored])
+        #expect(draft.sendAttemptID == nil)
+        #expect(draft.hasUnreadableImage)
+        #expect(draft.error?.contains(image.name) == true)
+        #expect(lookupChanged.withLock { $0 })
+        #expect(draft.thumbnail(for: restored, retaining: retained) == nil)
+        #expect(await draft.loadThumbnail(for: restored) == nil)
     }
 
     private func fixtureImage() throws -> ComposerImage {

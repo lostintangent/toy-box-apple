@@ -305,6 +305,10 @@ Agents never create these accounts, accept agreements, read private keys or set 
   `ComposerDraft.thumbnail(for:)` ImageIO/HEIC decoding on the main actor during draft tests.
   Thumbnail lookup is now cache-only. Both native strips await `loadThumbnail(for:)`, which
   coalesces background decodes and rejects removed or replaced images' late results.
+  Their retained bitmaps go through the draft's lookup too, so a later preparation failure
+  invalidates the displayed thumbnail and restores reattachment rather than showing stale success.
+  A controlled regression covers an attempted draft's loaded thumbnail followed by failed
+  normalization after editing, including the observation that updates both native tiles.
   `ComposerThumbnailTests` holds a decoder off the main actor and requires the connected store
   to apply a recovery snapshot before releasing it. This establishes that specific defect and
   protects the fix, but does not by itself close the historical reconnect incidents. Their
