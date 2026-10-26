@@ -103,6 +103,9 @@ view.
   exact label or identifier. Back accepts `ifPresent: true` for an explicitly
   optional initial return from restored navigation. Wait for the channel name first, then use
   optional Back before tapping its row, so restoration has a chance to finish.
+  Back tries the native Back target and then the window's public accessibility escape if activation
+  is unhandled. Disabled Back targets never fall through to escape. Both routes remain accessibility
+  actions, not physical touch.
   Wait accepts `absent: true` to wait for a label/value to disappear.
   Tap also matches an exact accessibility value when its element has no label, as with native Search.
   Other actions are never skipped or retried. Each step accepts a
