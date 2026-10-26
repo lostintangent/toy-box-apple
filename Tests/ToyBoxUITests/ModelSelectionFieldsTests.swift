@@ -28,15 +28,28 @@ struct ModelSelectionFieldsTests {
         #expect(writes == 2)
     }
 
-    @Test func missingModelEndpointHasAnHonestCapabilityMessage() {
+    @Test func missingModelEndpointsShowUnavailableWithoutRetryAndKeepScopedErrorDetails() {
         let missing = ChannelAPIError.http(status: 404, message: "Channel not found.")
-        #expect(ModelSelectionFields<EmptyView>.catalogErrorMessage(missing, memberScoped: false)
-                == "Models aren't available on this server.")
-        #expect(ModelSelectionFields<EmptyView>.catalogErrorMessage(missing, memberScoped: true)
-                .contains("Channel not found."))
-        let disconnected = ChannelAPIError.disconnected
-        #expect(ModelSelectionFields<EmptyView>.catalogErrorMessage(disconnected, memberScoped: false)
-                .contains(disconnected.localizedDescription))
+        let global = ModelSelectionFields<EmptyView>.catalogErrorPresentation(missing, memberScoped: false)
+        #expect(global.title == "Not Available")
+        #expect(global.message == "Models aren't available on this server.")
+        #expect(!global.canRetry)
+        let scoped = ModelSelectionFields<EmptyView>.catalogErrorPresentation(missing, memberScoped: true)
+        #expect(scoped.title == "Not Available")
+        #expect(scoped.message.contains("Channel not found."))
+        #expect(!scoped.canRetry)
+    }
+
+    @Test func catalogLoadFailuresKeepTheirReasonAndRetry() {
+        for error in [ChannelAPIError.disconnected, .http(status: 500, message: "Please try again."),
+                      .http(status: 403, message: "Forbidden.")] {
+            for memberScoped in [false, true] {
+                let failure = ModelSelectionFields<EmptyView>.catalogErrorPresentation(error, memberScoped: memberScoped)
+                #expect(failure.title == "Couldn't Load")
+                #expect(failure.message.contains(error.localizedDescription))
+                #expect(failure.canRetry)
+            }
+        }
     }
 
     @Test func reconstructionKeepsTheUnavailableOpeningOverrideAfterClearingIt() throws {

@@ -1655,8 +1655,11 @@ New Channel, Edit Channel, Add Agent and Edit Member share one sheet language:
   hint. Connection, server and recovery notices sit above the buttons.
 - **Models.** While loading, the model row's value is a small spinner. When the catalog fails, the
   value is secondary "Couldn't Load" with a small Retry button, and the section footer gives the
-  reason. Don't stack a warning, a message and a Reload button under the picker. A member's
-  first choice reads "Workspace Default (Model Name)" when the default is known.
+  reason. A catalog 404 instead shows "Not Available" without Retry. The global catalog's footer
+  explains that models aren't available on this server; a member catalog keeps the server's
+  missing-resource details visible. Existing current-model and inheritance choices stay usable.
+  Don't stack a warning, a message and a Reload button under the picker. A member's first choice
+  reads "Workspace Default (Model Name)" when the default is known.
 - **Progress.** Busy titles use the ellipsis character: "Creating…" and "Saving…".
 
 Copy:
