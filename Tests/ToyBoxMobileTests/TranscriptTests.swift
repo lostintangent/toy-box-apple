@@ -360,12 +360,6 @@ struct TranscriptTests {
     }
 
     @Test func mentionsUseTheAgentsInkAtTextContrastOnEveryBubble() throws {
-        func rgb(_ color: Color, dark: Bool) -> TranscriptRGB {
-            var (red, green, blue, alpha): (CGFloat, CGFloat, CGFloat, CGFloat) = (0, 0, 0, 0)
-            UIColor(color).resolvedColor(with: UITraitCollection(userInterfaceStyle: dark ? .dark : .light))
-                .getRed(&red, green: &green, blue: &blue, alpha: &alpha)
-            return TranscriptRGB(red: red, green: green, blue: blue, alpha: alpha)
-        }
         let pale = ChannelAgent(id: "ada", name: "Ada", avatar: .init(mark: "M0 0", color: "#facc15"))
         let text = transcriptInlineMarkdown("Thanks @ada and @everyone, not @nobody", agents: [pale],
                                             mentionInk: { _ in .red })
@@ -373,11 +367,21 @@ struct TranscriptTests {
         #expect(styled == ["@ada", "@everyone"])
         for dark in [false, true] {
             for increased in [false, true] {
+                // The same traits production resolves with, so 7:1 is measured on the high-contrast canvas.
+                let traits = UITraitCollection {
+                    $0.userInterfaceStyle = dark ? .dark : .light
+                    $0.accessibilityContrast = increased ? .high : .normal
+                }
+                func rgb(_ color: Color) -> TranscriptRGB {
+                    var (red, green, blue, alpha): (CGFloat, CGFloat, CGFloat, CGFloat) = (0, 0, 0, 0)
+                    UIColor(color).resolvedColor(with: traits).getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+                    return TranscriptRGB(red: red, green: green, blue: blue, alpha: alpha)
+                }
                 for surface in [TranscriptSurface.agent, .pendingAgent, .user] {
                     let ink = rgb(TranscriptMentionInk(surface: surface, isDark: dark, isContrastIncreased: increased)
-                        .color(for: pale), dark: dark)
+                        .color(for: pale))
                     let background = surface.fills(isDark: dark)
-                        .reduce(rgb(Color(uiColor: .systemBackground), dark: dark)) { $0.under(rgb($1, dark: dark)) }
+                        .reduce(rgb(Color(uiColor: .systemBackground))) { $0.under(rgb($1)) }
                     #expect(ink.contrast(with: background) >= (increased ? 7 : 4.5))
                 }
             }
