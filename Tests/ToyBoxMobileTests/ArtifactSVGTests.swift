@@ -79,6 +79,20 @@ struct ArtifactSVGTests {
                 == CGSize(width: 1, height: 1))
     }
 
+    @Test func aPlainPublicDTDFromADesignExportStillRenders() async throws {
+        let file = try fixture("""
+            <?xml version="1.0" encoding="UTF-8"?>
+            <!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+            <svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
+              <rect width="100" height="100" fill="#ff0000"/>
+            </svg>
+            """)
+        defer { try? FileManager.default.removeItem(at: file.deletingLastPathComponent()) }
+        let decoded = try await ArtifactImageDecoder.decode(file, kind: .svg, maximumPixelSize: 32)
+        let color = try pixel(decoded.image, x: 16, y: 16)
+        #expect(color[0] > 240 && color[1] < 15 && color[2] < 15 && color[3] > 240)
+    }
+
     @Test func malformedDocumentsAndExternalEntityDeclarationsFailBeforeRendering() async throws {
         for contents in [
             "<html><body>Not SVG</body></html>",
@@ -86,6 +100,10 @@ struct ArtifactSVGTests {
             """
             <!DOCTYPE svg [<!ENTITY remote SYSTEM "https://example.invalid/private">]>
             <svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><text>&remote;</text></svg>
+            """,
+            """
+            <!DOCTYPE svg [<!ENTITY text "Expanded text">]>
+            <svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><text>&text;</text></svg>
             """,
         ] {
             let file = try fixture(contents)
