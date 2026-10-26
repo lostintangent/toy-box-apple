@@ -1,4 +1,6 @@
 import ChannelKit
+import CoreGraphics
+import Foundation
 import SwiftUI
 import Testing
 import ToyBoxUI
@@ -82,6 +84,130 @@ struct OverviewPresentationTests {
         let result = ChannelOverviewFactsLayout.arrange(width: 300, items: items, timeCount: 2, stacksLeading: false)
         #expect(zip(result.frames, items).allSatisfy { frame, item in frame.minY + item.baseline == 13 })
         #expect(result.size.height == 18)
+    }
+
+    @Test func routineRunCopyKeepsPendingAheadOfAcknowledgementAndOtherwisePreservesTheSchedule() {
+        let requested = Date(timeIntervalSince1970: 1)
+        #expect(ChannelRoutineRunPresentation.label(
+            schedule: "Every morning", pending: false, requestedAt: nil) == "Every morning")
+        #expect(ChannelRoutineRunPresentation.label(
+            schedule: "Every morning", pending: true, requestedAt: nil) == "Requesting run…")
+        #expect(ChannelRoutineRunPresentation.label(
+            schedule: "Every morning", pending: false, requestedAt: requested) == "Run requested")
+        #expect(ChannelRoutineRunPresentation.label(
+            schedule: "Every morning", pending: true, requestedAt: requested) == "Requesting run…")
+    }
+
+    @Test(arguments: [1.0, 2.0, 3.0], [false, true])
+    @MainActor
+    func sharedAncestryGuideKeepsOnePixelAndFourPointEndsInBothDirections(
+        scale: CGFloat, rightToLeft: Bool
+    ) throws {
+        for scheme in [ColorScheme.light, .dark] {
+            let image = try rendered(
+                ChannelTaskAncestryGuide(statusWidth: 16)
+                    .frame(width: 60, height: 80)
+                    .background(scheme == .dark ? Color.black : Color.white)
+                    .environment(\.displayScale, scale)
+                    .environment(\.colorScheme, scheme)
+                    .environment(\.layoutDirection, rightToLeft ? .rightToLeft : .leftToRight),
+                scale: scale)
+            let background: UInt8 = scheme == .dark ? 0 : 255
+            var columns = Set<Int>()
+            var rows = Set<Int>()
+            for y in 0..<image.height {
+                for x in 0..<image.width {
+                    if image.pixels[(y * image.width + x) * 4] != background {
+                        columns.insert(x)
+                        rows.insert(y)
+                    }
+                }
+            }
+            let column = Int((8 * scale - 0.5).rounded())
+            #expect(columns == [rightToLeft ? image.width - 1 - column : column])
+            #expect(rows.min() == Int(4 * scale))
+            #expect(rows.max() == Int(76 * scale) - 1)
+        }
+    }
+
+    @Test(arguments: ["done", "blocked", "in_progress", "pending", "unknown"], [16.0, 24.0])
+    @MainActor
+    func sharedStatusSymbolPreservesNativeGlyphWeightPaletteAndHostSecondaryInk(
+        status: String, size: CGFloat
+    ) throws {
+        for scheme in [ColorScheme.light, .dark] {
+            let secondary: Color = size == 16 ? .secondary : ChannelInk.secondary
+            let background: Color = scheme == .dark ? .black : .white
+            let actual = try rendered(
+                ChannelTaskStatusSymbol(status: status, secondary: secondary)
+                    .font(.system(size: size * 0.875))
+                    .frame(width: size, height: size)
+                    .background(background)
+                    .environment(\.colorScheme, scheme))
+            let expected = try rendered(
+                nativeStatusReference(status: status, size: size, secondary: secondary, scheme: scheme)
+                    .frame(width: size, height: size)
+                    .background(background)
+                    .environment(\.colorScheme, scheme))
+            #expect(actual.width == expected.width && actual.height == expected.height)
+            let largestDifference = try #require(zip(actual.pixels, expected.pixels)
+                .map { abs(Int($0) - Int($1)) }.max())
+            // Native style paths can quantize an 8-bit color component one level apart.
+            #expect(largestDifference <= 1, "Status \(status), size \(size), scheme \(scheme)")
+        }
+    }
+
+    @ViewBuilder
+    private func nativeStatusReference(status: String, size: CGFloat, secondary: Color,
+                                       scheme: ColorScheme) -> some View {
+        let symbol = status == "done" ? "checkmark.circle.fill"
+            : status == "blocked" ? "exclamationmark.circle.fill"
+            : status == "in_progress" ? "circle.lefthalf.filled" : "circle"
+        if size == 24 {
+            Image(systemName: symbol)
+                .symbolRenderingMode(status == "blocked" ? .palette : .monochrome)
+                .foregroundStyle(status == "blocked" ? Color.white
+                                 : status == "done" ? ChannelTaskColors.changes(in: scheme).added : secondary,
+                                 Color.red)
+                .font(.system(size: size * 0.875,
+                              weight: status == "done" || status == "blocked" ? .semibold : .regular))
+        } else {
+            Group {
+                if status == "done" {
+                    Image(systemName: symbol)
+                        .symbolRenderingMode(.monochrome)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(ChannelTaskColors.changes(in: scheme).added)
+                } else if status == "blocked" {
+                    Image(systemName: symbol)
+                        .symbolRenderingMode(.palette)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(.white, .red)
+                } else {
+                    Image(systemName: symbol).foregroundStyle(secondary)
+                }
+            }
+            .font(.system(size: size * 0.875))
+        }
+    }
+
+    @MainActor
+    private func rendered(_ content: some View, scale: CGFloat = 3) throws
+        -> (width: Int, height: Int, pixels: [UInt8]) {
+        let renderer = ImageRenderer(content: content)
+        renderer.scale = scale
+        let image = try #require(renderer.cgImage)
+        let colorSpace = try #require(CGColorSpace(name: CGColorSpace.sRGB))
+        var pixels = [UInt8](repeating: 0, count: image.width * image.height * 4)
+        try pixels.withUnsafeMutableBytes { bytes in
+            let context = try #require(CGContext(
+                data: bytes.baseAddress, width: image.width, height: image.height,
+                bitsPerComponent: 8, bytesPerRow: image.width * 4,
+                space: colorSpace, bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue
+                    | CGImageAlphaInfo.premultipliedLast.rawValue))
+            context.draw(image, in: CGRect(x: 0, y: 0, width: CGFloat(image.width), height: CGFloat(image.height)))
+        }
+        return (image.width, image.height, pixels)
     }
 
     private var items: [ChannelOverviewMeasuredItem] {

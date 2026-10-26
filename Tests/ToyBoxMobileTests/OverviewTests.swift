@@ -320,32 +320,6 @@ struct OverviewTests {
         #expect(abs(top) < 0.5, "Tasks must land at the viewport top, not just exist below it: \(top)")
     }
 
-    @Test(arguments: [1.0, 2.0, 3.0])
-    func taskAncestryGuideIsOnePhysicalPixelWithFourPointEndClearance(scale: CGFloat) throws {
-        let renderer = ImageRenderer(content:
-            OverviewTaskAncestryGuide(statusWidth: 16)
-                .frame(width: 60, height: 80)
-                .background(Color.white)
-                .environment(\.displayScale, scale)
-                .environment(\.colorScheme, .light))
-        renderer.scale = scale
-        let image = try #require(renderer.uiImage?.cgImage)
-        let pixels = try rgba(image)
-        var columns = Set<Int>()
-        var rows = Set<Int>()
-        for y in 0..<image.height {
-            for x in 0..<image.width {
-                if pixels[(y * image.width + x) * 4] < 255 {
-                    columns.insert(x)
-                    rows.insert(y)
-                }
-            }
-        }
-        #expect(columns == [Int((8 * scale - 0.5).rounded())])
-        #expect(rows.min() == Int(4 * scale))
-        #expect(rows.max() == Int(76 * scale) - 1)
-    }
-
     @Test(arguments: [ColorScheme.light, .dark], [true, false])
     func artifactActionKeepsItsEnabledInkAndAnUncentered44PointTargetUnderLinkTint(
         scheme: ColorScheme, enabled: Bool

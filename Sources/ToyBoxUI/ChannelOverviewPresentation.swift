@@ -44,6 +44,77 @@ package enum ChannelOverviewSummary {
     }
 }
 
+package struct ChannelTaskStatusSymbol: View {
+    package let status: String
+    private let secondary: Color
+    @Environment(\.colorScheme) private var scheme
+
+    package init(status: String, secondary: Color = .secondary) {
+        self.status = status
+        self.secondary = secondary
+    }
+
+    package var body: some View {
+        icon.accessibilityHidden(true)
+    }
+
+    @ViewBuilder
+    private var icon: some View {
+        switch status {
+        case "done":
+            Image(systemName: "checkmark.circle.fill")
+                .symbolRenderingMode(.monochrome)
+                .fontWeight(.semibold)
+                .foregroundStyle(ChannelTaskColors.changes(in: scheme).added)
+        case "blocked":
+            Image(systemName: "exclamationmark.circle.fill")
+                .symbolRenderingMode(.palette)
+                .fontWeight(.semibold)
+                .foregroundStyle(.white, .red)
+        case "in_progress":
+            Image(systemName: "circle.lefthalf.filled").foregroundStyle(secondary)
+        default:
+            Image(systemName: "circle").foregroundStyle(secondary)
+        }
+    }
+}
+
+package struct ChannelTaskAncestryGuide: View {
+    private let statusWidth: CGFloat
+    @Environment(\.displayScale) private var scale
+
+    package init(statusWidth: CGFloat) { self.statusWidth = statusWidth }
+
+    package var body: some View {
+        let pixel = 1 / scale
+        let leading = ((statusWidth / 2 - pixel / 2) * scale).rounded() / scale
+        Rectangle()
+            .fill(separator)
+            .frame(width: pixel)
+            .padding(.vertical, 4)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.leading, leading)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+    }
+
+    private var separator: Color {
+        #if os(macOS)
+        Color(nsColor: .separatorColor)
+        #else
+        Color(uiColor: .separator)
+        #endif
+    }
+}
+
+package enum ChannelRoutineRunPresentation {
+    package static func label(schedule: String, pending: Bool, requestedAt: Date?) -> String {
+        if pending { return "Requesting run…" }
+        if requestedAt != nil { return "Run requested" }
+        return schedule
+    }
+}
+
 package struct ChannelOverviewMeasuredItem {
     package let size: CGSize
     package let baseline: CGFloat

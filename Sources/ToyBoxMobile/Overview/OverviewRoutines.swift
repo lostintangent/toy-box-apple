@@ -64,7 +64,7 @@ private struct OverviewRoutineRow: View {
         } label: {
             VStack(alignment: .leading, spacing: 4) {
                 Text(routine.title).font(.body)
-                Text(pending ? "Requesting run…" : requestedAt != nil ? "Run requested" : schedule)
+                Text(ChannelRoutineRunPresentation.label(schedule: schedule, pending: pending, requestedAt: requestedAt))
                     .font(.footnote).foregroundStyle(ChannelInk.secondary)
             }
             .frame(minHeight: 64, alignment: .leading)

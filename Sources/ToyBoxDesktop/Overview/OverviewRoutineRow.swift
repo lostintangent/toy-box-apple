@@ -39,9 +39,7 @@ struct OverviewRoutineRow: View {
     private var showsMenu: Bool { isHovering || focus != nil || voiceOver }
     private var scheduleSummary: String { RoutineScheduleSummary.text(for: routine.schedule) }
     private var scheduleLine: String {
-        if isRunning { return "Requesting run…" }
-        if runRequestedAt != nil { return "Run requested" }
-        return scheduleSummary
+        ChannelRoutineRunPresentation.label(schedule: scheduleSummary, pending: isRunning, requestedAt: runRequestedAt)
     }
 
     var body: some View {

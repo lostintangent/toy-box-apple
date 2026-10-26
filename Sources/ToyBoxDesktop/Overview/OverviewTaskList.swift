@@ -123,7 +123,7 @@ struct OverviewTaskRow: View {
                 }
                 .padding(.leading, OverviewTaskList.depthIndent)
                 .overlay {
-                    OverviewTaskAncestryGuide(statusWidth: Self.statusSize)
+                    ChannelTaskAncestryGuide(statusWidth: Self.statusSize)
                 }
             }
         }
@@ -254,24 +254,6 @@ struct OverviewTaskRow: View {
 }
 
 
-struct OverviewTaskAncestryGuide: View {
-    let statusWidth: CGFloat
-    @Environment(\.displayScale) private var scale
-
-    var body: some View {
-        let pixel = 1 / scale
-        let leading = ((statusWidth / 2 - pixel / 2) * scale).rounded() / scale
-        Rectangle()
-            .fill(Color(nsColor: .separatorColor))
-            .frame(width: pixel)
-            .padding(.vertical, 4)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.leading, leading)
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
-    }
-}
-
 /// A parent row is a button whose press toggles it, as the routine rows are. A leaf is static text.
 private struct OverviewTaskRowRole: ViewModifier {
     let isParent: Bool
@@ -293,35 +275,12 @@ private struct OverviewTaskRowRole: ViewModifier {
 /// A read-only 16-point status cell, never a toggleable checkbox.
 struct OverviewTaskStatusIcon: View {
     @Environment(\.channelTextScale) private var textScale
-    @Environment(\.colorScheme) private var colorScheme
     let status: String
 
     var body: some View {
-        icon
+        ChannelTaskStatusSymbol(status: status)
             .font(.system(size: 14 * textScale))
             .frame(width: OverviewTaskRow.statusSize, height: OverviewTaskRow.statusSize)
-            .accessibilityHidden(true)
-    }
-
-    @ViewBuilder
-    private var icon: some View {
-        switch status {
-        case "done":
-            // Monochrome knocks the check out to the inspector, which a white check on green can't match.
-            Image(systemName: "checkmark.circle.fill")
-                .symbolRenderingMode(.monochrome)
-                .fontWeight(.semibold)
-                .foregroundStyle(ChannelTaskColors.changes(in: colorScheme).added)
-        case "blocked":
-            Image(systemName: "exclamationmark.circle.fill")
-                .symbolRenderingMode(.palette)
-                .fontWeight(.semibold)
-                .foregroundStyle(.white, .red)
-        case "in_progress":
-            Image(systemName: "circle.lefthalf.filled").foregroundStyle(.secondary)
-        default:
-            Image(systemName: "circle").foregroundStyle(.secondary)
-        }
     }
 }
 

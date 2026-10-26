@@ -132,7 +132,6 @@ private struct OverviewTaskNode: View {
     let depth: Int
     let layout: OverviewTaskReadingLayout
     @Environment(ChannelArtifactSession.self) private var viewer
-    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ViewState private var isVisible = false
 
@@ -174,7 +173,7 @@ private struct OverviewTaskNode: View {
                     }
                     .padding(.leading, layout.indent)
                     .overlay {
-                        OverviewTaskAncestryGuide(statusWidth: layout.statusWidth)
+                        ChannelTaskAncestryGuide(statusWidth: layout.statusWidth)
                     }
                 } else {
                     NavigationLink(value: OverviewRoute.subtasks(task.id)) {
@@ -291,17 +290,9 @@ private struct OverviewTaskNode: View {
     }
 
     private var status: some View {
-        Image(systemName: task.status == "done" ? "checkmark.circle.fill"
-              : task.status == "blocked" ? "exclamationmark.circle.fill"
-              : task.status == "in_progress" ? "circle.lefthalf.filled" : "circle")
-            .symbolRenderingMode(task.status == "blocked" ? .palette : .monochrome)
-            .foregroundStyle(task.status == "blocked" ? Color.white
-                             : task.status == "done" ? ChannelTaskColors.changes(in: colorScheme).added
-                             : ChannelInk.secondary, Color.red)
-            .font(.system(size: layout.statusWidth * 0.875,
-                          weight: task.status == "done" || task.status == "blocked" ? .semibold : .regular))
+        ChannelTaskStatusSymbol(status: task.status, secondary: ChannelInk.secondary)
+            .font(.system(size: layout.statusWidth * 0.875))
             .frame(width: layout.statusWidth, height: layout.statusWidth)
-            .accessibilityHidden(true)
     }
 
     private func toggle() {
@@ -320,24 +311,6 @@ private struct OverviewTaskNode: View {
         if let diff { parts.append(ChannelOverviewTaskDiff.spoken(diff)) }
         if let owner { parts.append("owner \(owner.name)") }
         return parts.joined(separator: ", ")
-    }
-}
-
-struct OverviewTaskAncestryGuide: View {
-    let statusWidth: CGFloat
-    @Environment(\.displayScale) private var scale
-
-    var body: some View {
-        let pixel = 1 / scale
-        let leading = ((statusWidth / 2 - pixel / 2) * scale).rounded() / scale
-        Rectangle()
-            .fill(Color(uiColor: .separator))
-            .frame(width: pixel)
-            .padding(.vertical, 4)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.leading, leading)
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
     }
 }
 
