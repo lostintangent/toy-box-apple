@@ -1,6 +1,6 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { basename, isAbsolute, join, resolve } from "node:path";
-import { command, isMissing } from "../lib.ts";
+import { isMissing, root } from "../lib.ts";
 
 type Timed = { timeout?: number };
 export type MobileDriveStep = Timed & (
@@ -90,9 +90,41 @@ export async function prepareMobileDrive(path: string, data: string, output: str
 }
 
 export type DriveHost = {
-    capture(path: string, display: string): Promise<void>;
-    fold(closed: boolean): Promise<void>;
+    // Abort must terminate and reap the operation's child before its promise settles.
+    capture(path: string, display: string, signal: AbortSignal): Promise<void>;
+    fold(closed: boolean, signal: AbortSignal): Promise<void>;
 };
+
+type DriveProcess = {
+    exited: Promise<number>;
+    stdout: ReadableStream<Uint8Array>;
+    stderr: ReadableStream<Uint8Array>;
+    kill(signal: "SIGKILL"): void;
+};
+
+export async function runMobileDriveCommand(args: string[], env: NodeJS.ProcessEnv, signal: AbortSignal,
+    spawn: (args: string[], signal: AbortSignal) => DriveProcess = (args, signal) => Bun.spawn(args, {
+        cwd: root, env, signal, killSignal: "SIGKILL", stdin: "ignore", stdout: "pipe", stderr: "pipe",
+    })) {
+    signal.throwIfAborted();
+    const child = spawn(args, signal);
+    try {
+        const [exitCode, stdout, stderr] = await Promise.all([
+            child.exited, new Response(child.stdout).text(), new Response(child.stderr).text(),
+        ]);
+        signal.throwIfAborted();
+        return { exitCode, stdout, stderr };
+    } catch (error) {
+        child.kill("SIGKILL");
+        throw error;
+    } finally { await child.exited; }
+}
+
+export async function runMobileSimulatorCommand(args: string[], env: NodeJS.ProcessEnv, signal: AbortSignal) {
+    const tool = await runMobileDriveCommand(["xcrun", "--find", "simctl"], env, signal);
+    if (tool.exitCode || !tool.stdout.trim()) throw new Error(`Could not locate simctl: ${tool.stderr.trim()}`);
+    return runMobileDriveCommand([tool.stdout.trim(), ...args], env, signal);
+}
 
 export class MobileDriveSession {
     readonly screenshots: string[] = [];
@@ -102,7 +134,7 @@ export class MobileDriveSession {
 
     constructor(private drive: MobileDrive, private host: DriveHost) {}
 
-    async accept(status: Status): Promise<{ step: number; error?: string } | undefined> {
+    async accept(status: Status, signal?: AbortSignal, deadline?: AbortSignal): Promise<{ step: number; error?: string } | undefined> {
         const step = this.drive.steps[status.step];
         if (!step) throw driveFailure(status, "The app reported an unknown step.");
         if (status.state === "failed") throw driveFailure(status, status.error ?? "The app failed.");
@@ -119,16 +151,23 @@ export class MobileDriveSession {
             return;
         }
         if (status.state !== "ready" || this.acknowledged.has(status.step)) return;
+        const operation = AbortSignal.any([
+            ...(signal ? [signal] : []), ...(deadline ? [deadline] : []),
+            AbortSignal.timeout((step.timeout ?? 12) * 1_000),
+        ]);
         let error: string | undefined;
         try {
+            operation.throwIfAborted();
             if ("screenshot" in step) {
                 const name = step.screenshot.endsWith(".png") ? step.screenshot : `${step.screenshot}.png`;
                 const path = isAbsolute(name) ? name : join(this.drive.output, name);
-                await this.host.capture(path, step.display);
+                await this.host.capture(path, step.display, operation);
+                operation.throwIfAborted();
                 this.screenshots.push(path);
                 console.log(`Captured ${basename(path)}, display ${step.display}.`);
             } else if ("fold" in step) {
-                await this.host.fold(step.fold);
+                await this.host.fold(step.fold, operation);
+                operation.throwIfAborted();
             } else {
                 throw new Error("The app requested a host action for an app-only step.");
             }
@@ -162,7 +201,8 @@ export async function runMobileDrive(drive: MobileDrive, host: DriveHost, signal
             console.log(`Drive step ${status.step + 1}/${drive.steps.length}: ${status.state}, scene ${status.viewport.join("×")}`);
         }
         latest = status;
-        const acknowledgement = await session.accept(status);
+        const acknowledgement = await session.accept(status, signal,
+            AbortSignal.timeout(Math.max(0, deadline - Date.now())));
         if (session.completed) {
             console.log(`Drive complete. Screenshots: ${drive.output}`);
             return session.screenshots;
@@ -181,14 +221,14 @@ function driveFailure(status: Status, reason: string) {
 
 export function simulatorDriveHost(udid: string, env: NodeJS.ProcessEnv): DriveHost {
     return {
-        async capture(path, display) {
+        async capture(path, display, signal) {
             await mkdir(resolve(path, ".."), { recursive: true });
-            await command(["xcrun", "simctl", "io", udid, "screenshot", `--display=${display}`, path], { env });
+            const result = await runMobileSimulatorCommand(["io", udid, "screenshot", `--display=${display}`, path], env, signal);
+            if (result.exitCode) throw new Error(`Simulator screenshot failed: ${result.stderr.trim()}`);
         },
-        async fold() {
-            const helpResult = await command(["xcrun", "simctl", "io", udid, "screenConfig", "--help"],
-                { env, quiet: true, allowFailure: true });
-            const help = (helpResult.stdout.toString() + helpResult.stderr.toString()).trim();
+        async fold(_closed, signal) {
+            const helpResult = await runMobileSimulatorCommand(["io", udid, "screenConfig", "--help"], env, signal);
+            const help = (helpResult.stdout + helpResult.stderr).trim();
             throw new Error("Automated Duo folding is unavailable: screenConfig display power did not resize the app scene "
                 + "and is not a native posture control. No fold continuity proof was produced. "
                 + "Use Device Hub's native posture control for a separately observed check.\n"
