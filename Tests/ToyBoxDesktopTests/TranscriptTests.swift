@@ -1898,28 +1898,32 @@ struct ImageViewerTests {
         #expect(ImageViewer.export(file, named: "photo.jpeg")?.lastPathComponent == "photo.jpeg")
     }
 
-    @Test func onlyTheCurrentImageAndItsNeighborsKeepABitmap() async throws {
+    @Test func onlyTheCurrentImageItsNeighborsAndTheOneJustLeftKeepABitmap() async throws {
         let sizes = (0..<5).map { CGSize(width: 800 + $0, height: 600) }
         let viewer = try openViewer(sizes)
         defer { viewer.close(animated: false) }
         await finishLoads(viewer)
         let file = try #require(viewer.items[0]?.file)
         #expect(decoded(viewer) == [0, 1])
-        // A jump drops the bitmaps it leaves behind, and each image keeps its file and size.
+        // A jump keeps the image it left while that page fades out.
         viewer.show(3)
+        await finishLoads(viewer)
+        #expect(decoded(viewer) == [0, 2, 3, 4])
+        // The next step drops it, and each image keeps its file and size.
+        viewer.show(4)
         #expect(viewer.items[0]?.image == nil && viewer.items[0]?.bitmap == nil)
         #expect(viewer.items[0]?.file == file && viewer.items[0]?.pixelSize == sizes[0])
         await finishLoads(viewer)
-        #expect(decoded(viewer) == [2, 3, 4])
+        #expect(decoded(viewer) == [3, 4])
         // One step lands on an image that's already decoded, so it never flashes blank.
-        viewer.show(2)
-        #expect(viewer.items[2]?.image != nil)
+        viewer.show(3)
+        #expect(viewer.items[3]?.image != nil)
         await finishLoads(viewer)
-        #expect(decoded(viewer) == [1, 2, 3])
+        #expect(decoded(viewer) == [2, 3, 4])
         // Coming back decodes again from the same cached file.
         viewer.show(0)
         await finishLoads(viewer)
-        #expect(decoded(viewer) == [0, 1])
+        #expect(decoded(viewer) == [0, 1, 3])
         #expect(viewer.items[0]?.file == file)
     }
 
@@ -1927,11 +1931,12 @@ struct ImageViewerTests {
         let viewer = try openViewer((0..<5).map { CGSize(width: 800 + $0, height: 600) })
         defer { viewer.close(animated: false) }
         let canceled = try #require(viewer.loads[0])
+        viewer.show(2)
         viewer.show(4)
         #expect(viewer.loads[0] == nil)
         await canceled.value
         await finishLoads(viewer)
-        #expect(decoded(viewer) == [3, 4])
+        #expect(decoded(viewer) == [2, 3, 4])
         #expect(viewer.items[0]?.failure == nil)
     }
 
