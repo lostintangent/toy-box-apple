@@ -346,7 +346,7 @@ struct ComposerSurface: View {
                 }
                 VStack(alignment: .leading, spacing: 4) {
                     Text(choice.isCreate ? "Create \(choice.name)" : choice.name).font(.headline).lineLimit(1)
-                    Text(choice.detail).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    Text(choice.detail).font(.caption).foregroundStyle(ChannelInk.secondary).lineLimit(1)
                 }
                 Spacer(minLength: 0)
             }
