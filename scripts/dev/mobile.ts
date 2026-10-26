@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { parseArgs } from "node:util";
 import { command, machineLock, main, plist, root, scratchPath, text } from "../lib.ts";
 import { prepareMobileDrive, runMobileDrive, runMobileSimulatorCommand, simulatorDriveHost } from "./mobile-drive.ts";
+import { embedMobileAppIcon } from "./icon.ts";
 
 export const mobileEnvironment = {
     ...process.env,
@@ -197,6 +198,7 @@ export async function bundleMobile(device = false) {
     ]);
     const binary = join(app, "ToyBoxMobile");
     const minimumOS = await plist(join(app, "Info.plist"), ["Print :MinimumOSVersion"]);
+    await embedMobileAppIcon(join(root, "Resources"), app, device, minimumOS, mobileEnvironment);
     await command(["xcrun", "vtool", "-set-build-version", device ? "ios" : "iossim", minimumOS, version,
         "-replace", "-output", binary, binary], { env: mobileEnvironment });
     checkMobileBuildVersion(await text(["xcrun", "vtool", "-show-build", binary], { env: mobileEnvironment }),
