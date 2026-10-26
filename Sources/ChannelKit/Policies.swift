@@ -137,11 +137,6 @@ public func agentMatchesMentionQuery(_ agent: ChannelAgent, query: String) -> Bo
         .contains { $0.lowercased().contains(normalized) }
 }
 
-public func channelMessageReactions(_ message: ChannelMessage, agents: [ChannelAgent],
-                                   presence: [String: ChannelAgentPresence]) -> [ChannelReaction] {
-    channelMessageReactions(message, status: channelStatusReactions(agents: agents, presence: presence))
-}
-
 /// A message's reactions, then the looking and working ones from `channelStatusReactions`.
 public func channelMessageReactions(_ message: ChannelMessage,
                                    status: [Int: [ChannelReaction]]) -> [ChannelReaction] {
