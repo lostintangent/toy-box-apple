@@ -14,11 +14,13 @@ function buildVersion(platform = "IOSSIMULATOR", minimumOS = "27.0", sdk = "27.1
        ntools 1`;
 }
 
-test("phone ATS allows user-selected HTTP servers without a local-only override", async () => {
-    const info = await readFile(join(import.meta.dir, "../../Resources/Mobile/Info.plist"), "utf8");
-    const ats = info.match(/<key>NSAppTransportSecurity<\/key>\s*<dict>([\s\S]*?)<\/dict>/)?.[1];
-    expect(ats?.replace(/\s/g, "")).toBe("<key>NSAllowsArbitraryLoads</key><true/>");
-});
+for (const [platform, path] of [["phone", "Mobile/Info.plist"], ["Mac", "Info.plist"]] as const) {
+    test(`${platform} ATS allows user-selected HTTP servers without a local-only override`, async () => {
+        const info = await readFile(join(import.meta.dir, "../../Resources", path), "utf8");
+        const ats = info.match(/<key>NSAppTransportSecurity<\/key>\s*<dict>([\s\S]*?)<\/dict>/)?.[1];
+        expect(ats?.replace(/\s/g, "")).toBe("<key>NSAllowsArbitraryLoads</key><true/>");
+    });
+}
 
 test("mobile bundles must record their real SDK and preserve their deployment target and platform", () => {
     expect(() => checkMobileBuildVersion(buildVersion(), false, "27.0", "27.1")).not.toThrow();

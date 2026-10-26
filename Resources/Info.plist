@@ -84,8 +84,6 @@
     <string>Dictation is transcribed on this Mac.</string>
     <key>NSAppTransportSecurity</key>
     <dict>
-        <key>NSAllowsLocalNetworking</key>
-        <true/>
         <key>NSAllowsArbitraryLoads</key>
         <true/>
     </dict>
