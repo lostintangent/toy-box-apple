@@ -2,6 +2,7 @@ import ChannelClient
 import ChannelKit
 import SwiftUI
 import ToyBoxUI
+import UIKit
 
 struct OverviewTasksSection: View {
     let store: ChannelStore
@@ -161,17 +162,7 @@ private struct OverviewTaskNode: View {
                 Button {
                     if let artifact { viewer.open(artifact) }
                 } label: {
-                    HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Image(systemName: "doc.text")
-                            .frame(width: 16)
-                            .accessibilityHidden(true)
-                        Text(artifact?.title ?? "Artifact unavailable")
-                            .multilineTextAlignment(.leading)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    .font(.footnote)
-                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                    OverviewTaskArtifactLabel(title: artifact?.title ?? "Artifact unavailable")
                 }
                 .buttonStyle(.borderless)
                 .disabled(artifact == nil)
@@ -332,6 +323,27 @@ private struct OverviewTaskNode: View {
         if let diff { parts.append(ChannelOverviewTaskDiff.spoken(diff)) }
         if let owner { parts.append("owner \(owner.name)") }
         return parts.joined(separator: ", ")
+    }
+}
+
+struct OverviewTaskArtifactLabel: View {
+    let title: String
+    @ScaledMetric(relativeTo: .footnote) private var iconWidth = 16
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Image(systemName: "doc.text")
+                .frame(minWidth: iconWidth)
+                .accessibilityHidden(true)
+            Text(title)
+                .multilineTextAlignment(.leading)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .font(.footnote)
+        .foregroundStyle(Color(uiColor: .label))
+        .frame(maxWidth: .infinity, minHeight: 44, alignment: .topLeading)
+        .contentShape(Rectangle())
     }
 }
 
