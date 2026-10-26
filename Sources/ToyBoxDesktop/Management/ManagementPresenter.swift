@@ -56,7 +56,7 @@ final class ManagementPresenter {
             try await checkMentionCreation(key: key, store: store, catalog: catalog)
             throw ChannelAPIError.invalidMessage("The team has been refreshed. Review Team before explicitly creating this agent again.")
         }
-        if let message = MemberValidation.nameError(trimmed, agents: state.agents) {
+        if let message = ChannelValidation.memberNameError(trimmed, agents: state.agents) {
             throw ChannelAPIError.invalidMessage(message)
         }
         guard creatingMentions.insert(key).inserted else {
@@ -87,19 +87,6 @@ final class ManagementPresenter {
             throw ChannelAPIError.invalidMessage(
                 "\(ManagementRecoveryState.uncertaintyMessage) Current state could not be checked. \(error.localizedDescription)")
         }
-    }
-}
-
-enum MemberValidation {
-    static func nameError(_ name: String, agents: [ChannelAgent], excludingID: String? = nil) -> String? {
-        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty { return "Enter an agent name." }
-        if trimmed.utf16.count > 80 { return "Agent names are limited to 80 characters." }
-        let handle = agentHandleFromName(trimmed)
-        if agents.contains(where: { $0.id != excludingID && agentHandleFromName($0.name) == handle }) {
-            return "Another agent is already mentioned as @\(handle)."
-        }
-        return nil
     }
 }
 

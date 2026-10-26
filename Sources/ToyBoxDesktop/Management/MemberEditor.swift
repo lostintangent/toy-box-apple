@@ -34,12 +34,10 @@ struct MemberEditor: View {
     // An empty name only disables the default button. The prompt already says Required.
     private var nameViolation: String? {
         guard !nextName.isEmpty else { return nil }
-        return MemberValidation.nameError(nextName, agents: store.roster, excludingID: member?.id)
+        return ChannelValidation.memberNameError(nextName, agents: store.roster, excludingID: member?.id)
     }
     private var roleViolation: String? {
-        if nextRole.utf16.count > 8_000 { return "Roles are limited to 8,000 characters." }
-        if member?.role != nil, nextRole.isEmpty { return "An existing role can't be emptied." }
-        return nil
+        ChannelValidation.memberRoleError(nextRole, existingRole: member?.role)
     }
     private var isValid: Bool { !nextName.isEmpty && nameViolation == nil && roleViolation == nil }
     private var hasChanges: Bool {

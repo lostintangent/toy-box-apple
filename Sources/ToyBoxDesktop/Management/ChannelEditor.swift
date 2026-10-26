@@ -31,14 +31,13 @@ struct ChannelEditor: View {
     private var nextPurpose: String { purpose.trimmingCharacters(in: .whitespacesAndNewlines) }
     private var nextDirectory: String { directory.trimmingCharacters(in: .whitespacesAndNewlines) }
     private var nameViolation: String? {
-        nextName.utf16.count > 100 ? "Channel names are limited to 100 characters." : nil
+        ChannelValidation.channelNameError(nextName)
     }
     private var purposeViolation: String? {
-        nextPurpose.utf16.count > 12_000 ? "Purpose is limited to 12,000 characters." : nil
+        ChannelValidation.purposeError(nextPurpose)
     }
     private var directoryViolation: String? {
-        channel == nil && nextDirectory.utf16.count > 4_096
-            ? "Working directory paths are limited to 4,096 characters." : nil
+        channel == nil ? ChannelValidation.directoryError(nextDirectory) : nil
     }
     // An empty name or a missing lead model only disables the default button. The prompt and the
     // model section's footer already say why.
