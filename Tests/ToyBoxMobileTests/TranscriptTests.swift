@@ -335,6 +335,25 @@ struct TranscriptTests {
         }
     }
 
+    @Test func longMessagesCollapseInTheSamePassThatMeasuresThem() {
+        func height(_ text: String, expanded: Bool) -> CGFloat {
+            UIHostingController(rootView: TranscriptCollapsibleBody(isExpanded: expanded, endPadding: 10) {
+                Text(text).font(.body)
+            } toggle: {
+                Button("Show More") {}.frame(minHeight: 44)
+            }).sizeThatFits(in: CGSize(width: 300, height: CGFloat.infinity)).height
+        }
+        let long = Array(repeating: "A line that wraps across the bubble.", count: 30).joined(separator: "\n")
+        let full = UIHostingController(rootView: Text(long).font(.body))
+            .sizeThatFits(in: CGSize(width: 300, height: CGFloat.infinity)).height
+        let short = UIHostingController(rootView: Text("Short").font(.body))
+            .sizeThatFits(in: CGSize(width: 300, height: CGFloat.infinity)).height
+        // A first measurement that comes back clamped means the row never changes height after it's placed.
+        #expect(height(long, expanded: false) == TranscriptCollapsibleBody<Text, Text>.clampHeight + 44)
+        #expect(abs(height(long, expanded: true) - (full + 44)) < 1)
+        #expect(abs(height("Short", expanded: false) - (short + 10)) < 1)
+    }
+
     @Test func galleryPagingUsesTheApprovedMotion() {
         #expect(TranscriptImageGallery.pageAnimation(reduceMotion: false) == .smooth(duration: 0.3))
         #expect(TranscriptImageGallery.pageAnimation(reduceMotion: true) == .easeInOut(duration: 0.2))
