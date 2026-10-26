@@ -15,7 +15,7 @@ struct ManagementError: View {
 
 struct ManagementRecoveryNotice: View {
     let state: ChannelManagementRecoveryState
-    let reviewTitle: String
+    let reviewTitle: String?
     let onCheck: () -> Void
     let onReview: () -> Void
 
@@ -29,9 +29,22 @@ struct ManagementRecoveryNotice: View {
                 Button("Check Current Server Values", action: onCheck).frame(minHeight: 44)
             case .reconciled(let message):
                 Text(message).font(.footnote)
-                Button(reviewTitle, action: onReview).frame(minHeight: 44)
+                if let reviewTitle { Button(reviewTitle, action: onReview).frame(minHeight: 44) }
             }
+
         }
         .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+struct ManagementConnectionNotice: View {
+    let store: ChannelStore
+
+    var body: some View {
+        Label(store.phase == .deleted ? "This channel was deleted."
+              : "Reconnect before making changes. Your edits are preserved.",
+              systemImage: "wifi.exclamationmark")
+            .font(.footnote)
+            .foregroundStyle(.secondary)
     }
 }
