@@ -184,12 +184,9 @@ final class TranscriptFind {
             }
             return "Preview cleared"
         case "artifact_shared":
-            let actor = system.actor?.type == "user" ? "You"
-                : channelAgentIdentity(agents, id: system.actor?.agentId ?? "").name
-            return "\(actor) shared \(system.artifact?.title ?? "")"
-        case "routine_scheduled": return event("New routine scheduled", system.routine?.title ?? "Routine")
-        case "routine_edited": return event("Routine edited", system.routine?.title ?? "Routine")
-        case "routine_deleted": return event("Routine deleted", system.routine?.title ?? "Routine")
+            return "\(TranscriptSystemMessages.actorName(system, agents: agents)) shared \(system.artifact?.title ?? "")"
+        case "routine_scheduled", "routine_edited", "routine_deleted":
+            return event(TranscriptSystemMessages.routinePhrase(system.type), system.routine?.title ?? "Routine")
         default:
             return system.unknownFields?["description"]?.string.map { "Channel updated\n\($0)" } ?? "Channel updated"
         }
