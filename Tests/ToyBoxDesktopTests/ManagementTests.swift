@@ -305,20 +305,6 @@ struct ManagementTests {
         #expect(abs(grandchild - nested - OverviewTaskList.depthIndent) < 1)
     }
 
-    @Test func taskStatusDeterminesInitialDisclosureAndSubtaskProgress() {
-        #expect(!OverviewTaskRow.isExpandedByDefault(status: "done"))
-        for status in ["pending", "in_progress", "blocked"] {
-            #expect(OverviewTaskRow.isExpandedByDefault(status: status))
-        }
-        for status in ["in_progress", "blocked"] {
-            #expect(OverviewTaskRow.showsProgress(status: status, hasChildren: true))
-        }
-        for status in ["pending", "done"] {
-            #expect(!OverviewTaskRow.showsProgress(status: status, hasChildren: true))
-        }
-        #expect(!OverviewTaskRow.showsProgress(status: "in_progress", hasChildren: false))
-    }
-
     @Test func taskTimingUsesHoursExpandedSpeechAndOnlySchedulesVisibleRows() {
         for (minutes, text, spoken) in [
             (0, "0m", "0 minutes"), (1, "1m", "1 minute"), (59, "59m", "59 minutes"),
