@@ -14,7 +14,7 @@ struct ManagementFixtureTests {
         }
         let catalog = try await api.catalog()
         #expect(catalog.lead.name.isEmpty == false)
-        #expect(catalog.channels.contains { $0.id == "management-demo" })
+        _ = try #require(catalog.channels.first { $0.id == "management-demo" })
         let models = try await api.models()
         var configured = try #require(models.defaultModel)
         configured.options["reasoningEffort"] = .string("high")

@@ -11,6 +11,75 @@ export const mobileEnvironment = {
 };
 export const mobileBundleID = "dev.toybox.mobile";
 
+const contentSizeCategories = {
+    extraSmall: "UICTContentSizeCategoryXS", small: "UICTContentSizeCategoryS",
+    medium: "UICTContentSizeCategoryM", large: "UICTContentSizeCategoryL",
+    extraLarge: "UICTContentSizeCategoryXL", extraExtraLarge: "UICTContentSizeCategoryXXL",
+    extraExtraExtraLarge: "UICTContentSizeCategoryXXXL",
+    accessibilityMedium: "UICTContentSizeCategoryAccessibilityM",
+    accessibilityLarge: "UICTContentSizeCategoryAccessibilityL",
+    accessibilityExtraLarge: "UICTContentSizeCategoryAccessibilityXL",
+    accessibilityExtraExtraLarge: "UICTContentSizeCategoryAccessibilityXXL",
+    accessibilityExtraExtraExtraLarge: "UICTContentSizeCategoryAccessibilityXXXL",
+};
+type Appearance = "light" | "dark";
+type SimulatorCommand = (args: string[], signal: AbortSignal) =>
+    Promise<{ exitCode: number; stdout: string; stderr: string }>;
+
+export function mobileLaunchOptions(contentSize?: string, appearance?: string): {
+    contentSize: string | undefined; appearance: Appearance | undefined; arguments: string[];
+} {
+    const category = Object.entries(contentSizeCategories).find(([name]) => name === contentSize)?.[1];
+    if (contentSize !== undefined && !category) {
+        throw new Error(`--content-size must be one of: ${Object.keys(contentSizeCategories).join(", ")}.`);
+    }
+    if (appearance !== undefined && appearance !== "light" && appearance !== "dark") {
+        throw new Error("--appearance must be light or dark.");
+    }
+    return { contentSize: category, appearance,
+        arguments: category ? ["-UIPreferredContentSizeCategoryName", category] : [] };
+}
+
+export async function withMobileAppearance<T>(simulator: string, appearance: Appearance | undefined,
+    run: SimulatorCommand, signal: AbortSignal, body: () => Promise<T>): Promise<T> {
+    if (!appearance) return body();
+    const invoke = async (args: string[], signal: AbortSignal) => {
+        const result = await run(["ui", simulator, "appearance", ...args], signal);
+        if (result.exitCode) throw new Error(`Simulator appearance command failed: ${result.stderr.trim()}`);
+        return result.stdout.trim();
+    };
+    const operation = AbortSignal.any([signal, AbortSignal.timeout(15_000)]);
+    const previous = await invoke([], operation);
+    if (previous !== "light" && previous !== "dark") {
+        throw new Error(`Cannot preserve the simulator's unknown appearance: ${JSON.stringify(previous)}.`);
+    }
+    let failed = false;
+    let failure: unknown;
+    try {
+        await invoke([appearance], operation);
+        if (await invoke([], operation) !== appearance) throw new Error("The requested simulator appearance was not applied.");
+        return await body();
+    } catch (error) {
+        failed = true;
+        failure = error;
+        throw error;
+    } finally {
+        try {
+            const cleanup = AbortSignal.timeout(15_000);
+            await invoke([previous], cleanup);
+            if (await invoke([], cleanup) !== previous) throw new Error("The restored appearance did not match.");
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            if (failed) {
+                throw new AggregateError([failure, error],
+                    `Native run failed (${failure instanceof Error ? failure.message : String(failure)}). `
+                    + `Simulator appearance restoration failed (${message}).`);
+            }
+            throw new Error(`Simulator appearance restoration failed: ${message}`, { cause: error });
+        }
+    }
+}
+
 export async function linkMobileWorkspace(sourceRoot: string, workspace: string) {
     await mkdir(workspace, { recursive: true });
     for (const name of ["Package.swift", "Sources", "Tests"]) {
@@ -114,31 +183,42 @@ if (import.meta.main) await main(async () => {
         "build-only": { type: "boolean" }, device: { type: "boolean" }, shutdown: { type: "boolean" },
         screenshot: { type: "string" }, hold: { type: "boolean" }, display: { type: "string" },
         displays: { type: "boolean" }, server: { type: "string" },
-        drive: { type: "string" },
+        drive: { type: "string" }, "content-size": { type: "string" }, appearance: { type: "string" },
     } });
+    const launch = mobileLaunchOptions(values["content-size"], values.appearance);
     if (values.drive && (values.hold || values.screenshot || values.displays || values.shutdown)) {
         throw new Error("--drive owns its captures and simulator lifetime; do not combine it with --hold, --screenshot, --displays or --shutdown.");
     }
     if (values.display && !values.screenshot) throw new Error("--display requires --screenshot.");
     if (values.device || values["build-only"]) {
-        if (values.shutdown || values.screenshot || values.hold || values.displays || values.server || values.drive) {
+        if (values.shutdown || values.screenshot || values.hold || values.displays || values.server || values.drive
+            || values["content-size"] || values.appearance) {
             throw new Error("Build-only commands cannot use a simulator or set launch arguments.");
         }
         console.log(await bundleMobile(values.device));
         return;
     }
+    if (values.appearance && !(values.hold || values.drive)) {
+        throw new Error("--appearance requires --hold or --drive so its prior simulator setting can be restored.");
+    }
+    if ((values["content-size"] || values.appearance)
+        && (values.shutdown || (values.screenshot || values.displays) && !values.hold)) {
+        throw new Error("Content size and appearance require launching the app, not a capture/list/shutdown-only command.");
+    }
     const unlock = await machineLock("mobile-simulator");
-    let drivenSimulator: string | undefined;
+    let leasedSimulator: string | undefined;
+    let runFailed = false;
+    let runFailure: unknown;
     const interruption = new AbortController();
     const interrupt = () => interruption.abort();
-    if (values.drive) {
-        process.once("SIGINT", interrupt);
-        process.once("SIGTERM", interrupt);
+    if (values.drive || values.hold) {
+        process.on("SIGINT", interrupt);
+        process.on("SIGTERM", interrupt);
     }
     try {
         const simulator = await prepareMobileSimulator(true);
         if (!simulator) throw new Error("No iPhone simulator is available.");
-        if (values.drive) drivenSimulator = simulator.udid;
+        if ((values.drive || values.hold) && !values.shutdown) leasedSimulator = simulator.udid;
         interruption.signal.throwIfAborted();
         if (values.displays) {
             const ports = await text(["xcrun", "simctl", "io", simulator.udid, "enumerate"],
@@ -155,9 +235,10 @@ if (import.meta.main) await main(async () => {
         }
         const capture = async () => {
             if (!values.screenshot) return;
-            await command(["xcrun", "simctl", "io", simulator.udid, "screenshot",
+            const result = await runMobileSimulatorCommand(["io", simulator.udid, "screenshot",
                 ...(values.display ? [`--display=${values.display}`] : []), values.screenshot],
-                { env: mobileEnvironment });
+                mobileEnvironment, AbortSignal.timeout(15_000));
+            if (result.exitCode) throw new Error(`Simulator capture failed: ${result.stderr.trim()}`);
         };
         if (values.screenshot && !values.hold) {
             await capture();
@@ -169,51 +250,70 @@ if (import.meta.main) await main(async () => {
         await command(["xcrun", "simctl", "install", simulator.udid, app], { env: mobileEnvironment });
         interruption.signal.throwIfAborted();
         const server = values.server ?? process.env.TOY_BOX_SERVER_URL ?? "http://127.0.0.1:3210";
-        const drive = values.drive ? await prepareMobileDrive(values.drive,
-            await text(["xcrun", "simctl", "get_app_container", simulator.udid, mobileBundleID, "data"],
-                { env: mobileEnvironment }), join(scratchPath(), "mobile-drive", crypto.randomUUID())) : undefined;
+        const data = await text(["xcrun", "simctl", "get_app_container", simulator.udid, mobileBundleID, "data"],
+            { env: mobileEnvironment });
+        const drive = values.drive ? await prepareMobileDrive(values.drive, data,
+            join(scratchPath(), "mobile-drive", crypto.randomUUID())) : undefined;
         interruption.signal.throwIfAborted();
-        await command(["xcrun", "simctl", "launch", "--terminate-running-process", simulator.udid, mobileBundleID,
-            "--server", server],
-            { env: { ...mobileEnvironment, ...(drive ? { SIMCTL_CHILD_TOY_BOX_AUTOMATION_SCRIPT: drive.script } : {}) } });
-        console.log(`Running on ${simulator.udid}, server ${server}`);
-        console.log(`App data: ${await text(["xcrun", "simctl", "get_app_container", simulator.udid, mobileBundleID, "data"],
-            { env: mobileEnvironment })}`);
-        if (drive) {
-            await runMobileDrive(drive, simulatorDriveHost(simulator.udid, mobileEnvironment), interruption.signal);
-            return;
-        }
-        if (values.hold) {
-            console.log("Simulator lock held for UI checks for at most 15 minutes. Ctrl-C releases it and shuts down.");
-            if (values.screenshot) console.log(`The current pose will be captured to ${values.screenshot} before shutdown.`);
-            await new Promise<void>(resolve => {
-                const finish = () => {
-                    clearTimeout(timer);
-                    process.removeListener("SIGINT", finish);
-                    process.removeListener("SIGTERM", finish);
-                    resolve();
-                };
-                const timer = setTimeout(() => {
-                    console.log("The 15-minute simulator lease expired.");
-                    finish();
-                }, 15 * 60 * 1000);
-                process.once("SIGINT", finish);
-                process.once("SIGTERM", finish);
-            });
-            try { await capture(); }
-            finally {
-                await command(["xcrun", "simctl", "shutdown", simulator.udid], { env: mobileEnvironment });
+        await withMobileAppearance(simulator.udid, launch.appearance,
+            (args, signal) => runMobileSimulatorCommand(args, mobileEnvironment, signal), interruption.signal, async () => {
+            const result = await runMobileSimulatorCommand([
+                "launch", "--terminate-running-process", simulator.udid, mobileBundleID,
+                "--server", server, ...launch.arguments,
+            ], { ...mobileEnvironment, ...(drive ? { SIMCTL_CHILD_TOY_BOX_AUTOMATION_SCRIPT: drive.script } : {}) },
+            AbortSignal.any([interruption.signal, AbortSignal.timeout(30_000)]));
+            if (result.exitCode) throw new Error(`Mobile launch failed: ${result.stderr.trim()}`);
+            console.log(result.stdout.trim());
+            console.log(`Running on ${simulator.udid}, server ${server}`);
+            console.log(`App data: ${data}`);
+            if (drive) {
+                await runMobileDrive(drive, simulatorDriveHost(simulator.udid, mobileEnvironment), interruption.signal, {
+                    ...(launch.contentSize ? { contentSizeCategory: launch.contentSize } : {}),
+                    ...(launch.appearance ? { interfaceStyle: launch.appearance } : {}),
+                });
+                return;
             }
-        }
+            if (values.hold) {
+                console.log("Simulator lock held for UI checks for at most 15 minutes. Ctrl-C releases it and shuts down.");
+                if (values.screenshot) console.log(`The current pose will be captured to ${values.screenshot} before shutdown.`);
+                await new Promise<void>(resolve => {
+                    const finish = () => {
+                        clearTimeout(timer);
+                        interruption.signal.removeEventListener("abort", finish);
+                        resolve();
+                    };
+                    const timer = setTimeout(() => {
+                        console.log("The 15-minute simulator lease expired.");
+                        finish();
+                    }, 15 * 60 * 1000);
+                    interruption.signal.addEventListener("abort", finish, { once: true });
+                    if (interruption.signal.aborted) finish();
+                });
+                await capture();
+            }
+        });
+    } catch (error) {
+        runFailed = true;
+        runFailure = error;
+        throw error;
     } finally {
-        process.removeListener("SIGINT", interrupt);
-        process.removeListener("SIGTERM", interrupt);
         try {
-            if (drivenSimulator) {
-                const result = await runMobileSimulatorCommand(["shutdown", drivenSimulator], mobileEnvironment,
+            if (leasedSimulator) {
+                const result = await runMobileSimulatorCommand(["shutdown", leasedSimulator], mobileEnvironment,
                     AbortSignal.timeout(15_000));
                 if (result.exitCode) throw new Error(`Simulator shutdown failed: ${result.stderr.trim()}`);
             }
-        } finally { unlock(); }
+        } catch (error) {
+            if (runFailed) {
+                throw new AggregateError([runFailure, error],
+                    `Native run failed (${runFailure instanceof Error ? runFailure.message : String(runFailure)}). `
+                    + `Simulator shutdown failed (${error instanceof Error ? error.message : String(error)}).`);
+            }
+            throw error;
+        } finally {
+            process.removeListener("SIGINT", interrupt);
+            process.removeListener("SIGTERM", interrupt);
+            unlock();
+        }
     }
 });

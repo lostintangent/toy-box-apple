@@ -107,6 +107,18 @@ view.
   `--display <ID>` chooses one for a screenshot, including a secondary Duo display.
   Wait until the app is visibly drawn before ending the lease. Launch returning a PID does not
   mean its first frame is ready.
+  `--content-size <category>` passes UIKit's process-only preferred-category launch argument,
+  without changing the simulator's saved text size. Categories are `extraSmall`, `small`,
+  `medium`, `large`, `extraLarge`, `extraExtraLarge`, `extraExtraExtraLarge`,
+  `accessibilityMedium`, `accessibilityLarge`, `accessibilityExtraLarge`,
+  `accessibilityExtraExtraLarge` and `accessibilityExtraExtraExtraLarge`.
+  `--appearance light|dark` requires `--hold` or `--drive`. It captures the prior simulator
+  appearance, checks the requested setting and restores/readbacks the original before shutdown,
+  including failures and interruption. An unknown prior setting fails before mutation.
+  A drive with either option checks the app's effective native content traits before host captures
+  and on completion. Missing, ambiguous or mismatched traits fail the run. This does not overwrite
+  a saved app appearance override. Use System appearance or a matching app override.
+  Build/device, capture-only, display-list-only and shutdown-only commands reject launch options.
   `--drive <steps.json>` runs a DEBUG-only accessibility script under the same lease and shuts down
   on completion or failure. Steps are `{"tap":"exact label or identifier"}`, `{"type":"text"}`,
   `{"wait":"label or value fragment"}`, `{"screenshot":"name","display":1}`, `{"back":true}`

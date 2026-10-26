@@ -47,6 +47,11 @@ test("malformed app statuses never look like completion", () => {
     expect(() => parseMobileDriveStatus({ state: "completed" })).toThrow("invalid drive status");
     expect(() => parseMobileDriveStatus({ state: "completed", step: -1, labels: [], viewport: [] })).toThrow();
     expect(() => parseMobileDriveStatus({ state: "ready", step: 0, labels: [7], viewport: [] })).toThrow();
+    expect(() => parseMobileDriveStatus({ state: "ready", ...frame, traits: { interfaceStyle: "dark" } })).toThrow();
+    expect(() => parseMobileDriveStatus({ state: "ready", ...frame, traitsError: 3 })).toThrow();
+    const traits = { contentSizeCategory: "UICTContentSizeCategoryL", interfaceStyle: "dark" };
+    expect(parseMobileDriveStatus({ state: "ready", ...frame, traits }).traits).toEqual(traits);
+    expect(() => parseMobileDriveStatus({ state: "ready", ...frame, traits, traitsError: "Ambiguous" })).toThrow();
 });
 
 const frame = { step: 0, labels: ["Message"], viewport: [440, 956] };
@@ -54,6 +59,39 @@ const unexpected = async () => { throw new Error("Unexpected host action"); };
 function drive(steps: unknown) {
     return { steps: parseMobileDrive(steps), directory: "", script: "", output: "/captures" };
 }
+
+test("requested native content traits are verified before capture and on completion", async () => {
+    let captures = 0;
+    const traits = { contentSizeCategory: "UICTContentSizeCategoryAccessibilityXXXL", interfaceStyle: "dark" };
+    const session = new MobileDriveSession(drive([{ screenshot: "large-dark" }]), {
+        async capture() { captures += 1; }, fold: unexpected,
+    }, traits);
+    await expect(session.accept({ ...frame, state: "ready" })).rejects.toThrow("did not report effective");
+    await expect(session.accept({ ...frame, state: "ready", traitsError: "Ambiguous native windows" }))
+        .rejects.toThrow("Ambiguous native windows");
+    for (const mismatched of [
+        { ...traits, contentSizeCategory: "UICTContentSizeCategoryL" }, { ...traits, interfaceStyle: "light" },
+    ]) {
+        await expect(session.accept({ ...frame, state: "ready", traits: mismatched })).rejects.toThrow("expected");
+    }
+    expect(captures).toBe(0);
+    expect(await session.accept({ ...frame, state: "ready", traits })).toEqual({ step: 0 });
+    expect(captures).toBe(1);
+    await expect(session.accept({ ...frame, state: "completed" })).rejects.toThrow("did not report effective");
+    expect(session.completed).toBe(false);
+    await session.accept({ ...frame, state: "completed", traits });
+    expect(session.completed).toBe(true);
+});
+
+test("trait verification also protects scripts without host captures", async () => {
+    const session = new MobileDriveSession(drive([{ wait: "Channels" }]),
+        { capture: unexpected, fold: unexpected }, { interfaceStyle: "dark" });
+    await session.accept({ ...frame, state: "running" });
+    await expect(session.accept({ ...frame, state: "completed",
+        traits: { contentSizeCategory: "UICTContentSizeCategoryL", interfaceStyle: "light" } }))
+        .rejects.toThrow("saved app override");
+    expect(session.completed).toBe(false);
+});
 
 test("settled capture completes before acknowledgement and never repeats", async () => {
     const captures: string[] = [];
