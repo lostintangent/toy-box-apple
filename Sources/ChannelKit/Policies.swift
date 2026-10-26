@@ -227,7 +227,6 @@ func withoutLeadingMentions(_ content: String, handles: Set<String>) -> String {
 
 public enum ChannelDates {
     public static func date(_ value: String) -> Date? {
-        if let date = try? Date(value, strategy: .iso8601) { return date }
-        return try? Date(value, strategy: Date.ISO8601FormatStyle(includingFractionalSeconds: true))
+        try? Date(value, strategy: .iso8601)
     }
 }
