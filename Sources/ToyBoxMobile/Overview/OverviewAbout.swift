@@ -9,24 +9,33 @@ struct OverviewAboutSection: View {
     @Environment(\.openURL) private var openURL
 
     var body: some View {
-        Section("About") {
-            if let details = store.details {
-                if let purpose = details.purpose, !purpose.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    OverviewPurpose(purpose: purpose, expanded: $session.purposeExpanded)
-                }
-                if let directory = details.directory, !directory.isEmpty {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Label("Folder on Mac", systemImage: "folder")
-                        Text(directory)
-                            .font(.footnote.monospaced())
-                            .textSelection(.enabled)
-                            .fixedSize(horizontal: false, vertical: true)
-                        Button("Copy Folder Path") { UIPasteboard.general.string = directory }
-                            .frame(minHeight: 44)
+        if let details = store.details {
+            let purpose = details.purpose.flatMap { value in
+                value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : value
+            }
+            let directory = details.directory.flatMap { $0.isEmpty ? nil : $0 }
+            let preview = details.resolvedPreview
+            if purpose != nil || directory != nil || preview != nil {
+                Section("About") {
+                    if let purpose {
+                        OverviewPurpose(purpose: purpose, expanded: $session.purposeExpanded)
+                    }
+                    if let directory {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Label("Folder on Mac", systemImage: "folder")
+                            Text(directory)
+                                .font(.footnote.monospaced())
+                                .textSelection(.enabled)
+                                .fixedSize(horizontal: false, vertical: true)
+                            Button("Copy Folder Path") { UIPasteboard.general.string = directory }
+                                .frame(minHeight: 44)
+                        }
+                    }
+                    if let preview {
+                        previewRow(preview)
+                        if let error = session.previewError { ManagementError(message: error) }
                     }
                 }
-                if let preview = details.resolvedPreview { previewRow(preview) }
-                if let error = session.previewError { ManagementError(message: error) }
             }
         }
     }
