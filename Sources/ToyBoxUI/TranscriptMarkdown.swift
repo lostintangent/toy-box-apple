@@ -117,27 +117,23 @@ public struct TranscriptMarkdown: View {
             .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 6))
         case .table(let rows):
             ScrollView(.horizontal) {
-                Grid(alignment: .topLeading, horizontalSpacing: 0, verticalSpacing: 0) {
+                TranscriptMarkdownTableLayout(columns: rows.map(\.count).max() ?? 0) {
                     ForEach(rows.indices, id: \.self) { row in
-                        GridRow {
-                            ForEach(0..<(rows.map(\.count).max() ?? 0), id: \.self) { column in
-                                Text(inline(column < rows[row].count ? rows[row][column] : "", size: 13,
-                                            fragment: .init(block: block.id, row: row, column: column),
-                                            highlights: highlights))
-                                    .font(.system(size: 13 * textScale,
-                                                  weight: row == 0 ? .semibold : .regular))
-                                    .frame(minWidth: 64, maxWidth: 280, alignment: .leading)
-                                    .fixedSize(horizontal: false, vertical: true)
-                                    .padding(.horizontal, 10)
-                                    .padding(.vertical, 7)
-                                    .frame(maxHeight: .infinity, alignment: .topLeading)
-                                    .background(row == 0 ? Color.primary.opacity(0.05) : .clear)
-                                    .overlay(alignment: .bottom) { Divider() }
-                            }
+                        ForEach(0..<(rows.map(\.count).max() ?? 0), id: \.self) { column in
+                            Text(inline(column < rows[row].count ? rows[row][column] : "", size: 13,
+                                        fragment: .init(block: block.id, row: row, column: column),
+                                        highlights: highlights))
+                                .font(.system(size: 13 * textScale,
+                                              weight: row == 0 ? .semibold : .regular))
+                                .fixedSize(horizontal: false, vertical: true)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 7)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                                .background(row == 0 ? Color.primary.opacity(0.05) : .clear)
+                                .overlay(alignment: .bottom) { Divider() }
                         }
                     }
                 }
-                .fixedSize(horizontal: true, vertical: false)
                 .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(.separator, lineWidth: 0.5))
             }
         case .rule:
@@ -159,6 +155,52 @@ public struct TranscriptMarkdown: View {
                                               fontSize: size ?? bodySize, codeSize: codeSize,
                                               mentionInk: mentionInk)
         return highlights?.applying(to: result, fragment: fragment) ?? result
+    }
+}
+
+private struct TranscriptMarkdownTableLayout: Layout {
+    let columns: Int
+
+    struct Cache {
+        var widths: [CGFloat]
+        var heights: [CGFloat]
+    }
+
+    func makeCache(subviews: Subviews) -> Cache {
+        guard columns > 0 else { return Cache(widths: [], heights: []) }
+        var widths = Array(repeating: CGFloat(84), count: columns)
+        for index in subviews.indices {
+            let column = index % columns
+            widths[column] = max(widths[column], min(300, subviews[index].sizeThatFits(.unspecified).width))
+        }
+        var heights = Array(repeating: CGFloat.zero, count: (subviews.count + columns - 1) / columns)
+        for index in subviews.indices {
+            // A flexible Grid frame reports its unwrapped height for an unspecified width.
+            // Measure again at the final column width before choosing the row's height.
+            let size = subviews[index].sizeThatFits(.init(width: widths[index % columns], height: nil))
+            heights[index / columns] = max(heights[index / columns], size.height)
+        }
+        return Cache(widths: widths, heights: heights)
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout Cache) -> CGSize {
+        CGSize(width: cache.widths.reduce(0, +), height: cache.heights.reduce(0, +))
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout Cache) {
+        var origin = bounds.origin
+        for index in subviews.indices {
+            let column = index % columns
+            let row = index / columns
+            subviews[index].place(at: origin, anchor: .topLeading,
+                                 proposal: .init(width: cache.widths[column], height: cache.heights[row]))
+            if column + 1 == columns {
+                origin.x = bounds.minX
+                origin.y += cache.heights[row]
+            } else {
+                origin.x += cache.widths[column]
+            }
+        }
     }
 }
 

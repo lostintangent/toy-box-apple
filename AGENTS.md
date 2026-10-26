@@ -185,6 +185,9 @@ view.
   Both stamp and verify the executable's real selected iOS SDK in `LC_BUILD_VERSION`, preserving
   the plist's deployment minimum and the device/Simulator platform, before any bundle signing.
   The plist's `DTSDKName` alone does not opt into SDK-linked native layout behavior.
+  Both compile the shared `Resources/AppIcon.icon` for the selected iOS platform with `actool`
+  and embed its layered appearances, PNG fallbacks and generated bundle metadata before signing.
+  There is no separate phone icon artwork or committed iOS asset catalog.
 - `bun run mobile --device [--device-id <name-or-UDID>] [--server <URL>]` builds arm64,
   signs with an existing matching Apple Development identity/profile, installs with
   `xcrun devicectl`, launches and checks that the process is running. It never runs xcodebuild,
@@ -433,9 +436,10 @@ Agents never create these accounts, accept agreements, read private keys or set 
   to a G2 certificate, rerun the setup, and update the workflow's intermediate URL and SHA-256.
 - The app icon's only source is `Resources/AppIcon.icon` (Designer). After changing it, run
   `bun run icon` and commit it with `Resources/AppIcon.icns` and `Resources/Assets.car`. Generation
-  needs Icon Composer and Xcode's `actool`. Builds only copy these outputs, so CLT builds and CI
-  need neither tool. `CFBundleIconName` selects the layered dark, clear and tinted appearances;
-  the `.icns` stays the fallback.
+  needs Icon Composer and Xcode's `actool`. Mac builds only copy these outputs, so CLT builds
+  and Mac CI need neither tool. Mobile builds use their already-required Xcode `actool` to compile
+  that same source for device or Simulator. `CFBundleIconName` selects the layered dark, clear
+  and tinted appearances. The Mac `.icns` and generated phone PNGs stay the fallbacks.
 - Never alter the user's installed validation bundle or microphone permission state to test a
   release.
 
