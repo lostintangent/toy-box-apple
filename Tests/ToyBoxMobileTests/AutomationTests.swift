@@ -41,8 +41,12 @@ struct AutomationTests {
 
     private final class DragRecorder: NSObject, UIScrollViewDelegate {
         var events: [String] = []
+        var onScroll: (() -> Void)?
         func scrollViewWillBeginDragging(_ scrollView: UIScrollView) { events.append("begin") }
-        func scrollViewDidScroll(_ scrollView: UIScrollView) { if events.last != "scroll" { events.append("scroll") } }
+        func scrollViewDidScroll(_ scrollView: UIScrollView) {
+            if events.last != "scroll" { events.append("scroll") }
+            onScroll?()
+        }
         func scrollViewWillEndDragging(_ scrollView: UIScrollView, withVelocity velocity: CGPoint,
                                        targetContentOffset: UnsafeMutablePointer<CGPoint>) { events.append("willEnd") }
         func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
@@ -110,9 +114,29 @@ struct AutomationTests {
     }
 
     @Test func draggingMovesTheContentOffsetInFramesBetweenDragCallbacksAndStopsAtTheEdge() async throws {
+        let (window, list, recorder) = dragFixture()
+        defer { window.isHidden = true }
+        let tree = MobileAutomationTree(windows: [window])
+        #expect(try tree.scrollView("missing") == nil)
+        let view = try #require(try tree.scrollView("list"))
+        try await MobileAutomationTree.drag(view, .up, frames: 4, pause: .zero,
+                                            deadline: .now.advanced(by: .seconds(3_600)))
+        #expect(abs(list.contentOffset.y - 560) < 0.5)
+        #expect(recorder.events == ["begin", "scroll", "willEnd", "end"])
+        try await MobileAutomationTree.drag(view, .up, frames: 4, pause: .zero,
+                                            deadline: .now.advanced(by: .seconds(3_600)))
+        #expect(list.contentOffset.y == 0)
+        let container = ScrollContainer()
+        container.accessibilityIdentifier = "form"
+        window.addSubview(container)
+        #expect(throws: MobileAutomationTree.ScrollFailure.self) {
+            try MobileAutomationTree(windows: [window]).scrollView("form")
+        }
+    }
+
+    private func dragFixture() -> (UIWindow, UIScrollView, DragRecorder) {
         let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 400, height: 800))
         window.isHidden = false
-        defer { window.isHidden = true }
         let list = UIScrollView(frame: window.bounds)
         list.contentInsetAdjustmentBehavior = .never
         list.contentSize = CGSize(width: 400, height: 2_000)
@@ -121,20 +145,38 @@ struct AutomationTests {
         let recorder = DragRecorder()
         list.delegate = recorder
         window.addSubview(list)
-        let tree = MobileAutomationTree(windows: [window])
-        #expect(try tree.scrollView("missing") == nil)
-        let view = try #require(try tree.scrollView("list"))
-        await MobileAutomationTree.drag(view, .up, frames: 4, pause: .zero)
-        #expect(abs(list.contentOffset.y - 560) < 0.5)
-        #expect(recorder.events == ["begin", "scroll", "willEnd", "end"])
-        await MobileAutomationTree.drag(view, .up, frames: 4, pause: .zero)
-        #expect(list.contentOffset.y == 0)
-        let container = ScrollContainer()
-        container.accessibilityIdentifier = "form"
-        window.addSubview(container)
-        #expect(throws: MobileAutomationTree.ScrollFailure.self) {
-            try MobileAutomationTree(windows: [window]).scrollView("form")
+        return (window, list, recorder)
+    }
+
+    @Test(arguments: [false, true])
+    func anExpiredOrCancelledDragNeverStarts(cancelled: Bool) async {
+        let (window, list, recorder) = dragFixture()
+        defer { window.isHidden = true }
+        let attempt = Task {
+            if cancelled { withUnsafeCurrentTask { $0?.cancel() } }
+            try await MobileAutomationTree.drag(list, .up, pause: .zero,
+                                                deadline: .now.advanced(by: .seconds(cancelled ? 3_600 : -1)))
         }
+        if cancelled {
+            await #expect(throws: CancellationError.self) { try await attempt.value }
+        } else {
+            await #expect(throws: MobileAutomationTree.ScrollFailure.self) { try await attempt.value }
+        }
+        #expect(list.contentOffset == CGPoint(x: 0, y: 1_200))
+        #expect(recorder.events.isEmpty)
+    }
+
+    @Test func cancellationDuringDraggingStopsAtTheCurrentFrameAndBalancesCallbacks() async {
+        let (window, list, recorder) = dragFixture()
+        defer { window.isHidden = true }
+        recorder.onScroll = { withUnsafeCurrentTask { $0?.cancel() } }
+        let attempt = Task {
+            try await MobileAutomationTree.drag(list, .up, frames: 4, pause: .zero,
+                                                deadline: .now.advanced(by: .seconds(3_600)))
+        }
+        await #expect(throws: CancellationError.self) { try await attempt.value }
+        #expect(list.contentOffset == CGPoint(x: 0, y: 1_040))
+        #expect(recorder.events == ["begin", "scroll", "willEnd", "end"])
     }
 
     @Test func postureRequiresTheVerifiedSceneSizeNotAnArbitraryResize() {

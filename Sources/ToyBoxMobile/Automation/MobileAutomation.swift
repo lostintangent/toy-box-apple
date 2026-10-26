@@ -124,13 +124,14 @@ enum MobileAutomation {
 @MainActor
 struct MobileAutomationTree {
     enum ScrollFailure: Error, CustomStringConvertible {
-        case ambiguous(String), unhandled(String), notScrollView(String)
+        case ambiguous(String), unhandled(String), notScrollView(String), timedOut
 
         var description: String {
             switch self {
             case .ambiguous(let target): "Ambiguous accessibility scroll identifier: \(target)."
             case .unhandled(let target): "Accessibility scrolling was not handled by \(target)."
             case .notScrollView(let target): "Dragging needs a UIScrollView, not \(target)."
+            case .timedOut: "Dragging exceeded the step deadline."
             }
         }
     }
@@ -304,7 +305,13 @@ struct MobileAutomationTree {
     /// to the content, between the delegate's begin- and end-dragging callbacks. Scroll phases and
     /// geometry follow a finger drag's path, without the pan gesture or deceleration.
     static func drag(_ view: UIScrollView, _ direction: MobileAutomationStep.ScrollDirection,
-                     frames: Int = 24, pause: Duration = .milliseconds(16)) async {
+                     frames: Int = 24, pause: Duration = .milliseconds(16),
+                     deadline: ContinuousClock.Instant) async throws {
+        func checkDeadline() throws {
+            try Task.checkCancellation()
+            guard ContinuousClock.now < deadline else { throw ScrollFailure.timedOut }
+        }
+        try checkDeadline()
         let visible = view.bounds.inset(by: view.adjustedContentInset)
         let distance: CGPoint = switch direction {
         case .up: CGPoint(x: 0, y: -0.8 * visible.height)
@@ -313,7 +320,13 @@ struct MobileAutomationTree {
         case .right: CGPoint(x: 0.8 * visible.width, y: 0)
         }
         view.delegate?.scrollViewWillBeginDragging?(view)
+        defer {
+            var target = view.contentOffset
+            view.delegate?.scrollViewWillEndDragging?(view, withVelocity: .zero, targetContentOffset: &target)
+            view.delegate?.scrollViewDidEndDragging?(view, willDecelerate: false)
+        }
         for _ in 0..<frames {
+            try checkDeadline()
             let inset = view.adjustedContentInset
             let minimum = CGPoint(x: -inset.left, y: -inset.top)
             let maximum = CGPoint(x: max(minimum.x, view.contentSize.width + inset.right - view.bounds.width),
@@ -322,11 +335,9 @@ struct MobileAutomationTree {
             view.contentOffset = CGPoint(
                 x: min(maximum.x, max(minimum.x, offset.x + distance.x / CGFloat(frames))),
                 y: min(maximum.y, max(minimum.y, offset.y + distance.y / CGFloat(frames))))
-            try? await Task.sleep(for: pause)
+            try await Task.sleep(until: min(deadline, ContinuousClock.now.advanced(by: pause)), clock: .continuous)
         }
-        var target = view.contentOffset
-        view.delegate?.scrollViewWillEndDragging?(view, withVelocity: .zero, targetContentOffset: &target)
-        view.delegate?.scrollViewDidEndDragging?(view, willDecelerate: false)
+        try checkDeadline()
     }
 
     var firstResponder: UIResponder? {
@@ -433,7 +444,7 @@ private final class MobileAutomationRun {
             }
         case .drag(let direction, let target):
             let view = try await wait(timeout: step.timeout) { try MobileAutomationTree.current.scrollView(target) }
-            await MobileAutomationTree.drag(view, direction)
+            try await MobileAutomationTree.drag(view, direction, deadline: deadline)
         case .back(let ifPresent):
             let tree = try await wait(timeout: step.timeout) {
                 let tree = MobileAutomationTree.current
