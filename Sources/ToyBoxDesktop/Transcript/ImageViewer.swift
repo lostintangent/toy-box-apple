@@ -205,12 +205,13 @@ final class ImageViewer {
         guard let session, !isClosing, newIndex != index, session.images.indices.contains(newIndex) else { return }
         liveTextView?.resetSelection()
         cancelVectorRaster()
+        let departed = index
         withAnimation(reducesMotion ? .easeInOut(duration: 0.2) : .smooth(duration: 0.3)) {
             index = newIndex
             zoom = nil
             pan = .zero
         }
-        loadAround(newIndex)
+        loadAround(newIndex, departed: departed)
         refreshVectorRaster()
         analyzeCurrent()
     }
@@ -547,12 +548,13 @@ final class ImageViewer {
 
     func retry() { load(index, reload: true) }
 
-    /// Only the current image and its neighbors keep a decoded bitmap. The others keep their file
-    /// and size, and decode again from the attachment cache when they come back.
-    private func loadAround(_ index: Int) {
-        let kept = index - 1 ... index + 1
-        for position in loads.keys where !kept.contains(position) { loads.removeValue(forKey: position)?.cancel() }
-        for (position, item) in items where !kept.contains(position) && item.bitmap != nil {
+    /// Only the current image, its neighbors and the one just left, which is still fading out, keep
+    /// a decoded bitmap. The others keep their file and size, and decode again from the attachment
+    /// cache when they come back.
+    private func loadAround(_ index: Int, departed: Int? = nil) {
+        let kept = { (position: Int) in abs(position - index) <= 1 || position == departed }
+        for position in loads.keys where !kept(position) { loads.removeValue(forKey: position)?.cancel() }
+        for (position, item) in items where !kept(position) && item.bitmap != nil {
             items[position]?.image = nil
             items[position]?.bitmap = nil
         }
