@@ -182,7 +182,7 @@ struct ManagementTests {
 
     @Test func taskDiffTextMeetsSmallTextContrastInBothAppearances() throws {
         for scheme in [ColorScheme.light, .dark] {
-            let colors = OverviewTaskDiff.textColors(in: scheme)
+            let colors = ChannelTaskColors.changes(in: scheme)
             let backgrounds: [Double] = scheme == .light
                 ? [1, 246.0 / 255.0] : [30.0 / 255.0, 38.0 / 255.0, 51.0 / 255.0]
             for color in [colors.added, colors.removed] {
