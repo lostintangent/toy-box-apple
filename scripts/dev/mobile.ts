@@ -139,6 +139,7 @@ if (import.meta.main) await main(async () => {
         const simulator = await prepareMobileSimulator(true);
         if (!simulator) throw new Error("No iPhone simulator is available.");
         if (values.drive) drivenSimulator = simulator.udid;
+        interruption.signal.throwIfAborted();
         if (values.displays) {
             const ports = await text(["xcrun", "simctl", "io", simulator.udid, "enumerate"],
                 { env: mobileEnvironment });
@@ -163,12 +164,15 @@ if (import.meta.main) await main(async () => {
             return;
         }
         const app = await bundleMobile();
+        interruption.signal.throwIfAborted();
         console.log(app);
         await command(["xcrun", "simctl", "install", simulator.udid, app], { env: mobileEnvironment });
+        interruption.signal.throwIfAborted();
         const server = values.server ?? process.env.TOY_BOX_SERVER_URL ?? "http://127.0.0.1:3210";
         const drive = values.drive ? await prepareMobileDrive(values.drive,
             await text(["xcrun", "simctl", "get_app_container", simulator.udid, mobileBundleID, "data"],
                 { env: mobileEnvironment }), join(scratchPath(), "mobile-drive", crypto.randomUUID())) : undefined;
+        interruption.signal.throwIfAborted();
         await command(["xcrun", "simctl", "launch", "--terminate-running-process", simulator.udid, mobileBundleID,
             "--server", server],
             { env: { ...mobileEnvironment, ...(drive ? { SIMCTL_CHILD_TOY_BOX_AUTOMATION_SCRIPT: drive.script } : {}) } });
