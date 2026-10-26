@@ -76,7 +76,7 @@ struct ComposerTray: View {
             Spacer(minLength: 0)
             if tray.hasTasks {
                 Button { showTasks.wrappedValue.toggle() } label: {
-                    Label("Tasks \(progress.done)/\(progress.total)", systemImage: "checklist")
+                    Label("\(progress.done)/\(progress.total)", systemImage: "checklist")
                         .lineLimit(1)
                         .frame(minHeight: 28)
                         .fixedSize(horizontal: true, vertical: false)

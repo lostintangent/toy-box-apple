@@ -14,7 +14,7 @@ struct ComposerTaskProgress: View {
                 HStack {
                     Spacer(minLength: 0)
                     Button(action: showTasks) {
-                        Label("Tasks \(tray.taskProgress.done)/\(tray.taskProgress.total)", systemImage: "checklist")
+                        Label("\(tray.taskProgress.done)/\(tray.taskProgress.total)", systemImage: "checklist")
                             .lineLimit(1)
                             .frame(minHeight: 44)
                     }
