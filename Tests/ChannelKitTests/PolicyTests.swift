@@ -113,6 +113,21 @@ struct PolicyTests {
         #expect(channelArtifactsNewestFirst([]).isEmpty)
     }
 
+    @Test func artifactTiesStayInInputOrderAcrossSortRuns() {
+        let timestamps: [String?] = [
+            nil, "invalid", "2026-10-24T09:00:00Z", "2026-10-24T11:00:00+02:00",
+            "2026-10-25T09:00:00Z"
+        ]
+        let artifacts = (0..<128).map { index in
+            ChannelArtifact(file: .init(kind: "machine", path: "/\(index)"), title: "\(index)",
+                            sharedAt: timestamps[index % timestamps.count])
+        }
+        let newest = artifacts.filter { $0.sharedAt == timestamps[4] }
+        let tied = artifacts.filter { $0.sharedAt == timestamps[2] || $0.sharedAt == timestamps[3] }
+        let undated = artifacts.filter { $0.sharedAt == nil || $0.sharedAt == "invalid" }
+        #expect(channelArtifactsNewestFirst(artifacts) == newest + tied + undated)
+    }
+
     @Test func attentionAndIdentity() {
         var channel = Channel(id: "test", name: "Test", model: .init(provider: "test", name: "test"),
                               latestSequence: 10, seenThrough: 4, completedSequence: 7,
