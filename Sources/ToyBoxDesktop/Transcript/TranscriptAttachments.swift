@@ -70,19 +70,19 @@ struct TranscriptAttachments: View {
 
     private static let shadowRoom: CGFloat = 4
 
-    private var images: [ChannelAttachment] { attachments.filter(transcriptAttachmentIsImage) }
+    private var imagePositions: [Int] { attachments.indices.filter { transcriptAttachmentIsImage(attachments[$0]) } }
 
     /// The attachment the viewer presents from this message, if any.
     private var presentedAttachment: Int? {
         guard let viewer, let source, let session = viewer.session,
               session.source.messageID == source.messageID else { return nil }
-        return attachments.indices.filter { transcriptAttachmentIsImage(attachments[$0]) }
-            .dropFirst(viewer.index).first
+        return imagePositions.dropFirst(viewer.index).first
     }
 
     @ViewBuilder
     private var items: some View {
-        let positions = attachments.indices.filter { transcriptAttachmentIsImage(attachments[$0]) }
+        let positions = imagePositions
+        let images = positions.map { attachments[$0] }
         ForEach(attachments.indices, id: \.self) { index in
             let imageIndex = positions.firstIndex(of: index)
             TranscriptAttachment(attachment: attachments[index], api: api,
