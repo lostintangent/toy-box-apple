@@ -8,9 +8,17 @@ struct OverviewAboutSection: View {
     let store: ChannelStore
     @Bindable var session: OverviewSession
     @Environment(\.openURL) private var openURL
+    @Environment(\.dynamicTypeSize) private var typeSize
+
+    private var bodyFont: UIFont {
+        .preferredFont(forTextStyle: .body, compatibleWith: UITraitCollection(
+            preferredContentSizeCategory: UIContentSizeCategory(typeSize)))
+    }
 
     var body: some View {
         if let details = store.details {
+            let firstLineHeight = bodyFont.lineHeight
+            let controlHeight = max(44, firstLineHeight.rounded(.up))
             let purpose = details.purpose.flatMap { value in
                 value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : value
             }
@@ -22,11 +30,13 @@ struct OverviewAboutSection: View {
                         if let purpose {
                             OverviewPurpose(purpose: purpose, expanded: $session.purposeExpanded)
                                 .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.top, (controlHeight - firstLineHeight) / 2)
                         } else {
                             Spacer(minLength: 0)
                         }
-                        OverviewRootActions(store: store)
+                        OverviewRootActions(store: store, controlHeight: controlHeight)
                     }
+                    .padding(.top, 12)
                     if directory != nil || preview != nil {
                         VStack(alignment: .leading, spacing: 8) {
                             if let directory {
@@ -49,14 +59,12 @@ struct OverviewAboutSection: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .buttonStyle(.borderless)
+                .listRowInsets(.vertical, 0)
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
             }
-            .listRowInsets(.vertical, 0)
-            .listRowBackground(Color.clear)
-            .listRowSeparator(.hidden)
             .listSectionSeparator(.hidden)
-            .listSectionMargins(.vertical, 0)
-            .listSectionMargins(.top, 12)
-            .listSectionMargins(.bottom, 16)
+            .listSectionMargins(.bottom, OverviewListMetrics.sectionGap)
         }
     }
 
