@@ -40,9 +40,7 @@ struct ChannelScreen: View {
             .onDisappear {
                 if model.visibleChannelID == store.id { model.visibleChannelID = nil }
             }
-            .focusedValue(\.channelRefresh, model.isActive && store.phase != .deleted ? {
-                store.reconnect()
-            } : nil)
+            .focusedValue(\.channelRefresh, model.isActive && store.phase != .deleted ? .channel(store) : nil)
             .toolbar {
                 ToolbarItemGroup(placement: .primaryAction) {
                     Menu("Message View", systemImage: "line.3.horizontal.decrease") {

@@ -1,5 +1,30 @@
+import ChannelClient
 import ChannelKit
 import SwiftUI
+
+// Keep focus publication stable across native inspector layout passes.
+enum ChannelRefreshTarget: Equatable {
+    case catalog(AppModel)
+    case channel(ChannelStore)
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        switch (lhs, rhs) {
+        case (.catalog(let lhs), .catalog(let rhs)): lhs === rhs
+        case (.channel(let lhs), .channel(let rhs)): lhs === rhs
+        default: false
+        }
+    }
+
+    @MainActor @discardableResult
+    func perform() -> Task<Void, Never>? {
+        switch self {
+        case .catalog(let model): return Task { await model.refreshCatalog() }
+        case .channel(let store):
+            store.reconnect()
+            return nil
+        }
+    }
+}
 
 @MainActor
 struct WindowCommandActions {
@@ -25,7 +50,7 @@ private struct ChannelCommandsKey: FocusedValueKey {
 }
 
 private struct ChannelRefreshKey: FocusedValueKey {
-    typealias Value = () -> Void
+    typealias Value = ChannelRefreshTarget
 }
 
 extension FocusedValues {
@@ -34,7 +59,7 @@ extension FocusedValues {
         set { self[ChannelCommandsKey.self] = newValue }
     }
 
-    var channelRefresh: (() -> Void)? {
+    var channelRefresh: ChannelRefreshTarget? {
         get { self[ChannelRefreshKey.self] }
         set { self[ChannelRefreshKey.self] = newValue }
     }
@@ -73,9 +98,12 @@ struct ChannelCommands: Commands {
                 Text("Your Messages").tag(TranscriptView.yours).keyboardShortcut("2")
             }
             .disabled(actions?.setMessageView == nil)
-            Button("Refresh") { (focusedRefresh ?? actions?.refresh)?() }
+            Button("Refresh") {
+                if let focusedRefresh { focusedRefresh.perform() }
+                else { actions?.refresh?() }
+            }
                 .keyboardShortcut("r")
-                .disabled(actions == nil || (focusedRefresh ?? actions?.refresh) == nil)
+                .disabled(actions == nil || (focusedRefresh == nil && actions?.refresh == nil))
         }
         CommandMenu("Channel") {
             Button("Next Channel") { actions?.nextChannel?(.next) }

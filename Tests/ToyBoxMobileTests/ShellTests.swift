@@ -62,6 +62,53 @@ struct ShellTests {
         }
     }
 
+    @Test func focusedRefreshHasStableDestinationIdentityInsteadOfARecreatedClosure() async throws {
+        try await withDefaults { defaults in
+            let model = AppModel(arguments: ["--server", "https://fixture.example"], environment: [:],
+                                 defaults: defaults, session: fixtureSession())
+            let catalog = ChannelRefreshTarget.catalog(model)
+            #expect(catalog == .catalog(model))
+            let otherModel = AppModel(arguments: ["--server", "https://fixture.example"], environment: [:],
+                                      defaults: defaults, session: fixtureSession())
+            #expect(catalog != .catalog(otherModel))
+            let store = try #require(model.catalog?.channel(id: "first"))
+            #expect(ChannelRefreshTarget.channel(store) == .channel(store))
+            #expect(catalog != .channel(store))
+            let replacement = ChannelStore(id: store.id, api: store.api)
+            #expect(ChannelRefreshTarget.channel(store) != .channel(replacement))
+        }
+    }
+
+    @Test func focusedConversationRefreshReconnectsOnlyItsStore() async throws {
+        try await withDefaults { defaults in
+            let model = AppModel(arguments: ["--server", "https://fixture.example"], environment: [:],
+                                 defaults: defaults, session: fixtureSession())
+            let store = try #require(model.catalog?.channel(id: "first"))
+            let other = try #require(model.catalog?.channel(id: "second"))
+            defer { store.disconnect() }
+            #expect(ChannelRefreshTarget.channel(store).perform() == nil)
+            #expect(store.phase == .connecting)
+            #expect(other.phase == .idle)
+            #expect(model.catalog?.hasLoaded == false)
+        }
+    }
+
+    @Test func focusedCatalogRefreshUsesTheCurrentServerWithoutChangingItsFocusIdentity() async throws {
+        try await withDefaults { defaults in
+            let model = AppModel(arguments: ["--server", "https://first.example"], environment: [:],
+                                 defaults: defaults, session: fixtureSession())
+            let target = ChannelRefreshTarget.catalog(model)
+            let previousCatalog = model.catalog
+            try model.configure(serverURL: "https://second.example/prefix")
+            #expect(target == .catalog(model))
+            await target.perform()?.value
+            #expect(model.catalog !== previousCatalog)
+            #expect(model.catalog?.api.baseURL.absoluteString == "https://second.example/prefix")
+            #expect(model.catalog?.hasLoaded == true)
+            #expect(model.catalog?.channels.count == 2)
+        }
+    }
+
     @Test func channelRowsKeepTheirMinimumAndGrowForAccessibilityText() {
         let channel = Channel(id: "layout", name: "A team with a deliberately long channel name",
                               directory: "/Projects/a-deliberately-long-folder-name",
