@@ -5,7 +5,8 @@ import Testing
 
 @MainActor
 struct ChannelArtifactSessionTests {
-    @Test func switchingChannelsDiscardsTheVisitAndCancelsItsPendingLoad() async throws {
+    @Test(arguments: [false, true])
+    func switchingScopeDiscardsTheVisitAndCancelsItsPendingLoad(changingServer: Bool) async throws {
         let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try Data("Shared document".utf8).write(to: file)
         defer { try? FileManager.default.removeItem(at: file) }
@@ -20,16 +21,19 @@ struct ChannelArtifactSessionTests {
         await downloads.hold(original)
         session.open(original)
         try await wait { await downloads.hasRequested(original) }
-        session.configure(api: api, channelID: "second", artifacts: [next])
+        let obsolete = try #require(session.loadTask)
+        let replacement = changingServer ? try ChannelAPI(baseURL: URL(string: "https://other.example")!) : api
+        session.configure(api: replacement, channelID: changingServer ? "first" : "second", artifacts: [next])
         #expect(!session.isPresented)
         #expect(!session.isLoading)
         session.open(next)
         try await wait { !session.isLoading }
         await downloads.release(original)
-        try await wait { await downloads.hasReturned(original) }
+        await obsolete.value
         #expect(session.artifact?.id == next.id)
         #expect(session.content?.artifact.id == next.id)
         #expect(session.content?.text == "Shared document")
+        #expect(session.content?.server == replacement.baseURL)
         #expect(session.loadError == nil)
         #expect(session.actionError == nil)
         session.close()
@@ -52,9 +56,10 @@ struct ChannelArtifactSessionTests {
         await downloads.hold(selected)
         session.open(selected)
         try await wait { await downloads.hasRequested(selected) }
+        let obsolete = try #require(session.loadTask)
         session.update([neighbor])
         await downloads.release(selected)
-        try await wait { await downloads.hasReturned(selected) }
+        await obsolete.value
         #expect(session.artifact?.id == selected.id)
         #expect(session.isUnavailable)
         #expect(session.content == nil)
@@ -81,13 +86,11 @@ private actor ArtifactDownloads {
     let prepared: URL
     private var held: Set<String> = []
     private var requests: Set<String> = []
-    private var returned: Set<String> = []
     private var pending: [String: CheckedContinuation<Void, Never>] = [:]
 
     init(file: URL) { prepared = file }
     func hold(_ artifact: ChannelArtifact) { held.insert(artifact.id) }
     func hasRequested(_ artifact: ChannelArtifact) -> Bool { requests.contains(artifact.id) }
-    func hasReturned(_ artifact: ChannelArtifact) -> Bool { returned.contains(artifact.id) }
     func release(_ artifact: ChannelArtifact) {
         held.remove(artifact.id)
         pending.removeValue(forKey: artifact.id)?.resume()
@@ -95,7 +98,6 @@ private actor ArtifactDownloads {
     func file(for artifact: ChannelArtifact) async -> URL {
         requests.insert(artifact.id)
         if held.contains(artifact.id) { await withCheckedContinuation { pending[artifact.id] = $0 } }
-        returned.insert(artifact.id)
         return prepared
     }
 }

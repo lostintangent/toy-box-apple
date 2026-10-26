@@ -20,7 +20,7 @@ public final class ChannelArtifactSession {
     @ObservationIgnored private var extra: ChannelArtifact?
     @ObservationIgnored private var cached: [String: ArtifactContent] = [:]
     @ObservationIgnored private var preparedFiles: [String: URL] = [:]
-    @ObservationIgnored private var loadTask: Task<Void, Never>?
+    @ObservationIgnored private(set) var loadTask: Task<Void, Never>?
     @ObservationIgnored private var thumbnailTask: Task<Void, Never>?
     @ObservationIgnored private var token = UUID()
     @ObservationIgnored private var thumbnailToken = UUID()
