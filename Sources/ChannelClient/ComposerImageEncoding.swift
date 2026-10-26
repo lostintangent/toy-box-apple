@@ -66,9 +66,9 @@ enum ComposerImageEncoding {
         let scale = Double(maxPixelSize) / Double(dimension)
         let width = max(1, Int(Double(image.width) * scale))
         let height = max(1, Int(Double(image.height) * scale))
-        guard let context = CGContext(
+        guard let space = CGColorSpace(name: CGColorSpace.sRGB), let context = CGContext(
             data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
-            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
         ) else { return nil }
         context.interpolationQuality = .high
         context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
