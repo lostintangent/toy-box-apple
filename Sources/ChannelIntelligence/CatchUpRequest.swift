@@ -58,7 +58,7 @@ public struct CatchUpRequest: Sendable, Hashable {
                  scope: Scope = .unread) {
         guard let unreadAfter else { return nil }
         let unread = state.messages.filter { $0.sequence > unreadAfter }
-        let fromAgents = unread.filter { !$0.isSystem && $0.sender.type == "agent" }
+        let fromAgents = unread.filter(\.isAgentMessage)
         guard fromAgents.count >= max(1, minimumUnread),
               fromAgents.reduce(0, { $0 + $1.text.count }) >= minimumCharacters else { return nil }
 
