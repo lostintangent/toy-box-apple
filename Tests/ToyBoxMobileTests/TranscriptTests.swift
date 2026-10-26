@@ -71,6 +71,34 @@ struct TranscriptTests {
         #expect(anchor.row == "p1" && anchor.offset == 100)
     }
 
+    @Test func aRevealFinishesFromSettledGeometryOrWhenTheReaderTakesOver() {
+        let viewport = TranscriptScrollModel.Viewport(width: 386, height: 600, topInset: 0, bottomInset: 0)
+        let scroll = TranscriptScroll()
+        scroll.rows = (0..<20).map { .init(id: "r\($0)", order: $0) }
+        for index in 0..<20 { scroll.measure("r\(index)", frame: CGRect(x: 0, y: CGFloat(index) * 100, width: 386, height: 100)) }
+        scroll.metrics = .init(viewport: viewport, origin: 1400, documentEnd: 2000)
+        _ = scroll.update(.land(.end))
+
+        // Asking to scroll isn't revealing: it finishes only once the native origin arrives.
+        let settles = UUID()
+        scroll.pendingReveal = (settles, "r5")
+        let origin = scroll.update(.reveal("r5"))?.origin
+        #expect(origin == 250 && scroll.finishedReveal() == nil)
+        scroll.metrics?.origin = 250
+        _ = scroll.update()
+        #expect(scroll.finishedReveal()! == (settles, true))
+        #expect(scroll.finishedReveal() == nil)
+
+        // The reader scrolling first finishes it, revealed only if the row ended up in view.
+        let interrupted = UUID()
+        scroll.pendingReveal = (interrupted, "r15")
+        #expect(scroll.update(.reveal("r15"))?.origin == 1250 && scroll.finishedReveal() == nil)
+        scroll.isReaderScrolling = true
+        scroll.metrics?.origin = 0
+        _ = scroll.update()
+        #expect(scroll.finishedReveal()! == (interrupted, false))
+    }
+
     @Test func onlyANewSendFollowsToTheBottom() {
         func attempt(_ id: String, _ phase: ChannelSendPhase) -> ChannelSendAttempt {
             ChannelSendAttempt(id: id, content: id, attachments: [], timestamp: "2026-10-25T12:00:00Z", phase: phase)

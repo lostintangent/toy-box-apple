@@ -38,9 +38,11 @@ struct ConversationTranscript: View {
     @ViewState private var opening = TranscriptOpening()
     @ViewState private var layoutTurns = TranscriptLayoutTurns()
     @ViewState private var find: TranscriptFind
+    private let revealTimeout: Duration
 
-    init(store: ChannelStore, find: TranscriptFind = TranscriptFind()) {
+    init(store: ChannelStore, find: TranscriptFind = TranscriptFind(), revealTimeout: Duration = .seconds(2)) {
         self.store = store
+        self.revealTimeout = revealTimeout
         _find = ViewState(wrappedValue: find)
     }
 
@@ -881,9 +883,10 @@ struct ConversationTranscript: View {
         let individualSystem = message.system?.type == "artifact_shared"
             || (membership && row.messages.contains(where: { expandedMessageIds.contains($0.id) }))
         let targetID = message.isSystem && !individualSystem ? row.id : message.id
-        guard await settleReveal(targetID: targetID, rowID: row.id, token: token,
-                                 findToken: findToken, using: proxy) else { return }
-        interaction.finishReveal(token, .revealed)
+        guard let outcome = await settleReveal(targetID: targetID, rowID: row.id, token: token,
+                                               findToken: findToken, using: proxy) else { return }
+        interaction.finishReveal(token, outcome)
+        guard outcome == .revealed else { return }
         highlightedSequence = find.isPresented ? nil : sequence
         hasLanded = true
         guard !find.isPresented else { return }
@@ -898,15 +901,16 @@ struct ConversationTranscript: View {
         return findToken == nil || (find.isPresented && find.revealRequest?.token == findToken)
     }
 
-    private func settleReveal(targetID: String, rowID: String, token: UUID,
-                              findToken: UUID?, using proxy: ScrollViewProxy) async -> Bool {
+    /// Nil when another reveal, Find or the artifact viewer superseded this one.
+    private func settleReveal(targetID: String, rowID: String, token: UUID, findToken: UUID?,
+                              using proxy: ScrollViewProxy) async -> RevealProgress.Outcome? {
         let turns = TranscriptLayoutTurns()
-        let deadline = ContinuousClock.now + .seconds(2)
+        let deadline = ContinuousClock.now + revealTimeout
         var reveal = TranscriptReveal()
         var materialized = false
         scrollPosition = nil
         while ContinuousClock.now < deadline {
-            guard await turns.settled(), revealIsCurrent(token, findToken: findToken) else { return false }
+            guard await turns.settled(), revealIsCurrent(token, findToken: findToken) else { return nil }
             guard let layout = TranscriptReveal.Layout(
                 frame: frames[targetID], historyStart: store.messages.first?.sequence,
                 viewport: viewport, nativeTop: window.viewportTop) else {
@@ -918,11 +922,12 @@ struct ConversationTranscript: View {
                 continue
             }
             let aligned = window.restoreReadingBottom(layout.bottom, of: layout.frame)
-            if reveal.receive(layout, isAligned: aligned) { return true }
+            if reveal.receive(layout, isAligned: aligned) { return .revealed }
         }
-        guard revealIsCurrent(token, findToken: findToken) else { return false }
-        revealError = "Couldn't reveal this message. Try Reveal again."
-        return false
+        guard revealIsCurrent(token, findToken: findToken) else { return nil }
+        let failure = "Couldn't reveal this message. Try Reveal again."
+        revealError = failure
+        return .failed(failure)
     }
 
     private func loadOlder() async {

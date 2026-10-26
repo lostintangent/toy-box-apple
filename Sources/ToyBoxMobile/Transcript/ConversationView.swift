@@ -22,6 +22,8 @@ final class TranscriptScroll {
     var holdsAnchorThroughInput = false
     private(set) var intent: Model.Intent = .landing(.end)
     private(set) var hasLanded = false
+    /// The reveal still waiting for native geometry to hold its row.
+    var pendingReveal: (token: UUID, row: String)?
     private var frames: [String: CGRect] = [:]
     private var lastLayout: Model.Layout?
 
@@ -80,6 +82,20 @@ final class TranscriptScroll {
             || Model.firstRowStartingInView(metrics.origin, rows: measured, viewport: metrics.viewport) != nil
     }
 
+    /// A reveal finishes once geometry holds its row where the model places it. Reader input or a
+    /// jump that replaces it first finishes it too, revealed only if the row is in view.
+    func finishedReveal() -> (token: UUID, isRevealed: Bool)? {
+        guard let pending = pendingReveal, let layout else { return nil }
+        if case .revealing(let id, _) = intent, id == pending.row {
+            guard let origin = Model.placement(for: intent, layout: layout).origin,
+                  abs(origin - layout.origin) <= 0.5 else { return nil }
+            pendingReveal = nil
+            return (pending.token, true)
+        }
+        pendingReveal = nil
+        return (pending.token, Model.visibleRows(in: layout).contains(pending.row))
+    }
+
     var distanceToEnd: CGFloat { layout.map(Model.distanceToEnd(in:)) ?? 0 }
     var visibleRows: [String] { layout.map(Model.visibleRows(in:)) ?? [] }
 }
@@ -111,6 +127,7 @@ struct ConversationView: View {
     @ViewState private var expanded: Set<String> = []
 
     nonisolated private static let space = "transcript-content"
+    private static let revealInterrupted = "Scrolling moved away before the message was revealed."
     private static let laneWidth: CGFloat = 720
 
     private var items: [TranscriptItem] {
@@ -267,7 +284,12 @@ struct ConversationView: View {
             withAnimation(.easeOut(duration: 0.2)) { showsJumpToLatest = away }
         }
         // The current geometry is about to be replaced, so it says nothing about what the reader saw.
-        if !isMoving { markRead() }
+        if !isMoving {
+            markRead()
+            if let reveal = scroll.finishedReveal() {
+                interaction.finishReveal(reveal.token, reveal.isRevealed ? .revealed : .failed(Self.revealInterrupted))
+            }
+        }
     }
 
     /// Nothing covers the conversation: Settings, a management sheet and the compact Overview
@@ -308,8 +330,13 @@ struct ConversationView: View {
         }
         if target() == nil { interaction.messageView = .all }
         guard let item = target() else { return fail("This message is no longer available.") }
-        place(scroll.update(.reveal(item.id)))
-        interaction.finishReveal(token, .revealed)
+        scroll.pendingReveal = (token, item.id)
+        let placement = scroll.update(.reveal(item.id))
+        guard placement != nil, placement?.unavailableTarget == nil else {
+            scroll.pendingReveal = nil
+            return fail("This message is no longer available.")
+        }
+        place(placement)
         highlightedSequence = sequence
         try? await Task.sleep(for: .seconds(2))
         if highlightedSequence == sequence { highlightedSequence = nil }

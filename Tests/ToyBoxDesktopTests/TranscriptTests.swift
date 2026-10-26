@@ -867,6 +867,30 @@ struct TranscriptTests {
     }
 
     @MainActor
+    @Test func aRevealReportsRevealedOnlyOnceItsMessageIsInView() async throws {
+        let harness = try await TranscriptHarness(messages: (1...90).map(transcriptTestMessage))
+        defer { harness.close() }
+        try await harness.settled()
+        let token = harness.interaction.reveal(sequence: 20)
+        #expect(harness.interaction.revealProgress?.outcome == .loading)
+        try await harness.waitUntil { harness.interaction.revealProgress?.outcome != .loading }
+        #expect(harness.interaction.revealProgress == RevealProgress(token: token, sequence: 20, outcome: .revealed))
+        #expect(harness.visibleWindowFrames()["m20"] != nil)
+    }
+
+    @MainActor
+    @Test func aRevealThatNeverSettlesReportsItsFailure() async throws {
+        // No time to settle, so the reveal times out on its first check.
+        let harness = try await TranscriptHarness(messages: (1...90).map(transcriptTestMessage), revealTimeout: .zero)
+        defer { harness.close() }
+        try await harness.settled()
+        let token = harness.interaction.reveal(sequence: 20)
+        try await harness.waitUntil { harness.interaction.revealProgress?.outcome != .loading }
+        #expect(harness.interaction.revealProgress == RevealProgress(
+            token: token, sequence: 20, outcome: .failed("Couldn't reveal this message. Try Reveal again.")))
+    }
+
+    @MainActor
     @Test func closingFindAtTheBottomRestoresFollowingButKeepsReadSuspended() async throws {
         let find = TranscriptFind()
         let harness = try await TranscriptHarness(messages: transcriptFindTestMessages(1...90), find: find)
@@ -2909,7 +2933,7 @@ private final class TranscriptHarness {
          seenThrough: Int? = nil, height: CGFloat = 480, resizable: Bool = false, warm: Bool = false,
          legacyScrollers: Bool = false,
          intelligence: any ChannelIntelligenceService = LiveChannelIntelligence.shared,
-         find: TranscriptFind = TranscriptFind(),
+         find: TranscriptFind = TranscriptFind(), revealTimeout: Duration = .seconds(2),
          onTurn: (@MainActor (TranscriptHarness) -> Void)? = nil) async throws {
         let host = "transcript-\(UUID().uuidString.lowercased()).invalid"
         let latest = messages.last?.sequence ?? 0
@@ -2936,7 +2960,7 @@ private final class TranscriptHarness {
             }
             try #require(store.isLoaded && store.phase.isLive)
         }
-        let view = NSHostingView(rootView: ConversationTranscript(store: store, find: find)
+        let view = NSHostingView(rootView: ConversationTranscript(store: store, find: find, revealTimeout: revealTimeout)
             .onPreferenceChange(TranscriptMessageFrames.self) { capture.frames = $0 }
             .onPreferenceChange(TranscriptLanded.self) { capture.hasLanded = $0 }
             .onPreferenceChange(TranscriptRestoringHistory.self) { capture.isRestoringHistory = $0 }
