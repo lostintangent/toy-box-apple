@@ -359,6 +359,40 @@ struct TranscriptTests {
         }
     }
 
+    @Test func mentionsUseTheAgentsInkAtTextContrastOnEveryBubble() throws {
+        func rgb(_ color: Color, dark: Bool) -> TranscriptRGB {
+            var (red, green, blue, alpha): (CGFloat, CGFloat, CGFloat, CGFloat) = (0, 0, 0, 0)
+            UIColor(color).resolvedColor(with: UITraitCollection(userInterfaceStyle: dark ? .dark : .light))
+                .getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+            return TranscriptRGB(red: red, green: green, blue: blue, alpha: alpha)
+        }
+        let pale = ChannelAgent(id: "ada", name: "Ada", avatar: .init(mark: "M0 0", color: "#facc15"))
+        let text = transcriptInlineMarkdown("Thanks @ada and @everyone, not @nobody", agents: [pale],
+                                            mentionInk: { _ in .red })
+        let styled = text.runs.filter { $0.foregroundColor != nil }.map { String(text[$0.range].characters) }
+        #expect(styled == ["@ada", "@everyone"])
+        for dark in [false, true] {
+            for increased in [false, true] {
+                for surface in [TranscriptSurface.agent, .pendingAgent, .user] {
+                    let ink = rgb(TranscriptMentionInk(surface: surface, isDark: dark, isContrastIncreased: increased)
+                        .color(for: pale), dark: dark)
+                    let background = surface.fills(isDark: dark)
+                        .reduce(rgb(Color(uiColor: .systemBackground), dark: dark)) { $0.under(rgb($1, dark: dark)) }
+                    #expect(ink.contrast(with: background) >= (increased ? 7 : 4.5))
+                }
+            }
+        }
+    }
+
+    @Test func messagesRenderMarkdownBlocksLikeTheMac() {
+        func height(_ text: String) -> CGFloat {
+            UIHostingController(rootView: TranscriptBody(text: text))
+                .sizeThatFits(in: CGSize(width: 300, height: CGFloat.infinity)).height
+        }
+        let line = height("Pass 300")
+        #expect(height("## Pass 300") > line * 1.2)
+    }
+
     @Test func longMessagesCollapseInTheSamePassThatMeasuresThem() {
         func height(_ text: String, expanded: Bool) -> CGFloat {
             UIHostingController(rootView: TranscriptCollapsibleBody(isExpanded: expanded, endPadding: 10) {
