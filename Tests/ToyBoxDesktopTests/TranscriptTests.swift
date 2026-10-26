@@ -1958,6 +1958,16 @@ struct ImageViewerTests {
         }
     }
 
+    @Test func theViewerKnowsItsWindowBeforeAnImageOpens() {
+        let viewer = ImageViewer()
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 300), styleMask: [.borderless],
+                              backing: .buffered, defer: true)
+        window.isReleasedWhenClosed = false
+        window.contentView = NSHostingView(rootView: ImageViewerCanvas().environment(viewer))
+        window.contentView?.layoutSubtreeIfNeeded()
+        #expect(viewer.window === window)
+    }
+
     @Test func viewerBitmapsArriveInTheDisplaySpaceSoCommitHasNothingToConvert() throws {
         let srgb = try #require(CGColorSpace(name: CGColorSpace.sRGB))
         let p3 = try #require(CGColorSpace(name: CGColorSpace.displayP3))

@@ -115,6 +115,8 @@ final class ImageViewer {
     var toolbarInset: CGFloat = 0
     @ObservationIgnored var reducesMotion = false
     @ObservationIgnored weak var anchorView: NSView?
+    /// The window the canvas is in, known before an image opens so decoding targets its display.
+    @ObservationIgnored weak var window: NSWindow?
     @ObservationIgnored private var canvases = 0
     @ObservationIgnored private(set) var loads: [Int: Task<Void, Never>] = [:]
     @ObservationIgnored private var vectorRasterTask: Task<Void, Never>?
@@ -572,7 +574,7 @@ final class ImageViewer {
         let api = session.api
         let pixelsPerPoint = max(1, layout?.displayScale ?? 2)
         let rasterPixels = desiredVectorPixels(at: position)
-        let space = NSScreen.main?.colorSpace?.cgColorSpace
+        let space = (window?.screen ?? NSScreen.main)?.colorSpace?.cgColorSpace
         loads[position] = Task { [weak self] in
             let result: Result<(URL, CGImage, ImageViewerCornerTone?, CGSize?), any Error>
             do {
@@ -752,6 +754,7 @@ struct ImageViewerCanvas: View {
         .ignoresSafeArea(edges: .top)
         .onGeometryChange(for: CGFloat.self) { $0.safeAreaInsets.top } action: { viewer.toolbarInset = $0 }
         .allowsHitTesting(viewer.session != nil)
+        .background(ImageViewerWindowReader(viewer: viewer))
         .onAppear { viewer.canvasAppeared() }
         .onDisappear { viewer.canvasDisappeared() }
     }
@@ -1065,6 +1068,29 @@ private struct ImageViewerCapsule: View {
         .accessibilityLabel("Image \(position + 1) of \(session.images.count)"
                             + (session.images[position].filename.map { ", \($0)" } ?? ""))
         .accessibilityAddTraits(isCurrent ? .isSelected : [])
+    }
+}
+
+private struct ImageViewerWindowReader: NSViewRepresentable {
+    let viewer: ImageViewer
+
+    func makeNSView(context: Context) -> ReaderView {
+        let view = ReaderView()
+        view.viewer = viewer
+        return view
+    }
+
+    func updateNSView(_ view: ReaderView, context: Context) { view.viewer = viewer }
+
+    final class ReaderView: NSView {
+        weak var viewer: ImageViewer?
+
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if let window { viewer?.window = window }
+        }
     }
 }
 
