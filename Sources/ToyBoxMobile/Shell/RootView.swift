@@ -16,6 +16,7 @@ struct RootView: View {
             if let store = model.selectedStore {
                 ChannelScreen(store: store)
                     .environment(model.interaction(for: store.id))
+                    .environment(model.artifactSession(for: store))
             } else {
                 ContentUnavailableView("Choose a channel", systemImage: "bubble.left.and.bubble.right")
             }
@@ -39,16 +40,8 @@ struct RootView: View {
                     }
             }
         }
-        .sheet(item: $management.flow) { _ in
-            NavigationStack {
-                ContentUnavailableView("Management", systemImage: "person.2",
-                                       description: Text("Channel management is being built."))
-                    .toolbar {
-                        ToolbarItem(placement: .confirmationAction) {
-                            Button("Done") { management.flow = nil }
-                        }
-                    }
-            }
+        .sheet(item: $management.flow) { flow in
+            ManagementSheet(flow: flow, presenter: management)
         }
         .alert("Channel unavailable", isPresented: Binding(
             get: { model.navigationNotice != nil },

@@ -17,6 +17,7 @@ final class AppModel {
     var selectedChannelID: String? {
         didSet {
             guard oldValue != selectedChannelID else { return }
+            if let selectedStore { artifactSessions[selectedStore.id]?.session.close() }
             if holdsSelectedConnection, let selectedStore { connections.release(selectedStore) }
             holdsSelectedConnection = false
             selectedStore = selectedChannelID.flatMap { catalog?.channel(id: $0) }
@@ -32,6 +33,7 @@ final class AppModel {
     @ObservationIgnored private var restoredSelection = false
     @ObservationIgnored private var serverIdentity = ""
     @ObservationIgnored private var interactions: [String: ChannelInteraction] = [:]
+    @ObservationIgnored private var artifactSessions: [String: (store: ChannelStore, session: ChannelArtifactSession)] = [:]
 
     init(arguments: [String] = ProcessInfo.processInfo.arguments,
          environment: [String: String] = ProcessInfo.processInfo.environment,
@@ -73,6 +75,8 @@ final class AppModel {
         selectedChannelID = nil
         visibleChannelID = nil
         interactions = [:]
+        for entry in artifactSessions.values { entry.session.close() }
+        artifactSessions = [:]
         self.serverURL = api.baseURL.absoluteString
         serverIdentity = identity
         catalog = ChannelCatalogStore(api: api)
@@ -131,6 +135,15 @@ final class AppModel {
         let interaction = ChannelInteraction(isInspectorPresented: false)
         interactions[channelID] = interaction
         return interaction
+    }
+
+    func artifactSession(for store: ChannelStore) -> ChannelArtifactSession {
+        if let entry = artifactSessions[store.id], entry.store === store { return entry.session }
+        artifactSessions[store.id]?.session.close()
+        let session = ChannelArtifactSession(decodeImage: ArtifactImageDecoder.decode)
+        session.configure(api: store.api, channelID: store.id, artifacts: store.artifacts)
+        artifactSessions[store.id] = (store, session)
+        return session
     }
 
     private var rememberedSelections: [String: String] {
