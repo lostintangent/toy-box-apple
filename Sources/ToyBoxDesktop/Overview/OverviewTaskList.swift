@@ -136,7 +136,7 @@ struct OverviewTaskRow: View {
     @ViewBuilder
     private var timedHeader: some View {
         if task.startedAt.flatMap(ChannelDates.date) != nil {
-            TimelineView(OverviewTaskMinuteSchedule(isVisible: isTimingVisible)) { context in
+            TimelineView(ChannelTaskMinuteSchedule(isVisible: isTimingVisible)) { context in
                 header(timing: channelTaskTiming(task, now: context.date))
             }
             .onScrollVisibilityChange(threshold: 0.01) { isTimingVisible = $0 }
@@ -159,7 +159,7 @@ struct OverviewTaskRow: View {
                     }
                 }
                 if let timing {
-                    let presentation = OverviewTaskTimingPresentation(timing: timing)
+                    let presentation = ChannelTaskTimingPresentation(timing: timing)
                     HStack(spacing: 10) {
                         Label(presentation.elapsedText, systemImage: "clock")
                             .help(presentation.elapsedHelp)
@@ -248,7 +248,7 @@ struct OverviewTaskRow: View {
 
     private func accessibilityLabel(timing: ChannelTaskTiming?) -> String {
         var parts = [task.title, task.statusDescription]
-        if let timing { parts.append(OverviewTaskTimingPresentation(timing: timing).spoken) }
+        if let timing { parts.append(ChannelTaskTimingPresentation(timing: timing).spoken) }
         if let progress {
             parts.append("\(progress.done) of \(progress.total) subtasks done")
         }
@@ -261,8 +261,6 @@ struct OverviewTaskRow: View {
     }
 }
 
-typealias OverviewTaskMinuteSchedule = ChannelTaskMinuteSchedule
-typealias OverviewTaskTimingPresentation = ChannelTaskTimingPresentation
 
 /// A parent row is a button whose press toggles it, as the routine rows are. A leaf is static text.
 private struct OverviewTaskRowRole: ViewModifier {

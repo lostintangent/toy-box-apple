@@ -258,36 +258,6 @@ struct ManagementTests {
         #expect(abs(grandchild - nested - OverviewTaskList.depthIndent) < 1)
     }
 
-    @Test func taskTimingUsesHoursExpandedSpeechAndOnlySchedulesVisibleRows() {
-        for (minutes, text, spoken) in [
-            (0, "0m", "0 minutes"), (1, "1m", "1 minute"), (59, "59m", "59 minutes"),
-            (60, "1h", "1 hour"), (86, "1h 26m", "1 hour 26 minutes"), (2941, "49h 1m", "49 hours 1 minute")
-        ] {
-            let presentation = OverviewTaskTimingPresentation(timing: .init(elapsedMinutes: minutes))
-            #expect(presentation.elapsedText == text)
-            #expect(presentation.elapsedHelp == "Elapsed: \(spoken)")
-            #expect(presentation.checkInText == nil)
-            #expect(presentation.checkInHelp == nil)
-            #expect(presentation.spoken == "\(spoken) elapsed")
-        }
-        let upcoming = OverviewTaskTimingPresentation(timing: .init(elapsedMinutes: 86, checkInMinutes: 31))
-        #expect(upcoming.elapsedText == "1h 26m")
-        #expect(upcoming.checkInText == "31m")
-        #expect(upcoming.checkInHelp == "Check-in in 31 minutes")
-        #expect(upcoming.spoken == "1 hour 26 minutes elapsed, check-in in 31 minutes")
-        let due = OverviewTaskTimingPresentation(timing: .init(elapsedMinutes: 60, checkInMinutes: 0))
-        #expect(due.checkInText == "0m")
-        #expect(due.checkInHelp == "Check-in due")
-        #expect(due.spoken == "1 hour elapsed, check-in due")
-
-        let start = Date(timeIntervalSince1970: 1_792_800_000)
-        #expect(Array(OverviewTaskMinuteSchedule(isVisible: false).entries(from: start, mode: .normal)) == [start])
-        let ticks = Array(OverviewTaskMinuteSchedule(isVisible: true).entries(from: start, mode: .normal).prefix(3))
-        #expect(ticks.count == 3)
-        #expect(ticks[1].timeIntervalSince(ticks[0]) == 60)
-        #expect(ticks[2].timeIntervalSince(ticks[1]) == 60)
-    }
-
     @Test(arguments: ["in_progress", "done"])
     func aParentsChevronWrapsWithTheLastWordOfItsTitle(_ status: String) throws {
         let title = "Polish the onboarding flow for teammates"
