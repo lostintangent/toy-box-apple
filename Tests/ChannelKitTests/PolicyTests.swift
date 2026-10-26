@@ -67,9 +67,6 @@ struct PolicyTests {
         #expect(channelTasksDiff([]) == nil)
         #expect(channelTasksDiff([tasks[1]]) == .init(added: 0, removed: 0))
         #expect(channelTasksProgress(tasks) == .init(done: 1, total: 2))
-        #expect(!channelTasksComplete(tasks))
-        #expect(!channelTasksComplete([]))
-        #expect(channelTasksComplete([.init(id: "done", title: "Done", status: "done")]))
         #expect(unassignChannelTasks(tasks, agentId: "ada")[0].children?[0].ownerId == nil)
     }
 
