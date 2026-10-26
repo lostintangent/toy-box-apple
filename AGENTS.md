@@ -140,6 +140,14 @@ Agents never create these accounts, accept agreements, read private keys or set 
   and WindowServer-event checks remain opt-in and must run locally before changes to their behavior.
 - Restore a quarantined test to CI only after identifying the cause and adding deterministic
   regression coverage. Do not loosen assertions or add retries to turn an unexplained failure green.
+- The four `MainActorTurnTests` occupancy probes are quarantined behind
+  `TOY_BOX_TEST_MAIN_ACTOR_TIMING=1 bun run test --filter MainActorTurnTests`.
+  The 2026-10-26 Mac run of `c4c761d` recorded nine Client readiness failures in
+  `t338-full-mac.log`. The probes deliberately sleep and wait synchronously on the shared main actor
+  while other suites' three-second readiness deadlines keep running. Core owns
+  `client-test-actor-isolation`: isolate these probes and replace timing-dependent readiness with
+  controlled events before restoring their merge-gate coverage. The functional tests and their
+  deadlines remain unchanged.
 
 ## Validating the running app
 
