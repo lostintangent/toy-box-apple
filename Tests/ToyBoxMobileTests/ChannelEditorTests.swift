@@ -50,8 +50,21 @@ struct ChannelEditorTests {
             let labels = tree.elements.map(\.label)
             #expect(tree.elements.contains { $0.identifier == "channel-name-label" && $0.label == "Name" },
                     "The visible Name label must not be only a text-field accessibility label: \(tree.labels)")
-            #expect(tree.elements.contains { $0.identifier == "channel-name" })
-            #expect(tree.elements.contains { $0.identifier == "channel-purpose" })
+            // SwiftUI's UIKit inputs are omitted by this in-process accessibility walker.
+            let views = descendants(in: host.view)
+            let names = views.compactMap { $0 as? UITextField }
+            let purposes = views.compactMap { $0 as? UITextView }
+            #expect(names.count == 1)
+            #expect(purposes.count == 1)
+            let name = try #require(names.first)
+            let purpose = try #require(purposes.first)
+            #expect(name.window === window && !name.isHidden && name.bounds.width > 0)
+            #expect(purpose.window === window && !purpose.isHidden && purpose.bounds.height > 0)
+            #expect(name.text == session.name)
+            #expect(name.placeholder == "Required")
+            #expect(name.isEnabled)
+            #expect(purpose.text == session.purpose)
+            #expect(purpose.isEditable)
             #expect(!tree.elements.contains { $0.identifier == "channel-directory" })
             for removed in ["Working directory", "Folder on Mac", "Optional",
                             "A folder on the server. Leave it empty for a discussion-only channel.",
@@ -61,6 +74,10 @@ struct ChannelEditorTests {
             #expect(labels.contains("Name and purpose changes appear in the conversation.") == editing)
             #expect(session.channel?.directory == originalDirectory)
         }
+    }
+
+    private func descendants(in view: UIView) -> [UIView] {
+        view.subviews.flatMap { [$0] + descendants(in: $0) }
     }
     #endif
 
