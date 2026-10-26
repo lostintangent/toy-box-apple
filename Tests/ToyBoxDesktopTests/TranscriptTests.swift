@@ -2478,11 +2478,14 @@ private final class TranscriptHarness {
     /// A `resizable` transcript fills the window, so `resize(height:)` reaches it the way a live resize does.
     /// A `warm` store is live before the transcript appears, as when switching back to a channel.
     /// `onTurn` runs after every layout and display pass from the first one on.
+    /// The app's two-second reveal budget is wall-clock time, which a starved parallel runner can
+    /// spend before layout settles. Tests assert the settled outcome, so they get a budget that
+    /// still ends below `waitUntil`'s deadline. Timeout behavior has its own `.zero` test.
     init(messages: [ChannelMessage], history: [ChannelMessage] = [], holdsHistory: Bool = false,
          seenThrough: Int? = nil, height: CGFloat = 480, resizable: Bool = false, warm: Bool = false,
          legacyScrollers: Bool = false,
          intelligence: any ChannelIntelligenceService = LiveChannelIntelligence.shared,
-         find: TranscriptFind = TranscriptFind(), revealTimeout: Duration = .seconds(2),
+         find: TranscriptFind = TranscriptFind(), revealTimeout: Duration = .seconds(30),
          onTurn: (@MainActor (TranscriptHarness) -> Void)? = nil) async throws {
         let host = "transcript-\(UUID().uuidString.lowercased()).invalid"
         let latest = messages.last?.sequence ?? 0
