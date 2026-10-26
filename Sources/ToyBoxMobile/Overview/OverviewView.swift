@@ -69,22 +69,30 @@ struct OverviewRootActions: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            Menu("Channel Actions", systemImage: "ellipsis") {
+            Menu {
                 Button("Edit Channel", systemImage: "pencil") {
                     management.present(.editChannel(channelId: store.id))
                 }
                 Button("Delete Channel", systemImage: "trash", role: .destructive) {
                     management.present(.deleteChannel(channelId: store.id))
                 }
+            } label: {
+                Label("Channel Actions", systemImage: "ellipsis")
+                    .frame(minWidth: 44, minHeight: 44)
+                    .contentShape(Rectangle())
             }
-            .frame(minWidth: 44, minHeight: 44)
             .accessibilityIdentifier("overview-channel-actions")
             .disabled(!store.phase.isLive)
-            Button(role: .close) { interaction.isInspectorPresented = false }
-                .frame(minWidth: 44, minHeight: 44)
-                .accessibilityLabel("Close Overview")
+            Button(role: .close) {
+                interaction.isInspectorPresented = false
+            } label: {
+                Label("Close Overview", systemImage: "xmark")
+                    .frame(minWidth: 44, minHeight: 44)
+                    .contentShape(Rectangle())
+            }
         }
         .fixedSize()
+        .labelStyle(.iconOnly)
         .buttonStyle(.borderless)
     }
 }

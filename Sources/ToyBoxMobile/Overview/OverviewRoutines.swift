@@ -72,9 +72,9 @@ struct OverviewRoutineRow: View {
                 Text(ChannelRoutineRunPresentation.label(schedule: schedule, pending: pending, requestedAt: requestedAt))
                     .font(.footnote).foregroundStyle(ChannelInk.secondary)
             }
-            .modifier(OverviewListRowBoundary(isLast: contentEndsSection && !state.expanded))
             .frame(minHeight: 64, alignment: .leading)
         }
+        .listRowSeparator(contentEndsSection && !state.expanded ? .hidden : .automatic, edges: .bottom)
         .contextMenu {
             Button("Run Now", systemImage: "play", action: run).disabled(!canRun)
             Button("Delete Routine", systemImage: "trash", role: .destructive) {
