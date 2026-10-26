@@ -12,12 +12,6 @@ struct ChannelSidebarRow: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
-    static func faceLimits(working count: Int) -> [Int] {
-        guard count > 0 else { return [] }
-        let full = min(count, 3)
-        return [full] + (1..<full).reversed().filter { count - $0 >= 2 }
-    }
-
     var body: some View {
         HStack(spacing: 12) {
             ChannelMark(size: 28, emphasized: prominence == .increased)
@@ -42,11 +36,11 @@ struct ChannelSidebarRow: View {
                     attentionLabel
                 } else {
                     ViewThatFits(in: .horizontal) {
-                        ForEach(Self.faceLimits(working: working.count), id: \.self) { limit in
+                        ForEach(AgentAvatarStack.faceLimits(for: working.count), id: \.self) { limit in
                             teamAndStatus(faceLimit: limit)
                         }
                         VStack(alignment: .leading, spacing: 4) {
-                            if let limit = Self.faceLimits(working: working.count).last {
+                            if let limit = AgentAvatarStack.faceLimits(for: working.count).last {
                                 AgentAvatarStack(agents: working, size: 20, limit: limit)
                             }
                             attentionLabel

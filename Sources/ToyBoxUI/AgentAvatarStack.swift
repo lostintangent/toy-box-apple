@@ -17,6 +17,13 @@ public struct AgentAvatarStack: View {
         self.showsOverflow = showsOverflow
     }
 
+    /// Smaller fitting candidates only replace faces when their count represents at least two.
+    public nonisolated static func faceLimits(for count: Int) -> [Int] {
+        guard count > 0 else { return [] }
+        let full = min(count, 3)
+        return [full] + (1..<full).reversed().filter { count - $0 >= 2 }
+    }
+
     private var faces: [ChannelAgent] { Array(agents.prefix(max(limit, 1))) }
 
     public var body: some View {

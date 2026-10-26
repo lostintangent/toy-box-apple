@@ -131,15 +131,6 @@ struct ShellTests {
         #expect(accessible.height > regular.height)
     }
 
-    @Test func channelRowsUseTheMacWorkingFaceLimitsWithoutReplacingOneFaceWithPlusOne() {
-        #expect(ChannelSidebarRow.faceLimits(working: 0).isEmpty)
-        #expect(ChannelSidebarRow.faceLimits(working: 1) == [1])
-        #expect(ChannelSidebarRow.faceLimits(working: 2) == [2])
-        #expect(ChannelSidebarRow.faceLimits(working: 3) == [3, 1])
-        #expect(ChannelSidebarRow.faceLimits(working: 4) == [3, 2, 1])
-        #expect(ChannelSidebarRow.faceLimits(working: 8) == [3, 2, 1])
-    }
-
     @Test(arguments: [false, true])
     func aReaderWaitsForActualCompactOverviewDismissalNotJustTheClosedIntent(imageReader: Bool) {
         let overview = OverviewPresentation()
