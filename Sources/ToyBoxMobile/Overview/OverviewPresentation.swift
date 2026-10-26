@@ -7,6 +7,15 @@ enum OverviewPlacement: Equatable {
     case sheet, inspector
 }
 
+enum OverviewRoute: Hashable {
+    case agent(String)
+    case subtasks(String)
+}
+
+enum OverviewSection: Hashable {
+    case team, tasks, artifacts, routines
+}
+
 @MainActor @Observable
 final class OverviewPresentation {
     var placement = OverviewPlacement.sheet
@@ -45,7 +54,8 @@ final class OverviewSession {
     }
 
     let store: ChannelStore
-    var navigationPath: [String] = []
+    var navigationPath: [OverviewRoute] = []
+    var expandedSections: [OverviewSection: Bool] = [:]
     var purposeExpanded = false
     var previewError: String?
     var taskDisclosure: [String: Disclosure] = [:]
@@ -53,15 +63,41 @@ final class OverviewSession {
     @ObservationIgnored var scrollOffset: CGFloat = 0
     @ObservationIgnored private(set) var restorationOffset: CGFloat?
     @ObservationIgnored private var routines: [String: OverviewRoutineState] = [:]
+    @ObservationIgnored private var taskScrolls: [String: OverviewTaskScroll] = [:]
 
     init(store: ChannelStore) { self.store = store }
 
-    func prepareForPresentation() { restorationOffset = scrollOffset }
+    func prepareForPresentation() {
+        restorationOffset = scrollOffset
+        for scroll in taskScrolls.values { scroll.prepare() }
+    }
 
     func prepareForTaskReveal() {
+        expandedSections[.tasks] = true
         navigationPath = []
         restorationOffset = nil
         scrollPosition = ScrollPosition()
+    }
+
+    func isExpanded(_ section: OverviewSection) -> Bool { expandedSections[section] ?? true }
+
+    func taskScroll(_ id: String) -> OverviewTaskScroll {
+        if let scroll = taskScrolls[id] { return scroll }
+        let scroll = OverviewTaskScroll()
+        taskScrolls[id] = scroll
+        return scroll
+    }
+
+    func task(_ id: String) -> ChannelTask? {
+        Self.task(id, in: store.tasks)
+    }
+
+    static func task(_ id: String, in tasks: [ChannelTask]) -> ChannelTask? {
+        for task in tasks {
+            if task.id == id { return task }
+            if let found = Self.task(id, in: task.children ?? []) { return found }
+        }
+        return nil
     }
 
     func restoreScroll() {
@@ -90,6 +126,21 @@ final class OverviewSession {
         let state = OverviewRoutineState()
         routines[id] = state
         return state
+    }
+}
+
+@MainActor @Observable
+final class OverviewTaskScroll {
+    var position = ScrollPosition()
+    @ObservationIgnored var offset: CGFloat = 0
+    @ObservationIgnored var restorationOffset: CGFloat?
+
+    func prepare() { restorationOffset = offset }
+
+    func restore() {
+        guard let restorationOffset else { return }
+        position.scrollTo(y: restorationOffset)
+        self.restorationOffset = nil
     }
 }
 

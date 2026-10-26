@@ -28,8 +28,14 @@ struct OverviewView: View {
             }
             .navigationTitle("Overview")
             .navigationBarTitleDisplayMode(.inline)
-            .navigationDestination(for: String.self) { id in
-                OverviewAgentDetails(agentID: id, store: store)
+            .navigationDestination(for: OverviewRoute.self) { route in
+                switch route {
+                case .agent(let id):
+                    OverviewAgentDetails(agentID: id, store: store)
+                case .subtasks(let id):
+                    OverviewSubtasksScreen(parentID: id, store: store, session: session,
+                                           placement: placement, scroll: session.taskScroll(id))
+                }
             }
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
@@ -74,6 +80,7 @@ private struct OverviewForm: View {
     let placement: OverviewPlacement
     @Environment(OverviewPresentation.self) private var presentation
     @Environment(ChannelInteraction.self) private var interaction
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -88,11 +95,12 @@ private struct OverviewForm: View {
                     }
                 }
                 OverviewAboutSection(store: store, session: session)
-                OverviewTeamSection(store: store)
+                OverviewTeamSection(store: store, session: session)
                 OverviewTasksSection(store: store, session: session)
-                OverviewArtifactsSection(store: store)
+                OverviewArtifactsSection(store: store, session: session)
                 OverviewRoutinesSection(store: store, session: session)
             }
+            .listSectionSpacing(24)
             .accessibilityIdentifier("overview-form")
             .scrollPosition(Binding(
                 get: { session.scrollPosition },
@@ -104,7 +112,10 @@ private struct OverviewForm: View {
                     session.scrollOffset = offset
                 }
             }
-            .onChange(of: store.tasks, initial: true) { _, tasks in session.reconcileTasks(tasks) }
+            .onChange(of: store.tasks, initial: true) { _, tasks in
+                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) { session.reconcileTasks(tasks) }
+            }
+            .onDisappear { session.prepareForPresentation() }
             .scrollEdgeEffectStyle(.hard, for: .top)
             .task(id: interaction.overviewTasksRequest) {
                 let request = interaction.overviewTasksRequest
