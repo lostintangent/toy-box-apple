@@ -224,14 +224,6 @@ public final class TranscriptRowBuilder {
     }
 }
 
-public func pendingRequestRow(_ rows: [TranscriptRow], sequence: Int?) -> Int? {
-    guard let sequence else { return nil }
-    return rows.firstIndex { row in
-        guard case .agent(_, let entries) = row.content else { return false }
-        return entries.contains { $0.message.sequence == sequence }
-    }
-}
-
 public func transcriptDayLabel(_ date: Date, now: Date = .now,
                                calendar: Calendar = .current) -> String {
     let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: date),
