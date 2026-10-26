@@ -5,6 +5,7 @@ import Synchronization
 import Testing
 @testable import ChannelClient
 
+@Suite(.timeLimit(.minutes(1)))
 struct CatalogTests {
     private final class Announcements: Sendable {
         let names = Mutex<Set<String>>([])
@@ -95,7 +96,7 @@ struct CatalogTests {
         catalog.setActive(initiallyActive)
         catalog.startPolling(interval: 60)
         defer { catalog.stopPolling() }
-        try await eventually { mock.pendingResponseCount == 1 }
+        try await eventually(observing: mock) { mock.pendingResponseCount == 1 }
         catalog.setActive(!initiallyActive)
         #expect(catalog.pollingInterval == (initiallyActive ? 15 : 60))
         #expect(mock.finishPendingResponses() == 1)
@@ -125,7 +126,7 @@ struct CatalogTests {
         if hadFailure { await catalog.refresh() }
         let refreshedAt = catalog.lastRefreshedAt
         let refresh = Task { await catalog.refresh() }
-        try await eventually { mock.pendingResponseCount == 1 }
+        try await eventually(observing: mock) { mock.pendingResponseCount == 1 }
         refresh.cancel()
         await refresh.value
         #expect(!catalog.isLoading)
@@ -144,10 +145,10 @@ struct CatalogTests {
         defer { catalog.stopPolling() }
         try await eventually { catalog.lastRefreshedAt != nil && !catalog.isLoading }
         catalog.setActive(false)
-        try await eventually { mock.requests.count == 2 && !catalog.isLoading }
+        try await eventually(observing: mock) { mock.requests.count == 2 && !catalog.isLoading }
         #expect(catalog.pollingInterval == 15)
         catalog.setActive(true)
-        try await eventually { mock.requests.count == 3 && !catalog.isLoading }
+        try await eventually(observing: mock) { mock.requests.count == 3 && !catalog.isLoading }
         #expect(catalog.pollingInterval == 60)
         #expect(catalog.error == nil)
         #expect(catalog.failure == nil)

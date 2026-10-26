@@ -178,7 +178,23 @@ Agents never create these accounts, accept agreements, read private keys or set 
   run of `51935f4`, after the actor probes were disabled (`t338-isolated-full-mac.log`).
   No production code cause is established. Core owns the `client-reconnect-readiness` follow-up
   under t340 to identify the cause and add controlled-event reconnect coverage before restoring
-  these cases. Do not raise the deadline or retry an unchanged candidate to clear this failure.
+  these cases. Do not retry an unchanged candidate to clear this failure.
+- Client readiness waits use Observation and explicit per-mock request, held-response and stop
+  signals, not polling or an elapsed-time assertion. Their suites have a one-minute Swift Testing
+  hang limit. This deliberately replaces the shared three-second watchdog with the lead's approval
+  in channel message 2590, not a product latency assertion or a retry policy change. Keep actual
+  heartbeat/backoff checks and both quarantine gates unchanged.
+  Further 2026-10-26 failures include the driver gate on `555d015` (20 Client cases at load 436),
+  the composer gate on `2fbdbb6` (28 issues at load 300), and Overview's `c83c7a5` run in
+  `/tmp/tbm-overview-mobile-webkit-full-mac.log` (`staleStateRemainsVisibleAndCannotSend`,
+  `deletionIsTerminal`, `aRejectedEventClosesItsStreamBeforeReconnecting`). All failed the old
+  `MockTransport.swift:142` watchdog. Passing diagnostic reruns do not erase those failures.
+  The earlier cross-owner evidence is Core's `t338-full-mac.log` and `t338-isolated-full-mac.log`,
+  Composer's `files/mobile/full-mac-28e45b7-failed.log`, and Lead's
+  `/tmp/lead-mac-main-cc-1.log`. Core's actor-excluded controls,
+  `t340-no-actor-diagnostic-1.log` and `t340-no-actor-diagnostic-2.log`, respectively passed and
+  failed revision-zero reconnect. Core still owns causal restoration under t340. A green
+  readiness gate alone does not establish the quarantined reconnect failures' production cause.
 
 ## Validating the running app
 
