@@ -1,5 +1,6 @@
 import ChannelClient
 import ChannelKit
+import Combine
 import PhotosUI
 import SwiftUI
 import ToyBoxUI
@@ -27,6 +28,7 @@ struct ComposerSurface: View {
     @ViewState private var completionHeight: CGFloat = 264
     @ViewState private var completionViewportHeight: CGFloat = 0
     @ViewState private var connectionGrace = ConnectGrace()
+    @ViewState private var keyboardIsVisible = false
 
     private var draft: ComposerDraft { session.draft }
     private var store: ChannelStore { session.store }
@@ -72,8 +74,8 @@ struct ComposerSurface: View {
             }
         }
         .padding(.horizontal, sizeClass == .compact ? 12 : 16)
-        .frame(maxWidth: 720)
-        .padding(.bottom, 8)
+        .padding(.bottom, ComposerBottomSpacing.value(
+            compact: sizeClass == .compact, keyboardVisible: keyboardIsVisible))
         .frame(maxWidth: .infinity)
         .photosPicker(isPresented: $showPhotos, selection: $photoItems, matching: .images,
                       preferredItemEncoding: .current)
@@ -138,7 +140,22 @@ struct ComposerSurface: View {
         .onChange(of: scenePhase) { _, phase in
             if phase != .active { dictation.deactivate() }
         }
-        .onAppear { composer.reconcile(); registerDraft() }
+        .onAppear {
+            composer.reconcile()
+            registerDraft()
+            if let window = editor.textView?.window {
+                keyboardIsVisible = ComposerBottomSpacing.keyboardIsVisible(
+                    frame: window.keyboardLayoutGuide.layoutFrame, in: window.bounds,
+                    safeAreaBottom: window.safeAreaInsets.bottom)
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillChangeFrameNotification)) { event in
+            guard let window = editor.textView?.window,
+                  let screenFrame = event.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect else { return }
+            keyboardIsVisible = ComposerBottomSpacing.keyboardIsVisible(
+                frame: window.convert(screenFrame, from: window.screen.coordinateSpace), in: window.bounds,
+                safeAreaBottom: window.safeAreaInsets.bottom)
+        }
         .onDisappear {
             reattachment?.cancel()
             dictation.deactivate()
@@ -555,5 +572,17 @@ struct ComposerContextLayout: Layout {
         }
         let fitted = subviews.map { $0.sizeThatFits(.init(width: width, height: nil)) }
         return (.init(width: width, height: fitted.reduce(0) { $0 + $1.height } + gaps), fitted, false)
+    }
+
+}
+
+enum ComposerBottomSpacing {
+    static func value(compact: Bool, keyboardVisible: Bool) -> CGFloat {
+        compact && !keyboardVisible ? 0 : 8
+    }
+
+    static func keyboardIsVisible(frame: CGRect, in bounds: CGRect, safeAreaBottom: CGFloat) -> Bool {
+        let overlap = bounds.intersection(frame)
+        return !overlap.isNull && overlap.height > safeAreaBottom + 0.5
     }
 }
