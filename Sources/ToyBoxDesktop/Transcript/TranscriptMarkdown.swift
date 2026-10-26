@@ -71,40 +71,6 @@ extension EnvironmentValues {
     }
 }
 
-struct TranscriptMentionInk: Equatable {
-    var surface = TranscriptSurface.canvas
-    var isDark = false
-    var isContrastIncreased = false
-
-    var minimumContrast: Double { isContrastIncreased ? 7 : 4.5 }
-
-    func color(for agent: ChannelAgent?) -> Color {
-        let identity = agent?.avatar.flatMap { Color(hex: $0.color) } ?? .accentColor
-        let name: NSAppearance.Name = switch (isDark, isContrastIncreased) {
-        case (false, false): .aqua
-        case (true, false): .darkAqua
-        case (false, true): .accessibilityHighContrastAqua
-        case (true, true): .accessibilityHighContrastDarkAqua
-        }
-        var ink = Color.primary
-        NSAppearance(named: name)?.performAsCurrentDrawingAppearance {
-            guard let base = TranscriptRGB(identity) else { return }
-            // Popovers that reuse transcript Markdown sit on the window background instead.
-            let canvases = (surface == .canvas ? [NSColor.textBackgroundColor, .windowBackgroundColor]
-                                               : [NSColor.textBackgroundColor]).compactMap(TranscriptRGB.init)
-            let backgrounds = canvases.map { canvas in
-                surface.fills(isDark: isDark).reduce(canvas) { below, fill in
-                    TranscriptRGB(fill).map { below.under($0) } ?? below
-                }
-            }
-            let adjusted = TranscriptMentionContrast.adjusted(base, backgrounds: backgrounds, isDark: isDark,
-                                                              isContrastIncreased: isContrastIncreased)
-            ink = Color(.sRGB, red: adjusted.red, green: adjusted.green, blue: adjusted.blue)
-        }
-        return ink
-    }
-}
-
 extension TranscriptRGB {
     init?(_ color: Color) { self.init(NSColor(color)) }
 

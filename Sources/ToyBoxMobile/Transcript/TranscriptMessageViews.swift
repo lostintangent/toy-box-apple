@@ -338,35 +338,6 @@ struct TranscriptBody: View {
     }
 }
 
-/// The Mac's mention ink: the agent's identity color, moved toward the text color only as far as it
-/// takes to clear 4.5:1, or 7:1 with Increase Contrast, over the bubble it sits on.
-struct TranscriptMentionInk: Equatable {
-    var surface = TranscriptSurface.canvas
-    var isDark = false
-    var isContrastIncreased = false
-
-    func color(for agent: ChannelAgent?) -> Color {
-        let identity = agent?.avatar.flatMap { Color(hex: $0.color) } ?? .accentColor
-        let traits = UITraitCollection {
-            $0.userInterfaceStyle = isDark ? .dark : .light
-            $0.accessibilityContrast = isContrastIncreased ? .high : .normal
-        }
-        func rgb(_ color: Color) -> TranscriptRGB? {
-            var (red, green, blue, alpha): (CGFloat, CGFloat, CGFloat, CGFloat) = (0, 0, 0, 0)
-            guard UIColor(color).resolvedColor(with: traits).getRed(&red, green: &green, blue: &blue, alpha: &alpha)
-            else { return nil }
-            return TranscriptRGB(red: red, green: green, blue: blue, alpha: alpha)
-        }
-        guard let base = rgb(identity), let canvas = rgb(Color(uiColor: .systemBackground)) else { return .primary }
-        let background = surface.fills(isDark: isDark).reduce(canvas) { below, fill in
-            rgb(fill).map { below.under($0) } ?? below
-        }
-        let ink = TranscriptMentionContrast.adjusted(base, backgrounds: [background], isDark: isDark,
-                                                     isContrastIncreased: isContrastIncreased)
-        return Color(.sRGB, red: ink.red, green: ink.green, blue: ink.blue)
-    }
-}
-
 /// Secondary label ink measures 3.4:1 on white, so metadata uses opaque grays that clear 4.5:1
 /// on the transcript, the gallery and Find's filled field in both appearances.
 enum TranscriptInk {
