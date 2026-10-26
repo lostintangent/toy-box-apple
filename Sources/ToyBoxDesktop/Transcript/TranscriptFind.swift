@@ -259,8 +259,15 @@ struct TranscriptFindBar: View {
                     .foregroundStyle(.secondary)
                     .fixedSize()
                     .accessibilityLabel("Matching messages: \(find.countLabel)")
-                TranscriptFindNavigation(isEnabled: !find.matches.isEmpty, navigate: navigate)
-                    .frame(width: 60, height: 28)
+                ControlGroup {
+                    Button("Previous Match", systemImage: "chevron.left") { navigate(-1) }
+                        .help("Previous Match (Shift-Command-G)")
+                    Button("Next Match", systemImage: "chevron.right") { navigate(1) }
+                        .help("Next Match (Command-G)")
+                }
+                .controlGroupStyle(.navigation)
+                .disabled(find.matches.isEmpty)
+                .accessibilityIdentifier("channel-find-navigation")
                 Button("Done", action: close).frame(minHeight: 28)
                 .help("Close Find")
                 .accessibilityLabel("Close Find")
@@ -281,39 +288,6 @@ struct TranscriptFindBar: View {
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Find in \(channelName)")
         .onExitCommand(perform: close)
-    }
-}
-
-private struct TranscriptFindNavigation: NSViewRepresentable {
-    let isEnabled: Bool
-    var navigate: (Int) -> Void
-
-    func makeNSView(context: Context) -> NSSegmentedControl {
-        let control = NSSegmentedControl(images: [
-            NSImage(systemSymbolName: "chevron.left", accessibilityDescription: "Previous Match")!,
-            NSImage(systemSymbolName: "chevron.right", accessibilityDescription: "Next Match")!
-        ], trackingMode: .momentary, target: context.coordinator, action: #selector(Coordinator.navigate(_:)))
-        for segment in 0..<2 { control.setWidth(28, forSegment: segment) }
-        control.setToolTip("Previous Match (Shift-Command-G)", forSegment: 0)
-        control.setToolTip("Next Match (Command-G)", forSegment: 1)
-        control.setAccessibilityIdentifier("channel-find-navigation")
-        return control
-    }
-
-    func updateNSView(_ control: NSSegmentedControl, context: Context) {
-        context.coordinator.parent = self
-        control.isEnabled = isEnabled
-    }
-
-    func makeCoordinator() -> Coordinator { Coordinator(self) }
-
-    final class Coordinator: NSObject {
-        var parent: TranscriptFindNavigation
-        init(_ parent: TranscriptFindNavigation) { self.parent = parent }
-
-        @objc func navigate(_ control: NSSegmentedControl) {
-            parent.navigate(control.selectedSegment == 0 ? -1 : 1)
-        }
     }
 }
 
