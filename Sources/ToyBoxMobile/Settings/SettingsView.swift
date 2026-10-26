@@ -58,7 +58,7 @@ struct SettingsView: View {
             if phase == .active { availability = intelligence.availability }
             else { connection.cancel() }
         }
-        .confirmationDialog("Switch Toy Box servers?", isPresented: Binding(
+        .alert("Switch Toy Box servers?", isPresented: Binding(
             get: { pendingChange != nil },
             set: { if !$0 { pendingChange = nil } }
         ), presenting: pendingChange) { change in
