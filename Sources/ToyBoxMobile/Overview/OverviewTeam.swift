@@ -31,7 +31,7 @@ struct OverviewTeamSection: View {
                 .disabled(!store.phase.isLive)
             }
         } header: {
-            OverviewSectionHeader(title: "Team", count: "\(store.roster.count)", section: .team, session: session)
+            OverviewSectionHeader(summary: .team(store.roster.count), section: .team, session: session)
         }
     }
 }

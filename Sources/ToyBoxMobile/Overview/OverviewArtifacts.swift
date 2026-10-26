@@ -22,7 +22,7 @@ struct OverviewArtifactsSection: View {
                 }
             }
         } header: {
-            OverviewSectionHeader(title: "Artifacts", count: "\(store.artifacts.count)",
+            OverviewSectionHeader(summary: .artifacts(store.artifacts.count),
                                   section: .artifacts, session: session)
         }
     }

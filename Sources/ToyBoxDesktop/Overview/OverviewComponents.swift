@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import ToyBoxUI
 
 /// The inspector's collapsible sections, persisted per window scene rather than per channel.
 enum OverviewSectionID: String, CaseIterable {
@@ -111,9 +112,11 @@ struct OverviewItemState<Value> {
 struct OverviewSection<Trailing: View, Content: View>: View {
     @Environment(\.channelTextScale) private var textScale
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var scheme
+    @Environment(\.layoutDirection) private var direction
     let id: OverviewSectionID
-    let count: String
-    var accessibilityCount: String?
+    let summary: ChannelOverviewSummary
+    var accessibilityDetail: String?
     @Binding var collapsed: Set<OverviewSectionID>
     @ViewBuilder var trailing: () -> Trailing
     @ViewBuilder var content: () -> Content
@@ -126,20 +129,22 @@ struct OverviewSection<Trailing: View, Content: View>: View {
         VStack(alignment: .leading, spacing: 0) {
             Divider().padding(.vertical, 2)
             Button(action: toggle) {
-                HStack(spacing: 6) {
-                    Text(id.title).font(.system(size: 13 * textScale, weight: .bold))
-                    Text(count)
+                ChannelOverviewHeaderLayout(direction: direction) {
+                    Text(summary.title)
+                        .font(.system(size: 13 * textScale, weight: .semibold))
+                        .foregroundStyle(Color(nsColor: .labelColor))
+                    Text(summary.count)
                         .font(.system(size: 13 * textScale).monospacedDigit())
-                        .foregroundStyle(.secondary)
-                    Spacer(minLength: 8)
+                        .foregroundStyle(ChannelOverviewInk.secondary(in: scheme))
                     trailing()
                     Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 16, height: 16)
+                        .font(.system(size: 10 * textScale, weight: .semibold))
+                        .foregroundStyle(ChannelOverviewInk.secondary(in: scheme))
+                        .frame(width: 16 * textScale, height: 16 * textScale)
                         .opacity(isCollapsed || isHovering || isFocused ? 1 : 0)
+                        .accessibilityHidden(true)
                 }
-                .frame(height: 28)
+                .frame(minHeight: 28)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -147,7 +152,7 @@ struct OverviewSection<Trailing: View, Content: View>: View {
             .onHover { isHovering = $0 }
             .padding(.top, 8)
             .help(isCollapsed ? "Show \(id.title)" : "Hide \(id.title)")
-            .accessibilityLabel("\(id.title), \(accessibilityCount ?? count)")
+            .accessibilityLabel([summary.spoken, accessibilityDetail].compactMap { $0 }.joined(separator: ", "))
             .accessibilityValue(isCollapsed ? "Collapsed" : "Expanded")
             .accessibilityAddTraits(.isHeader)
             if !isCollapsed {
@@ -165,9 +170,9 @@ struct OverviewSection<Trailing: View, Content: View>: View {
 }
 
 extension OverviewSection where Trailing == EmptyView {
-    init(id: OverviewSectionID, count: String, accessibilityCount: String? = nil,
+    init(id: OverviewSectionID, summary: ChannelOverviewSummary, accessibilityDetail: String? = nil,
          collapsed: Binding<Set<OverviewSectionID>>, @ViewBuilder content: @escaping () -> Content) {
-        self.init(id: id, count: count, accessibilityCount: accessibilityCount, collapsed: collapsed,
+        self.init(id: id, summary: summary, accessibilityDetail: accessibilityDetail, collapsed: collapsed,
                   trailing: { EmptyView() }, content: content)
     }
 }

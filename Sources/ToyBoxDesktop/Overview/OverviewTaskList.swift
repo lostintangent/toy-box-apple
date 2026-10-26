@@ -108,6 +108,12 @@ struct OverviewTaskRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             timedHeader
+            if let linkedArtifact {
+                artifactLink(linkedArtifact.artifact)
+                    .padding(.leading, Self.statusSize + Self.titleGap)
+                    .padding(.top, 4)
+                    .padding(.bottom, 5)
+            }
             if isExpanded, !children.isEmpty {
                 VStack(alignment: .leading, spacing: 0) {
                     ForEach(children) { child in
@@ -148,7 +154,7 @@ struct OverviewTaskRow: View {
     private func header(timing: ChannelTaskTiming?) -> some View {
         HStack(alignment: .top, spacing: Self.titleGap) {
             OverviewTaskStatusIcon(status: task.status)
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: ChannelOverviewFactsLayout.titleGap) {
                 HStack(alignment: .top, spacing: 8) {
                     firstLine
                         .fixedSize(horizontal: false, vertical: true)
@@ -158,28 +164,14 @@ struct OverviewTaskRow: View {
                             .help("Owned by \(owner.name)")
                     }
                 }
-                if let timing {
-                    let presentation = ChannelTaskTimingPresentation(timing: timing)
-                    HStack(spacing: 10) {
-                        Label(presentation.elapsedText, systemImage: "clock")
-                            .help(presentation.elapsedHelp)
-                        if let checkIn = presentation.checkInText {
-                            Label(checkIn, systemImage: "bell")
-                                .help(presentation.checkInHelp ?? "")
-                        }
-                    }
-                    .font(.system(size: 11 * textScale))
-                    .monospacedDigit()
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                }
-                if diff != nil || linkedArtifact != nil {
-                    metadata
+                if timing != nil || diff != nil {
+                    ChannelOverviewTaskMetadata(timing: timing, diff: diff)
+                        .font(.system(size: 11 * textScale))
                 }
             }
         }
-        .padding(.vertical, 5)
-        // The whole parent row is the disclosure target. Its artifact link keeps its own action.
+        .padding(.top, 5)
+        .padding(.bottom, linkedArtifact == nil ? 5 : 0)
         .contentShape(Rectangle())
         .onTapGesture { if !children.isEmpty { toggle() } }
         .focusable(!children.isEmpty, interactions: focusInteractions)
@@ -210,28 +202,25 @@ struct OverviewTaskRow: View {
                                              textScale: textScale)
     }
 
-    private var metadata: some View {
-        HStack(spacing: 10) {
-            if let diff { OverviewTaskDiff(diff: diff) }
-            if let linkedArtifact { artifactLink(linkedArtifact.artifact) }
-        }
-        .lineLimit(1)
-    }
-
     private func artifactLink(_ artifact: ChannelArtifact?) -> some View {
         Button {
             if let artifact { onArtifactOpen(artifact) }
         } label: {
-            HStack(spacing: 3) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Image(systemName: "doc.text")
-                Text(artifact?.title ?? "Artifact unavailable").truncationMode(.tail)
+                    .accessibilityHidden(true)
+                Text(artifact?.title ?? "Artifact unavailable")
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            .font(.system(size: 11 * textScale))
+            .font(.system(size: 12 * textScale))
             .foregroundStyle(artifact == nil ? AnyShapeStyle(.tertiary) : AnyShapeStyle(Color(nsColor: .linkColor)))
+            .frame(maxWidth: .infinity, minHeight: 24, alignment: .leading)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .disabled(artifact == nil)
+        .accessibilityLabel(artifact.map { "Open \($0.title)" } ?? "Artifact unavailable")
         .help(artifact.map { "Open \($0.title)" } ?? "This artifact is no longer shared in the channel.")
     }
 

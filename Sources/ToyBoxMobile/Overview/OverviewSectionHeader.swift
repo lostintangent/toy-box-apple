@@ -1,14 +1,19 @@
 import ChannelKit
 import SwiftUI
 import ToyBoxUI
+import UIKit
 
 struct OverviewSectionHeader: View {
-    let title: String
-    let count: String
+    let summary: ChannelOverviewSummary
     let section: OverviewSection
     @Bindable var session: OverviewSession
     var diff: DiffStats?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var scheme
+    @Environment(\.layoutDirection) private var direction
+    @Environment(\.dynamicTypeSize) private var typeSize
+    @ScaledMetric(relativeTo: .footnote) private var disclosureSize = 11
+    @ScaledMetric(relativeTo: .footnote) private var disclosureLane = 16
 
     var body: some View {
         Button {
@@ -16,25 +21,17 @@ struct OverviewSectionHeader: View {
                 session.expandedSections[section] = !session.isExpanded(section)
             }
         } label: {
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 6) {
-                    Text(title).fixedSize()
-                    Text(count).monospacedDigit().fixedSize()
-                    Spacer(minLength: 8)
-                    if let diff { OverviewTaskDiff(diff: diff).fixedSize() }
-                    disclosure
-                }
-                VStack(alignment: .leading, spacing: 3) {
-                    HStack(spacing: 6) {
-                        Text(title)
-                        Text(count).monospacedDigit()
-                        Spacer(minLength: 8)
-                        disclosure
-                    }
-                    if let diff { OverviewTaskDiff(diff: diff) }
-                }
+            ChannelOverviewHeaderLayout(stacksLeading: typeSize.isAccessibilitySize, direction: direction) {
+                Text(summary.title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Color(uiColor: .label))
+                Text(summary.count)
+                    .font(.footnote.weight(.regular))
+                    .monospacedDigit()
+                    .foregroundStyle(ChannelOverviewInk.secondary(in: scheme))
+                if let diff { ChannelOverviewTaskDiff(diff: diff).font(.footnote) }
+                disclosure
             }
-            .foregroundStyle(ChannelInk.secondary)
             .frame(minHeight: 44)
             .contentShape(Rectangle())
         }
@@ -48,12 +45,14 @@ struct OverviewSectionHeader: View {
 
     private var disclosure: some View {
         Image(systemName: session.isExpanded(section) ? "chevron.down" : "chevron.right")
-            .font(.footnote.weight(.semibold))
+            .font(.system(size: disclosureSize, weight: .semibold))
+            .foregroundStyle(ChannelOverviewInk.secondary(in: scheme))
+            .frame(width: disclosureLane, height: disclosureLane)
+            .accessibilityHidden(true)
     }
 
     private var spoken: String {
-        let heading = "\(title), \(count.replacingOccurrences(of: "/", with: " of "))"
-        guard let diff else { return heading }
-        return "\(heading), \(diff.added) additions, \(diff.removed) deletions"
+        guard let diff else { return summary.spoken }
+        return "\(summary.spoken), \(ChannelOverviewTaskDiff.spoken(diff))"
     }
 }

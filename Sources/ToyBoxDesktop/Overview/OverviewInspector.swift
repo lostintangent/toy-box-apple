@@ -115,13 +115,14 @@ private struct OverviewTeamSection: View {
     @Binding var collapsed: Set<OverviewSectionID>
 
     var body: some View {
-        OverviewSection(id: .team, count: "\(store.roster.count)", collapsed: $collapsed) {
+        OverviewSection(id: .team, summary: .team(store.roster.count), collapsed: $collapsed) {
             OverviewTeamList(store: store)
         }
     }
 }
 
 private struct OverviewTasksSection: View {
+    @Environment(\.channelTextScale) private var textScale
     let store: ChannelStore
     @Binding var collapsed: Set<OverviewSectionID>
     let onArtifactOpen: (ChannelArtifact) -> Void
@@ -130,11 +131,13 @@ private struct OverviewTasksSection: View {
         let tasks = store.tasks
         let progress = channelTasksProgress(tasks)
         let diff = channelTasksDiff(tasks)
-        let spoken = ["\(progress.done) of \(progress.total) done", diff.map(OverviewTaskDiff.spoken)]
-            .compactMap { $0 }.joined(separator: ", ")
-        OverviewSection(id: .tasks, count: "\(progress.done)/\(progress.total)",
-                        accessibilityCount: spoken, collapsed: $collapsed) {
-            if let diff { OverviewTaskDiff(diff: diff).accessibilityHidden(true) }
+        OverviewSection(id: .tasks, summary: .tasks(progress),
+                        accessibilityDetail: diff.map(ChannelOverviewTaskDiff.spoken), collapsed: $collapsed) {
+            if let diff {
+                ChannelOverviewTaskDiff(diff: diff)
+                    .font(.system(size: 11 * textScale))
+                    .accessibilityHidden(true)
+            }
         } content: {
             OverviewTaskList(tasks: tasks, agents: store.roster, artifacts: store.artifacts,
                              channelId: store.id, onArtifactOpen: onArtifactOpen)
@@ -150,7 +153,7 @@ private struct OverviewArtifactsSection: View {
 
     var body: some View {
         let artifacts = channelArtifactsNewestFirst(store.artifacts)
-        OverviewSection(id: .artifacts, count: "\(artifacts.count)", collapsed: $collapsed) {
+        OverviewSection(id: .artifacts, summary: .artifacts(artifacts.count), collapsed: $collapsed) {
             if artifacts.isEmpty {
                 OverviewEmptyText("Nothing shared yet")
             } else {
@@ -177,7 +180,7 @@ private struct OverviewRoutinesSection: View {
 
     var body: some View {
         let routines = store.routines
-        OverviewSection(id: .routines, count: "\(routines.count)", collapsed: $collapsed) {
+        OverviewSection(id: .routines, summary: .routines(routines.count), collapsed: $collapsed) {
             if routines.isEmpty {
                 OverviewEmptyText("No routines")
             } else {
