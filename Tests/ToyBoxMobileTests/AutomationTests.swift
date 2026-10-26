@@ -15,23 +15,36 @@ struct AutomationTests {
             [{"tap":"Studio demo"},{"type":"Hello"},{"wait":"Needs you","timeout":20},
              {"screenshot":"reply","display":"3"},{"back":true},{"fold":false},
              {"action":"Reply","on":"message-12"},{"back":true,"ifPresent":true},
-             {"wait":"Replying to Lead","absent":true}]
+             {"wait":"Replying to Lead","absent":true},{"posture":"folded"},{"posture":"unfolded","timeout":60}]
             """.utf8))
         #expect(steps.map(\.action) == [.tap("Studio demo"), .type("Hello"), .wait("Needs you", absent: false),
                                        .screenshot("reply", "3"), .back(ifPresent: false), .fold(false),
                                        .customAction("Reply", on: "message-12"), .back(ifPresent: true),
-                                       .wait("Replying to Lead", absent: true)])
+                                       .wait("Replying to Lead", absent: true), .posture(.folded), .posture(.unfolded)])
         #expect(steps[0].timeout == 12 && steps[2].timeout == 20)
         for invalid in [#"{"tap":"x","wait":"x"}"#, #"{"type":""}"#, #"{"back":false}"#,
                         #"{"fold":1}"#, #"{"tap":"x","display":"1"}"#,
                         #"{"wait":"x","timeout":0}"#, #"{"tap":"x","typo":true}"#,
                         #"{"action":"Reply"}"#, #"{"action":"Reply","on":""}"#,
                         #"{"tap":"Reply","on":"message-12"}"#, #"{"wait":"x","absent":"yes"}"#,
-                        #"{"tap":"x","absent":true}"#] {
+                        #"{"tap":"x","absent":true}"#, #"{"posture":"open"}"#, #"{"posture":0}"#,
+                        #"{"posture":"folded","fold":true}"#, #"{"posture":"folded","display":"1"}"#] {
             #expect(throws: DecodingError.self) {
                 try JSONDecoder().decode(MobileAutomationStep.self, from: Data(invalid.utf8))
             }
         }
+    }
+
+    @Test func postureRequiresTheVerifiedSceneSizeNotAnArbitraryResize() {
+        #expect(MobileAutomationPosture.folded.matches([386, 678]))
+        #expect(MobileAutomationPosture.unfolded.matches([871, 669]))
+        let otherViewports: [[Double]] = [[], [386], [386, 678, 1], [678, 386], [810, 1080], [0, 0]]
+        for viewport in otherViewports {
+            #expect(!MobileAutomationPosture.folded.matches(viewport))
+            #expect(!MobileAutomationPosture.unfolded.matches(viewport))
+        }
+        #expect(!MobileAutomationPosture.folded.matches([871, 669]))
+        #expect(!MobileAutomationPosture.unfolded.matches([386, 678]))
     }
 
     @Test func treeUsesAccessibilityContainersWithoutDuplicatingOrExposingHiddenViews() throws {

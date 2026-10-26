@@ -1,0 +1,14 @@
+[
+  { "wait": "Studio demo", "timeout": 30 },
+  { "back": true, "ifPresent": true },
+  { "tap": "Studio demo" },
+  { "wait": "Message" },
+  { "posture": "folded", "timeout": 60 },
+  { "screenshot": "folded", "display": 1 },
+  { "posture": "unfolded", "timeout": 60 },
+  { "wait": "Message" },
+  { "screenshot": "unfolded", "display": 3 },
+  { "posture": "folded", "timeout": 60 },
+  { "wait": "Message" },
+  { "screenshot": "refolded", "display": 1 }
+]
