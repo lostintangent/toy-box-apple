@@ -2,9 +2,6 @@ import Foundation
 
 /// The catch-up prompt: shown lines, the waiting request, and the instructions that frame them.
 struct CatchUpPrompt: Sendable, Hashable {
-    /// Bump when instructions, schema or grounding change in a way that should invalidate cached
-    /// results.
-    static let version = 6
     static let maximumResponseTokens = 360
 
     static let instructions = """
