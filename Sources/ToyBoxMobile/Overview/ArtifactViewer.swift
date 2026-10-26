@@ -191,7 +191,18 @@ struct ArtifactViewer: View {
                     .font(.headline)
                     .lineLimit(1)
                     .truncationMode(.tail)
-                Text(session.subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                Text(session.subtitle)
+                    .font(.caption)
+                    .foregroundStyle(Color(uiColor: .label))
+                    .lineLimit(1)
+            }
+            .accessibilityShowsLargeContentViewer {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(session.artifact?.title ?? "Artifacts").font(.headline)
+                    Text(session.subtitle).font(.subheadline)
+                }
+                .foregroundStyle(Color(uiColor: .label))
+                .fixedSize(horizontal: false, vertical: true)
             }
             .accessibilityElement(children: .combine)
             .accessibilityAddTraits(.isHeader)
