@@ -1264,13 +1264,26 @@ actual Light/Dark glass. The static audience preview matches the Mac's capsule: 
 inset, minimum-24 visual height growing with text, neutral secondary at 8% fill, in the existing
 44-point row. Input Needed stays unfilled with the Mac's filled orange question-circle.
 
+At larger phone text sizes, measure the full context without truncation. If audience and
+Input Needed cannot fit together, put the audience on its own row and the full wrapping
+request label on a separate minimum-44 row above Attach, Dictate and Send. Neither context
+row has a fixed height. Keep Input Needed's orange question-circle and text, not an icon-only
+substitute. Attach uses an explicit 17-point symbol within its 44-point target, like Send,
+rather than inheriting an overflowing body glyph. When the full ordinary hint cannot fit at
+the actual body font, use the short visual hint "Message", preserving the native editor's
+full accessibility label and any real dictation state. Do not shrink or ellipsize the hint.
+At short keyboard heights, let the upper context/accessory region scroll while retaining one
+measured editor line and the Send row. No font caps, fixed composer height or extra glass.
+
 Phone conversation dragging dismisses the keyboard interactively. Tapping genuinely empty
 transcript space dismisses it too, without swallowing links, message controls or selection.
 Keep draft, caret and undo. After an explicit dismissal, do not refocus until the user chooses
 the composer or Reply. The working capsule is a minimum-44 button opening Working Now in an
 anchored native popover with compact sheet adaptation: actual working agents, 24-point
 avatars, body-17 names, wrapping subheadline-15 status and 12-point row gaps. No navigation or
-management action is implied by these informational rows.
+management action is implied by these informational rows. Status uses existing opaque
+readable-secondary ink locally, with at least 4.5:1 contrast against the actual Light/Dark
+presentation, not translucent secondary that fades into the sheet's glass.
 
 The composer floats over the conversation in a bottom `safeAreaBar`, as one glass surface
 spanning the full conversation lane from the avatars' leading edge, 16 points above the window's bottom
