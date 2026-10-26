@@ -24,7 +24,8 @@ struct TranscriptAttachments: View {
     }
 }
 
-/// An image that reserves its box before it decodes, so arriving pixels resize it at most once.
+/// An image that reserves its box from the header before it decodes, so arriving pixels never
+/// resize it. Decoded thumbnails stay cached, so a row scrolling back draws at once.
 private struct TranscriptImage: View {
     let attachment: ChannelAttachment
     let api: ChannelAPI
@@ -37,10 +38,11 @@ private struct TranscriptImage: View {
     static let unknown = CGSize(width: 120, height: 90)
 
     var body: some View {
-        let size = image.map { Self.fitted($0.size) } ?? Self.unknown
+        let shown = image ?? TranscriptThumbnails.remembered(for: attachment, api: api)
+        let size = Self.fitted(ChannelImageDecoder.pixelSize(for: attachment, api: api) ?? shown?.size ?? .zero)
         ZStack {
-            if let image {
-                Image(uiImage: image).resizable().aspectRatio(contentMode: .fit)
+            if let shown {
+                Image(uiImage: shown).resizable().aspectRatio(contentMode: .fit)
             } else {
                 Rectangle().fill(.quaternary)
                 if failed {
@@ -59,17 +61,11 @@ private struct TranscriptImage: View {
 
     private func load() async {
         guard image == nil else { return }
+        if let remembered = TranscriptThumbnails.remembered(for: attachment, api: api) { image = remembered; return }
         let progress = Task { try await Task.sleep(for: .milliseconds(300)); showsProgress = true }
         defer { progress.cancel(); showsProgress = false }
         do {
-            let data: Data
-            if let base64 = attachment.base64, let decoded = Data(base64Encoded: base64) {
-                data = decoded
-            } else if let address = attachment.url, let url = api.resourceURL(address) {
-                data = try await URLSession.shared.data(from: url).0
-            } else { throw URLError(.badURL) }
-            guard let decoded = await UIImage(data: data)?.byPreparingForDisplay() else { throw URLError(.cannotDecodeContentData) }
-            image = decoded
+            image = try await TranscriptThumbnails.image(for: attachment, api: api, reload: attempt > 0)
         } catch is CancellationError {
         } catch {
             failed = true
@@ -80,6 +76,34 @@ private struct TranscriptImage: View {
         guard size.width > 0, size.height > 0 else { return unknown }
         let scale = min(1, maximum.width / size.width, maximum.height / size.height)
         return CGSize(width: (size.width * scale).rounded(), height: (size.height * scale).rounded())
+    }
+}
+
+@MainActor
+enum TranscriptThumbnails {
+    private static let cache: NSCache<NSString, UIImage> = {
+        let cache = NSCache<NSString, UIImage>()
+        cache.totalCostLimit = 48 << 20
+        return cache
+    }()
+
+    static func remembered(for attachment: ChannelAttachment, api: ChannelAPI) -> UIImage? {
+        ChannelAttachmentCache.identity(for: attachment, api: api).flatMap { cache.object(forKey: $0 as NSString) }
+    }
+
+    /// Fetches into the shared file cache and decodes a bounded, oriented thumbnail off the main actor.
+    static func image(for attachment: ChannelAttachment, api: ChannelAPI, reload: Bool) async throws -> UIImage {
+        let file = try await ChannelAttachmentCache.shared.file(for: attachment, api: api, reload: reload)
+        guard let decoded = await Task.detached(priority: .userInitiated, operation: {
+            ChannelImageDecoder.thumbnail(file: file, maxPixelSize: 720)
+        }).value else { throw ChannelAttachmentError.invalidImage }
+        ChannelImageDecoder.rememberPixelSize(decoded.pixelSize, for: attachment, api: api)
+        let image = UIImage(cgImage: decoded.image)
+        if let identity = ChannelAttachmentCache.identity(for: attachment, api: api) {
+            cache.setObject(image, forKey: identity as NSString,
+                            cost: decoded.image.bytesPerRow * decoded.image.height + identity.utf8.count)
+        }
+        return image
     }
 }
 
