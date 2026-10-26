@@ -1,4 +1,5 @@
 import ChannelClient
+import ChannelIntelligence
 import ChannelKit
 import Foundation
 import SwiftUI
@@ -237,6 +238,152 @@ struct ShellTests {
             #expect(defaults.dictionary(forKey: "lastChannelByServer")?["https://first.example"] as? String == "first")
             #expect(defaults.string(forKey: "serverURL") == "https://second.example")
         }
+    }
+
+    @Test func staleServerConfirmationLeavesTheCurrentServerAndSelectionUntouched() async throws {
+        try await withDefaults { defaults in
+            let model = AppModel(arguments: ["--server", "https://first.example"], environment: [:],
+                                 defaults: defaults, session: fixtureSession())
+            let confirmedOldAddress = model.serverURL
+            try model.configure(serverURL: "https://second.example/prefix")
+            model.selectedChannelID = "second"
+            model.visibleChannelID = "second"
+            let catalog = model.catalog
+            let store = model.selectedStore
+            let interaction = model.interaction(for: "second")
+            #expect(throws: ServerSwitchFailure.self) {
+                try model.switchServer(to: "https://third.example", replacing: confirmedOldAddress)
+            }
+            #expect(model.serverURL == "https://second.example/prefix")
+            #expect(model.catalog === catalog)
+            #expect(model.selectedStore === store)
+            #expect(model.visibleChannelID == "second")
+            #expect(model.interaction(for: "second") === interaction)
+            #expect(defaults.string(forKey: "serverURL") == model.serverURL)
+        }
+    }
+
+    @Test func invalidConfirmedServerDoesNotTearDownOrPersistOverTheCurrentOne() async throws {
+        await withDefaults { defaults in
+            defaults.set("https://saved.example", forKey: "serverURL")
+            let model = AppModel(arguments: ["--server", "https://first.example"], environment: [:],
+                                 defaults: defaults)
+            model.selectedChannelID = "first"
+            let catalog = model.catalog
+            let store = model.selectedStore
+            #expect(throws: ChannelAPIError.invalidServerURL) {
+                try model.switchServer(to: "file:///not-a-server", replacing: model.serverURL)
+            }
+            #expect(model.serverURL == "https://first.example")
+            #expect(model.catalog === catalog)
+            #expect(model.selectedStore === store)
+            #expect(defaults.string(forKey: "serverURL") == "https://saved.example")
+        }
+    }
+
+    @Test func confirmedSwitchPreservesDraftNamespacesAndRestoresOnlyEachServersSelection() async throws {
+        try await withDefaults { defaults in
+            let namespace = UUID().uuidString.lowercased()
+            let firstAddress = "https://first-\(namespace).example/prefix"
+            let secondAddress = "https://second-\(namespace).example/prefix"
+            let model = AppModel(arguments: ["--server", firstAddress], environment: [:],
+                                 defaults: defaults, session: fixtureSession())
+            var drafts: [ComposerDraft] = []
+            defer {
+                model.setActive(false)
+                for draft in drafts { draft.clear(ifUnchanged: draft.revision) }
+                for address in [firstAddress, secondAddress] {
+                    do {
+                        let url = try #require(URL(string: address))
+                        let key = ComposerDraft.storageKey(serverURL: url, channelID: "first")
+                        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+                        let directory = support.appendingPathComponent("ToyBoxDesktop/Drafts/\(key)")
+                        for path in [directory.appendingPathExtension("json"), directory]
+                            where FileManager.default.fileExists(atPath: path.path) {
+                            try FileManager.default.removeItem(at: path)
+                        }
+                    } catch { Issue.record(error) }
+                }
+            }
+            model.selectedChannelID = "first"
+            let firstStore = try #require(model.selectedStore)
+            let firstDraft = model.composerSession(for: firstStore).draft
+            drafts.append(firstDraft)
+            firstDraft.text = "Draft for the first server"
+            model.visibleChannelID = firstStore.id
+            model.setActive(true)
+            #expect(firstStore.phase == .connecting)
+            try model.switchServer(to: secondAddress, replacing: firstAddress)
+            #expect(firstStore.phase == .idle)
+            #expect(model.selectedStore == nil)
+            #expect(model.visibleChannelID == nil)
+            #expect(defaults.string(forKey: "serverURL") == secondAddress)
+            await model.refreshCatalog()
+            #expect(model.selectedChannelID == nil)
+            let secondStore = try #require(model.catalog?.channel(id: "first"))
+            let secondDraft = model.composerSession(for: secondStore).draft
+            drafts.append(secondDraft)
+            #expect(secondDraft !== firstDraft)
+            #expect(secondDraft.text.isEmpty)
+            secondDraft.text = "Draft for the second server"
+            model.selectedChannelID = "second"
+            try model.switchServer(to: firstAddress, replacing: secondAddress)
+            await model.refreshCatalog()
+            #expect(model.selectedChannelID == "first")
+            let restoredStore = try #require(model.selectedStore)
+            #expect(model.composerSession(for: restoredStore).draft === firstDraft)
+            #expect(firstDraft.text == "Draft for the first server")
+            #expect(secondDraft.text == "Draft for the second server")
+            #expect(defaults.dictionary(forKey: "lastChannelByServer")?[secondAddress] as? String == "second")
+        }
+    }
+
+    @Test func firstLaunchRequiresARealCurrentProbeAndAllowsExplicitLoopbackTesting() async throws {
+        let connection = ServerConnectionProbe(address: "http://127.0.0.1:3100/prefix", session: fixtureSession())
+        let section = ServerConnectionSection(connection: connection, requiresTest: true, currentServer: nil,
+                                              onUse: {}, useFailure: .constant(nil))
+        #expect(section.canTest)
+        #expect(!section.canUse)
+        let operation = try #require(connection.start())
+        #expect(!section.canTest)
+        #expect(!section.canUse)
+        await operation.value
+        #expect(section.canUse)
+        connection.address = "http://127.0.0.1:3100/another-prefix"
+        #expect(section.canTest)
+        #expect(!section.canUse)
+        connection.address = "not-a-server"
+        #expect(!section.canTest)
+        #expect(!section.canUse)
+    }
+
+    @Test func settingsUseIsExplicitAndRejectsTheCurrentNormalizedServer() {
+        let connection = ServerConnectionProbe(address: "HTTPS://FIXTURE.EXAMPLE:443/prefix/")
+        let section = ServerConnectionSection(connection: connection, requiresTest: false,
+                                              currentServer: "https://fixture.example/prefix",
+                                              onUse: {}, useFailure: .constant(nil))
+        #expect(section.canTest)
+        #expect(!section.canUse)
+        connection.address = "https://another.example/prefix"
+        #expect(section.canUse)
+        connection.address = "https://user:password@another.example"
+        #expect(!section.canTest)
+        #expect(!section.canUse)
+    }
+
+    @Test func settingsFailuresKeepTheirRealCategoryAndPhoneAvailabilityReason() {
+        enum Key: String, CodingKey { case lead }
+        let missingLead = DecodingError.keyNotFound(Key.lead, .init(codingPath: [], debugDescription: "Missing Lead"))
+        #expect(ServerConnectionSection.failureMessage(missingLead).contains("required Lead"))
+        #expect(ServerConnectionSection.failureMessage(ChannelAPIError.http(status: 403, message: "Forbidden"))
+            .hasPrefix("Authorization error:"))
+        #expect(ServerConnectionSection.failureMessage(URLError(.serverCertificateUntrusted))
+            .hasPrefix("TLS connection error:"))
+        #expect(ServerConnectionSection.failureMessage(URLError(.cannotConnectToHost))
+            .hasPrefix("Connection error:"))
+        #expect(SettingsView.unavailableText(.deviceNotEligible) == "This iPhone doesn't support Apple Intelligence.")
+        #expect(SettingsView.unavailableText(.unsupportedLanguage).contains("iPhone's language"))
+        #expect(SettingsView.unavailableText(.appleIntelligenceNotEnabled).contains("Open Settings"))
     }
 
     @Test func composerSessionsSurviveNavigationAndAreScopedToTheCurrentServer() async throws {

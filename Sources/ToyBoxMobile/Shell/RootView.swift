@@ -17,20 +17,7 @@ struct RootView: View {
 
     @ViewBuilder
     private var navigationWithOverview: some View {
-        @Bindable var model = model
-        NavigationSplitView(columnVisibility: $columnVisibility, preferredCompactColumn: $preferredCompactColumn) {
-            ChannelSidebar(showsSettings: $model.isSettingsPresented, searchFocusRequest: searchFocusRequest)
-                .navigationSplitViewColumnWidth(min: 240, ideal: 256, max: 320)
-        } detail: {
-            if let store = model.selectedStore {
-                ChannelScreen(store: store)
-                    .environment(model.interaction(for: store.id))
-                    .environment(model.artifactSession(for: store))
-            } else {
-                ContentUnavailableView("Choose a channel", systemImage: "bubble.left.and.bubble.right",
-                                       description: Text("Open a channel from the list to join the conversation."))
-            }
-        }
+        channelNavigation
         .environment(management)
         .environment(overview)
         .environment(managementSessions)
@@ -62,7 +49,14 @@ struct RootView: View {
 
     var body: some View {
         @Bindable var model = model
-        navigationWithOverview
+        Group {
+            if model.catalog == nil {
+                NavigationStack { ConnectionSetupView() }
+            } else {
+                navigationWithOverview
+            }
+        }
+        .environment(management)
         .focusedSceneValue(\.channelCommands, commandActions)
         .onChange(of: model.serverURL) { _, _ in
             management.flow = nil
@@ -93,16 +87,7 @@ struct RootView: View {
             model.reconcileSelection()
         }
         .sheet(isPresented: $model.isSettingsPresented) {
-            NavigationStack {
-                ContentUnavailableView("Settings", systemImage: "gear",
-                                       description: Text("Server settings are being built."))
-                    .navigationTitle("Settings")
-                    .toolbar {
-                        ToolbarItem(placement: .confirmationAction) {
-                            Button("Done") { model.isSettingsPresented = false }
-                        }
-                    }
-            }
+            NavigationStack { SettingsView() }
         }
         .sheet(item: Binding(
             get: { selectedInteraction?.isInspectorPresented == true ? nil : management.flow },
@@ -133,6 +118,23 @@ struct RootView: View {
         }
     }
 
+    private var channelNavigation: some View {
+        @Bindable var model = model
+        return NavigationSplitView(columnVisibility: $columnVisibility, preferredCompactColumn: $preferredCompactColumn) {
+            ChannelSidebar(showsSettings: $model.isSettingsPresented, searchFocusRequest: searchFocusRequest)
+                .navigationSplitViewColumnWidth(min: 240, ideal: 256, max: 320)
+        } detail: {
+            if let store = model.selectedStore {
+                ChannelScreen(store: store)
+                    .environment(model.interaction(for: store.id))
+                    .environment(model.artifactSession(for: store))
+            } else {
+                ContentUnavailableView("Choose a channel", systemImage: "bubble.left.and.bubble.right",
+                                       description: Text("Open a channel from the list to join the conversation."))
+            }
+        }
+    }
+
     private var selectedInteraction: ChannelInteraction? {
         model.selectedStore.map { model.interaction(for: $0.id) }
     }
@@ -151,7 +153,7 @@ struct RootView: View {
     }
 
     private var commandActions: WindowCommandActions? {
-        guard model.isActive, !model.isSettingsPresented, management.flow == nil,
+        guard model.isActive, model.catalog != nil, !model.isSettingsPresented, management.flow == nil,
               model.navigationNotice == nil, model.browserFailure == nil else { return nil }
         let store = model.selectedStore.flatMap {
             $0.id == model.visibleChannelID && $0.phase != .deleted ? $0 : nil

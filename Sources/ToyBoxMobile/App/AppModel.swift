@@ -85,6 +85,11 @@ final class AppModel {
 
     func release(_ store: ChannelStore) { connections.release(store) }
 
+    func switchServer(to address: String, replacing expectedServer: String) throws {
+        guard serverURL == expectedServer else { throw ServerSwitchFailure.changed }
+        try configure(serverURL: address)
+    }
+
     func configure(serverURL: String, persist: Bool = true) throws {
         let api = try ChannelAPI(serverURL: serverURL, session: session)
         guard let identity = ChannelWaitingRequest.normalizedServer(api.baseURL.absoluteString) else {
@@ -210,4 +215,12 @@ final class AppModel {
 struct BrowserFailure {
     let url: URL?
     let message: String
+}
+
+enum ServerSwitchFailure: LocalizedError {
+    case changed
+
+    var errorDescription: String? {
+        "The connected server changed while confirmation was open. Review the server address and try again."
+    }
 }
