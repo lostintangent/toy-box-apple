@@ -79,9 +79,7 @@ final class ChannelSpotlight {
     static func indexes(_ options: LaunchOptions,
                         bundleID: String? = Bundle.main.bundleIdentifier,
                         environment: [String: String] = ProcessInfo.processInfo.environment) -> Bool {
-        !options.isSnapshot && options.serverURL == nil && environment["TOY_BOX_SERVER_URL"] == nil
-            && options.resizeBenchmark == nil && options.benchmark == nil && options.quickSendValidation == nil
-            && bundleID == "dev.toybox.desktop"
+        bundleID == "dev.toybox.desktop" && options.allowsUserIntegrations(environment: environment)
     }
 
     /// Follows the app's server and catalog for as long as the app runs.

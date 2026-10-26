@@ -55,10 +55,7 @@ final class AppModel {
         openAtLogin = OpenAtLogin(isAvailable: OpenAtLogin.isAllowed(
             launchOptions, bundleID: Bundle.main.bundleIdentifier))
         quickSend = QuickSendController(options: launchOptions)
-        widgetSnapshots = WidgetSnapshotPublisher(enabled:
-            !launchOptions.isSnapshot && launchOptions.benchmark == nil && launchOptions.resizeBenchmark == nil
-            && launchOptions.serverURL == nil && launchOptions.quickSendValidation == nil
-            && ProcessInfo.processInfo.environment["TOY_BOX_SERVER_URL"] == nil)
+        widgetSnapshots = WidgetSnapshotPublisher(enabled: launchOptions.allowsUserIntegrations())
         dockAttention = DockAttention(
             allowed: DockAttention.isAllowed(launchOptions, bundleID: Bundle.main.bundleIdentifier),
             enabled: { UserDefaults.standard.bool(forKey: DockAttention.enabledKey) },

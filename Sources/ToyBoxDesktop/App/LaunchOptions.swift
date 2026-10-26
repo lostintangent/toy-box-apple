@@ -14,6 +14,12 @@ struct LaunchOptions: Equatable, Sendable {
 
     var isSnapshot: Bool { snapshotURL != nil }
 
+    /// Isolated launches never change the user's integrations with the saved server.
+    func allowsUserIntegrations(environment: [String: String] = ProcessInfo.processInfo.environment) -> Bool {
+        !isSnapshot && benchmark == nil && resizeBenchmark == nil && quickSendValidation == nil
+            && serverURL == nil && environment["TOY_BOX_SERVER_URL"] == nil
+    }
+
     static func parse(_ arguments: [String], environment: [String: String] = [:]) throws -> LaunchOptions {
         var options = LaunchOptions()
         var seen: Set<String> = []

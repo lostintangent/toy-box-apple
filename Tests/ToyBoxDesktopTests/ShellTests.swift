@@ -326,6 +326,23 @@ struct ShellTests {
     }
 
     @MainActor @Test(arguments: [
+        [], ["--server", "http://127.0.0.1:3210"],
+        ["--channel", "studio-demo", "--snapshot", "/tmp/integrations.png"],
+        ["--channel", "studio-demo", "--benchmark", "launch"],
+        ["--channel", "studio-demo", "--benchmark-resize", "width"],
+        ["--validate-quick-send", "hold"],
+    ], [[:], ["TOY_BOX_SERVER_URL": "http://127.0.0.1:3210"]])
+    func userIntegrationsShareLaunchIsolation(_ arguments: [String], _ environment: [String: String]) throws {
+        let options = try LaunchOptions.parse(arguments)
+        let allowed = arguments.isEmpty && environment.isEmpty
+        #expect(options.allowsUserIntegrations(environment: environment) == allowed)
+        #expect(OpenAtLogin.isAllowed(options, bundleID: "dev.toybox.desktop", environment: environment) == allowed)
+        #expect(DockAttention.isAllowed(options, bundleID: "dev.toybox.desktop", environment: environment) == allowed)
+        #expect(MorningDigest.isAllowed(options, bundleID: "dev.toybox.desktop", environment: environment) == allowed)
+        #expect(ChannelSpotlight.indexes(options, bundleID: "dev.toybox.desktop", environment: environment) == allowed)
+    }
+
+    @MainActor @Test(arguments: [
         (false, false, false), (true, false, true),
         (false, true, false), (true, true, false),
     ])
