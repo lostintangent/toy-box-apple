@@ -103,6 +103,7 @@ struct ChannelEditor: View {
                 }
             }
         }
+        .accessibilityIdentifier("channel-editor-form")
         .disabled(saving)
         .navigationTitle(channel == nil ? "New Channel" : "Edit Channel")
         .navigationBarTitleDisplayMode(.inline)

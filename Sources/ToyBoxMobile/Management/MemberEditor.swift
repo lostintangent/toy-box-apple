@@ -89,6 +89,7 @@ struct MemberEditor: View {
                 }
             }
         }
+        .accessibilityIdentifier("member-editor-form")
         .disabled(saving)
         .navigationTitle(member == nil ? "Add Agent" : "Edit Agent")
         .navigationBarTitleDisplayMode(.inline)
