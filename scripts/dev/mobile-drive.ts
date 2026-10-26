@@ -6,6 +6,8 @@ type Timed = { timeout?: number };
 export type MobileDriveStep = Timed & (
     { tap: string } | { type: string } | { wait: string; absent?: boolean } | { screenshot: string; display: string }
     | { back: true; ifPresent?: boolean } | { fold: boolean } | { action: string; on: string }
+    | { scroll: "up" | "down" | "left" | "right"; on: string }
+    | { posture: "folded" | "unfolded" }
 );
 type Status = { state: "running" | "ready" | "completed" | "failed"; step: number;
     labels: string[]; viewport: number[]; error?: string };
@@ -19,11 +21,11 @@ export function parseMobileDrive(value: unknown): MobileDriveStep[] {
     return value.map((step: unknown, index) => {
         const fail = (message: string): never => { throw new Error(`Drive step ${index + 1}: ${message}`); };
         if (!record(step)) return fail("expected an action object.");
-        const actions = ["tap", "type", "wait", "screenshot", "back", "fold", "action"].filter(key => key in step);
-        if (actions.length !== 1) return fail("expected exactly one of tap, type, wait, screenshot, back, fold or action.");
+        const actions = ["tap", "type", "wait", "screenshot", "back", "fold", "action", "scroll", "posture"].filter(key => key in step);
+        if (actions.length !== 1) return fail("expected exactly one of tap, type, wait, screenshot, back, fold, action, scroll or posture.");
         const action = actions[0]!;
         const allowed = new Set([action, "timeout", ...(action === "screenshot" ? ["display"] : []),
-            ...(action === "back" ? ["ifPresent"] : []), ...(action === "action" ? ["on"] : []),
+            ...(action === "back" ? ["ifPresent"] : []), ...(action === "action" || action === "scroll" ? ["on"] : []),
             ...(action === "wait" ? ["absent"] : [])]);
         if (Object.keys(step).some(key => !allowed.has(key))) return fail("unknown action option.");
         const timeout = step.timeout;
@@ -39,6 +41,10 @@ export function parseMobileDrive(value: unknown): MobileDriveStep[] {
             if (typeof step.fold !== "boolean") return fail("fold must be a boolean.");
             return { fold: step.fold, ...timed };
         }
+        if (action === "posture") {
+            if (step.posture !== "folded" && step.posture !== "unfolded") return fail("posture must be folded or unfolded.");
+            return { posture: step.posture, ...timed };
+        }
         const label = step[action];
         if (typeof label !== "string" || !label.length) return fail(`${action} needs nonempty text.`);
         if (action === "tap") return { tap: label, ...timed };
@@ -50,6 +56,13 @@ export function parseMobileDrive(value: unknown): MobileDriveStep[] {
         if (action === "action") {
             if (typeof step.on !== "string" || !step.on.length) return fail("action needs a nonempty on target.");
             return { action: label, on: step.on, ...timed };
+        }
+        if (action === "scroll") {
+            if (label !== "up" && label !== "down" && label !== "left" && label !== "right") {
+                return fail("scroll must be up, down, left or right.");
+            }
+            if (typeof step.on !== "string" || !step.on.length) return fail("scroll needs a nonempty on identifier.");
+            return { scroll: label, on: step.on, ...timed };
         }
         const display = step.display ?? 1;
         if ((typeof display !== "number" && typeof display !== "string") || !/^[1-9][0-9]*$/.test(String(display))) {
@@ -199,6 +212,10 @@ export async function runMobileDrive(drive: MobileDrive, host: DriveHost, signal
             if (!step) throw new Error(`The app reported unknown step ${status.step + 1}.`);
             deadline = Date.now() + ((step.timeout ?? 12) + 5) * 1_000;
             console.log(`Drive step ${status.step + 1}/${drive.steps.length}: ${status.state}, scene ${status.viewport.join("×")}`);
+            if (status.state === "running" && "posture" in step) {
+                console.log(`Waiting for ${step.posture} posture. Set Device Hub's deviceChrome.poseHingeSlider `
+                    + "through Computer Use after confirming the leased simulator.");
+            }
         }
         latest = status;
         const acknowledgement = await session.accept(status, signal,
@@ -231,7 +248,7 @@ export function simulatorDriveHost(udid: string, env: NodeJS.ProcessEnv): DriveH
             const help = (helpResult.stdout + helpResult.stderr).trim();
             throw new Error("Automated Duo folding is unavailable: screenConfig display power did not resize the app scene "
                 + "and is not a native posture control. No fold continuity proof was produced. "
-                + "Use Device Hub's native posture control for a separately observed check.\n"
+                + "Use a posture step and Device Hub's native hinge control for a measured check.\n"
                 + `Native display-control help:\n${help}`);
         },
     };

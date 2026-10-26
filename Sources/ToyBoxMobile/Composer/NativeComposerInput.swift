@@ -7,14 +7,59 @@ enum ComposerCompletionKey {
     case previous, next, accept, dismiss
 }
 
+struct ComposerReaderFocus {
+    private(set) var isCovered = false
+    private var restoresFocus = false
+
+    mutating func cover(ownsFocus: Bool) {
+        guard !isCovered else { return }
+        isCovered = true
+        restoresFocus = ownsFocus
+    }
+
+    mutating func uncover(canRestoreFocus: Bool) -> Bool {
+        let restore = isCovered && restoresFocus && canRestoreFocus
+        self = Self()
+        return restore
+    }
+
+    mutating func cancelRestoration() { restoresFocus = false }
+}
+
 @MainActor @Observable
 final class ComposerEditorState {
     var selection = NSRange(location: 0, length: 0)
     private(set) var hasMarkedText = false
     private(set) var isFocused = false
+    private var readerFocus = ComposerReaderFocus()
+    var isReaderCovered: Bool { readerFocus.isCovered }
+    @ObservationIgnored private var allowsEditing = true
     @ObservationIgnored weak var textView: ComposerTextView?
 
-    func focus() { textView?.becomeFirstResponder() }
+    func focus() {
+        guard !isReaderCovered, allowsEditing else { return }
+        textView?.becomeFirstResponder()
+    }
+
+    func setReaderCovered(_ covered: Bool, canRestoreFocus: Bool) {
+        if covered {
+            readerFocus.cover(ownsFocus: textView?.isFirstResponder == true)
+            textView?.resignFirstResponder()
+            if let textView { update(from: textView) }
+            setEditingAllowed(allowsEditing)
+        } else {
+            let restore = readerFocus.uncover(canRestoreFocus: canRestoreFocus)
+            setEditingAllowed(allowsEditing)
+            if restore { focus() }
+        }
+    }
+
+    func setEditingAllowed(_ allowed: Bool) {
+        allowsEditing = allowed
+        textView?.isEditable = allowed && !isReaderCovered
+    }
+
+    func cancelReaderFocusRestoration() { readerFocus.cancelRestoration() }
 
     @discardableResult
     func replace(_ range: NSRange, with text: String) -> Bool {
@@ -66,6 +111,7 @@ struct NativeComposerInput: UIViewRepresentable {
         if context.coordinator.parent.editor !== editor {
             view.unmarkText()
             context.coordinator.textViewDidChange(view)
+            context.coordinator.parent.editor.cancelReaderFocusRestoration()
             context.coordinator.parent.editor.textView = nil
             view.undoManager?.removeAllActions()
             view.text = text
@@ -83,7 +129,10 @@ struct NativeComposerInput: UIViewRepresentable {
     }
 
     static func dismantleUIView(_ view: ComposerTextView, coordinator: Coordinator) {
-        if coordinator.parent.editor.textView === view { coordinator.parent.editor.textView = nil }
+        if coordinator.parent.editor.textView === view {
+            coordinator.parent.editor.cancelReaderFocusRestoration()
+            coordinator.parent.editor.textView = nil
+        }
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: ComposerTextView,
@@ -99,7 +148,7 @@ struct NativeComposerInput: UIViewRepresentable {
 
     private func configure(_ view: ComposerTextView) {
         editor.textView = view
-        view.isEditable = isEditable
+        editor.setEditingAllowed(isEditable)
         view.completionIsVisible = completionIsVisible
         view.onSend = onSend
         view.onCompletionKey = onCompletionKey
@@ -144,6 +193,16 @@ final class ComposerTextView: UITextView {
     var onCompletionKey: ((ComposerCompletionKey) -> Bool)?
     var onPasteImages: (([NSItemProvider]) -> Void)?
     var onEscape: (() -> Void)?
+
+    override init(frame: CGRect, textContainer: NSTextContainer?) {
+        super.init(frame: frame, textContainer: textContainer)
+        textColor = .label
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        textColor = .label
+    }
 
     override var keyCommands: [UIKeyCommand]? {
         var commands = [

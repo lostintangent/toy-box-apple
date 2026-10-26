@@ -324,8 +324,10 @@ public enum TranscriptScrollModel {
             guard let row = layout.measurements[identity.id] else {
                 return Placement(intent: intent, origin: nil, needsMeasurement: identity.id)
             }
+            // A row taller than the unobscured area starts at its top, so its sender stays in view.
             let middle = viewport.topInset + viewport.unobscuredHeight / 2
-            proposed = row.top + row.height / 2 - middle
+            proposed = row.height > viewport.unobscuredHeight
+                ? row.top - viewport.topInset : row.top + row.height / 2 - middle
         }
         let minimum = -viewport.topInset
         let maximum = max(minimum, layout.documentEnd - viewport.height + viewport.bottomInset)

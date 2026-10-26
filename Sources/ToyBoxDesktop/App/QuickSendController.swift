@@ -3,6 +3,7 @@ import ChannelKit
 import Observation
 import OSLog
 import SwiftUI
+import ToyBoxUI
 
 @MainActor @Observable
 final class QuickSendController: NSObject, NSWindowDelegate {

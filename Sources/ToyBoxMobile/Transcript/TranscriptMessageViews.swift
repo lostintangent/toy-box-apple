@@ -19,11 +19,13 @@ struct TranscriptItemView: View, @MainActor Equatable {
     let statusReactions: [Int: [ChannelReaction]]
     let isHighlighted: Bool
     var isExpanded = false
+    var findHighlight: TranscriptFindHighlight?
     var setExpanded: (Bool) -> Void = { _ in }
 
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.item == rhs.item && lhs.context == rhs.context && lhs.statusReactions == rhs.statusReactions
             && lhs.isHighlighted == rhs.isHighlighted && lhs.isExpanded == rhs.isExpanded
+            && lhs.findHighlight == rhs.findHighlight
     }
 
     var body: some View {
@@ -43,14 +45,15 @@ struct TranscriptItemView: View, @MainActor Equatable {
         switch item.content {
         case .user(let message):
             TranscriptUserMessage(message: message, context: context,
-                                  statusReactions: statusReactions[message.sequence] ?? [])
+                                  statusReactions: statusReactions[message.sequence] ?? [],
+                                  findHighlight: findHighlight)
         case .agent(let agentId, let entry, _):
             TranscriptAgentMessage(entry: entry, agent: channelAgentIdentity(context.agents, id: agentId),
                                    context: context,
                                    statusReactions: statusReactions[entry.message.sequence] ?? [],
-                                   isExpanded: isExpanded, setExpanded: setExpanded)
+                                   isExpanded: isExpanded, findHighlight: findHighlight, setExpanded: setExpanded)
         case .system(let messages):
-            TranscriptSystemMessages(messages: messages, agents: context.agents)
+            TranscriptSystemMessages(messages: messages, agents: context.agents, findHighlight: findHighlight)
         }
     }
 }
@@ -65,7 +68,7 @@ struct TranscriptRule: View {
             line
             Text(label)
                 .font(.caption.weight(.semibold))
-                .foregroundStyle(divider.unread ? Color.blue : .secondary)
+                .foregroundStyle(divider.unread ? Color.blue : TranscriptInk.secondary)
             line
         }
         .padding(.vertical, 12)
@@ -95,7 +98,7 @@ func transcriptMessageAccessibilityLabel(author: String, timestamp: String, addr
                                          request: ChannelRequestState? = nil, delivery: String? = nil) -> String {
     [author, ChannelDates.date(timestamp)?.formatted(date: .abbreviated, time: .shortened) ?? timestamp,
      addressee.map { "To \($0)" },
-     request.map { $0 == .pending ? "Needs you" : "Replied" }, delivery]
+     request.map { $0 == .pending ? "Needs your reply" : "Replied" }, delivery]
         .compactMap { $0 }
         .joined(separator: ", ")
 }
@@ -105,6 +108,9 @@ struct TranscriptUserMessage: View {
     let context: TranscriptRowContext
     var deliveryLabel: String?
     var statusReactions: [ChannelReaction] = []
+    /// Unsent attempts all have sequence 0, so they pass their own `send-<attempt id>`.
+    var identifier: String?
+    var findHighlight: TranscriptFindHighlight?
     @Environment(\.horizontalSizeClass) private var sizeClass
     @ViewState private var selectsText = false
 
@@ -114,12 +120,12 @@ struct TranscriptUserMessage: View {
                 HStack(spacing: 6) {
                     Text("You").fontWeight(.semibold)
                     TranscriptTimestamp(timestamp: message.timestamp)
-                    if let deliveryLabel { Text(deliveryLabel).foregroundStyle(.secondary) }
+                    if let deliveryLabel { Text(deliveryLabel).foregroundStyle(TranscriptInk.secondary) }
                 }
                 .font(.footnote)
                 .accessibilityHidden(true)
                 if !message.text.isEmpty {
-                    TranscriptBody(text: message.text)
+                    TranscriptBody(text: message.text, findHighlight: findHighlight)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 10)
                         .transcriptBubble(.user)
@@ -129,13 +135,16 @@ struct TranscriptUserMessage: View {
                         }
                 }
                 if let attachments = message.attachments, !attachments.isEmpty {
-                    TranscriptAttachments(attachments: attachments, api: context.api, alignment: .trailing)
+                    TranscriptAttachments(attachments: attachments, api: context.api, alignment: .trailing,
+                                          source: .init(messageID: message.id, sender: "You",
+                                                        timestamp: message.timestamp))
                 }
                 TranscriptReactions(message: message, agents: context.agents, statusReactions: statusReactions,
                                     alignment: .trailing)
             }
         }
         .accessibilityElement(children: .contain)
+        .accessibilityIdentifier(identifier ?? "message-\(message.sequence)")
         .accessibilityLabel(transcriptMessageAccessibilityLabel(
             author: "You", timestamp: message.timestamp, delivery: deliveryLabel))
         .accessibilityAction(named: "Copy Message") { UIPasteboard.general.string = message.text }
@@ -149,6 +158,7 @@ struct TranscriptAgentMessage: View {
     let context: TranscriptRowContext
     let statusReactions: [ChannelReaction]
     var isExpanded = false
+    var findHighlight: TranscriptFindHighlight?
     var setExpanded: (Bool) -> Void = { _ in }
     @Environment(ChannelInteraction.self) private var interaction
     @ViewState private var selectsText = false
@@ -173,7 +183,7 @@ struct TranscriptAgentMessage: View {
                 if !entry.body.isEmpty {
                     VStack(alignment: .leading, spacing: 4) {
                         if entry.collapsible {
-                            TranscriptBody(text: entry.body)
+                            TranscriptBody(text: entry.body, findHighlight: findHighlight)
                                 .onGeometryChange(for: Bool.self) { $0.size.height > Self.clampHeight } action: {
                                     overflows = $0
                                 }
@@ -197,7 +207,7 @@ struct TranscriptAgentMessage: View {
                                     .buttonStyle(.borderless)
                             }
                         } else {
-                            TranscriptBody(text: entry.body)
+                            TranscriptBody(text: entry.body, findHighlight: findHighlight)
                         }
                     }
                         .padding(.horizontal, 12)
@@ -217,7 +227,9 @@ struct TranscriptAgentMessage: View {
                         }
                 }
                 if let attachments = entry.message.attachments, !attachments.isEmpty {
-                    TranscriptAttachments(attachments: attachments, api: context.api, alignment: .leading)
+                    TranscriptAttachments(attachments: attachments, api: context.api, alignment: .leading,
+                                          source: .init(messageID: entry.message.id, sender: agent.name,
+                                                        timestamp: entry.message.timestamp))
                 }
                 TranscriptReactions(message: entry.message, agents: context.agents,
                                     statusReactions: statusReactions)
@@ -225,6 +237,7 @@ struct TranscriptAgentMessage: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("message-\(entry.message.sequence)")
         .accessibilityLabel(transcriptMessageAccessibilityLabel(
             author: agent.name, timestamp: entry.message.timestamp,
             addressee: entry.addressee, request: entry.request))
@@ -249,21 +262,22 @@ struct TranscriptAgentMessage: View {
     private var headerItems: some View {
         if entry.startsRun {
             Text(agent.name).fontWeight(.semibold).italic(agent.deleted == true)
-                .foregroundStyle(agent.deleted == true ? .secondary : .primary)
+                .foregroundStyle(agent.deleted == true ? TranscriptInk.secondary : Color.primary)
         }
         if let addressee = entry.addressee {
-            Label(addressee, systemImage: "arrow.right").foregroundStyle(.secondary).lineLimit(1)
+            Label(addressee, systemImage: "arrow.right").foregroundStyle(TranscriptInk.secondary).lineLimit(1)
         }
         TranscriptTimestamp(timestamp: entry.message.timestamp)
         if let request = entry.request {
-            if request == .pending {
-                Label("Needs you", systemImage: "questionmark.bubble")
-                    .fontWeight(.semibold)
-                    .foregroundStyle(.orange)
-                    .fixedSize()
-            } else {
-                Label("Replied", systemImage: "checkmark").foregroundStyle(.secondary).fixedSize()
+            Label {
+                Text(request == .pending ? "Needs your reply" : "Replied")
+                    .fontWeight(request == .pending ? .medium : nil)
+                    .foregroundStyle(request == .pending ? Color.primary : TranscriptInk.secondary)
+            } icon: {
+                Image(systemName: request == .pending ? "questionmark.bubble.fill" : "checkmark")
+                    .foregroundStyle(request == .pending ? Color.orange : TranscriptInk.secondary)
             }
+            .fixedSize()
         }
     }
 }
@@ -306,9 +320,11 @@ private struct TranscriptSelectTextSheet: View {
 /// Inline Markdown until the shared renderer moves to ToyBoxUI.
 struct TranscriptBody: View {
     let text: String
+    var findHighlight: TranscriptFindHighlight?
 
     var body: some View {
-        Text(Self.attributed(text))
+        let attributed = Self.attributed(text)
+        Text(findHighlight?.applying(to: attributed) ?? attributed)
             .font(.body)
             .foregroundStyle(.primary)
             .fixedSize(horizontal: false, vertical: true)
@@ -321,13 +337,28 @@ struct TranscriptBody: View {
     }
 }
 
+/// Secondary label ink measures 3.4:1 on white, so metadata uses opaque grays that clear 4.5:1
+/// on the transcript, the gallery and Find's filled field in both appearances.
+enum TranscriptInk {
+    static let secondary = Color(uiColor: UIColor { traits in
+        traits.userInterfaceStyle == .dark ? UIColor(red: 0xAE / 255, green: 0xAE / 255, blue: 0xB2 / 255, alpha: 1)
+            : UIColor(red: 0x63 / 255, green: 0x63 / 255, blue: 0x66 / 255, alpha: 1)
+    })
+}
+
+extension Glass {
+    /// Regular glass alone lets bright images show through under white text, so floating
+    /// transcript controls tint it toward the background, matching the composer.
+    static var transcriptFloating: Glass { .regular.tint(Color(uiColor: .systemBackground).opacity(0.3)) }
+}
+
 struct TranscriptTimestamp: View {
     let timestamp: String
 
     var body: some View {
         if let date = ChannelDates.date(timestamp) {
             Text(date, format: .dateTime.hour().minute())
-                .foregroundStyle(.secondary)
+                .foregroundStyle(TranscriptInk.secondary)
                 .monospacedDigit()
         }
     }
@@ -336,19 +367,26 @@ struct TranscriptTimestamp: View {
 struct TranscriptSystemMessages: View {
     let messages: [ChannelMessage]
     let agents: [ChannelAgent]
+    var findHighlight: TranscriptFindHighlight?
 
     @ViewState private var showsDetails = false
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
+        let type = messages.first?.system?.type
         Button { showsDetails = true } label: {
-            Text(text)
+            let symbol = Text(Image(systemName: ChannelSystemEventStyle.symbol(for: type)))
+                .foregroundStyle(ChannelSystemEventStyle.symbolColor(for: type, in: colorScheme))
+            let label = Text(findHighlight?.applying(to: AttributedString(text)) ?? AttributedString(text))
+            Text("\(symbol) \(label)")
                 .font(.footnote)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(TranscriptInk.secondary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: .infinity, minHeight: 44)
                 .contentShape(.rect)
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(text)
         .accessibilityHint("Shows details")
         .sheet(isPresented: $showsDetails) {
             TranscriptSystemDetails(messages: messages, agents: agents)
@@ -370,15 +408,8 @@ struct TranscriptReactions: View {
     var statusReactions: [ChannelReaction] = []
     var alignment: Alignment = .leading
 
-    private var groups: [(reaction: String, agents: [ChannelAgent])] {
-        let reactions = channelMessageReactions(message, status: [message.sequence: statusReactions])
-        var order: [String] = []
-        var grouped: [String: [ChannelAgent]] = [:]
-        for entry in reactions {
-            if grouped[entry.reaction] == nil { order.append(entry.reaction) }
-            grouped[entry.reaction, default: []].append(channelAgentIdentity(agents, id: entry.agentId))
-        }
-        return order.map { ($0, grouped[$0] ?? []) }
+    private var groups: [ChannelReactionGroup] {
+        ChannelReactionGroup.groups(for: message, agents: agents, statusReactions: statusReactions)
     }
 
     var body: some View {
@@ -386,24 +417,11 @@ struct TranscriptReactions: View {
         if !groups.isEmpty {
             HStack(spacing: 6) {
                 ForEach(groups, id: \.reaction) { group in
-                    let presentation = Self.presentation(group.reaction)
+                    let presentation = group.presentation
                     TranscriptReactionChip(emoji: presentation.emoji, label: presentation.label,
                                            reactors: group.agents, alignment: alignment)
                 }
             }
-        }
-    }
-
-    static func presentation(_ reaction: String) -> (emoji: String, label: String) {
-        switch reaction {
-        case "looking": ("\u{1f440}", "Looking")
-        case "working": ("\u{1f3c3}", "In progress")
-        case "done": ("\u{2705}", "Done")
-        case "agree": ("\u{1f44d}", "Agreed")
-        case "celebrate": ("\u{1f389}", "Celebrated")
-        case "love": ("\u{2764}\u{fe0f}", "Loved this")
-        case "laugh": ("\u{1f602}", "Laughed")
-        default: ("\u{2022}", reaction)
         }
     }
 }

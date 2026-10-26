@@ -87,7 +87,7 @@ private struct TranscriptAttachment: View {
     var imageName: String?
     var viewing: TranscriptAttachmentViewing?
     @ViewState private var localURL: URL?
-    @ViewState private var thumbnail: NSImage?
+    @ViewState private var thumbnail: CGImage?
     @ViewState private var error: String?
     @ViewState private var isLoading = false
     @ViewState private var previewURL: URL?
@@ -101,6 +101,7 @@ private struct TranscriptAttachment: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
     @Environment(\.channelIntelligence) private var intelligence
+    @Environment(\.displayScale) private var displayScale
     @AppStorage(TranscriptIntelligenceSettings.describesImages) private var describesImages = true
 
     private var name: String { imageName ?? attachment.displayName }
@@ -133,7 +134,7 @@ private struct TranscriptAttachment: View {
     }
 
     var body: some View {
-        let thumbnail = thumbnail ?? TranscriptThumbnails.remembered(for: attachment, api: api)
+        let thumbnail = thumbnail ?? ChannelThumbnails.remembered(for: attachment, api: api)
         VStack(alignment: .leading, spacing: 5) {
             if isImage, thumbnail != nil || error == nil {
                 imageTile(thumbnail)
@@ -141,7 +142,7 @@ private struct TranscriptAttachment: View {
                 Button { isPlaying = true } label: {
                     VStack(spacing: 10) {
                         if let thumbnail {
-                            Image(nsImage: thumbnail).resizable().scaledToFit()
+                            Image(decorative: thumbnail, scale: 1).resizable().scaledToFit()
                                 .frame(maxWidth: 240, maxHeight: 120)
                         }
                         Label("Play \(name)", systemImage: "play.circle.fill")
@@ -193,16 +194,16 @@ private struct TranscriptAttachment: View {
     /// A loading image holds its final size, from its inline header or from the cached file of an
     /// earlier load, so the row never grows when the preview lands. Only a remote image the app has
     /// never loaded resizes, once.
-    private func imageTile(_ thumbnail: NSImage?) -> some View {
+    private func imageTile(_ thumbnail: CGImage?) -> some View {
         let pixels = ChannelImageDecoder.pixelSize(for: attachment, api: api)
-            ?? thumbnail?.size ?? CGSize(width: 120, height: 90)
+            ?? thumbnail.map { CGSize(width: $0.width, height: $0.height) } ?? CGSize(width: 120, height: 90)
         let size = transcriptThumbnailSize(pixels)
         let tile = RoundedRectangle(cornerRadius: 8)
         return Button(action: view) {
             ZStack {
                 tile.fill(.quaternary.opacity(0.3))
                 if let thumbnail {
-                    Image(nsImage: thumbnail)
+                    Image(decorative: thumbnail, scale: 1)
                         .resizable()
                         .scaledToFit()
                         .frame(width: size.width, height: size.height)
@@ -260,7 +261,7 @@ private struct TranscriptAttachment: View {
             localURL = file
             if isImage {
                 let image = try await TranscriptThumbnails.image(at: file, for: attachment, api: api,
-                                                                 reload: retry > 0)
+                                                                 scale: displayScale, reload: retry > 0)
                 guard !Task.isCancelled else { return }
                 thumbnail = image
             } else if isVideo {
@@ -271,7 +272,7 @@ private struct TranscriptAttachment: View {
                 do {
                     let image = try await generator.image(at: .zero).image
                     guard !Task.isCancelled else { return }
-                    thumbnail = TranscriptThumbnails.remember(image, for: attachment, api: api)
+                    thumbnail = ChannelThumbnails.remember(image, for: attachment, api: api)
                 } catch {
                     // A missing poster must not prevent playback of a valid video.
                     self.error = "Video preview unavailable. Use Play to open the video."
@@ -330,49 +331,22 @@ private struct TranscriptVideo: View {
 /// second window or when paging, lays out at its final height on its first pass instead of
 /// starting as a file chip and growing when its decode lands.
 ///
-/// Previews are keyed by the address or inline payload itself rather than its digest. `body` looks
-/// them up, and hashing a multi-megabyte payload there costs milliseconds, while an `NSString`
-/// lookup samples the string and compares the payload's storage.
+/// The shared thumbnails, with the SVG rasterizer ImageIO lacks.
 @MainActor
 enum TranscriptThumbnails {
-    private static let cache: NSCache<NSString, NSImage> = {
-        let cache = NSCache<NSString, NSImage>()
-        cache.totalCostLimit = 64 << 20
-        return cache
-    }()
-
-    static func remembered(for attachment: ChannelAttachment, api: ChannelAPI) -> NSImage? {
-        ChannelAttachmentCache.identity(for: attachment, api: api).flatMap { cache.object(forKey: $0 as NSString) }
+    static func image(at file: URL, for attachment: ChannelAttachment, api: ChannelAPI, scale: CGFloat,
+                      reload: Bool = false) async throws -> CGImage {
+        try await ChannelThumbnails.image(at: file, for: attachment, api: api, scale: scale,
+                                          reload: reload, fallback: svg)
     }
 
-    /// Decoding a large image takes tens of milliseconds, so it runs off the main actor.
-    static func image(at file: URL, for attachment: ChannelAttachment, api: ChannelAPI,
-                      reload: Bool = false) async throws -> NSImage {
-        if !reload, let image = remembered(for: attachment, api: api) { return image }
-        let decoded = try await Task.detached(priority: .userInitiated) { try Self.decoded(file) }.value
-        ChannelImageDecoder.rememberPixelSize(decoded.pixelSize, for: attachment, api: api)
-        return remember(decoded.image, for: attachment, api: api)
+    nonisolated static func decode(_ file: URL, scale: CGFloat) throws -> CGImage {
+        try ChannelThumbnails.decode(file, scale: scale, fallback: svg).image
     }
 
-    nonisolated static func decode(_ file: URL) throws -> CGImage {
-        try decoded(file).image
-    }
-
-    private nonisolated static func decoded(_ file: URL) throws -> TranscriptSVGImage.Decoded {
-        if let decoded = ChannelImageDecoder.thumbnail(file: file, maxPixelSize: 640) {
-            return TranscriptSVGImage.Decoded(image: decoded.image, pixelSize: decoded.pixelSize)
-        }
-        return try TranscriptSVGImage.decode(file, maximumPixelSize: 640)
-    }
-
-    static func remember(_ image: CGImage, for attachment: ChannelAttachment, api: ChannelAPI) -> NSImage {
-        let thumbnail = NSImage(cgImage: image, size: .zero)
-        if let identity = ChannelAttachmentCache.identity(for: attachment, api: api) {
-            // The cache keeps its key alive, which for an inline image is the whole payload.
-            cache.setObject(thumbnail, forKey: identity as NSString,
-                            cost: image.bytesPerRow * image.height + identity.utf8.count)
-        }
-        return thumbnail
+    nonisolated private static let svg: ChannelThumbnails.Fallback = { file, bound in
+        let decoded = try TranscriptSVGImage.decode(file, maximumPixelSize: bound)
+        return (decoded.image, decoded.pixelSize)
     }
 }
 

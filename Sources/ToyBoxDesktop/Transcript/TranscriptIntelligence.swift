@@ -4,16 +4,6 @@ import ChannelIntelligence
 import ChannelKit
 import Observation
 
-/// The Intelligence toggles in Settings. Neither key registers a default, so an unset key reads as on.
-enum TranscriptIntelligenceSettings {
-    static let summarizesNewMessages = "summarizeNewMessages"
-    static let describesImages = "describeImagesForVoiceOver"
-
-    static func isOn(_ key: String, defaults: UserDefaults = .standard) -> Bool {
-        defaults.object(forKey: key) as? Bool ?? true
-    }
-}
-
 /// Generated image descriptions for VoiceOver, shared by inline tiles and the viewer so an image is
 /// described once per session. They only ever appear as an accessibility value.
 @MainActor @Observable

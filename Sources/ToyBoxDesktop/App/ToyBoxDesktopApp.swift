@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import ToyBoxControlIntents
+import ToyBoxUI
 
 // The macOS 27 CLT SDK exports a same-named macro without its plugin. Keep the property wrapper.
 typealias ViewState<Value> = SwiftUI.State<Value>

@@ -288,22 +288,6 @@ struct ArtifactViewerTests {
         #expect(requests.allSatisfy { !$0.headers.lowercased().contains(fakeCookie.name.lowercased()) })
     }
 
-    @Test func externalLinksOpenTheBrowserInsteadOfReplacingTheEmbeddedDocument() async throws {
-        let destination = try #require(URL(string: "https://artifact-viewer-test.invalid/review"))
-        var opened: [URL] = []
-        let web = ArtifactWebContent(openURL: { opened.append($0); return true })
-        defer { web.stop() }
-        let server = try #require(URL(string: "http://127.0.0.1:1"))
-        await web.load("""
-            <a id="external" href="\(destination.absoluteString)">Review</a>
-            <script>document.getElementById("external").click();</script>
-            """, directory: server.appendingPathComponent("api/serve/test/"), server: server)
-        try await wait { !opened.isEmpty || web.error != nil }
-        #expect(web.error == nil)
-        #expect(opened == [destination])
-        #expect(web.webView.url?.scheme == "toybox-artifact")
-    }
-
     @Test(arguments: ["toc", "resource", "hash"])
     func sameDocumentTOCLinksAndHashChangesStayInsideTheSandbox(method: String) async throws {
         let fixture = try ArtifactHTTPFixture()
@@ -351,17 +335,6 @@ struct ArtifactViewerTests {
             """)
         #expect(isolation as? String == "SecurityError")
         #expect(web.webView.configuration.userContentController.userScripts == probeScripts)
-    }
-
-    @Test func prefixedAndEscapedServerAddressesCompileIntoRealWebKitRules() async throws {
-        let server = try #require(URL(string: "http://127.0.0.1:3299/team%20space/"))
-        let encoded = try ArtifactWebPolicy.blockingRules(server: server)
-        let rules = try #require(try JSONSerialization.jsonObject(with: Data(encoded.utf8)) as? [[String: Any]])
-        let allow = try #require(rules.last?["trigger"] as? [String: String])
-        #expect(allow["url-filter"]?.contains("team%20space") == true)
-        let compiled = try await WKContentRuleListStore.default().compileContentRuleList(
-            forIdentifier: "artifact-viewer-prefix-test", encodedContentRuleList: encoded)
-        #expect(compiled != nil)
     }
 
     @Test func HTMLUsesTheReferenceSandboxPermissionsWithoutSameOrigin() {

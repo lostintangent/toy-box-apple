@@ -39,9 +39,9 @@ struct SVGAttachmentTests {
         let file = try svgFile(Self.picture, suffix: "data")
         defer { try? FileManager.default.removeItem(at: file) }
         let (thumbnail, full) = try await Task.detached {
-            (try TranscriptThumbnails.decode(file), try ImageViewer.decode(file, maximumPixelSize: 1280))
+            (try TranscriptThumbnails.decode(file, scale: 2), try ImageViewer.decode(file, maximumPixelSize: 1280))
         }.value
-        #expect(thumbnail.width == 640 && thumbnail.height == 320)
+        #expect(thumbnail.width == 480 && thumbnail.height == 240)
         #expect(full.width == 1280 && full.height == 640)
     }
 
@@ -65,8 +65,8 @@ struct SVGAttachmentTests {
         let api = try ChannelAPI(serverURL: "http://localhost:3210")
         let file = try await ChannelAttachmentCache.shared.file(for: attachment, api: api)
         defer { try? FileManager.default.removeItem(at: file) }
-        let thumbnail = try await TranscriptThumbnails.image(at: file, for: attachment, api: api)
-        #expect(thumbnail.size == CGSize(width: 640, height: 320))
+        let thumbnail = try await TranscriptThumbnails.image(at: file, for: attachment, api: api, scale: 2)
+        #expect(CGSize(width: thumbnail.width, height: thumbnail.height) == CGSize(width: 480, height: 240))
         #expect(ChannelImageDecoder.pixelSize(for: attachment, api: api) == CGSize(width: 800, height: 400))
         #expect(ImageViewer.knownPixelSize(of: attachment, api: api) == CGSize(width: 800, height: 400))
     }
@@ -83,7 +83,7 @@ struct SVGAttachmentTests {
         let api = try ChannelAPI(serverURL: "http://localhost:3210")
         let file = try await ChannelAttachmentCache.shared.file(for: attachment, api: api)
         defer { try? FileManager.default.removeItem(at: file) }
-        _ = try await TranscriptThumbnails.image(at: file, for: attachment, api: api)
+        _ = try await TranscriptThumbnails.image(at: file, for: attachment, api: api, scale: 2)
         let layout = ImageViewer.Layout(size: CGSize(width: 1000, height: 800), topInset: 52)
         let viewer = ImageViewer()
         viewer.layout = layout
@@ -128,7 +128,7 @@ struct SVGAttachmentTests {
         let file = try svgFile(source)
         defer { try? FileManager.default.removeItem(at: file) }
         await Task.detached {
-            #expect(throws: ChannelAttachmentError.invalidImage) { try TranscriptThumbnails.decode(file) }
+            #expect(throws: ChannelAttachmentError.invalidImage) { try TranscriptThumbnails.decode(file, scale: 2) }
             #expect(throws: ChannelAttachmentError.invalidImage) { try ImageViewer.decode(file, maximumPixelSize: 64) }
         }.value
     }
@@ -163,7 +163,7 @@ struct SVGAttachmentTests {
             """)
         defer { try? FileManager.default.removeItem(at: file) }
         try await Task.detached {
-            _ = try TranscriptThumbnails.decode(file)
+            _ = try TranscriptThumbnails.decode(file, scale: 2)
             _ = try ImageViewer.decode(file, maximumPixelSize: 640)
         }.value
         try await Task.sleep(for: .milliseconds(150))
