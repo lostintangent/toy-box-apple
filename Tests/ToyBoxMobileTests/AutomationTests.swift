@@ -42,6 +42,8 @@ struct AutomationTests {
         root.accessibilityIdentifier = "message-12"
         let shown = UILabel()
         shown.text = "Studio demo"
+        shown.accessibilityLabel = "Studio demo"
+        shown.isAccessibilityElement = true
         shown.accessibilityIdentifier = "channel-studio"
         var replies = 0
         shown.accessibilityCustomActions = [UIAccessibilityCustomAction(name: "Reply") { _ in
@@ -50,6 +52,8 @@ struct AutomationTests {
         }]
         let hidden = UILabel()
         hidden.text = "Hidden"
+        hidden.accessibilityLabel = "Hidden"
+        hidden.isAccessibilityElement = true
         hidden.isHidden = true
         root.addSubview(shown)
         root.addSubview(hidden)
