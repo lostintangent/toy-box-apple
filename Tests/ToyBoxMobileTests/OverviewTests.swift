@@ -1,10 +1,10 @@
-import ChannelClient
 import ChannelKit
 import Foundation
 import Testing
 import SwiftUI
 import ToyBoxUI
 import UIKit
+@testable import ChannelClient
 @testable import ToyBoxMobile
 
 @Suite("Mobile Overview")
@@ -262,8 +262,77 @@ struct OverviewTests {
         } else {
             #expect(list.numberOfItems(inSection: 0) == 1)
             #expect(list.numberOfItems(inSection: 1) == 1)
-            #expect(abs(headings[1].minY - first.maxY - 12) < 0.5)
+            #expect(abs(headings[1].minY - first.maxY - 24) < 0.5)
         }
+    }
+
+    @Test(arguments: [DynamicTypeSize.large, .accessibility5])
+    func overviewActionRowShowsOnlyTwoIconsNotVisibleActionTitles(size: DynamicTypeSize) throws {
+        let store = ChannelStore(id: "channel", api: try ChannelAPI(serverURL: "https://fixture.example"))
+        let renderer = ImageRenderer(content:
+            OverviewRootActions(store: store)
+                .environment(ChannelInteraction()).environment(ManagementPresenter())
+                .dynamicTypeSize(size))
+        let image = try #require(renderer.uiImage)
+        #expect(image.size == CGSize(width: 88, height: 44))
+    }
+
+    @Test(arguments: [false, true], [DynamicTypeSize.large, .accessibility5])
+    func loadedOpeningAlignsItsFirstLineAndUsesTheSameGapAsEverySection(
+        teamExpanded: Bool, size: DynamicTypeSize
+    ) async throws {
+        let store = ChannelStore(id: "channel", api: try ChannelAPI(serverURL: "https://fixture.example"),
+                                 sendJournal: nil)
+        _ = try store.apply(.init(type: "snapshot", state: .init(
+            revision: 1,
+            channel: .init(id: "channel", name: "Workshop", purpose: "Build.", directory: "/Workshop",
+                           model: .init(provider: "test", name: "test"),
+                           preview: .init(kind: "url", url: "https://example.com"),
+                           updatedAt: "2026-10-26T00:00:00Z"),
+            lead: .lead(id: "channel", profile: .init(name: "Lead", role: "Coordinator",
+                                                    avatar: .init(mark: "M4 12H20", color: "#123456")))
+        )))
+        let session = OverviewSession(store: store)
+        session.expandedSections[.team] = teamExpanded
+        let host = UIHostingController(rootView:
+            OverviewView(store: store, session: session, placement: .sheet)
+                .environment(OverviewPresentation()).environment(ChannelInteraction())
+                .environment(ManagementPresenter()).environment(try artifactSession(artifacts: []))
+                .environment(\.horizontalSizeClass, .compact).dynamicTypeSize(size))
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 466, height: 1600))
+        window.rootViewController = host
+        window.isHidden = false
+        defer { window.isHidden = true }
+        host.view.layoutIfNeeded()
+        await Task.yield()
+        host.view.layoutIfNeeded()
+        let tree = MobileAutomationTree(windows: [window])
+        let purpose = try #require(tree.elements.first { $0.label == "Build." })
+        let close = try #require(tree.elements.first { $0.label == "Close Overview" })
+        let menu = try #require(tree.elements.first { $0.identifier == "overview-channel-actions" })
+        #expect(abs(menu.frame.width - 44) < 0.5 && abs(close.frame.width - 44) < 0.5)
+        #expect(abs(close.frame.maxX - menu.frame.minX - 88) < 0.5)
+        #expect(menu.frame.height >= 44 && close.frame.height >= 44)
+        #expect(abs(menu.frame.midY - close.frame.midY) < 0.5)
+        #expect(abs(purpose.frame.midY - close.frame.midY) <= 1,
+                "Purpose \(purpose.frame), Close \(close.frame)")
+        let openingInset = close.frame.minY - window.safeAreaInsets.top
+        if size.isAccessibilitySize {
+            #expect(openingInset >= 12 && openingInset <= 24)
+        } else {
+            #expect(abs(openingInset - 12) < 0.5,
+                    "Loaded Close \(close.frame), safe area \(window.safeAreaInsets)")
+        }
+        let list = try #require(nativeList(in: host.view))
+        let about = try #require(list.layoutAttributesForItem(at: IndexPath(item: 0, section: 0))).frame
+        let team = try #require(list.layoutAttributesForItem(at: IndexPath(item: 0, section: 1))).frame
+        let lastTeam = try #require(list.layoutAttributesForItem(
+            at: IndexPath(item: list.numberOfItems(inSection: 1) - 1, section: 1))).frame
+        let tasks = try #require(list.layoutAttributesForItem(at: IndexPath(item: 0, section: 2))).frame
+        #expect(abs(team.minY - about.maxY - 24) < 0.5,
+                "About \(about), Team \(team), last Team \(lastTeam), Tasks \(tasks)")
+        #expect(abs(tasks.minY - lastTeam.maxY - (team.minY - about.maxY)) < 0.5,
+                "About-to-Team \(team.minY - about.maxY), Team-to-Tasks \(tasks.minY - lastTeam.maxY)")
     }
 
     @Test(arguments: [UserInterfaceSizeClass.compact, .regular])
@@ -370,22 +439,26 @@ struct OverviewTests {
         #expect(image.size == CGSize(width: 22, height: 22))
     }
 
-    @Test(arguments: [DynamicTypeSize.large, .accessibility5])
-    func artifactRowsUseTheTeamsCompactTwoLineRhythmAndGrowWithText(size: DynamicTypeSize) async throws {
+    @Test(arguments: [DynamicTypeSize.large, .accessibility5],
+          ["Design", "Design notes for the workshop and the next release"])
+    func artifactRowsKeepSixPointInsetsAndGrowWithTitlesAndTextSize(
+        size: DynamicTypeSize, title: String
+    ) async throws {
         let store = ChannelStore(id: "channel", api: try ChannelAPI(serverURL: "https://fixture.example"))
         let session = OverviewSession(store: store)
         let viewer = try artifactSession(artifacts: [])
+        let value = ChannelArtifact(file: .init(kind: "machine", path: "plan.md"), title: title)
         let host = UIHostingController(rootView:
             OverviewList {
                 OverviewTeamRow(agent: .init(id: "agent", name: "Design"), store: store,
                                 session: session, isLead: true)
                 OverviewArtifactRow(
-                    artifact: .init(file: .init(kind: "machine", path: "plan.md"), title: "Design"),
+                    artifact: value,
                     share: nil, api: store.api, channelID: store.id)
-                    .listRowInsets(.vertical, 0)
+                    .listRowInsets(.vertical, 6)
             }
             .environment(ManagementPresenter()).environment(ChannelInteraction()).environment(viewer)
-            .dynamicTypeSize(size))
+            .environment(\.horizontalSizeClass, .compact).dynamicTypeSize(size))
         let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 900))
         window.rootViewController = host
         window.isHidden = false
@@ -397,10 +470,14 @@ struct OverviewTests {
         let team = try #require(list.layoutAttributesForItem(at: IndexPath(item: 0, section: 0))).frame
         let artifact = try #require(list.layoutAttributesForItem(at: IndexPath(item: 1, section: 0))).frame
         #expect(artifact.height >= 44)
-        if size == .large {
-            #expect(artifact.height <= team.height + 1)
+        let label = ImageRenderer(content: OverviewArtifactLabel(artifact: value, share: nil).dynamicTypeSize(size))
+        label.proposedSize = ProposedViewSize(width: artifact.width - 32, height: nil)
+        let labelImage = try #require(label.uiImage)
+        #expect(abs(artifact.height - labelImage.size.height - 12) <= 1)
+        if size == .large, title == "Design" {
+            #expect(abs(artifact.height - 56) <= 1)
             #expect(artifact.height < 64)
-        } else {
+        } else if size.isAccessibilitySize {
             #expect(team.height > 64 && artifact.height > 64)
         }
     }

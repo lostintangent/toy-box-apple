@@ -64,6 +64,7 @@ struct OverviewView: View {
 
 struct OverviewRootActions: View {
     let store: ChannelStore
+    var controlHeight: CGFloat = 44
     @Environment(ChannelInteraction.self) private var interaction
     @Environment(ManagementPresenter.self) private var management
 
@@ -78,7 +79,7 @@ struct OverviewRootActions: View {
                 }
             } label: {
                 Label("Channel Actions", systemImage: "ellipsis")
-                    .frame(minWidth: 44, minHeight: 44)
+                    .frame(minWidth: 44, minHeight: controlHeight)
                     .contentShape(Rectangle())
             }
             .accessibilityIdentifier("overview-channel-actions")
@@ -87,12 +88,13 @@ struct OverviewRootActions: View {
                 interaction.isInspectorPresented = false
             } label: {
                 Label("Close Overview", systemImage: "xmark")
-                    .frame(minWidth: 44, minHeight: 44)
+                    .frame(minWidth: 44, minHeight: controlHeight)
                     .contentShape(Rectangle())
             }
         }
         .fixedSize()
         .labelStyle(.iconOnly)
+        .font(.system(size: 17))
         .buttonStyle(.borderless)
     }
 }

@@ -3,6 +3,10 @@ import SwiftUI
 import ToyBoxUI
 import UIKit
 
+enum OverviewListMetrics {
+    static let sectionGap: CGFloat = 24
+}
+
 struct OverviewListRowBoundary: ViewModifier {
     let isLast: Bool
 
@@ -40,7 +44,7 @@ struct OverviewSectionRows<Content: View>: View {
         }
         .id("overview-\(section)")
         .listSectionMargins(.top, isFirstSection ? 12 : 0)
-        .listSectionMargins(.bottom, session.isExpanded(section) ? 24 : 12)
+        .listSectionMargins(.bottom, OverviewListMetrics.sectionGap)
         .listSectionSeparator(.hidden, edges: .all)
     }
 }

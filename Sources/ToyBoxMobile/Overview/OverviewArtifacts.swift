@@ -19,7 +19,7 @@ struct OverviewArtifactsSection: View {
                 ForEach(artifacts) { artifact in
                     OverviewArtifactRow(artifact: artifact, share: store.artifactShares[artifact.file.id],
                                         api: store.api, channelID: store.id)
-                        .listRowInsets(.vertical, 0)
+                        .listRowInsets(.vertical, 6)
                         .modifier(OverviewListRowBoundary(isLast: artifact.id == artifacts.last?.id))
                 }
             }
@@ -43,7 +43,7 @@ struct OverviewArtifactList: View {
                         OverviewArtifactLabel(artifact: artifact, share: store.artifactShares[artifact.file.id])
                     }
                     .buttonStyle(.plain)
-                    .listRowInsets(.vertical, 0)
+                    .listRowInsets(.vertical, 6)
                     .accessibilityIdentifier("artifact-list-\(artifact.id)")
                 }
             }

@@ -45,7 +45,7 @@ struct OverviewTeamRow: View {
     @Environment(ChannelArtifactSession.self) private var viewer
     @Environment(\.dynamicTypeSize) private var typeSize
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
-    @ScaledMetric(relativeTo: .body) private var avatarSize = 24
+    @ScaledMetric(relativeTo: .body) private var avatarSize = 28
     @ViewState private var isVisible = false
 
     private var status: ChannelAgentStatusPresentation {
@@ -60,7 +60,7 @@ struct OverviewTeamRow: View {
     var body: some View {
         NavigationLink(value: OverviewRoute.agent(agent.id)) {
             HStack(spacing: 12) {
-                AgentAvatarView(agent: agent, size: min(32, avatarSize))
+                AgentAvatarView(agent: agent, size: min(36, avatarSize))
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(agent.name).font(.body)
