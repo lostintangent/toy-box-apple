@@ -10,6 +10,11 @@ struct AutomationTests {
         @objc var accessibilityIdentifier: String?
     }
 
+    private final class PresentedController: UIViewController {
+        var activePresentation: UIViewController?
+        override var presentedViewController: UIViewController? { activePresentation }
+    }
+
     @Test func scriptPreservesActionsAndRejectsUnknownOrContradictoryInputs() throws {
         let steps = try JSONDecoder().decode([MobileAutomationStep].self, from: Data("""
             [{"tap":"Studio demo"},{"type":"Hello"},{"wait":"Needs you","timeout":20},
@@ -32,6 +37,93 @@ struct AutomationTests {
                 try JSONDecoder().decode(MobileAutomationStep.self, from: Data(invalid.utf8))
             }
         }
+    }
+
+    @Test func traitSelectionDoesNotInventAWindowOrChooseBetweenAmbiguousWindows() {
+        #expect(MobileAutomationTree(windows: []).traits == .unavailable(.missingWindow))
+        let first = UIWindow(frame: CGRect(x: 0, y: 0, width: 386, height: 678))
+        let second = UIWindow(frame: first.frame)
+        first.isHidden = false
+        second.isHidden = false
+        defer { first.isHidden = true; second.isHidden = true }
+        #expect(MobileAutomationTree(windows: [first, second]).traits == .unavailable(.ambiguousWindow))
+        #expect(MobileAutomationTree(windows: [first]).traits == .unavailable(.missingContent))
+    }
+
+    @Test func effectiveTraitsUseLoadedContentOverridesAndTheActivePresentation() {
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 386, height: 678))
+        let root = PresentedController()
+        window.rootViewController = root
+        root.loadViewIfNeeded()
+        root.view.frame = window.bounds
+        window.addSubview(root.view)
+        window.overrideUserInterfaceStyle = .light
+        root.view.traitOverrides.userInterfaceStyle = .dark
+        root.view.traitOverrides.preferredContentSizeCategory = .accessibilityExtraExtraExtraLarge
+        window.isHidden = false
+        defer { window.isHidden = true }
+        window.updateTraitsIfNeeded()
+        #expect(window.traitCollection.userInterfaceStyle == .light)
+        let rootTraits = MobileAutomationTree.Traits(
+            contentSizeCategory: UIContentSizeCategory.accessibilityExtraExtraExtraLarge.rawValue,
+            interfaceStyle: "dark")
+        #expect(MobileAutomationTree(windows: [window]).traits == .available(rootTraits))
+
+        let presented = UIViewController()
+        root.activePresentation = presented
+        #expect(!presented.isViewLoaded)
+        #expect(MobileAutomationTree(windows: [window]).traits == .unavailable(.missingContent))
+        #expect(!presented.isViewLoaded)
+        presented.loadViewIfNeeded()
+        presented.view.frame = window.bounds
+        presented.view.traitOverrides.userInterfaceStyle = .light
+        presented.view.traitOverrides.preferredContentSizeCategory = .small
+        window.addSubview(presented.view)
+        window.updateTraitsIfNeeded()
+        let presentedTraits = MobileAutomationTree.Traits(
+            contentSizeCategory: UIContentSizeCategory.small.rawValue, interfaceStyle: "light")
+        #expect(MobileAutomationTree(windows: [window]).traits == .available(presentedTraits))
+    }
+
+    @Test func visibleContentMustAgreeOnEffectiveTraitsAndHiddenChildrenDoNotParticipate() {
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 386, height: 678))
+        let root = UIViewController()
+        window.rootViewController = root
+        root.loadViewIfNeeded()
+        root.view.frame = window.bounds
+        window.addSubview(root.view)
+        var children: [UIViewController] = []
+        for index in 0..<2 {
+            let child = UIViewController()
+            root.addChild(child)
+            child.loadViewIfNeeded()
+            child.view.frame = CGRect(x: index * 160, y: 0, width: 160, height: 300)
+            child.view.traitOverrides.preferredContentSizeCategory = .extraLarge
+            child.view.traitOverrides.userInterfaceStyle = index == 0 ? .dark : .light
+            root.view.addSubview(child.view)
+            child.didMove(toParent: root)
+            children.append(child)
+        }
+        window.isHidden = false
+        defer { window.isHidden = true }
+        window.updateTraitsIfNeeded()
+        #expect(MobileAutomationTree(windows: [window]).traits == .unavailable(.ambiguousContent))
+        children[1].view.traitOverrides.userInterfaceStyle = .dark
+        window.updateTraitsIfNeeded()
+        let expected = MobileAutomationTree.Traits(
+            contentSizeCategory: UIContentSizeCategory.extraLarge.rawValue, interfaceStyle: "dark")
+        #expect(MobileAutomationTree(windows: [window]).traits == .available(expected))
+        children[1].view.traitOverrides.userInterfaceStyle = .light
+        children[1].view.isHidden = true
+        window.updateTraitsIfNeeded()
+        #expect(MobileAutomationTree(windows: [window]).traits == .available(expected))
+        let hiddenParent = UIView(frame: root.view.bounds)
+        root.view.addSubview(hiddenParent)
+        hiddenParent.addSubview(children[1].view)
+        children[1].view.isHidden = false
+        hiddenParent.isHidden = true
+        window.updateTraitsIfNeeded()
+        #expect(MobileAutomationTree(windows: [window]).traits == .available(expected))
     }
 
     @Test func treeUsesAccessibilityContainersWithoutDuplicatingOrExposingHiddenViews() throws {
