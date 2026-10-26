@@ -178,15 +178,19 @@ struct TranscriptImageGallery: View {
                 .labelStyle(.iconOnly)
         }
         ToolbarItem(placement: .principal) {
+            let subtitle = TranscriptGalleryPresenter.subtitle(sentAt: ChannelDates.date(session.source.timestamp),
+                                                               index: session.index, count: session.images.count)
             VStack(spacing: 2) {
                 Text(session.source.sender).font(.headline).lineLimit(1)
-                Text(TranscriptGalleryPresenter.subtitle(sentAt: ChannelDates.date(session.source.timestamp),
-                                                         index: session.index, count: session.images.count))
-                    .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                Text(subtitle).font(.caption).foregroundStyle(Self.subtitleInk).lineLimit(1)
             }
             .accessibilityElement(children: .combine)
             .accessibilityAddTraits(.isHeader)
             .accessibilityFocused($titleFocused)
+            // Toolbar text stops growing with Dynamic Type, so a long press shows the whole title.
+            .accessibilityShowsLargeContentViewer {
+                Text("\(session.source.sender)\n\(subtitle)")
+            }
         }
         ToolbarItemGroup(placement: .topBarTrailing) {
             if let original {
@@ -221,12 +225,23 @@ struct TranscriptImageGallery: View {
         return session.api.resourceURL(address)
     }
 
+    /// Reduce Motion keeps the page change but makes it an opacity-only crossfade.
+    static func pageAnimation(reduceMotion: Bool) -> Animation {
+        reduceMotion ? .easeInOut(duration: 0.2) : .smooth(duration: 0.3)
+    }
+
+    /// Secondary label ink measures 3.4:1 on white, so Light uses a darker gray that clears 4.5:1.
+    static let subtitleInk = Color(uiColor: UIColor { traits in
+        traits.userInterfaceStyle == .dark ? .secondaryLabel.resolvedColor(with: traits)
+            : UIColor(red: 0x6C / 255, green: 0x6C / 255, blue: 0x70 / 255, alpha: 1)
+    })
+
     private func move(_ offset: Int) {
-        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) { presenter.move(by: offset) }
+        withAnimation(Self.pageAnimation(reduceMotion: reduceMotion)) { presenter.move(by: offset) }
     }
 
     private func select(_ index: Int) {
-        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) { presenter.select(index) }
+        withAnimation(Self.pageAnimation(reduceMotion: reduceMotion)) { presenter.select(index) }
     }
 
     /// Escape clears a Live Text selection before it closes the gallery.

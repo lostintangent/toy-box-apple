@@ -206,4 +206,23 @@ struct TranscriptTests {
         #expect(subtitle(0, 1) == "Today at 5:23 PM")
         #expect(TranscriptGalleryPresenter.subtitle(sentAt: nil, index: 2, count: 3) == "3 of 3")
     }
+
+    @Test func theGallerySubtitleClearsTextContrastInBothAppearances() {
+        func rgb(_ style: UIUserInterfaceStyle, _ color: UIColor) -> TranscriptRGB {
+            var (red, green, blue, alpha): (CGFloat, CGFloat, CGFloat, CGFloat) = (0, 0, 0, 0)
+            color.resolvedColor(with: UITraitCollection(userInterfaceStyle: style))
+                .getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+            return TranscriptRGB(red: red, green: green, blue: blue, alpha: alpha)
+        }
+        let ink = UIColor(TranscriptImageGallery.subtitleInk)
+        for style in [UIUserInterfaceStyle.light, .dark] {
+            let background = rgb(style, .systemBackground)
+            #expect(background.under(rgb(style, ink)).contrast(with: background) >= 4.5)
+        }
+    }
+
+    @Test func galleryPagingUsesTheApprovedMotion() {
+        #expect(TranscriptImageGallery.pageAnimation(reduceMotion: false) == .smooth(duration: 0.3))
+        #expect(TranscriptImageGallery.pageAnimation(reduceMotion: true) == .easeInOut(duration: 0.2))
+    }
 }
