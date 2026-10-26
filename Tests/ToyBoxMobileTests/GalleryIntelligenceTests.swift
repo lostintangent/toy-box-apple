@@ -122,9 +122,11 @@ struct GalleryIntelligenceTests {
             TranscriptGalleryCanvas(image: image, size: image.size, file: file, title: label,
                                     descriptionValue: value, reader: reader, page: { _ in })
         }
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 320, height: 400))
         let host = UIHostingController(rootView: canvas(""))
-        host.loadViewIfNeeded()
-        host.view.frame = CGRect(x: 0, y: 0, width: 320, height: 400)
+        window.rootViewController = host
+        window.isHidden = false
+        defer { window.isHidden = true }
         host.view.layoutIfNeeded()
         let originalCanvas = try #require(reader.canvas)
         let originalImage = try #require(originalCanvas.imageView.image)
