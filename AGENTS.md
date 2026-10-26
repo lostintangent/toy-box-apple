@@ -44,6 +44,18 @@ view.
 - `bun run history-demo` imports that reference factory read-only and serves `history-demo`
   on 3211 with 480 messages, canonical 100-message older pages and isolated read receipts. Use it
   for paging and key-window read checks without disturbing the shared 3210 screenshot baseline.
+- `bun run management-demo` serves a separate in-memory management fixture on 3240
+  (`TOY_BOX_MANAGEMENT_PORT`), initially `management-demo` / “Management Scratch”. It supports
+  channel/member create, edit and delete, catalog/models/member-models, snapshot/deleted SSE,
+  empty history and read receipts. New channels are blank. It does not run agents, send messages,
+  or implement routines/resources. Restart to reset. Never use the shared 3210 or live 3100 for
+  these destructive native checks.
+  `POST /_fixture/fault` with JSON `{method,path,mode}` arms one exact management write:
+  `reject422` rejects without mutation, `commit500` applies once then returns a generic 500.
+  Reads do not consume it. `GET /_fixture/state` exposes snapshots, the pending fault and a
+  write trace with status/committed flags. `DELETE /_fixture/fault` clears an unused fault.
+  `TOY_BOX_MANAGEMENT_DEMO_URL=http://127.0.0.1:3240 bun run test --filter ManagementFixtureTests`
+  verifies the real Swift client against this fixture. It creates and removes its own channel.
 - Integration tests are opt-in: `TOY_BOX_DEMO_URL=http://127.0.0.1:3210 bun run test`, and
   `TOY_BOX_HISTORY_DEMO_URL=http://127.0.0.1:3211 bun run test --filter HistoryFixtureTests`
   against a freshly started history demo.
