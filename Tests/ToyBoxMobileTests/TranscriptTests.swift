@@ -153,6 +153,41 @@ struct TranscriptTests {
         #expect(!scroll.reachesOlder)
     }
 
+    @Test func aMergedPageLoadsOnceEvenWhenGeometryArrivesBeforeItsRows() {
+        let viewport = TranscriptScrollModel.Viewport(width: 386, height: 600, topInset: 0, bottomInset: 0)
+        let scroll = TranscriptScroll()
+        let loaded: [TranscriptScrollModel.RowIdentity] = (0..<20).map { .init(id: "r\($0)", order: $0 + 5) }
+        scroll.sync(loaded)
+        for index in 0..<20 { scroll.measure("r\(index)", frame: CGRect(x: 0, y: CGFloat(index) * 100, width: 386, height: 100)) }
+        scroll.metrics = .init(viewport: viewport, origin: 1400, documentEnd: 2000)
+        _ = scroll.update(.land(.end))
+        var store = loaded
+        var loads = 0
+        func geometry(origin: CGFloat, documentEnd: CGFloat) {
+            scroll.metrics?.origin = origin
+            scroll.metrics?.documentEnd = documentEnd
+            _ = scroll.update()
+            if scroll.loadsOlder(with: store) { loads += 1 }
+        }
+
+        scroll.isReaderScrolling = true
+        geometry(origin: 40, documentEnd: 2000)
+        #expect(loads == 1)
+
+        // The page merges, and geometry reports the grown content before `onChange(items)` syncs it.
+        store = (0..<5).map { .init(id: "p\($0)", order: $0) } + loaded
+        for origin in stride(from: 39, through: 28, by: -1) { geometry(origin: CGFloat(origin), documentEnd: 2500) }
+        #expect(scroll.reachesOlder, "The old rows make the grown content look settled.")
+        #expect(loads == 1)
+
+        scroll.sync(store)
+        for index in 0..<5 { scroll.measure("p\(index)", frame: CGRect(x: 0, y: CGFloat(index) * 100, width: 386, height: 100)) }
+        for index in 0..<20 { scroll.measure("r\(index)", frame: CGRect(x: 0, y: CGFloat(index + 5) * 100, width: 386, height: 100)) }
+        geometry(origin: 28, documentEnd: 2500)
+        geometry(origin: 528, documentEnd: 2500)
+        #expect(loads == 1)
+    }
+
     @Test func aLandingThatCantFillTheScreenReachesOlderHistoryOnceItsPlaced() {
         let viewport = TranscriptScrollModel.Viewport(width: 386, height: 600, topInset: 0, bottomInset: 0)
         let scroll = TranscriptScroll()

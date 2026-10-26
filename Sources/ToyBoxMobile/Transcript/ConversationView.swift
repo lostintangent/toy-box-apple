@@ -125,6 +125,12 @@ final class TranscriptScroll {
         return abs(origin - layout.origin) <= 0.5
     }
 
+    /// Whether to page now. Geometry can report a merged page before `onChange(items)` syncs it,
+    /// and the old rows would make that grown content look settled with the top still in reach.
+    func loadsOlder(with current: @autoclosure () -> [Model.RowIdentity]) -> Bool {
+        reachesOlder && current() == rows
+    }
+
     var distanceToEnd: CGFloat { layout.map(Model.distanceToEnd(in:)) ?? 0 }
     var visibleRows: [String] { layout.map(Model.visibleRows(in:)) ?? [] }
 }
@@ -363,7 +369,7 @@ struct ConversationView: View {
             if let reveal = scroll.finishedReveal() {
                 interaction.finishReveal(reveal.token, reveal.isRevealed ? .revealed : .failed(Self.revealInterrupted))
             }
-            if scroll.reachesOlder && !store.isLoadingOlder { Task { await loadOlder() } }
+            if !store.isLoadingOlder && scroll.loadsOlder(with: rowIdentities) { Task { await loadOlder() } }
         }
     }
 
