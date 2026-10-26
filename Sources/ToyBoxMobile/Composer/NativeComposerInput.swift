@@ -1,3 +1,4 @@
+import ChannelClient
 import Observation
 import SwiftUI
 import UIKit
@@ -88,6 +89,7 @@ struct NativeComposerInput: UIViewRepresentable {
     var onCompletionKey: (ComposerCompletionKey) -> Bool
     var onPasteImages: ([NSItemProvider]) -> Void
     var onEscape: (() -> Void)? = nil
+    var dictation: ComposerDictation? = nil
 
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
 
@@ -102,13 +104,15 @@ struct NativeComposerInput: UIViewRepresentable {
         view.accessibilityLabel = "Message"
         view.delegate = context.coordinator
         view.text = text
-        configure(view)
+        configure(view, coordinator: context.coordinator)
+        context.coordinator.lastModelText = text
         view.selectedRange = clampedSelection(for: view)
         return view
     }
 
     func updateUIView(_ view: ComposerTextView, context: Context) {
         if context.coordinator.parent.editor !== editor {
+            context.coordinator.parent.dictation?.commitNow()
             view.unmarkText()
             context.coordinator.textViewDidChange(view)
             context.coordinator.parent.editor.cancelReaderFocusRestoration()
@@ -118,17 +122,23 @@ struct NativeComposerInput: UIViewRepresentable {
             view.selectedRange = clampedSelection(for: view)
         }
         context.coordinator.parent = self
-        configure(view)
+        configure(view, coordinator: context.coordinator)
         guard view.markedTextRange == nil else { return }
+        if context.coordinator.dictationSession != nil {
+            if text == context.coordinator.lastModelText { return }
+            context.coordinator.abandonDictation()
+        }
         if view.text != text {
             view.text = text
             view.invalidateIntrinsicContentSize()
         }
         let selection = clampedSelection(for: view)
         if view.selectedRange != selection { view.selectedRange = selection }
+        context.coordinator.lastModelText = text
     }
 
     static func dismantleUIView(_ view: ComposerTextView, coordinator: Coordinator) {
+        coordinator.parent.dictation?.commitNow()
         if coordinator.parent.editor.textView === view {
             coordinator.parent.editor.cancelReaderFocusRestoration()
             coordinator.parent.editor.textView = nil
@@ -140,8 +150,11 @@ struct NativeComposerInput: UIViewRepresentable {
         uiView.composerSizeThatFits(proposal)
     }
 
-    private func configure(_ view: ComposerTextView) {
+    private func configure(_ view: ComposerTextView, coordinator: Coordinator) {
+        coordinator.input = view
+        view.coordinator = coordinator
         editor.textView = view
+        dictation?.target = coordinator
         editor.setEditingAllowed(isEditable)
         view.completionIsVisible = completionIsVisible
         view.onSend = onSend
@@ -158,11 +171,25 @@ struct NativeComposerInput: UIViewRepresentable {
 
     @MainActor final class Coordinator: NSObject, UITextViewDelegate {
         var parent: NativeComposerInput
+        weak var input: ComposerTextView?
+        var lastModelText = ""
+        var dictationSession: DictationSession?
+        var isApplyingDictation = false
+
+        struct DictationSession {
+            let base: String
+            let replaced: NSRange
+            let replacedText: String
+            let attributes: [NSAttributedString.Key: Any]
+            var span: NSRange
+        }
 
         init(parent: NativeComposerInput) { self.parent = parent }
 
         func textViewDidChange(_ textView: UITextView) {
+            guard !isApplyingDictation else { return }
             parent.editor.update(from: textView)
+            lastModelText = textView.text
             parent.text = textView.text
             textView.invalidateIntrinsicContentSize()
         }
@@ -178,10 +205,178 @@ struct NativeComposerInput: UIViewRepresentable {
         func textViewDidEndEditing(_ textView: UITextView) {
             parent.editor.update(from: textView)
         }
+
+        func textView(_ textView: UITextView, shouldChangeTextIn range: NSRange,
+                      replacementText text: String) -> Bool {
+            commitDictationBeforeEdit()
+            return true
+        }
+    }
+}
+
+extension NativeComposerInput.Coordinator: DictationTextTarget {
+    var isInKeyWindow: Bool { input?.window?.isKeyWindow == true }
+
+    func beginDictation() -> Bool {
+        guard let input, input.window != nil, input.isEditable,
+              !parent.editor.isReaderCovered,
+              input.isFirstResponder || input.becomeFirstResponder() else { return false }
+        input.unmarkText()
+        anchorDictation()
+        return true
+    }
+
+    func anchorDictation() {
+        guard let input, dictationSession == nil else { return }
+        let range = input.selectedRange
+        var attributes = input.typingAttributes
+        attributes[.foregroundColor] = UIColor.label
+        dictationSession = .init(
+            base: input.text, replaced: range, replacedText: (input.text as NSString).substring(with: range),
+            attributes: attributes, span: range
+        )
+    }
+
+    func showDictation(_ transcript: DictationTranscript) {
+        guard let input, var session = dictationSession else { return }
+        let (previous, next) = neighbors(of: session)
+        let visible = transcript.visible
+        let display = NSMutableAttributedString()
+        var trailingLength = 0
+        if visible.isEmpty {
+            display.append(NSAttributedString(string: session.replacedText, attributes: session.attributes))
+        } else {
+            let (leading, trailing) = DictationTranscript.padding(for: visible, after: previous, before: next)
+            var tentative = session.attributes
+            tentative[.foregroundColor] = UIColor.secondaryLabel
+            display.append(NSAttributedString(string: leading + transcript.finalized, attributes: session.attributes))
+            display.append(NSAttributedString(string: String(visible.dropFirst(transcript.finalized.count)) + trailing,
+                                              attributes: tentative))
+            trailingLength = trailing.utf16.count
+        }
+        let selection = input.selectedRange
+        let old = session.span
+        isApplyingDictation = true
+        replaceDictationDisplay(in: input, range: old, with: display)
+        session.span = NSRange(location: old.location, length: display.length)
+        dictationSession = session
+        restoreSelection(selection, replacing: old, with: session.span,
+                         caret: visible.isEmpty ? session.span
+                            : NSRange(location: NSMaxRange(session.span) - trailingLength, length: 0))
+        input.typingAttributes = session.attributes
+        isApplyingDictation = false
+        let model = dictatedText(session, finalized: transcript.finalized)
+        lastModelText = model
+        if parent.text != model { parent.text = model }
+        parent.editor.update(from: input)
+        input.invalidateIntrinsicContentSize()
+        input.scrollRangeToVisible(input.selectedRange)
+    }
+
+    func endDictation(_ finalized: String) {
+        guard let session = dictationSession else { return }
+        dictationSession = nil
+        guard let input else {
+            parent.text = dictatedText(session, finalized: finalized)
+            return
+        }
+        let selection = input.selectedRange
+        isApplyingDictation = true
+        replaceDictationDisplay(
+            in: input, range: session.span,
+            with: NSAttributedString(string: session.replacedText, attributes: session.attributes)
+        )
+        input.typingAttributes = session.attributes
+        let (previous, next) = neighbors(of: session)
+        let (leading, trailing) = DictationTranscript.padding(for: finalized, after: previous, before: next)
+        let words = finalized.isEmpty ? session.replacedText : leading + finalized + trailing
+        if !finalized.isEmpty {
+            guard let start = input.position(from: input.beginningOfDocument, offset: session.replaced.location),
+                  let end = input.position(from: start, offset: session.replaced.length),
+                  let range = input.textRange(from: start, to: end) else {
+                preconditionFailure("Final dictation must replace a valid native text range.")
+            }
+            input.replace(range, withAttributedText: NSAttributedString(string: words, attributes: session.attributes))
+            input.undoManager?.setActionName("Dictation")
+        }
+        restoreSelection(
+            selection, replacing: session.span,
+            with: NSRange(location: session.replaced.location, length: words.utf16.count),
+            caret: finalized.isEmpty ? session.replaced
+                : NSRange(location: session.replaced.location + words.utf16.count - trailing.utf16.count, length: 0)
+        )
+        isApplyingDictation = false
+        lastModelText = input.text
+        parent.text = input.text
+        parent.editor.update(from: input)
+        input.invalidateIntrinsicContentSize()
+    }
+
+    func commitDictationBeforeEdit() {
+        guard dictationSession != nil, !isApplyingDictation else { return }
+        parent.dictation?.commitNow()
+    }
+
+    func abandonDictation() {
+        guard let input, let session = dictationSession else { return }
+        dictationSession = nil
+        isApplyingDictation = true
+        replaceDictationDisplay(
+            in: input, range: session.span,
+            with: NSAttributedString(string: session.replacedText, attributes: session.attributes)
+        )
+        input.typingAttributes = session.attributes
+        isApplyingDictation = false
+        parent.dictation?.commitNow()
+    }
+
+    private func replaceDictationDisplay(
+        in input: ComposerTextView, range: NSRange, with replacement: NSAttributedString
+    ) {
+        guard let start = input.position(from: input.beginningOfDocument, offset: range.location),
+              let end = input.position(from: start, offset: range.length),
+              let nativeRange = input.textRange(from: start, to: end) else {
+            preconditionFailure("The dictation display must have a valid native text range.")
+        }
+        let undo = input.undoManager
+        undo?.disableUndoRegistration()
+        defer { undo?.enableUndoRegistration() }
+        input.replace(nativeRange, withAttributedText: replacement)
+    }
+
+    private func restoreSelection(_ selection: NSRange, replacing old: NSRange,
+                                  with new: NSRange, caret: NSRange) {
+        guard let input else { return }
+        if selection.location >= old.location, NSMaxRange(selection) <= NSMaxRange(old) {
+            input.selectedRange = caret
+        } else if selection.location >= NSMaxRange(old) {
+            input.selectedRange = NSRange(location: selection.location + new.length - old.length,
+                                          length: selection.length)
+        } else {
+            input.selectedRange = selection
+        }
+    }
+
+    private func neighbors(of session: DictationSession) -> (Character?, Character?) {
+        let base = session.base as NSString
+        let start = session.replaced.location
+        let end = NSMaxRange(session.replaced)
+        return (
+            start > 0 ? base.substring(with: base.rangeOfComposedCharacterSequence(at: start - 1)).first : nil,
+            end < base.length ? base.substring(with: base.rangeOfComposedCharacterSequence(at: end)).first : nil
+        )
+    }
+
+    private func dictatedText(_ session: DictationSession, finalized: String) -> String {
+        guard !finalized.isEmpty else { return session.base }
+        let (previous, next) = neighbors(of: session)
+        let (leading, trailing) = DictationTranscript.padding(for: finalized, after: previous, before: next)
+        return (session.base as NSString).replacingCharacters(in: session.replaced, with: leading + finalized + trailing)
     }
 }
 
 final class ComposerTextView: UITextView {
+    weak var coordinator: NativeComposerInput.Coordinator?
     var completionIsVisible = false
     var onSend: (() -> Void)?
     var onCompletionKey: ((ComposerCompletionKey) -> Bool)?
@@ -196,6 +391,21 @@ final class ComposerTextView: UITextView {
     required init?(coder: NSCoder) {
         super.init(coder: coder)
         textColor = .label
+    }
+
+    override func insertText(_ text: String) {
+        coordinator?.commitDictationBeforeEdit()
+        super.insertText(text)
+    }
+
+    override func deleteBackward() {
+        coordinator?.commitDictationBeforeEdit()
+        super.deleteBackward()
+    }
+
+    override func setMarkedText(_ markedText: String?, selectedRange: NSRange) {
+        coordinator?.commitDictationBeforeEdit()
+        super.setMarkedText(markedText, selectedRange: selectedRange)
     }
 
     override var keyCommands: [UIKeyCommand]? {

@@ -29,6 +29,7 @@ struct ComposerSurface: View {
     private var draft: ComposerDraft { session.draft }
     private var store: ChannelStore { session.store }
     private var composer: ChannelComposerSession { session.composer }
+    private var dictation: ComposerDictation { session.dictation }
     private var editor: ComposerEditorState { session.editor }
     private var draftID: ObjectIdentifier { ObjectIdentifier(draft) }
     private var isReaderCovered: Bool {
@@ -45,7 +46,7 @@ struct ComposerSurface: View {
         canRestoreReaderFocus && !isReaderCovered
     }
     private var mentionContext: ChannelMentionContext? {
-        guard editor.isFocused, !editor.hasMarkedText else { return nil }
+        guard editor.isFocused, !editor.hasMarkedText, !dictation.isSessionActive else { return nil }
         return .match(text: draft.text, selection: editor.selection)
     }
     private var choices: [ChannelMentionChoice] {
@@ -56,6 +57,7 @@ struct ComposerSurface: View {
         draft.error != nil || composer.error != nil || store.attemptPersistenceError != nil
             || draft.text.utf16.count > 12_000 || session.isLoadingImages
             || connectionGrace.explains(store.phase, for: draftID) || composer.attempt?.canRetry == true
+            || dictation.notice != nil
     }
 
     var body: some View {
@@ -100,6 +102,7 @@ struct ComposerSurface: View {
         .onChange(of: showFiles) { _, presented in if !presented { restoreFocus() } }
         .onChange(of: management.flow?.id) { _, id in if id == nil { restoreFocus() } }
         .onChange(of: isReaderCovered, initial: true) { _, covered in
+            if covered { dictation.deactivate() }
             editor.setReaderCovered(covered, canRestoreFocus: canRestoreReaderFocus && !interaction.isRequestPreviewPresented)
         }
         .onChange(of: interaction.isRequestPreviewPresented) { _, covered in
@@ -122,9 +125,22 @@ struct ComposerSurface: View {
         .onChange(of: composer.isConfirmed) { _, confirmed in
             if confirmed { composer.reconcile(); interaction.jumpToLatest() }
         }
-        .onChange(of: draft.revision) { _, _ in registerDraft() }
+        .onChange(of: draft.revision) { _, revision in
+            registerDraft()
+            dictation.draftChanged(to: revision)
+        }
+        .onChange(of: store.roster.map(\.name), initial: true) { _, names in
+            dictation.contextualStrings = ["Lead", "Everyone"] + names
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase != .active { dictation.deactivate() }
+        }
         .onAppear { composer.reconcile(); registerDraft() }
-        .onDisappear { reattachment?.cancel() }
+        .onDisappear {
+            reattachment?.cancel()
+            dictation.deactivate()
+        }
+        .task { await dictation.refreshLanguageSupport() }
         .task(id: store.phase) { await connectionGrace.watch(store.phase, for: draftID) }
         .confirmationDialog("Keep your current draft?", isPresented: Binding(
             get: { composer.pendingEdit != nil },
@@ -148,8 +164,8 @@ struct ComposerSurface: View {
                 }
             }
             ZStack(alignment: .topLeading) {
-                if draft.text.isEmpty {
-                    Text("Message your team")
+                if draft.text.isEmpty && !dictation.hasWords {
+                    Text(dictation.isListening ? "Listening\u{2026}" : "Message your team")
                         .font(.body).foregroundStyle(Color.primary).lineLimit(1)
                         .padding(.horizontal, 12).padding(.top, 10).accessibilityHidden(true)
                 }
@@ -157,7 +173,11 @@ struct ComposerSurface: View {
                     text: Bindable(draft).text, editor: editor, completionIsVisible: !choices.isEmpty,
                     onSend: send, onCompletionKey: handleCompletionKey,
                     onPasteImages: { providers in for provider in providers { draft.attachProvider(provider) } },
-                    onEscape: composer.replySource == nil ? nil : { composer.replySource = nil }
+                    onEscape: composer.replySource == nil && dictation.phase == .idle ? nil : {
+                        if dictation.phase != .idle { Task { await dictation.stop(.escape) } }
+                        else { composer.replySource = nil }
+                    },
+                    dictation: dictation
                 )
             }
             .padding(.bottom, 6)
@@ -216,11 +236,17 @@ struct ComposerSurface: View {
                 attachmentMenu
                 context
                 Spacer(minLength: 0)
+                ComposerDictateButton(dictation: dictation)
                 sendButton
             }
             VStack(spacing: 0) {
                 HStack(spacing: 4) { context; Spacer(minLength: 0) }.frame(minHeight: 44)
-                HStack(spacing: 4) { attachmentMenu; Spacer(minLength: 0); sendButton }
+                HStack(spacing: 4) {
+                    attachmentMenu
+                    Spacer(minLength: 0)
+                    ComposerDictateButton(dictation: dictation)
+                    sendButton
+                }
             }
         }
     }
@@ -255,7 +281,7 @@ struct ComposerSurface: View {
     private var sendButton: some View {
         Button(action: send) {
             Group {
-                if composer.isSubmitting || composer.attempt?.phase == .sending {
+                if session.isFinalizingDictation || composer.isSubmitting || composer.attempt?.phase == .sending {
                     ProgressView().frame(width: 32, height: 32)
                 } else {
                     Image(systemName: composer.attempt?.canRetry == true ? "arrow.clockwise" : "arrow.up")
@@ -284,6 +310,13 @@ struct ComposerSurface: View {
             if let error = store.attemptPersistenceError { notice(error) }
             if draft.text.utf16.count > 12_000 { notice("Messages are limited to 12,000 characters.") }
             if session.isLoadingImages { Label("Reading images", systemImage: "photo") }
+            if let notice = dictation.notice {
+                switch notice {
+                case .failed, .unsent: self.notice(notice.text)
+                case .downloading: Label(notice.text, systemImage: "arrow.down.circle")
+                case .noMicrophone: Label(notice.text, systemImage: "mic.slash")
+                }
+            }
             if connectionGrace.explains(store.phase, for: draftID) {
                 Label(store.phase == .deleted ? "This channel was deleted. Copy your draft somewhere safe."
                       : "Reconnect before sending so the audience is current.", systemImage: "wifi.slash")
@@ -406,7 +439,10 @@ struct ComposerSurface: View {
         interaction.showOverviewTasks()
     }
 
-    private func preparePresentation() { restoresFocus = editor.isFocused }
+    private func preparePresentation() {
+        restoresFocus = editor.isFocused
+        dictation.deactivate()
+    }
     private func restoreFocus() {
         guard !interaction.isRequestPreviewPresented else { return }
         if restoresFocus && canPresentRequestPreview { editor.focus() }
