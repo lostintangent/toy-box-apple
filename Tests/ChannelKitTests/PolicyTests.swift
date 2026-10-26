@@ -116,7 +116,7 @@ struct PolicyTests {
         #expect(channelArtifactsNewestFirst([]).isEmpty)
     }
 
-    @Test func attentionAndPresence() {
+    @Test func attentionAndIdentity() {
         var channel = Channel(id: "test", name: "Test", model: .init(provider: "test", name: "test"),
                               latestSequence: 10, seenThrough: 4, completedSequence: 7,
                               requestSequence: 8, updatedAt: "2026-10-01T00:00:00Z")
@@ -128,12 +128,6 @@ struct PolicyTests {
         #expect(channelStatus(channel) == .unread)
         channel.seenThrough = 10
         #expect(channelStatus(channel) == nil)
-        var agent = ada
-        agent.status = .init(state: "waiting", text: "Waiting", wakeAt: "2026-10-02T00:00:00Z")
-        #expect(channelAgentPresence(agent, running: true) == .init(state: "working"))
-        #expect(channelAgentPresence(agent, running: false) == agent.status)
-        agent.status = .init(state: "working", text: "Settling")
-        #expect(channelAgentPresence(agent, running: false) == .init(state: "idle"))
         #expect(channelAgentIdentity([ada], id: "removed").name == "Deleted agent")
     }
 

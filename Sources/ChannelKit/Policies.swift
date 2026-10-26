@@ -23,14 +23,6 @@ public func channelAgentIdentity(_ agents: [ChannelAgent], id: String) -> Channe
     agents.first { $0.id == id } ?? ChannelAgent(id: id, name: "Deleted agent", deleted: true)
 }
 
-public func channelAgentPresence(_ agent: ChannelAgent, running: Bool) -> ChannelAgentPresence {
-    if running {
-        return .init(state: "working", text: agent.status?.state == "working" ? agent.status?.text : nil)
-    }
-    if agent.status?.state == "waiting", let status = agent.status { return status }
-    return .init(state: "idle")
-}
-
 public func channelTasksDiff(_ tasks: [ChannelTask]) -> DiffStats? {
     var total: DiffStats?
     for task in tasks {
