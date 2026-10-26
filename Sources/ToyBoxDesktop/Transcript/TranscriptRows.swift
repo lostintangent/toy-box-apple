@@ -400,11 +400,7 @@ struct TranscriptAgentMessage: View, @MainActor Equatable {
     @ViewBuilder
     private var headerItems: some View {
         if entry.startsRun {
-            if agent.deleted == true {
-                Text(agent.name).font(.system(size: 12 * textScale, weight: .semibold)).italic()
-            } else {
-                Text(agent.name).font(.system(size: 12 * textScale, weight: .semibold))
-            }
+            Text(agent.name).font(.system(size: 12 * textScale, weight: .semibold)).italic(agent.deleted == true)
         }
 
         if let addressee = entry.addressee {
