@@ -57,6 +57,7 @@ struct ManagementSheet: View {
                     unavailable(app.configurationError ?? "Set a server URL in Settings before managing channels.")
                 }
             }
+            .listSectionSpacing(24)
             .navigationBarTitleDisplayMode(.inline)
         }
         .task(id: channelID) {
