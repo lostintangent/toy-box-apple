@@ -23,7 +23,7 @@ struct OverviewTasksSection: View {
                 }
             }
         } header: {
-            OverviewSectionHeader(title: "Tasks", count: "\(progress.done)/\(progress.total)",
+            OverviewSectionHeader(summary: .tasks(progress),
                                   section: .tasks, session: session, diff: channelTasksDiff(store.tasks))
                 .accessibilityIdentifier("overview-tasks")
                 .id("overview-tasks")
@@ -176,6 +176,7 @@ private struct OverviewTaskNode: View {
                 .buttonStyle(.borderless)
                 .disabled(artifact == nil)
                 .padding(.leading, layout.accessibility ? 0 : layout.statusWidth + layout.titleGap)
+                .padding(.top, 4)
                 .accessibilityLabel(artifact.map { "Open \($0.title)" } ?? "Artifact unavailable")
                 .accessibilityIdentifier("overview-task-artifact-\(task.id)")
             }
@@ -237,40 +238,42 @@ private struct OverviewTaskNode: View {
                 }
                 .frame(minHeight: 44)
             }
-            HStack(alignment: .top, spacing: 8) {
-                if children.isEmpty {
-                    heading(timing: timing)
-                        .accessibilityElement(children: .ignore)
-                        .accessibilityLabel(spoken(timing: timing))
-                        .accessibilityAddTraits(.isStaticText)
-                        .accessibilityIdentifier("overview-task-\(task.id)")
-                } else {
-                    Button(action: toggle) { heading(timing: timing) }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel(spoken(timing: timing))
-                        .accessibilityValue(expanded ? "Expanded" : "Collapsed")
-                        .accessibilityActions {
-                            Button(expanded ? "Collapse" : "Expand", action: toggle)
-                        }
-                        .accessibilityIdentifier("overview-task-\(task.id)")
-                }
-                if !layout.accessibility { ownerAvatar.padding(.top, 12) }
+            if children.isEmpty {
+                heading(timing: timing)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(spoken(timing: timing))
+                    .accessibilityAddTraits(.isStaticText)
+                    .accessibilityIdentifier("overview-task-\(task.id)")
+            } else {
+                Button(action: toggle) { heading(timing: timing) }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(spoken(timing: timing))
+                    .accessibilityValue(expanded ? "Expanded" : "Collapsed")
+                    .accessibilityActions {
+                        Button(expanded ? "Collapse" : "Expand", action: toggle)
+                    }
+                    .accessibilityIdentifier("overview-task-\(task.id)")
             }
         }
     }
 
     private func heading(timing: ChannelTaskTiming?) -> some View {
-        HStack(alignment: .top, spacing: layout.titleGap) {
-            if !layout.accessibility { status.padding(.top, 2) }
-            VStack(alignment: .leading, spacing: 3) {
-                firstLine.fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                if timing != nil || diff != nil {
-                    OverviewTaskMetadata(timing: timing, diff: diff)
+        VStack(alignment: .leading, spacing: ChannelOverviewFactsLayout.titleGap) {
+            HStack(alignment: .top, spacing: 8) {
+                HStack(alignment: .top, spacing: layout.titleGap) {
+                    if !layout.accessibility { status.padding(.top, 2) }
+                    firstLine.fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
+                if !layout.accessibility { ownerAvatar }
+            }
+            if timing != nil || diff != nil {
+                OverviewTaskMetadata(timing: timing, diff: diff)
+                    .padding(.leading, layout.accessibility ? 0 : layout.statusWidth + layout.titleGap)
             }
         }
-        .padding(.vertical, 12)
+        .padding(.top, 12)
+        .padding(.bottom, task.artifactId == nil ? 12 : 0)
         .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
         .contentShape(Rectangle())
     }
@@ -326,7 +329,7 @@ private struct OverviewTaskNode: View {
             parts.append("\(progress.done) of \(progress.total) subtasks done")
         }
         if let timing { parts.append(ChannelTaskTimingPresentation(timing: timing).spoken) }
-        if let diff { parts.append("\(diff.added) additions, \(diff.removed) deletions") }
+        if let diff { parts.append(ChannelOverviewTaskDiff.spoken(diff)) }
         if let owner { parts.append("owner \(owner.name)") }
         return parts.joined(separator: ", ")
     }
@@ -335,73 +338,17 @@ private struct OverviewTaskNode: View {
 struct OverviewTaskMetadata: View {
     let timing: ChannelTaskTiming?
     let diff: DiffStats?
-    @Environment(\.layoutDirection) private var layoutDirection
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
-        OverviewMetadataLayout(direction: layoutDirection) {
-            if let timing {
-                let presentation = ChannelTaskTimingPresentation(timing: timing)
-                Label(presentation.elapsedText, systemImage: "clock")
-                if let remaining = presentation.checkInText {
-                    Label(remaining, systemImage: "bell")
-                }
-            }
-            if let diff { OverviewTaskDiff(diff: diff) }
-        }
-        .font(.footnote)
-        .labelStyle(.titleAndIcon)
-        .foregroundStyle(ChannelInk.secondary)
-        .monospacedDigit()
-    }
-}
-
-private struct OverviewMetadataLayout: Layout {
-    let direction: LayoutDirection
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        arrangement(width: proposal.width ?? .infinity, subviews: subviews).size
-    }
-
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        let layout = arrangement(width: bounds.width, subviews: subviews)
-        for (index, subview) in subviews.enumerated() {
-            let frame = layout.frames[index]
-            let x = direction == .rightToLeft
-                ? bounds.maxX - frame.maxX : bounds.minX + frame.minX
-            subview.place(at: CGPoint(x: x,
-                                      y: bounds.minY + frame.minY),
-                          proposal: .init(width: frame.width, height: frame.height))
-        }
-    }
-
-    private func arrangement(width: CGFloat, subviews: Subviews) -> (size: CGSize, frames: [CGRect]) {
-        var x: CGFloat = 0, y: CGFloat = 0, height: CGFloat = 0, measuredWidth: CGFloat = 0
-        var frames: [CGRect] = []
-        for subview in subviews {
-            let size = subview.sizeThatFits(.init(width: width.isFinite ? max(0, width) : nil, height: nil))
-            if x > 0, x + size.width > width { x = 0; y += height + 3; height = 0 }
-            frames.append(CGRect(origin: CGPoint(x: x, y: y), size: size))
-            measuredWidth = max(measuredWidth, x + size.width)
-            x += size.width + 10
-            height = max(height, size.height)
-        }
-        return (CGSize(width: measuredWidth, height: y + height), frames)
+        ChannelOverviewTaskMetadata(timing: timing, diff: diff, stacksLeading: typeSize.isAccessibilitySize)
+            .font(.footnote)
     }
 }
 
 struct OverviewTaskDiff: View {
     let diff: DiffStats
-    @Environment(\.colorScheme) private var colorScheme
-
     var body: some View {
-        let colors = ChannelTaskColors.changes(in: colorScheme)
-        HStack(spacing: 6) {
-            Text("+\(diff.added.formatted(.number.notation(.compactName).precision(.fractionLength(0...1))))")
-                .foregroundStyle(colors.added)
-            Text("\u{2212}\(diff.removed.formatted(.number.notation(.compactName).precision(.fractionLength(0...1))))")
-                .foregroundStyle(colors.removed)
-        }
-        .font(.footnote.monospacedDigit())
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(diff.added) additions, \(diff.removed) deletions")
+        ChannelOverviewTaskDiff(diff: diff).font(.footnote)
     }
 }

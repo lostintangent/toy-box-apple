@@ -729,7 +729,7 @@ details and unmatched-audience warnings. Non-text status symbols need at least 3
 | Message body and composer | 14, regular | Approximately 20 line height. Never compress line height to fit |
 | Message author | 12, semibold | Timestamp and addressee 11, regular |
 | Day divider and system rows | 11, semibold / 11, regular | Centered, secondary, values in primary medium |
-| Inspector section heading | 13, bold (Headline) | Count follows in 13 regular secondary. No capsule, no forced uppercase |
+| Inspector section heading | 13, semibold | Count follows 6 points later in 13 regular readable secondary. No capsule, no forced uppercase |
 | Inspector body | 13, regular | Approximately 18 line height |
 | Inspector status and detail lines | 11, regular | Secondary, tabular digits for counts and countdowns |
 | Inline code and diff counts | System monospaced, 12 / 11 | Code blocks scroll horizontally |
@@ -1389,17 +1389,45 @@ with a zero-spacing `VStack` and 16-point horizontal insets. Order: About (untit
 Tasks, Artifacts, Routines. Separate sections with a native `Divider()` across the content
 width, with 2 points of vertical padding. No cards, count capsules, section fills or uppercase.
 
-**Section headers.** Headline style (13 bold), then the count 6 points later in 13 regular
-secondary with tabular digits: "Team 9", "Tasks 1/4", "Artifacts 2", "Routines 1". The
-header row is 28 high, sits 8 points below the divider above it, and has 4 points to its first
-row. A section ends 12 points above the next divider. Headers collapse, as in the Finder
-sidebar: a trailing 10-point semibold `chevron.down` (expanded) or `chevron.right` (collapsed)
-in secondary appears on hover or keyboard focus and stays visible while collapsed. Clicking the
-header toggles it with the 180 ms disclosure animation, or instantly under Reduce Motion.
-Persist collapsed sections per window scene, not per channel. The header is a button with the
-header trait, labeled "Team, 9" with the value "Expanded" or "Collapsed". Tasks shows its
-recursive diff total at the trailing edge, before the chevron. Empty sections stay, with one
-12-point secondary sentence: "No tasks yet", "Nothing shared yet" or "No routines".
+**Section headers: names lead, facts follow.** The name is the primary anchor and its count is
+quiet supporting information, never a badge or part of the name. Mac uses 13 semibold primary
+and 13 regular readable secondary; phone uses native subheadline 15 semibold primary and
+footnote 13 regular readable secondary at Large. Baseline-align name/count with a 6-point gap
+and tabular digits. Set both text styles explicitly, not through inherited Form header ink.
+Use package-scoped ToyBoxUI `ChannelOverviewInk.secondary(in:)`, opaque sRGB `#636366` Light /
+`#AEAEB2` Dark, for header details and task metadata on both hosts. Leave `ChannelInk.secondary`,
+Mac global secondary ink and waiting amber unchanged. Verify text at 4.5:1 against actual
+native surfaces and non-text disclosure at 3:1.
+
+Team counts the lead plus current members, not working agents. Tasks uses shared completed
+roots / total roots, never descendant or visible-row counts: "Tasks 1/4", or "Tasks 0" when
+there are no roots. Artifacts counts channel artifact entries; Routines counts registered
+routines, not executions. Keep known zeros and local empty sentences. Never invent zeros
+before loading; retain cached counts with the stale notice. Tasks' recursive `channelTasksDiff`
+is separate change volume, not progress. Keep the shared +/− pair together in 11-point Mac /
+footnote 13 phone, with its readable colors, tabular digits and 6-point pair gap. Leave at least
+12 points after name/count and 8 before the disclosure lane. Nil omits the diff; measured
+`+0 −0` stays. Facts update while collapsed without expanding or announcing every change.
+
+Mac header minimum 28, not fixed height: 8 below divider, 4 to content, 12 after section.
+Keep the Finder convention: trailing 10-point semibold `chevron.down` appears on hover or
+keyboard focus; collapsed `chevron.right` stays visible. Reserve the 16-point lane when hidden
+so nothing jumps. Phone minimum 44 with an always-visible 11-point semibold chevron and native
+Form section spacing. Scale text and symbols with host text sizing, growing the lane as needed.
+When the complete baseline row cannot fit, move the whole diff to a leading-aligned second
+line, 4 points below. If name/count cannot fit together, keep name and top-trailing disclosure
+first, count next, diff last. Phone accessibility sizes deliberately use this single column.
+If the diff pair itself cannot fit, additions/deletions may stack within that one fact group.
+Wrap a localized name if necessary; never shrink, clip or hide facts to preserve one line.
+
+The whole header is one heading button, including count/diff. Enter/Space or accessibility
+activation toggles once with 180 ms disclosure, instantly under Reduce Motion, and retains
+focus. Speak natural counts and exact changes: "Team, 9 agents", "Tasks, 1 of 4 top-level tasks
+complete, 1,522 additions, 114 deletions", or "Tasks, no tasks", with Expanded/Collapsed value.
+Use proper plurals, not spoken slash or compact K/M. Symbols/values add no focus stops. Retain
+native focus indication and Show/Hide help. Persistence scopes stay unchanged: collapsed
+sections belong to the Mac window scene, not channel, and to the phone's retained per-channel
+Overview session. Empty sections stay with "No tasks yet", "Nothing shared yet" or "No routines".
 
 **About.** The purpose is 13 regular primary, about 18-point line height, at most 4 lines, then
 an inline "More" link that expands in place ("Less" collapses it). A missing purpose reads "Add
@@ -1488,12 +1516,25 @@ applies in the Composer's Tasks popover, which shares these rows.
 
 Rows have 5 points of vertical padding. The first line is the title (13 regular, wrapping, done
 titles in secondary, never struck through) with the owner's 16-point avatar at the trailing
-edge, centered on the first line and at least 8 points from the title. An additional metadata line,
-3 points below the preceding line and aligned with the title, appears when there is a diff or artifact, with 10 points
-between items: the diff ("+1.5K −114", 11 medium tabular,
-in the adaptive green and red tokens) and the task's artifact as an 11-point link ("Workshop
-plan" after `doc.text`, 3 points apart) that opens only that artifact and never toggles
-disclosure. Measured zero ("+0 −0") is distinct from absent. The header count is done over
+edge, centered on the first line and at least 8 points from the title. Preserve this status,
+title, owner, child progress and inline disclosure arrangement.
+
+**Task facts have a dedicated home.** Start metadata 6 points below the final title/progress
+line, aligned with the title and extending to the row's trailing edge under the avatar column,
+not merely its narrower title allocation. At ordinary sizes, elapsed/check-in sit leading and
+the recursive diff sits trailing, sharing the first baseline. Diff trailing edges align down
+the list, including indented children. Use 11 regular Mac / native footnote 13 phone, scoped
+readable Overview ink, tabular digits, 4 points between timing symbol/value, 12 between time
+labels, at least 16 between times/diff and the shared 6-point diff gap. Keep each timing symbol
+and complete value as one title-and-icon label. No icon-only fallback or reserved empty slot.
+
+Measure the groups against actual lane width. If times + 16 + diff will not fit, times get the
+full lane and the complete diff moves to a trailing-aligned next line, 4 points below. If time
+labels cannot fit together, stack them leading. At phone accessibility sizes, use a single
+leading column: elapsed, check-in, then diff, 4 points apart. If the diff pair itself cannot
+fit, additions and deletions can use successive lines. Never squeeze text, clip values,
+horizontally scroll or reserve a fixed blank metadata box. Pending omits row diff; measured zero
+("+0 −0") is distinct from absent. The header count is done over
 total for direct roots, exactly as the pane, written "9/12" like the composer's Tasks button
 rather than "9 of 12". Visible counts use the compact slash form, and spoken values keep "of".
 Completion attention
@@ -1502,15 +1543,28 @@ counting, and keep exact accessible values: "Build the workshop, in progress, 1 
 done, 1,522 additions, 114 deletions, owner Pixel", with Open Artifact and Expand or Collapse
 actions. A parent row is a button whose value is "Expanded" or "Collapsed" and whose press
 toggles it, so VoiceOver reads "Build the workshop, …, collapsed, button". A leaf row is static
-text. Neither may surface as an unknown element, matching the routine rows. A missing referenced artifact keeps a disabled link labeled "Artifact unavailable".
+text. Neither may surface as an unknown element, matching the routine rows.
 
-Tasks with a valid server-owned `startedAt` show an 11-point secondary timing line below the
-title: a small `clock` before "1h 26m", with monospaced digits. Use "59m" below an hour,
+The task's own artifact is a separate line on both hosts, intentionally replacing Mac's
+artifact-beside-diff arrangement. It is an action, not another statistic. Place it 4 points
+after metadata, or 6 below the title when no metadata exists, aligned to the title. Keep
+`doc.text` and full wrapping title 6 points apart in one leading-aligned group. Use a growing
+minimum-24 Mac target with 12-point title and native link ink; phone minimum 44 and native
+footnote 13 retain its existing artifact treatment. No stretched icon/title gap or centered
+title. Keep the action outside the parent toggle target: opening never toggles, toggling never
+opens. Speak "Open [artifact title]" and use the existing reader route. No reference means no
+empty artifact lane; a missing reference keeps disabled "Artifact unavailable", never a
+descendant's file. These row rules also apply to Mac's shared Tasks popover.
+
+Tasks with a valid server-owned `startedAt` show elapsed in the metadata lane:
+a small `clock` before "1h 26m", with monospaced digits. Use "59m" below an hour,
 "1h" at an exact hour, and keep hours beyond 24. An in-progress task with a valid `checkInAt`
-adds a `bell` before its remaining time, 10 points later. At zero keep "0m", without warning
+adds a `bell` before its remaining time. At zero keep "0m", without warning
 color. Hover spells out "Elapsed: 1 hour 26 minutes", "Check-in in 31 minutes" or "Check-in
 due". Elapsed time rounds down and remaining time rounds up, both clamped at zero. Retain
-any diff and artifact on the following line. Update once a minute only while the timed row
+the diff and independent artifact through the measured lane reflow above. Use shared
+`ChannelTaskTimingPresentation` without changing arithmetic or agent wake-time semantics.
+Update once a minute only while the timed row
 is visible. VoiceOver uses expanded units, with no live announcements. These rules apply
 to the shared tray rows too.
 

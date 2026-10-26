@@ -19,7 +19,7 @@ struct OverviewRoutinesSection: View {
                 }
             }
         } header: {
-            OverviewSectionHeader(title: "Routines", count: "\(store.routines.count)",
+            OverviewSectionHeader(summary: .routines(store.routines.count),
                                   section: .routines, session: session)
         }
     }

@@ -18,6 +18,14 @@ public enum ChannelInk {
     }()
 }
 
+package enum ChannelOverviewInk {
+    package static func secondary(in scheme: ColorScheme) -> Color {
+        scheme == .dark
+            ? Color(.sRGB, red: 174.0 / 255, green: 174.0 / 255, blue: 178.0 / 255, opacity: 1)
+            : Color(.sRGB, red: 99.0 / 255, green: 99.0 / 255, blue: 102.0 / 255, opacity: 1)
+    }
+}
+
 public enum ChannelColors {
     public static let userWash = Color.accentColor.opacity(0.09)
     public static let sourceHighlight = Color.accentColor.opacity(0.09)

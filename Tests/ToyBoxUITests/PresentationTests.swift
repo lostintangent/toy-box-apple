@@ -42,6 +42,17 @@ struct PresentationTests {
         #endif
     }
 
+    @Test func overviewSecondaryInkUsesTheApprovedOpaqueSRGBValues() {
+        let light = ChannelOverviewInk.secondary(in: .light).resolve(in: EnvironmentValues())
+        let dark = ChannelOverviewInk.secondary(in: .dark).resolve(in: EnvironmentValues())
+        #expect(abs(light.red - 99.0 / 255) < 0.00001)
+        #expect(abs(light.green - 99.0 / 255) < 0.00001)
+        #expect(abs(light.blue - 102.0 / 255) < 0.00001 && light.opacity == 1)
+        #expect(abs(dark.red - 174.0 / 255) < 0.00001)
+        #expect(abs(dark.green - 174.0 / 255) < 0.00001)
+        #expect(abs(dark.blue - 178.0 / 255) < 0.00001 && dark.opacity == 1)
+    }
+
     @Test func avatarHexColorsKeepShorthandAndInvalidInputRules() {
         let expected = Color(.sRGB, red: 170.0 / 255, green: 187.0 / 255, blue: 204.0 / 255)
         #expect(["#abc", "abc", "#aAbBcC", "AABBCC"].allSatisfy { Color(hex: $0) == expected })
