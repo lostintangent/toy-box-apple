@@ -139,7 +139,6 @@ struct ComposerSurface: View {
 
     private var container: some View {
         VStack(spacing: 0) {
-            ComposerTaskProgress(store: store, showTasks: showTasks)
             if hasNotices || composer.replySource != nil || !draft.images.isEmpty {
                 ViewThatFits(in: .vertical) {
                     accessories
@@ -399,11 +398,6 @@ struct ComposerSurface: View {
         guard scenePhase == .active, session.canSend else { return }
         interaction.jumpToLatest()
         Task { if await session.send() { interaction.jumpToLatest() } }
-    }
-
-    private func showTasks() {
-        if sizeClass == .compact { editor.setReaderCovered(true, canRestoreFocus: false) }
-        interaction.showOverviewTasks()
     }
 
     private func preparePresentation() { restoresFocus = editor.isFocused }
