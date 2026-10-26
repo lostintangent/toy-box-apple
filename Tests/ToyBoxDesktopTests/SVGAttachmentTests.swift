@@ -63,11 +63,11 @@ struct SVGAttachmentTests {
         let attachment = ChannelAttachment(name: "cached-vector.svg", mimeType: "image/svg+xml",
                                            base64: Data(Self.picture.utf8).base64EncodedString())
         let api = try ChannelAPI(serverURL: "http://localhost:3210")
-        let file = try await TranscriptAttachmentCache.shared.file(for: attachment, api: api)
+        let file = try await ChannelAttachmentCache.shared.file(for: attachment, api: api)
         defer { try? FileManager.default.removeItem(at: file) }
         let thumbnail = try await TranscriptThumbnails.image(at: file, for: attachment, api: api)
         #expect(thumbnail.size == CGSize(width: 640, height: 320))
-        #expect(TranscriptThumbnails.pixelSize(for: attachment, api: api) == CGSize(width: 800, height: 400))
+        #expect(ChannelImageDecoder.pixelSize(for: attachment, api: api) == CGSize(width: 800, height: 400))
         #expect(ImageViewer.knownPixelSize(of: attachment, api: api) == CGSize(width: 800, height: 400))
     }
 
@@ -81,7 +81,7 @@ struct SVGAttachmentTests {
         let attachment = ChannelAttachment(name: "natural-size.svg", mimeType: "image/svg+xml",
                                            base64: Data(source.utf8).base64EncodedString())
         let api = try ChannelAPI(serverURL: "http://localhost:3210")
-        let file = try await TranscriptAttachmentCache.shared.file(for: attachment, api: api)
+        let file = try await ChannelAttachmentCache.shared.file(for: attachment, api: api)
         defer { try? FileManager.default.removeItem(at: file) }
         _ = try await TranscriptThumbnails.image(at: file, for: attachment, api: api)
         let layout = ImageViewer.Layout(size: CGSize(width: 1000, height: 800), topInset: 52)
@@ -128,8 +128,8 @@ struct SVGAttachmentTests {
         let file = try svgFile(source)
         defer { try? FileManager.default.removeItem(at: file) }
         await Task.detached {
-            #expect(throws: AttachmentError.invalidImage) { try TranscriptThumbnails.decode(file) }
-            #expect(throws: AttachmentError.invalidImage) { try ImageViewer.decode(file, maximumPixelSize: 64) }
+            #expect(throws: ChannelAttachmentError.invalidImage) { try TranscriptThumbnails.decode(file) }
+            #expect(throws: ChannelAttachmentError.invalidImage) { try ImageViewer.decode(file, maximumPixelSize: 64) }
         }.value
     }
 
@@ -184,7 +184,7 @@ struct SVGAttachmentTests {
                     api: api)
         defer {
             viewer.close(animated: false)
-            if let cached = TranscriptAttachmentCache.cachedFile(for: attachment, api: api) {
+            if let cached = ChannelAttachmentCache.cachedFile(for: attachment, api: api) {
                 try? FileManager.default.removeItem(at: cached)
             }
         }
@@ -224,7 +224,7 @@ struct SVGAttachmentTests {
                     api: api)
         defer {
             viewer.close(animated: false)
-            if let cached = TranscriptAttachmentCache.cachedFile(for: attachment, api: api) {
+            if let cached = ChannelAttachmentCache.cachedFile(for: attachment, api: api) {
                 try? FileManager.default.removeItem(at: cached)
             }
         }

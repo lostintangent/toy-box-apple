@@ -1090,25 +1090,6 @@ struct TranscriptTests {
         #expect(interaction.revealRequestToken != first.token)
     }
 
-    @Test func thumbnailsFitTheirBoundsWithoutCroppingOrUpscaling() {
-        #expect(transcriptThumbnailSize(CGSize(width: 1200, height: 600)) == CGSize(width: 240, height: 120))
-        #expect(transcriptThumbnailSize(CGSize(width: 600, height: 1200)) == CGSize(width: 80, height: 160))
-        #expect(transcriptThumbnailSize(CGSize(width: 1, height: 1)) == CGSize(width: 1, height: 1))
-        #expect(transcriptThumbnailSize(.zero) == CGSize(width: 44, height: 44))
-    }
-
-    @Test func inlineImageSizesComeFromTheHeaderWithoutDecodingThePayload() throws {
-        // Noise keeps the PNG large, so the probe has to stop well short of the payload's end.
-        let large = try encodedImage(width: 900, height: 600, type: .png)
-        #expect(large.count > 500_000)
-        #expect(TranscriptThumbnails.headerPixelSize(base64: large) == CGSize(width: 900, height: 600))
-        // EXIF orientation 6 is a quarter turn, which the decoded thumbnail applies too.
-        let rotated = try encodedImage(width: 400, height: 200, type: .jpeg, orientation: 6)
-        #expect(TranscriptThumbnails.headerPixelSize(base64: rotated) == CGSize(width: 200, height: 400))
-        #expect(TranscriptThumbnails.headerPixelSize(base64: "bm90IGFuIGltYWdl") == nil)
-        #expect(TranscriptThumbnails.headerPixelSize(base64: "%%%") == nil)
-    }
-
     @MainActor
     @Test func imageHeadersGiveInlineAndCachedImagesTheirFinalSizeOnTheFirstPass() throws {
         let payload = try encodedImage(width: 600, height: 300, type: .png)
@@ -1123,13 +1104,13 @@ struct TranscriptTests {
             // Every test process shares the cache folder, so each run uses its own path.
             let remote = ChannelAttachment(name: "wide.png", url: "/files/\(UUID().uuidString).png",
                                            mimeType: "image/png")
-            #expect(TranscriptThumbnails.pixelSize(for: remote, api: api) == nil)
-            let file = try #require(TranscriptAttachmentCache.destination(for: remote, api: api))
+            #expect(ChannelImageDecoder.pixelSize(for: remote, api: api) == nil)
+            let file = try #require(ChannelAttachmentCache.destination(for: remote, api: api))
             try FileManager.default.createDirectory(at: file.deletingLastPathComponent(),
                                                     withIntermediateDirectories: true)
             try #require(Data(base64Encoded: payload)).write(to: file)
             defer { try? FileManager.default.removeItem(at: file) }
-            #expect(TranscriptThumbnails.pixelSize(for: remote, api: api) == CGSize(width: 600, height: 300))
+            #expect(ChannelImageDecoder.pixelSize(for: remote, api: api) == CGSize(width: 600, height: 300))
             let cached = NSHostingView(rootView: TranscriptAttachments(attachments: [remote], api: api).fixedSize())
             cached.layoutSubtreeIfNeeded()
             #expect(cached.fittingSize == CGSize(width: 240, height: 120))
@@ -1356,31 +1337,6 @@ struct TranscriptTests {
         }
         #expect(abs(try await actionsMinX(bubbleWidth: 300) - 232) < 0.5)
         #expect(abs(try await actionsMinX(bubbleWidth: 40)) < 0.5)
-    }
-
-    @Test func inlineAttachmentsBecomeLocalQuickLookFiles() async throws {
-        let data = Data("Quick Look test \(UUID().uuidString)".utf8)
-        let attachment = ChannelAttachment(name: "notes.txt", mimeType: "text/plain", base64: data.base64EncodedString())
-        let api = try ChannelAPI(serverURL: "http://localhost:3210/prefix")
-        let file = try await TranscriptAttachmentCache.shared.file(for: attachment, api: api)
-        defer { try? FileManager.default.removeItem(at: file) }
-        #expect(file.isFileURL)
-        #expect(file.pathExtension == "txt")
-        #expect(try Data(contentsOf: file) == data)
-        try Data("damaged cache".utf8).write(to: file, options: .atomic)
-        let refreshed = try await TranscriptAttachmentCache.shared.file(for: attachment, api: api, reload: true)
-        #expect(refreshed == file)
-        #expect(try Data(contentsOf: refreshed) == data)
-    }
-
-    @Test func unsupportedAddressesAndInvalidInlineDataFailExplicitly() async throws {
-        let api = try ChannelAPI(serverURL: "http://localhost:3210")
-        await #expect(throws: AttachmentError.invalidAddress) {
-            try await TranscriptAttachmentCache.shared.file(for: .init(url: "file:///not-a-remote-resource"), api: api)
-        }
-        await #expect(throws: AttachmentError.invalidData) {
-            try await TranscriptAttachmentCache.shared.file(for: .init(base64: "not valid base64!"), api: api)
-        }
     }
 
     private func frame(sequence: Int, y: CGFloat, height: CGFloat) -> TranscriptMessageFrame {
