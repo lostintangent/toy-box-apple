@@ -21,7 +21,7 @@ struct ChannelSidebarFooter: View {
                         .font(.footnote.weight(.semibold))
                     Text(error)
                         .font(.footnote)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(ChannelInk.secondary)
                         .textSelection(.enabled)
                     HStack(spacing: 16) {
                         if canRetry {
@@ -75,13 +75,13 @@ struct ChannelSidebarFooter: View {
             Text(serverURL.isEmpty ? "Choose a Server"
                  : "\(connection.verb) \(SidebarConnection.server(serverURL))")
                 .font(.footnote)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(ChannelInk.secondary)
                 .lineLimit(1)
                 .truncationMode(.middle)
             Spacer(minLength: 0)
             if showsSettingsButton {
                 Image(systemName: "gear")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(ChannelInk.secondary)
             }
         }
         .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)

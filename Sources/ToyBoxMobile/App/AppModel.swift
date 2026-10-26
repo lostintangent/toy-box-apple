@@ -74,7 +74,8 @@ final class AppModel {
         )
     }
 
-    var canCreateChannel: Bool { isActive && sidebarConnection == .connected }
+    var canManageChannels: Bool { isActive && sidebarConnection == .connected }
+    var canCreateChannel: Bool { canManageChannels }
 
     var sidebarProjection: ChannelSidebarProjection {
         let visible = isActive ? visibleChannelID : nil

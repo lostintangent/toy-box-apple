@@ -12,6 +12,12 @@ struct ChannelSidebarRow: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
+    static func faceLimits(working count: Int) -> [Int] {
+        guard count > 0 else { return [] }
+        let full = min(count, 3)
+        return [full] + (1..<full).reversed().filter { count - $0 >= 2 }
+    }
+
     var body: some View {
         HStack(spacing: 12) {
             ChannelMark(size: 28, emphasized: prominence == .increased)
@@ -20,25 +26,30 @@ struct ChannelSidebarRow: View {
                 if let path = channel.directory, !path.isEmpty {
                     Label((path as NSString).lastPathComponent, systemImage: "folder")
                         .font(.footnote)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(ChannelInk.secondary)
                         .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
                         .truncationMode(.middle)
                 } else if let purpose = channelPurposePreview(channel.purpose) {
                     Text(purpose)
                         .font(.footnote)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(ChannelInk.secondary)
                         .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
                 }
                 if dynamicTypeSize.isAccessibilitySize {
-                    AgentAvatarStack(agents: agents, size: 20, limit: 4)
-                    status
+                    if !working.isEmpty {
+                        AgentAvatarStack(agents: working, size: 20, limit: 3)
+                    }
+                    attentionLabel
                 } else {
                     ViewThatFits(in: .horizontal) {
-                        teamAndStatus(faceLimit: 4)
-                        teamAndStatus(faceLimit: 1)
+                        ForEach(Self.faceLimits(working: working.count), id: \.self) { limit in
+                            teamAndStatus(faceLimit: limit)
+                        }
                         VStack(alignment: .leading, spacing: 4) {
-                            AgentAvatarStack(agents: agents, size: 20, limit: 1)
-                            status
+                            if let limit = Self.faceLimits(working: working.count).last {
+                                AgentAvatarStack(agents: working, size: 20, limit: limit)
+                            }
+                            attentionLabel
                         }
                     }
                 }
@@ -75,37 +86,18 @@ struct ChannelSidebarRow: View {
         if let date = ChannelDates.date(channel.updatedAt) {
             Text(ChannelActivityTime.label(for: date, now: now))
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(ChannelInk.secondary)
                 .fixedSize()
         }
     }
 
     private func teamAndStatus(faceLimit: Int) -> some View {
         HStack(spacing: 8) {
-            AgentAvatarStack(agents: agents, size: 20, limit: faceLimit)
+            AgentAvatarStack(agents: working, size: 20, limit: faceLimit)
                 .fixedSize()
-            inlineStatus.fixedSize()
+            attentionLabel.fixedSize()
             Spacer(minLength: 0)
         }
-    }
-
-    private var status: some View {
-        ViewThatFits(in: .horizontal) {
-            inlineStatus.fixedSize()
-            VStack(alignment: .leading, spacing: 4) {
-                attentionLabel
-                workingLabel
-            }
-        }
-        .font(.footnote)
-    }
-
-    private var inlineStatus: some View {
-        HStack(spacing: 8) {
-            attentionLabel
-            workingLabel
-        }
-        .font(.footnote)
     }
 
     private var attentionColor: Color {
@@ -122,16 +114,11 @@ struct ChannelSidebarRow: View {
                 } else {
                     Image(systemName: ChannelAttentionStyle.symbol(for: attention))
                         .font(.footnote.weight(.semibold))
+                        .foregroundStyle(attentionColor)
                 }
-                Text(attentionText)
+                Text(attentionText).foregroundStyle(prominence == .increased ? Color.white : Color.primary)
             }
-            .foregroundStyle(attentionColor)
-        }
-    }
-
-    @ViewBuilder private var workingLabel: some View {
-        if !working.isEmpty {
-            Text("Working").foregroundStyle(.secondary)
+            .font(.footnote)
         }
     }
 
