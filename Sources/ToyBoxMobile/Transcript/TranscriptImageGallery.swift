@@ -1,4 +1,5 @@
 import ChannelClient
+import ChannelIntelligence
 import ChannelKit
 import QuickLook
 import SwiftUI
@@ -89,11 +90,20 @@ final class TranscriptGalleryPresenter {
         let filename = session.image.filename.map { ", \($0)" } ?? ""
         return "Image\(position) from \(session.source.sender)\(filename)"
     }
+
+    func descriptionRequest(for page: Session, file: URL?, voiceOver: Bool, isOn: Bool,
+                            using service: any ChannelIntelligenceService) -> AltTextRequest? {
+        guard session?.id == page.id, session?.index == page.index,
+              TranscriptImageDescriptionSession.isActive(voiceOver: voiceOver, isOn: isOn, using: service),
+              let file, let digest = ChannelAttachmentCache.destination(for: page.image, api: page.api)?
+                .deletingPathExtension().lastPathComponent else { return nil }
+        return AltTextRequest(server: page.api.baseURL, digest: digest, fileURL: file, priority: .focused)
+    }
 }
 
 /// The presented page's canvas and original, for the toolbar's actions.
 @MainActor @Observable
-private final class TranscriptGalleryReader {
+final class TranscriptGalleryReader {
     weak var canvas: ArtifactImageScrollView?
     var original: TranscriptGalleryOriginal?
     var preview: URL?
@@ -107,7 +117,7 @@ private final class TranscriptGalleryReader {
     }
 }
 
-private struct TranscriptGalleryOriginal: Equatable {
+struct TranscriptGalleryOriginal: Equatable {
     var session: UUID
     var index: Int
     /// The cached original, under its own name, for Share and Quick Look.
@@ -138,7 +148,7 @@ struct TranscriptImageGallery: View {
     }
 
     private func gallery(_ session: TranscriptGalleryPresenter.Session) -> some View {
-        TranscriptGalleryPage(session: session, reader: reader, page: move)
+        TranscriptGalleryPage(session: session, reader: reader, presenter: presenter, page: move)
             .padding(margin(session))
             .id(session.index)
             .transition(pageTransition(session.direction))
@@ -281,18 +291,29 @@ struct TranscriptImageGallery: View {
 private struct TranscriptGalleryPage: View {
     let session: TranscriptGalleryPresenter.Session
     let reader: TranscriptGalleryReader
+    let presenter: TranscriptGalleryPresenter
     let page: (Int) -> Void
     @Environment(\.displayScale) private var displayScale
+    @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
+    @Environment(\.channelIntelligence) private var intelligence
+    @AppStorage(TranscriptIntelligenceSettings.describesImages) private var describesImages = true
     @ViewState private var loaded: (image: UIImage, size: CGSize, file: URL)?
     @ViewState private var failure: String?
     @ViewState private var showsProgress = false
     @ViewState private var attempt = 0
+
+    private var descriptionRequest: AltTextRequest? {
+        presenter.descriptionRequest(
+            for: session, file: loaded?.file, voiceOver: voiceOver, isOn: describesImages, using: intelligence)
+    }
 
     var body: some View {
         ZStack {
             if let loaded {
                 TranscriptGalleryCanvas(image: loaded.image, size: loaded.size, file: loaded.file,
                                         title: TranscriptGalleryPresenter.accessibilityLabel(session),
+                                        descriptionValue: TranscriptImageDescriptionSession.value(
+                                            TranscriptImageDescriptionSession.shared.text(for: descriptionRequest)),
                                         reader: reader, page: page)
             } else if let failure {
                 ContentUnavailableView {
@@ -308,6 +329,10 @@ private struct TranscriptGalleryPage: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .task(id: attempt) { await load() }
+        .task(id: descriptionRequest) {
+            guard let descriptionRequest else { return }
+            await TranscriptImageDescriptionSession.shared.describe(descriptionRequest, using: intelligence)
+        }
     }
 
     private func load() async {
@@ -356,11 +381,12 @@ private struct TranscriptGalleryPage: View {
 }
 
 /// The shared canvas, plus double-tap between fit and actual size and a swipe that pages at fit.
-private struct TranscriptGalleryCanvas: UIViewRepresentable {
+struct TranscriptGalleryCanvas: UIViewRepresentable {
     let image: UIImage
     let size: CGSize
     let file: URL
     let title: String
+    let descriptionValue: String
     let reader: TranscriptGalleryReader
     let page: (Int) -> Void
 
@@ -379,6 +405,7 @@ private struct TranscriptGalleryCanvas: UIViewRepresentable {
         context.coordinator.page = page
         context.coordinator.animates = !context.environment.accessibilityReduceMotion
         view.configure(image: image, size: size, file: file, title: title)
+        view.imageView.accessibilityValue = descriptionValue
         reader.canvas = view
     }
 
