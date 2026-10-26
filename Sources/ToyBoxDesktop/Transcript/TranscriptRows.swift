@@ -440,25 +440,26 @@ private struct TranscriptHoverActions: View {
 
     var body: some View {
         if isHovered || isFocused {
-            HStack(spacing: 8) {
-                if agent.deleted != true {
-                    Button("Reply", systemImage: "arrowshape.turn.up.left") {
-                        interaction.reply(to: agent)
+            TranscriptHoverActionsLayout {
+                HStack(spacing: 8) {
+                    if agent.deleted != true {
+                        Button("Reply", systemImage: "arrowshape.turn.up.left") {
+                            interaction.reply(to: agent)
+                        }
+                        .help("Reply to \(agent.name)")
                     }
-                    .help("Reply to \(agent.name)")
+                    Button("Copy Message", systemImage: "doc.on.doc") {
+                        TranscriptClipboard.copy(text)
+                    }
+                    .help("Copy message")
                 }
-                Button("Copy Message", systemImage: "doc.on.doc") {
-                    TranscriptClipboard.copy(text)
-                }
-                .help("Copy message")
+                .labelStyle(.iconOnly)
+                .buttonStyle(.borderless)
+                .padding(6)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 7))
+                .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(.separator, lineWidth: 0.5))
+                .fixedSize()
             }
-            .labelStyle(.iconOnly)
-            .buttonStyle(.borderless)
-            .padding(6)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 7))
-            .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(.separator, lineWidth: 0.5))
-            .fixedSize()
-            .modifier(TranscriptHoverActionsPlacement())
         }
     }
 }
@@ -533,12 +534,6 @@ extension EnvironmentValues {
 
 /// Floats hover actions over a bubble's top trailing corner, but never past its leading edge, so
 /// they stay over the bubble that fits a short message instead of covering the avatar.
-private struct TranscriptHoverActionsPlacement: ViewModifier {
-    func body(content: Content) -> some View {
-        TranscriptHoverActionsLayout { content }
-    }
-}
-
 struct TranscriptHoverActionsLayout: Layout {
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         proposal.replacingUnspecifiedDimensions()
