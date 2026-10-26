@@ -107,6 +107,10 @@ view.
   Tap also matches an exact accessibility value when its element has no label, as with native Search.
   `{"menuAction":"Edit Channel"}` is explicitly **visible-menu action dispatch**, not a tap.
   It requires one active menu in the current scene and one enabled, visible matching leaf.
+  The driver tags that leaf's public accessibility identifier in UIKit's returned menu copy
+  and requires the exact fresh tag on a measured native candidate. A same-title background
+  control never establishes menu ownership. If UIKit does not expose the tag, the action fails.
+  The original identifier is restored before dispatch and on failure.
   Hidden items and unopened submenus are excluded. It dismisses through UIKit, waits within
   the same deadline for dismissal and settled layout, then performs the retained leaf through the public
   `UIMenuLeaf` API. Missing, dismissed, ambiguous or changed-scene menus fail explicitly.
