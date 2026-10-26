@@ -71,6 +71,11 @@ struct ChannelCommands: Commands {
     @FocusedValue(\.channelCommands) private var actions
     @FocusedValue(\.channelRefresh) private var focusedRefresh
 
+    private var findsChannels: Bool {
+        if case .catalog? = focusedRefresh { return true }
+        return actions?.findInChannel == nil
+    }
+
     var body: some Commands {
         CommandGroup(replacing: .newItem) {
             Button("New Channel") { actions?.newChannel?() }
@@ -81,9 +86,12 @@ struct ChannelCommands: Commands {
                 .disabled(actions?.openInToyBox == nil)
         }
         CommandGroup(after: .textEditing) {
-            Button("Find in Conversation") { actions?.findInChannel?() }
+            Button(findsChannels ? "Find Channel" : "Find in Conversation") {
+                if findsChannels { actions?.findChannel() }
+                else { actions?.findInChannel?() }
+            }
                 .keyboardShortcut("f")
-                .disabled(actions?.findInChannel == nil)
+                .disabled(actions == nil || (!findsChannels && actions?.findInChannel == nil))
             Button("Find Next") { actions?.findNext?(1) }
                 .keyboardShortcut("g")
                 .disabled(actions?.findNext == nil)
