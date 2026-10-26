@@ -11,6 +11,7 @@ struct ArtifactViewer: View {
     @Environment(AppModel.self) private var app
     @Environment(ChannelInteraction.self) private var interaction
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.openURL) private var openURL
     @ViewState private var reading = ArtifactReaderState()
     @ViewState private var showsSpinner = false
@@ -208,7 +209,7 @@ struct ArtifactViewer: View {
             .accessibilityAddTraits(.isHeader)
             .accessibilityFocused($titleFocused)
         }
-        ToolbarItemGroup(placement: .topBarTrailing) {
+        ToolbarItemGroup(placement: sizeClass == .compact ? .bottomBar : .topBarTrailing) {
             Button("Share Original", systemImage: "square.and.arrow.up") {
                 reading.prepareOriginal(session: session, sharing: true)
             }
