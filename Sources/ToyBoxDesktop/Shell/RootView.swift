@@ -235,18 +235,19 @@ struct RootView: View {
         return path
     }
 
-    private func selectAdjacent(_ direction: Int) {
-        guard let channels = model.catalog?.channels, !channels.isEmpty else { return }
-        let current = channels.firstIndex { $0.id == selectedId } ?? (direction > 0 ? -1 : 0)
-        selectedId = channels[(current + direction + channels.count) % channels.count].id
+    private func selectAdjacent(_ direction: ChannelNavigation.Direction) {
+        let ids = model.catalog?.channels.map(\.id) ?? []
+        if let id = ChannelNavigation.adjacent(in: ids, from: selectedId, direction: direction) {
+            selectedId = id
+        }
     }
 
     private func selectNextAttention() {
-        guard let channels = model.catalog?.channels, !channels.isEmpty else { return }
-        let current = channels.firstIndex { $0.id == selectedId } ?? -1
-        for offset in 1...channels.count {
-            let channel = channels[(current + offset) % channels.count]
-            if channelStatus(channel) != nil { selectedId = channel.id; return }
+        let channels = model.catalog?.channels ?? []
+        let attention = Set(channels.filter { channelStatus($0) != nil }.map(\.id))
+        if let id = ChannelNavigation.nextAttention(in: channels.map(\.id), from: selectedId,
+                                                    attentionIDs: attention) {
+            selectedId = id
         }
     }
 }
