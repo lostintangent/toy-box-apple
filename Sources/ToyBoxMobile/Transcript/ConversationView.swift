@@ -125,6 +125,11 @@ struct ConversationView: View {
     @ViewState private var requestedRead = 0
     @ViewState private var isPagingVisible = false
     @ViewState private var expanded: Set<String> = []
+    @ViewState private var find: TranscriptFind = {
+        let find = TranscriptFind()
+        find.revealsWhileTyping = false
+        return find
+    }()
 
     nonisolated private static let space = "transcript-content"
     private static let revealInterrupted = "Scrolling moved away before the message was revealed."
@@ -142,6 +147,9 @@ struct ConversationView: View {
         let items = items
         let context = TranscriptRowContext(agents: store.roster, api: store.api)
         let statusReactions = statusReactions
+        let findMatches = find.isPresented
+            ? Dictionary(uniqueKeysWithValues: find.matches.map { ($0.sequence, $0.sequence == find.selectedSequence) })
+            : [:]
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
                 if store.hasOlderMessages && !items.isEmpty {
@@ -154,7 +162,9 @@ struct ConversationView: View {
                 ForEach(items) { item in
                     TranscriptItemView(item: item, context: context, statusReactions: statusReactions,
                                        isHighlighted: item.messages.contains { $0.sequence == highlightedSequence },
-                                       isExpanded: expanded.contains(item.id)) { expands in
+                                       isExpanded: expanded.contains(item.id),
+                                       findHighlight: item.messages.lazy.compactMap { findMatches[$0.sequence] }.first
+                                           .map { TranscriptFindHighlight.phone(query: find.query, isCurrent: $0) }) { expands in
                         // Keep the tapped message's top where it is, or bring it back when it collapses.
                         place(scroll.update(.toggledExpansion(item.id, expanded: expands)))
                         if expands { expanded.insert(item.id) } else { expanded.remove(item.id) }
@@ -198,11 +208,12 @@ struct ConversationView: View {
         }
         .onScrollPhaseChange { _, phase in
             scroll.isReaderScrolling = phase == .tracking || phase == .interacting || phase == .decelerating
+            if phase == .tracking || phase == .interacting { find.resumeReading() }
         }
         // An inset rather than an overlay, so the end of the conversation settles clear of them.
         .safeAreaInset(edge: .bottom, spacing: 0) {
             TranscriptFloatingAccessories(store: store, showsJumpToLatest: showsJumpToLatest) {
-                place(scroll.update(.jumpToLatest))
+                jumpToLatest()
             }
         }
         .overlay(alignment: .top) {
@@ -231,7 +242,26 @@ struct ConversationView: View {
         .onChange(of: store.sendAttempts.map(\.id)) { old, _ in
             if startsOwnPost(after: old, in: store.sendAttempts) { place(scroll.update(.ownPostConfirmed)) }
         }
-        .onChange(of: interaction.jumpToLatestRequest) { place(scroll.update(.jumpToLatest)) }
+        // A bar rather than an overlay, so the scroll edge effect extends under it and a reveal clears it.
+        .safeAreaBar(edge: .top, spacing: 0) {
+            if find.isPresented {
+                TranscriptFindAccessory(find: find, focusRequest: interaction.findRequest,
+                                        navigate: navigateFind, close: { find.close() })
+            }
+        }
+        .onChange(of: interaction.findRequest) { openFind() }
+        .onChange(of: interaction.findNavigation?.token) {
+            openFind()
+            navigateFind(interaction.findNavigation?.direction ?? 1)
+        }
+        .onChange(of: store.messages) { if find.isPresented { prepareFind() } }
+        .task(id: find.work) {
+            guard find.isPresented else { return }
+            prepareFind()
+            await find.searchOlder { try await store.api.history(channelId: store.id, before: $0).messages }
+        }
+        .onDisappear { find.close() }
+        .onChange(of: interaction.jumpToLatestRequest) { jumpToLatest() }
         .onChange(of: interaction.revealRequestToken) {
             guard let request = interaction.revealRequest else { return }
             Task { await reveal(sequence: request.sequence, token: request.token) }
@@ -250,6 +280,28 @@ struct ConversationView: View {
             return agent
         }
         return channelStatusReactions(agents: agents, presence: store.presence)
+    }
+
+    private func openFind() {
+        prepareFind()
+        find.present()
+    }
+
+    private func prepareFind() {
+        find.prepare(messages: store.messages.filter { !store.optimisticMessageIds.contains($0.id) },
+                     agents: store.roster, hasOlder: store.hasOlderMessages)
+    }
+
+    /// Only Next and Previous reveal. Typing, progress and closing leave the reader where they are.
+    private func navigateFind(_ direction: Int) {
+        find.move(direction)
+        if let request = find.revealRequest { interaction.reveal(sequence: request.sequence) }
+    }
+
+    private func jumpToLatest() {
+        find.close()
+        find.resumeReading()
+        place(scroll.update(.jumpToLatest))
     }
 
     private func land(_ items: [TranscriptItem]) {
@@ -301,7 +353,7 @@ struct ConversationView: View {
 
     /// Reads advance only for committed rows the reader can see in an active scene.
     private func markRead() {
-        guard scroll.hasLanded, scenePhase == .active, store.phase.isLive, isUncovered else { return }
+        guard scroll.hasLanded, scenePhase == .active, store.phase.isLive, isUncovered, !find.blocksRead else { return }
         let visible = Set(scroll.visibleRows)
         guard !visible.isEmpty else { return }
         let sequence = items.lazy.filter { visible.contains($0.id) }.map(\.sequence).max() ?? 0
@@ -330,6 +382,8 @@ struct ConversationView: View {
         }
         if target() == nil { interaction.messageView = .all }
         guard let item = target() else { return fail("This message is no longer available.") }
+        // A match below a collapsed message's fold would otherwise stay hidden.
+        if find.isPresented { expanded.insert(item.id) }
         scroll.pendingReveal = (token, item.id)
         let placement = scroll.update(.reveal(item.id))
         guard placement != nil, placement?.unavailableTarget == nil else {
@@ -337,6 +391,8 @@ struct ConversationView: View {
             return fail("This message is no longer available.")
         }
         place(placement)
+        // Find's own highlight marks the current match.
+        guard !find.isPresented else { return }
         highlightedSequence = sequence
         try? await Task.sleep(for: .seconds(2))
         if highlightedSequence == sequence { highlightedSequence = nil }

@@ -19,11 +19,13 @@ struct TranscriptItemView: View, @MainActor Equatable {
     let statusReactions: [Int: [ChannelReaction]]
     let isHighlighted: Bool
     var isExpanded = false
+    var findHighlight: TranscriptFindHighlight?
     var setExpanded: (Bool) -> Void = { _ in }
 
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.item == rhs.item && lhs.context == rhs.context && lhs.statusReactions == rhs.statusReactions
             && lhs.isHighlighted == rhs.isHighlighted && lhs.isExpanded == rhs.isExpanded
+            && lhs.findHighlight == rhs.findHighlight
     }
 
     var body: some View {
@@ -43,14 +45,15 @@ struct TranscriptItemView: View, @MainActor Equatable {
         switch item.content {
         case .user(let message):
             TranscriptUserMessage(message: message, context: context,
-                                  statusReactions: statusReactions[message.sequence] ?? [])
+                                  statusReactions: statusReactions[message.sequence] ?? [],
+                                  findHighlight: findHighlight)
         case .agent(let agentId, let entry, _):
             TranscriptAgentMessage(entry: entry, agent: channelAgentIdentity(context.agents, id: agentId),
                                    context: context,
                                    statusReactions: statusReactions[entry.message.sequence] ?? [],
-                                   isExpanded: isExpanded, setExpanded: setExpanded)
+                                   isExpanded: isExpanded, findHighlight: findHighlight, setExpanded: setExpanded)
         case .system(let messages):
-            TranscriptSystemMessages(messages: messages, agents: context.agents)
+            TranscriptSystemMessages(messages: messages, agents: context.agents, findHighlight: findHighlight)
         }
     }
 }
@@ -107,6 +110,7 @@ struct TranscriptUserMessage: View {
     var statusReactions: [ChannelReaction] = []
     /// Unsent attempts all have sequence 0, so they pass their own `send-<attempt id>`.
     var identifier: String?
+    var findHighlight: TranscriptFindHighlight?
     @Environment(\.horizontalSizeClass) private var sizeClass
     @ViewState private var selectsText = false
 
@@ -121,7 +125,7 @@ struct TranscriptUserMessage: View {
                 .font(.footnote)
                 .accessibilityHidden(true)
                 if !message.text.isEmpty {
-                    TranscriptBody(text: message.text)
+                    TranscriptBody(text: message.text, findHighlight: findHighlight)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 10)
                         .transcriptBubble(.user)
@@ -152,6 +156,7 @@ struct TranscriptAgentMessage: View {
     let context: TranscriptRowContext
     let statusReactions: [ChannelReaction]
     var isExpanded = false
+    var findHighlight: TranscriptFindHighlight?
     var setExpanded: (Bool) -> Void = { _ in }
     @Environment(ChannelInteraction.self) private var interaction
     @ViewState private var selectsText = false
@@ -176,7 +181,7 @@ struct TranscriptAgentMessage: View {
                 if !entry.body.isEmpty {
                     VStack(alignment: .leading, spacing: 4) {
                         if entry.collapsible {
-                            TranscriptBody(text: entry.body)
+                            TranscriptBody(text: entry.body, findHighlight: findHighlight)
                                 .onGeometryChange(for: Bool.self) { $0.size.height > Self.clampHeight } action: {
                                     overflows = $0
                                 }
@@ -200,7 +205,7 @@ struct TranscriptAgentMessage: View {
                                     .buttonStyle(.borderless)
                             }
                         } else {
-                            TranscriptBody(text: entry.body)
+                            TranscriptBody(text: entry.body, findHighlight: findHighlight)
                         }
                     }
                         .padding(.horizontal, 12)
@@ -311,9 +316,11 @@ private struct TranscriptSelectTextSheet: View {
 /// Inline Markdown until the shared renderer moves to ToyBoxUI.
 struct TranscriptBody: View {
     let text: String
+    var findHighlight: TranscriptFindHighlight?
 
     var body: some View {
-        Text(Self.attributed(text))
+        let attributed = Self.attributed(text)
+        Text(findHighlight?.applying(to: attributed) ?? attributed)
             .font(.body)
             .foregroundStyle(.primary)
             .fixedSize(horizontal: false, vertical: true)
@@ -341,6 +348,7 @@ struct TranscriptTimestamp: View {
 struct TranscriptSystemMessages: View {
     let messages: [ChannelMessage]
     let agents: [ChannelAgent]
+    var findHighlight: TranscriptFindHighlight?
 
     @ViewState private var showsDetails = false
     @Environment(\.colorScheme) private var colorScheme
@@ -350,7 +358,8 @@ struct TranscriptSystemMessages: View {
         Button { showsDetails = true } label: {
             let symbol = Text(Image(systemName: ChannelSystemEventStyle.symbol(for: type)))
                 .foregroundStyle(ChannelSystemEventStyle.symbolColor(for: type, in: colorScheme))
-            Text("\(symbol) \(text)")
+            let label = Text(findHighlight?.applying(to: AttributedString(text)) ?? AttributedString(text))
+            Text("\(symbol) \(label)")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
