@@ -23,16 +23,16 @@ struct TranscriptRowContent: View, @MainActor Equatable {
     let row: TranscriptRow
     let context: TranscriptRowContext
     /// The looking and working reactions on this row's messages, by sequence.
-    var statusReactions: [Int: [ChannelReaction]] = [:]
+    let statusReactions: [Int: [ChannelReaction]]
     /// The highlighted sequence, when it's one of this row's messages.
-    var highlightedSequence: Int?
-    var findHighlights: [Int: TranscriptFindHighlight] = [:]
+    let highlightedSequence: Int?
+    let findHighlights: [Int: TranscriptFindHighlight]
     /// The catch-up summary, for the row under the New divider that shows it.
-    var catchUp: TranscriptCatchUp?
+    let catchUp: TranscriptCatchUp?
     let store: ChannelStore
     /// This row's expanded messages.
-    var expandedMessageIds: Set<String> = []
-    var onSetExpanded: (String, Bool) -> Void = { _, _ in }
+    let expandedMessageIds: Set<String>
+    let onSetExpanded: (String, Bool) -> Void
     @Environment(ChannelInteraction.self) private var interaction
 
     init(row: TranscriptRow, context: TranscriptRowContext, statusReactions: [Int: [ChannelReaction]],
