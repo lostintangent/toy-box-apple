@@ -31,14 +31,9 @@ actor GenerationQueue {
         }
     }
 
-    private let limit: Int
     private var jobs: [String: Job] = [:]
-    private var running = 0
+    private var isRunning = false
     private var counter = 0
-
-    init(limit: Int = 1) {
-        self.limit = limit
-    }
 
     /// Nil when the caller was cancelled before the shared run finished.
     func run<Value: Sendable>(key: String, priority: Priority,
@@ -90,7 +85,7 @@ actor GenerationQueue {
     }
 
     private func preempt() {
-        guard running >= limit,
+        guard isRunning,
               jobs.values.contains(where: { $0.task == nil && $0.priority == .catchUp }) else { return }
         for job in Array(jobs.values) where job.task != nil && job.priority < .catchUp {
             counter += 1
@@ -104,23 +99,20 @@ actor GenerationQueue {
     }
 
     private func pump() {
-        while running < limit {
-            let next = jobs.values.filter { $0.task == nil }
-                .max { ($0.priority, $0.stamp) < ($1.priority, $1.stamp) }
-            guard let job = next else { return }
-            running += 1
-            let operation = job.operation
-            let key = job.key
-            let id = job.id
-            job.task = Task {
-                let value = await operation()
-                self.finish(key: key, id: id, value: value)
-            }
+        guard !isRunning, let job = jobs.values.filter({ $0.task == nil })
+            .max(by: { ($0.priority, $0.stamp) < ($1.priority, $1.stamp) }) else { return }
+        isRunning = true
+        let operation = job.operation
+        let key = job.key
+        let id = job.id
+        job.task = Task {
+            let value = await operation()
+            self.finish(key: key, id: id, value: value)
         }
     }
 
     private func finish(key: String, id: Int, value: (any Sendable)?) {
-        running -= 1
+        isRunning = false
         if let job = jobs[key], job.id == id {
             jobs.removeValue(forKey: key)
             for continuation in job.waiters.values { continuation.resume(returning: value) }
