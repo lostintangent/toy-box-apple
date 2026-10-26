@@ -46,37 +46,58 @@ struct ComposerImageStrip: View {
         ScrollView(.horizontal) {
             HStack(spacing: 10) {
                 ForEach(draft.images) { image in
-                    VStack(spacing: 4) {
-                        ZStack(alignment: .topTrailing) {
-                            Group {
-                                if let thumbnail = draft.thumbnail(for: image) {
-                                    Image(decorative: thumbnail, scale: 1).resizable().scaledToFill()
-                                } else {
-                                    Image(systemName: "exclamationmark.triangle").foregroundStyle(.orange)
-                                }
-                            }
-                            .frame(width: 56, height: 56)
-                            .clipShape(RoundedRectangle(cornerRadius: 7))
-                            Button { draft.removeImage(id: image.id) } label: {
-                                Image(systemName: "xmark.circle.fill")
-                                    .symbolRenderingMode(.palette)
-                                    .foregroundStyle(.white, Color.black.opacity(0.7))
-                                    .padding(2)
-                                    .frame(width: 28, height: 28)
-                                    .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel("Remove \(image.name)")
-                        }
-                        Text(image.name).font(.system(size: 10)).lineLimit(1).frame(width: 68)
-                    }
-                    .help(draft.thumbnail(for: image) == nil ? "\(image.name) must be reattached" : image.name)
+                    ComposerImageTile(draft: draft, image: image)
                 }
             }
             .padding(12)
         }
         // `.hidden` still shows a legacy scroller for mouse users, which would grow the strip 17pt.
         .scrollIndicators(.never)
+    }
+}
+
+private struct ComposerImageTile: View {
+    let draft: ComposerDraft
+    let image: ComposerImage
+    @ViewState private var loaded: (image: ComposerImage, bitmap: CGImage?)?
+
+    var body: some View {
+        let retained = loaded?.image == image ? loaded?.bitmap : nil
+        let thumbnail = draft.thumbnail(for: image, retaining: retained)
+        let unavailable = loaded?.image == image && thumbnail == nil
+        VStack(spacing: 4) {
+            ZStack(alignment: .topTrailing) {
+                Group {
+                    if let thumbnail {
+                        Image(decorative: thumbnail, scale: 1).resizable().scaledToFill()
+                    } else if !unavailable {
+                        RoundedRectangle(cornerRadius: 7).fill(.quaternary)
+                            .accessibilityLabel("Loading \(image.name)")
+                    } else {
+                        Image(systemName: "exclamationmark.triangle").foregroundStyle(.orange)
+                    }
+                }
+                .frame(width: 56, height: 56)
+                .clipShape(RoundedRectangle(cornerRadius: 7))
+                Button { draft.removeImage(id: image.id) } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .symbolRenderingMode(.palette)
+                        .foregroundStyle(.white, Color.black.opacity(0.7))
+                        .padding(2)
+                        .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Remove \(image.name)")
+            }
+            Text(image.name).font(.system(size: 10)).lineLimit(1).frame(width: 68)
+        }
+        .help(unavailable ? "\(image.name) must be reattached" : image.name)
+        .task(id: image) {
+            let decoded = await draft.loadThumbnail(for: image)
+            guard !Task.isCancelled else { return }
+            loaded = (image, decoded)
+        }
     }
 }
 

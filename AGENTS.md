@@ -309,6 +309,19 @@ Agents never create these accounts, accept agreements, read private keys or set 
   distinguish a delayed consumer turn from a delayed main-actor turn after an already-decoded EOF.
   Reconnect-delay-elapsed also separates the backoff sleeper's resumed turn from the main-actor
   turn that issues the next request.
+  The 2026-10-26 sampled Client run (`t340-sampled-official-run.log` and
+  `t340-sampled-official-stacks.txt` in Core's session files) identified synchronous production
+  `ComposerDraft.thumbnail(for:)` ImageIO/HEIC decoding on the main actor during draft tests.
+  Thumbnail lookup is now cache-only. Both native strips await `loadThumbnail(for:)`, which
+  coalesces background decodes and rejects removed or replaced images' late results.
+  Their retained bitmaps go through the draft's lookup too, so a later preparation failure
+  invalidates the displayed thumbnail and restores reattachment rather than showing stale success.
+  A controlled regression covers an attempted draft's loaded thumbnail followed by failed
+  normalization after editing, including the observation that updates both native tiles.
+  `ComposerThumbnailTests` holds a decoder off the main actor and requires the connected store
+  to apply a recovery snapshot before releasing it. This establishes that specific defect and
+  protects the fix, but does not by itself close the historical reconnect incidents. Their
+  quarantine gates remain unchanged pending the foundation gate and causal-restoration review.
 - `ChannelArtifactSessionTests.switchingScopeDiscardsTheVisitAndCancelsItsPendingLoad` is quarantined
   behind `TOY_BOX_TEST_ARTIFACT_SCOPE_TIMING=1`. Its `changingServer: false` argument failed the
   unchanged private three-second polling helper at line 81 in the 2026-10-26 Client diagnostic run

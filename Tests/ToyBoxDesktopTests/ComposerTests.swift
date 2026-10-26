@@ -21,7 +21,7 @@ struct ComposerTests {
             </svg>
             """.utf8)
         let draft = ComposerDraft()
-        let native = try #require(draft.thumbnail(for: .init(name: "Mark.svg", mimeType: "image/svg+xml", data: data)))
+        let native = try #require(await draft.loadThumbnail(for: .init(name: "Mark.svg", mimeType: "image/svg+xml", data: data)))
         let nativeColor = try #require(NSBitmapImageRep(cgImage: native).colorAt(x: 32, y: 32)?.usingColorSpace(.sRGB))
         draft.append(.init(name: "Mark.svg", mimeType: "image/svg+xml", data: data))
         try await finishLoading(draft)
@@ -30,7 +30,8 @@ struct ComposerTests {
         #expect(draft.images.first?.mimeType == "image/jpeg")
         #expect(!draft.hasUnreadableImage)
         #expect(draft.error == nil)
-        let thumbnail = try #require(draft.images.first.flatMap { draft.thumbnail(for: $0) })
+        let prepared = try #require(draft.images.first)
+        let thumbnail = try #require(await draft.loadThumbnail(for: prepared))
         let color = try #require(NSBitmapImageRep(cgImage: thumbnail).colorAt(x: 32, y: 32)?.usingColorSpace(.sRGB))
         #expect(color.redComponent > 0.9)
         #expect(nativeColor.redComponent > nativeColor.greenComponent + 0.5)
