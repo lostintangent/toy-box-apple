@@ -179,6 +179,46 @@ struct OverviewTests {
         #expect(image.size.height > 10 && image.size.height < 50)
     }
 
+    @Test func artifactActionKeepsPrimaryInkAndAnUncentered44PointTargetUnderLinkTint() throws {
+        for scheme in [ColorScheme.light, .dark] {
+            let renderer = ImageRenderer(content:
+                OverviewTaskArtifactLabel(title: "Plan")
+                    .foregroundStyle(Color.blue)
+                    .tint(.blue)
+                    .background(scheme == .dark ? Color.black : Color.white)
+                    .dynamicTypeSize(.large)
+                    .environment(\.colorScheme, scheme))
+            renderer.proposedSize = ProposedViewSize(width: 220, height: nil)
+            renderer.scale = 1
+            let image = try #require(renderer.uiImage)
+            let cgImage = try #require(image.cgImage)
+            #expect(image.size.height == 44)
+            let colorSpace = try #require(CGColorSpace(name: CGColorSpace.sRGB))
+            var pixels = [UInt8](repeating: 0, count: cgImage.width * cgImage.height * 4)
+            try pixels.withUnsafeMutableBytes { bytes in
+                let context = try #require(CGContext(
+                    data: bytes.baseAddress, width: cgImage.width, height: cgImage.height,
+                    bitsPerComponent: 8, bytesPerRow: cgImage.width * 4,
+                    space: colorSpace,
+                    bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue
+                        | CGImageAlphaInfo.premultipliedLast.rawValue))
+                context.draw(cgImage, in: CGRect(
+                    x: 0, y: 0, width: CGFloat(cgImage.width), height: CGFloat(cgImage.height)))
+            }
+            var inkRows: [Int] = []
+            var tintedPixels = 0
+            for offset in stride(from: 0, to: pixels.count, by: 4) {
+                if abs(Int(pixels[offset]) - Int(pixels[offset + 2])) > 1 { tintedPixels += 1 }
+                let isInk = scheme == .dark ? pixels[offset] > 240 : pixels[offset] < 15
+                if isInk { inkRows.append(offset / (cgImage.width * 4)) }
+            }
+            #expect(tintedPixels == 0)
+            let first = try #require(inkRows.min())
+            let last = try #require(inkRows.max())
+            #expect(min(first, cgImage.height - 1 - last) < 8)
+        }
+    }
+
     @Test func cancellingRemovalRestoresTheEditorAndOldSessionsCannotCompleteANewFlow() throws {
         try withModel { app in
             let catalog = try #require(app.catalog)

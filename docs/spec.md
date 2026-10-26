@@ -1549,8 +1549,9 @@ The task's own artifact is a separate line on both hosts, intentionally replacin
 artifact-beside-diff arrangement. It is an action, not another statistic. Place it 4 points
 after metadata, or 6 below the title when no metadata exists, aligned to the title. Keep
 `doc.text` and full wrapping title 6 points apart in one leading-aligned group. Use a growing
-minimum-24 Mac target with 12-point title and native link ink; phone minimum 44 and native
-footnote 13 retain its existing artifact treatment. No stretched icon/title gap or centered
+minimum-24 Mac target with 12-point title and native link ink. Phone uses a minimum-44 target,
+native footnote 13 and explicit primary label ink for readable text under native action tint.
+Top-align the phone label within that growing target. No stretched icon/title gap or centered
 title. Keep the action outside the parent toggle target: opening never toggles, toggling never
 opens. Speak "Open [artifact title]" and use the existing reader route. No reference means no
 empty artifact lane; a missing reference keeps disabled "Artifact unavailable", never a
