@@ -180,11 +180,25 @@ view.
   `bun run mobile --shutdown` shuts it down. `MOBILE_SIMULATOR=<UDID>` is only for selecting an
   agreed shared device, not for creating one per agent.
 - `bun run mobile --build-only` builds the Simulator bundle without booting a device.
-  `bun run mobile --device` builds an **unsigned** arm64 device bundle, without reading signing
-  identities or provisioning profiles. Neither command produces a distributable TestFlight build.
+  `bun run mobile --device --build-only` builds an **unsigned** arm64 device bundle, without
+  reading signing identities or provisioning profiles.
   Both stamp and verify the executable's real selected iOS SDK in `LC_BUILD_VERSION`, preserving
   the plist's deployment minimum and the device/Simulator platform, before any bundle signing.
   The plist's `DTSDKName` alone does not opt into SDK-linked native layout behavior.
+- `bun run mobile --device [--device-id <name-or-UDID>] [--server <URL>]` builds arm64,
+  signs with an existing matching Apple Development identity/profile, installs with
+  `xcrun devicectl`, launches and checks that the process is running. It never runs xcodebuild,
+  exports private keys, creates signing assets, or uses the shared simulator. Connect, pair,
+  enable Developer Mode and unlock your own iOS 27+ iPhone first. Multiple eligible phones
+  require `--device-id`; multiple matching teams require `MOBILE_PROVISIONING_PROFILE=<path>`.
+  An explicit profile must already cover the phone's UDID and this app, remain unexpired and
+  include an available signing certificate. The existing app/data are not uninstalled.
+  Device launches default to this Mac's Bonjour host, `http://<LocalHostName>.local:3100`.
+  Use `--server` or `TOY_BOX_SERVER_URL` for another phone-reachable LAN/HTTPS server.
+  The signed device bundle records that URL as `ToyBoxDefaultServerURL`, a nonpersistent
+  first-launch fallback after explicit launch input, environment and saved Settings.
+  Simulator/unsigned bundles have no bundled server default. Launch overrides are not saved
+  in Settings. Loopback URLs and URLs containing credentials are rejected.
 - `SCRATCH_PATH=/tmp/tbm-<you> bun run test:mobile` builds and runs ChannelKit,
   ChannelClient, ChannelIntelligence, ToyBoxUI and ToyBoxMobile tests on iOS Simulator. It uses Apple's simulator
   `xctest` host and rejects interrupted, failed and empty Swift Testing runs. Existing opt-ins

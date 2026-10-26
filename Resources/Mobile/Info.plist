@@ -24,6 +24,13 @@
     <string>Toy Box uses the microphone only while you dictate a message.</string>
     <key>NSSpeechRecognitionUsageDescription</key>
     <string>Dictation is transcribed on this iPhone.</string>
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>Toy Box connects to the channel server you choose on your local network.</string>
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsLocalNetworking</key>
+        <true/>
+    </dict>
     <key>UIDeviceFamily</key>
     <array>
         <integer>1</integer>

@@ -140,6 +140,10 @@ test("capture-only, build-only and unleased appearance arguments fail before tou
     for (const [args, message] of [
         [["--build-only", "--content-size", "large"], "Build-only"],
         [["--device", "--appearance", "dark"], "Build-only"],
+        [["--device-id", "phone"], "--device-id requires --device"],
+        [["--device", "--device-id", "phone", "--build-only"], "--device-id cannot be used with --build-only"],
+        [["--device", "--displays"], "Build-only/device"],
+        [["--build-only", "--server", "http://mac.local:3100"], "Build-only/device"],
         [["--appearance", "dark"], "--appearance requires --hold or --drive"],
         [["--screenshot", "/unused.png", "--content-size", "large"], "require launching"],
         [["--shutdown", "--hold", "--appearance", "dark"], "require launching"],
