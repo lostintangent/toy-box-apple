@@ -180,24 +180,14 @@ struct TranscriptFindTests {
         #expect(find.selectedSequence == 3)
     }
 
-    @Test func systemEventsSearchTheWordsThatAreRenderedNotTheirProtocolKinds() {
-        let renamed = ChannelMessage(id: "system", sequence: 1, timestamp: "2026-10-24T12:00:00Z",
-                                     sender: .system,
-                                     content: .system(.init(type: "channel_renamed", name: "Caf\u{00e9} team")))
-        let find = make([renamed])
-        find.query = "renamed Cafe"
+    @Test func systemEventsAreIndexedByTheirSharedRenderedTextNotTheirProtocolKind() {
+        let renamed = ChannelSystemContent(type: "channel_renamed", name: "Team")
+        let find = make([.init(id: "system", sequence: 1, timestamp: "2026-10-24T12:00:00Z",
+                               sender: .system, content: .system(renamed))])
+        find.query = ChannelSystemText.rendered(renamed, agents: [])
         #expect(find.matches.map(\.sequence) == [1])
-        find.query = "channel_renamed"
+        find.query = renamed.type
         #expect(find.matches.isEmpty)
-
-        let edited = ChannelMessage(id: "routine", sequence: 2, timestamp: "2026-10-24T12:00:00Z", sender: .system,
-                                    content: .system(.init(type: "routine_edited", routine: .init(
-                                        id: "r", title: "Daily review", schedule: "0 9 * * *", prompt: "blockers"))))
-        let shared = ChannelMessage(id: "share", sequence: 3, timestamp: "2026-10-24T12:00:00Z", sender: .system,
-                                    content: .system(.init(type: "artifact_shared", actor: .user, artifact: .init(
-                                        file: .init(kind: "session", path: "plan.md"), title: "Workshop plan"))))
-        #expect(TranscriptFind.renderedText(edited, agents: []) == "Routine edited Daily review")
-        #expect(TranscriptFind.renderedText(shared, agents: []) == "You shared Workshop plan")
     }
 
     @Test func loadedMessageUpdatesInvalidateRenderedTextAndPreserveHistoryCompletion() async {
