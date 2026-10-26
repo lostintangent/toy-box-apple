@@ -1,4 +1,5 @@
 import Foundation
+import ToyBoxUI
 
 struct LaunchOptions: Equatable, Sendable {
     var serverURL: String?

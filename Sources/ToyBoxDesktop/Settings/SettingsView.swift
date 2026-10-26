@@ -2,6 +2,7 @@ import AppKit
 import ChannelClient
 import ChannelIntelligence
 import SwiftUI
+import ToyBoxUI
 import UserNotifications
 
 struct SettingsView: View {
@@ -17,10 +18,8 @@ struct SettingsView: View {
     @AppStorage(DockAttention.enabledKey) private var bounceDockForRequests = false
     @AppStorage(MorningDigest.enabledKey) private var morningDigestEnabled = true
     @AppStorage(MorningDigest.timeKey) private var morningDigestMinutes = 480
-    @ViewState private var serverURL = ""
-    @ViewState private var result: String?
-    @ViewState private var resultIsError = false
-    @ViewState private var isTesting = false
+    @ViewState private var connection = ServerConnectionProbe()
+    @ViewState private var configurationFailure: String?
     @ViewState private var isEnabling = false
     @ViewState private var confirmsServerChange = false
     /// Read on appear and whenever the app becomes active, since the service can't be observed.
@@ -32,10 +31,12 @@ struct SettingsView: View {
             fitted(notifications).tabItem { Label("Notifications", systemImage: "bell") }
         }
         .onAppear {
-            serverURL = model.serverURL
+            connection.address = model.serverURL
             intelligenceAvailability = intelligence.availability
             model.openAtLogin.refresh()
         }
+        .onDisappear { connection.cancel() }
+        .onChange(of: connection.address) { _, _ in configurationFailure = nil }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             intelligenceAvailability = intelligence.availability
             model.openAtLogin.refresh()
@@ -56,31 +57,40 @@ struct SettingsView: View {
     }
 
     private var general: some View {
-        Form {
+        @Bindable var connection = connection
+        return Form {
             Section {
-                TextField("Server URL", text: $serverURL)
+                TextField("Server URL", text: $connection.address)
                     .textContentType(.URL)
                     .onSubmit { requestServerChange() }
                 Text("Use an HTTP or HTTPS URL, including any server path prefix.")
                     .font(.caption).foregroundStyle(.secondary)
                 HStack {
-                    Button(isTesting ? "Connecting..." : "Test Connection") { testConnection() }
-                        .disabled(isTesting || validationError != nil)
-                    if isTesting { ProgressView().controlSize(.small) }
+                    Button(connection.isTesting ? "Connecting..." : "Test Connection") {
+                        configurationFailure = nil
+                        connection.start()
+                    }
+                        .disabled(connection.isTesting || validationError != nil)
+                    if connection.isTesting { ProgressView().controlSize(.small) }
                     Spacer()
                     Button("Use Server") { requestServerChange() }
-                        .disabled(serverURL == model.serverURL || validationError != nil || isTesting)
+                        .disabled(connection.address == model.serverURL || validationError != nil || connection.isTesting)
                 }
                 if let validationError {
                     errorLabel(validationError)
                 }
-                if let result {
-                    if resultIsError {
-                        errorLabel(result)
-                    } else {
-                        Label(result, systemImage: "checkmark.circle")
-                            .font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
-                    }
+                switch connection.phase {
+                case .connected(let url, let count):
+                    Label(Self.connectionSummary(serverURL: url.absoluteString, channelCount: count),
+                          systemImage: "checkmark.circle")
+                        .font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                case .failed(let address, let error):
+                    errorLabel("Couldn't connect to \(address): \(error.localizedDescription)")
+                case .idle, .testing:
+                    EmptyView()
+                }
+                if let configurationFailure {
+                    errorLabel(configurationFailure)
                 }
             }
             Section {
@@ -326,37 +336,19 @@ struct SettingsView: View {
     }
 
     private var validationError: String? {
-        do { _ = try ChannelAPI(serverURL: serverURL); return nil }
-        catch { return error.localizedDescription }
+        connection.validationError
     }
 
     private func requestServerChange() {
-        guard validationError == nil, serverURL != model.serverURL else { return }
+        guard validationError == nil, connection.address != model.serverURL else { return }
         confirmsServerChange = true
     }
 
     private func useServer() {
-        model.configure(serverURL: serverURL)
-        serverURL = model.serverURL
-        result = model.configurationError
-        resultIsError = result != nil
-    }
-
-    private func testConnection() {
-        let testingURL = serverURL
-        result = nil
-        isTesting = true
-        Task {
-            defer { isTesting = false }
-            do {
-                let catalog = try await ChannelAPI(serverURL: testingURL).catalog()
-                result = Self.connectionSummary(serverURL: testingURL, channelCount: catalog.channels.count)
-                resultIsError = false
-            } catch {
-                result = "Couldn't connect to \(testingURL): \(error.localizedDescription)"
-                resultIsError = true
-            }
-        }
+        model.configure(serverURL: connection.address)
+        connection.address = model.serverURL
+        connection.cancel()
+        configurationFailure = model.configurationError
     }
 
     static func connectionSummary(serverURL: String, channelCount: Int) -> String {
