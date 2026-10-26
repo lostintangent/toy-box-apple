@@ -82,6 +82,8 @@ final class ComposerEditorState {
 }
 
 struct NativeComposerInput: UIViewRepresentable {
+    static let textInsets = UIEdgeInsets(top: 14, left: 16, bottom: 0, right: 16)
+
     @Binding var text: String
     let editor: ComposerEditorState
     var completionIsVisible = false
@@ -99,7 +101,7 @@ struct NativeComposerInput: UIViewRepresentable {
         view.backgroundColor = .clear
         view.font = .preferredFont(forTextStyle: .body)
         view.adjustsFontForContentSizeCategory = true
-        view.textContainerInset = UIEdgeInsets(top: 10, left: 12, bottom: 0, right: 12)
+        view.textContainerInset = Self.textInsets
         view.textContainer.lineFragmentPadding = 0
         view.returnKeyType = .default
         view.accessibilityLabel = "Message"
