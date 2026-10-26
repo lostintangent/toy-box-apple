@@ -281,9 +281,10 @@ struct ConversationView: View {
     private func reveal(sequence: Int, token: UUID) async {
         defer { interaction.consumeRevealRequest(token) }
         func target() -> TranscriptItem? { items.first { $0.messages.contains { $0.sequence == sequence } } }
-        while target() == nil, store.hasOlderMessages, store.historyError == nil,
-              (store.messages.first?.sequence ?? 0) > sequence {
-            await store.loadOlder()
+        await store.loadHistory(through: sequence)
+        guard !Task.isCancelled, interaction.revealRequestToken == token else { return }
+        if target() == nil, store.messages.contains(where: { $0.sequence == sequence }) {
+            interaction.messageView = .all
         }
         guard let item = target() else { return }
         place(scroll.update(.reveal(item.id)))
