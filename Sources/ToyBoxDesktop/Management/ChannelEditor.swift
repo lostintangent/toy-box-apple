@@ -13,7 +13,7 @@ struct ChannelEditor: View {
     @ViewState private var directory: String
     @ViewState private var model: ModelConfiguration?
     @ViewState private var isSaving = false
-    @ViewState private var recovery = ManagementWriteRecovery()
+    @ViewState private var recovery = ChannelManagementWriteRecovery()
     @FocusState private var nameFocused: Bool
 
     init(channel: ChannelDetails?, store: ChannelStore?, api: ChannelAPI, presenter: ManagementPresenter) {

@@ -66,11 +66,11 @@ final class ManagementPresenter {
         do {
             return try await store.api.createMember(channelId: store.id, input: .init(name: trimmed))
         } catch {
-            guard ManagementRecoveryState.isRequired(after: error) else { throw error }
+            guard ChannelManagementRecoveryState.isRequired(after: error) else { throw error }
             uncertainMentions.insert(key)
             try await checkMentionCreation(key: key, store: store, catalog: catalog)
             throw ChannelAPIError.invalidMessage(
-                "\(ManagementRecoveryState.uncertaintyMessage) The team has been refreshed. Review Team before creating another agent.")
+                "\(ChannelManagementRecoveryState.uncertaintyMessage) The team has been refreshed. Review Team before creating another agent.")
         }
     }
 
@@ -78,14 +78,14 @@ final class ManagementPresenter {
                                       catalog: ChannelCatalogStore?) async throws {
         guard let catalog, catalog.api.baseURL == store.api.baseURL else {
             throw ChannelAPIError.invalidMessage(
-                "\(ManagementRecoveryState.uncertaintyMessage) Reconnect to this server before checking Team.")
+                "\(ChannelManagementRecoveryState.uncertaintyMessage) Reconnect to this server before checking Team.")
         }
         do {
             _ = try await catalog.reconcileManagementWrite(channelId: store.id)
             uncertainMentions.remove(key)
         } catch {
             throw ChannelAPIError.invalidMessage(
-                "\(ManagementRecoveryState.uncertaintyMessage) Current state could not be checked. \(error.localizedDescription)")
+                "\(ChannelManagementRecoveryState.uncertaintyMessage) Current state could not be checked. \(error.localizedDescription)")
         }
     }
 }

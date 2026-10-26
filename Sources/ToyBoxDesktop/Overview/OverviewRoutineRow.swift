@@ -20,7 +20,7 @@ struct OverviewRoutineRow: View {
     let onExpand: () -> Void
     @ViewState private var item = OverviewItemState(Item())
     /// A routine gets its own recovery when it first runs.
-    @ViewState private var recoveries = OverviewItemState<ManagementWriteRecovery?>(nil)
+    @ViewState private var recoveries = OverviewItemState<ChannelManagementWriteRecovery?>(nil)
     @ViewState private var isHovering = false
     @FocusState private var focus: Focus?
 
@@ -33,7 +33,7 @@ struct OverviewRoutineRow: View {
     private var expanded: Bool { item[key].expanded }
     private var isRunning: Bool { item[key].isRunning }
     private var runRequestedAt: Date? { item[key].runRequestedAt }
-    private var recovery: ManagementWriteRecovery? { recoveries[key] }
+    private var recovery: ChannelManagementWriteRecovery? { recoveries[key] }
     private var canRun: Bool { !isRunning && recovery?.blocksWrites != true && store.phase.isLive }
     private var showsMenu: Bool { isHovering || focus != nil || voiceOver }
     private var scheduleSummary: String { RoutineScheduleSummary.text(for: routine.schedule) }
@@ -176,7 +176,7 @@ struct OverviewRoutineRow: View {
 
     private func run() {
         guard canRun else { return }
-        let recovery = self.recovery ?? ManagementWriteRecovery()
+        let recovery = self.recovery ?? ChannelManagementWriteRecovery()
         recoveries[key] = recovery
         item[key].isRunning = true
         item[key].runRequestedAt = nil
@@ -196,7 +196,7 @@ struct OverviewRoutineRow: View {
         }
     }
 
-    private func checkCurrentState(_ recovery: ManagementWriteRecovery) async {
+    private func checkCurrentState(_ recovery: ChannelManagementWriteRecovery) async {
         await recovery.check(catalog: app.catalog, channelId: store.id) { current in
             if current.channelWasDeleted {
                 return "The channel is no longer present on the server."
