@@ -152,6 +152,9 @@ struct RootView: View {
         }
         let interaction = store.map { model.interaction(for: $0.id) }
         guard interaction?.isArtifactViewerPresented != true else { return nil }
+        let conversation = interaction.flatMap {
+            sizeClass == .compact && $0.isInspectorPresented ? nil : $0
+        }
         let channels = model.catalog?.channels ?? []
         let attention = Set(channels.filter { model.sidebarProjection.attention($0) != nil }.map(\.id))
         let refresh: (() -> Void)?
@@ -178,7 +181,7 @@ struct RootView: View {
                 columnVisibility = columnVisibility == .detailOnly ? .all : .detailOnly
             } : nil,
             toggleInspector: interaction.map { interaction in { interaction.isInspectorPresented.toggle() } },
-            setMessageView: interaction.map { interaction in { interaction.messageView = $0 } },
+            setMessageView: conversation.map { interaction in { interaction.messageView = $0 } },
             refresh: refresh,
             nextChannel: channels.isEmpty ? nil : { direction in
                 selectChannel(ChannelNavigation.adjacent(in: channels.map(\.id), from: model.selectedChannelID,
@@ -188,10 +191,12 @@ struct RootView: View {
                 selectChannel(ChannelNavigation.nextAttention(in: channels.map(\.id), from: model.selectedChannelID,
                                                               attentionIDs: attention))
             },
-            focusComposer: interaction.map { interaction in { interaction.focusComposer() } },
-            jumpToLatest: interaction.map { interaction in { interaction.jumpToLatest() } },
+            focusComposer: conversation.map { interaction in { interaction.focusComposer() } },
+            jumpToLatest: conversation.map { interaction in { interaction.jumpToLatest() } },
             revealRequest: store.flatMap { store in
-                guard store.phase.isLive, let sequence = store.requestSequence, let interaction else { return nil }
+                guard store.phase.isLive, let sequence = store.requestSequence, let interaction = conversation else {
+                    return nil
+                }
                 return { interaction.reveal(sequence: sequence) }
             }
         )
@@ -199,6 +204,9 @@ struct RootView: View {
 
     private func selectChannel(_ id: String?) {
         guard let id else { return }
+        if sizeClass == .compact, let store = model.selectedStore {
+            model.interaction(for: store.id).isInspectorPresented = false
+        }
         model.selectedChannelID = id
         preferredCompactColumn = .detail
     }

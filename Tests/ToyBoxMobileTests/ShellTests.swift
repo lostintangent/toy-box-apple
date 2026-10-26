@@ -3,6 +3,7 @@ import ChannelKit
 import Foundation
 import SwiftUI
 import Testing
+import UIKit
 import UniformTypeIdentifiers
 @testable import ToyBoxMobile
 
@@ -221,7 +222,7 @@ struct ShellTests {
     @Test func draftCopyPreservesTextAndOriginalImageBytesWithoutChangingTheDraft() async throws {
         let draft = ComposerDraft(imageIsReadable: { _ in true })
         draft.text = "A draft to keep\nwith its original spacing."
-        let bytes = Data([0, 1, 2, 3, 254, 255])
+        let bytes = try #require(draftImage().pngData())
         draft.append(.init(name: "Original image.png", mimeType: "image/png", data: bytes))
         draft.associateSend(id: "unconfirmed-attempt")
         let revision = draft.revision
@@ -241,7 +242,7 @@ struct ShellTests {
         let draft = ComposerDraft(imageIsReadable: { _ in true })
         #expect(!draft.hasContent)
         #expect(DraftPasteboard.itemProviders(for: draft).isEmpty)
-        let bytes = Data([1, 2, 3])
+        let bytes = try #require(draftImage().jpegData(compressionQuality: 0.8))
         draft.append(.init(name: "Draft image.jpg", mimeType: "image/jpeg", data: bytes))
         #expect(draft.hasContent)
         let providers = DraftPasteboard.itemProviders(for: draft)
@@ -251,6 +252,13 @@ struct ShellTests {
         let copied = try await copiedData(from: provider, type: .jpeg)
         #expect(copied == bytes)
         #expect(draft.images.count == 1)
+    }
+
+    private func draftImage() -> UIImage {
+        UIGraphicsImageRenderer(size: CGSize(width: 1, height: 1)).image { context in
+            UIColor.black.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 1, height: 1))
+        }
     }
 
     private func copiedData(from provider: NSItemProvider, type: UTType) async throws -> Data {
