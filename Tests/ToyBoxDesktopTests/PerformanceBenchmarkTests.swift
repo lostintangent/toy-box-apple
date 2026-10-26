@@ -1,5 +1,6 @@
 import AppKit
 import Testing
+import ToyBoxUI
 @testable import ToyBoxDesktop
 
 @Suite("Transcript benchmark scroll drift")
