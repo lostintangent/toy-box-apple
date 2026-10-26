@@ -18,6 +18,16 @@ struct ShellTests {
         try await work(defaults)
     }
 
+    @Test func theTrayUsesTheMeasuredHeightAndScaledMinimumWithoutDroppingBelowTheFloor() {
+        #expect(!ChannelScreen.showsTray(usableHeight: 659, minimumHeight: 660))
+        #expect(ChannelScreen.showsTray(usableHeight: 660, minimumHeight: 660))
+        #expect(ChannelScreen.showsTray(usableHeight: 661, minimumHeight: 660))
+        #expect(!ChannelScreen.showsTray(usableHeight: 659, minimumHeight: 600))
+        #expect(ChannelScreen.showsTray(usableHeight: 660, minimumHeight: 600))
+        #expect(!ChannelScreen.showsTray(usableHeight: 824, minimumHeight: 825))
+        #expect(ChannelScreen.showsTray(usableHeight: 825, minimumHeight: 825))
+    }
+
     @Test func launchOverridesAreSessionOnlyAndTakePrecedence() async throws {
         await withDefaults { defaults in
             defaults.set("https://saved.example/prefix", forKey: "serverURL")

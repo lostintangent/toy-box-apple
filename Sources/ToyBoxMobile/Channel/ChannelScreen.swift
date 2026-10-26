@@ -12,6 +12,8 @@ struct ChannelScreen: View {
     @Environment(TranscriptGalleryPresenter.self) private var gallery
     @Environment(OverviewPresentation.self) private var overview
     @Environment(\.horizontalSizeClass) private var sizeClass
+    @ScaledMetric(relativeTo: .body) private var minimumTrayHeight: CGFloat = 660
+    @ViewState private var usableHeight: CGFloat = 0
 
     private var reader: ChannelReaderVisibility {
         ChannelReaderVisibility(
@@ -23,8 +25,9 @@ struct ChannelScreen: View {
     }
 
     var body: some View {
+        let showsTray = Self.showsTray(usableHeight: usableHeight, minimumHeight: minimumTrayHeight)
         ZStack {
-            conversation
+            conversation(showsTray: showsTray)
                 .opacity(reader.isVisible ? 0 : 1)
                 .allowsHitTesting(!reader.requested)
                 .accessibilityHidden(reader.requested)
@@ -36,6 +39,26 @@ struct ChannelScreen: View {
                 }
             }
         }
+            .background {
+                // Measuring behind the keyboard must not opt the composer out of avoidance.
+                GeometryReader { geometry in
+                    #if DEBUG
+                    let mode = showsTray ? "shown" : "hidden"
+                    let measurement = "Usable height \(geometry.size.height), minimum \(max(660, minimumTrayHeight)), tray \(mode)"
+                    #endif
+                    Color.clear
+                        .onChange(of: geometry.size.height, initial: true) { _, height in
+                            usableHeight = height
+                        }
+                        #if DEBUG
+                        .accessibilityElement()
+                        .accessibilityLabel("Conversation layout")
+                        .accessibilityValue(Text(verbatim: measurement))
+                        .accessibilityHidden(ProcessInfo.processInfo.environment["TOY_BOX_AUTOMATION_SCRIPT"] == nil)
+                        #endif
+                }
+                .ignoresSafeArea(.keyboard)
+            }
             .navigationTitle(store.details?.name ?? model.catalog?.channels.first { $0.id == store.id }?.name ?? "")
             .navigationBarTitleDisplayMode(.inline)
             .onAppear { model.visibleChannelID = store.id }
@@ -67,12 +90,16 @@ struct ChannelScreen: View {
             .focusedValue(\.channelRefresh,
                            model.isActive && store.phase != .deleted && !reader.requested ? .channel(store) : nil)
             .toolbar {
-                if !reader.requested { conversationToolbar }
+                if !reader.requested { conversationToolbar(showsTray: showsTray) }
             }
     }
 
+    static func showsTray(usableHeight: CGFloat, minimumHeight: CGFloat) -> Bool {
+        usableHeight >= max(660, minimumHeight)
+    }
+
     @ViewBuilder
-    private var conversation: some View {
+    private func conversation(showsTray: Bool) -> some View {
         Group {
             if store.phase == .deleted {
                 DeletedChannelView(draft: model.composerSession(for: store).draft) {
@@ -81,17 +108,18 @@ struct ChannelScreen: View {
             } else {
                 ConversationView(store: store)
                     .safeAreaBar(edge: .bottom, spacing: 0) {
-                        ComposerView(store: store)
+                        ComposerView(store: store, showsTray: showsTray)
                     }
             }
         }
     }
 
     @ToolbarContentBuilder
-    private var conversationToolbar: some ToolbarContent {
+    private func conversationToolbar(showsTray: Bool) -> some ToolbarContent {
         if sizeClass == .compact {
             ToolbarItemGroup(placement: .primaryAction) {
                 overviewButton
+                if !showsTray { tasksButton }
                 channelActions
             }
             ToolbarItem(placement: .bottomBar) {
@@ -101,6 +129,7 @@ struct ChannelScreen: View {
             ToolbarItemGroup(placement: .primaryAction) {
                 messageView
                 channelActions
+                if !showsTray { tasksButton }
                 overviewButton
             }
         }
@@ -146,6 +175,19 @@ struct ChannelScreen: View {
             interaction.isInspectorPresented.toggle()
         }
         .disabled(store.phase == .deleted)
+    }
+
+    @ViewBuilder
+    private var tasksButton: some View {
+        let progress = channelTasksProgress(store.tasks)
+        if progress.done < progress.total {
+            Button("Tasks", systemImage: "checklist") {
+                interaction.showOverviewTasks()
+            }
+            .accessibilityValue("\(progress.done) of \(progress.total) done")
+            .accessibilityIdentifier("channel-tasks")
+            .disabled(store.phase == .deleted)
+        }
     }
 }
 
