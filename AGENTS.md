@@ -93,6 +93,8 @@ view.
   Combine `--hold --screenshot <file.png>` to capture the current pose at lease end, before
   shutdown, without a second command waiting for the lock. `--displays` lists native display IDs.
   `--display <ID>` chooses one for a screenshot, including a secondary Duo display.
+  Wait until the app is visibly drawn before ending the lease. Launch returning a PID does not
+  mean its first frame is ready.
   `bun run mobile --shutdown` shuts it down. `MOBILE_SIMULATOR=<UDID>` is only for selecting an
   agreed shared device, not for creating one per agent.
 - `bun run mobile --build-only` builds the Simulator bundle without booting a device.
@@ -308,3 +310,7 @@ Edit only files you own. Ask the owner for anything else in the channel.
   existing query normalization and ordering. `ChannelAPI.channelURL(channelID:files:)` builds
   browser routes, preserving deployment prefixes. `SidebarConnection` (ToyBoxUI) projects the
   shared footer connection state and server label.
+- `ChannelSidebarProjection` (ChannelClient) takes the catalog and the host's current
+  `openChannelIDs`. Its `channel`, `attention`, `agents`, `working` and `catalogAgents` methods
+  preserve the Mac's live-versus-catalog rules and granular observation. `RequestedCatalogRefresh`
+  tracks user-requested work separately from polling and joins refreshes already in flight.
