@@ -131,7 +131,8 @@ struct TranscriptUserMessage: View {
                 if let attachments = message.attachments, !attachments.isEmpty {
                     TranscriptAttachments(attachments: attachments, api: context.api, alignment: .trailing)
                 }
-                TranscriptReactions(message: message, agents: context.agents, statusReactions: statusReactions)
+                TranscriptReactions(message: message, agents: context.agents, statusReactions: statusReactions,
+                                    alignment: .trailing)
             }
         }
         .accessibilityElement(children: .contain)
@@ -154,7 +155,7 @@ struct TranscriptAgentMessage: View {
     /// Only collapsible coordination measures, so other rows lay out once.
     @State private var overflows = false
 
-    private static let clampHeight: CGFloat = 160
+    nonisolated private static let clampHeight: CGFloat = 160
     private var isClamped: Bool { entry.collapsible && !isExpanded && overflows }
 
     private static let avatarSize: CGFloat = 32
@@ -336,12 +337,22 @@ struct TranscriptSystemMessages: View {
     let messages: [ChannelMessage]
     let agents: [ChannelAgent]
 
+    @State private var showsDetails = false
+
     var body: some View {
-        Text(text)
-            .font(.footnote)
-            .foregroundStyle(.secondary)
-            .multilineTextAlignment(.center)
-            .frame(maxWidth: .infinity)
+        Button { showsDetails = true } label: {
+            Text(text)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint("Shows details")
+        .sheet(isPresented: $showsDetails) {
+            TranscriptSystemDetails(messages: messages, agents: agents)
+        }
     }
 
     private var text: String {
@@ -357,6 +368,7 @@ struct TranscriptReactions: View {
     let message: ChannelMessage
     let agents: [ChannelAgent]
     var statusReactions: [ChannelReaction] = []
+    var alignment: Alignment = .leading
 
     private var groups: [(reaction: String, agents: [ChannelAgent])] {
         let reactions = channelMessageReactions(message, status: [message.sequence: statusReactions])
@@ -375,16 +387,8 @@ struct TranscriptReactions: View {
             HStack(spacing: 6) {
                 ForEach(groups, id: \.reaction) { group in
                     let presentation = Self.presentation(group.reaction)
-                    HStack(spacing: 4) {
-                        Text(presentation.emoji)
-                        if group.agents.count > 1 { Text("\(group.agents.count)").monospacedDigit() }
-                    }
-                    .font(.caption)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 4)
-                    .background(.quaternary.opacity(0.5), in: .capsule)
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel("\(presentation.label): \(group.agents.map(\.name).joined(separator: ", "))")
+                    TranscriptReactionChip(emoji: presentation.emoji, label: presentation.label,
+                                           reactors: group.agents, alignment: alignment)
                 }
             }
         }
@@ -400,6 +404,55 @@ struct TranscriptReactions: View {
         case "love": ("\u{2764}\u{fe0f}", "Loved this")
         case "laugh": ("\u{1f602}", "Laughed")
         default: ("\u{2022}", reaction)
+        }
+    }
+}
+
+/// A display-only reaction. Tapping lists who reacted, in a popover that becomes a sheet when compact.
+struct TranscriptReactionChip: View {
+    let emoji: String
+    let label: String
+    let reactors: [ChannelAgent]
+    var alignment: Alignment = .leading
+    @State private var showsReactors = false
+
+    var body: some View {
+        Button { showsReactors = true } label: {
+            HStack(spacing: 4) {
+                Text(emoji)
+                if reactors.count > 1 { Text("\(reactors.count)").monospacedDigit() }
+            }
+            .font(.caption)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 4)
+            .background(.quaternary.opacity(0.5), in: .capsule)
+            // The pill stays aligned with the bubble while its hit region reaches 44 points.
+            .frame(minWidth: 44, minHeight: 44, alignment: alignment)
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(label): \(reactors.map(\.name).joined(separator: ", "))")
+        .accessibilityHint("Shows who reacted")
+        .popover(isPresented: $showsReactors) {
+            NavigationStack {
+                List(reactors) { agent in
+                    HStack(spacing: 12) {
+                        AgentAvatarView(agent: agent, size: 24)
+                        Text(agent.name)
+                    }
+                    .frame(minHeight: 44)
+                }
+                .listStyle(.plain)
+                .navigationTitle("\(emoji) \(label)")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Done", systemImage: "checkmark") { showsReactors = false }
+                    }
+                }
+            }
+            .frame(minWidth: 280, minHeight: CGFloat(min(reactors.count, 6)) * 44 + 56)
+            .presentationDetents([.medium, .large])
         }
     }
 }
@@ -449,5 +502,60 @@ private struct TranscriptBubble: ViewModifier {
                     shape.strokeBorder(edge, lineWidth: 1)
                 }
             }
+    }
+}
+
+/// Every value an event carries, in full, rather than the one-line summary in the conversation.
+struct TranscriptSystemDetails: View {
+    let messages: [ChannelMessage]
+    let agents: [ChannelAgent]
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            List(messages) { message in
+                if let system = message.system {
+                    Section {
+                        ForEach(Self.details(system, agents: agents), id: \.label) { detail in
+                            LabeledContent(detail.label) {
+                                Text(detail.value).textSelection(.enabled).multilineTextAlignment(.trailing)
+                            }
+                        }
+                        if let date = ChannelDates.date(message.timestamp) {
+                            LabeledContent("Time", value: date.formatted(date: .abbreviated, time: .shortened))
+                        }
+                    } header: {
+                        Text(ChannelSystemText.phrase(for: system))
+                    }
+                }
+            }
+            .navigationTitle(messages.count > 1 ? "Membership" : ChannelSystemText.phrase(for: messages.first?.system))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done", systemImage: "checkmark") { dismiss() }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+    }
+
+    static func details(_ system: ChannelSystemContent, agents: [ChannelAgent]) -> [(label: String, value: String)] {
+        var details: [(label: String, value: String)] = []
+        if system.actor != nil { details.append(("By", ChannelSystemText.actor(system, agents: agents))) }
+        if let member = system.member?.name { details.append(("Member", member)) }
+        if let name = system.name { details.append(("Name", name)) }
+        if let purpose = system.purpose { details.append(("Purpose", purpose)) }
+        if let directory = system.directory { details.append(("Folder", directory)) }
+        if let preview = system.preview ?? system.previewUrl.map({ ChannelPreview(kind: "url", url: $0) }) {
+            details.append(("Preview", preview.kind == "screen" ? "Screen" : preview.url ?? preview.kind))
+        }
+        if let artifact = system.artifact { details.append(("Artifact", artifact.title)) }
+        if let routine = system.routine {
+            details.append(("Routine", routine.title))
+            details.append(("Schedule", routine.schedule))
+        }
+        if let description = system.unknownFields?["description"]?.string { details.append(("Details", description)) }
+        return details
     }
 }
