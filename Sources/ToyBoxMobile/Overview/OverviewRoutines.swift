@@ -8,19 +8,14 @@ struct OverviewRoutinesSection: View {
     let session: OverviewSession
 
     var body: some View {
-        Section {
-            if session.isExpanded(.routines) {
-                if store.routines.isEmpty {
-                    Text("No routines").foregroundStyle(ChannelInk.secondary)
-                } else {
-                    ForEach(store.routines) {
-                        OverviewRoutineRow(routine: $0, store: store, state: session.routine($0.id))
-                    }
+        OverviewSectionRows(summary: .routines(store.routines.count), section: .routines, session: session) {
+            if store.routines.isEmpty {
+                Text("No routines").foregroundStyle(ChannelInk.secondary)
+            } else {
+                ForEach(store.routines) {
+                    OverviewRoutineRow(routine: $0, store: store, state: session.routine($0.id))
                 }
             }
-        } header: {
-            OverviewSectionHeader(summary: .routines(store.routines.count),
-                                  section: .routines, session: session)
         }
     }
 }

@@ -10,20 +10,15 @@ struct OverviewArtifactsSection: View {
     let session: OverviewSession
 
     var body: some View {
-        Section {
-            if session.isExpanded(.artifacts) {
-                if store.artifacts.isEmpty {
-                    Text("Nothing shared yet").foregroundStyle(ChannelInk.secondary)
-                } else {
-                    ForEach(channelArtifactsNewestFirst(store.artifacts)) { artifact in
-                        OverviewArtifactRow(artifact: artifact, share: store.artifactShares[artifact.file.id],
-                                            api: store.api, channelID: store.id)
-                    }
+        OverviewSectionRows(summary: .artifacts(store.artifacts.count), section: .artifacts, session: session) {
+            if store.artifacts.isEmpty {
+                Text("Nothing shared yet").foregroundStyle(ChannelInk.secondary)
+            } else {
+                ForEach(channelArtifactsNewestFirst(store.artifacts)) { artifact in
+                    OverviewArtifactRow(artifact: artifact, share: store.artifactShares[artifact.file.id],
+                                        api: store.api, channelID: store.id)
                 }
             }
-        } header: {
-            OverviewSectionHeader(summary: .artifacts(store.artifacts.count),
-                                  section: .artifacts, session: session)
         }
     }
 }

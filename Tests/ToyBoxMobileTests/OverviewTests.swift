@@ -179,6 +179,173 @@ struct OverviewTests {
         #expect(image.size.height > 10 && image.size.height < 50)
     }
 
+    @Test(arguments: [ColorScheme.light, .dark], [DynamicTypeSize.large, .accessibility5])
+    func waitingCueStaysCenteredOnTheFirstLineWhileTheReasonWraps(
+        scheme: ColorScheme, size: DynamicTypeSize
+    ) throws {
+        let renderer = ImageRenderer(content:
+            OverviewAgentStatus(
+                presence: .init(state: "waiting", text: "WAITING MMMM MMMM MMMM MMMM MMMM"),
+                live: true)
+                .frame(width: 180, alignment: .leading)
+                .background(scheme == .dark ? Color.black : Color.white)
+                .environment(\.colorScheme, scheme)
+                .dynamicTypeSize(size))
+        renderer.scale = 3
+        let image = try #require(renderer.uiImage?.cgImage)
+        let pixels = try rgba(image)
+        let background = scheme == .dark ? 0 : 255
+        var cueRows = Set<Int>()
+        var textRows = Set<Int>()
+        for y in 0..<image.height {
+            for x in 0..<image.width {
+                let offset = (y * image.width + x) * 4
+                let red = Int(pixels[offset]), green = Int(pixels[offset + 1]), blue = Int(pixels[offset + 2])
+                if red > green + 20, green > blue + 20 { cueRows.insert(y) }
+                if abs(red - green) <= 4, abs(green - blue) <= 4, abs(red - background) > 24 {
+                    textRows.insert(y)
+                }
+            }
+        }
+        let firstTextRow = try #require(textRows.min())
+        var lastFirstLineRow = firstTextRow
+        while textRows.contains(lastFirstLineRow + 1) { lastFirstLineRow += 1 }
+        let firstCueRow = try #require(cueRows.min())
+        let lastCueRow = try #require(cueRows.max())
+        #expect(abs(CGFloat(firstCueRow + lastCueRow - firstTextRow - lastFirstLineRow) / 6) <= 1,
+                "Cue \(firstCueRow)...\(lastCueRow), first line \(firstTextRow)...\(lastFirstLineRow)")
+        #expect(try #require(textRows.max()) > lastFirstLineRow)
+    }
+
+    @Test(arguments: [false, true])
+    func plainOverviewUsesExactCollapsedAndExpandedNativeRowGaps(expanded: Bool) async throws {
+        let store = ChannelStore(id: "channel", api: try ChannelAPI(serverURL: "https://fixture.example"))
+        let session = OverviewSession(store: store)
+        session.expandedSections[.team] = expanded
+        session.expandedSections[.tasks] = expanded
+        let host = UIHostingController(rootView:
+            OverviewList {
+                OverviewSectionRows(summary: .team(1), section: .team, session: session, isFirstSection: true) {
+                    Text("Ada").frame(height: 44).listRowInsets(.vertical, 0)
+                }
+                OverviewSectionRows(summary: .tasks(channelTasksProgress([
+                    ChannelTask(id: "task", title: "Build", status: "pending")
+                ])),
+                                    section: .tasks, session: session) {
+                    Text("Build").frame(height: 44).listRowInsets(.vertical, 0)
+                }
+            }
+            .dynamicTypeSize(.large)
+            .environment(\.horizontalSizeClass, .compact))
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 600))
+        window.rootViewController = host
+        window.isHidden = false
+        defer { window.isHidden = true }
+        host.view.layoutIfNeeded()
+        await Task.yield()
+        host.view.layoutIfNeeded()
+        let list = try #require(nativeList(in: host.view))
+        list.layoutIfNeeded()
+        var frames: [CGRect] = []
+        for section in 0..<list.numberOfSections {
+            for item in 0..<list.numberOfItems(inSection: section) {
+                frames.append(try #require(list.layoutAttributesForItem(
+                    at: IndexPath(item: item, section: section))).frame)
+            }
+        }
+        try #require(frames.count == (expanded ? 4 : 2))
+        let first = try #require(frames.first)
+        let top = list.convert(first, to: host.view).minY - host.view.safeAreaInsets.top
+        #expect(abs(top - 12) < 0.5,
+                "Top \(top), inset \(list.adjustedContentInset), offset \(list.contentOffset), frames \(frames)")
+        if expanded {
+            #expect(abs(first.height - 48) < 0.5)
+            #expect(abs(frames[1].height - 44) < 0.5)
+            #expect(abs(frames[1].minY - first.maxY) < 0.5)
+            #expect(abs(frames[2].minY - frames[1].maxY - 16) < 0.5)
+        } else {
+            #expect(abs(first.height - 44) < 0.5)
+            #expect(abs(frames[1].minY - first.maxY - 8) < 0.5)
+            #expect(abs(frames[1].minY - first.minY - 52) < 0.5)
+        }
+    }
+
+    @Test func taskRevealScrollsToTheNativeSectionInsteadOfOnlyExpandingIt() async throws {
+        let store = ChannelStore(id: "channel", api: try ChannelAPI(serverURL: "https://fixture.example"))
+        let session = OverviewSession(store: store)
+        session.expandedSections[.tasks] = false
+        let host = UIHostingController(rootView:
+            ScrollViewReader { proxy in
+                OverviewList {
+                    OverviewSectionRows(summary: .team(20), section: .team, session: session,
+                                        isFirstSection: true) {
+                        ForEach(0..<20, id: \.self) { index in
+                            Text("Agent \(index)").frame(height: 44).listRowInsets(.vertical, 0)
+                        }
+                    }
+                    OverviewSectionRows(summary: .tasks(channelTasksProgress([
+                        ChannelTask(id: "task", title: "Build", status: "pending")
+                    ])), section: .tasks, session: session) {
+                        Text("Build").frame(height: 44).listRowInsets(.vertical, 0)
+                    }
+                    OverviewSectionRows(summary: .artifacts(20), section: .artifacts, session: session) {
+                        ForEach(0..<20, id: \.self) { index in
+                            Text("Artifact \(index)").frame(height: 44).listRowInsets(.vertical, 0)
+                        }
+                    }
+                }
+                .task {
+                    session.prepareForTaskReveal()
+                    await Task.yield()
+                    proxy.scrollTo("overview-tasks", anchor: .top)
+                }
+            }
+            .dynamicTypeSize(.large)
+            .environment(\.horizontalSizeClass, .compact))
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 600))
+        window.rootViewController = host
+        window.isHidden = false
+        defer { window.isHidden = true }
+        host.view.layoutIfNeeded()
+        let list = try #require(nativeList(in: host.view))
+        let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+        while list.contentOffset.y < 600, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(5))
+            host.view.layoutIfNeeded()
+        }
+        #expect(session.isExpanded(.tasks))
+        #expect(list.contentOffset.y > 600)
+        let target = try #require(list.layoutAttributesForItem(at: IndexPath(item: 0, section: 1))).frame
+        let top = list.convert(target, to: host.view).minY - host.view.safeAreaInsets.top
+        #expect(abs(top) < 0.5, "Tasks must land at the viewport top, not just exist below it: \(top)")
+    }
+
+    @Test(arguments: [1.0, 2.0, 3.0])
+    func taskAncestryGuideIsOnePhysicalPixelWithFourPointEndClearance(scale: CGFloat) throws {
+        let renderer = ImageRenderer(content:
+            OverviewTaskAncestryGuide(statusWidth: 16)
+                .frame(width: 60, height: 80)
+                .background(Color.white)
+                .environment(\.displayScale, scale)
+                .environment(\.colorScheme, .light))
+        renderer.scale = scale
+        let image = try #require(renderer.uiImage?.cgImage)
+        let pixels = try rgba(image)
+        var columns = Set<Int>()
+        var rows = Set<Int>()
+        for y in 0..<image.height {
+            for x in 0..<image.width {
+                if pixels[(y * image.width + x) * 4] < 255 {
+                    columns.insert(x)
+                    rows.insert(y)
+                }
+            }
+        }
+        #expect(columns == [Int((8 * scale - 0.5).rounded())])
+        #expect(rows.min() == Int(4 * scale))
+        #expect(rows.max() == Int(76 * scale) - 1)
+    }
+
     @Test(arguments: [ColorScheme.light, .dark], [true, false])
     func artifactActionKeepsItsEnabledInkAndAnUncentered44PointTargetUnderLinkTint(
         scheme: ColorScheme, enabled: Bool
@@ -199,18 +366,7 @@ struct OverviewTests {
         let image = try #require(renderer.uiImage)
         let cgImage = try #require(image.cgImage)
         #expect(image.size.height == 44)
-        let colorSpace = try #require(CGColorSpace(name: CGColorSpace.sRGB))
-        var pixels = [UInt8](repeating: 0, count: cgImage.width * cgImage.height * 4)
-        try pixels.withUnsafeMutableBytes { bytes in
-            let context = try #require(CGContext(
-                data: bytes.baseAddress, width: cgImage.width, height: cgImage.height,
-                bitsPerComponent: 8, bytesPerRow: cgImage.width * 4,
-                space: colorSpace,
-                bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue
-                    | CGImageAlphaInfo.premultipliedLast.rawValue))
-            context.draw(cgImage, in: CGRect(
-                x: 0, y: 0, width: CGFloat(cgImage.width), height: CGFloat(cgImage.height)))
-        }
+        let pixels = try rgba(cgImage)
         var inkRows: [Int] = []
         var tintedPixels = 0
         let background = scheme == .dark ? 0 : 255
@@ -422,6 +578,25 @@ struct OverviewTests {
         view.stop()
         await view.fitPublication?.value
         #expect(fitted == [true, false, false])
+    }
+
+    private func nativeList(in view: UIView) -> UICollectionView? {
+        if let list = view as? UICollectionView { return list }
+        return view.subviews.lazy.compactMap { nativeList(in: $0) }.first
+    }
+
+    private func rgba(_ image: CGImage) throws -> [UInt8] {
+        let colorSpace = try #require(CGColorSpace(name: CGColorSpace.sRGB))
+        var pixels = [UInt8](repeating: 0, count: image.width * image.height * 4)
+        try pixels.withUnsafeMutableBytes { bytes in
+            let context = try #require(CGContext(
+                data: bytes.baseAddress, width: image.width, height: image.height,
+                bitsPerComponent: 8, bytesPerRow: image.width * 4,
+                space: colorSpace, bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue
+                    | CGImageAlphaInfo.premultipliedLast.rawValue))
+            context.draw(image, in: CGRect(x: 0, y: 0, width: CGFloat(image.width), height: CGFloat(image.height)))
+        }
+        return pixels
     }
 
     private func artifact(_ path: String) -> ChannelArtifact {

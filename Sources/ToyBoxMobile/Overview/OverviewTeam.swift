@@ -2,6 +2,7 @@ import ChannelClient
 import ChannelKit
 import SwiftUI
 import ToyBoxUI
+import UIKit
 
 struct OverviewTeamSection: View {
     let store: ChannelStore
@@ -17,21 +18,18 @@ struct OverviewTeamSection: View {
     }
 
     var body: some View {
-        Section {
-            if session.isExpanded(.team) {
-                ForEach(ordered) { agent in
-                    OverviewTeamRow(agent: agent, store: store, session: session,
-                                    isLead: agent.id == store.roster.first?.id)
-                }
-                Button("Add Agent", systemImage: "person.badge.plus") {
-                    management.present(.addMember(channelId: store.id, name: ""))
-                }
-                .frame(minHeight: 44)
-                .accessibilityIdentifier("overview-add-agent")
-                .disabled(!store.phase.isLive)
+        OverviewSectionRows(summary: .team(store.roster.count), section: .team, session: session,
+                            isFirstSection: !OverviewAboutSection.hasInformation(store.details)) {
+            ForEach(ordered) { agent in
+                OverviewTeamRow(agent: agent, store: store, session: session,
+                                isLead: agent.id == store.roster.first?.id)
             }
-        } header: {
-            OverviewSectionHeader(summary: .team(store.roster.count), section: .team, session: session)
+            Button("Add Agent", systemImage: "person.badge.plus") {
+                management.present(.addMember(channelId: store.id, name: ""))
+            }
+            .frame(minHeight: 44)
+            .accessibilityIdentifier("overview-add-agent")
+            .disabled(!store.phase.isLive)
         }
     }
 }
@@ -176,13 +174,16 @@ struct OverviewAgentDetails: View {
     }
 }
 
-private struct OverviewAgentStatus: View {
+struct OverviewAgentStatus: View {
     let presence: ChannelAgentPresence?
     let live: Bool
     var active = false
     @Environment(\.colorScheme) private var colorScheme
     @ScaledMetric(relativeTo: .footnote) private var cueSize = 9
     @ScaledMetric(relativeTo: .footnote) private var cueWidth = 12
+    @ScaledMetric(relativeTo: .footnote) private var statusFontSize = UIFont.preferredFont(
+        forTextStyle: .footnote,
+        compatibleWith: UITraitCollection(preferredContentSizeCategory: .large)).pointSize
 
     var body: some View {
         let status = ChannelAgentStatusPresentation(presence: presence, isLive: live)
@@ -197,6 +198,9 @@ private struct OverviewAgentStatus: View {
                     .font(.system(size: cueSize, weight: .heavy))
                     .foregroundStyle(ChannelAgentStatusPresentation.waitingCue(in: colorScheme))
                     .frame(width: cueWidth)
+                    .alignmentGuide(.firstTextBaseline) {
+                        $0[VerticalAlignment.center] + UIFont.systemFont(ofSize: statusFontSize).capHeight / 2
+                    }
                     .accessibilityHidden(true)
             }
             Text(status.text).foregroundStyle(ChannelInk.secondary)

@@ -3,6 +3,39 @@ import SwiftUI
 import ToyBoxUI
 import UIKit
 
+struct OverviewSectionRows<Content: View>: View {
+    let summary: ChannelOverviewSummary
+    let section: OverviewSection
+    let session: OverviewSession
+    let diff: DiffStats?
+    let isFirstSection: Bool
+    let content: Content
+
+    init(summary: ChannelOverviewSummary, section: OverviewSection, session: OverviewSession,
+         diff: DiffStats? = nil, isFirstSection: Bool = false, @ViewBuilder content: () -> Content) {
+        self.summary = summary
+        self.section = section
+        self.session = session
+        self.diff = diff
+        self.isFirstSection = isFirstSection
+        self.content = content()
+    }
+
+    var body: some View {
+        Section {
+            OverviewSectionHeader(summary: summary, section: section, session: session, diff: diff)
+                .padding(.bottom, session.isExpanded(section) ? 4 : 0)
+                .listRowInsets(.vertical, 0)
+                .listRowSeparator(.hidden)
+                .accessibilityIdentifier(section == .tasks ? "overview-tasks" : "overview-section-\(section)")
+            if session.isExpanded(section) { content }
+        }
+        .id("overview-\(section)")
+        .listSectionMargins(.top, isFirstSection ? 12 : 0)
+        .listSectionMargins(.bottom, session.isExpanded(section) ? 16 : 8)
+    }
+}
+
 struct OverviewSectionHeader: View {
     let summary: ChannelOverviewSummary
     let section: OverviewSection

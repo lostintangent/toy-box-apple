@@ -10,24 +10,18 @@ struct OverviewTasksSection: View {
 
     var body: some View {
         let progress = channelTasksProgress(store.tasks)
-        Section {
-            if session.isExpanded(.tasks) {
-                if store.tasks.isEmpty {
-                    Text("No tasks yet").foregroundStyle(ChannelInk.secondary)
-                } else {
-                    ForEach(store.tasks) { task in
-                        OverviewTaskTree(task: task, store: store, session: session)
-                            .listRowSeparator(.hidden)
-                            .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
-                            .padding(.bottom, 8)
-                    }
+        OverviewSectionRows(summary: .tasks(progress), section: .tasks, session: session,
+                            diff: channelTasksDiff(store.tasks)) {
+            if store.tasks.isEmpty {
+                Text("No tasks yet").foregroundStyle(ChannelInk.secondary)
+            } else {
+                ForEach(store.tasks) { task in
+                    OverviewTaskTree(task: task, store: store, session: session)
+                        .listRowSeparator(.hidden)
+                        .listRowInsets(.vertical, 0)
+                        .padding(.bottom, 8)
                 }
             }
-        } header: {
-            OverviewSectionHeader(summary: .tasks(progress),
-                                  section: .tasks, session: session, diff: channelTasksDiff(store.tasks))
-                .accessibilityIdentifier("overview-tasks")
-                .id("overview-tasks")
         }
     }
 }
@@ -179,6 +173,9 @@ private struct OverviewTaskNode: View {
                         }
                     }
                     .padding(.leading, layout.indent)
+                    .overlay {
+                        OverviewTaskAncestryGuide(statusWidth: layout.statusWidth)
+                    }
                 } else {
                     NavigationLink(value: OverviewRoute.subtasks(task.id)) {
                         HStack {
@@ -323,6 +320,24 @@ private struct OverviewTaskNode: View {
         if let diff { parts.append(ChannelOverviewTaskDiff.spoken(diff)) }
         if let owner { parts.append("owner \(owner.name)") }
         return parts.joined(separator: ", ")
+    }
+}
+
+struct OverviewTaskAncestryGuide: View {
+    let statusWidth: CGFloat
+    @Environment(\.displayScale) private var scale
+
+    var body: some View {
+        let pixel = 1 / scale
+        let leading = ((statusWidth / 2 - pixel / 2) * scale).rounded() / scale
+        Rectangle()
+            .fill(Color(uiColor: .separator))
+            .frame(width: pixel)
+            .padding(.vertical, 4)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.leading, leading)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
     }
 }
 

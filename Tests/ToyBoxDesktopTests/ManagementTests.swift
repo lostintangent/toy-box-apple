@@ -106,6 +106,31 @@ struct ManagementTests {
         }
     }
 
+    @Test(arguments: [1.0, 2.0, 3.0])
+    func taskAncestryGuideIsOnePhysicalPixelWithFourPointEndClearance(scale: CGFloat) throws {
+        let renderer = ImageRenderer(content:
+            OverviewTaskAncestryGuide(statusWidth: 16)
+                .frame(width: 60, height: 80)
+                .background(Color.white)
+                .environment(\.displayScale, scale)
+                .environment(\.colorScheme, .light))
+        renderer.scale = scale
+        let bitmap = try RenderedPixels(try #require(renderer.cgImage))
+        var columns = Set<Int>()
+        var rows = Set<Int>()
+        for y in 0..<bitmap.pixelsHigh {
+            for x in 0..<bitmap.pixelsWide {
+                if bitmap.colorAt(x: x, y: y).redComponent < 0.999 {
+                    columns.insert(x)
+                    rows.insert(y)
+                }
+            }
+        }
+        #expect(columns == [Int((8 * scale - 0.5).rounded())])
+        #expect(rows.min() == Int(4 * scale))
+        #expect(rows.max() == Int(76 * scale) - 1)
+    }
+
     @Test func purposeExpansionAppearsOnlyBeyondFourLines() {
         let short = "Build a welcoming workshop where the team's work is clear at a glance."
         #expect(!OverviewPurpose.requiresExpansion(short, width: 288, fontSize: 13))

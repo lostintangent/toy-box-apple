@@ -122,6 +122,9 @@ struct OverviewTaskRow: View {
                     }
                 }
                 .padding(.leading, OverviewTaskList.depthIndent)
+                .overlay {
+                    OverviewTaskAncestryGuide(statusWidth: Self.statusSize)
+                }
             }
         }
         .accessibilityElement(children: .contain)
@@ -250,6 +253,24 @@ struct OverviewTaskRow: View {
     }
 }
 
+
+struct OverviewTaskAncestryGuide: View {
+    let statusWidth: CGFloat
+    @Environment(\.displayScale) private var scale
+
+    var body: some View {
+        let pixel = 1 / scale
+        let leading = ((statusWidth / 2 - pixel / 2) * scale).rounded() / scale
+        Rectangle()
+            .fill(Color(nsColor: .separatorColor))
+            .frame(width: pixel)
+            .padding(.vertical, 4)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.leading, leading)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+    }
+}
 
 /// A parent row is a button whose press toggles it, as the routine rows are. A leaf is static text.
 private struct OverviewTaskRowRole: ViewModifier {

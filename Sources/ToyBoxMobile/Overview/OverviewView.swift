@@ -16,7 +16,7 @@ struct OverviewView: View {
         NavigationStack(path: $session.navigationPath) {
             Group {
                 if store.details != nil, store.phase != .deleted {
-                    OverviewForm(store: store, session: session, placement: placement).id(ObjectIdentifier(store))
+                    OverviewContent(store: store, session: session, placement: placement).id(ObjectIdentifier(store))
                 } else {
                     ContentUnavailableView(
                         store.phase == .deleted ? "Channel Deleted" : "Connecting",
@@ -74,7 +74,7 @@ struct OverviewView: View {
     }
 }
 
-private struct OverviewForm: View {
+private struct OverviewContent: View {
     let store: ChannelStore
     @Bindable var session: OverviewSession
     let placement: OverviewPlacement
@@ -84,7 +84,7 @@ private struct OverviewForm: View {
 
     var body: some View {
         ScrollViewReader { proxy in
-            Form {
+            OverviewList {
                 if !store.phase.isLive {
                     Section {
                         Label("Overview may be out of date. Reconnect before making changes.",
@@ -100,7 +100,6 @@ private struct OverviewForm: View {
                 OverviewArtifactsSection(store: store, session: session)
                 OverviewRoutinesSection(store: store, session: session)
             }
-            .listSectionSpacing(24)
             .accessibilityIdentifier("overview-form")
             .scrollPosition(Binding(
                 get: { session.scrollPosition },
@@ -131,5 +130,27 @@ private struct OverviewForm: View {
                 }
             }
         }
+    }
+}
+
+struct OverviewList<Content: View>: View {
+    let content: Content
+    @Environment(\.horizontalSizeClass) private var sizeClass
+
+    init(@ViewBuilder content: () -> Content) { self.content = content() }
+
+    var body: some View {
+        List {
+            content
+                .listRowInsets(.horizontal, sizeClass == .regular ? 20 : 16)
+                .listRowBackground(Color.clear)
+        }
+        .listStyle(.plain)
+        .environment(\.defaultMinListRowHeight, 44)
+        .listSectionSpacing(0)
+        .listSectionMargins(.vertical, 0)
+        .listSectionMargins(.horizontal, 0)
+        .contentMargins(.horizontal, 0, for: .scrollContent)
+        .scrollContentBackground(.hidden)
     }
 }
