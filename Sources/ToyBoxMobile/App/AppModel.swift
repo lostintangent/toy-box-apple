@@ -38,7 +38,7 @@ final class AppModel {
          defaults: UserDefaults = .standard, session: URLSession = .shared) {
         self.defaults = defaults
         self.session = session
-        let address: String
+        let address: String?
         if let index = arguments.firstIndex(of: "--server") {
             guard arguments.indices.contains(index + 1) else {
                 configurationError = "Provide a server URL after --server."
@@ -46,9 +46,9 @@ final class AppModel {
             }
             address = arguments[index + 1]
         } else {
-            address = environment["TOY_BOX_SERVER_URL"] ?? defaults.string(forKey: "serverURL") ?? ""
+            address = environment["TOY_BOX_SERVER_URL"] ?? defaults.string(forKey: "serverURL")
         }
-        guard !address.isEmpty else { return }
+        guard let address else { return }
         do { try configure(serverURL: address, persist: false) }
         catch { configurationError = error.localizedDescription }
     }

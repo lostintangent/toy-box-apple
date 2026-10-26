@@ -213,6 +213,43 @@ struct TransportTests {
         #expect(mock.requests.last?.url?.query == "before=100")
     }
 
+    @Test @MainActor func loadingHistoryThroughASequenceStopsWhenAPageAddsNothing() async throws {
+        let initial = testState(revision: 10, messages: [testMessage(100)])
+        let mock = MockTransport { request, _ in
+            if request.url?.path.hasSuffix("/messages") == true {
+                return try .json(ChannelHistoryPage(version: 1, revision: 10, messages: [testMessage(100)]))
+            }
+            return try .stream([.init(type: "snapshot", state: initial)])
+        }
+        let store = ChannelStore(id: "test", api: try mock.api(), sendJournal: nil)
+        store.connect()
+        defer { store.disconnect() }
+        try await eventually { store.phase.isLive }
+        await store.loadHistory(through: 5)
+        #expect(store.hasOlderMessages)
+        #expect(store.state?.messages.map(\.sequence) == [100])
+        #expect(mock.requests.filter { $0.url?.path.hasSuffix("/messages") == true }.count == 1)
+    }
+
+    @Test @MainActor func loadingHistoryThroughASequencePagesUntilItIsLoaded() async throws {
+        let initial = testState(revision: 10, messages: [testMessage(100)])
+        let mock = MockTransport { request, _ in
+            if request.url?.path.hasSuffix("/messages") == true {
+                let before = Int(request.url?.query?.replacingOccurrences(of: "before=", with: "") ?? "") ?? 0
+                return try .json(ChannelHistoryPage(version: 1, revision: 10,
+                                                     messages: [testMessage(before - 2), testMessage(before - 1)]))
+            }
+            return try .stream([.init(type: "snapshot", state: initial)])
+        }
+        let store = ChannelStore(id: "test", api: try mock.api(), sendJournal: nil)
+        store.connect()
+        defer { store.disconnect() }
+        try await eventually { store.phase.isLive }
+        await store.loadHistory(through: 95)
+        #expect(store.state?.messages.first?.sequence == 94)
+        #expect(mock.requests.filter { $0.url?.path.hasSuffix("/messages") == true }.count == 3)
+    }
+
     @Test @MainActor func serverFailurePreservesUncertainAttemptOutsideCanonicalState() async throws {
         let initial = testState(revision: 10, messages: [testMessage(1)])
         let mock = MockTransport { request, _ in

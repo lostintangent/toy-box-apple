@@ -1,3 +1,5 @@
+@testable import ChannelClient
+import ChannelKit
 import SwiftUI
 import Testing
 import UIKit
@@ -116,5 +118,31 @@ struct ComposerTests {
         view.paste(nil)
         #expect(imported == 1)
         #expect(view.text == "Keep this draft")
+    }
+
+    @Test func replyContextUsesTheSourceAndAnOldEchoCannotClearNewerWords() throws {
+        let draft = ComposerDraft(imageIsReadable: { UIImage(data: $0) != nil })
+        draft.text = "Keep these words"
+        let store = ChannelStore(id: "test", api: try ChannelAPI(serverURL: "http://localhost:3210"),
+                                 sendJournal: nil)
+        let session = ComposerSession(store: store, draft: draft)
+        let agent = ChannelAgent(id: "ada", name: "Ada Lovelace")
+        session.reply(to: agent, sequence: 8)
+        #expect(draft.text == "@ada-lovelace Keep these words")
+        #expect(session.replySource?.sequence == 8)
+        session.reply(to: agent, sequence: nil)
+        #expect(draft.text == "@ada-lovelace Keep these words")
+        draft.associateSend(id: "original")
+        draft.text = "A newer draft"
+        let message = ChannelMessage(id: "original", sequence: 9, timestamp: "2026-10-24T00:00:00Z",
+                                     sender: .user, content: .text("The earlier payload"))
+        let channel = Channel(id: "test", name: "Test", model: .init(provider: "test", name: "test"),
+                              latestSequence: 9, updatedAt: message.timestamp)
+        let state = ChannelState(revision: 1, channel: channel,
+                                 lead: .init(id: "lead", name: "Lead"), messages: [message])
+        _ = try store.apply(.init(type: "snapshot", state: state))
+        session.reconcile()
+        #expect(draft.text == "A newer draft")
+        #expect(session.replySource?.sequence == 8)
     }
 }

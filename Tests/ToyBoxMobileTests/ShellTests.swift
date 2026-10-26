@@ -33,7 +33,7 @@ struct ShellTests {
     @Test func missingAndInvalidLaunchAddressesNeverChooseAnotherServer() async {
         await withDefaults { defaults in
             defaults.set("https://saved.example", forKey: "serverURL")
-            for arguments in [["--server"], ["--server", "not-a-server"]] {
+            for arguments in [["--server"], ["--server", ""], ["--server", "not-a-server"]] {
                 let model = AppModel(arguments: arguments, environment: [:], defaults: defaults)
                 #expect(model.catalog == nil)
                 #expect(model.configurationError != nil)
