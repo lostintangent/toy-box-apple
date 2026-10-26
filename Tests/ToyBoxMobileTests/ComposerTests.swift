@@ -294,30 +294,21 @@ struct ComposerTests {
         view.insertText("!")
         #expect(text == dictated + "!")
         let undo = try #require(view.undoManager)
-        let groupingIssue: Comment = "t329: UIKit keeps dictation and adjacent typing in one automatic event group."
         undo.undo()
-        withKnownIssue(groupingIssue) {
-            #expect(text == dictated, "Typing after dictation is its own undo step")
-        }
+        #expect(text == dictated, "Typing after dictation is its own undo step")
         #expect(view.text == text)
         undo.undo()
-        withKnownIssue(groupingIssue) {
-            #expect(text == (typedBefore ? "Typed" : ""), "Dictation is its own undo step")
-        } when: { typedBefore }
+        #expect(text == (typedBefore ? "Typed" : ""), "Dictation is its own undo step")
         #expect(view.text == text)
         if typedBefore {
-            withKnownIssue(groupingIssue) {
-                #expect(undo.canUndo)
-            }
+            #expect(undo.canUndo)
             undo.undo()
             #expect(text.isEmpty, "Typing before dictation remains a separate undo step")
             #expect(view.text.isEmpty)
         }
         undo.redo()
         if typedBefore { undo.redo() }
-        withKnownIssue(groupingIssue) {
-            #expect(text == dictated)
-        }
+        #expect(text == dictated)
         undo.redo()
         #expect(text == dictated + "!")
         #expect(view.text == text)
@@ -358,30 +349,21 @@ struct ComposerTests {
         let dictated = typedBefore ? "Typed Spoken" : "Spoken"
         view.insertText("!")
         #expect(text == dictated + "!")
-        let groupingIssue: Comment = "t329: UIKit keeps dictation and adjacent typing in one automatic event group."
         undo.undo()
-        withKnownIssue(groupingIssue) {
-            #expect(text == dictated, "Typing after dictation is its own undo step in the focused native editor")
-        }
+        #expect(text == dictated, "Typing after dictation is its own undo step in the focused native editor")
         #expect(view.text == text)
         undo.undo()
-        withKnownIssue(groupingIssue) {
-            #expect(text == (typedBefore ? "Typed" : ""), "Dictation is its own undo step in the focused native editor")
-        } when: { typedBefore }
+        #expect(text == (typedBefore ? "Typed" : ""), "Dictation is its own undo step in the focused native editor")
         #expect(view.text == text)
         if typedBefore {
-            withKnownIssue(groupingIssue) {
-                #expect(undo.canUndo)
-            }
+            #expect(undo.canUndo)
             undo.undo()
             #expect(text.isEmpty)
             #expect(view.text.isEmpty)
         }
         undo.redo()
         if typedBefore { undo.redo() }
-        withKnownIssue(groupingIssue) {
-            #expect(text == dictated)
-        }
+        #expect(text == dictated)
         undo.redo()
         #expect(text == dictated + "!")
         #expect(view.text == text)
