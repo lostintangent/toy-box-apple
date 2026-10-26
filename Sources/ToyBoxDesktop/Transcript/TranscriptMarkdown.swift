@@ -38,7 +38,8 @@ struct TranscriptMarkdown: View {
         .lineSpacing(lineSpacing * textScale)
         .modifier(TranscriptTextSelection(enabled: selectable))
         .environment(\.openURL, OpenURLAction { url in
-            let resolved = url.scheme == nil ? url.absoluteURL(relativeTo: baseURL) : url
+            let resolved = url.scheme == nil
+                ? baseURL.flatMap { URL(string: url.relativeString, relativeTo: $0)?.absoluteURL } : url
             guard let resolved, ["http", "https", "mailto"].contains(resolved.scheme?.lowercased() ?? "") else {
                 return .discarded
             }
@@ -565,12 +566,5 @@ enum TranscriptClipboard {
     static func copy(_ content: String) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(content, forType: .string)
-    }
-}
-
-private extension URL {
-    func absoluteURL(relativeTo base: URL?) -> URL? {
-        guard let base else { return nil }
-        return URL(string: relativeString, relativeTo: base)?.absoluteURL
     }
 }
