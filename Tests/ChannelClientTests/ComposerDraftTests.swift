@@ -185,7 +185,9 @@ struct ComposerDraftTests {
     }
 
     @Test func cameraPhotosBecomeOrientedJPEGAndThumbnailsStayCachedWhileTyping() async throws {
-        let image = try generatedImage(width: 6_000, height: 2_000, type: .heic, orientation: 6)
+        let image = try await Task.detached {
+            try Self.generatedImage(width: 6_000, height: 2_000, type: .heic, orientation: 6)
+        }.value
         let draft = imageIODraft()
         draft.text = "Keep this photo caption"
         draft.associateSend(id: "earlier")
@@ -216,10 +218,13 @@ struct ComposerDraftTests {
     }
 
     @Test func oversizedImagesRespectBothProviderLimits() async throws {
-        for image in [
-            try generatedImage(width: 9_001, height: 2, type: .png),
-            try generatedImage(width: 3_600, height: 2_600, type: .jpeg, noisy: true),
-        ] {
+        let images = try await Task.detached {
+            [
+                try Self.generatedImage(width: 9_001, height: 2, type: .png),
+                try Self.generatedImage(width: 3_600, height: 2_600, type: .jpeg, noisy: true),
+            ]
+        }.value
+        for image in images {
             if image.mimeType == "image/jpeg" { try #require(image.data.count > 5_000_000) }
             let draft = imageIODraft()
             draft.append(image)
@@ -243,8 +248,8 @@ struct ComposerDraftTests {
         })
     }
 
-    private func generatedImage(width: Int, height: Int, type: UTType,
-                                orientation: Int = 1, noisy: Bool = false) throws -> ComposerImage {
+    nonisolated private static func generatedImage(width: Int, height: Int, type: UTType,
+                                                   orientation: Int = 1, noisy: Bool = false) throws -> ComposerImage {
         var pixels = Data(count: width * height * 4)
         pixels.withUnsafeMutableBytes { bytes in
             let words = bytes.bindMemory(to: UInt32.self)

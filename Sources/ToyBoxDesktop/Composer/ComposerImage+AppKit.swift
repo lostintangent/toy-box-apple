@@ -25,9 +25,9 @@ private func rasterizeComposerImage(_ data: Data, maxPixelSize: Int) -> CGImage?
     let scale = min(1, CGFloat(maxPixelSize) / max(image.size.width, image.size.height))
     let width = max(1, Int(image.size.width * scale))
     let height = max(1, Int(image.size.height * scale))
-    guard let context = CGContext(
+    guard let space = CGColorSpace(name: CGColorSpace.sRGB), let context = CGContext(
         data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
-        space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
     ) else { return nil }
     let graphics = NSGraphicsContext(cgContext: context, flipped: false)
     let bounds = NSRect(x: 0, y: 0, width: width, height: height)

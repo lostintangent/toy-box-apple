@@ -16,11 +16,13 @@ import UniformTypeIdentifiers
 struct ComposerTests {
     @Test func sharedDraftNormalizesTheMacsNativeSVGInsteadOfLosingIt() async throws {
         let data = Data("""
-            <svg xmlns="http://www.w3.org/2000/svg" width="2" height="2">
-            <rect width="2" height="2" fill="red"/>
+            <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64">
+            <rect width="64" height="64" fill="red"/>
             </svg>
             """.utf8)
         let draft = ComposerDraft()
+        let native = try #require(draft.thumbnail(for: .init(name: "Mark.svg", mimeType: "image/svg+xml", data: data)))
+        let nativeColor = try #require(NSBitmapImageRep(cgImage: native).colorAt(x: 32, y: 32)?.usingColorSpace(.sRGB))
         draft.append(.init(name: "Mark.svg", mimeType: "image/svg+xml", data: data))
         try await finishLoading(draft)
         #expect(draft.images.count == 1)
@@ -29,9 +31,12 @@ struct ComposerTests {
         #expect(!draft.hasUnreadableImage)
         #expect(draft.error == nil)
         let thumbnail = try #require(draft.images.first.flatMap { draft.thumbnail(for: $0) })
-        let color = try #require(NSBitmapImageRep(cgImage: thumbnail).colorAt(x: 0, y: 0)?.usingColorSpace(.deviceRGB))
+        let color = try #require(NSBitmapImageRep(cgImage: thumbnail).colorAt(x: 32, y: 32)?.usingColorSpace(.sRGB))
         #expect(color.redComponent > 0.9)
-        #expect(color.greenComponent < 0.1)
+        #expect(nativeColor.redComponent > nativeColor.greenComponent + 0.5)
+        #expect(abs(color.redComponent - nativeColor.redComponent) < 0.02)
+        #expect(abs(color.greenComponent - nativeColor.greenComponent) < 0.02)
+        #expect(abs(color.blueComponent - nativeColor.blueComponent) < 0.02)
     }
 
     @Test func auxiliaryRepliesSeedOnceAndKeepStaleRequestsUnsent() async throws {
