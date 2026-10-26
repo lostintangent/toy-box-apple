@@ -191,8 +191,9 @@ Agents never create these accounts, accept agreements, read private keys or set 
 
 ## Client rules
 
-- Management writes are never retried. A 422 is a rejection, but a 500 may have committed, so
-  call `reconcileManagementWrite(channelId:)` before offering another attempt.
+- Management writes are never retried. A 422 is a rejection, but a 500, timeout or lost connection
+  may have committed, so call `reconcileManagementWrite(channelId:)` before offering another attempt.
+  Can't connect, offline and bad-host failures remain ordinary retryable errors.
 - A send makes one attempt with a caller-owned UUID, kept in a per-channel outbox until confirmed.
   Send Again reuses that UUID, so the server can't deliver it twice.
 - Reading never answers a request. Reconnects resume from the last applied revision.

@@ -227,6 +227,9 @@ management failure is 500 with a generic `{error}`, and details stay in server l
 follow a committed change, including a deletion, so the client never retries a write on 500,
 automatically or through an unchanged resubmission. It treats the outcome as uncertain and
 reconciles from the authoritative catalog or channel detail before offering another write.
+A timeout or lost connection is also uncertain, since the request may already have reached the
+server. The same reconciliation is required. Can't-connect, offline and bad-host failures remain
+ordinary retryable errors rather than blocking management editing.
 
 Attachments are `{name, url}` or inline `{mimeType, base64}`. Avatars are SVG path data in a
 24×24 viewBox plus a hex color, and may carry an optional `ink` for the mark that only Toy Box's
