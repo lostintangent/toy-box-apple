@@ -313,6 +313,61 @@ struct ComposerTests {
         #expect(text == dictated + "!")
     }
 
+    @Test(arguments: [false, true])
+    func losingTheNativeDictationRangePreservesRecognizedWordsThroughTheDraft(finalizes: Bool) {
+        var text = "Typed"
+        let editor = ComposerEditorState()
+        let input = NativeComposerInput(
+            text: Binding(get: { text }, set: { text = $0 }), editor: editor,
+            onSend: {}, onCompletionKey: { _ in false }, onPasteImages: { _ in }
+        )
+        let coordinator = NativeComposerInput.Coordinator(parent: input)
+        let view = ComposerTextView()
+        view.delegate = coordinator
+        view.coordinator = coordinator
+        coordinator.input = view
+        editor.textView = view
+        view.text = text
+        view.selectedRange = NSRange(location: text.utf16.count, length: 0)
+        coordinator.anchorDictation()
+        var transcript = DictationTranscript()
+        transcript.receive("Spoken", isFinal: false)
+        coordinator.showDictation(transcript)
+        #expect(view.text == "Typed Spoken")
+
+        view.text = ""
+        if finalizes { coordinator.endDictation(transcript.visible) }
+        else { coordinator.showDictation(transcript) }
+        #expect(text == "Typed Spoken")
+        #expect(view.text == text)
+        #expect(coordinator.lastModelText == text)
+        #expect(coordinator.dictationSession == nil)
+        #expect(!coordinator.isApplyingDictation)
+        #expect(view.undoManager?.isUndoRegistrationEnabled == true)
+    }
+
+    @Test func nativeUndoDuringLiveDictationEndsThatSessionWithoutRemovingEarlierTyping() async throws {
+        let recognizer = MobileTestRecognizer()
+        let (session, target) = try dictatingSession(recognizer)
+        defer { session.dictation.deactivate() }
+        target.input.insertText("Typed")
+        await session.dictation.refreshLanguageSupport()
+        session.dictation.toggleRecheckingInput()
+        await recognizer.waitUntilListening()
+        recognizer.send("Spoken", isFinal: false)
+        #expect(target.input.text == "Typed Spoken")
+
+        let undo = try #require(target.input.undoManager)
+        undo.undo()
+        #expect(!session.dictation.isSessionActive, "Native Undo must end the live dictation session")
+        #expect(recognizer.isCancelled)
+        #expect(target.input.text == "Typed", "The whole live session is one undo step, not the earlier typing")
+        #expect(session.draft.text == target.input.text)
+        recognizer.send("Late result", isFinal: true)
+        #expect(session.draft.text == "Typed", "A result arriving after Undo cannot restore the session")
+        #expect(target.input.text == session.draft.text)
+    }
+
     @Test func constructingAComposerDoesNotQuerySpeechAssetsDevicesOrPermissions() async throws {
         let probe = MobileDictationProbe()
         let recognizer = MobileTestRecognizer()

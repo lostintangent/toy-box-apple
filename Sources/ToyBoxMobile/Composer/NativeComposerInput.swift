@@ -1,5 +1,6 @@
 import ChannelClient
 import Observation
+import OSLog
 import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
@@ -170,6 +171,7 @@ struct NativeComposerInput: UIViewRepresentable {
     }
 
     @MainActor final class Coordinator: NSObject, UITextViewDelegate {
+        private static let logger = Logger(subsystem: "dev.toybox.mobile", category: "Dictation")
         var parent: NativeComposerInput
         weak var input: ComposerTextView?
         var lastModelText = ""
@@ -223,12 +225,16 @@ extension NativeComposerInput.Coordinator: DictationTextTarget {
               input.isFirstResponder || input.becomeFirstResponder() else { return false }
         input.unmarkText()
         anchorDictation()
-        return true
+        return dictationSession != nil
     }
 
     func anchorDictation() {
         guard let input, dictationSession == nil else { return }
         let range = input.selectedRange
+        guard nativeRange(in: input, for: range) != nil else {
+            Self.logger.error("Dictation could not anchor because the native selection is outside the draft.")
+            return
+        }
         var attributes = input.typingAttributes
         attributes[.foregroundColor] = UIColor.label
         dictationSession = .init(
@@ -257,7 +263,10 @@ extension NativeComposerInput.Coordinator: DictationTextTarget {
         let selection = input.selectedRange
         let old = session.span
         isApplyingDictation = true
-        replaceDictationDisplay(in: input, range: old, with: display)
+        guard replaceDictationDisplay(in: input, range: old, with: display) else {
+            recoverDictation(session, finalized: visible)
+            return
+        }
         session.span = NSRange(location: old.location, length: display.length)
         dictationSession = session
         restoreSelection(selection, replacing: old, with: session.span,
@@ -282,19 +291,21 @@ extension NativeComposerInput.Coordinator: DictationTextTarget {
         }
         let selection = input.selectedRange
         isApplyingDictation = true
-        replaceDictationDisplay(
+        guard replaceDictationDisplay(
             in: input, range: session.span,
             with: NSAttributedString(string: session.replacedText, attributes: session.attributes)
-        )
+        ) else {
+            recoverDictation(session, finalized: finalized)
+            return
+        }
         input.typingAttributes = session.attributes
         let (previous, next) = neighbors(of: session)
         let (leading, trailing) = DictationTranscript.padding(for: finalized, after: previous, before: next)
         let words = finalized.isEmpty ? session.replacedText : leading + finalized + trailing
         if !finalized.isEmpty {
-            guard let start = input.position(from: input.beginningOfDocument, offset: session.replaced.location),
-                  let end = input.position(from: start, offset: session.replaced.length),
-                  let range = input.textRange(from: start, to: end) else {
-                preconditionFailure("Final dictation must replace a valid native text range.")
+            guard let range = nativeRange(in: input, for: session.replaced) else {
+                recoverDictation(session, finalized: finalized)
+                return
             }
             input.replace(range, withText: words)
             input.undoManager?.setActionName("Dictation")
@@ -321,10 +332,12 @@ extension NativeComposerInput.Coordinator: DictationTextTarget {
         guard let input, let session = dictationSession else { return }
         dictationSession = nil
         isApplyingDictation = true
-        replaceDictationDisplay(
+        if !replaceDictationDisplay(
             in: input, range: session.span,
             with: NSAttributedString(string: session.replacedText, attributes: session.attributes)
-        )
+        ) {
+            Self.logger.error("Dictation lost its native range while applying a replacement draft. Keeping the replacement draft.")
+        }
         input.typingAttributes = session.attributes
         isApplyingDictation = false
         parent.dictation?.commitNow()
@@ -332,16 +345,44 @@ extension NativeComposerInput.Coordinator: DictationTextTarget {
 
     private func replaceDictationDisplay(
         in input: ComposerTextView, range: NSRange, with replacement: NSAttributedString
-    ) {
-        guard let start = input.position(from: input.beginningOfDocument, offset: range.location),
-              let end = input.position(from: start, offset: range.length),
-              let nativeRange = input.textRange(from: start, to: end) else {
-            preconditionFailure("The dictation display must have a valid native text range.")
-        }
+    ) -> Bool {
+        guard let nativeRange = nativeRange(in: input, for: range) else { return false }
         let undo = input.undoManager
         undo?.disableUndoRegistration()
         defer { undo?.enableUndoRegistration() }
         input.replace(nativeRange, withAttributedText: replacement)
+        return true
+    }
+
+    private func nativeRange(in input: UITextView, for range: NSRange) -> UITextRange? {
+        let length = input.text.utf16.count
+        guard range.location >= 0, range.length >= 0,
+              range.location <= length, range.length <= length - range.location,
+              let start = input.position(from: input.beginningOfDocument, offset: range.location),
+              let end = input.position(from: start, offset: range.length) else { return nil }
+        return input.textRange(from: start, to: end)
+    }
+
+    private func recoverDictation(_ session: DictationSession, finalized: String) {
+        Self.logger.error("Dictation lost its native text range. Preserving recognized words through the draft.")
+        dictationSession = nil
+        isApplyingDictation = true
+        defer { isApplyingDictation = false }
+        parent.dictation?.commitNow()
+        let recovered = dictatedText(session, finalized: finalized)
+        lastModelText = recovered
+        parent.text = recovered
+        if let input {
+            let selection = input.selectedRange
+            input.typingAttributes = session.attributes
+            input.text = recovered
+            let location = min(max(selection.location, 0), recovered.utf16.count)
+            input.selectedRange = NSRange(
+                location: location, length: min(max(selection.length, 0), recovered.utf16.count - location)
+            )
+            parent.editor.update(from: input)
+            input.invalidateIntrinsicContentSize()
+        }
     }
 
     private func restoreSelection(_ selection: NSRange, replacing old: NSRange,
