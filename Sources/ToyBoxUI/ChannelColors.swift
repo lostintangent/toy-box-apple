@@ -1,5 +1,22 @@
 import ChannelKit
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
+
+public enum ChannelInk {
+    public static let secondary: Color = {
+        #if canImport(UIKit)
+        Color(uiColor: UIColor { traits in
+            traits.userInterfaceStyle == .dark
+                ? UIColor(red: 0xAE / 255, green: 0xAE / 255, blue: 0xB2 / 255, alpha: 1)
+                : UIColor(red: 0x63 / 255, green: 0x63 / 255, blue: 0x66 / 255, alpha: 1)
+        })
+        #else
+        Color.secondary
+        #endif
+    }()
+}
 
 public enum ChannelColors {
     public static let userWash = Color.accentColor.opacity(0.09)

@@ -78,7 +78,7 @@ public struct TranscriptMarkdown: View {
         case .listItem(let marker, let text, let depth):
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(highlights?.applying(to: AttributedString(marker), fragment: .init(block: block.id))
-                     ?? AttributedString(marker)).foregroundStyle(.secondary).textSelection(.disabled)
+                     ?? AttributedString(marker)).foregroundStyle(ChannelInk.secondary).textSelection(.disabled)
                     .frame(minWidth: 14, alignment: .trailing)
                 Text(inline(text, fragment: .init(block: block.id, column: 1), highlights: highlights))
                     .fixedSize(horizontal: false, vertical: true)
@@ -87,14 +87,14 @@ public struct TranscriptMarkdown: View {
         case .quote(let text):
             HStack(alignment: .top, spacing: 10) {
                 RoundedRectangle(cornerRadius: 2).fill(.tertiary).frame(width: 3)
-                Text(inline(text, fragment: .init(block: block.id), highlights: highlights)).foregroundStyle(.secondary)
+                Text(inline(text, fragment: .init(block: block.id), highlights: highlights)).foregroundStyle(ChannelInk.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
             .fixedSize(horizontal: false, vertical: true)
         case .code(let language, let code):
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
-                    Text(language.isEmpty ? "Code" : language).foregroundStyle(.secondary)
+                    Text(language.isEmpty ? "Code" : language).foregroundStyle(ChannelInk.secondary)
                         .textSelection(.disabled)
                     Spacer(minLength: 12)
                     Button("Copy Code", systemImage: "doc.on.doc") {
@@ -243,7 +243,7 @@ private struct TranscriptTextSelection: ViewModifier {
 private struct TranscriptCopyCodeButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .foregroundStyle(configuration.isPressed ? .primary : .secondary)
+            .foregroundStyle(configuration.isPressed ? Color.primary : ChannelInk.secondary)
             .contentShape(Rectangle())
     }
 }
