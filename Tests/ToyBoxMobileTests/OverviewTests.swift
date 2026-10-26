@@ -54,11 +54,11 @@ struct OverviewTests {
         let api = try ChannelAPI(serverURL: "https://fixture.example")
         let session = OverviewSession(store: ChannelStore(id: "channel", api: api))
         session.navigationPath = ["agent"]
+        session.scrollPosition.scrollTo(point: CGPoint(x: 0, y: 120))
+        #expect(session.scrollPosition.point?.y == 120)
         session.scrollOffset = 244
         session.prepareForPresentation()
-        session.restoreScroll()
-        #expect(session.scrollPosition.point?.y == 244)
-        session.prepareForPresentation()
+        #expect(session.restorationOffset == 244)
         session.prepareForTaskReveal()
         session.restoreScroll()
         #expect(session.navigationPath.isEmpty)
