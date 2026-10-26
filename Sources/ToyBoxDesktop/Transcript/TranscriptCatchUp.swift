@@ -19,6 +19,9 @@ final class TranscriptCatchUp {
         let count: Int
     }
 
+    /// A summary never animates the card's height, because each frame of that lays out the whole
+    /// transcript. The card takes its new height in one pass and only its lines fade, so Reduce
+    /// Motion needs no variant.
     enum Phase: Equatable {
         case loading
         case ready(Summary)
@@ -114,7 +117,7 @@ final class TranscriptCatchUp {
         if let catchUp = result?.catchUp {
             let summary = Summary(catchUp: catchUp, count: request.unreadFromOthers)
             Self.remember(summary, for: request.key)
-            show(summary)
+            phase = .ready(summary)
         } else if case .updating(let previous) = phase {
             // A failed update keeps the summary the reader already has, along with its Update.
             if let updatingFrom { self.request = updatingFrom }
@@ -132,7 +135,7 @@ final class TranscriptCatchUp {
         updatingFrom = self.request
         self.request = request
         if let summary = Self.results[request.key] {
-            show(summary)
+            phase = .ready(summary)
             return
         }
         withAnimation(.easeOut(duration: 0.2)) { phase = .updating(current) }
@@ -144,12 +147,6 @@ final class TranscriptCatchUp {
         Self.dismissed.insert(boundary)
         generation = nil
         Task { await collapse() }
-    }
-
-    /// The card never animates its height, because each frame of that lays out the whole transcript.
-    /// It takes its new height in one pass and only its lines fade, so Reduce Motion needs no variant.
-    private func show(_ summary: Summary) {
-        phase = .ready(summary)
     }
 
     /// Fades the card, then removes it in one layout pass.
