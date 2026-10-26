@@ -1,20 +1,22 @@
-import AppKit
 import AVFoundation
+import Foundation
 import Observation
 import Speech
 
 /// The words of one dictation session: what the transcriber has finalized, then its current guess.
-struct DictationTranscript: Equatable {
-    private(set) var finalized = ""
-    private(set) var tentative = ""
+package struct DictationTranscript: Equatable {
+    package private(set) var finalized = ""
+    package private(set) var tentative = ""
 
-    var isEmpty: Bool { visible.isEmpty }
+    package init() {}
+
+    package var isEmpty: Bool { visible.isEmpty }
     /// Everything the composer shows. `finalized` is always its prefix.
-    var visible: String { Self.join(finalized, tentative) }
+    package var visible: String { Self.join(finalized, tentative) }
 
     /// Returns whether the shown words changed.
     @discardableResult
-    mutating func receive(_ text: String, isFinal: Bool) -> Bool {
+    package mutating func receive(_ text: String, isFinal: Bool) -> Bool {
         let old = self
         if isFinal {
             finalized = Self.join(finalized, text)
@@ -26,15 +28,15 @@ struct DictationTranscript: Equatable {
     }
 
     /// Keeps every word the person has seen, for stops that can't wait for the transcriber.
-    mutating func promoteTentative() {
+    package mutating func promoteTentative() {
         finalized = visible
         tentative = ""
     }
 
-    mutating func discardTentative() { tentative = "" }
+    package mutating func discardTentative() { tentative = "" }
 
     /// Joins transcriber segments, which carry their own leading spaces, such as "facing", "?" and " and check".
-    static func join(_ head: String, _ tail: String) -> String {
+    package static func join(_ head: String, _ tail: String) -> String {
         guard !head.isEmpty else { return String(tail.drop(while: \.isWhitespace)) }
         guard let last = head.last, let first = tail.first else { return head }
         if !last.isWhitespace, first.isLetter || first.isNumber { return head + " " + tail }
@@ -42,7 +44,7 @@ struct DictationTranscript: Equatable {
     }
 
     /// The spaces that separate dictated words from the text around the caret.
-    static func padding(for words: String, after previous: Character?, before next: Character?) -> (String, String) {
+    package static func padding(for words: String, after previous: Character?, before next: Character?) -> (String, String) {
         guard let first = words.first, let last = words.last else { return ("", "") }
         let leading = previous.map { !$0.isWhitespace && (first.isLetter || first.isNumber) } == true ? " " : ""
         let trailing = next.map { $0.isLetter || $0.isNumber } == true && !last.isWhitespace ? " " : ""
@@ -51,7 +53,7 @@ struct DictationTranscript: Equatable {
 }
 
 /// The composer text view, which shows dictation at the caret and commits it as one undoable edit.
-@MainActor protocol DictationTextTarget: AnyObject {
+@MainActor package protocol DictationTextTarget: AnyObject {
     var isInKeyWindow: Bool { get }
     /// Focuses the composer and anchors the session at the caret, replacing any selection.
     func beginDictation() -> Bool
@@ -59,40 +61,25 @@ struct DictationTranscript: Equatable {
     func endDictation(_ finalized: String)
 }
 
-enum DictationAudioEvent: Sendable {
+package enum DictationAudioEvent: Sendable {
     case audio(AnalyzerInput, level: Double)
     case unavailable
 }
 
 /// Feeds analyzer-format audio to a dictation session. Tests and checks feed recorded files through
 /// the same real `DictationTranscriber` the microphone uses.
-protocol DictationAudioSource: AnyObject {
+package protocol DictationAudioSource: AnyObject {
     func start(format: AVAudioFormat, handler: @escaping @Sendable (DictationAudioEvent) -> Void) throws
     func stop()
 }
 
-enum DictationMicrophoneAccess: Equatable {
+package enum DictationMicrophoneAccess: Equatable {
     case undetermined, denied, granted
 }
 
 /// Which permission keeps the Dictate button from listening.
-enum DictationAccess: Equatable {
+package enum DictationAccess: Equatable {
     case microphone, speechRecognition
-
-    var title: String {
-        self == .microphone ? "Microphone Access Is Off" : "Speech Recognition Access Is Off"
-    }
-
-    var explanation: String {
-        self == .microphone
-            ? "Allow Toy Box to use the microphone in Privacy & Security settings. The Dictation key still works."
-            : "Allow Toy Box to use speech recognition in Privacy & Security settings. The Dictation key still works."
-    }
-
-    var settingsURL: URL? {
-        URL(string: "x-apple.systempreferences:com.apple.preference.security?"
-            + (self == .microphone ? "Privacy_Microphone" : "Privacy_SpeechRecognition"))
-    }
 }
 
 enum DictationError: LocalizedError {
@@ -108,94 +95,55 @@ enum DictationError: LocalizedError {
 }
 
 /// The platform services dictation depends on. Tests and snapshot states replace them.
-@MainActor struct DictationSystem {
-    var supportedLocale: () async -> Locale?
+@MainActor package struct DictationSystem {
+    package var supportedLocale: () async -> Locale?
     /// Finding the default input device starts Core Audio, so only the first click asks.
-    var hasMicrophone: () async -> Bool
-    var microphoneAccess: () -> DictationMicrophoneAccess
-    var requestMicrophoneAccess: () async -> Bool
-    var speechRecognitionDenied: () -> Bool
+    package var hasMicrophone: () async -> Bool
+    package var microphoneAccess: () -> DictationMicrophoneAccess
+    package var requestMicrophoneAccess: () async -> Bool
+    package var speechRecognitionDenied: () -> Bool
     /// Installs the language asset if needed, reporting progress only when a download is required.
-    var installAssets: (Locale, @escaping @MainActor @Sendable (Double) -> Void) async throws -> Void
-    var makeSource: () -> DictationAudioSource
-    var makeRecognizer: (Locale, [String], DictationAudioSource) -> any DictationRecognizing
-    var announce: (String) -> Void
-    var openSettings: (DictationAccess) -> Void
-    var silenceTimeout: Duration = .seconds(30)
-    var finalizeTimeout: Duration = .seconds(3)
+    package var installAssets: (Locale, @escaping @MainActor @Sendable (Double) -> Void) async throws -> Void
+    package var makeSource: () -> DictationAudioSource
+    package var makeRecognizer: (Locale, [String], DictationAudioSource) -> any DictationRecognizing
+    package var announce: (String) -> Void
+    package var openSettings: (DictationAccess) -> Void
+    package var silenceTimeout: Duration
+    package var finalizeTimeout: Duration
+    package var refreshNotifications: [Notification.Name] = [
+        AVCaptureDevice.wasConnectedNotification, AVCaptureDevice.wasDisconnectedNotification,
+    ]
+
+    package init(
+        supportedLocale: @escaping () async -> Locale?,
+        hasMicrophone: @escaping () async -> Bool,
+        microphoneAccess: @escaping () -> DictationMicrophoneAccess,
+        requestMicrophoneAccess: @escaping () async -> Bool,
+        speechRecognitionDenied: @escaping () -> Bool,
+        installAssets: @escaping (Locale, @escaping @MainActor @Sendable (Double) -> Void) async throws -> Void,
+        makeSource: @escaping () -> DictationAudioSource,
+        makeRecognizer: @escaping (Locale, [String], DictationAudioSource) -> any DictationRecognizing,
+        announce: @escaping (String) -> Void,
+        openSettings: @escaping (DictationAccess) -> Void,
+        silenceTimeout: Duration = .seconds(30),
+        finalizeTimeout: Duration = .seconds(3)
+    ) {
+        self.supportedLocale = supportedLocale
+        self.hasMicrophone = hasMicrophone
+        self.microphoneAccess = microphoneAccess
+        self.requestMicrophoneAccess = requestMicrophoneAccess
+        self.speechRecognitionDenied = speechRecognitionDenied
+        self.installAssets = installAssets
+        self.makeSource = makeSource
+        self.makeRecognizer = makeRecognizer
+        self.announce = announce
+        self.openSettings = openSettings
+        self.silenceTimeout = silenceTimeout
+        self.finalizeTimeout = finalizeTimeout
+    }
 }
 
-extension DictationSystem {
-    private static var resolvedLocale: Locale??
-
-    static var live: DictationSystem {
-        var system = DictationSystem(
-            supportedLocale: {
-                if let resolvedLocale { return resolvedLocale }
-                let locale = await DictationTranscriber.supportedLocale(equivalentTo: .current)
-                resolvedLocale = .some(locale)
-                return locale
-            },
-            hasMicrophone: { await Task.detached { AVCaptureDevice.default(for: .audio) != nil }.value },
-            microphoneAccess: {
-                switch AVCaptureDevice.authorizationStatus(for: .audio) {
-                case .authorized: .granted
-                case .notDetermined: .undetermined
-                default: .denied
-                }
-            },
-            requestMicrophoneAccess: { await AVCaptureDevice.requestAccess(for: .audio) },
-            speechRecognitionDenied: {
-                [.denied, .restricted].contains(SFSpeechRecognizer.authorizationStatus())
-            },
-            installAssets: { locale, progress in
-                let transcriber = DictationRecognizer.transcriber(for: locale)
-                guard let request = try await AssetInventory.assetInstallationRequest(supporting: [transcriber])
-                else { return }
-                progress(0)
-                let observation = request.progress.observe(\.fractionCompleted) { reported, _ in
-                    let fraction = reported.fractionCompleted
-                    Task { @MainActor in progress(fraction) }
-                }
-                defer { observation.invalidate() }
-                try await withTaskCancellationHandler {
-                    try await request.downloadAndInstall()
-                } onCancel: {
-                    request.progress.cancel()
-                }
-                try Task.checkCancellation()
-            },
-            makeSource: { MicrophoneDictationSource() },
-            makeRecognizer: { DictationRecognizer(locale: $0, contextualStrings: $1, source: $2) },
-            announce: { message in
-                guard let element = NSApp.keyWindow ?? NSApp.mainWindow else { return }
-                NSAccessibility.post(element: element, notification: .announcementRequested,
-                                     userInfo: [.announcement: message,
-                                                .priority: NSAccessibilityPriorityLevel.high.rawValue])
-            },
-            openSettings: { access in
-                if let url = access.settingsURL { NSWorkspace.shared.open(url) }
-            }
-        )
-#if DEBUG
-        if let url = recordingOverride {
-            system.hasMicrophone = { true }
-            system.microphoneAccess = { .granted }
-            system.makeSource = { FileDictationSource(url: url) }
-        }
-#endif
-        return system
-    }
-
-#if DEBUG
-    /// Lets real-window checks feed a recording through the real transcriber without a microphone.
-    static var recordingOverride: URL? {
-        ProcessInfo.processInfo.environment["TOYBOX_DICTATION_AUDIO_FILE"].map { URL(fileURLWithPath: $0) }
-    }
-#endif
-}
-
-@MainActor protocol DictationRecognizing: AnyObject {
+@MainActor package protocol DictationRecognizing: AnyObject {
     /// Starts capture and analysis. `onListening` runs once the audio source is live.
     func start(onListening: @escaping @MainActor () -> Void,
                onResult: @escaping @MainActor (String, Bool) -> Void,
@@ -207,8 +155,9 @@ extension DictationSystem {
     func cancel()
 }
 
-/// Runs macOS 26's on-device `SpeechAnalyzer` with a `DictationTranscriber` over an audio source.
-@MainActor final class DictationRecognizer: DictationRecognizing {
+/// Runs the on-device `SpeechAnalyzer` with a `DictationTranscriber` over an audio source.
+@MainActor package final class DictationRecognizer: DictationRecognizing {
+    private static var resolvedLocale: Locale??
     private let transcriber: DictationTranscriber
     private let analyzer: SpeechAnalyzer
     private let contextualStrings: [String]
@@ -217,9 +166,36 @@ extension DictationSystem {
     private var results: Task<Void, any Error>?
     private var isStopped = false
 
+    package static func preferredLocale() async -> Locale? {
+        if let resolvedLocale { return resolvedLocale }
+        let locale = await DictationTranscriber.supportedLocale(equivalentTo: .current)
+        resolvedLocale = .some(locale)
+        return locale
+    }
+
+    package static func installAssets(
+        for locale: Locale, progress: @escaping @MainActor @Sendable (Double) -> Void
+    ) async throws {
+        let transcriber = transcriber(for: locale)
+        guard let request = try await AssetInventory.assetInstallationRequest(supporting: [transcriber])
+        else { return }
+        progress(0)
+        let observation = request.progress.observe(\.fractionCompleted) { reported, _ in
+            let fraction = reported.fractionCompleted
+            Task { @MainActor in progress(fraction) }
+        }
+        defer { observation.invalidate() }
+        try await withTaskCancellationHandler {
+            try await request.downloadAndInstall()
+        } onCancel: {
+            request.progress.cancel()
+        }
+        try Task.checkCancellation()
+    }
+
     /// `progressiveLongDictation` with frequent finalization, so each phrase settles at a pause
     /// rather than the whole session staying tentative until Stop.
-    static func transcriber(for locale: Locale) -> DictationTranscriber {
+    package static func transcriber(for locale: Locale) -> DictationTranscriber {
         let preset = DictationTranscriber.Preset.progressiveLongDictation
         return DictationTranscriber(locale: locale, contentHints: preset.contentHints,
                                     transcriptionOptions: preset.transcriptionOptions,
@@ -227,14 +203,14 @@ extension DictationSystem {
                                     attributeOptions: preset.attributeOptions)
     }
 
-    init(locale: Locale, contextualStrings: [String], source: DictationAudioSource) {
+    package init(locale: Locale, contextualStrings: [String], source: DictationAudioSource) {
         transcriber = Self.transcriber(for: locale)
         analyzer = SpeechAnalyzer(modules: [transcriber])
         self.contextualStrings = contextualStrings
         self.source = source
     }
 
-    func start(onListening: @escaping @MainActor () -> Void,
+    package func start(onListening: @escaping @MainActor () -> Void,
                onResult: @escaping @MainActor (String, Bool) -> Void,
                onLevel: @escaping @MainActor @Sendable (Double) -> Void,
                onInterruption: @escaping @MainActor @Sendable () -> Void,
@@ -272,7 +248,7 @@ extension DictationSystem {
         try await analyzer.start(inputSequence: stream)
     }
 
-    func finish() async throws {
+    package func finish() async throws {
         isStopped = true
         source.stop()
         continuation?.finish()
@@ -280,7 +256,7 @@ extension DictationSystem {
         try await results?.value
     }
 
-    func cancel() {
+    package func cancel() {
         isStopped = true
         source.stop()
         continuation?.finish()
@@ -346,12 +322,14 @@ private final class DictationAudioConverter: @unchecked Sendable {
 }
 
 /// Captures the default input device with `AVAudioEngine`. Its methods run on the main thread.
-final class MicrophoneDictationSource: DictationAudioSource, @unchecked Sendable {
+package final class MicrophoneDictationSource: DictationAudioSource, @unchecked Sendable {
     private let engine = AVAudioEngine()
     private var observer: (any NSObjectProtocol)?
     private var isRunning = false
 
-    func start(format: AVAudioFormat, handler: @escaping @Sendable (DictationAudioEvent) -> Void) throws {
+    package init() {}
+
+    package func start(format: AVAudioFormat, handler: @escaping @Sendable (DictationAudioEvent) -> Void) throws {
         try capture(format: format, handler: handler)
         // The engine stops when the input device changes. Follow a switch, and report a device that's gone.
         observer = NotificationCenter.default.addObserver(
@@ -388,7 +366,7 @@ final class MicrophoneDictationSource: DictationAudioSource, @unchecked Sendable
         isRunning = true
     }
 
-    func stop() {
+    package func stop() {
         if let observer { NotificationCenter.default.removeObserver(observer) }
         observer = nil
         engine.inputNode.removeTap(onBus: 0)
@@ -398,20 +376,20 @@ final class MicrophoneDictationSource: DictationAudioSource, @unchecked Sendable
 }
 
 /// Plays a recording into a session in real time, then stays open like a quiet microphone.
-final class FileDictationSource: DictationAudioSource, @unchecked Sendable {
+package final class FileDictationSource: DictationAudioSource, @unchecked Sendable {
     private let url: URL
     private let pace: Double
     private let stopsAfter: TimeInterval?
     private var task: Task<Void, Never>?
 
     /// `pace` 1 is real time and 0 is as fast as possible. `stopsAfter` ends playback early, mid-phrase.
-    init(url: URL, pace: Double = 1, stopsAfter: TimeInterval? = nil) {
+    package init(url: URL, pace: Double = 1, stopsAfter: TimeInterval? = nil) {
         self.url = url
         self.pace = pace
         self.stopsAfter = stopsAfter
     }
 
-    func start(format: AVAudioFormat, handler: @escaping @Sendable (DictationAudioEvent) -> Void) throws {
+    package func start(format: AVAudioFormat, handler: @escaping @Sendable (DictationAudioEvent) -> Void) throws {
         let file = try AVAudioFile(forReading: url)
         let converter = try DictationAudioConverter(from: file.processingFormat, to: format)
         let chunk = AVAudioFrameCount(file.processingFormat.sampleRate / 10)
@@ -426,7 +404,7 @@ final class FileDictationSource: DictationAudioSource, @unchecked Sendable {
         }
     }
 
-    func stop() {
+    package func stop() {
         task?.cancel()
         task = nil
     }
@@ -453,12 +431,12 @@ final class FileDictationSource: DictationAudioSource, @unchecked Sendable {
 
 /// The Dictate button's state and one dictation session at a time for one composer.
 @MainActor @Observable
-final class ComposerDictation {
-    enum Availability: Equatable {
+package final class ComposerDictation {
+    package enum Availability: Equatable {
         case checking, unsupported, noMicrophone, available
     }
 
-    enum Phase: Equatable {
+    package enum Phase: Equatable {
         case idle
         /// Asking for access or loading the model, before any audio is captured.
         case preparing
@@ -468,7 +446,7 @@ final class ComposerDictation {
         case finishing
     }
 
-    enum Notice: Equatable {
+    package enum Notice: Equatable {
         case downloading(language: String)
         case failed(String)
         /// Send held the message back because dictation didn't finish. It describes the draft at
@@ -477,7 +455,7 @@ final class ComposerDictation {
         /// A click found no microphone. It clears once one is connected.
         case noMicrophone
 
-        var text: String {
+        package var text: String {
             switch self {
             case .downloading(let language): "Downloading \(language) dictation. This happens once."
             case .failed(let message): message
@@ -487,31 +465,31 @@ final class ComposerDictation {
         }
     }
 
-    enum StopReason {
+    package enum StopReason {
         case button, escape, send, silence, windowResigned
     }
 
-    private(set) var availability: Availability = .checking
-    private(set) var phase: Phase = .idle
-    private(set) var accessOff: DictationAccess?
-    private(set) var notice: Notice?
+    package private(set) var availability: Availability = .checking
+    package private(set) var phase: Phase = .idle
+    package private(set) var accessOff: DictationAccess?
+    package private(set) var notice: Notice?
     /// The smoothed input level, updated about 12 times a second while listening.
-    private(set) var level: Double = 0
+    package private(set) var level: Double = 0
     /// True when dictated words, tentative or final, are showing in the composer.
-    private(set) var hasWords = false
+    package private(set) var hasWords = false
     /// True from the moment dictation anchors at the caret until its words are committed.
-    private(set) var isSessionActive = false
-    var showsAccessExplanation = false
+    package private(set) var isSessionActive = false
+    package var showsAccessExplanation = false
 
-    var isListening: Bool { phase == .listening || phase == .finishing }
-    var hasTentativeWords: Bool { !transcript.tentative.isEmpty }
+    package var isListening: Bool { phase == .listening || phase == .finishing }
+    package var hasTentativeWords: Bool { !transcript.tentative.isEmpty }
 
-    @ObservationIgnored weak var target: (any DictationTextTarget)?
-    @ObservationIgnored var contextualStrings: [String] = []
+    @ObservationIgnored package weak var target: (any DictationTextTarget)?
+    @ObservationIgnored package var contextualStrings: [String] = []
     /// The composer draft's current revision, read when Send is held back so the commit itself
     /// doesn't count as an edit.
-    @ObservationIgnored var draftRevision: () -> UUID? = { nil }
-    @ObservationIgnored var system: DictationSystem
+    @ObservationIgnored package var draftRevision: () -> UUID? = { nil }
+    @ObservationIgnored package var system: DictationSystem
     @ObservationIgnored private var locale: Locale?
     @ObservationIgnored private var transcript = DictationTranscript()
     @ObservationIgnored private var recognizer: (any DictationRecognizing)?
@@ -525,15 +503,15 @@ final class ComposerDictation {
     @ObservationIgnored private var observers: [any NSObjectProtocol] = []
     @ObservationIgnored private var isActive = false
     /// True from the first click on, once devices and access have been checked.
-    @ObservationIgnored private(set) var isTracking = false
+    @ObservationIgnored package private(set) var isTracking = false
 
-    init(system: DictationSystem = .live) {
+    package init(system: DictationSystem) {
         self.system = system
     }
 
     /// Checks the language, which decides whether Dictate shows. The microphone and its access
     /// wait for the first click, so launch and channel switches never start Core Audio.
-    func activate() {
+    package func activate() {
         guard !isActive else { return }
         isActive = true
         if isTracking { observe() }
@@ -541,7 +519,7 @@ final class ComposerDictation {
     }
 
     /// Commits any session and stops tracking, such as when the composer goes away.
-    func deactivate() {
+    package func deactivate() {
         isActive = false
         observers.forEach(NotificationCenter.default.removeObserver)
         observers.removeAll()
@@ -550,7 +528,7 @@ final class ComposerDictation {
     }
 
     /// Checks devices and access now and follows their changes from here on.
-    func startTracking() async {
+    package func startTracking() async {
         guard !isTracking else { return }
         isTracking = true
         if isActive { observe() }
@@ -560,8 +538,7 @@ final class ComposerDictation {
     private func observe() {
         guard observers.isEmpty else { return }
         let center = NotificationCenter.default
-        for name in [AVCaptureDevice.wasConnectedNotification, AVCaptureDevice.wasDisconnectedNotification,
-                     NSApplication.didBecomeActiveNotification] {
+        for name in system.refreshNotifications {
             observers.append(center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated {
                     guard let self else { return }
@@ -573,14 +550,14 @@ final class ComposerDictation {
 
     /// Commits any session to the draft it was spoken into and drops what described that draft,
     /// such as when the window switches channels. Device and access tracking carry on.
-    func leaveDraft() {
+    package func leaveDraft() {
         commitNow()
         if phase != .idle { cancelPreparation() }
         notice = nil
         showsAccessExplanation = false
     }
 
-    func refresh() async {
+    package func refresh() async {
         if locale == nil { locale = await system.supportedLocale() }
         guard locale != nil else {
             availability = .unsupported
@@ -612,7 +589,7 @@ final class ComposerDictation {
     }
 
     /// The Dictate button's action.
-    func toggle() {
+    package func toggle() {
         switch phase {
         case .idle:
             if accessOff != nil {
@@ -629,24 +606,24 @@ final class ComposerDictation {
         }
     }
 
-    func openSettings() {
+    package func openSettings() {
         showsAccessExplanation = false
         if let accessOff { system.openSettings(accessOff) }
     }
 
-    func dismissNotice() { notice = nil }
+    package func dismissNotice() { notice = nil }
 
     /// Clears the unsent notice once the person edits the draft it describes.
-    func draftChanged(to revision: UUID) {
+    package func draftChanged(to revision: UUID) {
         if case .unsent(let described)? = notice, described != revision { notice = nil }
     }
 
     /// Clears the unsent notice when the person sends.
-    func draftSent() {
+    package func draftSent() {
         if case .unsent? = notice { notice = nil }
     }
 
-    func windowResignedKey() {
+    package func windowResignedKey() {
         if isListening { Task { await stop(.windowResigned) } }
     }
 
@@ -789,7 +766,7 @@ final class ComposerDictation {
     /// Stops listening and waits for the transcriber to finalize every pending word. Returns false
     /// when words the person saw could not be confirmed, which keeps them in the draft unsent.
     @discardableResult
-    func stop(_ reason: StopReason = .button) async -> Bool {
+    package func stop(_ reason: StopReason = .button) async -> Bool {
         switch phase {
         case .preparing where !isSessionActive, .downloading:
             if reason != .send { cancelPreparation() }
@@ -866,7 +843,7 @@ final class ComposerDictation {
     }
 
     /// Ends the session at once, keeping every shown word, such as when the person starts typing.
-    func commitNow() {
+    package func commitNow() {
         guard isSessionActive else { return }
         recognizer?.cancel()
         transcript.promoteTentative()
@@ -917,7 +894,7 @@ final class ComposerDictation {
 
 extension DictationSystem {
     /// Deterministic services for snapshot states and tests, with scripted words instead of audio.
-    static func scripted(microphone: DictationMicrophoneAccess = .granted, hasMicrophone: Bool = true,
+    package static func scripted(microphone: DictationMicrophoneAccess = .granted, hasMicrophone: Bool = true,
                          downloadProgress: Double? = nil, results: [(String, Bool)] = [],
                          level: Double = 0.75, finishes: Bool = true) -> DictationSystem {
         DictationSystem(
@@ -942,13 +919,14 @@ extension DictationSystem {
 }
 
 /// An audio source that never produces audio, for scripted sessions.
-final class SilentDictationSource: DictationAudioSource {
-    func start(format: AVAudioFormat, handler: @escaping @Sendable (DictationAudioEvent) -> Void) throws {}
-    func stop() {}
+package final class SilentDictationSource: DictationAudioSource {
+    package init() {}
+    package func start(format: AVAudioFormat, handler: @escaping @Sendable (DictationAudioEvent) -> Void) throws {}
+    package func stop() {}
 }
 
 /// Plays scripted transcriber results and a steady input level.
-@MainActor final class ScriptedDictationRecognizer: DictationRecognizing {
+@MainActor package final class ScriptedDictationRecognizer: DictationRecognizing {
     private let results: [(String, Bool)]
     private let level: Double
     /// False stalls the final pass until cancelled, like a transcriber that never answers.
@@ -956,13 +934,13 @@ final class SilentDictationSource: DictationAudioSource {
     private var task: Task<Void, Never>?
     private var stall: CheckedContinuation<Void, Never>?
 
-    init(results: [(String, Bool)], level: Double, finishes: Bool = true) {
+    package init(results: [(String, Bool)], level: Double, finishes: Bool = true) {
         self.results = results
         self.level = level
         self.finishes = finishes
     }
 
-    func start(onListening: @escaping @MainActor () -> Void,
+    package func start(onListening: @escaping @MainActor () -> Void,
                onResult: @escaping @MainActor (String, Bool) -> Void,
                onLevel: @escaping @MainActor @Sendable (Double) -> Void,
                onInterruption: @escaping @MainActor @Sendable () -> Void,
@@ -980,14 +958,14 @@ final class SilentDictationSource: DictationAudioSource {
         }
     }
 
-    func finish() async throws {
+    package func finish() async throws {
         task?.cancel()
         guard !finishes else { return }
         await withCheckedContinuation { stall = $0 }
         throw CancellationError()
     }
 
-    func cancel() {
+    package func cancel() {
         task?.cancel()
         stall?.resume()
         stall = nil
