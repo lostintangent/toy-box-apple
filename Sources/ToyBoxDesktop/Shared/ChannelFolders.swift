@@ -1,4 +1,5 @@
 import AppKit
+import ChannelClient
 import Foundation
 import Observation
 
@@ -122,7 +123,7 @@ final class ChannelFolders {
     }
 
     nonisolated static func isLoopback(_ host: String) -> Bool {
-        host == "localhost" || host.hasSuffix(".localhost") || host == "::1" || host.hasPrefix("127.")
+        isLoopbackHost(host)
     }
 
     nonisolated static func normalizedHost(_ server: URL) -> String {
