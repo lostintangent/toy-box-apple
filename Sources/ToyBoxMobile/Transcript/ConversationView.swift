@@ -158,6 +158,7 @@ struct ConversationView: View {
     @ViewState private var arrivalUnreadAfter: Int?
     @ViewState private var capturedArrival = false
     @ViewState private var showsJumpToLatest = false
+    @ViewState private var showsWorkingNow = false
     @ViewState private var highlightedSequence: Int?
     @ViewState private var revealError: String?
     @ViewState private var requestedRead = 0
@@ -228,8 +229,15 @@ struct ConversationView: View {
             .frame(maxWidth: Self.laneWidth)
             .padding(.horizontal, sizeClass == .regular ? 20 : 16)
             .frame(maxWidth: .infinity)
+            // Rows, links and controls sit above this, so only a tap on empty space reaches it.
+            .background {
+                Color.clear.contentShape(.rect).onTapGesture {
+                    UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                }
+            }
             .coordinateSpace(.named(Self.space))
         }
+        .scrollDismissesKeyboard(.interactively)
         .accessibilityIdentifier("conversation-transcript")
         .scrollPosition($position)
         // The conversation owns the generation, so a card that leaves the lazy stack never cancels it.
@@ -254,7 +262,8 @@ struct ConversationView: View {
         // A bar rather than an overlay, so the end of the conversation settles clear of them and
         // the scroll edge effect reaches up behind them.
         .safeAreaBar(edge: .bottom, spacing: 0) {
-            TranscriptFloatingAccessories(store: store, showsJumpToLatest: showsJumpToLatest) {
+            TranscriptFloatingAccessories(store: store, showsJumpToLatest: showsJumpToLatest,
+                                          showsWorkingNow: $showsWorkingNow) {
                 jumpToLatest()
             }
         }
@@ -396,7 +405,7 @@ struct ConversationView: View {
         model.isActive && model.visibleChannelID == store.id && !model.isSettingsPresented
             && management.flow == nil && !interaction.isArtifactViewerPresented
             && !overviewPresentation.isCompactSheetPresented
-            && !(sizeClass == .compact && interaction.isInspectorPresented)
+            && !(sizeClass == .compact && (interaction.isInspectorPresented || showsWorkingNow))
             && !interaction.isRequestPreviewPresented
     }
 
@@ -524,6 +533,7 @@ private struct TranscriptSendAttempt: View {
 private struct TranscriptFloatingAccessories: View {
     let store: ChannelStore
     let showsJumpToLatest: Bool
+    @Binding var showsWorkingNow: Bool
     let jumpToLatest: () -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private var rises: AnyTransition { reduceMotion ? .opacity : .opacity.combined(with: .offset(y: 4)) }
@@ -553,27 +563,39 @@ private struct TranscriptFloatingAccessories: View {
         .padding(.horizontal, 16)
         .padding(.bottom, 8)
         .animation(.easeOut(duration: 0.2), value: working.map(\.id))
+        // The popover's anchor leaves with the last working agent, so it can't stay presented.
+        .onChange(of: working.isEmpty) { _, isEmpty in if isEmpty { showsWorkingNow = false } }
     }
 
     private enum WorkingForm: CaseIterable { case sentence, avatars }
 
     @ViewBuilder private func status(_ working: [ChannelAgent], form: WorkingForm) -> some View {
         if !working.isEmpty {
-            HStack(spacing: 8) {
-                HStack(spacing: -6) {
-                    ForEach(working.prefix(3)) { AgentAvatarView(agent: $0, size: 20) }
+            Button { showsWorkingNow.toggle() } label: {
+                HStack(spacing: 8) {
+                    HStack(spacing: -6) {
+                        ForEach(working.prefix(3)) { AgentAvatarView(agent: $0, size: 20) }
+                    }
+                    switch form {
+                    case .sentence: Text(summary(working)).font(.footnote).fixedSize(horizontal: false, vertical: true)
+                    case .avatars: EmptyView()
+                    }
                 }
-                switch form {
-                case .sentence: Text(summary(working)).font(.footnote).fixedSize(horizontal: false, vertical: true)
-                case .avatars: EmptyView()
-                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .frame(minHeight: 44)
+                .contentShape(.rect(cornerRadius: 22))
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .frame(minHeight: 44)
-            .glassEffect(.transcriptFloating, in: .rect(cornerRadius: 22))
+            .buttonStyle(.plain)
+            .glassEffect(.transcriptFloating.interactive(), in: .rect(cornerRadius: 22))
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(summary(working))
+            .accessibilityHint("Shows current work details")
+            .accessibilityAddTraits(.isButton)
+            .popover(isPresented: $showsWorkingNow) {
+                TranscriptWorkingNow(store: store)
+                    .presentationDetents([.medium, .large])
+            }
             .transition(rises)
         }
     }
@@ -598,6 +620,50 @@ private struct TranscriptFloatingAccessories: View {
         case 2: "\(agents[0].name) and \(agents[1].name) are working"
         default: "\(agents[0].name) and \(agents.count - 1) others are working"
         }
+    }
+}
+
+/// The agents working now and what each is doing. Rows are information only.
+private struct TranscriptWorkingNow: View {
+    let store: ChannelStore
+    @Environment(\.dismiss) private var dismiss
+
+    private var working: [ChannelAgent] {
+        guard store.phase.isLive else { return [] }
+        return store.roster.filter { store.presence[$0.id]?.state == "working" }
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    ForEach(working) { agent in
+                        HStack(alignment: .firstTextBaseline, spacing: 12) {
+                            AgentAvatarView(agent: agent, size: 24)
+                                .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 5 }
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(agent.name).font(.body)
+                                Text(store.presence[agent.id]?.text ?? "Working")
+                                    .font(.subheadline)
+                                    .foregroundStyle(ChannelInk.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .accessibilityElement(children: .combine)
+                    }
+                }
+                .padding(16)
+            }
+            .navigationTitle("Working Now")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done", systemImage: "checkmark") { dismiss() }
+                }
+            }
+        }
+        .frame(minWidth: 320, idealWidth: 360, minHeight: 240, idealHeight: 360)
     }
 }
 

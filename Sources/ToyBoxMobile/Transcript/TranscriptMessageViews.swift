@@ -175,11 +175,6 @@ struct TranscriptAgentMessage: View {
     var setExpanded: (Bool) -> Void = { _ in }
     @Environment(ChannelInteraction.self) private var interaction
     @ViewState private var selectsText = false
-    /// Only collapsible coordination measures, so other rows lay out once.
-    @ViewState private var overflows = false
-
-    nonisolated private static let clampHeight: CGFloat = 160
-    private var isClamped: Bool { entry.collapsible && !isExpanded && overflows }
 
     private static let avatarSize: CGFloat = 32
     private static let avatarGap: CGFloat = 8
@@ -194,37 +189,24 @@ struct TranscriptAgentMessage: View {
             VStack(alignment: .leading, spacing: 4) {
                 if entry.showHeader { header.accessibilityHidden(true) }
                 if !entry.body.isEmpty {
-                    VStack(alignment: .leading, spacing: 4) {
+                    Group {
                         if entry.collapsible {
-                            TranscriptBody(text: entry.body, findHighlight: findHighlight)
-                                .onGeometryChange(for: Bool.self) { $0.size.height > Self.clampHeight } action: {
-                                    overflows = $0
-                                }
-                                .frame(height: isClamped ? Self.clampHeight : nil, alignment: .top)
-                                .clipped()
-                                .mask(alignment: .bottom) {
-                                    if isClamped {
-                                        VStack(spacing: 0) {
-                                            Rectangle()
-                                            LinearGradient(colors: [.black, .clear], startPoint: .top, endPoint: .bottom)
-                                                .frame(height: 24)
-                                        }
-                                    } else {
-                                        Rectangle()
-                                    }
-                                }
-                            if overflows {
+                            // Show More's 44pt target is the bubble's footer, so it replaces the bottom padding.
+                            TranscriptCollapsibleBody(isExpanded: isExpanded, endPadding: 10) {
+                                TranscriptBody(text: entry.body, findHighlight: findHighlight)
+                            } toggle: {
                                 Button(isExpanded ? "Show Less" : "Show More") { setExpanded(!isExpanded) }
                                     .font(.footnote.weight(.semibold))
                                     .frame(minHeight: 44)
                                     .buttonStyle(.borderless)
                             }
+                            .padding(.top, 10)
                         } else {
                             TranscriptBody(text: entry.body, findHighlight: findHighlight)
+                                .padding(.vertical, 10)
                         }
                     }
                         .padding(.horizontal, 12)
-                        .padding(.vertical, 10)
                         .transcriptBubble(entry.request == .pending ? .pendingAgent : .agent)
                         .contentShape(.contextMenuPreview, .rect(cornerRadius: 12, style: .continuous))
                         .contextMenu {
