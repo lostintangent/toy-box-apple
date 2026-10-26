@@ -95,7 +95,7 @@ func transcriptMessageAccessibilityLabel(author: String, timestamp: String, addr
                                          request: ChannelRequestState? = nil, delivery: String? = nil) -> String {
     [author, ChannelDates.date(timestamp)?.formatted(date: .abbreviated, time: .shortened) ?? timestamp,
      addressee.map { "To \($0)" },
-     request.map { $0 == .pending ? "Needs you" : "Replied" }, delivery]
+     request.map { $0 == .pending ? "Needs your reply" : "Replied" }, delivery]
         .compactMap { $0 }
         .joined(separator: ", ")
 }
@@ -260,14 +260,15 @@ struct TranscriptAgentMessage: View {
         }
         TranscriptTimestamp(timestamp: entry.message.timestamp)
         if let request = entry.request {
-            if request == .pending {
-                Label("Needs you", systemImage: "questionmark.bubble")
-                    .fontWeight(.semibold)
-                    .foregroundStyle(.orange)
-                    .fixedSize()
-            } else {
-                Label("Replied", systemImage: "checkmark").foregroundStyle(.secondary).fixedSize()
+            Label {
+                Text(request == .pending ? "Needs your reply" : "Replied")
+                    .fontWeight(request == .pending ? .medium : nil)
+                    .foregroundStyle(request == .pending ? Color.primary : .secondary)
+            } icon: {
+                Image(systemName: request == .pending ? "questionmark.bubble.fill" : "checkmark")
+                    .foregroundStyle(request == .pending ? Color.orange : .secondary)
             }
+            .fixedSize()
         }
     }
 }
