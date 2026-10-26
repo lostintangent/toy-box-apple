@@ -95,6 +95,30 @@ view.
   `--display <ID>` chooses one for a screenshot, including a secondary Duo display.
   Wait until the app is visibly drawn before ending the lease. Launch returning a PID does not
   mean its first frame is ready.
+  `--drive <steps.json>` runs a DEBUG-only accessibility script under the same lease and shuts down
+  on completion or failure. Steps are `{"tap":"exact label or identifier"}`, `{"type":"text"}`,
+  `{"wait":"label or value fragment"}`, `{"screenshot":"name","display":1}`, `{"back":true}`
+  and `{"fold":false}`. `{"action":"Reply","on":"message-12"}` activates a named accessibility
+  custom action on one exact label or identifier. Back accepts `ifPresent: true` for an explicitly
+  optional initial return from restored navigation. Wait for the channel name first, then use
+  optional Back before tapping its row, so restoration has a chance to finish.
+  Wait accepts `absent: true` to wait for a label/value to disappear.
+  Tap also matches an exact accessibility value when its element has no label, as with native Search.
+  Other actions are never skipped or retried. Each step accepts a
+  timeout in seconds (default 12, maximum 60). Screenshots are acknowledged by the host only after
+  the app reports a settled accessibility/layout snapshot and go under `SCRATCH_PATH/mobile-drive/`.
+  Capture/control subprocesses share the step deadline and interruption signal. Cancellation kills
+  the exact child and awaits its exit before simulator shutdown and lease release.
+  This drives accessibility activation, native control primary actions and text insertion, not
+  finger touch. Rerunning a
+  script repeats its actions, including sends. Use demo servers only for write scripts.
+  Fold currently fails explicitly with native display-control diagnostics. The display-power
+  command did not change the app scene and can crash SpringBoard, so the driver never uses it.
+  Native posture interaction still needs Device Hub. Release builds have neither the startup hook nor
+  driver, and no script runs without the explicit per-launch environment.
+  `scripts/fixtures/mobile-drive-demo.json` demonstrates a real request reply/send and both display
+  captures. It requires the message-row identifiers and the demo baseline's request at sequence 15.
+  It sends a message on every run and stops, without retrying, if native fold control is unsupported.
   `bun run mobile --shutdown` shuts it down. `MOBILE_SIMULATOR=<UDID>` is only for selecting an
   agreed shared device, not for creating one per agent.
 - `bun run mobile --build-only` builds the Simulator bundle without booting a device.
