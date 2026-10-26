@@ -448,6 +448,22 @@ composer's leading edge sits on the avatars' leading edge. At the default 720-po
 width, W is 672, agent surfaces reach 628 and your messages 538. Do not let modifier order
 produce a composer wider than the lane.
 
+On the phone, use the same full-available-lane behavior, preserving its accepted native edge
+insets. Do not cap the overall transcript, activity controls or composer at 720 points in a
+wide scene. Remove that independent container limit from transcript and composer together,
+without changing folded horizontal geometry or document-reader
+widths. The Mac's 720-point example above is a sample conversation width, not a lane cap.
+In an unfolded phone scene, share the Mac's text-scaled individual surface caps: agents up to
+760, yours up to the lesser of 80% of the available lane or 640. Keep the existing phone
+identity gutter. Folded message limits remain unchanged.
+Verify wide unfolded layout and repeated Overview close/reopen after an unfolded launch
+separately. A header change alone does not establish that the reported Close defect is fixed.
+Folded with the software keyboard down, align the composer's bottom edge with the native
+Message View toolbar button. Keep the existing 8-point clearance above a visible keyboard,
+native keyboard avoidance and all control targets. Do not copy the screenshot's approximate
+14-point discrepancy into a fixed offset. This alignment does not apply to unfolded scenes,
+where Message View has no bottom toolbar button.
+
 Normal agent surfaces use a visible neutral tonal fill, not an almost invisible outline on the
 same color as the conversation. Derive the fill from primary ink over the opaque conversation
 background: approximately 4.5% in light appearance and 7% in dark. Preserve normal primary text,
