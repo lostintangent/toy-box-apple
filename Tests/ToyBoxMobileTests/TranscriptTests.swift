@@ -128,6 +128,29 @@ struct TranscriptTests {
         }
     }
 
+    @Test func aPageArrivingAtTheTopKeepsTheReadersRowInsteadOfItsOldFrame() {
+        let viewport = TranscriptScrollModel.Viewport(width: 386, height: 600, topInset: 0, bottomInset: 0)
+        let scroll = TranscriptScroll()
+        let loaded: [TranscriptScrollModel.RowIdentity] = (0..<20).map { .init(id: "r\($0)", order: $0 + 5) }
+        scroll.sync(loaded)
+        for index in 0..<20 { scroll.measure("r\(index)", frame: CGRect(x: 0, y: CGFloat(index) * 100, width: 386, height: 100)) }
+        scroll.metrics = .init(viewport: viewport, origin: 1400, documentEnd: 2000)
+        _ = scroll.update(.land(.end))
+        scroll.metrics?.origin = 30
+        scroll.isReaderScrolling = true
+        _ = scroll.update()
+
+        // UIKit keeps the offset as the page lands above, so r1's old frame would say nothing moved.
+        let paged = (0..<5).map { TranscriptScrollModel.RowIdentity(id: "p\($0)", order: $0) } + loaded
+        scroll.sync(paged)
+        scroll.metrics?.documentEnd = 2500
+        #expect(scroll.update()?.needsMeasurement == "r1")
+
+        for index in 0..<5 { scroll.measure("p\(index)", frame: CGRect(x: 0, y: CGFloat(index) * 100, width: 386, height: 100)) }
+        for index in 0..<20 { scroll.measure("r\(index)", frame: CGRect(x: 0, y: CGFloat(index + 5) * 100, width: 386, height: 100)) }
+        #expect(scroll.update()?.origin == 530)
+    }
+
     @Test func onlyANewSendFollowsToTheBottom() {
         func attempt(_ id: String, _ phase: ChannelSendPhase) -> ChannelSendAttempt {
             ChannelSendAttempt(id: id, content: id, attachments: [], timestamp: "2026-10-25T12:00:00Z", phase: phase)
