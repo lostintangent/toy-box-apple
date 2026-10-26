@@ -56,7 +56,7 @@ struct OverviewAgentRow: View {
     @ViewState private var isHovering = false
     @FocusState private var focus: Focus?
 
-    private var status: ChannelAgentPresence { presence ?? .init(state: "idle") }
+    private var status: ChannelAgentPresence? { presence }
     private var showsMenu: Bool { isHovering || focus != nil || voiceOver }
     private var showingAbout: Binding<Bool> {
         Binding(get: { about[key] }, set: { about[key] = $0 })
@@ -91,7 +91,7 @@ struct OverviewAgentRow: View {
             .accessibilityActions { actions }
 
             ZStack(alignment: .trailing) {
-                if isLive, status.state == "waiting", let raw = status.wakeAt, let wake = ChannelDates.date(raw) {
+                if isLive, status?.state == "waiting", let raw = status?.wakeAt, let wake = ChannelDates.date(raw) {
                     OverviewWakeCountdown(wake: wake)
                         .opacity(showsMenu ? 0 : 1)
                 }
@@ -126,42 +126,40 @@ struct OverviewAgentRow: View {
 /// One 11-point line: Messages' typing cue while working, the reason while waiting, otherwise Idle.
 struct OverviewAgentStatusLine: View {
     @Environment(\.channelTextScale) private var textScale
+    @Environment(\.colorScheme) private var colorScheme
     let agent: ChannelAgent
-    let status: ChannelAgentPresence
+    let status: ChannelAgentPresence?
     let isLive: Bool
 
-    static func text(_ status: ChannelAgentPresence, isLive: Bool) -> String {
-        guard isLive else { return "Status unavailable while disconnected" }
-        switch status.state {
-        case "working":
-            return status.text.flatMap { $0.isEmpty ? nil : $0 } ?? "Working"
-        case "waiting":
-            guard let text = status.text, !text.isEmpty else { return "Waiting" }
-            return text.lowercased().hasPrefix("waiting") ? text : "Waiting for \(text)"
-        default:
-            return "Idle"
-        }
+    static func text(_ status: ChannelAgentPresence?, isLive: Bool) -> String {
+        ChannelAgentStatusPresentation(presence: status, isLive: isLive).text
     }
 
-    static func spoken(_ status: ChannelAgentPresence, isLive: Bool) -> String {
-        let text = text(status, isLive: isLive)
-        return isLive && status.state == "working" && text != "Working" ? "Working, \(text)" : text
+    static func spoken(_ status: ChannelAgentPresence?, isLive: Bool) -> String {
+        ChannelAgentStatusPresentation(presence: status, isLive: isLive).spoken
     }
 
     var body: some View {
-        let text = Self.text(status, isLive: isLive)
+        let presentation = ChannelAgentStatusPresentation(presence: status, isLive: isLive)
         HStack(spacing: 4) {
-            if isLive, status.state == "working" {
+            if presentation.cue == .working {
                 OverviewWorkingEllipsis(color: agent.avatar.flatMap { Color(hex: $0.color) } ?? Color.accentColor)
-                Text(text).foregroundStyle(Color.primary.opacity(0.85))
+                Text(presentation.text).foregroundStyle(Color.primary.opacity(0.85))
             } else {
-                Text(text).foregroundStyle(.secondary)
+                if presentation.cue == .waiting {
+                    Image(systemName: "pause.fill")
+                        .font(.system(size: 9 * textScale, weight: .heavy))
+                        .foregroundStyle(ChannelAgentStatusPresentation.waitingCue(in: colorScheme))
+                        .frame(width: 12 * textScale)
+                        .accessibilityHidden(true)
+                }
+                Text(presentation.text).foregroundStyle(.secondary)
             }
         }
         .font(.system(size: 11 * textScale))
         .lineLimit(1)
         .truncationMode(.tail)
-        .help(text)
+        .help(presentation.text)
     }
 }
 
@@ -198,7 +196,7 @@ private struct OverviewAgentAbout: View {
     let agent: ChannelAgent
     let isLead: Bool
     let model: ModelConfiguration?
-    let status: ChannelAgentPresence
+    let status: ChannelAgentPresence?
     let isLive: Bool
 
     var body: some View {
