@@ -1,3 +1,4 @@
+import AVKit
 import ChannelClient
 import ChannelKit
 import SwiftUI
@@ -10,8 +11,11 @@ struct TranscriptAttachments: View {
     var body: some View {
         VStack(alignment: alignment, spacing: 8) {
             ForEach(Array(attachments.enumerated()), id: \.offset) { _, attachment in
-                if attachment.mimeType?.hasPrefix("image/") == true {
+                if attachment.contentType?.conforms(to: .image) == true {
                     TranscriptImage(attachment: attachment, api: api)
+                } else if attachment.contentType?.conforms(to: .movie) == true,
+                          let address = attachment.url, let url = api.resourceURL(address) {
+                    TranscriptVideo(url: url, name: attachment.displayName)
                 } else {
                     TranscriptFileRow(attachment: attachment, api: api)
                 }
@@ -49,7 +53,7 @@ private struct TranscriptImage: View {
         }
         .frame(width: size.width, height: size.height)
         .clipShape(.rect(cornerRadius: 10, style: .continuous))
-        .accessibilityLabel(attachment.name ?? "Image")
+        .accessibilityLabel(attachment.displayName)
         .task(id: attempt) { await load() }
     }
 
@@ -89,9 +93,9 @@ private struct TranscriptFileRow: View {
             if let address = attachment.url, let url = api.resourceURL(address) { openURL(url) }
         } label: {
             Label {
-                Text(attachment.name ?? "Attachment").lineLimit(1).truncationMode(.middle)
+                Text(attachment.displayName).lineLimit(1).truncationMode(.middle)
             } icon: {
-                Image(systemName: attachment.mimeType?.hasPrefix("video/") == true ? "film" : "doc")
+                Image(systemName: "doc")
             }
             .font(.subheadline)
             .padding(.horizontal, 12)
@@ -100,5 +104,55 @@ private struct TranscriptFileRow: View {
         }
         .buttonStyle(.plain)
         .disabled(attachment.url == nil)
+    }
+}
+
+/// A poster that plays only when tapped, in the system player. A missing poster still plays.
+private struct TranscriptVideo: View {
+    let url: URL
+    let name: String
+    @State private var poster: UIImage?
+    @State private var isPlaying = false
+
+    var body: some View {
+        Button { isPlaying = true } label: {
+            VStack(spacing: 8) {
+                if let poster {
+                    Image(uiImage: poster).resizable().scaledToFit()
+                        .frame(maxWidth: TranscriptImage.maximum.width, maxHeight: TranscriptImage.maximum.height)
+                        .clipShape(.rect(cornerRadius: 10, style: .continuous))
+                }
+                Label("Play \(name)", systemImage: "play.circle.fill")
+                    .font(.subheadline)
+                    .lineLimit(2)
+            }
+            .padding(12)
+            .frame(maxWidth: TranscriptImage.maximum.width, minHeight: 44)
+            .background(.quaternary, in: .rect(cornerRadius: 10, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .fullScreenCover(isPresented: $isPlaying) { TranscriptPlayer(url: url).ignoresSafeArea() }
+        .task(id: url) {
+            let generator = AVAssetImageGenerator(asset: AVURLAsset(url: url))
+            generator.appliesPreferredTrackTransform = true
+            generator.maximumSize = CGSize(width: 480, height: 320)
+            poster = try? await UIImage(cgImage: generator.image(at: .zero).image)
+        }
+    }
+}
+
+private struct TranscriptPlayer: UIViewControllerRepresentable {
+    let url: URL
+
+    func makeUIViewController(context: Context) -> AVPlayerViewController {
+        let controller = AVPlayerViewController()
+        controller.player = AVPlayer(url: url)
+        return controller
+    }
+
+    func updateUIViewController(_ controller: AVPlayerViewController, context: Context) {}
+
+    static func dismantleUIViewController(_ controller: AVPlayerViewController, coordinator: ()) {
+        controller.player?.pause()
     }
 }
