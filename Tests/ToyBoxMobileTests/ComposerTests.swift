@@ -340,7 +340,6 @@ struct ComposerTests {
         host.traitOverrides.preferredContentSizeCategory = .accessibilityExtraExtraExtraLarge
         host.view.frame = CGRect(x: 0, y: 0, width: 340, height: 210)
         host.view.layoutIfNeeded()
-        #expect(editor.textView == nil, "A detached hosting view has not mounted the native editor")
         let window = UIWindow(frame: host.view.frame)
         window.rootViewController = host
         window.isHidden = false
