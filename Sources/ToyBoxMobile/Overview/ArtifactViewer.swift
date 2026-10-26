@@ -296,7 +296,8 @@ struct ArtifactViewer: View {
             Image(uiImage: UIImage(cgImage: image)).resizable().scaledToFit()
                 .accessibilityHidden(true)
         } else {
-            Image(systemName: ArtifactContentKind(artifact) == .html ? "chevron.left.forwardslash.chevron.right" : "doc.text")
+            Image(systemName: ChannelArtifactSymbol.name(for: ArtifactContentKind(artifact)))
+                .foregroundStyle(.primary)
                 .font(.title3)
                 .foregroundStyle(.secondary)
                 .accessibilityHidden(true)

@@ -19,7 +19,7 @@ struct OverviewTeamSection: View {
 
     var body: some View {
         OverviewSectionRows(summary: .team(store.roster.count), section: .team, session: session,
-                            isFirstSection: !OverviewAboutSection.hasInformation(store.details)) {
+                            isFirstSection: false) {
             ForEach(ordered) { agent in
                 OverviewTeamRow(agent: agent, store: store, session: session,
                                 isLead: agent.id == store.roster.first?.id)
@@ -30,11 +30,12 @@ struct OverviewTeamSection: View {
             .frame(minHeight: 44)
             .accessibilityIdentifier("overview-add-agent")
             .disabled(!store.phase.isLive)
+            .modifier(OverviewListRowBoundary(isLast: true))
         }
     }
 }
 
-private struct OverviewTeamRow: View {
+struct OverviewTeamRow: View {
     let agent: ChannelAgent
     let store: ChannelStore
     let session: OverviewSession

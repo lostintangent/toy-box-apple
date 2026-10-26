@@ -11,27 +11,31 @@ struct OverviewRoutinesSection: View {
         OverviewSectionRows(summary: .routines(store.routines.count), section: .routines, session: session) {
             if store.routines.isEmpty {
                 Text("No routines").foregroundStyle(ChannelInk.secondary)
+                    .modifier(OverviewListRowBoundary(isLast: true))
             } else {
-                ForEach(store.routines) {
-                    OverviewRoutineRow(routine: $0, store: store, state: session.routine($0.id))
+                ForEach(store.routines) { routine in
+                    OverviewRoutineRow(routine: routine, store: store, state: session.routine(routine.id),
+                                       isLast: routine.id == store.routines.last?.id)
                 }
             }
         }
     }
 }
 
-private struct OverviewRoutineRow: View {
+struct OverviewRoutineRow: View {
     let routine: ChannelRoutine
     let store: ChannelStore
     @Environment(AppModel.self) private var app
     @Environment(ManagementPresenter.self) private var management
     @Bindable var state: OverviewRoutineState
+    let isLast: Bool
     private var pending: Bool { state.pending }
     private var requestedAt: Date? { state.requestedAt }
     private var recovery: ChannelManagementWriteRecovery { state.recovery }
 
     private var canRun: Bool { store.phase.isLive && !pending && !recovery.blocksWrites }
     private var schedule: String { (try? cronSummary(routine.schedule)) ?? routine.schedule }
+    private var contentEndsSection: Bool { isLast && recovery.error == nil && recovery.state == nil }
 
     var body: some View {
         DisclosureGroup(isExpanded: $state.expanded) {
@@ -61,12 +65,14 @@ private struct OverviewRoutineRow: View {
             }
             .frame(minHeight: 44)
             .disabled(pending || !store.phase.isLive)
+            .modifier(OverviewListRowBoundary(isLast: contentEndsSection))
         } label: {
             VStack(alignment: .leading, spacing: 4) {
                 Text(routine.title).font(.body)
                 Text(ChannelRoutineRunPresentation.label(schedule: schedule, pending: pending, requestedAt: requestedAt))
                     .font(.footnote).foregroundStyle(ChannelInk.secondary)
             }
+            .modifier(OverviewListRowBoundary(isLast: contentEndsSection && !state.expanded))
             .frame(minHeight: 64, alignment: .leading)
         }
         .contextMenu {
@@ -83,11 +89,15 @@ private struct OverviewRoutineRow: View {
             catch { recovery.record(error); return }
             state.requestedAt = nil
         }
-        if let error = recovery.error { ManagementError(message: error) }
+        if let error = recovery.error {
+            ManagementError(message: error)
+                .modifier(OverviewListRowBoundary(isLast: isLast && recovery.state == nil))
+        }
         if let state = recovery.state {
             ManagementRecoveryNotice(state: state, reviewTitle: "I've Reviewed the Conversation",
                                      onCheck: { Task { await check(catalog: matchingCatalog) } },
                                      onReview: recovery.finishReview)
+                .modifier(OverviewListRowBoundary(isLast: isLast))
         }
     }
 
