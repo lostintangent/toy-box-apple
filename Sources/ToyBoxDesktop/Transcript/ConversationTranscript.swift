@@ -860,7 +860,7 @@ struct ConversationTranscript: View {
         revealError = nil
         pagingAnchor = nil
         defer { if interaction.revealRequestToken == token { isRevealing = false } }
-        await loadHistory(through: sequence)
+        await store.loadHistory(through: sequence)
         guard revealIsCurrent(token, findToken: findToken) else { return }
         guard let message = store.state?.messages.first(where: { $0.sequence == sequence }) else {
             revealError = store.historyError ?? "This message is no longer available."
@@ -919,18 +919,6 @@ struct ConversationTranscript: View {
         guard revealIsCurrent(token, findToken: findToken) else { return false }
         revealError = "Couldn't reveal this message. Try Reveal again."
         return false
-    }
-
-    private func loadHistory(through sequence: Int) async {
-        while let first = store.state?.messages.first, first.sequence > sequence && store.hasOlderMessages {
-            let before = first.sequence
-            if store.isLoadingOlder {
-                do { try await Task.sleep(for: .milliseconds(40)) }
-                catch { return }
-            } else { await store.loadOlder() }
-            guard !Task.isCancelled, store.historyError == nil else { return }
-            if !store.isLoadingOlder && store.state?.messages.first?.sequence == before { return }
-        }
     }
 
     private func loadOlder() async {

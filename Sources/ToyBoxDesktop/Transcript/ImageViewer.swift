@@ -492,7 +492,7 @@ final class ImageViewer {
         guard let session, !isClosing, hasSettledOpening, Self.readsText,
               let item = items[index], item.analysis == nil, let bitmap = item.bitmap else { return }
         let position = index
-        let key = TranscriptAttachmentCache.destination(for: session.images[position], api: session.api)?
+        let key = ChannelAttachmentCache.destination(for: session.images[position], api: session.api)?
             .deletingPathExtension().lastPathComponent
         if let key, let remembered = analyses.firstIndex(where: { $0.key == key }) {
             let entry = analyses.remove(at: remembered)
@@ -576,7 +576,7 @@ final class ImageViewer {
         loads[position] = Task { [weak self] in
             let result: Result<(URL, CGImage, ImageViewerCornerTone?, CGSize?), any Error>
             do {
-                let file = try await TranscriptAttachmentCache.shared.file(for: attachment, api: api, reload: reload)
+                let file = try await ChannelAttachmentCache.shared.file(for: attachment, api: api, reload: reload)
                 let (image, tone, vectorSize) = try await Task.detached(priority: .userInitiated) {
                     let decoded = try ImageViewer.decoded(file, maximumPixelSize: rasterPixels)
                     let image = ImageViewer.displayReady(decoded.image, in: space)
@@ -621,7 +621,7 @@ final class ImageViewer {
 
     /// An inline image's size from its header, or a downloaded image's from its cached file.
     static func knownPixelSize(of attachment: ChannelAttachment, api: ChannelAPI) -> CGSize? {
-        TranscriptThumbnails.pixelSize(for: attachment, api: api)
+        ChannelImageDecoder.pixelSize(for: attachment, api: api)
     }
 
     /// Decodes the full image, oriented, off the main actor. Very large images cap at 8192 pixels.
@@ -633,7 +633,7 @@ final class ImageViewer {
         -> (image: CGImage, vectorSize: CGSize?) {
         if let source = CGImageSourceCreateWithURL(file as CFURL, nil),
            let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
-           let size = TranscriptThumbnails.orientedPixelSize(properties),
+           let size = ChannelImageDecoder.orientedPixelSize(properties),
            let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
             kCGImageSourceThumbnailMaxPixelSize: min(8192, max(size.width, size.height)),

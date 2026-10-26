@@ -194,7 +194,7 @@ private struct TranscriptAttachment: View {
     /// earlier load, so the row never grows when the preview lands. Only a remote image the app has
     /// never loaded resizes, once.
     private func imageTile(_ thumbnail: NSImage?) -> some View {
-        let pixels = TranscriptThumbnails.pixelSize(for: attachment, api: api)
+        let pixels = ChannelImageDecoder.pixelSize(for: attachment, api: api)
             ?? thumbnail?.size ?? CGSize(width: 120, height: 90)
         let size = transcriptThumbnailSize(pixels)
         let tile = RoundedRectangle(cornerRadius: 8)
@@ -255,7 +255,7 @@ private struct TranscriptAttachment: View {
         error = nil
         defer { isLoading = false }
         do {
-            let file = try await TranscriptAttachmentCache.shared.file(for: attachment, api: api, reload: retry > 0)
+            let file = try await ChannelAttachmentCache.shared.file(for: attachment, api: api, reload: retry > 0)
             guard !Task.isCancelled else { return }
             localURL = file
             if isImage {
@@ -326,80 +326,6 @@ private struct TranscriptVideo: View {
     }
 }
 
-enum AttachmentError: LocalizedError, Equatable {
-    case invalidAddress, invalidData, invalidImage, response(Int)
-
-    var errorDescription: String? {
-        switch self {
-        case .invalidAddress: "This attachment has no supported resource address."
-        case .invalidData: "This attachment contains invalid data."
-        case .invalidImage: "The image could not be decoded."
-        case .response(let status): "The server returned HTTP \(status)."
-        }
-    }
-}
-
-actor TranscriptAttachmentCache {
-    static let shared = TranscriptAttachmentCache()
-    private var inFlight: [String: Task<URL, any Error>] = [:]
-
-    /// The remote address or inline payload that identifies an attachment's content.
-    static func identity(for attachment: ChannelAttachment, api: ChannelAPI) -> String? {
-        let identity = attachment.url.flatMap(api.resourceURL)?.absoluteString ?? attachment.base64 ?? ""
-        return identity.isEmpty ? nil : identity
-    }
-
-    private static let directory = FileManager.default.temporaryDirectory
-        .appendingPathComponent("ToyBoxDesktop-Attachments", isDirectory: true)
-
-    /// Where an attachment's content is cached, named by the digest of its identity.
-    static func destination(for attachment: ChannelAttachment, api: ChannelAPI) -> URL? {
-        guard let identity = identity(for: attachment, api: api) else { return nil }
-        let key = SHA256.hash(data: Data(identity.utf8)).map { String(format: "%02x", $0) }.joined()
-        let type = attachment.mimeType.flatMap { UTType(mimeType: $0) }
-        let suffix = (attachment.name as NSString?)?.pathExtension.nilIfEmpty
-            ?? attachment.url.flatMap(api.resourceURL)?.pathExtension.nilIfEmpty
-            ?? type?.preferredFilenameExtension ?? "data"
-        return directory.appendingPathComponent(key).appendingPathExtension(suffix)
-    }
-
-    /// An attachment's cached file when an earlier load already wrote it.
-    static func cachedFile(for attachment: ChannelAttachment, api: ChannelAPI) -> URL? {
-        destination(for: attachment, api: api).flatMap { FileManager.default.fileExists(atPath: $0.path) ? $0 : nil }
-    }
-
-    func file(for attachment: ChannelAttachment, api: ChannelAPI, reload: Bool = false) async throws -> URL {
-        let remote = attachment.url.flatMap(api.resourceURL)
-        guard let destination = Self.destination(for: attachment, api: api) else { throw AttachmentError.invalidAddress }
-        let key = destination.deletingPathExtension().lastPathComponent
-        if let task = inFlight[key] { return try await task.value }
-        let task = Task<URL, any Error> {
-            try FileManager.default.createDirectory(at: Self.directory, withIntermediateDirectories: true)
-            if !reload && FileManager.default.fileExists(atPath: destination.path) { return destination }
-            if let remote {
-                let (temporary, response) = try await URLSession.shared.download(from: remote)
-                guard let response = response as? HTTPURLResponse else { throw AttachmentError.invalidData }
-                guard (200..<300).contains(response.statusCode) else {
-                    throw AttachmentError.response(response.statusCode)
-                }
-                if FileManager.default.fileExists(atPath: destination.path) {
-                    _ = try FileManager.default.replaceItemAt(destination, withItemAt: temporary)
-                } else {
-                    try FileManager.default.moveItem(at: temporary, to: destination)
-                }
-            } else if let base64 = attachment.base64, let data = Data(base64Encoded: base64) {
-                try data.write(to: destination, options: .atomic)
-            } else {
-                throw AttachmentError.invalidData
-            }
-            return destination
-        }
-        inFlight[key] = task
-        defer { inFlight[key] = nil }
-        return try await task.value
-    }
-}
-
 /// Decoded previews by attachment. A row that is created again, after switching channels, in a
 /// second window or when paging, lays out at its final height on its first pass instead of
 /// starting as a file chip and growing when its decode lands.
@@ -415,65 +341,8 @@ enum TranscriptThumbnails {
         return cache
     }()
 
-    private static let pixelSizes: NSCache<NSString, NSValue> = {
-        let cache = NSCache<NSString, NSValue>()
-        cache.countLimit = 512
-        return cache
-    }()
-
-    /// An image's oriented pixel size without decoding it, from the start of an inline payload or
-    /// from the header of a remote image an earlier load cached. A remote row built again, after
-    /// its decoded preview left the cache, then lays out at its final size instead of growing.
-    static func pixelSize(for attachment: ChannelAttachment, api: ChannelAPI) -> CGSize? {
-        if let remote = attachment.url.flatMap(api.resourceURL) {
-            let key = remote.absoluteString as NSString
-            if let size = pixelSizes.object(forKey: key)?.sizeValue { return size }
-            guard let file = TranscriptAttachmentCache.cachedFile(for: attachment, api: api),
-                  let size = filePixelSize(file) else { return nil }
-            pixelSizes.setObject(NSValue(size: size), forKey: key)
-            return size
-        }
-        guard let payload = attachment.base64, !payload.isEmpty else { return nil }
-        let key = payload as NSString
-        let size = pixelSizes.object(forKey: key)?.sizeValue ?? {
-            let size = headerPixelSize(base64: payload) ?? .zero
-            pixelSizes.setObject(NSValue(size: size), forKey: key)
-            return size
-        }()
-        return size == .zero ? nil : size
-    }
-
-    nonisolated static func headerPixelSize(base64 payload: String) -> CGSize? {
-        // 64K characters are 48 KB of image, past the size fields of PNG, GIF and EXIF-laden JPEGs.
-        let prefix = Data(payload.utf8.prefix(65_536))
-        guard let data = Data(base64Encoded: prefix) else { return nil }
-        let source = CGImageSourceCreateIncremental(nil)
-        CGImageSourceUpdateData(source, data as CFData, prefix.count == payload.utf8.count)
-        guard let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any] else {
-            return nil
-        }
-        return orientedPixelSize(properties)
-    }
-
-    nonisolated static func filePixelSize(_ file: URL) -> CGSize? {
-        guard let source = CGImageSourceCreateWithURL(file as CFURL, nil),
-              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any] else {
-            return nil
-        }
-        return orientedPixelSize(properties)
-    }
-
-    nonisolated static func orientedPixelSize(_ properties: [CFString: Any]) -> CGSize? {
-        guard let width = (properties[kCGImagePropertyPixelWidth] as? NSNumber)?.doubleValue,
-              let height = (properties[kCGImagePropertyPixelHeight] as? NSNumber)?.doubleValue,
-              width > 0, height > 0 else { return nil }
-        // Orientations 5 through 8 rotate a quarter turn, as the decoded thumbnail does.
-        let orientation = (properties[kCGImagePropertyOrientation] as? NSNumber)?.intValue ?? 1
-        return orientation >= 5 ? CGSize(width: height, height: width) : CGSize(width: width, height: height)
-    }
-
     static func remembered(for attachment: ChannelAttachment, api: ChannelAPI) -> NSImage? {
-        TranscriptAttachmentCache.identity(for: attachment, api: api).flatMap { cache.object(forKey: $0 as NSString) }
+        ChannelAttachmentCache.identity(for: attachment, api: api).flatMap { cache.object(forKey: $0 as NSString) }
     }
 
     /// Decoding a large image takes tens of milliseconds, so it runs off the main actor.
@@ -481,9 +350,7 @@ enum TranscriptThumbnails {
                       reload: Bool = false) async throws -> NSImage {
         if !reload, let image = remembered(for: attachment, api: api) { return image }
         let decoded = try await Task.detached(priority: .userInitiated) { try Self.decoded(file) }.value
-        if let identity = TranscriptAttachmentCache.identity(for: attachment, api: api) {
-            pixelSizes.setObject(NSValue(size: decoded.pixelSize), forKey: identity as NSString)
-        }
+        ChannelImageDecoder.rememberPixelSize(decoded.pixelSize, for: attachment, api: api)
         return remember(decoded.image, for: attachment, api: api)
     }
 
@@ -492,22 +359,15 @@ enum TranscriptThumbnails {
     }
 
     private nonisolated static func decoded(_ file: URL) throws -> TranscriptSVGImage.Decoded {
-        if let source = CGImageSourceCreateWithURL(file as CFURL, nil),
-           let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [
-                kCGImageSourceCreateThumbnailFromImageAlways: true,
-                kCGImageSourceThumbnailMaxPixelSize: 640,
-                kCGImageSourceCreateThumbnailWithTransform: true
-              ] as CFDictionary) {
-            let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]
-            let size = properties.flatMap(orientedPixelSize) ?? CGSize(width: image.width, height: image.height)
-            return TranscriptSVGImage.Decoded(image: image, pixelSize: size)
+        if let decoded = ChannelImageDecoder.thumbnail(file: file, maxPixelSize: 640) {
+            return TranscriptSVGImage.Decoded(image: decoded.image, pixelSize: decoded.pixelSize)
         }
         return try TranscriptSVGImage.decode(file, maximumPixelSize: 640)
     }
 
     static func remember(_ image: CGImage, for attachment: ChannelAttachment, api: ChannelAPI) -> NSImage {
         let thumbnail = NSImage(cgImage: image, size: .zero)
-        if let identity = TranscriptAttachmentCache.identity(for: attachment, api: api) {
+        if let identity = ChannelAttachmentCache.identity(for: attachment, api: api) {
             // The cache keeps its key alive, which for an inline image is the whole payload.
             cache.setObject(thumbnail, forKey: identity as NSString,
                             cost: image.bytesPerRow * image.height + identity.utf8.count)
@@ -525,10 +385,10 @@ enum TranscriptSVGImage {
 
     static func decode(_ file: URL, maximumPixelSize: Int) throws -> Decoded {
         let data = try Data(contentsOf: file)
-        guard let image = NSImage(data: data) else { throw AttachmentError.invalidImage }
+        guard let image = NSImage(data: data) else { throw ChannelAttachmentError.invalidImage }
         let size = image.size
         guard size.width.isFinite, size.height.isFinite, size.width > 0, size.height > 0 else {
-            throw AttachmentError.invalidImage
+            throw ChannelAttachmentError.invalidImage
         }
         try Task.checkCancellation()
         let edge = CGFloat(min(Self.maximumPixelSize, max(1, maximumPixelSize)))
@@ -538,7 +398,7 @@ enum TranscriptSVGImage {
         guard let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8,
                                       bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
                                       bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else {
-            throw AttachmentError.invalidImage
+            throw ChannelAttachmentError.invalidImage
         }
         let graphics = NSGraphicsContext(cgContext: context, flipped: false)
         NSGraphicsContext.saveGraphicsState()
@@ -546,18 +406,7 @@ enum TranscriptSVGImage {
         NSGraphicsContext.current = graphics
         image.draw(in: CGRect(x: 0, y: 0, width: width, height: height),
                    from: .zero, operation: .copy, fraction: 1)
-        guard let bitmap = context.makeImage() else { throw AttachmentError.invalidImage }
+        guard let bitmap = context.makeImage() else { throw ChannelAttachmentError.invalidImage }
         return Decoded(image: bitmap, pixelSize: size)
     }
-}
-
-func transcriptThumbnailSize(_ original: CGSize) -> CGSize {
-    guard original.width > 0, original.height > 0,
-          original.width.isFinite, original.height.isFinite else { return CGSize(width: 44, height: 44) }
-    let scale = min(1, 240 / original.width, 160 / original.height)
-    return CGSize(width: original.width * scale, height: original.height * scale)
-}
-
-private extension String {
-    var nilIfEmpty: String? { isEmpty ? nil : self }
 }
