@@ -248,48 +248,6 @@ private struct TranscriptCopyCodeButtonStyle: ButtonStyle {
     }
 }
 
-public extension View {
-    /// Draws a message bubble for `surface` behind the content: its fills and, under Increase
-    /// Contrast, its edge.
-    func transcriptBubble(_ surface: TranscriptSurface) -> some View {
-        modifier(TranscriptBubble(surface: surface))
-    }
-}
-
-private struct TranscriptBubble: ViewModifier {
-    let surface: TranscriptSurface
-    @Environment(\.colorScheme) private var colorScheme
-    @Environment(\.colorSchemeContrast) private var contrast
-
-    func body(content: Content) -> some View {
-        let shape = RoundedRectangle(cornerRadius: 12)
-        content
-            .background {
-                ZStack {
-                    ForEach(Array(surface.fills(isDark: colorScheme == .dark).enumerated()), id: \.offset) {
-                        shape.fill($0.element)
-                    }
-                }
-            }
-            .overlay {
-                if contrast == .increased, let edge = surface.increasedContrastEdge {
-                    shape.strokeBorder(edge, lineWidth: 1)
-                }
-            }
-    }
-}
-
-private struct TranscriptSurfaceKey: EnvironmentKey {
-    static let defaultValue = TranscriptSurface.canvas
-}
-
-public extension EnvironmentValues {
-    var transcriptSurface: TranscriptSurface {
-        get { self[TranscriptSurfaceKey.self] }
-        set { self[TranscriptSurfaceKey.self] = newValue }
-    }
-}
-
 /// An opaque sRGB color for contrast arithmetic.
 public struct TranscriptRGB: Equatable, Sendable {
     public var red: Double
