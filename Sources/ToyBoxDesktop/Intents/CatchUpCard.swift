@@ -217,9 +217,9 @@ private struct CatchUpCardLine: View {
         case .agent(let agent):
             AgentAvatarView(agent: agent, size: 16)
         case .event(let type):
-            Image(systemName: TranscriptSystemMessages.symbol(for: type))
+            Image(systemName: ChannelSystemEventStyle.symbol(for: type))
                 .font(.system(size: 13))
-                .foregroundStyle(TranscriptSystemMessages.symbolColor(for: type, in: colorScheme))
+                .foregroundStyle(ChannelSystemEventStyle.symbolColor(for: type, in: colorScheme))
         case .info:
             Image(systemName: "info.circle")
                 .font(.system(size: 12))

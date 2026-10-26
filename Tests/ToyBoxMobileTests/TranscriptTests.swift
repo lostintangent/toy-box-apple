@@ -1,8 +1,12 @@
+@testable import ChannelClient
 import ChannelKit
 import CoreGraphics
 import Foundation
+import SwiftUI
 import Testing
 @testable import ToyBoxMobile
+import ToyBoxUI
+import UIKit
 
 @Suite("Mobile Transcript")
 @MainActor
@@ -68,5 +72,138 @@ struct TranscriptTests {
         }
         // The first measured row starting below the top holds the reader's place.
         #expect(anchor.row == "p1" && anchor.offset == 100)
+    }
+
+    @Test func aRevealFinishesFromSettledGeometryOrWhenTheReaderTakesOver() {
+        let viewport = TranscriptScrollModel.Viewport(width: 386, height: 600, topInset: 0, bottomInset: 0)
+        let scroll = TranscriptScroll()
+        scroll.rows = (0..<20).map { .init(id: "r\($0)", order: $0) }
+        for index in 0..<20 { scroll.measure("r\(index)", frame: CGRect(x: 0, y: CGFloat(index) * 100, width: 386, height: 100)) }
+        scroll.metrics = .init(viewport: viewport, origin: 1400, documentEnd: 2000)
+        _ = scroll.update(.land(.end))
+
+        // Asking to scroll isn't revealing: it finishes only once the native origin arrives.
+        let settles = UUID()
+        scroll.pendingReveal = (settles, "r5")
+        let origin = scroll.update(.reveal("r5"))?.origin
+        #expect(origin == 250 && scroll.finishedReveal() == nil)
+        scroll.metrics?.origin = 250
+        _ = scroll.update()
+        #expect(scroll.finishedReveal()! == (settles, true))
+        #expect(scroll.finishedReveal() == nil)
+
+        // The reader scrolling first finishes it, revealed only if the row ended up in view.
+        let interrupted = UUID()
+        scroll.pendingReveal = (interrupted, "r15")
+        #expect(scroll.update(.reveal("r15"))?.origin == 1250 && scroll.finishedReveal() == nil)
+        scroll.isReaderScrolling = true
+        scroll.metrics?.origin = 0
+        _ = scroll.update()
+        #expect(scroll.finishedReveal()! == (interrupted, false))
+    }
+
+    @Test func onlyANewSendFollowsToTheBottom() {
+        func attempt(_ id: String, _ phase: ChannelSendPhase) -> ChannelSendAttempt {
+            ChannelSendAttempt(id: id, content: id, attachments: [], timestamp: "2026-10-25T12:00:00Z", phase: phase)
+        }
+        // The restored outbox lands after the unread landing and must not move the reader.
+        #expect(!startsOwnPost(after: [], in: [attempt("old", .deliveryNotConfirmed), attempt("lost", .notSent)]))
+        #expect(startsOwnPost(after: ["old"], in: [attempt("old", .notSent), attempt("new", .sending)]))
+        // Send Again reuses its id, so it isn't a new post.
+        #expect(!startsOwnPost(after: ["old"], in: [attempt("old", .sending)]))
+    }
+
+    @Test func phoneFindRevealsOnlyOnNavigationAndCallsProvisionalCountsSoFar() {
+        let find = TranscriptFind()
+        find.revealsWhileTyping = false
+        find.prepare(messages: [
+            ChannelMessage(id: "a", sequence: 4, timestamp: "2026-10-25T12:00:00Z", sender: .user, content: .text("hit")),
+            ChannelMessage(id: "b", sequence: 6, timestamp: "2026-10-25T12:01:00Z", sender: .user, content: .text("hit"))
+        ], agents: [lead], hasOlder: true)
+        find.present()
+        find.query = "hit"
+        #expect(find.revealRequest == nil)
+        #expect(find.isSearching)
+        #expect(find.phoneCountLabel == "1 of 2 so far")
+        find.move(1)
+        #expect(find.revealRequest?.sequence == 4)
+        find.move(1)
+        #expect(find.revealRequest?.sequence == 6)
+        #expect(find.phoneCountLabel == "2 of 2 so far")
+        // Closing leaves the reader at the match. Only a real scroll or Jump to Latest reads again.
+        find.close()
+        #expect(find.blocksRead)
+        find.resumeReading()
+        #expect(!find.blocksRead)
+    }
+
+    @Test func phoneFindKeepsMatchTextReadableInBothAppearances() throws {
+        func rgb(_ color: UIColor, _ traits: UITraitCollection) -> TranscriptRGB {
+            var (red, green, blue, alpha): (CGFloat, CGFloat, CGFloat, CGFloat) = (0, 0, 0, 0)
+            color.resolvedColor(with: traits).getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+            return TranscriptRGB(red: red, green: green, blue: blue, alpha: alpha)
+        }
+        for style in [UIUserInterfaceStyle.light, .dark] {
+            let traits = UITraitCollection(userInterfaceStyle: style)
+            for isCurrent in [false, true] {
+                let run = try #require(TranscriptFindHighlight.phone(query: "hit", isCurrent: isCurrent)
+                    .applying(to: AttributedString("a hit")).runs.first { $0.backgroundColor != nil })
+                #expect(run.backgroundColor == Color(uiColor: .systemYellow).opacity(isCurrent ? 1 : 0.45))
+                #expect(run.foregroundColor == (isCurrent ? Color.black : Color(uiColor: .label)))
+                var fill = rgb(.systemYellow, traits)
+                fill.alpha = isCurrent ? 1 : 0.45
+                let ink = rgb(isCurrent ? .black : .label, traits)
+                #expect(ink.contrast(with: rgb(.systemBackground, traits).under(fill)) >= 4.5)
+            }
+        }
+    }
+
+    @Test func theGalleryShowsOnlyTheMessagesImagesAndNeverWraps() throws {
+        let attachments = [
+            ChannelAttachment(name: "one.png", url: "/files/one.png", mimeType: "image/png"),
+            ChannelAttachment(name: "notes.txt", url: "/files/notes.txt", mimeType: "text/plain"),
+            ChannelAttachment(name: "diagram.svg", url: "/files/diagram.svg", mimeType: "image/svg+xml"),
+            ChannelAttachment(name: "two.jpg", url: "/files/two.jpg", mimeType: "image/jpeg"),
+            ChannelAttachment(name: "three.heic", url: "/files/three.heic"),
+        ]
+        let images = TranscriptGalleryPresenter.images(in: attachments)
+        #expect(images.map(\.name) == ["one.png", "two.jpg", "three.heic"])
+
+        let gallery = TranscriptGalleryPresenter()
+        let api = try ChannelAPI(serverURL: "http://127.0.0.1:3210")
+        let source = TranscriptGalleryPresenter.Source(messageID: "m1", sender: "Lead",
+                                                       timestamp: "2026-10-25T12:00:00Z")
+        gallery.open(images: images, at: 7, source: source, api: api)
+        #expect(gallery.session?.index == 2)
+        #expect(gallery.session?.canShowNext == false)
+        gallery.move(by: 1)
+        #expect(gallery.session?.index == 2)
+        gallery.select(0)
+        #expect(gallery.session?.index == 0)
+        #expect(gallery.session?.direction == -1)
+        #expect(gallery.session?.canShowPrevious == false)
+        gallery.move(by: -1)
+        #expect(gallery.session?.index == 0)
+        #expect(gallery.session.map(TranscriptGalleryPresenter.accessibilityLabel) == "Image 1 of 3 from Lead, one.png")
+
+        gallery.close()
+        #expect(gallery.session == nil)
+        gallery.open(images: [], at: 0, source: source, api: api)
+        #expect(gallery.session == nil)
+    }
+
+    @Test func theGallerySubtitleCountsOnlySeveralImages() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try #require(TimeZone(identifier: "UTC"))
+        calendar.locale = Locale(identifier: "en_US")
+        let sent = try #require(ChannelDates.date("2026-10-25T17:23:00Z"))
+        let now = try #require(ChannelDates.date("2026-10-25T20:00:00Z"))
+        func subtitle(_ index: Int, _ count: Int) -> String {
+            TranscriptGalleryPresenter.subtitle(sentAt: sent, index: index, count: count, now: now, calendar: calendar)
+                .replacingOccurrences(of: "\u{202F}", with: " ")
+        }
+        #expect(subtitle(1, 4) == "Today at 5:23 PM · 2 of 4")
+        #expect(subtitle(0, 1) == "Today at 5:23 PM")
+        #expect(TranscriptGalleryPresenter.subtitle(sentAt: nil, index: 2, count: 3) == "3 of 3")
     }
 }

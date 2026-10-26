@@ -1,6 +1,7 @@
 import AppKit
 import Observation
 import SwiftUI
+import ToyBoxUI
 
 @MainActor @Observable
 final class TranscriptWindowObserver {
@@ -208,15 +209,6 @@ extension BenchmarkScrollGeometry {
         guard let first else { return nil }
         self.init(firstVisibleRow: first.id, rowTops: tops, reportedTops: reported)
     }
-}
-
-struct TranscriptMessageFrame: Equatable {
-    var sequence: Int
-    var rect: CGRect
-    var historyStart: Int
-    /// The top in the content, which only layout changes move. Scrolling moves only `rect`.
-    var contentTop: CGFloat = 0
-    var windowRect: CGRect = .zero
 }
 
 struct TranscriptMessageFrames: PreferenceKey {
