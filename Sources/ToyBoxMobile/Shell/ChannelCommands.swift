@@ -7,6 +7,8 @@ struct WindowCommandActions {
     var sidebarVisible: Bool
     var inspectorVisible: Bool
     var findChannel: () -> Void
+    var findInChannel: (() -> Void)?
+    var findNext: ((Int) -> Void)?
     var newChannel: (() -> Void)?
     var openInToyBox: (() -> Void)?
     var toggleSidebar: (() -> Void)?
@@ -54,6 +56,16 @@ struct ChannelCommands: Commands {
                 .disabled(actions?.openInToyBox == nil)
         }
         CommandGroup(after: .textEditing) {
+            Button("Find in Conversation") { actions?.findInChannel?() }
+                .keyboardShortcut("f")
+                .disabled(actions?.findInChannel == nil)
+            Button("Find Next") { actions?.findNext?(1) }
+                .keyboardShortcut("g")
+                .disabled(actions?.findNext == nil)
+            Button("Find Previous") { actions?.findNext?(-1) }
+                .keyboardShortcut("g", modifiers: [.command, .shift])
+                .disabled(actions?.findNext == nil)
+            Divider()
             Button("Find Channel") { actions?.findChannel() }
                 .keyboardShortcut("f", modifiers: [.command, .option])
                 .disabled(actions == nil)

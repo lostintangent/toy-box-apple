@@ -116,6 +116,8 @@ struct RootView: View {
                 preferredCompactColumn = .sidebar
                 searchFocusRequest = UUID()
             },
+            findInChannel: conversation.map { interaction in { interaction.findInChannel() } },
+            findNext: conversation.map { interaction in { interaction.findNext($0) } },
             newChannel: model.canCreateChannel ? { management.present(.newChannel) } : nil,
             openInToyBox: store.map { store in { model.openInToyBox(channelID: store.id) } },
             toggleSidebar: sizeClass == .regular ? {
