@@ -65,32 +65,6 @@ private struct ManagementFittedForm<Content: View>: View {
     }
 }
 
-/// A section footer: help in 11-point secondary, or a real violation behind a red symbol.
-struct ManagementFooter: View {
-    var help: [String] = []
-    var violation: String?
-
-    var body: some View {
-        Group {
-            if let violation {
-                Label {
-                    Text(violation)
-                } icon: {
-                    Image(systemName: "exclamationmark.circle.fill").foregroundStyle(.red)
-                }
-            } else if !help.isEmpty {
-                VStack(alignment: .leading, spacing: 4) {
-                    ForEach(help, id: \.self) { Text($0) }
-                }
-            }
-        }
-        .font(.system(size: 11))
-        .foregroundStyle(.secondary)
-        .fixedSize(horizontal: false, vertical: true)
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-}
-
 /// A multi-line field whose label sits above it, so its text shares the label's leading edge and
 /// the single-line fields' chrome. Return submits, and Option-Return inserts a line break.
 struct ManagementLongTextField: View {

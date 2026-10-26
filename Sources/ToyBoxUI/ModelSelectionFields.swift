@@ -2,9 +2,11 @@ import ChannelClient
 import ChannelKit
 import SwiftUI
 
+private typealias ViewState = SwiftUI.State
+
 /// The model section of a management sheet: the model, its Reasoning and Context options when the
 /// chosen model offers them, any rows the sheet adds, and a footer that explains the catalog.
-struct ModelSelectionFields<ExtraRows: View>: View {
+public struct ModelSelectionFields<ExtraRows: View>: View {
     @Binding var model: ModelConfiguration?
     let api: ChannelAPI
     let provider: String?
@@ -21,7 +23,7 @@ struct ModelSelectionFields<ExtraRows: View>: View {
     /// The model the sheet opened with, so a cleared override can be restored without a catalog.
     @ViewState private var initialModel: ModelConfiguration?
 
-    init(model: Binding<ModelConfiguration?>, api: ChannelAPI, provider: String?, allowsInheritance: Bool,
+    public init(model: Binding<ModelConfiguration?>, api: ChannelAPI, provider: String?, allowsInheritance: Bool,
          title: String = "Model", memberScope: (channelId: String, agentId: String)? = nil,
          help: [String] = [], violation: String? = nil, @ViewBuilder extraRows: () -> ExtraRows) {
         _model = model
@@ -66,7 +68,7 @@ struct ModelSelectionFields<ExtraRows: View>: View {
         return lines + help
     }
 
-    var body: some View {
+    public var body: some View {
         Section {
             if isLoading {
                 LabeledContent(title) {
@@ -175,7 +177,7 @@ struct ModelSelectionFields<ExtraRows: View>: View {
 }
 
 extension ModelSelectionFields where ExtraRows == EmptyView {
-    init(model: Binding<ModelConfiguration?>, api: ChannelAPI, provider: String?, allowsInheritance: Bool,
+    public init(model: Binding<ModelConfiguration?>, api: ChannelAPI, provider: String?, allowsInheritance: Bool,
          title: String = "Model", memberScope: (channelId: String, agentId: String)? = nil,
          help: [String] = [], violation: String? = nil) {
         self.init(model: model, api: api, provider: provider, allowsInheritance: allowsInheritance,
@@ -185,4 +187,38 @@ extension ModelSelectionFields where ExtraRows == EmptyView {
 
 private extension ProviderModel {
     var selfKey: String { "\(provider)/\(id)" }
+}
+
+public struct ManagementFooter: View {
+    let help: [String]
+    let violation: String?
+
+    public init(help: [String] = [], violation: String? = nil) {
+        self.help = help
+        self.violation = violation
+    }
+
+    public var body: some View {
+        Group {
+            if let violation {
+                Label {
+                    Text(violation)
+                } icon: {
+                    Image(systemName: "exclamationmark.circle.fill").foregroundStyle(.red)
+                }
+            } else if !help.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(help, id: \.self) { Text($0) }
+                }
+            }
+        }
+        #if os(iOS)
+        .font(.footnote)
+        #else
+        .font(.system(size: 11))
+        #endif
+        .foregroundStyle(.secondary)
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
 }
