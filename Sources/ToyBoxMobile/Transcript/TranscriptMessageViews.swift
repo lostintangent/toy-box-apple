@@ -105,6 +105,8 @@ struct TranscriptUserMessage: View {
     let context: TranscriptRowContext
     var deliveryLabel: String?
     var statusReactions: [ChannelReaction] = []
+    /// Unsent attempts all have sequence 0, so they pass their own `send-<attempt id>`.
+    var identifier: String?
     @Environment(\.horizontalSizeClass) private var sizeClass
     @ViewState private var selectsText = false
 
@@ -136,7 +138,7 @@ struct TranscriptUserMessage: View {
             }
         }
         .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("message-\(message.sequence)")
+        .accessibilityIdentifier(identifier ?? "message-\(message.sequence)")
         .accessibilityLabel(transcriptMessageAccessibilityLabel(
             author: "You", timestamp: message.timestamp, delivery: deliveryLabel))
         .accessibilityAction(named: "Copy Message") { UIPasteboard.general.string = message.text }

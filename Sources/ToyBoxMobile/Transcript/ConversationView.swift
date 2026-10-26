@@ -341,7 +341,8 @@ private struct TranscriptSendAttempt: View {
 
     var body: some View {
         VStack(alignment: .trailing, spacing: 6) {
-            TranscriptUserMessage(message: attempt.message, context: context, deliveryLabel: attempt.phase.label)
+            TranscriptUserMessage(message: attempt.message, context: context, deliveryLabel: attempt.phase.label,
+                                  identifier: "send-\(attempt.id)")
                 .opacity(attempt.phase == .sending ? 0.65 : 1)
             if let error = actionError ?? attempt.error {
                 Text(error).font(.footnote).foregroundStyle(.secondary)
