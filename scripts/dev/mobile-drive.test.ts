@@ -13,12 +13,18 @@ test("drive actions are strict and native display identifiers are normalized", (
         .toEqual([{ action: "Reply", on: "message-12" }]);
     expect(parseMobileDrive([{ wait: "Replying to Lead", absent: true }]))
         .toEqual([{ wait: "Replying to Lead", absent: true }]);
+    for (const direction of ["up", "down", "left", "right"] as const) {
+        expect(parseMobileDrive([{ scroll: direction, on: "overview-form", timeout: 20 }]))
+            .toEqual([{ scroll: direction, on: "overview-form", timeout: 20 }]);
+    }
     for (const value of [[], {}, [{}], [{ tap: "x", wait: "x" }], [{ type: "" }], [{ back: false }],
         [{ fold: 1 }], [{ tap: "x", display: 1 }], [{ screenshot: "x", display: 0 }],
         [{ screenshot: "x", display: "primary" }], [{ wait: "x", timeout: 0 }],
         [{ wait: "x", timeout: 61 }], [{ tap: "x", typo: true }], [{ tap: "x", ifPresent: true }],
         [{ back: true, ifPresent: "yes" }], [{ action: "Reply" }], [{ action: "Reply", on: "" }],
-        [{ tap: "Reply", on: "message-12" }], [{ wait: "x", absent: "yes" }], [{ tap: "x", absent: true }]]) {
+        [{ tap: "Reply", on: "message-12" }], [{ wait: "x", absent: "yes" }], [{ tap: "x", absent: true }],
+        [{ scroll: "down" }], [{ scroll: "down", on: "" }], [{ scroll: "forward", on: "form" }],
+        [{ scroll: "up", on: "form", display: 1 }]]) {
         expect(() => parseMobileDrive(value)).toThrow();
     }
 });

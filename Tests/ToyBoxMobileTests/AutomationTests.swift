@@ -10,28 +10,66 @@ struct AutomationTests {
         @objc var accessibilityIdentifier: String?
     }
 
+    private final class ScrollContainer: UIView {
+        var directions: [UIAccessibilityScrollDirection] = []
+        var handlesScroll = true
+
+        override func accessibilityScroll(_ direction: UIAccessibilityScrollDirection) -> Bool {
+            directions.append(direction)
+            return handlesScroll
+        }
+    }
+
     @Test func scriptPreservesActionsAndRejectsUnknownOrContradictoryInputs() throws {
         let steps = try JSONDecoder().decode([MobileAutomationStep].self, from: Data("""
             [{"tap":"Studio demo"},{"type":"Hello"},{"wait":"Needs you","timeout":20},
              {"screenshot":"reply","display":"3"},{"back":true},{"fold":false},
              {"action":"Reply","on":"message-12"},{"back":true,"ifPresent":true},
-             {"wait":"Replying to Lead","absent":true}]
+             {"wait":"Replying to Lead","absent":true},{"scroll":"down","on":"overview-form"}]
             """.utf8))
         #expect(steps.map(\.action) == [.tap("Studio demo"), .type("Hello"), .wait("Needs you", absent: false),
                                        .screenshot("reply", "3"), .back(ifPresent: false), .fold(false),
                                        .customAction("Reply", on: "message-12"), .back(ifPresent: true),
-                                       .wait("Replying to Lead", absent: true)])
+                                       .wait("Replying to Lead", absent: true), .scroll(.down, on: "overview-form")])
         #expect(steps[0].timeout == 12 && steps[2].timeout == 20)
         for invalid in [#"{"tap":"x","wait":"x"}"#, #"{"type":""}"#, #"{"back":false}"#,
                         #"{"fold":1}"#, #"{"tap":"x","display":"1"}"#,
                         #"{"wait":"x","timeout":0}"#, #"{"tap":"x","typo":true}"#,
                         #"{"action":"Reply"}"#, #"{"action":"Reply","on":""}"#,
                         #"{"tap":"Reply","on":"message-12"}"#, #"{"wait":"x","absent":"yes"}"#,
-                        #"{"tap":"x","absent":true}"#] {
+                        #"{"tap":"x","absent":true}"#, #"{"scroll":"down"}"#,
+                        #"{"scroll":"down","on":""}"#, #"{"scroll":"forward","on":"form"}"#,
+                        #"{"scroll":"up","on":"form","display":"1"}"#] {
             #expect(throws: DecodingError.self) {
                 try JSONDecoder().decode(MobileAutomationStep.self, from: Data(invalid.utf8))
             }
         }
+    }
+
+    @Test func scrollingDispatchesOnceToAUniqueContainerAndNeverRetriesAnUnhandledAction() throws {
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 440, height: 956))
+        window.isHidden = false
+        defer { window.isHidden = true }
+        let container = ScrollContainer()
+        container.accessibilityIdentifier = "form"
+        window.addSubview(container)
+        #expect(try !MobileAutomationTree(windows: [window]).scroll(.down, on: "missing"))
+        #expect(container.directions.isEmpty)
+        #expect(try MobileAutomationTree(windows: [window]).scroll(.down, on: "form"))
+        #expect(container.directions == [.down])
+        container.handlesScroll = false
+        #expect(throws: MobileAutomationTree.ScrollFailure.self) {
+            try MobileAutomationTree(windows: [window]).scroll(.up, on: "form")
+        }
+        #expect(container.directions == [.down, .up])
+        let duplicate = ScrollContainer()
+        duplicate.accessibilityIdentifier = "form"
+        window.addSubview(duplicate)
+        #expect(throws: MobileAutomationTree.ScrollFailure.self) {
+            try MobileAutomationTree(windows: [window]).scroll(.left, on: "form")
+        }
+        #expect(container.directions == [.down, .up])
+        #expect(duplicate.directions.isEmpty)
     }
 
     @Test func treeUsesAccessibilityContainersWithoutDuplicatingOrExposingHiddenViews() throws {

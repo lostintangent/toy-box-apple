@@ -109,6 +109,12 @@ view.
   the app reports a settled accessibility/layout snapshot and go under `SCRATCH_PATH/mobile-drive/`.
   Capture/control subprocesses share the step deadline and interruption signal. Cancellation kills
   the exact child and awaits its exit before simulator shutdown and lease release.
+  `{"scroll":"down","on":"scrollable-list"}` dispatches one public accessibility scroll action to
+  that exact, unique identifier. Directions are `up`, `down`, `left` and `right`. Missing targets
+  wait within the same step deadline. Ambiguous or unhandled actions fail without retries or
+  direct content-offset changes, and captures still wait for settled layout.
+  The target must handle this public action. Some SwiftUI Form containers decline it, so this
+  is not a finger-scroll substitute.
   This drives accessibility activation, native control primary actions and text insertion, not
   finger touch. Rerunning a
   script repeats its actions, including sends. Use demo servers only for write scripts.

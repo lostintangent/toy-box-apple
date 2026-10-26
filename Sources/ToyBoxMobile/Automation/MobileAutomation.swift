@@ -3,9 +3,23 @@ import Foundation
 import UIKit
 
 struct MobileAutomationStep: Decodable, Equatable {
+    enum ScrollDirection: String, Decodable {
+        case up, down, left, right
+
+        var native: UIAccessibilityScrollDirection {
+            switch self {
+            case .up: .up
+            case .down: .down
+            case .left: .left
+            case .right: .right
+            }
+        }
+    }
+
     enum Action: Equatable {
         case tap(String), type(String), wait(String, absent: Bool), screenshot(String, String), back(ifPresent: Bool), fold(Bool)
         case customAction(String, on: String)
+        case scroll(ScrollDirection, on: String)
     }
 
     let action: Action
@@ -21,13 +35,13 @@ struct MobileAutomationStep: Decodable, Equatable {
     init(from decoder: any Decoder) throws {
         let values = try decoder.container(keyedBy: Key.self)
         let names = Set(values.allKeys.map(\.stringValue))
-        let actions = names.intersection(["tap", "type", "wait", "screenshot", "back", "fold", "action"])
+        let actions = names.intersection(["tap", "type", "wait", "screenshot", "back", "fold", "action", "scroll"])
         guard actions.count == 1, names.isSubset(of: actions.union(["display", "timeout", "ifPresent", "on", "absent"])),
               let name = actions.first, let key = Key(stringValue: name),
               (!names.contains("display") || name == "screenshot"),
               (!names.contains("ifPresent") || name == "back"),
               (!names.contains("absent") || name == "wait"),
-              (!names.contains("on") || name == "action") else {
+              (!names.contains("on") || name == "action" || name == "scroll") else {
             throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath,
                                                     debugDescription: "Each step needs exactly one supported action."))
         }
@@ -37,7 +51,7 @@ struct MobileAutomationStep: Decodable, Equatable {
                                                   debugDescription: "timeout must be greater than 0 and at most 60 seconds.")
         }
         switch name {
-        case "tap", "type", "wait", "screenshot", "action":
+        case "tap", "type", "wait", "screenshot", "action", "scroll":
             let text = try values.decode(String.self, forKey: key)
             guard !text.isEmpty else {
                 throw DecodingError.dataCorruptedError(forKey: key, in: values,
@@ -48,13 +62,21 @@ struct MobileAutomationStep: Decodable, Equatable {
             case "type": action = .type(text)
             case "wait":
                 action = .wait(text, absent: try values.decodeIfPresent(Bool.self, forKey: Key(stringValue: "absent")!) ?? false)
-            case "action":
+            case "action", "scroll":
                 let target = try values.decode(String.self, forKey: Key(stringValue: "on")!)
                 guard !target.isEmpty else {
                     throw DecodingError.dataCorruptedError(forKey: key, in: values,
-                                                          debugDescription: "Custom actions need a nonempty on target.")
+                                                          debugDescription: "Custom actions and scrolling need a nonempty on target.")
                 }
-                action = .customAction(text, on: target)
+                if name == "scroll" {
+                    guard let direction = ScrollDirection(rawValue: text) else {
+                        throw DecodingError.dataCorruptedError(forKey: key, in: values,
+                                                              debugDescription: "Scroll direction must be up, down, left or right.")
+                    }
+                    action = .scroll(direction, on: target)
+                } else {
+                    action = .customAction(text, on: target)
+                }
             default:
                 let displayKey = Key(stringValue: "display")!
                 let display = try values.decodeIfPresent(String.self, forKey: displayKey)
@@ -84,6 +106,17 @@ enum MobileAutomation {
 
 @MainActor
 struct MobileAutomationTree {
+    enum ScrollFailure: Error, CustomStringConvertible {
+        case ambiguous(String), unhandled(String)
+
+        var description: String {
+            switch self {
+            case .ambiguous(let target): "Ambiguous accessibility scroll identifier: \(target)."
+            case .unhandled(let target): "Accessibility scrolling was not handled by \(target)."
+            }
+        }
+    }
+
     @MainActor
     struct Element {
         let object: NSObject
@@ -147,11 +180,13 @@ struct MobileAutomationTree {
 
     let windows: [UIWindow]
     let elements: [Element]
+    private let identifiedObjects: [String: [NSObject]]
 
     init(windows: [UIWindow]) {
         self.windows = windows.filter { !$0.isHidden && $0.alpha > 0 }
         var seen = Set<ObjectIdentifier>()
         var elements: [Element] = []
+        var identifiedObjects: [String: [NSObject]] = [:]
         func visit(_ object: NSObject, containers: [String]) {
             guard seen.count < 5_000, seen.insert(ObjectIdentifier(object)).inserted else { return }
             if let view = object as? UIView, view.isHidden || view.alpha == 0 { return }
@@ -164,6 +199,7 @@ struct MobileAutomationTree {
                 identifier = object.responds(to: getter)
                     ? object.perform(getter)?.takeUnretainedValue() as? String ?? "" : ""
             }
+            if !identifier.isEmpty { identifiedObjects[identifier, default: []].append(object) }
             let descendants = identifier.isEmpty ? containers : containers + [identifier]
             if object.isAccessibilityElement || !(object.accessibilityCustomActions ?? []).isEmpty {
                 let element = Element(object: object, label: object.accessibilityLabel ?? "",
@@ -189,6 +225,7 @@ struct MobileAutomationTree {
         }
         for window in self.windows { visit(window, containers: []) }
         self.elements = elements
+        self.identifiedObjects = identifiedObjects
     }
 
     static var current: Self {
@@ -214,6 +251,15 @@ struct MobileAutomationTree {
         elements.contains { $0.label.localizedCaseInsensitiveContains(target)
             || $0.value.localizedCaseInsensitiveContains(target) || $0.identifier == target
             || $0.containerIdentifiers.contains(target) }
+    }
+
+    func scroll(_ direction: MobileAutomationStep.ScrollDirection, on identifier: String) throws -> Bool {
+        guard let matches = identifiedObjects[identifier], !matches.isEmpty else { return false }
+        guard matches.count == 1, let target = matches.first else { throw ScrollFailure.ambiguous(identifier) }
+        guard target.accessibilityScroll(direction.native) else {
+            throw ScrollFailure.unhandled("\(identifier) (\(type(of: target)))")
+        }
+        return true
     }
 
     var firstResponder: UIResponder? {
@@ -313,6 +359,10 @@ private final class MobileAutomationRun {
             let actions = element.actions.filter { $0.name == name }
             guard actions.count == 1, let action = actions.first, element.perform(action) else {
                 throw Failure("Accessibility custom action \(name) was not handled by \(target).")
+            }
+        case .scroll(let direction, let target):
+            _ = try await wait(timeout: step.timeout) {
+                try MobileAutomationTree.current.scroll(direction, on: target) ? true : nil
             }
         case .back(let ifPresent):
             let tree = try await wait(timeout: step.timeout) {
