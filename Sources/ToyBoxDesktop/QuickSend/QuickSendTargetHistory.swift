@@ -1,4 +1,5 @@
 import ChannelKit
+import ChannelClient
 import Foundation
 import Observation
 

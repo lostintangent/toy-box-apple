@@ -5,6 +5,7 @@ import CoreSpotlight
 import Observation
 import OSLog
 import SwiftUI
+import ToyBoxUI
 
 @MainActor
 final class RequestSpotlight {

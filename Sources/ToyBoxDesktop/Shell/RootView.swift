@@ -1,6 +1,7 @@
 import ChannelClient
 import ChannelKit
 import SwiftUI
+import ToyBoxUI
 
 /// The window: source-list sidebar and the selected channel. Each window owns its selection
 /// and management presenter, while the catalog and channel stores are shared app-wide.

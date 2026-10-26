@@ -1,4 +1,5 @@
 import Foundation
+import ChannelClient
 import Observation
 
 struct QuickSendPrefill: Identifiable, Sendable {

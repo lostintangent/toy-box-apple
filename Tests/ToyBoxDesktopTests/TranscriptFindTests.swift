@@ -3,6 +3,7 @@ import ChannelClient
 import ChannelKit
 import Foundation
 import SwiftUI
+import ToyBoxUI
 import Testing
 @testable import ToyBoxDesktop
 

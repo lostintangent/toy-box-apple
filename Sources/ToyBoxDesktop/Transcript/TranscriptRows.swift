@@ -1,6 +1,7 @@
 import ChannelClient
 import ChannelKit
 import SwiftUI
+import ToyBoxUI
 
 /// What every row draws from the channel. It leaves out the statuses, presence and messages that
 /// change on nearly every update, so a row redraws only when something it shows does.

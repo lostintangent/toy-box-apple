@@ -3,6 +3,7 @@ import ChannelClient
 import ChannelKit
 import Network
 import SwiftUI
+import ToyBoxUI
 import Synchronization
 import Testing
 import WebKit

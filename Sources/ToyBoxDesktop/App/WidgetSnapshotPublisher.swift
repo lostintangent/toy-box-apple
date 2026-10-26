@@ -2,6 +2,7 @@ import AppKit
 import ChannelKit
 import OSLog
 import SwiftUI
+import ToyBoxUI
 import WidgetKit
 
 @MainActor

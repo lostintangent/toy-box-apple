@@ -1,5 +1,6 @@
 import ChannelClient
 import SwiftUI
+import ToyBoxUI
 
 @main
 struct ToyBoxMobileApp: App {

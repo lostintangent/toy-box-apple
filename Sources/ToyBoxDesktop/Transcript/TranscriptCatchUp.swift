@@ -2,6 +2,7 @@ import ChannelClient
 import ChannelIntelligence
 import ChannelKit
 import SwiftUI
+import ToyBoxUI
 
 /// The catch-up summary for one landing in a channel: what the card shows, the generation the
 /// transcript runs for it, and how its height changes move the rows around it.

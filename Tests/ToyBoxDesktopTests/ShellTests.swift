@@ -5,6 +5,7 @@ import ChannelClient
 import ChannelIntelligence
 import Observation
 import SwiftUI
+import ToyBoxUI
 import Synchronization
 import Testing
 @testable import ToyBoxDesktop

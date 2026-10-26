@@ -1,6 +1,7 @@
 import ChannelClient
 import ChannelKit
 import SwiftUI
+import ToyBoxUI
 
 /// The lead, then members alphabetically. Positions never follow presence, so the list stays scannable.
 struct OverviewTeamList: View {

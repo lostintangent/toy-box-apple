@@ -1,6 +1,7 @@
 import ChannelClient
 import ChannelKit
 import SwiftUI
+import ToyBoxUI
 
 /// Channel events sit in the neutral center of the conversation, as in Messages: one centered
 /// sentence led by its inline symbol, with values in primary ink and links in native link ink.

@@ -3,6 +3,7 @@ import ChannelClient
 import ChannelKit
 import QuickLook
 import SwiftUI
+import ToyBoxUI
 import UniformTypeIdentifiers
 
 /// A shared file: its real Finder icon, the title, and who shared it and when.

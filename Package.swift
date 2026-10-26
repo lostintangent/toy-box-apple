@@ -11,6 +11,7 @@ let package = Package(
         .library(name: "ChannelKit", targets: ["ChannelKit"]),
         .library(name: "ChannelClient", targets: ["ChannelClient"]),
         .library(name: "ChannelIntelligence", targets: ["ChannelIntelligence"]),
+        .library(name: "ToyBoxUI", targets: ["ToyBoxUI"]),
     ] + (mobile ? [
         .executable(name: "ToyBoxMobile", targets: ["ToyBoxMobile"]),
     ] : [
@@ -25,8 +26,9 @@ let package = Package(
         .target(name: "ChannelKit"),
         .target(name: "ChannelClient", dependencies: ["ChannelKit"]),
         .target(name: "ChannelIntelligence", dependencies: ["ChannelKit"]),
+        .target(name: "ToyBoxUI", dependencies: ["ChannelKit"]),
     ] + (mobile ? [
-        .executableTarget(name: "ToyBoxMobile", dependencies: ["ChannelClient", "ChannelIntelligence"]),
+        .executableTarget(name: "ToyBoxMobile", dependencies: ["ChannelClient", "ChannelIntelligence", "ToyBoxUI"]),
     ] : [
         .target(name: "ToyBoxControlIntents", swiftSettings: [.unsafeFlags(["-application-extension"])]),
         .executableTarget(
@@ -42,7 +44,7 @@ let package = Package(
         .executableTarget(
             name: "ToyBoxDesktop",
             dependencies: [
-                "ChannelKit", "ChannelClient", "ChannelIntelligence",
+                "ChannelKit", "ChannelClient", "ChannelIntelligence", "ToyBoxUI",
                 "ToyBoxControlIntents",
                 .product(name: "Sparkle", package: "Sparkle"),
             ],
@@ -58,6 +60,7 @@ let package = Package(
             resources: [.copy("Fixtures")]
         ),
         .testTarget(name: "ChannelClientTests", dependencies: ["ChannelClient"]),
+        .testTarget(name: "ToyBoxUITests", dependencies: ["ToyBoxUI"]),
         .testTarget(
             name: "ChannelIntelligenceTests",
             dependencies: ["ChannelIntelligence"],

@@ -2,6 +2,7 @@ import AppKit
 import ChannelClient
 import ChannelKit
 import SwiftUI
+import ToyBoxUI
 
 struct MenuBarInbox: View {
     @Environment(AppModel.self) private var model

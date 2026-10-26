@@ -3,6 +3,7 @@ import AppKit
 import ChannelKit
 import CoreSpotlight
 import SwiftUI
+import ToyBoxUI
 
 /// Keeps Spotlight's channels in step with the server saved in Settings. Each channel appears by
 /// name, with its purpose and the sidebar's icon, and picking one runs Open Channel. A deleted

@@ -3,6 +3,7 @@ import ChannelClient
 import ChannelKit
 import QuickLook
 import SwiftUI
+import ToyBoxUI
 import UniformTypeIdentifiers
 import WebKit
 

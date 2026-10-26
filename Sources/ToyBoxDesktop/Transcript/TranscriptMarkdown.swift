@@ -1,6 +1,7 @@
 import AppKit
 import ChannelKit
 import SwiftUI
+import ToyBoxUI
 
 struct TranscriptMarkdown: View {
     let content: String

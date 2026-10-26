@@ -1,7 +1,9 @@
 import AppKit
+import ChannelClient
 import ChannelKit
 import Observation
 import SwiftUI
+import ToyBoxUI
 import UniformTypeIdentifiers
 
 struct ComposerFailureFeedback: Equatable {

@@ -1,6 +1,7 @@
 import ChannelClient
 import ChannelKit
 import SwiftUI
+import ToyBoxUI
 
 struct ChannelDetailView: View {
     let store: ChannelStore

@@ -3,6 +3,7 @@ import AppKit
 import ChannelKit
 import Foundation
 import SwiftUI
+import ToyBoxUI
 import Synchronization
 import Testing
 @testable import ToyBoxDesktop

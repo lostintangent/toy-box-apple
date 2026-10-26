@@ -1,6 +1,7 @@
 import ChannelClient
 import ChannelKit
 import SwiftUI
+import ToyBoxUI
 
 struct MemberEditor: View {
     @Environment(AppModel.self) private var app

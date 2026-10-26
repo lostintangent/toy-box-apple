@@ -1,6 +1,7 @@
 import AppKit
 import ChannelKit
 import SwiftUI
+import ToyBoxUI
 
 private struct OverviewTaskFocusInteractionsKey: EnvironmentKey {
     static let defaultValue: FocusInteractions = .activate

@@ -1,7 +1,5 @@
-import ChannelClient
-
 /// What the app's connection count needs from a channel store.
-@MainActor protocol ConnectableChannel: AnyObject {
+@MainActor public protocol ConnectableChannel: AnyObject {
     func captureUnreadBoundary()
     func connect()
     func disconnect()
@@ -17,23 +15,23 @@ extension ChannelStore: ConnectableChannel {}
 /// A lingering store has no view, so it never marks read, and notifications come from the catalog,
 /// which a connection doesn't change. Only the newest `capacity` stores linger, so leaving a third
 /// channel disconnects the oldest at once.
-@MainActor final class ChannelConnections<Store: ConnectableChannel> {
-    let linger: Duration
-    let capacity: Int
+@MainActor public final class ChannelConnections<Store: ConnectableChannel> {
+    public let linger: Duration
+    public let capacity: Int
     private var held: [ObjectIdentifier: (store: Store, count: Int)] = [:]
     /// Oldest first.
     private var lingering: [(store: Store, expiry: Task<Void, Never>)] = []
 
-    init(linger: Duration = .seconds(5), capacity: Int = 2) {
+    public init(linger: Duration = .seconds(5), capacity: Int = 2) {
         self.linger = linger
         self.capacity = capacity
     }
 
     /// Held and lingering stores, each with its own connection.
-    var stores: [Store] { held.values.map(\.store) + lingering.map(\.store) }
-    var lingeringCount: Int { lingering.count }
+    public var stores: [Store] { held.values.map(\.store) + lingering.map(\.store) }
+    public var lingeringCount: Int { lingering.count }
 
-    func acquire(_ store: Store) {
+    public func acquire(_ store: Store) {
         let key = ObjectIdentifier(store)
         if let entry = held[key] {
             held[key] = (store, entry.count + 1)
@@ -49,7 +47,7 @@ extension ChannelStore: ConnectableChannel {}
         store.connect()
     }
 
-    func release(_ store: Store) {
+    public func release(_ store: Store) {
         let key = ObjectIdentifier(store)
         guard let entry = held[key] else { return }
         guard entry.count == 1 else {
@@ -76,7 +74,7 @@ extension ChannelStore: ConnectableChannel {}
     }
 
     /// Disconnects every store at once, as a server change does.
-    func disconnectAll() {
+    public func disconnectAll() {
         for entry in held.values { entry.store.disconnect() }
         for entry in lingering {
             entry.expiry.cancel()

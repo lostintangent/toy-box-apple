@@ -2,6 +2,7 @@ import AppKit
 import ChannelClient
 import ChannelKit
 import SwiftUI
+import ToyBoxUI
 import UniformTypeIdentifiers
 
 struct ComposerArea: View {
