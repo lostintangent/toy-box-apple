@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { MobileDriveSession, parseMobileDrive, parseMobileDriveStatus } from "./mobile-drive.ts";
+import { MobileDriveSession, parseMobileDrive, parseMobileDriveStatus, runMobileDriveCommand } from "./mobile-drive.ts";
 
 test("drive actions are strict and native display identifiers are normalized", () => {
     expect(parseMobileDrive([{ tap: "Studio demo" }, { type: "Hello" }, { wait: "Needs you", timeout: 20 },
@@ -97,3 +97,36 @@ test("fold uses the same single acknowledgement handshake", async () => {
     expect(folds).toEqual([false]);
     expect(session.completed).toBe(true);
 });
+
+for (const reason of ["timeout", "cancellation"]) {
+    test(`a stalled host ${reason} waits for child termination and cannot acknowledge success`, async () => {
+        const deadline = new AbortController();
+        const cancellation = new AbortController();
+        let finish!: (exit: number) => void;
+        const exited = new Promise<number>(resolve => { finish = resolve; });
+        let stopped = false;
+        let settled = false;
+        const session = new MobileDriveSession(drive([{ screenshot: "reply" }]), {
+            async capture(_path, _display, signal) {
+                await runMobileDriveCommand(["controlled-child"], {}, signal, (_args, childSignal) => {
+                    childSignal.addEventListener("abort", () => { stopped = true; }, { once: true });
+                    const empty = () => new ReadableStream<Uint8Array>({ start(controller) { controller.close(); } });
+                    return { exited, stdout: empty(), stderr: empty(), kill() { stopped = true; } };
+                });
+            },
+            fold: unexpected,
+        });
+        const pending = session.accept({ ...frame, state: "ready" }, cancellation.signal, deadline.signal);
+        void pending.then(() => { settled = true; });
+        const controller = reason === "timeout" ? deadline : cancellation;
+        controller.abort(new Error(`Host ${reason}`));
+        expect(stopped).toBe(true);
+        expect(settled).toBe(false);
+        finish(137);
+        expect(await pending).toEqual({ step: 0, error: `Host ${reason}` });
+        expect(session.screenshots).toEqual([]);
+        expect(await session.accept({ ...frame, state: "ready" })).toBeUndefined();
+        await expect(session.accept({ ...frame, state: "completed" })).rejects.toThrow(`Host ${reason}`);
+        expect(session.completed).toBe(false);
+    });
+}

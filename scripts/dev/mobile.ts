@@ -2,7 +2,7 @@ import { copyFile, lstat, mkdir, readlink, symlink, unlink } from "node:fs/promi
 import { join } from "node:path";
 import { parseArgs } from "node:util";
 import { command, machineLock, main, plist, root, scratchPath, text } from "../lib.ts";
-import { prepareMobileDrive, runMobileDrive, simulatorDriveHost } from "./mobile-drive.ts";
+import { prepareMobileDrive, runMobileDrive, runMobileSimulatorCommand, simulatorDriveHost } from "./mobile-drive.ts";
 
 export const mobileEnvironment = {
     ...process.env,
@@ -206,7 +206,9 @@ if (import.meta.main) await main(async () => {
         process.removeListener("SIGTERM", interrupt);
         try {
             if (drivenSimulator) {
-                await command(["xcrun", "simctl", "shutdown", drivenSimulator], { env: mobileEnvironment });
+                const result = await runMobileSimulatorCommand(["shutdown", drivenSimulator], mobileEnvironment,
+                    AbortSignal.timeout(15_000));
+                if (result.exitCode) throw new Error(`Simulator shutdown failed: ${result.stderr.trim()}`);
             }
         } finally { unlock(); }
     }

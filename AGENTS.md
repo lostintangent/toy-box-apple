@@ -107,6 +107,8 @@ view.
   Other actions are never skipped or retried. Each step accepts a
   timeout in seconds (default 12, maximum 60). Screenshots are acknowledged by the host only after
   the app reports a settled accessibility/layout snapshot and go under `SCRATCH_PATH/mobile-drive/`.
+  Capture/control subprocesses share the step deadline and interruption signal. Cancellation kills
+  the exact child and awaits its exit before simulator shutdown and lease release.
   This drives accessibility activation, native control primary actions and text insertion, not
   finger touch. Rerunning a
   script repeats its actions, including sends. Use demo servers only for write scripts.
