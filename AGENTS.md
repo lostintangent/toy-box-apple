@@ -199,6 +199,10 @@ view.
   first-launch fallback after explicit launch input, environment and saved Settings.
   Simulator/unsigned bundles have no bundled server default. Launch overrides are not saved
   in Settings. Loopback URLs and URLs containing credentials are rejected.
+  The phone accepts user-selected HTTP and HTTPS servers, including fully qualified Tailscale
+  names. Its ATS dictionary uses `NSAllowsArbitraryLoads` alone: adding `NSAllowsLocalNetworking`
+  makes iOS ignore that opt-out. Local-network permission remains separate from ATS, and HTTPS
+  still uses normal certificate validation.
 - `SCRATCH_PATH=/tmp/tbm-<you> bun run test:mobile` builds and runs ChannelKit,
   ChannelClient, ChannelIntelligence, ToyBoxUI and ToyBoxMobile tests on iOS Simulator. It uses Apple's simulator
   `xctest` host and rejects interrupted, failed and empty Swift Testing runs. Existing opt-ins
