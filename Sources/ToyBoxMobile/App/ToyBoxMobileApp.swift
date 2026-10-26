@@ -16,5 +16,6 @@ struct ToyBoxMobileApp: App {
                 .task { await MobileAutomation.runIfRequested() }
                 #endif
         }
+        .commands { ChannelCommands() }
     }
 }

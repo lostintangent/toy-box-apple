@@ -8,7 +8,9 @@ struct ChannelSidebar: View {
     @Environment(AppModel.self) private var model
     @Environment(ManagementPresenter.self) private var management
     @Binding var showsSettings: Bool
+    let searchFocusRequest: UUID
     @ViewState private var query = ""
+    @FocusState private var searchFocused: Bool
 
     private var trimmedQuery: String { query.trimmingCharacters(in: .whitespacesAndNewlines) }
 
@@ -16,12 +18,7 @@ struct ChannelSidebar: View {
         (model.catalog?.channels ?? []).filter { channelMatchesQuery($0, query: trimmedQuery) }
     }
 
-    private var connection: SidebarConnection {
-        SidebarConnection(
-            loaded: model.catalog?.hasLoaded == true, failing: model.catalog?.error != nil,
-            fatal: model.catalog == nil || SidebarConnection.isFatal(model.catalog?.failure)
-        )
-    }
+    private var connection: SidebarConnection { model.sidebarConnection }
 
     private var initialLoading: Bool {
         model.catalog != nil && connection == .connecting
@@ -32,14 +29,9 @@ struct ChannelSidebar: View {
         return initialLoading || model.requestedRefresh.isRunning(for: catalog)
     }
 
-    private var canCreate: Bool {
-        model.isActive && connection == .connected
-    }
+    private var canCreate: Bool { model.canCreateChannel }
 
-    private var projection: ChannelSidebarProjection {
-        let visible = model.isActive ? model.visibleChannelID : nil
-        return ChannelSidebarProjection(catalog: model.catalog, openChannelIDs: Set(visible.map { [$0] } ?? []))
-    }
+    private var projection: ChannelSidebarProjection { model.sidebarProjection }
 
     private func channelList(now: Date) -> some View {
         @Bindable var model = model
@@ -85,6 +77,11 @@ struct ChannelSidebar: View {
         .navigationTitle("Channels")
         .navigationBarTitleDisplayMode(.large)
         .searchable(text: $query, prompt: "Search Channels")
+        .searchFocused($searchFocused)
+        .onChange(of: searchFocusRequest) { _, _ in searchFocused = true }
+        .focusedValue(\.channelRefresh, model.isActive && model.catalog != nil ? {
+            Task { await model.refreshCatalog() }
+        } : nil)
         .refreshable { await model.refreshCatalog() }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
