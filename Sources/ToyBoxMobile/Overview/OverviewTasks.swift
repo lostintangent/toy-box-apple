@@ -125,7 +125,7 @@ private struct OverviewTaskTree: View {
     }
 }
 
-private struct OverviewTaskNode: View {
+struct OverviewTaskNode: View {
     let task: ChannelTask
     let store: ChannelStore
     let session: OverviewSession
@@ -160,7 +160,6 @@ private struct OverviewTaskNode: View {
                 .buttonStyle(.borderless)
                 .disabled(artifact == nil)
                 .padding(.leading, layout.accessibility ? 0 : layout.statusWidth + layout.titleGap)
-                .padding(.top, 4)
                 .accessibilityLabel(artifact.map { "Open \($0.title)" } ?? "Artifact unavailable")
                 .accessibilityIdentifier("overview-task-artifact-\(task.id)")
             }
@@ -331,7 +330,9 @@ struct OverviewTaskArtifactLabel: View {
         }
         .font(.footnote)
         .foregroundStyle(Color(uiColor: isEnabled ? .label : .tertiaryLabel))
-        .frame(maxWidth: .infinity, minHeight: 44, alignment: .topLeading)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.top, ChannelOverviewFactsLayout.titleGap)
+        .padding(.bottom, 12)
         .contentShape(Rectangle())
     }
 }

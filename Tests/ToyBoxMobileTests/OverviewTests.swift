@@ -179,7 +179,7 @@ struct OverviewTests {
         #expect(image.size.height > 10 && image.size.height < 50)
     }
 
-    @Test(arguments: [ColorScheme.light, .dark], [DynamicTypeSize.large, .accessibility5])
+    @Test(arguments: [ColorScheme.light, .dark], DynamicTypeSize.allCases)
     func waitingCueStaysCenteredOnTheFirstLineWhileTheReasonWraps(
         scheme: ColorScheme, size: DynamicTypeSize
     ) throws {
@@ -328,7 +328,7 @@ struct OverviewTests {
     }
 
     @Test(arguments: [ColorScheme.light, .dark], [true, false])
-    func artifactActionKeepsItsEnabledInkAndAnUncentered44PointTargetUnderLinkTint(
+    func artifactActionUsesOnlyNormalInsetsAndKeepsItsEnabledInkUnderLinkTint(
         scheme: ColorScheme, enabled: Bool
     ) throws {
         let renderer = ImageRenderer(content:
@@ -346,7 +346,7 @@ struct OverviewTests {
         renderer.scale = 1
         let image = try #require(renderer.uiImage)
         let cgImage = try #require(image.cgImage)
-        #expect(image.size.height == 44)
+        #expect(image.size.height < 44)
         let pixels = try rgba(cgImage)
         var inkRows: [Int] = []
         var tintedPixels = 0
@@ -372,7 +372,47 @@ struct OverviewTests {
         }
         let first = try #require(inkRows.min())
         let last = try #require(inkRows.max())
-        #expect(min(first, cgImage.height - 1 - last) < 8)
+        let bottom = cgImage.height - 1 - last
+        #expect(first >= Int(ChannelOverviewFactsLayout.titleGap))
+        #expect(bottom >= 12)
+        #expect(abs(CGFloat(bottom - first) - (12 - ChannelOverviewFactsLayout.titleGap)) <= 2)
+    }
+
+    @Test func linkedArtifactAddsNoMoreRowHeightThanAnOrdinaryMetadataLine() throws {
+        let store = ChannelStore(id: "channel", api: try ChannelAPI(serverURL: "https://fixture.example"))
+        let session = OverviewSession(store: store)
+        let viewer = try artifactSession(artifacts: [])
+        let layout = OverviewTaskReadingLayout(
+            contentWidth: 220, statusWidth: 16, titleGap: 6, ownerWidth: 20,
+            scaledReadingWidth: 192, accessibility: false, rootHasOwner: false)
+        func rendered(_ task: ChannelTask) throws -> UIImage {
+            let renderer = ImageRenderer(content:
+                OverviewTaskNode(task: task, store: store, session: session, depth: 0, layout: layout)
+                    .environment(viewer)
+                    .dynamicTypeSize(.large))
+            renderer.proposedSize = ProposedViewSize(width: 220, height: nil)
+            renderer.scale = 3
+            return try #require(renderer.uiImage)
+        }
+        let title = "Design: every screen agreed with Mac parity"
+        let linked = try rendered(.init(id: "linked", title: title, status: "done", artifactId: "artifact"))
+        let metadata = try rendered(.init(id: "metadata", title: title, status: "done",
+                                         diff: .init(added: 1, removed: 1)))
+        #expect(abs(linked.size.height - metadata.size.height) <= 1)
+    }
+
+    @Test(arguments: [DynamicTypeSize.large, .accessibility5])
+    func anArtifactActionGrowsToFitItsWrappingLabel(size: DynamicTypeSize) throws {
+        let renderer = ImageRenderer(content:
+            Button {} label: {
+                OverviewTaskArtifactLabel(title: "The design plan and its supporting decisions")
+            }
+            .buttonStyle(.borderless)
+            .dynamicTypeSize(size))
+        renderer.proposedSize = ProposedViewSize(width: 180, height: nil)
+        renderer.scale = 3
+        let image = try #require(renderer.uiImage)
+        #expect(image.size.height > 44)
     }
 
     @Test func cancellingRemovalRestoresTheEditorAndOldSessionsCannotCompleteANewFlow() throws {

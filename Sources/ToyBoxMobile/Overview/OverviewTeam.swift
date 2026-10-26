@@ -179,14 +179,16 @@ struct OverviewAgentStatus: View {
     let live: Bool
     var active = false
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.dynamicTypeSize) private var typeSize
     @ScaledMetric(relativeTo: .footnote) private var cueSize = 9
     @ScaledMetric(relativeTo: .footnote) private var cueWidth = 12
-    @ScaledMetric(relativeTo: .footnote) private var statusFontSize = UIFont.preferredFont(
-        forTextStyle: .footnote,
-        compatibleWith: UITraitCollection(preferredContentSizeCategory: .large)).pointSize
 
     var body: some View {
         let status = ChannelAgentStatusPresentation(presence: presence, isLive: live)
+        // Scaled metrics do not track the preferred font's point size at accessibility sizes.
+        let capHeight = UIFont.preferredFont(
+            forTextStyle: .footnote,
+            compatibleWith: UITraitCollection(preferredContentSizeCategory: UIContentSizeCategory(typeSize))).capHeight
         HStack(alignment: .firstTextBaseline, spacing: 4) {
             if status.cue == .working {
                 OverviewWorkingEllipsis(size: cueSize, active: active)
@@ -198,9 +200,7 @@ struct OverviewAgentStatus: View {
                     .font(.system(size: cueSize, weight: .heavy))
                     .foregroundStyle(ChannelAgentStatusPresentation.waitingCue(in: colorScheme))
                     .frame(width: cueWidth)
-                    .alignmentGuide(.firstTextBaseline) {
-                        $0[VerticalAlignment.center] + UIFont.systemFont(ofSize: statusFontSize).capHeight / 2
-                    }
+                    .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + capHeight / 2 }
                     .accessibilityHidden(true)
             }
             Text(status.text).foregroundStyle(ChannelInk.secondary)
