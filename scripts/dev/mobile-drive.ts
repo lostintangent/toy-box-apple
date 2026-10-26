@@ -9,6 +9,7 @@ export type MobileDriveStep = Timed & (
     | { scroll: "up" | "down" | "left" | "right"; on: string }
     | { drag: "up" | "down" | "left" | "right"; on: string }
     | { posture: "folded" | "unfolded" }
+    | { menuAction: string }
 );
 export type MobileDriveTraits = { contentSizeCategory: string; interfaceStyle: string };
 type Status = { state: "running" | "ready" | "completed" | "failed"; step: number;
@@ -23,8 +24,9 @@ export function parseMobileDrive(value: unknown): MobileDriveStep[] {
     return value.map((step: unknown, index) => {
         const fail = (message: string): never => { throw new Error(`Drive step ${index + 1}: ${message}`); };
         if (!record(step)) return fail("expected an action object.");
-        const actions = ["tap", "type", "wait", "screenshot", "back", "fold", "action", "scroll", "drag", "posture"].filter(key => key in step);
-        if (actions.length !== 1) return fail("expected exactly one of tap, type, wait, screenshot, back, fold, action, scroll, drag or posture.");
+        const actions = ["tap", "type", "wait", "screenshot", "back", "fold", "action", "scroll", "drag", "posture", "menuAction"]
+            .filter(key => key in step);
+        if (actions.length !== 1) return fail("expected one supported action.");
         const action = actions[0]!;
         const allowed = new Set([action, "timeout", ...(action === "screenshot" ? ["display"] : []),
             ...(action === "back" ? ["ifPresent"] : []), ...(["action", "scroll", "drag"].includes(action) ? ["on"] : []),
@@ -51,6 +53,7 @@ export function parseMobileDrive(value: unknown): MobileDriveStep[] {
         if (typeof label !== "string" || !label.length) return fail(`${action} needs nonempty text.`);
         if (action === "tap") return { tap: label, ...timed };
         if (action === "type") return { type: label, ...timed };
+        if (action === "menuAction") return { menuAction: label, ...timed };
         if (action === "wait") {
             if (step.absent !== undefined && typeof step.absent !== "boolean") return fail("absent must be a boolean.");
             return { wait: label, ...timed, ...(step.absent === undefined ? {} : { absent: step.absent }) };
@@ -250,6 +253,9 @@ export async function runMobileDrive(drive: MobileDrive, host: DriveHost, signal
             if (status.state === "running" && "posture" in step) {
                 console.log(`Waiting for ${step.posture} posture. Set Device Hub's deviceChrome.poseHingeSlider `
                     + "through Computer Use after confirming the leased simulator.");
+            }
+            if (status.state === "running" && "menuAction" in step) {
+                console.log(`Visible-menu action dispatch (not a tap): ${step.menuAction}`);
             }
         }
         latest = status;

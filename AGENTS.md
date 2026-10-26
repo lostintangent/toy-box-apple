@@ -122,6 +122,16 @@ view.
   `traits.interfaceStyle`, or an explicit `traitsError`. Active presented content takes priority.
   Multiple visible controllers must agree. Reporting never forces view loading or substitutes
   screen traits or requested launch arguments for measured content.
+  `{"menuAction":"Edit Channel"}` is explicitly **visible-menu action dispatch**, not a tap.
+  It requires one active menu in the current scene and one enabled, visible matching leaf.
+  The driver tags that leaf's public accessibility identifier in UIKit's returned menu copy
+  and requires the exact fresh tag on a measured native candidate. A same-title background
+  control never establishes menu ownership. If UIKit does not expose the tag, the action fails.
+  The original identifier is restored before dispatch and on failure.
+  Hidden items and unopened submenus are excluded. It dismisses through UIKit, waits within
+  the same deadline for dismissal and settled layout, then performs the retained leaf through the public
+  `UIMenuLeaf` API. Missing, dismissed, ambiguous or changed-scene menus fail explicitly.
+  This does not prove finger selection, menu accessibility or hardware-key delivery.
   Other actions are never skipped or retried. Each step accepts a
   timeout in seconds (default 12, maximum 60). Screenshots are acknowledged by the host only after
   the app reports a settled accessibility/layout snapshot and go under `SCRATCH_PATH/mobile-drive/`.

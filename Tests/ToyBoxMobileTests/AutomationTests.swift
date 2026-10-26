@@ -59,19 +59,48 @@ struct AutomationTests {
         override var presentedViewController: UIViewController? { activePresentation }
     }
 
+    private final class MenuDelegate: NSObject, UIContextMenuInteractionDelegate {
+        func contextMenuInteraction(_ interaction: UIContextMenuInteraction,
+                                    configurationForMenuAtLocation location: CGPoint) -> UIContextMenuConfiguration? { nil }
+    }
+
+    private final class MenuInteraction: UIContextMenuInteraction {
+        private let retainedDelegate: MenuDelegate
+        var menu: UIMenu?
+        var dismissals = 0
+
+        init(menu: UIMenu) {
+            let delegate = MenuDelegate()
+            retainedDelegate = delegate
+            self.menu = menu
+            super.init(delegate: delegate)
+        }
+
+        override func updateVisibleMenu(_ block: (UIMenu) -> UIMenu) {
+            if let menu { self.menu = block(menu) }
+        }
+
+        override func dismissMenu() {
+            dismissals += 1
+            menu = nil
+        }
+    }
+
     @Test func scriptPreservesActionsAndRejectsUnknownOrContradictoryInputs() throws {
         let steps = try JSONDecoder().decode([MobileAutomationStep].self, from: Data("""
             [{"tap":"Studio demo"},{"type":"Hello"},{"wait":"Needs you","timeout":20},
              {"screenshot":"reply","display":"3"},{"back":true},{"fold":false},
              {"action":"Reply","on":"message-12"},{"back":true,"ifPresent":true},
              {"wait":"Replying to Lead","absent":true},{"scroll":"down","on":"overview-form"},
-             {"drag":"up","on":"conversation-transcript"},{"posture":"folded"},{"posture":"unfolded","timeout":60}]
+             {"drag":"up","on":"conversation-transcript"},{"posture":"folded"},{"posture":"unfolded","timeout":60},
+             {"menuAction":"Edit Channel"}]
             """.utf8))
         #expect(steps.map(\.action) == [.tap("Studio demo"), .type("Hello"), .wait("Needs you", absent: false),
                                        .screenshot("reply", "3"), .back(ifPresent: false), .fold(false),
                                        .customAction("Reply", on: "message-12"), .back(ifPresent: true),
                                        .wait("Replying to Lead", absent: true), .scroll(.down, on: "overview-form"),
-                                       .drag(.up, on: "conversation-transcript"), .posture(.folded), .posture(.unfolded)])
+                                       .drag(.up, on: "conversation-transcript"), .posture(.folded), .posture(.unfolded),
+                                       .menuAction("Edit Channel")])
         #expect(steps[0].timeout == 12 && steps[2].timeout == 20)
         for invalid in [#"{"tap":"x","wait":"x"}"#, #"{"type":""}"#, #"{"back":false}"#,
                         #"{"fold":1}"#, #"{"tap":"x","display":"1"}"#,
@@ -85,7 +114,9 @@ struct AutomationTests {
                         #"{"posture":"folded","fold":true}"#, #"{"posture":"folded","display":"1"}"#,
                         #"{"posture":"folded","scroll":"down","on":"form"}"#,
                         #"{"posture":"folded","on":"form"}"#, #"{"drag":"up"}"#,
-                        #"{"drag":"forward","on":"list"}"#, #"{"drag":"up","on":"list","scroll":"up"}"#] {
+                        #"{"drag":"forward","on":"list"}"#, #"{"drag":"up","on":"list","scroll":"up"}"#,
+                        #"{"menuAction":""}"#, #"{"menuAction":"Edit","on":"menu"}"#,
+                        #"{"menuAction":"Edit","tap":"Edit"}"#] {
             #expect(throws: DecodingError.self) {
                 try JSONDecoder().decode(MobileAutomationStep.self, from: Data(invalid.utf8))
             }
@@ -182,6 +213,142 @@ struct AutomationTests {
         await #expect(throws: CancellationError.self) { try await attempt.value }
         #expect(list.contentOffset == CGPoint(x: 0, y: 1_040))
         #expect(recorder.events == ["begin", "scroll", "willEnd", "end"])
+    }
+
+    @Test func menuDispatchExcludesDisabledHiddenOffscreenAndUnopenedSubmenuItems() throws {
+        let visible = UIAction(title: "Visible") { _ in }
+        let disabled = UIAction(title: "Disabled", attributes: .disabled) { _ in }
+        let hidden = UIAction(title: "Hidden", attributes: .hidden) { _ in }
+        let unopened = UIAction(title: "Unopened") { _ in }
+        let menu = UIMenu(children: [visible, disabled, hidden, UIMenu(title: "More", children: [unopened])])
+        let selected = try MobileAutomationMenu.leaf(named: "Visible", in: [menu], isVisible: true)
+        let matchesExpectedAction = selected === visible
+        #expect(matchesExpectedAction)
+        for title in ["Disabled", "Hidden", "Unopened", "Missing"] {
+            #expect(throws: MobileAutomationMenu.Failure.self) {
+                try MobileAutomationMenu.leaf(named: title, in: [menu], isVisible: true)
+            }
+        }
+        #expect(throws: MobileAutomationMenu.Failure.self) {
+            try MobileAutomationMenu.leaf(named: "Visible", in: [menu], isVisible: false)
+        }
+    }
+
+    @Test func inlineSectionsAreVisibleAndSeparateReportsDoNotDuplicateThem() throws {
+        let action = UIAction(title: "Edit") { _ in }
+        let inline = UIMenu(options: .displayInline, children: [action])
+        let root = UIMenu(children: [inline])
+        for menus in [[root], [root, inline]] {
+            let selected = try MobileAutomationMenu.leaf(named: "Edit", in: menus, isVisible: true)
+            let matchesExpectedAction = selected === action
+            #expect(matchesExpectedAction)
+        }
+    }
+
+    @Test func duplicateVisibleMenuLeavesAreRejectedWithoutDispatching() {
+        var performed = 0
+        let first = UIAction(title: "Edit") { _ in performed += 1 }
+        let second = UIAction(title: "Edit") { _ in performed += 1 }
+        let menu = UIMenu(children: [first, second])
+        #expect(throws: MobileAutomationMenu.Failure.self) {
+            try MobileAutomationMenu.leaf(named: "Edit", in: [menu], isVisible: true)
+        }
+        #expect(performed == 0)
+    }
+
+    @Test func menuVisibilityRequiresTheSelectedWindowAndUnclippedMeasuredCenter() {
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 386, height: 678))
+        window.isHidden = false
+        defer { window.isHidden = true }
+        let clip = UIView(frame: CGRect(x: 20, y: 20, width: 100, height: 100))
+        clip.clipsToBounds = true
+        window.addSubview(clip)
+        let item = UIView(frame: CGRect(x: 0, y: 10, width: 80, height: 40))
+        item.accessibilityIdentifier = "menu-item"
+        clip.addSubview(item)
+        func measured() -> MobileAutomationTree.Element {
+            .init(object: item, label: "Edit", value: "", identifier: "menu-item", traits: .button,
+                  frame: item.convert(item.bounds, to: nil))
+        }
+        #expect(MobileAutomationMenu.isVisible(measured(), matching: "menu-item", in: [window]))
+        #expect(!MobileAutomationMenu.isVisible(measured(), matching: "menu-item", in: []))
+        item.frame.origin.y = 150
+        #expect(!MobileAutomationMenu.isVisible(measured(), matching: "menu-item", in: [window]))
+        item.frame.origin.y = 10
+        item.isHidden = true
+        #expect(!MobileAutomationMenu.isVisible(measured(), matching: "menu-item", in: [window]))
+    }
+
+    @Test func menuIdentityTagsOnlyAnIsolatedLeafCopyAndRestoresBeforeDispatch() throws {
+        var performed = 0
+        var deliveredIdentifier: String?
+        let action = UIAction(title: "Edit") { action in
+            performed += 1
+            deliveredIdentifier = action.accessibilityIdentifier
+        }
+        action.accessibilityIdentifier = "original-edit"
+        let other = UIAction(title: "Other") { _ in }
+        other.accessibilityIdentifier = "other"
+        let interaction = MenuInteraction(menu: UIMenu(children: [action, other]))
+        let marked = try MobileAutomationMenu.mark("Edit", in: interaction)
+        defer { marked.restoreIdentifier() }
+        let retainedIsCopy = marked.leaf !== action
+        #expect(retainedIsCopy)
+        #expect(action.accessibilityIdentifier == "original-edit")
+        #expect(other.accessibilityIdentifier == "other")
+        #expect(marked.element.accessibilityIdentifier == marked.identifier)
+        let displayed = try MobileAutomationMenu.leaf(named: "Edit",
+                                                       in: MobileAutomationMenu.snapshot(interaction), isVisible: true)
+        let displayedIsMarkedCopy = displayed === marked.leaf
+        #expect(displayedIsMarkedCopy)
+        #expect(performed == 0)
+        marked.restoreIdentifier()
+        #expect(marked.element.accessibilityIdentifier == "original-edit")
+        marked.leaf.performWithSender(nil, target: nil)
+        #expect(performed == 1)
+        #expect(deliveredIdentifier == "original-edit")
+    }
+
+    @Test func aSameTitleBackgroundControlCannotStandInForAnOffscreenMenuLeaf() throws {
+        let action = UIAction(title: "Edit") { _ in }
+        let interaction = MenuInteraction(menu: UIMenu(children: [action]))
+        let marked = try MobileAutomationMenu.mark("Edit", in: interaction)
+        defer { marked.restoreIdentifier() }
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 386, height: 678))
+        window.isHidden = false
+        defer { window.isHidden = true }
+        let background = UIView(frame: CGRect(x: 20, y: 20, width: 100, height: 40))
+        background.accessibilityIdentifier = "background-edit"
+        let menuItem = UIView(frame: CGRect(x: 20, y: 800, width: 100, height: 40))
+        menuItem.accessibilityIdentifier = marked.identifier
+        window.addSubview(background)
+        window.addSubview(menuItem)
+        func measured(_ view: UIView) -> MobileAutomationTree.Element {
+            .init(object: view, label: "Edit", value: "", identifier: view.accessibilityIdentifier ?? "",
+                  traits: .button, frame: view.convert(view.bounds, to: nil))
+        }
+        #expect(MobileAutomationMenu.isVisible(measured(background), matching: "background-edit", in: [window]))
+        #expect(!MobileAutomationMenu.isVisible(measured(background), matching: marked.identifier, in: [window]))
+        #expect(!MobileAutomationMenu.isVisible(measured(menuItem), matching: marked.identifier, in: [window]))
+        menuItem.frame.origin.y = 100
+        #expect(MobileAutomationMenu.isVisible(measured(menuItem), matching: marked.identifier, in: [window]))
+    }
+
+    @Test func dismissedMenusAreRejectedAndRetainedActionsUseThePublicLeafAPI() throws {
+        var performed = 0
+        let action = UIAction(title: "Edit") { _ in performed += 1 }
+        let interaction = MenuInteraction(menu: UIMenu(children: [action]))
+        let selected = try MobileAutomationMenu.leaf(named: "Edit",
+                                                    in: MobileAutomationMenu.snapshot(interaction), isVisible: true)
+        interaction.dismissMenu()
+        #expect(interaction.dismissals == 1)
+        #expect(throws: MobileAutomationMenu.Failure.self) {
+            try MobileAutomationMenu.leaf(named: "Edit",
+                                         in: MobileAutomationMenu.snapshot(interaction), isVisible: true)
+        }
+        #expect(performed == 0)
+        selected.performWithSender(nil, target: nil)
+        #expect(performed == 1)
     }
 
     @Test func postureRequiresTheVerifiedSceneSizeNotAnArbitraryResize() {
