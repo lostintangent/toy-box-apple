@@ -34,7 +34,7 @@ struct AutomationTests {
         }
     }
 
-    @Test func treeUsesAccessibilityContainersWithoutDuplicatingOrExposingHiddenViews() {
+    @Test func treeUsesAccessibilityContainersWithoutDuplicatingOrExposingHiddenViews() throws {
         let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 440, height: 956))
         window.isHidden = false
         defer { window.isHidden = true }
@@ -71,9 +71,10 @@ struct AutomationTests {
         #expect(tree.matching("Search Channels").first?.object === search)
         #expect(tree.contains("studio"))
         #expect(!tree.contains("Hidden"))
-        let element = tree.matching("channel-studio").first!
+        let element = try #require(tree.matching("channel-studio").first)
+        let action = try #require(element.actions.first)
         #expect(element.description.contains("actions: Reply"))
-        #expect(element.perform(element.actions[0]))
+        #expect(element.perform(action))
         #expect(replies == 1)
     }
 
