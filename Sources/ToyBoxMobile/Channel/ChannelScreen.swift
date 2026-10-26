@@ -51,6 +51,10 @@ struct ChannelScreen: View {
                         .disabled(store.phase == .deleted)
                     }
                     Menu("Channel Actions", systemImage: "ellipsis") {
+                        Button("Find in Conversation", systemImage: "magnifyingglass") {
+                            interaction.findInChannel()
+                        }
+                        .disabled(store.phase == .deleted)
                         Button("Refresh", systemImage: "arrow.clockwise") { store.reconnect() }
                             .disabled(!model.isActive || store.phase == .deleted)
                         Button("Open in Toy Box", systemImage: "arrow.up.forward.square") {
