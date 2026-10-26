@@ -128,6 +128,25 @@ struct PolicyTests {
         #expect(channelArtifactsNewestFirst(artifacts) == newest + tied + undated)
     }
 
+    @Test func wireDatesAcceptOptionalFractionsAndOffsets() throws {
+        let whole = Date(timeIntervalSince1970: 1_792_832_400)
+        for (value, fraction) in [
+            ("2026-10-24T09:00:00Z", 0.0),
+            ("2026-10-24T09:00:00.000Z", 0.0),
+            ("2026-10-24T09:00:00.125Z", 0.125),
+            ("2026-10-24T09:00:00.123456Z", 0.123456),
+            ("2026-10-24T09:00:00.123456789Z", 0.123456789),
+            ("2026-10-24T11:00:00+02:00", 0.0),
+            ("2026-10-24T03:30:00.125-05:30", 0.125),
+        ] {
+            let date = try #require(ChannelDates.date(value))
+            #expect(abs(date.timeIntervalSince(whole) - fraction) < 0.000001, Comment(rawValue: value))
+        }
+        for value in ["", "not-a-date", "2026-10-24T09:00:00.invalidZ"] {
+            #expect(ChannelDates.date(value) == nil)
+        }
+    }
+
     @Test func attentionAndIdentity() {
         var channel = Channel(id: "test", name: "Test", model: .init(provider: "test", name: "test"),
                               latestSequence: 10, seenThrough: 4, completedSequence: 7,
