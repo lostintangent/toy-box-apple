@@ -69,14 +69,18 @@ final class TranscriptGalleryPresenter {
     /// "Today at 5:23 PM · 2 of 4", without the position for a single image.
     static func subtitle(sentAt: Date?, index: Int, count: Int, now: Date = .now,
                          calendar: Calendar = .current) -> String {
-        var parts: [String] = []
-        if let sentAt {
+        let parts = subtitleParts(sentAt: sentAt, index: index, count: count, now: now, calendar: calendar)
+        return [parts.sent, parts.position].compactMap(\.self).joined(separator: " · ")
+    }
+
+    static func subtitleParts(sentAt: Date?, index: Int, count: Int, now: Date = .now,
+                              calendar: Calendar = .current) -> (sent: String?, position: String?) {
+        let sent = sentAt.map { sentAt in
             let time = Date.FormatStyle(date: .omitted, time: .shortened, locale: calendar.locale ?? .current,
                                         calendar: calendar, timeZone: calendar.timeZone)
-            parts.append("\(transcriptDayLabel(sentAt, now: now, calendar: calendar)) at \(sentAt.formatted(time))")
+            return "\(transcriptDayLabel(sentAt, now: now, calendar: calendar)) at \(sentAt.formatted(time))"
         }
-        if count > 1 { parts.append("\(index + 1) of \(count)") }
-        return parts.joined(separator: " · ")
+        return (sent, count > 1 ? "\(index + 1) of \(count)" : nil)
     }
 
     /// "Image 2 of 4 from Lead, plan.png".
@@ -178,11 +182,21 @@ struct TranscriptImageGallery: View {
                 .labelStyle(.iconOnly)
         }
         ToolbarItem(placement: .principal) {
-            let subtitle = TranscriptGalleryPresenter.subtitle(sentAt: ChannelDates.date(session.source.timestamp),
-                                                               index: session.index, count: session.images.count)
+            let sentAt = ChannelDates.date(session.source.timestamp)
+            let subtitle = TranscriptGalleryPresenter.subtitle(sentAt: sentAt, index: session.index,
+                                                               count: session.images.count)
+            let parts = TranscriptGalleryPresenter.subtitleParts(sentAt: sentAt, index: session.index,
+                                                                 count: session.images.count)
             VStack(spacing: 2) {
                 Text(session.source.sender).font(.headline).lineLimit(1)
-                Text(subtitle).font(.caption).foregroundStyle(Self.subtitleInk).lineLimit(1)
+                // Only the time truncates, so the position stays readable at large text sizes.
+                HStack(spacing: 0) {
+                    if let sent = parts.sent { Text(sent).lineLimit(1) }
+                    if let position = parts.position {
+                        Text(parts.sent == nil ? position : " · \(position)").fixedSize()
+                    }
+                }
+                .font(.caption).foregroundStyle(Self.subtitleInk)
             }
             .accessibilityElement(children: .combine)
             .accessibilityAddTraits(.isHeader)
