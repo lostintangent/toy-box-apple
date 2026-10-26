@@ -10,7 +10,6 @@ struct OverviewView: View {
     @Environment(OverviewPresentation.self) private var presentation
     @Environment(ChannelInteraction.self) private var interaction
     @Environment(ManagementPresenter.self) private var management
-    @Environment(\.horizontalSizeClass) private var sizeClass
 
     var body: some View {
         NavigationStack(path: $session.navigationPath) {
@@ -51,12 +50,8 @@ struct OverviewView: View {
                     .disabled(!store.phase.isLive)
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    if sizeClass == .compact {
-                        Button("Done") { interaction.isInspectorPresented = false }
-                    } else {
-                        Button("Close Overview", systemImage: "xmark") { interaction.isInspectorPresented = false }
-                            .labelStyle(.iconOnly)
-                    }
+                    Button(role: .close) { interaction.isInspectorPresented = false }
+                        .accessibilityLabel("Close Overview")
                 }
             }
         }
