@@ -169,9 +169,10 @@ struct ComposerSurface: View {
             }
             ZStack(alignment: .topLeading) {
                 if draft.text.isEmpty && !dictation.hasWords {
-                    Text(dictation.isListening ? "Listening\u{2026}" : "Message your team")
-                        .font(.body).foregroundStyle(Color.primary).lineLimit(1)
-                        .padding(.horizontal, 12).padding(.top, 10).accessibilityHidden(true)
+                    ComposerPlaceholder(isListening: dictation.isListening)
+                        .padding(.horizontal, NativeComposerInput.textInsets.left)
+                        .padding(.top, NativeComposerInput.textInsets.top)
+                        .accessibilityHidden(true)
                 }
                 NativeComposerInput(
                     text: Bindable(draft).text, editor: editor, completionIsVisible: !choices.isEmpty,
@@ -197,6 +198,7 @@ struct ComposerSurface: View {
                     .strokeBorder(.tint, lineWidth: 2).allowsHitTesting(false)
             }
         }
+
         .onDrop(of: [UTType.fileURL, .image], isTargeted: $dragging) { providers in
             providers.map { draft.attachProvider($0) }.contains(true)
         }
@@ -456,5 +458,16 @@ struct ComposerSurface: View {
     private func registerDraft() {
         interaction.hasDraft = draft.hasContent
         interaction.copyDraft = { UIPasteboard.general.string = draft.text }
+    }
+}
+
+struct ComposerPlaceholder: View {
+    let isListening: Bool
+
+    var body: some View {
+        Text(isListening ? "Listening\u{2026}" : "Message your team")
+            .font(.body)
+            .foregroundStyle(ChannelInk.secondary)
+            .lineLimit(1)
     }
 }

@@ -29,7 +29,12 @@ struct ComposerAudienceView: View {
                 .fixedSize(horizontal: true, vertical: false)
             }
             .font(.caption)
-            .foregroundStyle(Color.primary)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 4)
+            .frame(minHeight: 24)
+            .background(recipients.isEmpty ? Color.orange.opacity(0.1) : Color.secondary.opacity(0.08),
+                        in: Capsule())
+            .foregroundStyle(recipients.isEmpty ? Color.primary : ChannelInk.secondary)
             .frame(minHeight: 44)
             .contextMenu {
                 Text(recipients.isEmpty ? label : "Notifies \(names)")

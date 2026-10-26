@@ -83,7 +83,7 @@ struct ComposerRequestButton: View {
             Label {
                 Text("Input Needed").foregroundStyle(Color.primary)
             } icon: {
-                Image(systemName: "questionmark.bubble")
+                Image(systemName: "questionmark.circle.fill")
                     .foregroundStyle(ChannelAttentionStyle.color(for: .waiting, in: colorScheme))
             }
             .lineLimit(1).frame(minHeight: 44)

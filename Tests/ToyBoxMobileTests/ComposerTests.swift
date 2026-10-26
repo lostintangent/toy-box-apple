@@ -207,16 +207,83 @@ struct ComposerTests {
             #expect(resolved.cgColor.alpha == 1)
         }
     }
+
+    @Test(arguments: [ColorScheme.light, .dark], [false, true])
+    func placeholderUsesReadableSecondaryInkEvenUnderAnInheritedPrimaryStyle(
+        scheme: ColorScheme, listening: Bool
+    ) throws {
+        let renderer = ImageRenderer(content: ComposerPlaceholder(isListening: listening)
+            .foregroundStyle(Color.primary)
+            .environment(\.colorScheme, scheme)
+            .dynamicTypeSize(.large))
+        renderer.scale = 1
+        let image = try #require(renderer.uiImage?.cgImage)
+        let pixels = try renderedPixels(image)
+        let strongest = try #require(stride(from: 0, to: pixels.count, by: 4).max {
+            pixels[$0 + 3] < pixels[$1 + 3]
+        })
+        #expect(pixels[strongest + 3] >= 250)
+        let expected = scheme == .dark ? [174, 174, 178] : [99, 99, 102]
+        for component in 0..<3 {
+            #expect(abs(Int(pixels[strongest + component]) - expected[component]) <= 3)
+        }
+    }
+
+    @Test(arguments: [ColorScheme.light, .dark], [DynamicTypeSize.large, .accessibility5])
+    func audienceCapsuleIsSeparateFromIts44PointRowAndGrowsWithText(
+        scheme: ColorScheme, size: DynamicTypeSize
+    ) throws {
+        let lead = ChannelAgent.lead(id: "test", profile: .init(
+            name: "Lead", role: "Coordinator", avatar: .init(mark: "M4 12H20", color: "#123456")
+        ))
+        let renderer = ImageRenderer(content:
+            ComposerAudienceView(text: "", agents: [lead], acknowledgesRequest: false)
+                .environment(\.colorScheme, scheme)
+                .dynamicTypeSize(size))
+        renderer.scale = 1
+        renderer.proposedSize = .init(width: 260, height: nil)
+        let image = try #require(renderer.uiImage?.cgImage)
+        #expect(image.height >= 44)
+        let pixels = try renderedPixels(image)
+        let center = image.width / 2
+        let filledRows = (0..<image.height).filter { pixels[($0 * image.width + center) * 4 + 3] > 0 }
+        let first = try #require(filledRows.first)
+        let last = try #require(filledRows.last)
+        #expect(last - first + 1 >= 24, "Audience has a visible badge, not only bare text")
+        if size == .large {
+            #expect(image.height == 44)
+            #expect(last - first + 1 == 24)
+            #expect(first >= 9 && image.height - 1 - last >= 9)
+        }
+    }
+
+    private func renderedPixels(_ image: CGImage) throws -> [UInt8] {
+        let colorSpace = try #require(CGColorSpace(name: CGColorSpace.sRGB))
+        var pixels = [UInt8](repeating: 0, count: image.width * image.height * 4)
+        try pixels.withUnsafeMutableBytes { bytes in
+            let context = try #require(CGContext(
+                data: bytes.baseAddress, width: image.width, height: image.height,
+                bitsPerComponent: 8, bytesPerRow: image.width * 4,
+                space: colorSpace,
+                bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue
+                    | CGImageAlphaInfo.premultipliedLast.rawValue))
+            context.draw(image, in: CGRect(
+                x: 0, y: 0, width: CGFloat(image.width), height: CGFloat(image.height)))
+        }
+        return pixels
+    }
+
     @Test func editorFitsOneThroughThreeMeasuredLinesWithoutChangingItsTextOrCaret() throws {
         for pointSize: CGFloat in [17, 40] {
             let view = ComposerTextView()
             let font = UIFont.systemFont(ofSize: pointSize)
             view.font = font
-            view.textContainerInset = UIEdgeInsets(top: 10, left: 12, bottom: 0, right: 12)
+            view.textContainerInset = NativeComposerInput.textInsets
             view.text = "One\nTwo\nThree\nFour"
             view.selectedRange = NSRange(location: 2, length: 0)
-            let oneLine = ceil(font.lineHeight + 10)
-            let threeLines = ceil(3 * font.lineHeight + 10)
+            let verticalInset = NativeComposerInput.textInsets.top + NativeComposerInput.textInsets.bottom
+            let oneLine = ceil(font.lineHeight + verticalInset)
+            let threeLines = ceil(3 * font.lineHeight + verticalInset)
             let full = try #require(view.composerSizeThatFits(.init(width: 320, height: nil)))
             #expect(full.height == threeLines)
             #expect(view.isScrollEnabled)
