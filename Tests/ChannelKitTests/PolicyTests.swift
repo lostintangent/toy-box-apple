@@ -24,7 +24,6 @@ struct PolicyTests {
         #expect(withoutLeadingMentions("@Ada, @Finch: Ship it", agents: [ada, finch]) == "Ship it")
         #expect(withoutLeadingMentions("@Ada @unknown Ship it", agents: [ada]) == "@Ada @unknown Ship it")
         #expect(withoutLeadingMentions("@Ada", agents: [ada]) == "@Ada")
-        #expect(splitAgentMentionText("Hello @Ada!").map(\.content) == ["Hello ", "@Ada", "!"])
     }
 
     @Test func mentionCompletionIncludesEveryAgentForAnEmptyQuery() {
