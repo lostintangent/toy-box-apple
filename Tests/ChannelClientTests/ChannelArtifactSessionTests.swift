@@ -77,10 +77,11 @@ struct ChannelArtifactSessionTests {
         ChannelArtifact(file: .init(kind: "machine", path: path), title: path, url: "/api/serve/test/\(path)")
     }
 
-    private func wait(_ condition: () async -> Bool) async throws {
+    private func wait(sourceLocation: SourceLocation = #_sourceLocation,
+                      _ condition: () async -> Bool) async throws {
         let deadline = ContinuousClock.now.advanced(by: .seconds(3))
         while !(await condition()), ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(5)) }
-        #expect(await condition())
+        #expect(await condition(), sourceLocation: sourceLocation)
     }
 }
 

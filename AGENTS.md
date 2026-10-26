@@ -282,6 +282,8 @@ Agents never create these accounts, accept agreements, read private keys or set 
   established. Core owns `artifact-removal-readiness` under t340: capture the stalled stage,
   identify its cause and add deterministic removal-during-load coverage before restoring this case.
   The test body and deadline are unchanged. Do not restore it based on passing reruns.
+  The artifact wait helper now attributes failures to their caller, distinguishing a download that
+  never starts from a replacement load that never settles. Its conditions and deadline are unchanged.
 
 ## Validating the running app
 
