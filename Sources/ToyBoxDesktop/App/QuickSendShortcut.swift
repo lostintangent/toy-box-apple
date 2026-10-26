@@ -47,10 +47,6 @@ struct QuickSendShortcut: Codable, Equatable, Sendable {
     }
 
     var modifierLabel: String {
-        Self.modifierLabel(modifiers)
-    }
-
-    static func modifierLabel(_ modifiers: UInt32) -> String {
         [(controlKey, "⌃"), (optionKey, "⌥"), (shiftKey, "⇧"), (cmdKey, "⌘")]
             .filter { modifiers & UInt32($0.0) != 0 }.map(\.1).joined()
     }
