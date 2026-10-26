@@ -4,12 +4,13 @@ import ChannelIntelligence
 import ChannelKit
 import QuickLook
 import SwiftUI
+import ToyBoxUI
 import UniformTypeIdentifiers
 
 struct TranscriptAttachments: View {
     let attachments: [ChannelAttachment]
     let api: ChannelAPI
-    let alignment: HorizontalAlignment
+    let alignment: UnitPoint
     /// The message the images belong to, which the gallery names.
     let source: TranscriptGalleryPresenter.Source
     @Environment(TranscriptGalleryPresenter.self) private var gallery: TranscriptGalleryPresenter?
@@ -17,25 +18,31 @@ struct TranscriptAttachments: View {
 
     var body: some View {
         let images = TranscriptGalleryPresenter.images(in: attachments)
-        VStack(alignment: alignment, spacing: 8) {
-            ForEach(Array(attachments.enumerated()), id: \.offset) { offset, attachment in
-                if TranscriptGalleryPresenter.isGalleryImage(attachment) {
-                    let position = attachments[..<offset].count(where: TranscriptGalleryPresenter.isGalleryImage)
-                    if let gallery {
-                        TranscriptImage(attachment: attachment, api: api, voiceOver: voiceOver) {
-                            gallery.open(images: images, at: position, source: source, api: api)
-                        }
-                    } else {
-                        TranscriptImage(attachment: attachment, api: api, voiceOver: voiceOver)
+        TranscriptAttachmentStrip(count: attachments.count, alignment: alignment, presented: presented) { offset in
+            let attachment = attachments[offset]
+            if TranscriptGalleryPresenter.isGalleryImage(attachment) {
+                let position = attachments[..<offset].count(where: TranscriptGalleryPresenter.isGalleryImage)
+                if let gallery {
+                    TranscriptImage(attachment: attachment, api: api, voiceOver: voiceOver) {
+                        gallery.open(images: images, at: position, source: source, api: api)
                     }
-                } else if attachment.contentType?.conforms(to: .movie) == true,
-                          let address = attachment.url, let url = api.resourceURL(address) {
-                    TranscriptVideo(url: url, name: attachment.displayName)
                 } else {
-                    TranscriptFileRow(attachment: attachment, api: api)
+                    TranscriptImage(attachment: attachment, api: api, voiceOver: voiceOver)
                 }
+            } else if attachment.contentType?.conforms(to: .movie) == true,
+                      let address = attachment.url, let url = api.resourceURL(address) {
+                TranscriptVideo(url: url, name: attachment.displayName)
+            } else {
+                TranscriptFileRow(attachment: attachment, api: api)
             }
         }
+    }
+
+    /// The attachment the gallery presents from this message, if any.
+    private var presented: Int? {
+        guard let session = gallery?.session, session.source.messageID == source.messageID else { return nil }
+        return attachments.indices.filter { TranscriptGalleryPresenter.isGalleryImage(attachments[$0]) }
+            .dropFirst(session.index).first
     }
 }
 
@@ -152,6 +159,8 @@ private struct TranscriptFileRow: View {
                         Text(kind).font(.caption).foregroundStyle(TranscriptInk.secondary)
                     }
                 }
+                // A long name truncates instead of widening the row past an image's width.
+                .frame(maxWidth: 200, alignment: .leading)
             } icon: {
                 if isLoading { ProgressView() } else { Image(systemName: "doc") }
             }

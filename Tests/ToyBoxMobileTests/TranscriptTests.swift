@@ -458,5 +458,42 @@ struct TranscriptTests {
             #expect(abs(frames.mine.maxX - width) < 0.5)
         }
     }
+
+    @Test func attachmentsShareOneRowThatScrollsSideways() throws {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let png = try #require(UIGraphicsImageRenderer(size: CGSize(width: 400, height: 300), format: format)
+            .image { context in
+                UIColor.systemTeal.setFill()
+                context.fill(CGRect(x: 0, y: 0, width: 400, height: 300))
+            }.pngData()).base64EncodedString()
+        let attachments = ["one.png", "two.png", "three.png"].map {
+            ChannelAttachment(name: $0, mimeType: "image/png", base64: png)
+        } + [ChannelAttachment(name: "A very long attachment name that would otherwise stretch across the row.txt",
+                               url: "/files/notes.txt", mimeType: "text/plain")]
+        let api = try ChannelAPI(serverURL: "https://strip-\(UUID().uuidString.lowercased()).invalid")
+        let tile = transcriptThumbnailSize(CGSize(width: 400, height: 300))
+        let host = UIHostingController(rootView: TranscriptAttachments(
+            attachments: attachments, api: api, alignment: .trailing,
+            source: .init(messageID: "m1", sender: "Lead", timestamp: "2026-10-26T12:00:00Z")))
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 402, height: 874))
+        window.rootViewController = host
+        window.isHidden = false
+        defer { window.isHidden = true }
+        host.view.layoutIfNeeded()
+
+        // One row as tall as an image, where a stack would be four tiles tall.
+        let height = host.sizeThatFits(in: CGSize(width: 402, height: CGFloat.greatestFiniteMagnitude)).height
+        #expect(abs(height - tile.height) < 0.5)
+        func scrollViews(_ view: UIView) -> [UIScrollView] {
+            (view as? UIScrollView).map { [$0] } ?? view.subviews.flatMap(scrollViews)
+        }
+        let strip = try #require(scrollViews(host.view).first)
+        // Three images and the capped file row, 8 points apart, overflow and scroll sideways.
+        let content = strip.contentSize.width
+        #expect(content > 402)
+        #expect(content >= 3 * tile.width + 3 * 8 + 44)
+        #expect(content <= 3 * tile.width + 3 * 8 + 240 + 8.5)
+    }
 }
 
