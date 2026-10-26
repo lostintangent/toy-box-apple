@@ -207,22 +207,30 @@ export async function bundleMobile(device = false) {
 
 if (import.meta.main) await main(async () => {
     const { values } = parseArgs({ args: process.argv.slice(2), options: {
-        "build-only": { type: "boolean" }, device: { type: "boolean" }, shutdown: { type: "boolean" },
+        "build-only": { type: "boolean" }, device: { type: "boolean" }, "device-id": { type: "string" },
+        shutdown: { type: "boolean" },
         screenshot: { type: "string" }, hold: { type: "boolean" }, display: { type: "string" },
         displays: { type: "boolean" }, server: { type: "string" },
         drive: { type: "string" }, "content-size": { type: "string" }, appearance: { type: "string" },
     } });
     const launch = mobileLaunchOptions(values["content-size"], values.appearance);
+    if (values["device-id"] && !values.device) throw new Error("--device-id requires --device.");
+    if (values["device-id"] && values["build-only"]) throw new Error("--device-id cannot be used with --build-only.");
     if (values.drive && (values.hold || values.screenshot || values.displays || values.shutdown)) {
         throw new Error("--drive owns its captures and simulator lifetime; do not combine it with --hold, --screenshot, --displays or --shutdown.");
     }
     if (values.display && !values.screenshot) throw new Error("--display requires --screenshot.");
-    if (values.device || values["build-only"]) {
-        if (values.shutdown || values.screenshot || values.hold || values.displays || values.server || values.drive
-            || values["content-size"] || values.appearance) {
-            throw new Error("Build-only commands cannot use a simulator or set launch arguments.");
+    if (values["build-only"] || values.device) {
+        if (values.shutdown || values.screenshot || values.hold || values.displays || values.drive
+            || values["content-size"] || values.appearance || values["build-only"] && values.server) {
+            throw new Error("Build-only/device commands cannot use simulator options; only device launches accept --server.");
         }
-        console.log(await bundleMobile(values.device));
+        if (values.device && !values["build-only"]) {
+            const { runMobileDevice } = await import("./mobile-device.ts");
+            await runMobileDevice(values["device-id"], values.server ?? process.env.TOY_BOX_SERVER_URL);
+        } else {
+            console.log(await bundleMobile(values.device));
+        }
         return;
     }
     if (values.appearance && !(values.hold || values.drive)) {

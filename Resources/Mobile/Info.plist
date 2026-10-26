@@ -20,6 +20,13 @@
     <string>27.0</string>
     <key>LSRequiresIPhoneOS</key>
     <true/>
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>Toy Box connects to the channel server you choose on your local network.</string>
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsLocalNetworking</key>
+        <true/>
+    </dict>
     <key>UIDeviceFamily</key>
     <array>
         <integer>1</integer>
