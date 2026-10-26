@@ -98,7 +98,7 @@ struct ChannelDetailView: View {
             // toolbar safe area so their scroll containers receive its inset.
             // The open viewer is modal, which takes the conversation and Overview out of the
             // accessibility tree.
-            .overlay { ImageViewerCanvas().ignoresSafeArea(edges: .top) }
+            .overlay { ImageViewerCanvas() }
             .overlay { ArtifactViewerCanvas(store: store) }
             .sheet(isPresented: narrowInspector) {
                 overviewSheet.frame(minWidth: 360, idealWidth: 360, maxWidth: 360, minHeight: 420,
