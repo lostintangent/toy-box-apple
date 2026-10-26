@@ -55,14 +55,20 @@ struct AutomationTests {
         hidden.accessibilityLabel = "Hidden"
         hidden.isAccessibilityElement = true
         hidden.isHidden = true
+        let search = UITextField()
+        search.isAccessibilityElement = true
+        search.accessibilityLabel = ""
+        search.accessibilityValue = "Search Channels"
         root.addSubview(shown)
         root.addSubview(hidden)
-        root.accessibilityElements = [shown, hidden]
+        root.addSubview(search)
+        root.accessibilityElements = [shown, hidden, search]
         window.addSubview(root)
         let tree = MobileAutomationTree(windows: [window])
         #expect(tree.elements.filter { $0.label == "Studio demo" }.count == 1)
         #expect(tree.matching("channel-studio").first?.object === shown)
         #expect(tree.matching("message-12").first?.object === shown)
+        #expect(tree.matching("Search Channels").first?.object === search)
         #expect(tree.contains("studio"))
         #expect(!tree.contains("Hidden"))
         let element = tree.matching("channel-studio").first!

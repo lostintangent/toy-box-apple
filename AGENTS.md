@@ -103,6 +103,7 @@ view.
   optional initial return from restored navigation. Wait for the channel name first, then use
   optional Back before tapping its row, so restoration has a chance to finish.
   Wait accepts `absent: true` to wait for a label/value to disappear.
+  Tap also matches an exact accessibility value when its element has no label, as with native Search.
   Other actions are never skipped or retried. Each step accepts a
   timeout in seconds (default 12, maximum 60). Screenshots are acknowledged by the host only after
   the app reports a settled accessibility/layout snapshot and go under `SCRATCH_PATH/mobile-drive/`.

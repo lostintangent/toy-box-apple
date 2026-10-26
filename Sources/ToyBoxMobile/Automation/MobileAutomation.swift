@@ -205,7 +205,9 @@ struct MobileAutomationTree {
 
     func matching(_ target: String) -> [Element] {
         let identifiers = elements.filter { $0.identifier == target || $0.containerIdentifiers.contains(target) }
-        return identifiers.isEmpty ? elements.filter { $0.label == target } : identifiers
+        if !identifiers.isEmpty { return identifiers }
+        let labels = elements.filter { $0.label == target }
+        return labels.isEmpty ? elements.filter { $0.label.isEmpty && $0.value == target } : labels
     }
 
     func contains(_ target: String) -> Bool {
