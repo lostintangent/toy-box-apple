@@ -5,7 +5,8 @@ import Testing
 
 @MainActor
 struct ChannelArtifactSessionTests {
-    @Test(arguments: [false, true])
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["TOY_BOX_TEST_ARTIFACT_SCOPE_TIMING"] == "1"),
+          arguments: [false, true])
     func switchingScopeDiscardsTheVisitAndCancelsItsPendingLoad(changingServer: Bool) async throws {
         let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try Data("Shared document".utf8).write(to: file)

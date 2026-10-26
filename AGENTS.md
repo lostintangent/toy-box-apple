@@ -204,6 +204,14 @@ Agents never create these accounts, accept agreements, read private keys or set 
   presence and transport counters before disconnecting. Callback submission does not prove that
   URLSession or the event iterator consumed it. Diagnostic state is read only after the wait fails,
   outside readiness Observation tracking, so it cannot add dependencies that mask a missed wakeup.
+- `ChannelArtifactSessionTests.switchingScopeDiscardsTheVisitAndCancelsItsPendingLoad` is quarantined
+  behind `TOY_BOX_TEST_ARTIFACT_SCOPE_TIMING=1`. Its `changingServer: false` argument failed the
+  unchanged private three-second polling helper at line 81 in the 2026-10-26 Client diagnostic run
+  (`reconnect-diagnostics-mac.log` in Core's session files, based on `db3b71d` with failure tracing).
+  The test body matches main `f2eff6b`; no production cause or failed wait stage is established.
+  Core owns `artifact-scope-readiness` under t340: capture the stalled stage, identify its cause and
+  add deterministic scope-replacement coverage before restoring this case. Both argument bodies
+  and the deadline remain unchanged. Do not clear the incident by retrying the original candidate.
 
 ## Validating the running app
 
