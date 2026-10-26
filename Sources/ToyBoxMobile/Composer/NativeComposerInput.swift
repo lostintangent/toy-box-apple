@@ -281,7 +281,7 @@ extension NativeComposerInput.Coordinator: DictationTextTarget {
             return
         }
         session.span = NSRange(location: old.location, length: display.length)
-        if !visible.isEmpty { input.selectedRange = session.span }
+        if !visible.isEmpty, session.undoEdit == nil { input.selectedRange = session.span }
         updateDictationUndo(&session, hasWords: !visible.isEmpty)
         dictationSession = session
         restoreSelection(selection, replacing: old, with: session.span,
