@@ -35,6 +35,19 @@ struct ComposerFailureAnnouncements {
 }
 
 struct NativeComposerInput: NSViewRepresentable {
+    enum AgentManagement {
+        case hidden, disabled
+        case enabled(create: (String) async throws -> ChannelAgent, edit: (ChannelAgent) -> Void)
+
+        var isVisible: Bool {
+            if case .hidden = self { false } else { true }
+        }
+
+        var isEnabled: Bool {
+            if case .enabled = self { true } else { false }
+        }
+    }
+
     @Binding var text: String
     /// The draft being edited. When it changes, such as on a channel switch, the same text view
     /// takes the new draft's text with a fresh caret and undo history.
@@ -44,17 +57,14 @@ struct NativeComposerInput: NSViewRepresentable {
     var fontSize: CGFloat
     var focusRequest: UUID
     var agents: [ChannelAgent]
-    var canManage: Bool
     var onSend: () -> Void
     var onFiles: ([URL]) -> Void
     var onImage: (ComposerImage) -> Void
     var onError: (String) -> Void
-    var onCreate: (String) async throws -> ChannelAgent
-    var onEdit: (ChannelAgent) -> Void
+    var agentManagement: AgentManagement = .hidden
     var snapshot: WindowSnapshot? = nil
     var failureFeedback: ComposerFailureFeedback? = nil
     var dictation: ComposerDictation? = nil
-    var allowsAgentManagement = true
     var isEditable = true
     var minimumHeight: CGFloat = 0
     var maximumLineCount = 3
@@ -214,8 +224,9 @@ struct NativeComposerInput: NSViewRepresentable {
             super.init()
             completion.onAccept = { [weak self] in self?.accept($0) }
             completion.onEdit = { [weak self] agent in
-                self?.dismissCompletion()
-                self?.parent.onEdit(agent)
+                guard let self, case .enabled(_, let edit) = parent.agentManagement else { return }
+                dismissCompletion()
+                edit(agent)
             }
         }
 
@@ -447,13 +458,13 @@ struct NativeComposerInput: NSViewRepresentable {
             else { dismissCompletion(); return }
             mentionRange = context.range
             let items = MentionChoice.items(query: context.query, agents: parent.agents,
-                                            allowsCreation: parent.allowsAgentManagement)
+                                            allowsCreation: parent.agentManagement.isVisible)
             guard !items.isEmpty else { dismissCompletion(); return }
             if completion.items.map(\.id) != items.map(\.id) { completion.selected = 0 }
             if completion.items != items { completion.items = items }
-            let canManage = parent.canManage && parent.allowsAgentManagement
+            let canManage = parent.agentManagement.isEnabled
             if completion.canManage != canManage { completion.canManage = canManage }
-            completion.showsManagement = parent.allowsAgentManagement
+            completion.showsManagement = parent.agentManagement.isVisible
             if popover == nil {
                 let popover = NSPopover()
                 popover.behavior = .semitransient
@@ -477,7 +488,7 @@ struct NativeComposerInput: NSViewRepresentable {
         private func accept(_ item: MentionChoice) {
             guard let input, let range = mentionRange, completion.creatingID == nil else { return }
             if item.isCreate {
-                guard parent.canManage else { return }
+                guard case .enabled(let create, _) = parent.agentManagement else { return }
                 let originalText = input.string
                 let originalSelection = input.selectedRange()
                 let origin = parent
@@ -487,7 +498,7 @@ struct NativeComposerInput: NSViewRepresentable {
                 Task { [weak self] in
                     guard let self else { return }
                     do {
-                        let member = try await origin.onCreate(item.name)
+                        let member = try await create(item.name)
                         // The member joined the channel it was created for. Its draft has gone.
                         guard self.document == document else { return }
                         completion.creatingID = nil

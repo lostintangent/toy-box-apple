@@ -487,6 +487,38 @@ struct ComposerTests {
                 == ["Everyone", "Lead", "Ada", "Pixel", "Zebra"])
     }
 
+    @Test func mentionManagementHidesOrDisablesCreationUntilAnActionIsAvailable() async throws {
+        let draft = ComposerDraft()
+        draft.text = "@new-person"
+        let (window, input) = try await hostComposer(
+            draft: draft, dictation: ComposerDictation(system: .scripted())
+        )
+        window.setFrameOrigin(NSPoint(x: -4000, y: -4000))
+        window.orderBack(nil)
+        defer { window.makeFirstResponder(nil); window.close() }
+        let coordinator = try #require(input.coordinator)
+        input.setSelectedRange(NSRange(location: input.string.utf16.count, length: 0))
+        let enter = try key("\r", code: 36, in: window)
+        for management: NativeComposerInput.AgentManagement in [.hidden, .disabled] {
+            coordinator.parent.agentManagement = management
+            coordinator.updateCompletion()
+            #expect(coordinator.isCompletionVisible == management.isVisible)
+            #expect(!management.isEnabled)
+            #expect(coordinator.handle(enter))
+            #expect(draft.text == "@new-person")
+        }
+        var created: [String] = []
+        coordinator.parent.agentManagement = .enabled(create: { name in
+            created.append(name)
+            return .init(id: "created", name: name)
+        }, edit: { _ in Issue.record("Creating a mention must not edit an existing agent") })
+        coordinator.updateCompletion()
+        #expect(coordinator.isCompletionVisible)
+        #expect(coordinator.handle(enter))
+        try await waitUntil("the created agent replaces the mention query") { draft.text == "@new-person " }
+        #expect(created == ["New Person"])
+    }
+
     @Test func importingImagesRejectsUnsupportedAndUnreadableFilesExplicitly() async throws {
         try await withDraft { draft, url in
             let image = try sampleImage()
@@ -555,9 +587,9 @@ struct ComposerTests {
         let parent = NativeComposerInput(
             text: .init(get: { text }, set: { text = $0 }), height: .constant(44),
             dragging: .constant(false), fontSize: 14,
-            focusRequest: UUID(), agents: [.lead(id: "lead")], canManage: false,
+            focusRequest: UUID(), agents: [.lead(id: "lead")],
             onSend: { sends += 1 }, onFiles: { _ in }, onImage: { _ in },
-            onError: { _ in }, onCreate: { .init(id: "created", name: $0) }, onEdit: { _ in }
+            onError: { _ in }, agentManagement: .disabled
         )
         let coordinator = parent.makeCoordinator()
         let input = ComposerTextView(frame: .init(x: 0, y: 0, width: 400, height: 80))
@@ -644,9 +676,9 @@ struct ComposerTests {
         let parent = NativeComposerInput(
             text: .constant(""), height: .constant(44),
             dragging: .constant(false), fontSize: 14, focusRequest: UUID(),
-            agents: [], canManage: false, onSend: {}, onFiles: { files += $0 },
+            agents: [], onSend: {}, onFiles: { files += $0 },
             onImage: { images.append($0) }, onError: { errors.append($0) },
-            onCreate: { .init(id: "created", name: $0) }, onEdit: { _ in }
+            agentManagement: .disabled
         )
         let coordinator = parent.makeCoordinator()
         let input = ComposerTextView()
@@ -800,8 +832,8 @@ struct ComposerTests {
         let parent = NativeComposerInput(
             text: .init(get: { draft.text }, set: { draft.text = $0 }), height: .constant(44),
             dragging: .constant(false), fontSize: 14, focusRequest: UUID(),
-            agents: [], canManage: false, onSend: {}, onFiles: { _ in }, onImage: { _ in },
-            onError: { _ in }, onCreate: { .init(id: "created", name: $0) }, onEdit: { _ in }
+            agents: [], onSend: {}, onFiles: { _ in }, onImage: { _ in },
+            onError: { _ in }, agentManagement: .disabled
         )
         let coordinator = parent.makeCoordinator()
         let input = ComposerTextView()
@@ -1447,8 +1479,8 @@ struct ComposerTests {
             NativeComposerInput(
                 text: $draft.text, document: ObjectIdentifier(draft), height: $height,
                 dragging: $dragging, fontSize: 14, focusRequest: focusRequest, agents: [.lead(id: "lead")],
-                canManage: false, onSend: {}, onFiles: { _ in }, onImage: { _ in }, onError: { _ in },
-                onCreate: { .init(id: "created", name: $0) }, onEdit: { _ in }, dictation: dictation,
+                onSend: {}, onFiles: { _ in }, onImage: { _ in }, onError: { _ in },
+                agentManagement: .disabled, dictation: dictation,
                 startsAtEnd: startsAtEnd
             )
             .frame(height: height)

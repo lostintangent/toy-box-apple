@@ -373,15 +373,14 @@ private struct ChannelComposer: View {
                 NativeComposerInput(text: $draft.text, document: draftID, height: $inputHeight,
                                     dragging: $isDragging, fontSize: 14 * textScale,
                                     focusRequest: focusRequest,
-                                    agents: store.roster, canManage: store.phase.isLive,
+                                    agents: store.roster,
                                     onSend: send, onFiles: draft.attachFiles, onImage: draft.append,
                                     onError: { draft.error = $0 },
-                                    onCreate: { name in
+                                    agentManagement: store.phase.isLive ? .enabled(create: { name in
                                         try await management.createMentionMember(name: name, store: store, catalog: app.catalog)
-                                    },
-                                    onEdit: { agent in
+                                    }, edit: { agent in
                                         management.present(.editMember(channelId: store.id, agentId: agent.id))
-                                    }, snapshot: snapshot, failureFeedback: failureFeedback,
+                                    }) : .disabled, snapshot: snapshot, failureFeedback: failureFeedback,
                                     dictation: dictation)
                     .frame(height: inputHeight)
             }
