@@ -36,8 +36,6 @@ struct OverviewAboutSection: View {
                         previewRow(preview)
                         if let error = session.previewError { ManagementError(message: error) }
                     }
-                } header: {
-                    Text("About").foregroundStyle(ChannelInk.secondary)
                 }
             }
         }
