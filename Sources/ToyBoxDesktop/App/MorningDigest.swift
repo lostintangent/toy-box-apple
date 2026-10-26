@@ -83,10 +83,7 @@ final class MorningDigest {
 
     static func isAllowed(_ options: LaunchOptions, bundleID: String?,
                           environment: [String: String] = ProcessInfo.processInfo.environment) -> Bool {
-        !options.isSnapshot && options.benchmark == nil && options.resizeBenchmark == nil
-            && options.quickSendValidation == nil && options.serverURL == nil
-            && environment["TOY_BOX_SERVER_URL"] == nil
-            && bundleID == "dev.toybox.desktop"
+        bundleID == "dev.toybox.desktop" && options.allowsUserIntegrations(environment: environment)
     }
 
     /// Local wall-clock scheduling also handles DST, clock changes and a missed wake-up. A later
