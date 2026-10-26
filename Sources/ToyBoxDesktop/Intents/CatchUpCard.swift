@@ -78,26 +78,6 @@ struct CatchUpCard: Codable, Equatable, Sendable {
     }
 }
 
-extension CatchUpCard.Line {
-    /// Where `token` stands as a whole mention in `text`, by the transcript's rule: not after a
-    /// letter, digit or hyphen, and not before one.
-    static func ranges(of token: String, in text: String) -> [Range<String.Index>] {
-        var found: [Range<String.Index>] = []
-        var start = text.startIndex
-        while let range = text.range(of: token, range: start..<text.endIndex) {
-            let before = range.lowerBound == text.startIndex ? nil : text[text.index(before: range.lowerBound)]
-            let after = range.upperBound == text.endIndex ? nil : text[range.upperBound]
-            if !(before.map(isHandle) ?? false), !(after.map(isHandle) ?? false) { found.append(range) }
-            start = range.upperBound
-        }
-        return found
-    }
-
-    private static func isHandle(_ character: Character) -> Bool {
-        character == "-" || (character.isASCII && (character.isLetter || character.isNumber))
-    }
-}
-
 /// Plain SwiftUI, because the system archives a snippet's view. Its buttons run intents, since a
 /// closure in a snippet never runs.
 struct CatchUpCardView: View {
@@ -211,7 +191,7 @@ private struct CatchUpCardLine: View {
         let ink = TranscriptMentionInk(isDark: colorScheme == .dark, isContrastIncreased: contrast == .increased)
         let mentions = (line.mentions ?? []).map { ("@" + $0.name, Optional($0)) } + [("@everyone", nil)]
         for (token, agent) in mentions {
-            for range in CatchUpCard.Line.ranges(of: token, in: line.text) {
+            for range in channelMentionRanges(of: token, in: line.text) {
                 guard let lower = AttributedString.Index(range.lowerBound, within: text),
                       let upper = AttributedString.Index(range.upperBound, within: text) else { continue }
                 text[lower..<upper].font = .system(size: 13, weight: .semibold)

@@ -295,12 +295,6 @@ struct IntentsTests {
         #expect(askOnly.subtitle == nil && askOnly.caption == "Waiting for your reply")
     }
 
-    @Test func cardInksOnlyWholeMentions() {
-        let text = "@Ada, @Adam, x@Ada, @Ada-bot and @Ada's"
-        let ranges = CatchUpCard.Line.ranges(of: "@Ada", in: text)
-        #expect(ranges.map { String(text[$0.upperBound...].prefix(2)) } == [", ", "'s"])
-    }
-
     @Test func cardShowsTheNewestFewOfManyMessages() throws {
         let senders = ["ada", "moss", "finch", "iris", "ada", "moss", "finch", "iris", "kit", "moss", "finch", "iris"]
         let messages = senders.enumerated().map { message(30 + $0.offset, from: $0.element, "Update \($0.offset).") }
