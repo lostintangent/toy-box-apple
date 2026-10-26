@@ -4,7 +4,8 @@ import SwiftUI
 import ToyBoxUI
 
 struct SettingsView: View {
-    private struct ServerChange {
+    private struct ServerChange: Identifiable {
+        let id = UUID()
         let previous: String
         let address: String
     }
@@ -58,14 +59,45 @@ struct SettingsView: View {
             if phase == .active { availability = intelligence.availability }
             else { connection.cancel() }
         }
-        .alert("Switch Toy Box servers?", isPresented: Binding(
-            get: { pendingChange != nil },
-            set: { if !$0 { pendingChange = nil } }
-        ), presenting: pendingChange) { change in
-            Button("Switch Server") { apply(change) }
-            Button("Cancel", role: .cancel) {}
-        } message: { change in
-            Text("Live connections to \(change.previous) will close. Switch to \(change.address)? Drafts stay saved separately for each server.")
+        .sheet(item: $pendingChange) { change in
+            NavigationStack {
+                Form {
+                    Section {
+                        Text("Live connections to the current server will close. Drafts stay saved separately for each server.")
+                    }
+                    Section {
+                        serverAddress("Current Server", address: change.previous)
+                        serverAddress("New Server", address: change.address)
+                    }
+                }
+                .font(.body)
+                .foregroundStyle(.primary)
+                .navigationTitle("Switch Server")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel", role: .cancel) { pendingChange = nil }
+                            .disabled(isApplying)
+                    }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Switch") {
+                            pendingChange = nil
+                            apply(change)
+                        }
+                        .disabled(isApplying)
+                    }
+                }
+            }
+            .presentationDetents([.large])
+            .presentationSizing(.form)
+            .interactiveDismissDisabled(isApplying)
+        }
+    }
+
+    private func serverAddress(_ title: String, address: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title).font(.headline)
+            Text(address).textSelection(.enabled)
         }
     }
 
@@ -109,6 +141,7 @@ struct SettingsView: View {
     }
 
     private func apply(_ change: ServerChange) {
+        guard !isApplying else { return }
         isApplying = true
         useFailure = nil
         Task {
