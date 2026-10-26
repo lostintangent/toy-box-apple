@@ -68,7 +68,7 @@ public struct ModelSelectionFields<ExtraRows: View>: View {
     private var footerHelp: [String] {
         var lines: [String] = []
         if let error {
-            lines.append(Self.catalogErrorMessage(error, memberScoped: memberScope != nil))
+            lines.append(Self.catalogErrorPresentation(error, memberScoped: memberScope != nil).message)
         } else if catalog != nil, selectionPolicy.choices.isEmpty {
             lines.append("No models are available for this provider.")
         }
@@ -84,22 +84,26 @@ public struct ModelSelectionFields<ExtraRows: View>: View {
                 LabeledContent(title) {
                     ProgressView().controlSize(.small).accessibilityLabel("Loading models")
                 }
-            } else if error != nil {
+            } else if let error {
+                let failure = Self.catalogErrorPresentation(error, memberScoped: memberScope != nil)
                 LabeledContent(title) {
                     HStack(spacing: 8) {
                         // A member's override stays clearable without a catalog, as the spec requires.
                         if selectionPolicy.retainedModel != nil {
                             picker.labelsHidden().fixedSize()
-                        } else {
-                            Text("Couldn't Load")
+                        }
+                        if selectionPolicy.retainedModel == nil || !failure.canRetry {
+                            Text(failure.title)
                                 #if os(iOS)
                                 .foregroundStyle(ChannelInk.secondary)
                                 #else
                                 .foregroundStyle(.secondary)
                                 #endif
                         }
-                        Button("Retry") { Task { await load() } }
-                            .controlSize(.small)
+                        if failure.canRetry {
+                            Button("Retry") { Task { await load() } }
+                                .controlSize(.small)
+                        }
                     }
                 }
             } else {
@@ -183,11 +187,15 @@ public struct ModelSelectionFields<ExtraRows: View>: View {
         }
     }
 
-    static func catalogErrorMessage(_ error: any Error, memberScoped: Bool) -> String {
-        if !memberScoped, case ChannelAPIError.http(status: 404, message: _) = error {
-            return "Models aren't available on this server."
+    static func catalogErrorPresentation(_ error: any Error, memberScoped: Bool)
+        -> (title: String, message: String, canRetry: Bool) {
+        if case ChannelAPIError.http(status: 404, message: _) = error {
+            let message = memberScoped
+                ? "Models aren't available. \(error.localizedDescription)"
+                : "Models aren't available on this server."
+            return ("Not Available", message, false)
         }
-        return "Models could not be loaded. \(error.localizedDescription)"
+        return ("Couldn't Load", "Models could not be loaded. \(error.localizedDescription)", true)
     }
 }
 
