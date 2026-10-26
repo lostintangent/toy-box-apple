@@ -105,6 +105,28 @@ struct ShellTests {
         }
     }
 
+    @Test func managementOwnersResumeWithoutASelectedChannelOnlyWhileActive() async throws {
+        try await withDefaults { defaults in
+            let model = AppModel(arguments: ["--server", "https://fixture.example"], environment: [:],
+                                 defaults: defaults, session: fixtureSession())
+            defer { model.setActive(false) }
+            let store = try #require(model.catalog?.channel(id: "first"))
+            model.acquire(store)
+            #expect(model.selectedChannelID == nil)
+            #expect(store.phase == .idle)
+            model.setActive(true)
+            #expect(store.phase == .connecting)
+            model.setActive(false)
+            #expect(store.phase == .idle)
+            model.setActive(true)
+            #expect(store.phase == .connecting)
+            model.selectedChannelID = store.id
+            #expect(model.selectedStore === store)
+            model.release(store)
+            #expect(store.phase == .connecting)
+        }
+    }
+
     @Test func restorationWaitsForTheCatalogAndUsesTheNormalizedServer() async throws {
         await withDefaults { defaults in
             defaults.set(["https://fixture.example/prefix": "second"], forKey: "lastChannelByServer")
