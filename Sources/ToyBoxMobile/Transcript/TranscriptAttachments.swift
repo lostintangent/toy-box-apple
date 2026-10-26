@@ -28,10 +28,10 @@ struct TranscriptAttachments: View {
 private struct TranscriptImage: View {
     let attachment: ChannelAttachment
     let api: ChannelAPI
-    @State private var image: UIImage?
-    @State private var failed = false
-    @State private var showsProgress = false
-    @State private var attempt = 0
+    @ViewState private var image: UIImage?
+    @ViewState private var failed = false
+    @ViewState private var showsProgress = false
+    @ViewState private var attempt = 0
 
     static let maximum = CGSize(width: 240, height: 160)
     static let unknown = CGSize(width: 120, height: 90)
@@ -111,8 +111,8 @@ private struct TranscriptFileRow: View {
 private struct TranscriptVideo: View {
     let url: URL
     let name: String
-    @State private var poster: UIImage?
-    @State private var isPlaying = false
+    @ViewState private var poster: UIImage?
+    @ViewState private var isPlaying = false
 
     var body: some View {
         Button { isPlaying = true } label: {

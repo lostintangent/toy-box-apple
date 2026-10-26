@@ -91,16 +91,16 @@ struct ConversationView: View {
     @Environment(ChannelInteraction.self) private var interaction
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.horizontalSizeClass) private var sizeClass
-    @State private var rowBuilder = TranscriptRowBuilder()
-    @State private var scroll = TranscriptScroll()
-    @State private var position = ScrollPosition()
-    @State private var arrivalUnreadAfter: Int?
-    @State private var capturedArrival = false
-    @State private var showsJumpToLatest = false
-    @State private var highlightedSequence: Int?
-    @State private var requestedRead = 0
-    @State private var isPagingVisible = false
-    @State private var expanded: Set<String> = []
+    @ViewState private var rowBuilder = TranscriptRowBuilder()
+    @ViewState private var scroll = TranscriptScroll()
+    @ViewState private var position = ScrollPosition()
+    @ViewState private var arrivalUnreadAfter: Int?
+    @ViewState private var capturedArrival = false
+    @ViewState private var showsJumpToLatest = false
+    @ViewState private var highlightedSequence: Int?
+    @ViewState private var requestedRead = 0
+    @ViewState private var isPagingVisible = false
+    @ViewState private var expanded: Set<String> = []
 
     private static let space = "transcript-content"
     private static let laneWidth: CGFloat = 720
@@ -299,7 +299,7 @@ private struct TranscriptPagingAccessory: View {
     let isLoading: Bool
     let error: String?
     let load: () -> Void
-    @State private var showsProgress = false
+    @ViewState private var showsProgress = false
 
     var body: some View {
         Group {
@@ -328,7 +328,7 @@ private struct TranscriptSendAttempt: View {
     let store: ChannelStore
     let context: TranscriptRowContext
     @Environment(ChannelInteraction.self) private var interaction
-    @State private var actionError: String?
+    @ViewState private var actionError: String?
 
     var body: some View {
         VStack(alignment: .trailing, spacing: 6) {
@@ -445,7 +445,7 @@ private struct TranscriptState: View {
     let loadOlder: () -> Void
     @Environment(AppModel.self) private var model
     @Environment(ChannelInteraction.self) private var interaction
-    @State private var showsProgress = false
+    @ViewState private var showsProgress = false
 
     var body: some View {
         if !store.isLoaded {

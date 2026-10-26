@@ -33,7 +33,7 @@ struct TranscriptItemView: View, @MainActor Equatable {
                     .padding(.bottom, item.spacing > 0 ? TranscriptItem.runGap : 0)
             }
             content
-                .background(isHighlighted ? ChannelColors.userWash : .clear,
+                .background(isHighlighted ? ChannelColors.sourceHighlight : .clear,
                             in: .rect(cornerRadius: 12, style: .continuous))
         }
     }
@@ -106,7 +106,7 @@ struct TranscriptUserMessage: View {
     var deliveryLabel: String?
     var statusReactions: [ChannelReaction] = []
     @Environment(\.horizontalSizeClass) private var sizeClass
-    @State private var selectsText = false
+    @ViewState private var selectsText = false
 
     var body: some View {
         TranscriptTrailingLane(fraction: sizeClass == .regular ? 0.8 : 0.88)() {
@@ -151,9 +151,9 @@ struct TranscriptAgentMessage: View {
     var isExpanded = false
     var setExpanded: (Bool) -> Void = { _ in }
     @Environment(ChannelInteraction.self) private var interaction
-    @State private var selectsText = false
+    @ViewState private var selectsText = false
     /// Only collapsible coordination measures, so other rows lay out once.
-    @State private var overflows = false
+    @ViewState private var overflows = false
 
     nonisolated private static let clampHeight: CGFloat = 160
     private var isClamped: Bool { entry.collapsible && !isExpanded && overflows }
@@ -337,7 +337,7 @@ struct TranscriptSystemMessages: View {
     let messages: [ChannelMessage]
     let agents: [ChannelAgent]
 
-    @State private var showsDetails = false
+    @ViewState private var showsDetails = false
 
     var body: some View {
         Button { showsDetails = true } label: {
@@ -414,7 +414,7 @@ struct TranscriptReactionChip: View {
     let label: String
     let reactors: [ChannelAgent]
     var alignment: Alignment = .leading
-    @State private var showsReactors = false
+    @ViewState private var showsReactors = false
 
     var body: some View {
         Button { showsReactors = true } label: {
