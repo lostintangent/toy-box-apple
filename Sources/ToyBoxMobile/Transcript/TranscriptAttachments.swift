@@ -64,7 +64,8 @@ private struct TranscriptImage: View {
 
     private func load() async {
         guard image == nil else { return }
-        if attempt == 0, let remembered = ChannelThumbnails.remembered(for: attachment, api: api) {
+        if attempt == 0,
+           let remembered = ChannelThumbnails.remembered(for: attachment, api: api, scale: displayScale) {
             image = remembered
             return
         }

@@ -48,6 +48,26 @@ struct ChannelAttachmentTests {
         #expect(ChannelThumbnailCache.image(for: .attachment(id.uuidString)) === image)
     }
 
+    @Test func aSharperScaleDecodesAgainAndTheSharperThumbnailIsKept() async throws {
+        let payload = try encodedImage(width: 1000, height: 500, type: .png)
+        let attachment = ChannelAttachment(name: "wide.png", mimeType: "image/png", base64: payload)
+        let api = try ChannelAPI(serverURL: "http://localhost:3210")
+        let file = try await ChannelAttachmentCache.shared.file(for: attachment, api: api)
+
+        let standard = try await ChannelThumbnails.image(at: file, for: attachment, api: api, scale: 1)
+        #expect(standard.width == 240)
+        let retina = try await ChannelThumbnails.image(at: file, for: attachment, api: api, scale: 2)
+        #expect(retina.width == 480)
+        #expect(try await ChannelThumbnails.image(at: file, for: attachment, api: api, scale: 1) === retina)
+        #expect(ChannelThumbnails.remember(standard, for: attachment, api: api) === retina)
+
+        let small = ChannelAttachment(name: "small.png", mimeType: "image/png",
+                                      base64: try encodedImage(width: 100, height: 50, type: .png))
+        let smallFile = try await ChannelAttachmentCache.shared.file(for: small, api: api)
+        let whole = try await ChannelThumbnails.image(at: smallFile, for: small, api: api, scale: 1)
+        #expect(try await ChannelThumbnails.image(at: smallFile, for: small, api: api, scale: 2) === whole)
+    }
+
     @Test func inlineAttachmentsBecomeLocalQuickLookFiles() async throws {
         let data = Data("Quick Look test \(UUID().uuidString)".utf8)
         let attachment = ChannelAttachment(name: "notes.txt", mimeType: "text/plain", base64: data.base64EncodedString())

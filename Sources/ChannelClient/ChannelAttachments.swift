@@ -207,6 +207,8 @@ public enum ChannelThumbnailCache {
     nonisolated(unsafe) private static let storage: NSCache<AnyObject, Entry> = {
         let cache = NSCache<AnyObject, Entry>()
         cache.totalCostLimit = 64 << 20
+        // A failed decode costs nothing, so the count bounds those.
+        cache.countLimit = 512
         return cache
     }()
 
@@ -249,15 +251,31 @@ public enum ChannelThumbnails {
         Int((240 * max(scale, 1)).rounded(.up))
     }
 
+    /// Any remembered thumbnail, to draw at once while a sharper one may still be decoding.
     public static func remembered(for attachment: ChannelAttachment, api: ChannelAPI) -> CGImage? {
         ChannelAttachmentCache.identity(for: attachment, api: api).flatMap {
             ChannelThumbnailCache.image(for: .attachment($0))
         }
     }
 
+    /// The remembered thumbnail only when it's sharp enough at `scale`: it reaches the bound, or
+    /// it's already the whole original.
+    public static func remembered(for attachment: ChannelAttachment, api: ChannelAPI, scale: CGFloat) -> CGImage? {
+        guard let image = remembered(for: attachment, api: api) else { return nil }
+        let side = max(image.width, image.height)
+        if side >= maxPixelSize(scale: scale) { return image }
+        guard let original = ChannelImageDecoder.pixelSize(for: attachment, api: api) else { return nil }
+        return CGFloat(side) >= max(original.width, original.height) ? image : nil
+    }
+
+    /// Keeps the sharper of the new and remembered thumbnails, since both show the same bytes.
     @discardableResult
     public static func remember(_ image: CGImage, for attachment: ChannelAttachment, api: ChannelAPI) -> CGImage {
         guard let identity = ChannelAttachmentCache.identity(for: attachment, api: api) else { return image }
+        if let kept = ChannelThumbnailCache.image(for: .attachment(identity)),
+           max(kept.width, kept.height) > max(image.width, image.height) {
+            return kept
+        }
         return ChannelThumbnailCache.remember(image, for: .attachment(identity))
     }
 
@@ -273,7 +291,7 @@ public enum ChannelThumbnails {
     /// decode records the image's pixel size, so the next build of its row reserves it.
     public static func image(at file: URL, for attachment: ChannelAttachment, api: ChannelAPI, scale: CGFloat,
                              reload: Bool = false, fallback: Fallback? = nil) async throws -> CGImage {
-        if !reload, let image = remembered(for: attachment, api: api) { return image }
+        if !reload, let image = remembered(for: attachment, api: api, scale: scale) { return image }
         let decoded = try await Task.detached(priority: .userInitiated) {
             try decode(file, scale: scale, fallback: fallback)
         }.value
