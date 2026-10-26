@@ -102,6 +102,7 @@ struct MemberEditor: View {
                         title: saving ? (member == nil ? "Adding…" : "Saving…") : member == nil ? "Add Agent" : "Save",
                         pendingSince: session.pendingSince)
                 }
+                .accessibilityIdentifier("member-submit")
                 .keyboardShortcut(.return, modifiers: .command)
                 .disabled(!canSave)
             }

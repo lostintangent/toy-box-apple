@@ -116,6 +116,7 @@ struct ChannelEditor: View {
                         title: saving ? (channel == nil ? "Creating…" : "Saving…") : channel == nil ? "Create" : "Save",
                         pendingSince: session.pendingSince)
                 }
+                .accessibilityIdentifier("channel-submit")
                 .keyboardShortcut(.return, modifiers: .command)
                 .disabled(!canSave)
             }
