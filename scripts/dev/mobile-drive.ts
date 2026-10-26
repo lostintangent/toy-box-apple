@@ -7,6 +7,7 @@ export type MobileDriveStep = Timed & (
     { tap: string } | { type: string } | { wait: string; absent?: boolean } | { screenshot: string; display: string }
     | { back: true; ifPresent?: boolean } | { fold: boolean } | { action: string; on: string }
     | { scroll: "up" | "down" | "left" | "right"; on: string }
+    | { drag: "up" | "down" | "left" | "right"; on: string }
     | { posture: "folded" | "unfolded" }
 );
 type Status = { state: "running" | "ready" | "completed" | "failed"; step: number;
@@ -21,11 +22,11 @@ export function parseMobileDrive(value: unknown): MobileDriveStep[] {
     return value.map((step: unknown, index) => {
         const fail = (message: string): never => { throw new Error(`Drive step ${index + 1}: ${message}`); };
         if (!record(step)) return fail("expected an action object.");
-        const actions = ["tap", "type", "wait", "screenshot", "back", "fold", "action", "scroll", "posture"].filter(key => key in step);
-        if (actions.length !== 1) return fail("expected exactly one of tap, type, wait, screenshot, back, fold, action, scroll or posture.");
+        const actions = ["tap", "type", "wait", "screenshot", "back", "fold", "action", "scroll", "drag", "posture"].filter(key => key in step);
+        if (actions.length !== 1) return fail("expected exactly one of tap, type, wait, screenshot, back, fold, action, scroll, drag or posture.");
         const action = actions[0]!;
         const allowed = new Set([action, "timeout", ...(action === "screenshot" ? ["display"] : []),
-            ...(action === "back" ? ["ifPresent"] : []), ...(action === "action" || action === "scroll" ? ["on"] : []),
+            ...(action === "back" ? ["ifPresent"] : []), ...(["action", "scroll", "drag"].includes(action) ? ["on"] : []),
             ...(action === "wait" ? ["absent"] : [])]);
         if (Object.keys(step).some(key => !allowed.has(key))) return fail("unknown action option.");
         const timeout = step.timeout;
@@ -57,12 +58,12 @@ export function parseMobileDrive(value: unknown): MobileDriveStep[] {
             if (typeof step.on !== "string" || !step.on.length) return fail("action needs a nonempty on target.");
             return { action: label, on: step.on, ...timed };
         }
-        if (action === "scroll") {
+        if (action === "scroll" || action === "drag") {
             if (label !== "up" && label !== "down" && label !== "left" && label !== "right") {
-                return fail("scroll must be up, down, left or right.");
+                return fail(`${action} must be up, down, left or right.`);
             }
-            if (typeof step.on !== "string" || !step.on.length) return fail("scroll needs a nonempty on identifier.");
-            return { scroll: label, on: step.on, ...timed };
+            if (typeof step.on !== "string" || !step.on.length) return fail(`${action} needs a nonempty on identifier.`);
+            return action === "scroll" ? { scroll: label, on: step.on, ...timed } : { drag: label, on: step.on, ...timed };
         }
         const display = step.display ?? 1;
         if ((typeof display !== "number" && typeof display !== "string") || !/^[1-9][0-9]*$/.test(String(display))) {
