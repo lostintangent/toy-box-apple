@@ -92,6 +92,7 @@ struct ManagementConfirmation: View {
                         title: deleting ? "Deleting…" : buttonTitle, pendingSince: session.pendingSince)
                         .frame(minHeight: 44)
                 }
+                .accessibilityIdentifier("management-review-delete")
                 .disabled(deleting || recovery.blocksWrites || !exists || !store.phase.isLive)
             }
         }
@@ -108,8 +109,10 @@ struct ManagementConfirmation: View {
             set: { if isCurrentHost { session.isConfirmationPresented = $0 } }
         )) {
             Button(buttonTitle, role: .destructive, action: remove)
+                .accessibilityIdentifier("management-confirm-delete")
                 .disabled(deleting || recovery.blocksWrites || !exists || !store.phase.isLive)
             Button("Cancel", role: .cancel) { sessions.cancel(session, presenter: presenter) }
+                .accessibilityIdentifier("management-confirm-cancel")
         } message: {
             Text(consequence)
         }
