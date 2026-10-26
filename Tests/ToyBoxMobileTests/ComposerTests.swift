@@ -340,6 +340,13 @@ struct ComposerTests {
         host.traitOverrides.preferredContentSizeCategory = .accessibilityExtraExtraExtraLarge
         host.view.frame = CGRect(x: 0, y: 0, width: 340, height: 210)
         host.view.layoutIfNeeded()
+        #expect(editor.textView == nil, "A detached hosting view has not mounted the native editor")
+        let window = UIWindow(frame: host.view.frame)
+        window.rootViewController = host
+        window.isHidden = false
+        defer { window.isHidden = true }
+        window.layoutIfNeeded()
+        host.view.layoutIfNeeded()
         let input = try #require(editor.textView)
         editor.selection = NSRange(location: 3, length: 0)
         input.selectedRange = NSRange(location: 3, length: 0)
@@ -351,7 +358,9 @@ struct ComposerTests {
         #expect(inputFrame.maxY <= host.view.bounds.height - 44)
         #expect(scroll.bounds.height > 0 && scroll.bounds.height < scroll.contentSize.height)
         host.rootView = content(height: 600)
-        host.view.frame.size.height = 600
+        window.frame.size.height = 600
+        window.setNeedsLayout()
+        window.layoutIfNeeded()
         host.view.setNeedsLayout()
         host.view.layoutIfNeeded()
         #expect(editor.textView === input)
