@@ -131,11 +131,13 @@ struct ShellTests {
         #expect(accessible.height > regular.height)
     }
 
-    @Test func aReaderWaitsForActualCompactOverviewDismissalNotJustTheClosedIntent() {
+    @Test(arguments: [false, true])
+    func aReaderWaitsForActualCompactOverviewDismissalNotJustTheClosedIntent(imageReader: Bool) {
         let overview = OverviewPresentation()
         overview.compactSheetDidAppear()
         func visibility(requested: Bool = true, overviewRequested: Bool) -> ChannelReaderVisibility {
-            ChannelReaderVisibility(requested: requested, compactOverviewRequested: overviewRequested,
+            ChannelReaderVisibility(artifactRequested: requested && !imageReader,
+                                    imageRequested: requested && imageReader, compactOverviewRequested: overviewRequested,
                                     compactOverviewPresented: overview.isCompactSheetPresented)
         }
         #expect(!visibility(overviewRequested: true).isVisible)
@@ -154,14 +156,48 @@ struct ShellTests {
             let interaction = model.interaction(for: store.id)
             let composer = model.composerSession(for: store)
             let artifacts = model.artifactSession(for: store)
+            let gallery = model.galleryPresenter(for: store)
+            gallery.open(images: [.init(name: "image.png", url: "/image.png")], at: 0,
+                         source: .init(messageID: "image", sender: "Lead", timestamp: "2026-10-25T12:00:00Z"),
+                         api: store.api)
             interaction.isArtifactViewerPresented = true
             model.selectedChannelID = "second"
             #expect(!interaction.isArtifactViewerPresented)
+            #expect(gallery.session == nil)
             model.selectedChannelID = "first"
             #expect(model.selectedStore === store)
             #expect(model.interaction(for: store.id) === interaction)
             #expect(model.composerSession(for: store) === composer)
             #expect(model.artifactSession(for: store) === artifacts)
+            #expect(model.galleryPresenter(for: store) === gallery)
+        }
+    }
+
+    @Test(arguments: [false, true])
+    func changingTheReaderStoreOrServerClosesItsScope(changingServer: Bool) async throws {
+        try await withDefaults { defaults in
+            let model = AppModel(arguments: ["--server", "https://fixture.example"], environment: [:],
+                                 defaults: defaults, session: fixtureSession())
+            model.selectedChannelID = "first"
+            let store = try #require(model.selectedStore)
+            let interaction = model.interaction(for: store.id)
+            let artifacts = model.artifactSession(for: store)
+            let gallery = model.galleryPresenter(for: store)
+            gallery.open(images: [.init(name: "image.png", url: "/image.png")], at: 0,
+                         source: .init(messageID: "image", sender: "Lead", timestamp: "2026-10-25T12:00:00Z"),
+                         api: store.api)
+            interaction.isArtifactViewerPresented = true
+            let replacement: ChannelStore
+            if changingServer {
+                try model.configure(serverURL: "https://second.example")
+                replacement = try #require(model.catalog?.channel(id: store.id))
+            } else {
+                replacement = ChannelStore(id: store.id, api: store.api)
+            }
+            #expect(model.artifactSession(for: replacement) !== artifacts)
+            #expect(model.galleryPresenter(for: replacement) !== gallery)
+            #expect(gallery.session == nil)
+            #expect(!interaction.isArtifactViewerPresented)
         }
     }
 

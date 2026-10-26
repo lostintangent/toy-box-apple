@@ -21,8 +21,7 @@ final class AppModel {
         didSet {
             guard oldValue != selectedChannelID else { return }
             if let selectedStore {
-                artifactSessions[selectedStore.id]?.session.close()
-                interactions[selectedStore.id]?.isArtifactViewerPresented = false
+                closeReaders(for: selectedStore.id)
             }
             if holdsSelectedConnection, let selectedStore { connections.release(selectedStore) }
             holdsSelectedConnection = false
@@ -41,6 +40,7 @@ final class AppModel {
     @ObservationIgnored private var interactions: [String: ChannelInteraction] = [:]
     @ObservationIgnored private var composerSessions: [String: ComposerSession] = [:]
     @ObservationIgnored private var artifactSessions: [String: (store: ChannelStore, session: ChannelArtifactSession)] = [:]
+    @ObservationIgnored private var galleryPresenters: [String: (store: ChannelStore, presenter: TranscriptGalleryPresenter)] = [:]
 
     init(arguments: [String] = ProcessInfo.processInfo.arguments,
          environment: [String: String] = ProcessInfo.processInfo.environment,
@@ -103,10 +103,11 @@ final class AppModel {
         holdsSelectedConnection = false
         selectedChannelID = nil
         visibleChannelID = nil
+        for id in Set(artifactSessions.keys).union(galleryPresenters.keys) { closeReaders(for: id) }
         interactions = [:]
         composerSessions = [:]
-        for entry in artifactSessions.values { entry.session.close() }
         artifactSessions = [:]
+        galleryPresenters = [:]
         self.serverURL = api.baseURL.absoluteString
         serverIdentity = identity
         catalog = ChannelCatalogStore(api: api)
@@ -195,12 +196,35 @@ final class AppModel {
     }
 
     func artifactSession(for store: ChannelStore) -> ChannelArtifactSession {
+        resetReaderScopeIfNeeded(for: store)
         if let entry = artifactSessions[store.id], entry.store === store { return entry.session }
-        artifactSessions[store.id]?.session.close()
         let session = ChannelArtifactSession(decodeImage: ArtifactImageDecoder.decode)
         session.configure(api: store.api, channelID: store.id, artifacts: store.artifacts)
         artifactSessions[store.id] = (store, session)
         return session
+    }
+
+    func galleryPresenter(for store: ChannelStore) -> TranscriptGalleryPresenter {
+        resetReaderScopeIfNeeded(for: store)
+        if let entry = galleryPresenters[store.id], entry.store === store { return entry.presenter }
+        let presenter = TranscriptGalleryPresenter()
+        galleryPresenters[store.id] = (store, presenter)
+        return presenter
+    }
+
+    private func resetReaderScopeIfNeeded(for store: ChannelStore) {
+        if artifactSessions[store.id].map({ $0.store !== store }) == true
+            || galleryPresenters[store.id].map({ $0.store !== store }) == true {
+            closeReaders(for: store.id)
+            artifactSessions[store.id] = nil
+            galleryPresenters[store.id] = nil
+        }
+    }
+
+    private func closeReaders(for channelID: String) {
+        artifactSessions[channelID]?.session.close()
+        galleryPresenters[channelID]?.presenter.close()
+        interactions[channelID]?.isArtifactViewerPresented = false
     }
 
     private var rememberedSelections: [String: String] {

@@ -24,8 +24,15 @@ struct RootView: View {
         .accessibilityHidden(overview.isCompactSheetPresented
                              || (overview.placement == .sheet && selectedInteraction?.isInspectorPresented == true))
         .inspector(isPresented: Binding(
-            get: { overview.placement == .inspector && selectedInteraction?.isInspectorPresented == true },
-            set: { if overview.placement == .inspector { selectedInteraction?.isInspectorPresented = $0 } }
+            get: {
+                overview.placement == .inspector && selectedInteraction?.isInspectorPresented == true
+                    && selectedInteraction?.isArtifactViewerPresented != true
+            },
+            set: {
+                if overview.placement == .inspector, selectedInteraction?.isArtifactViewerPresented != true {
+                    selectedInteraction?.isInspectorPresented = $0
+                }
+            }
         )) {
             overviewContent(at: .inspector)
                 .inspectorColumnWidth(min: 280, ideal: 296, max: 360)
@@ -128,6 +135,7 @@ struct RootView: View {
                 ChannelScreen(store: store)
                     .environment(model.interaction(for: store.id))
                     .environment(model.artifactSession(for: store))
+                    .environment(model.galleryPresenter(for: store))
             } else {
                 ContentUnavailableView("Choose a channel", systemImage: "bubble.left.and.bubble.right",
                                        description: Text("Open a channel from the list to join the conversation."))

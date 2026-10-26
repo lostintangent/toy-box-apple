@@ -9,12 +9,14 @@ struct ChannelScreen: View {
     @Environment(ChannelInteraction.self) private var interaction
     @Environment(ManagementPresenter.self) private var management
     @Environment(ChannelArtifactSession.self) private var artifacts
+    @Environment(TranscriptGalleryPresenter.self) private var gallery
     @Environment(OverviewPresentation.self) private var overview
     @Environment(\.horizontalSizeClass) private var sizeClass
 
     private var reader: ChannelReaderVisibility {
         ChannelReaderVisibility(
-            requested: artifacts.isPresented,
+            artifactRequested: artifacts.isPresented,
+            imageRequested: gallery.session != nil,
             compactOverviewRequested: sizeClass == .compact && interaction.isInspectorPresented,
             compactOverviewPresented: overview.isCompactSheetPresented
         )
@@ -27,7 +29,11 @@ struct ChannelScreen: View {
                 .allowsHitTesting(!reader.requested)
                 .accessibilityHidden(reader.requested)
             if reader.isVisible {
-                ArtifactViewer(session: artifacts)
+                if artifacts.isPresented {
+                    ArtifactViewer(session: artifacts)
+                } else {
+                    TranscriptImageGallery(presenter: gallery)
+                }
             }
         }
             .navigationTitle(store.details?.name ?? model.catalog?.channels.first { $0.id == store.id }?.name ?? "")
@@ -37,6 +43,12 @@ struct ChannelScreen: View {
             .onChange(of: store.artifacts, initial: true) { _, current in
                 artifacts.configure(api: store.api, channelID: store.id, artifacts: current)
             }
+            .onChange(of: artifacts.isPresented, initial: true) { _, presented in
+                if presented, artifacts.isPresented { gallery.close() }
+            }
+            .onChange(of: gallery.session?.id, initial: true) { _, id in
+                if id != nil, gallery.session?.id == id { artifacts.close() }
+            }
             .onChange(of: reader.requested, initial: true) { _, requested in
                 interaction.isArtifactViewerPresented = requested
                 if requested, sizeClass == .compact { interaction.isInspectorPresented = false }
@@ -44,6 +56,7 @@ struct ChannelScreen: View {
             .onChange(of: store.phase, initial: true) { _, phase in
                 if phase == .deleted {
                     artifacts.close()
+                    gallery.close()
                     interaction.isInspectorPresented = false
                 }
             }
@@ -115,9 +128,12 @@ struct ChannelScreen: View {
 }
 
 struct ChannelReaderVisibility {
-    let requested: Bool
+    let artifactRequested: Bool
+    let imageRequested: Bool
     let compactOverviewRequested: Bool
     let compactOverviewPresented: Bool
+
+    var requested: Bool { artifactRequested || imageRequested }
 
     var isVisible: Bool {
         requested && !compactOverviewRequested && !compactOverviewPresented
