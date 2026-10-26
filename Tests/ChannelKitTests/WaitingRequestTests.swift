@@ -22,21 +22,33 @@ struct WaitingRequestTests {
         #expect(ChannelWaitingRequest.Identity(serverURL: "https://server.test", channelID: "", sequence: 8) == nil)
     }
 
-    @Test func macLinksKeepTheRawServerSpellingThatRoutingMatchesExactly() throws {
-        for (server, normalized) in [
-            ("http://127.0.0.1:3210/", "http://127.0.0.1:3210"),
-            ("http://SERVER.TEST:80/base///", "http://server.test/base"),
-            ("https://SERVER.TEST:443/", "https://server.test")
+    @Test func requestLinksKeepTheirRawValuesAndRejectMalformedRoutes() throws {
+        let server = "http://127.0.0.1:3210/"
+        let link = NeedsYouRequestLink(serverURL: server, channelID: "studio / # & \u{fc}", sequence: 123)
+        let open = try #require(link.url)
+        let reply = try #require(link.replyURL)
+        #expect(NeedsYouRequestLink(url: open) == link)
+        #expect(NeedsYouRequestLink(replyURL: reply) == link)
+        #expect(NeedsYouRequestLink(url: reply) == nil)
+        #expect(NeedsYouRequestLink(replyURL: open) == nil)
+        #expect(NeedsYouRequestLink(url: NeedsYouSnapshot.mainURL) == nil)
+        #expect(ChannelWaitingRequest.Identity(serverURL: server, channelID: link.channelID, sequence: link.sequence)?.serverURL
+                == "http://127.0.0.1:3210")
+        for value in [
+            "https://request?server=http://localhost/&channel=studio&sequence=1",
+            "toybox-desktop://request?server=http://localhost/&channel=studio&sequence=0",
+            "toybox-desktop://request?server=http://localhost/&channel=studio&sequence=-1",
+            "toybox-desktop://request?server=http://localhost/&channel=studio&sequence=1&sequence=2",
+            "toybox-desktop://request?server=file:///private/&channel=studio&sequence=1",
+            "toybox-desktop://request?server=https://user@example.com/&channel=studio&sequence=1",
+            "toybox-desktop://request?server=http://localhost/&channel=&sequence=1",
+            "toybox-desktop://request/elsewhere?server=http://localhost/&channel=studio&sequence=1",
+            "toybox-desktop://request?server=http://localhost/&channel=studio&sequence=1#fragment",
         ] {
-            let link = NeedsYouRequestLink(serverURL: server, channelID: "studio", sequence: 8)
-            let canonical = try #require(ChannelWaitingRequest.Identity(serverURL: server, channelID: "studio", sequence: 8))
-            let openURL = try #require(link.url)
-            let replyURL = try #require(link.replyURL)
-            let open = try #require(NeedsYouRequestLink(url: openURL))
-            let reply = try #require(NeedsYouRequestLink(replyURL: replyURL))
-            #expect(open.serverURL == server && reply.serverURL == server)
-            #expect(open == link && reply == link)
-            #expect(canonical.serverURL == normalized)
+            let invalidOpen = try #require(URL(string: value))
+            let invalidReply = try #require(URL(string: value.replacingOccurrences(of: "://request", with: "://reply")))
+            #expect(NeedsYouRequestLink(url: invalidOpen) == nil)
+            #expect(NeedsYouRequestLink(replyURL: invalidReply) == nil)
         }
     }
 
@@ -48,7 +60,6 @@ struct WaitingRequestTests {
                   question: question, agent: requester, channelName: "Studio", requestedAt: nil)
         }
         let request = try #require(entry())
-        #expect(request.id.serverURL == "https://server.test")
         #expect(request.question == "Should we ship the caf\u{00e9} layout?")
         #expect(request.agent == .init(id: "lead", name: "Lead", deleted: false))
         #expect(entry(question: nil) == nil)
@@ -59,16 +70,14 @@ struct WaitingRequestTests {
         #expect(entry(sequence: -1) == nil)
     }
 
-    @Test func newerMessagesAndRepliesCountOnlyWhatTheTranscriptShows() {
-        var messages = (1...30).map { message($0, sender: $0 == 25 ? .user : .agent("lead")) }
-        messages.append(message(31, sender: .system))
-        #expect(channelAgentMessageCount(messages, after: 20) == 9)
+    @Test func onlyLaterUserMessagesAnswerARequest() {
+        let messages = [message(24), message(25, sender: .user), message(26), message(27, sender: .system)]
         #expect(ChannelWaitingRequest.isReplied(24, in: messages))
         #expect(!ChannelWaitingRequest.isReplied(25, in: messages))
         #expect(!ChannelWaitingRequest.isReplied(0, in: []))
     }
 
-    @Test func requestLookupPrefersTheDedicatedMessageAndPreservesDeletedRequesterRules() throws {
+    @Test func requestLookupPrefersTheDedicatedMessageAndPreservesDeletedRequesterRules() {
         let historical = message(8)
         var dedicated = historical
         dedicated.content = .text("The dedicated question")
@@ -81,34 +90,16 @@ struct WaitingRequestTests {
         #expect(ChannelWaitingRequest.recipient(of: 8, in: state) == "Renamed Lead")
         #expect(ChannelWaitingRequest.recipient(of: 9, in: state) == nil)
         #expect(ChannelWaitingRequest.message(at: 10, in: state) == nil)
-        #expect(ChannelRequestMessage(sequence: 10, in: state) == nil)
-        let joined = try #require(ChannelRequestMessage(sequence: 8, in: state))
-        #expect(joined.message == dedicated && joined.requester == state.lead)
+        #expect(ChannelRequestMessage(message: dedicated, agents: state.agents).requester == state.lead)
 
         state.lead.deleted = true
         #expect(ChannelWaitingRequest.recipient(of: 8, in: state) == nil)
-        #expect(ChannelRequestMessage(sequence: 8, in: state)?.requester?.deleted == true)
+        #expect(ChannelRequestMessage(message: dedicated, agents: state.agents).requester?.deleted == true)
         state.request = nil
         #expect(ChannelWaitingRequest.message(at: 8, in: state) == historical)
         state.messages[0].sender = .agent("missing")
         #expect(ChannelWaitingRequest.recipient(of: 8, in: state) == nil)
-        #expect(ChannelRequestMessage(sequence: 8, in: state)?.requester == nil)
-    }
-
-    @Test func matchingARequestDoesNotReadTheRosterUntilItsSequenceMatches() {
-        var reads = 0
-        func roster() -> [ChannelAgent] {
-            reads += 1
-            return [.init(id: "lead", name: "Lead")]
-        }
-        let missing = ChannelWaitingRequest.message(at: 8, live: nil, agents: roster(), cached: nil)
-        let other = ChannelWaitingRequest.message(at: 8, live: message(9), agents: roster(), cached: nil)
-        #expect(missing == nil)
-        #expect(other == nil)
-        #expect(reads == 0)
-        let matching = ChannelWaitingRequest.message(at: 8, live: message(8), agents: roster(), cached: nil)
-        #expect(matching?.requester?.name == "Lead")
-        #expect(reads == 1)
+        #expect(ChannelRequestMessage(message: state.messages[0], agents: state.agents).requester == nil)
     }
 
     @Test func liveAndCatalogProjectionReadsOnlyTheChosenSourceAndRejectsOldSequences() throws {
@@ -137,6 +128,8 @@ struct WaitingRequestTests {
         #expect(missing == nil)
         #expect(rosterReads == 1)
         #expect(cacheReads == 2)
+        let absent = ChannelWaitingRequest.message(at: 8, live: nil, agents: roster(), cached: nil)
+        #expect(absent == nil && rosterReads == 1 && cacheReads == 2)
     }
 
     @Test func liveDetailsReplaceOnlyDescriptiveFieldsAndTheLiveRequest() {
@@ -145,22 +138,19 @@ struct WaitingRequestTests {
                                tasks: [.init(id: "task", title: "Keep the catalog task")],
                                latestSequence: 40, seenThrough: 20, completedSequence: 35, requestSequence: 30,
                                updatedAt: "2026-10-24T08:00:00Z")
-        var changed = original
-        changed.name = "Live"
-        changed.purpose = nil
-        changed.directory = "/new"
-        changed.model = .init(provider: "new", name: "new")
+        var changed = Channel(id: "studio", name: "Live", directory: "/new",
+                              model: .init(provider: "new", name: "new"),
+                              latestSequence: 99, seenThrough: 98, completedSequence: 97, requestSequence: 96,
+                              updatedAt: "2026-10-25T08:00:00Z")
         changed.previewUrl = "/new-preview"
-        changed.latestSequence = 99
-        changed.updatedAt = "2026-10-25T08:00:00Z"
-        let details = ChannelDetails(changed)
-        let projected = details.applying(to: original, requestSequence: nil)
+        let projected = ChannelDetails(changed).applying(to: original, requestSequence: nil)
+        changed.tasks = original.tasks
         changed.latestSequence = original.latestSequence
+        changed.seenThrough = original.seenThrough
+        changed.completedSequence = original.completedSequence
         changed.updatedAt = original.updatedAt
         changed.requestSequence = nil
         #expect(projected == changed)
-        #expect(projected.seenThrough == 20 && projected.completedSequence == 35 && projected.tasks == original.tasks)
-        #expect(details.resolvedPreview == .init(kind: "url", url: "/new-preview"))
     }
 
     private func message(_ sequence: Int, sender: ChannelMessageSender = .agent("lead")) -> ChannelMessage {

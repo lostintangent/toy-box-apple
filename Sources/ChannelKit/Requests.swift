@@ -9,16 +9,10 @@ public struct ChannelRequestMessage: Equatable, Sendable {
         self.agents = agents
     }
 
-    public init?(sequence: Int, in state: ChannelState) {
-        guard let message = ChannelWaitingRequest.message(at: sequence, in: state) else { return nil }
-        self.init(message: message, agents: state.agents)
-    }
-
     /// An unresolved requester stays unresolved in an inbox or search index.
     public var requester: ChannelAgent? {
         agents.first { $0.id == message.sender.agentId }
     }
-
 }
 
 public struct ChannelWaitingRequest: Equatable, Identifiable, Sendable {

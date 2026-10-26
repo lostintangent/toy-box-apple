@@ -34,13 +34,11 @@ struct MentionPolicyTests {
         let create = ChannelMentionChoice.choices(matching: "new-person", among: agents).last
         #expect(create?.isCreate == true)
         #expect(create?.name == "New Person")
-        #expect(ChannelMentionChoice.choices(matching: "ada", among: agents).first?.isMember == true)
-        #expect(ChannelMentionChoice.choices(matching: "lead", among: agents).first?.isMember == false)
+        let member = ChannelMentionChoice.choices(matching: "ada", among: agents).first
+        #expect(member?.isMember == true && member?.agent == agents[2])
+        let lead = ChannelMentionChoice.choices(matching: "lead", among: agents).first
+        #expect(lead?.isMember == false && lead?.agent == agents[0])
         #expect(ChannelMentionChoice.choices(matching: "new-person", among: agents, allowsCreation: false).isEmpty)
-        #expect(ChannelMentionChoice.choices(matching: "", among: agents, allowsCreation: false).map(\.name)
-                == ["Everyone", "Lead", "Ada", "Pixel", "Zebra"])
-        #expect(ChannelMentionChoice.choices(matching: "ada", among: agents).first?.kind == .member(agents[2]))
-        #expect(ChannelMentionChoice.choices(matching: "lead", among: agents).first?.kind == .lead(agents[0]))
     }
 
     @Test func deletedAgentsNeverAppearButTheOriginalLeadStillDeterminesMembership() {

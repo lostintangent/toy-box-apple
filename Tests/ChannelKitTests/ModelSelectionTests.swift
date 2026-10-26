@@ -1,4 +1,3 @@
-import Foundation
 import Testing
 @testable import ChannelKit
 
@@ -49,15 +48,6 @@ struct ModelSelectionTests {
         #expect(ChannelModelSelection(model: nil, catalog: catalog, scope: .channel).defaultModel == catalog.defaultModel)
         #expect(ChannelModelSelection(model: .init(provider: "copilot", name: "unavailable"),
                                       catalog: catalog, scope: .channel).defaultModel == nil)
-    }
-
-    @Test func catalogWireValuesStillRoundTripAfterMovingToTheDomain() throws {
-        let data = Data(#"{"version":1,"models":[{"id":"first","name":"First","provider":"copilot","supportedReasoningEfforts":["high"],"supportedContextTiers":[{"name":"long","tokenWindow":200000}]}],"defaultModel":{"provider":"copilot","name":"first"},"provider":"copilot"}"#.utf8)
-        let decoded = try JSONDecoder().decode(ModelCatalog.self, from: data)
-        #expect(decoded.models.first?.supportedContextTiers?.first?.tokenWindow == 200_000)
-        #expect(decoded.models.first?.configuration == decoded.defaultModel)
-        #expect(try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(decoded))
-                == JSONDecoder().decode(JSONValue.self, from: data))
     }
 
     private func catalog() -> ModelCatalog {

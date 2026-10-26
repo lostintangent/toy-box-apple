@@ -15,47 +15,32 @@ struct ContentPolicyTests {
         #expect(channelAgentMessageCount([]) == 0)
     }
 
-    @Test func everyCommonSendBlockerAndTheUTF16LimitIsPreserved() {
-        let atLimit = String(repeating: "\u{1F680}", count: 6_000).utf16.count
-        #expect(atLimit == 12_000)
-        for blockers in 0..<64 {
-            for length in [0, 11_999, atLimit, atLimit + 1] {
-                let eligible = channelCanSend(
-                    isLive: blockers & 1 == 0,
-                    isSending: blockers & 2 != 0,
-                    isSubmitting: blockers & 4 != 0,
-                    hasContent: blockers & 8 == 0,
-                    isLoadingImages: blockers & 16 != 0,
-                    hasUnreadableImage: blockers & 32 != 0,
-                    textUTF16Count: length)
-                #expect(eligible == (blockers == 0 && length <= 12_000))
-            }
-        }
-    }
-
-    @Test func sendEligibilityReadsEachInputOnceInOrderAndStopsAtTheFirstBlocker() {
+    @Test func sendEligibilityPreservesEveryBlockerBoundaryAndLazyReadOrder() {
         let inputs = ["isLive", "isSending", "isSubmitting", "hasContent",
                       "isLoadingImages", "hasUnreadableImage", "textUTF16Count"]
-        for stoppedAt in 0...inputs.count {
-            var reads: [String] = []
-            func read(_ index: Int, _ value: Bool) -> Bool {
-                reads.append(inputs[index])
-                return value
+        for blockers in 0..<64 {
+            let readCount = (0..<6).first { blockers & (1 << $0) != 0 }.map { $0 + 1 } ?? inputs.count
+            for length in [0, 11_999, 12_000, 12_001] {
+                var reads: [String] = []
+                func read(_ index: Int, _ value: Bool) -> Bool {
+                    reads.append(inputs[index])
+                    return value
+                }
+                func readLength() -> Int {
+                    reads.append(inputs[6])
+                    return length
+                }
+                let eligible = channelCanSend(
+                    isLive: read(0, blockers & 1 == 0),
+                    isSending: read(1, blockers & 2 != 0),
+                    isSubmitting: read(2, blockers & 4 != 0),
+                    hasContent: read(3, blockers & 8 == 0),
+                    isLoadingImages: read(4, blockers & 16 != 0),
+                    hasUnreadableImage: read(5, blockers & 32 != 0),
+                    textUTF16Count: readLength())
+                #expect(eligible == (blockers == 0 && length <= 12_000))
+                #expect(reads == Array(inputs.prefix(readCount)))
             }
-            func length() -> Int {
-                reads.append(inputs[6])
-                return stoppedAt == 6 ? 12_001 : 12_000
-            }
-            let eligible = channelCanSend(
-                isLive: read(0, stoppedAt != 0),
-                isSending: read(1, stoppedAt == 1),
-                isSubmitting: read(2, stoppedAt == 2),
-                hasContent: read(3, stoppedAt != 3),
-                isLoadingImages: read(4, stoppedAt == 4),
-                hasUnreadableImage: read(5, stoppedAt == 5),
-                textUTF16Count: length())
-            #expect(eligible == (stoppedAt == inputs.count))
-            #expect(reads == Array(inputs.prefix(min(stoppedAt + 1, inputs.count))))
         }
     }
 
