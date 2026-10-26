@@ -1,5 +1,6 @@
 import ChannelClient
 import SwiftUI
+import ToyBoxUI
 
 struct ManagementError: View {
     let message: String
@@ -49,6 +50,6 @@ struct ManagementConnectionNotice: View {
               : "Reconnect before making changes. Your edits are preserved.",
               systemImage: "wifi.exclamationmark")
             .font(.footnote)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(ChannelInk.secondary)
     }
 }

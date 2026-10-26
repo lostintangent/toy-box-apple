@@ -60,16 +60,19 @@ struct MemberEditor: View {
             }
             Section {
                 Text(member == nil ? "Joins \(channel.name) and starts onboarding right away." : "Member of \(channel.name).")
-                    .font(.footnote).foregroundStyle(.secondary)
+                    .font(.footnote).foregroundStyle(ChannelInk.secondary)
             }
             Section {
-                TextField("Name", text: $session.name, prompt: Text("Required"))
+                TextField("Name", text: $session.name,
+                          prompt: Text("Required").foregroundStyle(ChannelInk.secondary))
                     .focused($focus, equals: .name)
                     .submitLabel(.next)
                     .onSubmit { focus = .role }
                     .accessibilityIdentifier("member-name")
                 TextField("Role", text: $session.role,
-                          prompt: Text("What this agent owns and how it works, including its persona."), axis: .vertical)
+                          prompt: Text("What this agent owns and how it works, including its persona.")
+                            .foregroundStyle(ChannelInk.secondary),
+                          axis: .vertical)
                     .lineLimit(5...10)
                     .focused($focus, equals: .role)
                     .accessibilityIdentifier("member-role")
@@ -77,6 +80,7 @@ struct MemberEditor: View {
                 if let violation { ManagementError(message: violation, systemImage: "exclamationmark.circle.fill") }
                 Text(nextName.isEmpty ? "Names are unique in this channel."
                      : "Mentioned as @\(agentHandleFromName(nextName)). Names are unique in this channel.")
+                    .foregroundStyle(ChannelInk.secondary)
             }
             ModelSelectionFields(model: $session.model, openingModel: session.openingModel,
                                  api: api, provider: member?.model?.provider,
