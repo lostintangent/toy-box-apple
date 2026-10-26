@@ -256,6 +256,10 @@ Agents never create these accounts, accept agreements, read private keys or set 
   `t340-no-actor-diagnostic-1.log` and `t340-no-actor-diagnostic-2.log`, respectively passed and
   failed revision-zero reconnect. Core still owns causal restoration under t340. A green
   readiness gate alone does not establish the quarantined reconnect failures' production cause.
+  `ReconnectReadinessTests` separately protects both reconnect contracts with immediate EOF and
+  an explicit stream completion after the first snapshot applies. The controlled recovery case
+  also loads older history before EOF and checks that the recovery snapshot replaces it.
+  These input-order regressions do not lift either historical quarantine.
 - `ChannelArtifactSessionTests.switchingScopeDiscardsTheVisitAndCancelsItsPendingLoad` is quarantined
   behind `TOY_BOX_TEST_ARTIFACT_SCOPE_TIMING=1`. Its `changingServer: false` argument failed the
   unchanged private three-second polling helper at line 81 in the 2026-10-26 Client diagnostic run
