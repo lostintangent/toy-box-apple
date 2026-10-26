@@ -263,7 +263,7 @@ struct TransportTests {
         let store = ChannelStore(id: "test", api: try mock.api(), sendJournal: nil)
         _ = try store.apply(.init(type: "snapshot", state: testState(revision: 10, messages: [testMessage(100)])))
         let reveal = Task { await store.loadHistory(through: 5) }
-        try await eventually { mock.pendingResponseCount == 1 }
+        try await eventually(observing: mock) { mock.pendingResponseCount == 1 }
         _ = try store.apply(.init(type: "snapshot", state: testState(revision: 11, messages: [testMessage(200)])))
         #expect(mock.finishPendingResponses() == 1)
         await reveal.value
@@ -280,7 +280,7 @@ struct TransportTests {
         let store = ChannelStore(id: "test", api: try mock.api(), sendJournal: nil)
         _ = try store.apply(.init(type: "snapshot", state: testState(revision: 10, messages: [testMessage(100)])))
         let paging = Task { await store.loadOlder() }
-        try await eventually { mock.pendingResponseCount == 1 }
+        try await eventually(observing: mock) { mock.pendingResponseCount == 1 }
         let (started, start) = AsyncStream<Void>.makeStream()
         let reveal = Task {
             start.finish()
