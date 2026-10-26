@@ -7,7 +7,7 @@ view.
 ## Tech stack
 
 - SwiftUI, with AppKit where SwiftUI falls short. Swift 6.4 and SwiftPM, with no Xcode project.
-  macOS 27 on Apple Silicon only.
+  macOS 27 on Apple Silicon, plus the iOS 27 iPhone companion in `Sources/ToyBoxMobile`.
 - `ChannelKit` is the domain: Codable models, the reducer, transcript grouping, attention, tasks
   and cron. `ChannelClient` is transport: HTTP commands, SSE, reconnect and observable stores.
   `ChannelIntelligence` is on-device Foundation Models. `ToyBoxDesktop` is the app.
@@ -22,7 +22,8 @@ view.
   `bun check` directly, without installing TypeScript. `bun run test:release` and
   `bun run lint:workflows` cover release behavior and workflows.
 - Use `bun run test` for Swift tests. Bare `bun test` only runs the TypeScript tooling tests.
-- Build only with Command Line Tools. Never use `xcodebuild`. `bun run app` runs Xcode's `appintentsmetadataprocessor` directly for
+- Mac builds use only Command Line Tools. This rule is Mac-only. iOS builds use Xcode's
+  toolchain and SDK through SwiftPM, not `xcodebuild`. `bun run app` runs Xcode's `appintentsmetadataprocessor` directly for
   Siri and Shortcuts, which needs Xcode installed but not its license.
 - Target macOS 27 or later on Apple Silicon with Swift tools 6.4 or later. `bun run app` stamps the real SDK
   version before signing. Use its bundle for native visual checks, not SwiftPM's unstamped
@@ -73,6 +74,51 @@ view.
 - Quit the instances you launch when you are done.
 - Attach channel images from your own session `files/` folder, never `/tmp`. Toy Box serves
   attachments from their original paths, so a cleaned scratch folder breaks earlier posts.
+
+### iPhone development
+
+- `SCRATCH_PATH=/tmp/tbm-<you> bun run mobile` builds and bundles the placeholder, installs it
+  and launches `dev.toybox.mobile` on the shared **Toy Box Mobile** iPhone Duo simulator.
+  It does not open or focus Device Hub (`com.apple.dt.Devices`). Choose that device there to
+  view it, using the native Closed / Open controls to fold or unfold.
+  Only one agent may use the simulator at a time. Every simulator command takes a machine-wide
+  `flock` and waits its turn, printing the holder's PID, command and worktree. Use
+  `bun run mobile --hold` to keep that lock during manual UI checks. Ctrl-C or the 15-minute
+  lease expiry shuts down the simulator and releases it. Never boot another simulator or run `simctl` by hand.
+  `bun run mobile --screenshot <file.png>` captures the shared device under the same lock.
+  `bun run mobile --shutdown` shuts it down. `MOBILE_SIMULATOR=<UDID>` is only for selecting an
+  agreed shared device, not for creating one per agent.
+- `bun run mobile --build-only` builds the Simulator bundle without booting a device.
+  `bun run mobile --device` builds an **unsigned** arm64 device bundle, without reading signing
+  identities or provisioning profiles. Neither command produces a distributable TestFlight build.
+- `SCRATCH_PATH=/tmp/tbm-<you> bun run test:mobile` builds and runs the existing ChannelKit,
+  ChannelClient and ChannelIntelligence tests on iOS Simulator. It uses Apple's simulator
+  `xctest` host and rejects interrupted, failed and empty Swift Testing runs. Existing opt-ins
+  stay off. It shuts down the simulator only if it booted it.
+- Mobile commands default to `/Applications/Xcode.app/Contents/Developer`. Set `DEVELOPER_DIR`
+  to another installed Xcode if needed. They require Swift 6.4 and an iOS 27+ SDK. Running the
+  app requires a runtime supporting Duo. Tests may use another iPhone with an installed 27+
+  runtime. They never download runtimes.
+- These commands set `TOY_BOX_MOBILE=1` for the package's mobile graph and use
+  `mobile-simulator` / `mobile-device` subdirectories of `SCRATCH_PATH`. The default package
+  graph, Mac build, Mac tests and dependency lockfile stay unchanged. Each mobile scratch
+  directory links the same manifest, sources and tests into a package workspace, so resolving
+  its dependency-free graph cannot rewrite the Mac's Sparkle lockfile. Do not export the flag
+  globally or run that graph in the repository root. Do not share a scratch path across builds.
+- CI always builds the mobile app and shared modules for Simulator. It runs the shared tests
+  only when an iOS 27+ runtime is already installed, otherwise reporting the explicit skip.
+- Mobile views use SwiftUI's safe areas, layout margins, size classes and adaptive navigation.
+  Never hard-code a safe-area inset, device size or Duo fold width. The layout adapts to the
+  scene the system provides. Mockup canvas measurements are not implementation constants.
+
+Before a signed device or TestFlight build, the **user** must confirm an active Apple Developer
+team and accept any pending agreements, register the explicit App ID `dev.toybox.mobile`, and
+create the matching app in App Store Connect. For local device installation, enable Developer
+Mode on the iPhone and arrange an Apple Development certificate, registered device and matching
+development provisioning profile. For TestFlight, arrange an Apple Distribution certificate
+and App Store Connect provisioning profile, then complete the app's required metadata,
+privacy/export-compliance answers and tester access. External testers also require beta review.
+Agents never create these accounts, accept agreements, read private keys or set up credentials.
 
 ## Test reliability
 
@@ -226,6 +272,10 @@ view.
 | `Sources/ToyBoxDesktop/Composer` (composer and tray), `Tests/ToyBoxDesktopTests/ComposerTests.swift` | Composer |
 | `Sources/ToyBoxDesktop/Overview`, `Management` | Overview |
 | `Sources/ChannelIntelligence/`, `Tests/ChannelIntelligenceTests/` | Intelligence |
+| `Sources/ToyBoxMobile/App`, `Shell`, `Sidebar`, `Settings`, `Shared`, `Channel` | Shell |
+| `Sources/ToyBoxMobile/Transcript` | Transcript |
+| `Sources/ToyBoxMobile/Composer` (composer and tray) | Composer |
+| `Sources/ToyBoxMobile/Overview`, `Management` | Overview |
 
 UI engineers may add one `Tests/ToyBoxDesktopTests/<Surface>Tests.swift` file for their own surface.
 

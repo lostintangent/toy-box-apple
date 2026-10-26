@@ -1,6 +1,7 @@
 import { $ } from "bun";
+import { dlopen, FFIType, read } from "bun:ffi";
 import { access, mkdtemp, rm } from "node:fs/promises";
-import { constants } from "node:fs";
+import { closeSync, constants, ftruncateSync, openSync, readFileSync, writeSync } from "node:fs";
 import { resolve, join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -56,6 +57,31 @@ export function required(name: string) {
 }
 
 export function scratchPath() { return resolve(process.env.SCRATCH_PATH || join(root, ".build")); }
+
+export async function machineLock(name: string) {
+    const library = dlopen("/usr/lib/libSystem.B.dylib", {
+        flock: { args: [FFIType.i32, FFIType.i32], returns: FFIType.i32 },
+        __error: { args: [], returns: FFIType.ptr },
+    });
+    const path = `/tmp/toy-box-${name}.lock`;
+    const fd = openSync(path, "a");
+    let waiting = false;
+    try {
+        while (library.symbols.flock(fd, 2 | 4) !== 0) {
+            const pointer = library.symbols.__error();
+            const errno = pointer ? read.i32(pointer) : 0;
+            if (errno !== 35 && errno !== 4) throw new Error(`${name} lock failed (errno ${errno}).`);
+            if (!waiting) {
+                console.log(`Waiting for ${name}, held by ${readFileSync(path, "utf8").trim() || "an acquiring process"}`);
+                waiting = true;
+            }
+            await Bun.sleep(250);
+        }
+        ftruncateSync(fd, 0);
+        writeSync(fd, `PID ${process.pid}, ${process.argv[1] ?? process.execPath}, ${process.cwd()}\n`);
+    } catch (error) { closeSync(fd); library.close(); throw error; }
+    return () => { closeSync(fd); library.close(); };
+}
 
 export async function executable(path: string) {
     try { await access(path, constants.X_OK); return true; }

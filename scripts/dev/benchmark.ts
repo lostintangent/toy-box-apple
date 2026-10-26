@@ -1,30 +1,9 @@
-import { dlopen, FFIType, read } from "bun:ffi";
-import { closeSync, openSync } from "node:fs";
 import { mkdir, realpath, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
-import { bundleIdentity, command, main, plist, required, root, temporary } from "../lib.ts";
+import { bundleIdentity, command, machineLock, main, plist, required, root, temporary } from "../lib.ts";
 import { pidsFor } from "./validate.ts";
 import { isolateIntegrations } from "./isolate-integrations.ts";
-
-async function benchmarkLock() {
-    const library = dlopen("/usr/lib/libSystem.B.dylib", {
-        flock: { args: [FFIType.i32, FFIType.i32], returns: FFIType.i32 },
-        __error: { args: [], returns: FFIType.ptr },
-    });
-    const fd = openSync("/tmp/toy-box-benchmark.lock", "a");
-    let waiting = false;
-    try {
-        while (library.symbols.flock(fd, 2 | 4) !== 0) {
-            const pointer = library.symbols.__error();
-            const errno = pointer ? read.i32(pointer) : 0;
-            if (errno !== 35 && errno !== 4) throw new Error(`Benchmark lock failed (errno ${errno}).`);
-            if (!waiting) { console.log("Waiting for another benchmark to finish"); waiting = true; }
-            await Bun.sleep(250);
-        }
-    } catch (error) { closeSync(fd); library.close(); throw error; }
-    return () => { closeSync(fd); library.close(); };
-}
 
 async function reachable(url: string, successful = false) {
     try {
@@ -67,7 +46,7 @@ if (import.meta.main) await main(async () => {
     const name = "Toy Box Benchmark";
     const identity = `${bundleIdentity}.benchmark`;
     const app = join(build, `${name}.app`);
-    const unlock = await benchmarkLock();
+    const unlock = await machineLock("benchmark");
     try {
         if (await reachable(server)) throw new Error(`Port ${port} is already in use. Set TOY_BOX_PERF_PORT to a free port.`);
         await mkdir(build, { recursive: true });
