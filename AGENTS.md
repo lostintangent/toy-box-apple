@@ -142,6 +142,9 @@ view.
 - `bun run mobile --build-only` builds the Simulator bundle without booting a device.
   `bun run mobile --device` builds an **unsigned** arm64 device bundle, without reading signing
   identities or provisioning profiles. Neither command produces a distributable TestFlight build.
+  Both stamp and verify the executable's real selected iOS SDK in `LC_BUILD_VERSION`, preserving
+  the plist's deployment minimum and the device/Simulator platform, before any bundle signing.
+  The plist's `DTSDKName` alone does not opt into SDK-linked native layout behavior.
 - `SCRATCH_PATH=/tmp/tbm-<you> bun run test:mobile` builds and runs ChannelKit,
   ChannelClient, ChannelIntelligence, ToyBoxUI and ToyBoxMobile tests on iOS Simulator. It uses Apple's simulator
   `xctest` host and rejects interrupted, failed and empty Swift Testing runs. Existing opt-ins
