@@ -22,8 +22,8 @@ struct ComposerSurface: View {
     @ViewState private var dragging = false
     @ViewState private var highlightedChoice: String?
     @ViewState private var dismissedCompletion: ChannelMentionContext?
+    @ViewState private var completionHeight: CGFloat = 264
     @ViewState private var connectionGrace = ConnectGrace()
-    @ScaledMetric(relativeTo: .body) private var completionRowHeight = 56
 
     private var draft: ComposerDraft { session.draft }
     private var store: ChannelStore { session.store }
@@ -305,20 +305,27 @@ struct ComposerSurface: View {
 
     private var completion: some View {
         ScrollViewReader { proxy in
-            List(selection: $highlightedChoice) {
-                ForEach(choices) { choice in
-                    completionRow(choice).tag(choice.id).id(choice.id)
+            ScrollView {
+                VStack(spacing: 0) {
+                    ForEach(choices) { choice in
+                        completionRow(choice).id(choice.id)
+                        if choice.id != choices.last?.id {
+                            Divider().padding(.leading, 46)
+                        }
+                    }
                 }
+                .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { completionHeight = $0 }
             }
-            .listStyle(.plain)
-            .scrollContentBackground(.hidden)
+            .scrollBounceBehavior(.basedOnSize)
+            .buttonStyle(.plain)
             .onChange(of: highlightedChoice) { _, id in
                 if let id { proxy.scrollTo(id, anchor: .center) }
             }
         }
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+        .clipShape(RoundedRectangle(cornerRadius: 16))
         .frame(maxWidth: 320)
-        .frame(minHeight: 0, idealHeight: min(264, CGFloat(choices.count) * completionRowHeight), maxHeight: 264)
+        .frame(maxHeight: min(264, completionHeight))
     }
 
     private func completionRow(_ choice: ChannelMentionChoice) -> some View {
@@ -339,7 +346,9 @@ struct ComposerSurface: View {
         }
         .disabled(choice.isCreate && !store.phase.isLive)
         .accessibilityIdentifier("composer-mention-\(choice.id)")
-        .listRowInsets(EdgeInsets(top: 6, leading: 12, bottom: 6, trailing: 12))
+        .padding(.vertical, 6)
+        .padding(.horizontal, 12)
+        .background(highlightedChoice == choice.id ? Color(uiColor: .secondarySystemFill) : .clear)
         .contextMenu {
             if let agent = choice.agent, choice.isMember {
                 Button("Edit Agent") {
