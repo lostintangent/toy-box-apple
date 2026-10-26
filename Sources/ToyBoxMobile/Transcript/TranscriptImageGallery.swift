@@ -131,6 +131,49 @@ struct TranscriptGalleryOriginal: Equatable {
     /// The cached original, under its own name, for Share and Quick Look.
     var export: URL
     var type: UTType?
+
+    /// A link to the cached original under its own name, so Share and Quick Look show the name
+    /// rather than the cache's digest.
+    nonisolated static func export(_ file: URL, named name: String) throws -> URL {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ToyBox-Images", isDirectory: true)
+            .appendingPathComponent(file.deletingPathExtension().lastPathComponent, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        var filename = name.replacingOccurrences(of: "/", with: "-")
+        if (filename as NSString).pathExtension.isEmpty { filename += ".\(file.pathExtension)" }
+        let destination = directory.appendingPathComponent(filename)
+        try? FileManager.default.removeItem(at: destination)
+        do { try FileManager.default.linkItem(at: file, to: destination) }
+        catch { try FileManager.default.copyItem(at: file, to: destination) }
+        return destination
+    }
+}
+
+/// The current image for Share. Its file is exported only when a destination asks for it, so
+/// Share stays available while the page is still loading.
+struct TranscriptGalleryShareItem: Transferable {
+    let attachment: ChannelAttachment
+    let api: ChannelAPI
+    let name: String
+
+    init(_ session: TranscriptGalleryPresenter.Session) {
+        attachment = session.image
+        api = session.api
+        name = session.image.imageName(index: session.index, count: session.images.count)
+    }
+
+    /// The thumbnail the conversation already decoded, so the share sheet never shows a blank.
+    var preview: Image {
+        ChannelThumbnails.remembered(for: attachment, api: api).map { Image(decorative: $0, scale: 1) }
+            ?? Image(systemName: "photo")
+    }
+
+    static var transferRepresentation: some TransferRepresentation {
+        FileRepresentation(exportedContentType: .image) { item in
+            let file = try await ChannelAttachmentCache.shared.file(for: item.attachment, api: item.api)
+            return SentTransferredFile(try TranscriptGalleryOriginal.export(file, named: item.name))
+        }
+    }
 }
 
 struct TranscriptImageGallery: View {
@@ -156,11 +199,14 @@ struct TranscriptImageGallery: View {
     }
 
     private func gallery(_ session: TranscriptGalleryPresenter.Session) -> some View {
-        TranscriptGalleryPage(session: session, reader: reader, presenter: presenter, page: move)
-            .padding(margin(session))
-            .id(session.index)
-            .transition(pageTransition(session.direction))
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // The container keeps the page's identity and transition off the capsule and toolbar.
+        ZStack {
+            TranscriptGalleryPage(session: session, reader: reader, presenter: presenter, page: move)
+                .padding(margin(session))
+                .id(session.index)
+                .transition(pageTransition(session.direction))
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color(uiColor: .systemBackground))
             .overlay(alignment: .bottom) {
                 if session.images.count > 1 {
@@ -225,13 +271,9 @@ struct TranscriptImageGallery: View {
             }
         }
         ToolbarItemGroup(placement: .topBarTrailing) {
-            if let original {
-                ShareLink(item: original.export) {
-                    Label("Share", systemImage: "square.and.arrow.up")
-                }
-            } else {
-                Button("Share", systemImage: "square.and.arrow.up") {}
-                    .disabled(true)
+            let share = TranscriptGalleryShareItem(session)
+            ShareLink(item: share, preview: SharePreview(share.name, image: share.preview)) {
+                Label("Share", systemImage: "square.and.arrow.up")
             }
             Menu {
                 Button("Copy Image", systemImage: "doc.on.doc") { copyImage() }
@@ -357,7 +399,7 @@ private struct TranscriptGalleryPage: View {
                 guard let decoded = ChannelImageDecoder.thumbnail(file: file, maxPixelSize: 4096) else {
                     throw ChannelAttachmentError.invalidImage
                 }
-                return (decoded.image, decoded.pixelSize, try Self.export(file, named: name))
+                return (decoded.image, decoded.pixelSize, try TranscriptGalleryOriginal.export(file, named: name))
             }.value
             try Task.checkCancellation()
             let scale = max(1, displayScale)
@@ -369,22 +411,6 @@ private struct TranscriptGalleryPage: View {
         } catch {
             failure = error.localizedDescription
         }
-    }
-
-    /// A link to the cached original under its own name, so Share and Quick Look show the name
-    /// rather than the cache's digest.
-    nonisolated private static func export(_ file: URL, named name: String) throws -> URL {
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("ToyBox-Images", isDirectory: true)
-            .appendingPathComponent(file.deletingPathExtension().lastPathComponent, isDirectory: true)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        var filename = name.replacingOccurrences(of: "/", with: "-")
-        if (filename as NSString).pathExtension.isEmpty { filename += ".\(file.pathExtension)" }
-        let destination = directory.appendingPathComponent(filename)
-        try? FileManager.default.removeItem(at: destination)
-        do { try FileManager.default.linkItem(at: file, to: destination) }
-        catch { try FileManager.default.copyItem(at: file, to: destination) }
-        return destination
     }
 }
 
