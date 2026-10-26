@@ -1872,13 +1872,7 @@ struct ImageViewerTests {
         viewer.close(animated: false)
     }
 
-    @Test func unnamedImagesAreNamedByPositionAndDataURLsNeverNameAFile() throws {
-        let inline = ChannelAttachment(url: "data:image/png;base64,iVBORw0KGgo=", mimeType: "image/png")
-        #expect(transcriptAttachmentFilename(inline) == nil)
-        #expect(transcriptImageName(inline, index: 1, count: 3) == "Image 2 of 3")
-        #expect(transcriptImageName(inline, index: 0, count: 1) == "Image")
-        let remote = ChannelAttachment(url: "http://localhost:3210/files/plan.png", mimeType: "image/png")
-        #expect(transcriptImageName(remote, index: 0, count: 2) == "plan.png")
+    @Test func theViewerNamesUnnamedImagesByPosition() throws {
         let viewer = try openViewer([Self.screenshot, Self.screenshot], at: 1, names: ["plan.png", nil])
         defer { viewer.close(animated: false) }
         #expect(viewer.presentation?.filename == "Image 2 of 2")

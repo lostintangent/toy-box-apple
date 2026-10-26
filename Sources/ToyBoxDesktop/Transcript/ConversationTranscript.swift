@@ -595,13 +595,13 @@ struct ConversationTranscript: View {
     private func openViewerSnapshot(_ name: String, using proxy: ScrollViewProxy) async {
         guard let snapshot else { return }
         guard let viewer, let state = store.state, let message = state.messages.last(where: {
-            $0.attachments?.contains(where: transcriptAttachmentIsImage) == true
+            $0.attachments?.contains(where: \.isImage) == true
         }) else {
             snapshot.failState(name, message: "The window has no image viewer or the channel has no images.")
             return
         }
         await reveal(sequence: message.sequence, using: proxy)
-        let images = (message.attachments ?? []).filter(transcriptAttachmentIsImage)
+        let images = (message.attachments ?? []).filter(\.isImage)
         viewer.open(images: images, at: min(1, images.count - 1), source: ImageViewer.Source(message: message, agents: state.agents),
                     api: store.api)
         let loaded = await waitForSnapshotLayout {

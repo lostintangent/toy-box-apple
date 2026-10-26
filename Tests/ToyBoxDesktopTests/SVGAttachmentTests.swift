@@ -175,7 +175,7 @@ struct SVGAttachmentTests {
             .replacingOccurrences(of: "400", with: "6000")
         let attachment = ChannelAttachment(name: "vector.svg", mimeType: "image/svg+xml",
                                            base64: Data(source.utf8).base64EncodedString())
-        #expect(transcriptAttachmentIsImage(attachment))
+        #expect(attachment.isImage)
         let api = try ChannelAPI(serverURL: "http://localhost:3210")
         let viewer = ImageViewer()
         viewer.layout = .init(size: CGSize(width: 1000, height: 800), topInset: 52)
