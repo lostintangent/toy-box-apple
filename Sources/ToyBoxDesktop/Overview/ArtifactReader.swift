@@ -333,16 +333,6 @@ extension ArtifactContentKind {
 
 /// Fetches artifact content from the server's resource URL, never assuming the file is local.
 enum ArtifactDownload {
-    static func text(from resource: URL) async throws -> String {
-        let request = URLRequest(url: resource, cachePolicy: .reloadIgnoringLocalCacheData)
-        let (data, response) = try await URLSession.shared.data(for: request)
-        try validate(response)
-        guard let text = String(data: data, encoding: .utf8) else {
-            throw ChannelAPIError.invalidMessage("This Markdown artifact is not valid UTF-8 text.")
-        }
-        return text
-    }
-
     static func file(for artifact: ChannelArtifact, from resource: URL) async throws -> URL {
         let request = URLRequest(url: resource, cachePolicy: .reloadIgnoringLocalCacheData)
         let (temporary, response) = try await URLSession.shared.download(for: request)
