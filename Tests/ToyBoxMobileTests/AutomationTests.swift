@@ -6,6 +6,10 @@ import UIKit
 
 @MainActor
 struct AutomationTests {
+    private final class IdentifierOnlyElement: NSObject {
+        @objc var accessibilityIdentifier: String?
+    }
+
     @Test func scriptPreservesActionsAndRejectsUnknownOrContradictoryInputs() throws {
         let steps = try JSONDecoder().decode([MobileAutomationStep].self, from: Data("""
             [{"tap":"Studio demo"},{"type":"Hello"},{"wait":"Needs you","timeout":20},
@@ -89,6 +93,18 @@ struct AutomationTests {
                                                    traits: .button, frame: button.frame)
         #expect(element.activate(in: [window]))
         #expect(presses == 1)
+    }
+
+    @Test func publicIdentifierGetterDoesNotRequireProtocolConformance() {
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 440, height: 956))
+        window.isHidden = false
+        defer { window.isHidden = true }
+        let element = IdentifierOnlyElement()
+        element.accessibilityIdentifier = "message-15"
+        element.accessibilityLabel = "A message"
+        element.isAccessibilityElement = true
+        window.accessibilityElements = [element]
+        #expect(MobileAutomationTree(windows: [window]).matching("message-15").first?.object === element)
     }
 }
 #endif

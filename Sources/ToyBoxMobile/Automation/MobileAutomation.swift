@@ -156,7 +156,14 @@ struct MobileAutomationTree {
             guard seen.count < 5_000, seen.insert(ObjectIdentifier(object)).inserted else { return }
             if let view = object as? UIView, view.isHidden || view.alpha == 0 { return }
             guard !object.accessibilityElementsHidden else { return }
-            let identifier = (object as? any UIAccessibilityIdentification)?.accessibilityIdentifier ?? ""
+            let identifier: String
+            if let identified = object as? any UIAccessibilityIdentification {
+                identifier = identified.accessibilityIdentifier ?? ""
+            } else {
+                let getter = #selector(getter: UIView.accessibilityIdentifier)
+                identifier = object.responds(to: getter)
+                    ? object.perform(getter)?.takeUnretainedValue() as? String ?? "" : ""
+            }
             let descendants = identifier.isEmpty ? containers : containers + [identifier]
             if object.isAccessibilityElement || !(object.accessibilityCustomActions ?? []).isEmpty {
                 let element = Element(object: object, label: object.accessibilityLabel ?? "",

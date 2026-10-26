@@ -109,8 +109,9 @@ view.
   This drives accessibility activation, native control primary actions and text insertion, not
   finger touch. Rerunning a
   script repeats its actions, including sends. Use demo servers only for write scripts.
-  Fold attempts the native display-power command and fails if the scene size does not change.
-  Such a failure is not fold-continuity proof. Release builds have neither the startup hook nor
+  Fold currently fails explicitly with native display-control diagnostics. The display-power
+  command did not change the app scene and can crash SpringBoard, so the driver never uses it.
+  Native posture interaction still needs Device Hub. Release builds have neither the startup hook nor
   driver, and no script runs without the explicit per-launch environment.
   `scripts/fixtures/mobile-drive-demo.json` demonstrates a real request reply/send and both display
   captures. It requires the message-row identifiers and the demo baseline's request at sequence 15.

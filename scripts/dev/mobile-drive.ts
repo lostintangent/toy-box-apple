@@ -185,17 +185,14 @@ export function simulatorDriveHost(udid: string, env: NodeJS.ProcessEnv): DriveH
             await mkdir(resolve(path, ".."), { recursive: true });
             await command(["xcrun", "simctl", "io", udid, "screenshot", `--display=${display}`, path], { env });
         },
-        async fold(closed) {
-            for (const [display, power] of [["1", closed ? "on" : "off"], ["3", closed ? "off" : "on"]]) {
-                const result = await command(["xcrun", "simctl", "io", udid, "screenConfig",
-                    `--display=${display}`, "power", power], { env, quiet: true, allowFailure: true });
-                if (result.exitCode) {
-                    const help = await text(["xcrun", "simctl", "io", udid, "screenConfig", "--help"],
-                        { env, allowFailure: true });
-                    throw new Error(`Simulator fold control is unavailable: ${result.stderr.toString().trim()}\n${help}\n`
-                        + "No fold continuity proof was produced. Capture each supported launch posture separately.");
-                }
-            }
+        async fold() {
+            const helpResult = await command(["xcrun", "simctl", "io", udid, "screenConfig", "--help"],
+                { env, quiet: true, allowFailure: true });
+            const help = (helpResult.stdout.toString() + helpResult.stderr.toString()).trim();
+            throw new Error("Automated Duo folding is unavailable: screenConfig display power did not resize the app scene "
+                + "and is not a native posture control. No fold continuity proof was produced. "
+                + "Use Device Hub's native posture control for a separately observed check.\n"
+                + `Native display-control help:\n${help}`);
         },
     };
 }
