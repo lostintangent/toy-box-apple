@@ -1,6 +1,6 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { basename, isAbsolute, join, resolve } from "node:path";
-import { command, isMissing, text } from "../lib.ts";
+import { command, isMissing } from "../lib.ts";
 
 type Timed = { timeout?: number };
 export type MobileDriveStep = Timed & (
