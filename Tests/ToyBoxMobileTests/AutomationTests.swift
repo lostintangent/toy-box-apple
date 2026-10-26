@@ -20,6 +20,25 @@ struct AutomationTests {
         }
     }
 
+    private final class EscapeWindow: UIWindow {
+        var escapes = 0
+        var handlesEscape = true
+
+        override func accessibilityPerformEscape() -> Bool {
+            escapes += 1
+            return handlesEscape
+        }
+    }
+
+    private final class UnhandledBackElement: NSObject {
+        var activations = 0
+
+        override func accessibilityActivate() -> Bool {
+            activations += 1
+            return false
+        }
+    }
+
     @Test func scriptPreservesActionsAndRejectsUnknownOrContradictoryInputs() throws {
         let steps = try JSONDecoder().decode([MobileAutomationStep].self, from: Data("""
             [{"tap":"Studio demo"},{"type":"Hello"},{"wait":"Needs you","timeout":20},
@@ -145,6 +164,68 @@ struct AutomationTests {
         button.isEnabled = false
         #expect(!element.activate())
         #expect(presses == 1)
+    }
+
+    @Test func aPresentButUnhandledBackTargetFallsBackToOnePublicEscape() {
+        let window = EscapeWindow()
+        window.isHidden = false
+        defer { window.isHidden = true }
+        let target = UnhandledBackElement()
+        let back = MobileAutomationTree.Element(object: target, label: "Back", value: "", identifier: "BackButton",
+                                                traits: .button, frame: .zero)
+        #expect(MobileAutomationTree(windows: [window]).activateBack(back))
+        #expect(target.activations == 1)
+        #expect(window.escapes == 1)
+    }
+
+    @Test func aHandledBackActionNeverAlsoEscapes() {
+        let window = EscapeWindow()
+        window.isHidden = false
+        defer { window.isHidden = true }
+        let button = UIButton()
+        var presses = 0
+        button.addAction(UIAction { _ in presses += 1 }, for: .primaryActionTriggered)
+        let back = MobileAutomationTree.Element(object: button, label: "Back", value: "", identifier: "BackButton",
+                                                traits: .button, frame: .zero)
+        #expect(MobileAutomationTree(windows: [window]).activateBack(back))
+        #expect(presses == 1)
+        #expect(window.escapes == 0)
+    }
+
+    @Test func anUnhandledBackAndEscapeCannotReportSuccessAndAnAbsentTargetCanEscape() {
+        let window = EscapeWindow()
+        window.isHidden = false
+        defer { window.isHidden = true }
+        window.handlesEscape = false
+        let target = UnhandledBackElement()
+        let back = MobileAutomationTree.Element(object: target, label: "Back", value: "", identifier: "BackButton",
+                                                traits: .button, frame: .zero)
+        let tree = MobileAutomationTree(windows: [window])
+        #expect(!tree.activateBack(back))
+        #expect(target.activations == 1)
+        #expect(window.escapes == 1)
+        window.handlesEscape = true
+        #expect(tree.activateBack(nil))
+        #expect(window.escapes == 2)
+    }
+
+    @Test func disabledBackTargetsNeverActivateOrEscape() {
+        let window = EscapeWindow()
+        window.isHidden = false
+        defer { window.isHidden = true }
+        let button = UIButton()
+        button.isEnabled = false
+        let tree = MobileAutomationTree(windows: [window])
+        let disabledControl = MobileAutomationTree.Element(
+            object: button, label: "Back", value: "", identifier: "BackButton", traits: .button, frame: .zero)
+        #expect(!tree.activateBack(disabledControl))
+        let target = UnhandledBackElement()
+        let disabledElement = MobileAutomationTree.Element(
+            object: target, label: "Back", value: "", identifier: "BackButton",
+            traits: [.button, .notEnabled], frame: .zero)
+        #expect(!tree.activateBack(disabledElement))
+        #expect(target.activations == 0)
+        #expect(window.escapes == 0)
     }
 
     @Test func virtualAccessibilityElementsActivateTheirMeasuredNativeControl() {

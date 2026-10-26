@@ -143,6 +143,12 @@ struct MobileAutomationTree {
         let frame: CGRect
         var containerIdentifiers: [String] = []
         var actions: [UIAccessibilityCustomAction] { object.accessibilityCustomActions ?? [] }
+        var isEnabled: Bool {
+            guard !traits.contains(.notEnabled) else { return false }
+            if let control = object as? UIControl { return control.isEnabled }
+            if let item = object as? UIBarButtonItem { return item.isEnabled }
+            return true
+        }
 
         var description: String {
             [label, value.isEmpty ? "" : "value: \(value)", identifier.isEmpty ? "" : "id: \(identifier)",
@@ -176,8 +182,7 @@ struct MobileAutomationTree {
         }
 
         func activate(in windows: [UIWindow] = []) -> Bool {
-            if traits.contains(.notEnabled) { return false }
-            if let control = object as? UIControl, !control.isEnabled { return false }
+            guard isEnabled else { return false }
             if object.accessibilityActivate() { return true }
             guard let target = nativeTarget(in: windows) else { return false }
             if let input = target as? UIResponder, input is any UIKeyInput { return input.becomeFirstResponder() }
@@ -261,6 +266,12 @@ struct MobileAutomationTree {
         if !identifiers.isEmpty { return identifiers }
         let labels = elements.filter { $0.label == target }
         return labels.isEmpty ? elements.filter { $0.label.isEmpty && $0.value == target } : labels
+    }
+
+    func activateBack(_ back: Element?) -> Bool {
+        if let back, !back.isEnabled { return false }
+        return back?.activate(in: windows) == true
+            || windows.reversed().contains { $0.accessibilityPerformEscape() }
     }
 
     func contains(_ target: String) -> Bool {
@@ -387,8 +398,7 @@ private final class MobileAutomationRun {
             }
             let back = tree.matching("BackButton").first
             if back == nil && ifPresent { break }
-            let performed = back?.activate(in: tree.windows)
-                ?? tree.windows.reversed().contains { $0.accessibilityPerformEscape() }
+            let performed = tree.activateBack(back)
             guard performed else {
                 let details = back.map { " Back target: \(type(of: $0.object))." } ?? ""
                 throw Failure("No visible window handled the accessibility escape action.\(details)")
