@@ -146,6 +146,61 @@ struct GalleryIntelligenceTests {
         #expect(described.imageView.accessibilityValue == "")
         #expect(described.imageView.accessibilityLabel == label)
     }
+
+    #if DEBUG
+    @Test func aRememberedInlineImageKeepsItsButtonLabelAndExposesOnlyAnEligibleGeneratedValue() async throws {
+        let api = try ChannelAPI(serverURL: "https://inline-\(UUID().uuidString.lowercased()).invalid")
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 64, height: 64)).image { context in
+            UIColor.systemYellow.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 64, height: 64))
+        }
+        let data = try #require(image.pngData())
+        let attachment = ChannelAttachment(name: "warm.png", mimeType: "image/png", base64: data.base64EncodedString())
+        let file = try await ChannelAttachmentCache.shared.file(for: attachment, api: api)
+        _ = try await ChannelThumbnails.image(at: file, for: attachment, api: api, scale: 1)
+        let request = try #require(TranscriptImageDescriptionSession.request(
+            for: attachment, api: api, file: file, priority: .visible))
+        #expect(request.priority == .visible)
+        #expect(request.fileURL == ChannelAttachmentCache.cachedFile(for: attachment, api: api))
+        let service = GalleryDescriptionService(text: "A yellow square.")
+        await TranscriptImageDescriptionSession.shared.describe(request, using: service)
+        let gallery = TranscriptGalleryPresenter()
+        let suite = "GalleryIntelligenceTests-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        func inline(voiceOver: Bool, isOn: Bool = true, service: any ChannelIntelligenceService = service) -> some View {
+            defaults.set(isOn, forKey: TranscriptIntelligenceSettings.describesImages)
+            return TranscriptImage(attachment: attachment, api: api, voiceOver: voiceOver) {
+                gallery.open(images: [attachment], at: 0,
+                             source: .init(messageID: "inline", sender: "Lead", timestamp: ""), api: api)
+            }
+                .environment(\.channelIntelligence, service)
+                .defaultAppStorage(defaults)
+        }
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 320, height: 400))
+        let host = UIHostingController(rootView: inline(voiceOver: true))
+        window.rootViewController = host
+        window.isHidden = false
+        defer { window.isHidden = true }
+        host.view.layoutIfNeeded()
+        let button = try #require(MobileAutomationTree(windows: [window]).matching("warm.png").first)
+        #expect(button.traits.contains(.button))
+        #expect(button.label == "warm.png")
+        #expect(button.value == "Generated description: A yellow square.")
+        #expect(button.object.accessibilityHint == "Opens the image")
+
+        host.rootView = inline(voiceOver: false)
+        host.view.layoutIfNeeded()
+        #expect(try #require(MobileAutomationTree(windows: [window]).matching("warm.png").first).value == "")
+        host.rootView = inline(voiceOver: true, isOn: false)
+        host.view.layoutIfNeeded()
+        #expect(try #require(MobileAutomationTree(windows: [window]).matching("warm.png").first).value == "")
+        host.rootView = inline(voiceOver: true, service: GalleryDescriptionService(availability: .unavailable(.modelNotReady)))
+        host.view.layoutIfNeeded()
+        #expect(try #require(MobileAutomationTree(windows: [window]).matching("warm.png").first).value == "")
+        #expect(await service.calls == 1)
+    }
+    #endif
 }
 
 private actor GalleryDescriptionService: ChannelIntelligenceService {

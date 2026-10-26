@@ -94,10 +94,18 @@ final class TranscriptGalleryPresenter {
     func descriptionRequest(for page: Session, file: URL?, voiceOver: Bool, isOn: Bool,
                             using service: any ChannelIntelligenceService) -> AltTextRequest? {
         guard session?.id == page.id, session?.index == page.index,
-              TranscriptImageDescriptionSession.isActive(voiceOver: voiceOver, isOn: isOn, using: service),
-              let file, let digest = ChannelAttachmentCache.destination(for: page.image, api: page.api)?
-                .deletingPathExtension().lastPathComponent else { return nil }
-        return AltTextRequest(server: page.api.baseURL, digest: digest, fileURL: file, priority: .focused)
+              TranscriptImageDescriptionSession.isActive(voiceOver: voiceOver, isOn: isOn, using: service)
+        else { return nil }
+        return TranscriptImageDescriptionSession.request(for: page.image, api: page.api, file: file, priority: .focused)
+    }
+}
+
+extension TranscriptImageDescriptionSession {
+    static func request(for attachment: ChannelAttachment, api: ChannelAPI, file: URL?,
+                        priority: AltTextRequest.Priority) -> AltTextRequest? {
+        guard let file, let digest = ChannelAttachmentCache.destination(for: attachment, api: api)?
+            .deletingPathExtension().lastPathComponent else { return nil }
+        return AltTextRequest(server: api.baseURL, digest: digest, fileURL: file, priority: priority)
     }
 }
 

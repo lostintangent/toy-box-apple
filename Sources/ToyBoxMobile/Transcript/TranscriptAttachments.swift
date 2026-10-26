@@ -1,5 +1,6 @@
 import AVKit
 import ChannelClient
+import ChannelIntelligence
 import ChannelKit
 import QuickLook
 import SwiftUI
@@ -12,6 +13,7 @@ struct TranscriptAttachments: View {
     /// The message the images belong to, which the gallery names.
     let source: TranscriptGalleryPresenter.Source
     @Environment(TranscriptGalleryPresenter.self) private var gallery: TranscriptGalleryPresenter?
+    @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
 
     var body: some View {
         let images = TranscriptGalleryPresenter.images(in: attachments)
@@ -20,16 +22,11 @@ struct TranscriptAttachments: View {
                 if TranscriptGalleryPresenter.isGalleryImage(attachment) {
                     let position = attachments[..<offset].count(where: TranscriptGalleryPresenter.isGalleryImage)
                     if let gallery {
-                        Button {
+                        TranscriptImage(attachment: attachment, api: api, voiceOver: voiceOver) {
                             gallery.open(images: images, at: position, source: source, api: api)
-                        } label: {
-                            TranscriptImage(attachment: attachment, api: api)
                         }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel(attachment.displayName)
-                        .accessibilityHint("Opens the image")
                     } else {
-                        TranscriptImage(attachment: attachment, api: api)
+                        TranscriptImage(attachment: attachment, api: api, voiceOver: voiceOver)
                     }
                 } else if attachment.contentType?.conforms(to: .movie) == true,
                           let address = attachment.url, let url = api.resourceURL(address) {
@@ -44,10 +41,15 @@ struct TranscriptAttachments: View {
 
 /// An image that reserves its box from the header before it decodes, so arriving pixels never
 /// resize it.
-private struct TranscriptImage: View {
+struct TranscriptImage: View {
     let attachment: ChannelAttachment
     let api: ChannelAPI
+    let voiceOver: Bool
+    var open: (() -> Void)?
     @Environment(\.displayScale) private var displayScale
+    @Environment(\.channelIntelligence) private var intelligence
+    @AppStorage(TranscriptIntelligenceSettings.describesImages) private var describesImages = true
+    @ViewState private var file: URL?
     @ViewState private var image: CGImage?
     @ViewState private var failed = false
     @ViewState private var showsProgress = false
@@ -55,9 +57,39 @@ private struct TranscriptImage: View {
 
     var body: some View {
         let shown = image ?? ChannelThumbnails.remembered(for: attachment, api: api)
+        let request = descriptionRequest(isLoaded: shown != nil)
+        Group {
+            if let open {
+                Button(action: open) { thumbnail(shown) }
+                    .buttonStyle(.plain)
+                    .accessibilityHint("Opens the image")
+            } else {
+                thumbnail(shown)
+            }
+        }
+        .accessibilityLabel(attachment.displayName)
+        .accessibilityValue(TranscriptImageDescriptionSession.value(
+            TranscriptImageDescriptionSession.shared.text(for: request)))
+        .task(id: attempt) { await load() }
+        .task(id: request) {
+            guard let request else { return }
+            await TranscriptImageDescriptionSession.shared.describe(request, using: intelligence)
+        }
+    }
+
+    private func descriptionRequest(isLoaded: Bool) -> AltTextRequest? {
+        guard isLoaded,
+              TranscriptImageDescriptionSession.isActive(voiceOver: voiceOver, isOn: describesImages, using: intelligence)
+        else { return nil }
+        return TranscriptImageDescriptionSession.request(
+            for: attachment, api: api, file: file ?? ChannelAttachmentCache.cachedFile(for: attachment, api: api),
+            priority: .visible)
+    }
+
+    private func thumbnail(_ shown: CGImage?) -> some View {
         let size = transcriptThumbnailSize(ChannelImageDecoder.pixelSize(for: attachment, api: api)
             ?? shown.map { CGSize(width: $0.width, height: $0.height) } ?? .zero)
-        ZStack {
+        return ZStack {
             if let shown {
                 Image(decorative: shown, scale: 1).resizable().aspectRatio(contentMode: .fit)
             } else {
@@ -74,8 +106,6 @@ private struct TranscriptImage: View {
         }
         .frame(width: size.width, height: size.height)
         .clipShape(.rect(cornerRadius: 10, style: .continuous))
-        .accessibilityLabel(attachment.displayName)
-        .task(id: attempt) { await load() }
     }
 
     private func load() async {
@@ -89,8 +119,11 @@ private struct TranscriptImage: View {
         defer { progress.cancel(); showsProgress = false }
         do {
             let file = try await ChannelAttachmentCache.shared.file(for: attachment, api: api, reload: attempt > 0)
-            image = try await ChannelThumbnails.image(at: file, for: attachment, api: api, scale: displayScale,
-                                                      reload: attempt > 0)
+            let image = try await ChannelThumbnails.image(at: file, for: attachment, api: api, scale: displayScale,
+                                                          reload: attempt > 0)
+            try Task.checkCancellation()
+            self.image = image
+            self.file = file
         } catch is CancellationError {
         } catch {
             failed = true
