@@ -80,6 +80,52 @@ struct ManagementWriteRecoveryTests {
         #expect(!ChannelManagementRecoveryState.isRequired(after: ChannelAPIError.invalidMessage("Invalid name.")))
     }
 
+    @Test(arguments: [URLError.Code.timedOut, .networkConnectionLost])
+    func aLostWriteOutcomeRequiresReconciliation(code: URLError.Code) async throws {
+        let mock = MockTransport { request, _ in
+            if request.httpMethod == "DELETE" { throw URLError(code) }
+            return try .json(ChannelCatalog(lead: testLeadProfile, channels: []))
+        }
+        let api = try mock.api()
+        let recovery = ChannelManagementWriteRecovery()
+        let catalog = ChannelCatalogStore(api: api)
+        do {
+            try await api.deleteChannel(id: "deleted-channel")
+            Issue.record("The fixture must lose the write's outcome.")
+        } catch {
+            #expect(recovery.record(error))
+        }
+        #expect(recovery.blocksWrites)
+        #expect(recovery.error == ChannelManagementRecoveryState.uncertaintyMessage)
+        recovery.finishReview()
+        #expect(recovery.blocksWrites)
+        await recovery.check(catalog: catalog, channelId: "deleted-channel") { current in
+            current.channelWasDeleted ? "The channel is absent." : "The channel is present."
+        }
+        #expect(recovery.result?.channelWasDeleted == true)
+        #expect(recovery.blocksWrites)
+        recovery.finishReview()
+        #expect(!recovery.blocksWrites)
+        #expect(mock.requests.map(\.httpMethod) == ["DELETE", "GET"])
+    }
+
+    @Test(arguments: [URLError.Code.cannotConnectToHost, .notConnectedToInternet, .cannotFindHost, .badURL])
+    func anUnsentRequestKeepsItsErrorWithoutBlockingAnotherAttempt(code: URLError.Code) {
+        let recovery = ChannelManagementWriteRecovery()
+        let error = URLError(code)
+        #expect(!recovery.record(error))
+        #expect(!recovery.blocksWrites)
+        #expect(recovery.error == error.localizedDescription)
+        #expect(recovery.result == nil)
+    }
+
+    @Test func bridgedURLSessionErrorsKeepTheirClassification() {
+        #expect(ChannelManagementRecoveryState.isRequired(
+            after: NSError(domain: NSURLErrorDomain, code: URLError.timedOut.rawValue)))
+        #expect(!ChannelManagementRecoveryState.isRequired(
+            after: NSError(domain: "FixtureError", code: URLError.timedOut.rawValue)))
+    }
+
     @Test func aMissingCatalogCannotUnblockWritesOrInventAReconciliation() async {
         let recovery = ChannelManagementWriteRecovery()
         recovery.record(ChannelAPIError.http(status: 500, message: "Failed."))

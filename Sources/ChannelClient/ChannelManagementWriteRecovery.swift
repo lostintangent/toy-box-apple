@@ -1,3 +1,4 @@
+import Foundation
 import Observation
 
 public enum ChannelManagementRecoveryState: Equatable, Sendable {
@@ -6,11 +7,12 @@ public enum ChannelManagementRecoveryState: Equatable, Sendable {
     case reconciled(String)
 
     public static func isRequired(after error: any Error) -> Bool {
-        guard case ChannelAPIError.http(let status, _) = error else { return false }
-        return status >= 500
+        if case ChannelAPIError.http(let status, _) = error { return status >= 500 }
+        guard let error = error as? URLError else { return false }
+        return error.code == .timedOut || error.code == .networkConnectionLost
     }
 
-    public static let uncertaintyMessage = "The server reported an error, but the change may already have been applied. The request was not repeated."
+    public static let uncertaintyMessage = "The change may already have been applied, but its result could not be confirmed. The request was not repeated."
 }
 
 @MainActor @Observable

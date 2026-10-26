@@ -7,6 +7,18 @@ struct DemoIntegrationTests {
     static var demoURL: String? { ProcessInfo.processInfo.environment["TOY_BOX_DEMO_URL"] }
 
     @Test(.enabled(if: demoURL != nil))
+    func modelCatalogEnablesTheConfiguredChoice() async throws {
+        let api = try ChannelAPI(serverURL: #require(Self.demoURL))
+        let models = try await api.models()
+        let catalog = try await api.catalog()
+        let channel = try #require(catalog.channels.first)
+        let selection = ChannelModelSelection(model: channel.model, catalog: models, scope: .channel)
+        #expect(selection.isEnabled)
+        #expect(selection.selected?.id == channel.model.name)
+        #expect(selection.selected?.provider == channel.model.provider)
+    }
+
+    @Test(.enabled(if: demoURL != nil))
     func catalogSnapshotPostConflictReadAndResume() async throws {
         let api = try ChannelAPI(serverURL: #require(Self.demoURL))
         guard api.baseURL.port == 3210, ["localhost", "127.0.0.1"].contains(api.baseURL.host) else {

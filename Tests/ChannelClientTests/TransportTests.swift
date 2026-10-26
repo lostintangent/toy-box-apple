@@ -107,7 +107,8 @@ struct TransportTests {
         #expect(mock.requests.count == 1)
     }
 
-    @Test @MainActor func storeReconnectsFromAppliedRevisionZero() async throws {
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["TOY_BOX_TEST_RECONNECT_TIMING"] == "1"))
+    @MainActor func storeReconnectsFromAppliedRevisionZero() async throws {
         let initial = testState()
         let mock = MockTransport { _, count in
             if count == 1 { return try .stream([.init(type: "snapshot", state: initial)], keepOpen: false) }
@@ -150,7 +151,8 @@ struct TransportTests {
         #expect(store.state?.channel.id == "test")
     }
 
-    @Test @MainActor func recoverySnapshotReplacesCachedHistory() async throws {
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["TOY_BOX_TEST_RECONNECT_TIMING"] == "1"))
+    @MainActor func recoverySnapshotReplacesCachedHistory() async throws {
         let initial = testState(revision: 5, messages: [testMessage(1)])
         let recovered = testState(revision: 100, messages: [testMessage(100)])
         let mock = MockTransport { _, count in

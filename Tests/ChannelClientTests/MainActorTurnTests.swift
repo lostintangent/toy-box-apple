@@ -6,6 +6,7 @@ import Testing
 /// At launch the main actor is busy building the first window for hundreds of milliseconds.
 /// These tests hold it the same way and check that network work neither waits for it nor
 /// needs extra turns on it once a response has arrived.
+@Suite(.enabled(if: ProcessInfo.processInfo.environment["TOY_BOX_TEST_MAIN_ACTOR_TIMING"] == "1"))
 @MainActor
 struct MainActorTurnTests {
     @Test func connectRequestsTheStreamWithoutAMainActorTurn() async throws {

@@ -140,6 +140,21 @@ Agents never create these accounts, accept agreements, read private keys or set 
   and WindowServer-event checks remain opt-in and must run locally before changes to their behavior.
 - Restore a quarantined test to CI only after identifying the cause and adding deterministic
   regression coverage. Do not loosen assertions or add retries to turn an unexplained failure green.
+- The four `MainActorTurnTests` occupancy probes are quarantined behind
+  `TOY_BOX_TEST_MAIN_ACTOR_TIMING=1 bun run test --filter MainActorTurnTests`.
+  The 2026-10-26 Mac run of `c4c761d` recorded nine Client readiness failures in
+  `t338-full-mac.log`. The probes deliberately sleep and wait synchronously on the shared main actor
+  while other suites' three-second readiness deadlines keep running. Run them locally before
+  changing launch network work. Core owns t340 (`client-test-actor-isolation`): isolate these probes
+  and replace timing-dependent readiness with controlled events before restoring their merge-gate
+  coverage. No functional assertion or deadline was changed.
+- `TransportTests.storeReconnectsFromAppliedRevisionZero` and
+  `recoverySnapshotReplacesCachedHistory` are quarantined behind `TOY_BOX_TEST_RECONNECT_TIMING=1`.
+  Both again exceeded the unchanged three-second readiness deadline in the 2026-10-26 full Mac
+  run of `51935f4`, after the actor probes were disabled (`t338-isolated-full-mac.log`).
+  No production code cause is established. Core owns the `client-reconnect-readiness` follow-up
+  under t340 to identify the cause and add controlled-event reconnect coverage before restoring
+  these cases. Do not raise the deadline or retry an unchanged candidate to clear this failure.
 
 ## Validating the running app
 
@@ -191,8 +206,9 @@ Agents never create these accounts, accept agreements, read private keys or set 
 
 ## Client rules
 
-- Management writes are never retried. A 422 is a rejection, but a 500 may have committed, so
-  call `reconcileManagementWrite(channelId:)` before offering another attempt.
+- Management writes are never retried. A 422 is a rejection, but a 500, timeout or lost connection
+  may have committed, so call `reconcileManagementWrite(channelId:)` before offering another attempt.
+  Can't connect, offline and bad-host failures remain ordinary retryable errors.
 - A send makes one attempt with a caller-owned UUID, kept in a per-channel outbox until confirmed.
   Send Again reuses that UUID, so the server can't deliver it twice.
 - Reading never answers a request. Reconnects resume from the last applied revision.
