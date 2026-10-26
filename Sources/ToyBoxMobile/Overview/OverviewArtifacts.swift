@@ -7,19 +7,23 @@ import UIKit
 
 struct OverviewArtifactsSection: View {
     let store: ChannelStore
+    let session: OverviewSession
 
     var body: some View {
         Section {
-            if store.artifacts.isEmpty {
-                Text("Nothing shared yet").foregroundStyle(ChannelInk.secondary)
-            } else {
-                ForEach(channelArtifactsNewestFirst(store.artifacts)) { artifact in
-                    OverviewArtifactRow(artifact: artifact, share: store.artifactShares[artifact.file.id],
-                                        api: store.api, channelID: store.id)
+            if session.isExpanded(.artifacts) {
+                if store.artifacts.isEmpty {
+                    Text("Nothing shared yet").foregroundStyle(ChannelInk.secondary)
+                } else {
+                    ForEach(channelArtifactsNewestFirst(store.artifacts)) { artifact in
+                        OverviewArtifactRow(artifact: artifact, share: store.artifactShares[artifact.file.id],
+                                            api: store.api, channelID: store.id)
+                    }
                 }
             }
         } header: {
-            Text("Artifacts · \(store.artifacts.count)").foregroundStyle(ChannelInk.secondary)
+            OverviewSectionHeader(title: "Artifacts", count: "\(store.artifacts.count)",
+                                  section: .artifacts, session: session)
         }
     }
 }

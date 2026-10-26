@@ -15,7 +15,7 @@ struct OverviewTests {
         let store = ChannelStore(id: "channel", api: api)
         let presentation = OverviewPresentation()
         let session = presentation.session(for: store)
-        session.navigationPath = ["agent"]
+        session.navigationPath = [.agent("agent")]
         session.purposeExpanded = true
         session.taskDisclosure["task"] = .init(status: "in_progress", expanded: false)
         session.scrollOffset = 244
@@ -26,7 +26,7 @@ struct OverviewTests {
         #expect(presentation.isCompactSheetPresented)
         presentation.move(to: .sheet)
         #expect(presentation.session(for: store) === session)
-        #expect(session.navigationPath == ["agent"])
+        #expect(session.navigationPath == [.agent("agent")])
         #expect(session.purposeExpanded)
         #expect(session.taskDisclosure["task"]?.expanded == false)
         #expect(session.restorationOffset == 244)
@@ -53,7 +53,7 @@ struct OverviewTests {
     @Test func tasksRevealReplacesQueuedScrollRestorationAndAgentNavigation() throws {
         let api = try ChannelAPI(serverURL: "https://fixture.example")
         let session = OverviewSession(store: ChannelStore(id: "channel", api: api))
-        session.navigationPath = ["agent"]
+        session.navigationPath = [.agent("agent")]
         session.scrollPosition.scrollTo(point: CGPoint(x: 0, y: 120))
         #expect(session.scrollPosition.point?.y == 120)
         session.scrollOffset = 244
@@ -87,6 +87,81 @@ struct OverviewTests {
             rebuilt.pending = false
             #expect(rebuilt.pendingSince == nil)
         }
+    }
+
+    @Test func taskReadingBudgetScopesBelowTheFloorAndKeepsEqualityInline() {
+        func layout(_ width: CGFloat) -> OverviewTaskReadingLayout {
+            .init(contentWidth: width, statusWidth: 16, titleGap: 6, ownerWidth: 20,
+                  scaledReadingWidth: 192, accessibility: false, rootHasOwner: true)
+        }
+        #expect(layout(263.99).canInlineChildren(ofDepth: 0, haveOwner: true) == false)
+        #expect(layout(264).canInlineChildren(ofDepth: 0, haveOwner: true))
+        #expect(layout(264.01).canInlineChildren(ofDepth: 0, haveOwner: true))
+        #expect(layout(264).indent == 22 && layout(264).readingFloor == 192)
+        #expect(layout(180).readingFloor == 130)
+        #expect(!layout(180).canInlineChildren(ofDepth: 0, haveOwner: true))
+        #expect(!layout(0).canInlineChildren(ofDepth: 0, haveOwner: false))
+        let accessible = OverviewTaskReadingLayout(
+            contentWidth: 360, statusWidth: 24, titleGap: 8, ownerWidth: 28,
+            scaledReadingWidth: 640, accessibility: true, rootHasOwner: true)
+        #expect(accessible.indent == 32 && accessible.readingFloor == 360)
+        #expect(accessible.titleWidth(depth: 0, hasOwner: true) == 360)
+        #expect(!accessible.canInlineChildren(ofDepth: 0, haveOwner: true))
+    }
+
+    @Test func closingParentsAndMovingPresentationRetainChildChoicesRoutesAndScopedOffsets() throws {
+        let store = ChannelStore(id: "channel", api: try ChannelAPI(serverURL: "https://fixture.example"))
+        let session = OverviewSession(store: store)
+        var tasks: [ChannelTask] = [
+            .init(id: "parent", title: "Parent", status: "in_progress", children: [
+                .init(id: "child", title: "Child", status: "in_progress", children: [
+                    .init(id: "leaf", title: "Leaf", status: "pending")
+                ])
+            ])
+        ]
+        session.reconcileTasks(tasks)
+        session.taskDisclosure["child"] = .init(status: "in_progress", expanded: false)
+        session.taskDisclosure["parent"] = .init(status: "in_progress", expanded: false)
+        session.reconcileTasks(tasks)
+        session.taskDisclosure["parent"] = .init(status: "in_progress", expanded: true)
+        #expect(session.taskDisclosure["child"]?.expanded == false)
+        tasks[0].status = "done"
+        session.reconcileTasks(tasks)
+        #expect(session.taskDisclosure["parent"]?.expanded == false)
+        #expect(session.taskDisclosure["child"]?.expanded == false)
+        tasks[0].status = "in_progress"
+        session.reconcileTasks(tasks)
+        #expect(session.taskDisclosure["parent"]?.expanded == true)
+        #expect(session.taskDisclosure["child"]?.expanded == false)
+        session.navigationPath = [.subtasks("parent"), .subtasks("child")]
+        let scroll = session.taskScroll("child")
+        scroll.offset = 244
+        session.expandedSections[.team] = false
+        session.prepareForPresentation()
+        #expect(session.taskScroll("child") === scroll && scroll.restorationOffset == 244)
+        #expect(session.navigationPath == [.subtasks("parent"), .subtasks("child")])
+        #expect(!session.isExpanded(.team))
+        #expect(OverviewSession.task("leaf", in: tasks)?.title == "Leaf")
+        #expect(OverviewSession.task("deleted", in: tasks) == nil)
+        session.expandedSections[.tasks] = false
+        session.prepareForTaskReveal()
+        #expect(session.navigationPath.isEmpty && session.isExpanded(.tasks))
+        #expect(session.taskDisclosure["child"]?.expanded == false)
+    }
+
+    @Test func detachedWorkingHostNeverAnimatesAndVisibilityChangesReuseItsNativeGlyph() throws {
+        let view = OverviewEllipsisView()
+        view.frame = CGRect(x: 0, y: 0, width: 12, height: 9)
+        view.configure(size: 9, scale: 3, color: .secondaryLabel, active: true)
+        view.layoutIfNeeded()
+        let imageView = try #require(view.subviews.first as? UIImageView)
+        let image = try #require(imageView.image)
+        #expect(view.pulse.segments.allSatisfy { $0.animation(forKey: "pulse") == nil && $0.opacity == 1 })
+        view.configure(size: 9, scale: 3, color: .secondaryLabel, active: false)
+        #expect(imageView.image === image)
+        #expect(!view.isAccessibilityElement && view.accessibilityElementsHidden)
+        view.stop()
+        #expect(view.pulse.segments.allSatisfy { $0.animationKeys()?.isEmpty != false && $0.opacity == 1 })
     }
 
     @Test func cancellingRemovalRestoresTheEditorAndOldSessionsCannotCompleteANewFlow() throws {

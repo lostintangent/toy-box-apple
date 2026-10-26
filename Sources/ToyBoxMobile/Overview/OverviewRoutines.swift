@@ -9,15 +9,18 @@ struct OverviewRoutinesSection: View {
 
     var body: some View {
         Section {
-            if store.routines.isEmpty {
-                Text("No routines").foregroundStyle(ChannelInk.secondary)
-            } else {
-                ForEach(store.routines) {
-                    OverviewRoutineRow(routine: $0, store: store, state: session.routine($0.id))
+            if session.isExpanded(.routines) {
+                if store.routines.isEmpty {
+                    Text("No routines").foregroundStyle(ChannelInk.secondary)
+                } else {
+                    ForEach(store.routines) {
+                        OverviewRoutineRow(routine: $0, store: store, state: session.routine($0.id))
+                    }
                 }
             }
         } header: {
-            Text("Routines · \(store.routines.count)").foregroundStyle(ChannelInk.secondary)
+            OverviewSectionHeader(title: "Routines", count: "\(store.routines.count)",
+                                  section: .routines, session: session)
         }
     }
 }
