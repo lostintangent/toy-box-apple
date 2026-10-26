@@ -102,6 +102,32 @@ struct TranscriptTests {
         #expect(scroll.finishedReveal()! == (interrupted, false))
     }
 
+    @Test func aRevealIntoAPageThatJustLandedFindsItsRow() {
+        let viewport = TranscriptScrollModel.Viewport(width: 386, height: 600, topInset: 0, bottomInset: 0)
+        let scroll = TranscriptScroll()
+        let loaded: [TranscriptScrollModel.RowIdentity] = (0..<20).map { .init(id: "r\($0)", order: $0 + 5) }
+        scroll.sync(loaded)
+        for index in 0..<20 { scroll.measure("r\(index)", frame: CGRect(x: 0, y: CGFloat(index) * 100, width: 386, height: 100)) }
+        scroll.metrics = .init(viewport: viewport, origin: 1400, documentEnd: 2000)
+        _ = scroll.update(.land(.end))
+
+        // The reveal resumes after older pages land but before SwiftUI reports the new rows.
+        let paged = (0..<5).map { TranscriptScrollModel.RowIdentity(id: "p\($0)", order: $0) } + loaded
+        #expect(scroll.update(.reveal("p2"))?.unavailableTarget == "p2")
+        scroll.sync(paged)
+        #expect(scroll.update(.reveal("p2"))?.unavailableTarget == nil)
+        guard case .revealing("p2", _) = scroll.intent else {
+            Issue.record("The reveal should own the position.")
+            return
+        }
+        // SwiftUI's later report of the same rows must not hold the old position over the reveal.
+        scroll.sync(paged)
+        guard case .revealing("p2", _) = scroll.intent else {
+            Issue.record("A repeated sync replaced the reveal.")
+            return
+        }
+    }
+
     @Test func onlyANewSendFollowsToTheBottom() {
         func attempt(_ id: String, _ phase: ChannelSendPhase) -> ChannelSendAttempt {
             ChannelSendAttempt(id: id, content: id, attachments: [], timestamp: "2026-10-25T12:00:00Z", phase: phase)
