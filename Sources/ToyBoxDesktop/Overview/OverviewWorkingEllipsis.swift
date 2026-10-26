@@ -1,6 +1,7 @@
 import AppKit
 import QuartzCore
 import SwiftUI
+import ToyBoxUI
 
 /// The working ellipsis beside a member's status. At rest it's the real 9-point heavy symbol. In
 /// the key window, the same symbol sits in its own hosting view behind a mask of three segments,
@@ -56,11 +57,11 @@ final class OverviewEllipsisPulseView: NSView {
 
     /// Measured from the system effect: dots rest at 25%, each rises over 0.3125 s and falls over
     /// 0.3125 s, starting 1/3 s apart, in a 5/3 s cycle.
-    static let rest: Float = 0.25
-    static let peak: Float = 1
-    static let rise: CFTimeInterval = 0.3125
-    static let cycle: CFTimeInterval = 5.0 / 3
-    static let stagger: CFTimeInterval = 1.0 / 3
+    static let rest = ChannelEllipsisPulseMask.rest
+    static let peak = ChannelEllipsisPulseMask.peak
+    static let rise = ChannelEllipsisPulseMask.rise
+    static let cycle = ChannelEllipsisPulseMask.cycle
+    static let stagger = ChannelEllipsisPulseMask.stagger
 
     /// The symbol drawn offscreen, and the two points between its dots where the segments meet.
     struct Rendering {
@@ -78,19 +79,15 @@ final class OverviewEllipsisPulseView: NSView {
     /// Drawn by the window's own renderer, so every pixel matches the symbol at rest. An offscreen
     /// `ImageRenderer` bitmap doesn't.
     private var symbol: NSHostingView<AnyView>?
-    let segments = (0..<3).map { _ in CALayer() }
-    private let segmentMask = CALayer()
+    private let pulse = ChannelEllipsisPulseMask()
+    var segments: [CALayer] { pulse.segments }
     private var glyph: Glyph?
     private var splits: [CGFloat] = []
 
     init() {
         super.init(frame: .zero)
         wantsLayer = true
-        for segment in segments {
-            segment.backgroundColor = NSColor.black.cgColor
-            segmentMask.addSublayer(segment)
-        }
-        layer?.mask = segmentMask
+        layer?.mask = pulse.layer
     }
 
     @available(*, unavailable)
@@ -121,50 +118,18 @@ final class OverviewEllipsisPulseView: NSView {
 
     override func layout() {
         super.layout()
-        let edges = [0] + (splits.count == 2 ? splits : [bounds.width / 3, bounds.width * 2 / 3]) + [bounds.width]
-        Self.withoutActions {
-            if layer?.mask !== segmentMask { layer?.mask = segmentMask }
-            segmentMask.frame = bounds
-            for (index, segment) in segments.enumerated() {
-                segment.frame = CGRect(x: edges[index], y: 0, width: edges[index + 1] - edges[index],
-                                       height: bounds.height)
-            }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        if layer?.mask !== pulse.layer {
+            layer?.mask = pulse.layer
         }
+        pulse.layout(in: bounds, splits: splits)
+        CATransaction.commit()
     }
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        if window != nil, segments[0].animation(forKey: "pulse") == nil { startPulse() }
-    }
-
-    /// Fades all three dots to rest, then pulses each in turn.
-    private func startPulse() {
-        let ease = CAMediaTimingFunction(controlPoints: 0.37, 0, 0.63, 1)
-        let frameRate = CAFrameRateRange(minimum: 10, maximum: 30, preferred: 30)
-        let now = CACurrentMediaTime()
-        Self.withoutActions {
-            for (index, segment) in segments.enumerated() {
-                let fade = CABasicAnimation(keyPath: "opacity")
-                fade.fromValue = Self.peak
-                fade.toValue = Self.rest
-                fade.duration = Self.rise
-                fade.timingFunction = ease
-                fade.preferredFrameRateRange = frameRate
-
-                let pulse = CAKeyframeAnimation(keyPath: "opacity")
-                pulse.values = [Self.rest, Self.peak, Self.rest, Self.rest]
-                pulse.keyTimes = [0, 0.1875, 0.375, 1]
-                pulse.timingFunctions = [ease, ease, CAMediaTimingFunction(name: .linear)]
-                pulse.duration = Self.cycle
-                pulse.repeatCount = .infinity
-                pulse.beginTime = segment.convertTime(now, from: nil) + Self.rise + Self.stagger * Double(index)
-                pulse.preferredFrameRateRange = frameRate
-
-                segment.opacity = Self.rest
-                segment.add(fade, forKey: "fade")
-                segment.add(pulse, forKey: "pulse")
-            }
-        }
+        if window != nil { pulse.start() }
     }
 
     /// The symbol drawn offscreen, only to find the gaps between its dots.
@@ -183,44 +148,11 @@ final class OverviewEllipsisPulseView: NSView {
     /// antialiasing can leave no empty column, so the faintest one goes to the dot beside its heavier
     /// neighbor, whose edge is nearer.
     static func splits(in image: CGImage, scale: CGFloat) -> [CGFloat] {
-        let ink = columnInk(in: image)
-        guard !ink.isEmpty else { return [] }
-        return [1, 2].map { third -> CGFloat in
-            let target = CGFloat(ink.count * third) / 3
-            let candidates = max(0, Int((target - scale).rounded(.down)))...min(ink.count - 1, Int(target + scale))
-            let faintest = candidates.min { ink[$0] != ink[$1] ? ink[$0] < ink[$1]
-                : abs(CGFloat($0) + 0.5 - target) < abs(CGFloat($1) + 0.5 - target) } ?? Int(target)
-            guard ink[faintest] == 0 else {
-                let left = faintest > 0 ? ink[faintest - 1] : 0
-                let right = faintest + 1 < ink.count ? ink[faintest + 1] : 0
-                return CGFloat(right < left ? faintest + 1 : faintest)
-            }
-            var low = faintest, high = faintest + 1
-            while low > 0, ink[low - 1] == 0 { low -= 1 }
-            while high < ink.count, ink[high] == 0 { high += 1 }
-            return CGFloat(low + high) / 2
-        }
+        ChannelEllipsisPulseMask.splits(in: image, scale: scale)
     }
 
     /// Each pixel column's total alpha.
     static func columnInk(in image: CGImage) -> [Int] {
-        let width = image.width, height = image.height
-        var alpha = [UInt8](repeating: 0, count: width * height)
-        let drawn = alpha.withUnsafeMutableBytes { buffer -> Bool in
-            guard let context = CGContext(data: buffer.baseAddress, width: width, height: height, bitsPerComponent: 8,
-                                          bytesPerRow: width, space: CGColorSpaceCreateDeviceGray(),
-                                          bitmapInfo: CGImageAlphaInfo.alphaOnly.rawValue) else { return false }
-            context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
-            return true
-        }
-        guard drawn else { return [] }
-        return (0..<width).map { x in (0..<height).reduce(0) { $0 + Int(alpha[$1 * width + x]) } }
-    }
-
-    private static func withoutActions(_ body: () -> Void) {
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        body()
-        CATransaction.commit()
+        ChannelEllipsisPulseMask.columnInk(in: image)
     }
 }
