@@ -167,7 +167,7 @@ final class ImageViewer {
     var accessibilityLabel: String {
         guard let session, session.images.indices.contains(index) else { return "Image" }
         let position = session.images.count > 1 ? " \(index + 1) of \(session.images.count)" : ""
-        let filename = transcriptAttachmentFilename(session.images[index]).map { ", \($0)" } ?? ""
+        let filename = session.images[index].filename.map { ", \($0)" } ?? ""
         return "Image\(position) from \(session.source.sender)\(filename)"
     }
 
@@ -178,7 +178,7 @@ final class ImageViewer {
         guard images.indices.contains(index) else { return }
         cancelLoads()
         cancelAnalysis()
-        let names = images.indices.map { transcriptImageName(images[$0], index: $0, count: images.count) }
+        let names = images.indices.map { images[$0].imageName(index: $0, count: images.count) }
         session = Session(source: source, images: images, names: names, api: api, thumbnails: thumbnails,
                           openedFrom: thumbnails?.frames[index])
         self.index = index
@@ -190,7 +190,7 @@ final class ImageViewer {
         focusReturn = nil
         items = Dictionary(uniqueKeysWithValues: images.indices.map { position in
             (position, Item(pixelSize: Self.knownPixelSize(of: images[position], api: api),
-                            isVector: transcriptAttachmentType(images[position])?.conforms(to: .svg) == true))
+                            isVector: images[position].contentType?.conforms(to: .svg) == true))
         })
         loadAround(index)
     }
@@ -1039,7 +1039,7 @@ private struct ImageViewerCapsule: View {
         }
         .help(session.names[position])
         .accessibilityLabel("Image \(position + 1) of \(session.images.count)"
-                            + (transcriptAttachmentFilename(session.images[position]).map { ", \($0)" } ?? ""))
+                            + (session.images[position].filename.map { ", \($0)" } ?? ""))
         .accessibilityAddTraits(isCurrent ? .isSelected : [])
     }
 }

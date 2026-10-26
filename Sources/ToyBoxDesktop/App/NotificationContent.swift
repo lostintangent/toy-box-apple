@@ -25,7 +25,7 @@ enum NotificationText {
         if !text.isEmpty { return truncated(text) }
         let attachments = message.attachments ?? []
         guard !attachments.isEmpty else { return waitingBody }
-        let images = attachments.allSatisfy(transcriptAttachmentIsImage)
+        let images = attachments.allSatisfy(\.isImage)
         switch (images, attachments.count) {
         case (true, 1): return "Sent an image"
         case (true, let count): return "Sent \(count) images"

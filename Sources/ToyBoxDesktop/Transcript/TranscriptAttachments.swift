@@ -9,34 +9,6 @@ import QuickLook
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// The attachment's own filename. Inline images often have none, and a data URL never names one.
-func transcriptAttachmentFilename(_ attachment: ChannelAttachment) -> String? {
-    if let name = attachment.name, !name.isEmpty { return name }
-    guard let address = attachment.url, !address.hasPrefix("data:"),
-          let component = URL(string: address)?.lastPathComponent,
-          !component.isEmpty, component != "/" else { return nil }
-    return component
-}
-
-func transcriptAttachmentName(_ attachment: ChannelAttachment) -> String {
-    transcriptAttachmentFilename(attachment)
-        ?? (attachment.mimeType?.hasPrefix("image/") == true ? "Image" : "Attachment")
-}
-
-/// Names an image without a filename by its place among its message's images, as the pane does.
-func transcriptImageName(_ attachment: ChannelAttachment, index: Int, count: Int) -> String {
-    transcriptAttachmentFilename(attachment) ?? (count > 1 ? "Image \(index + 1) of \(count)" : "Image")
-}
-
-func transcriptAttachmentType(_ attachment: ChannelAttachment) -> UTType? {
-    attachment.mimeType.flatMap { UTType(mimeType: $0) }
-        ?? UTType(filenameExtension: (transcriptAttachmentName(attachment) as NSString).pathExtension)
-}
-
-func transcriptAttachmentIsImage(_ attachment: ChannelAttachment) -> Bool {
-    transcriptAttachmentType(attachment)?.conforms(to: .image) == true
-}
-
 struct TranscriptAttachments: View {
     let attachments: [ChannelAttachment]
     let api: ChannelAPI
@@ -70,7 +42,7 @@ struct TranscriptAttachments: View {
 
     private static let shadowRoom: CGFloat = 4
 
-    private var imagePositions: [Int] { attachments.indices.filter { transcriptAttachmentIsImage(attachments[$0]) } }
+    private var imagePositions: [Int] { attachments.indices.filter { attachments[$0].isImage } }
 
     /// The attachment the viewer presents from this message, if any.
     private var presentedAttachment: Int? {
@@ -87,7 +59,7 @@ struct TranscriptAttachments: View {
             let imageIndex = positions.firstIndex(of: index)
             TranscriptAttachment(attachment: attachments[index], api: api,
                                  imageName: imageIndex.map {
-                                     transcriptImageName(attachments[index], index: $0, count: positions.count)
+                                     attachments[index].imageName(index: $0, count: positions.count)
                                  },
                                  viewing: source.flatMap { source in
                                      imageIndex.map { imageIndex in
@@ -130,7 +102,7 @@ private struct TranscriptAttachment: View {
     @Environment(\.channelIntelligence) private var intelligence
     @AppStorage(TranscriptIntelligenceSettings.describesImages) private var describesImages = true
 
-    private var name: String { imageName ?? transcriptAttachmentName(attachment) }
+    private var name: String { imageName ?? attachment.displayName }
 
     /// Asked for as the tile appears, while VoiceOver is running.
     private var descriptionRequest: AltTextRequest? {
@@ -138,7 +110,7 @@ private struct TranscriptAttachment: View {
         else { return nil }
         return TranscriptImageDescriptions.request(for: attachment, api: api, file: localURL, priority: .visible)
     }
-    private var fileType: UTType? { transcriptAttachmentType(attachment) }
+    private var fileType: UTType? { attachment.contentType }
     private var isImage: Bool { fileType?.conforms(to: .image) == true }
     private var isVideo: Bool { fileType?.conforms(to: .movie) == true }
 
