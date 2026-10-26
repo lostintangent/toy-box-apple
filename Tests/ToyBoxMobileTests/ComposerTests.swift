@@ -103,6 +103,48 @@ struct ComposerTests {
         #expect(text == view.text)
     }
 
+    @Test func nativeTypingRetainsItsHistoryWithoutAutomaticEventGrouping() throws {
+        var text = ""
+        let input = NativeComposerInput(
+            text: Binding(get: { text }, set: { text = $0 }), editor: ComposerEditorState(),
+            onSend: {}, onCompletionKey: { _ in false }, onPasteImages: { _ in }
+        )
+        let coordinator = NativeComposerInput.Coordinator(parent: input)
+        let view = ComposerTextView()
+        view.delegate = coordinator
+        view.coordinator = coordinator
+        coordinator.input = view
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 440, height: 956))
+        let root = UIViewController()
+        window.rootViewController = root
+        root.view.addSubview(view)
+        view.frame = CGRect(x: 20, y: 100, width: 400, height: 120)
+        window.makeKeyAndVisible()
+        defer {
+            view.resignFirstResponder()
+            window.isHidden = true
+        }
+        try #require(view.becomeFirstResponder())
+        let undo = try #require(view.undoManager)
+        try #require(undo.groupingLevel == 0, "The policy probe never changes an existing group")
+        let original = undo.groupsByEvent
+        undo.groupsByEvent = false
+        defer { undo.groupsByEvent = original }
+        print("Native policy probe before typing: level=\(undo.groupingLevel)")
+        view.insertText("T")
+        print("Native policy probe after T: level=\(undo.groupingLevel)")
+        view.insertText("y")
+        print("Native policy probe after y: level=\(undo.groupingLevel)")
+        #expect(text == "Ty")
+        undo.undo()
+        #expect(text.isEmpty, "Ordinary native typing keeps its coalesced history")
+        #expect(view.text == text)
+        undo.redo()
+        #expect(text == "Ty")
+        #expect(view.text == text)
+        #expect(view.undoManager === undo)
+    }
+
     @Test func imagePasteUsesTheSharedImportCallbackWithoutReplacingText() throws {
         let pasteboard = UIPasteboard.general
         let original = pasteboard.items
