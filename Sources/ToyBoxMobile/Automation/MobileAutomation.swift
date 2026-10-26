@@ -33,6 +33,7 @@ struct MobileAutomationStep: Decodable, Equatable {
         case tap(String), type(String), wait(String, absent: Bool), screenshot(String, String), back(ifPresent: Bool), fold(Bool)
         case customAction(String, on: String)
         case scroll(ScrollDirection, on: String)
+        case drag(ScrollDirection, on: String)
         case posture(MobileAutomationPosture)
     }
 
@@ -49,13 +50,13 @@ struct MobileAutomationStep: Decodable, Equatable {
     init(from decoder: any Decoder) throws {
         let values = try decoder.container(keyedBy: Key.self)
         let names = Set(values.allKeys.map(\.stringValue))
-        let actions = names.intersection(["tap", "type", "wait", "screenshot", "back", "fold", "action", "scroll", "posture"])
+        let actions = names.intersection(["tap", "type", "wait", "screenshot", "back", "fold", "action", "scroll", "drag", "posture"])
         guard actions.count == 1, names.isSubset(of: actions.union(["display", "timeout", "ifPresent", "on", "absent"])),
               let name = actions.first, let key = Key(stringValue: name),
               (!names.contains("display") || name == "screenshot"),
               (!names.contains("ifPresent") || name == "back"),
               (!names.contains("absent") || name == "wait"),
-              (!names.contains("on") || name == "action" || name == "scroll") else {
+              (!names.contains("on") || ["action", "scroll", "drag"].contains(name)) else {
             throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath,
                                                     debugDescription: "Each step needs exactly one supported action."))
         }
@@ -65,7 +66,7 @@ struct MobileAutomationStep: Decodable, Equatable {
                                                   debugDescription: "timeout must be greater than 0 and at most 60 seconds.")
         }
         switch name {
-        case "tap", "type", "wait", "screenshot", "action", "scroll":
+        case "tap", "type", "wait", "screenshot", "action", "scroll", "drag":
             let text = try values.decode(String.self, forKey: key)
             guard !text.isEmpty else {
                 throw DecodingError.dataCorruptedError(forKey: key, in: values,
@@ -76,18 +77,18 @@ struct MobileAutomationStep: Decodable, Equatable {
             case "type": action = .type(text)
             case "wait":
                 action = .wait(text, absent: try values.decodeIfPresent(Bool.self, forKey: Key(stringValue: "absent")!) ?? false)
-            case "action", "scroll":
+            case "action", "scroll", "drag":
                 let target = try values.decode(String.self, forKey: Key(stringValue: "on")!)
                 guard !target.isEmpty else {
                     throw DecodingError.dataCorruptedError(forKey: key, in: values,
                                                           debugDescription: "Custom actions and scrolling need a nonempty on target.")
                 }
-                if name == "scroll" {
+                if name != "action" {
                     guard let direction = ScrollDirection(rawValue: text) else {
                         throw DecodingError.dataCorruptedError(forKey: key, in: values,
                                                               debugDescription: "Scroll direction must be up, down, left or right.")
                     }
-                    action = .scroll(direction, on: target)
+                    action = name == "scroll" ? .scroll(direction, on: target) : .drag(direction, on: target)
                 } else {
                     action = .customAction(text, on: target)
                 }
@@ -123,12 +124,13 @@ enum MobileAutomation {
 @MainActor
 struct MobileAutomationTree {
     enum ScrollFailure: Error, CustomStringConvertible {
-        case ambiguous(String), unhandled(String)
+        case ambiguous(String), unhandled(String), notScrollView(String)
 
         var description: String {
             switch self {
             case .ambiguous(let target): "Ambiguous accessibility scroll identifier: \(target)."
             case .unhandled(let target): "Accessibility scrolling was not handled by \(target)."
+            case .notScrollView(let target): "Dragging needs a UIScrollView, not \(target)."
             }
         }
     }
@@ -289,6 +291,44 @@ struct MobileAutomationTree {
         return true
     }
 
+    func scrollView(_ identifier: String) throws -> UIScrollView? {
+        guard let matches = identifiedObjects[identifier], !matches.isEmpty else { return nil }
+        guard matches.count == 1, let target = matches.first else { throw ScrollFailure.ambiguous(identifier) }
+        guard let view = target as? UIScrollView else {
+            throw ScrollFailure.notScrollView("\(identifier) (\(type(of: target)))")
+        }
+        return view
+    }
+
+    /// Moves the content offset frame by frame across 80% of the visible height or width, clamped
+    /// to the content, between the delegate's begin- and end-dragging callbacks. Scroll phases and
+    /// geometry follow a finger drag's path, without the pan gesture or deceleration.
+    static func drag(_ view: UIScrollView, _ direction: MobileAutomationStep.ScrollDirection,
+                     frames: Int = 24, pause: Duration = .milliseconds(16)) async {
+        let visible = view.bounds.inset(by: view.adjustedContentInset)
+        let distance: CGPoint = switch direction {
+        case .up: CGPoint(x: 0, y: -0.8 * visible.height)
+        case .down: CGPoint(x: 0, y: 0.8 * visible.height)
+        case .left: CGPoint(x: -0.8 * visible.width, y: 0)
+        case .right: CGPoint(x: 0.8 * visible.width, y: 0)
+        }
+        view.delegate?.scrollViewWillBeginDragging?(view)
+        for _ in 0..<frames {
+            let inset = view.adjustedContentInset
+            let minimum = CGPoint(x: -inset.left, y: -inset.top)
+            let maximum = CGPoint(x: max(minimum.x, view.contentSize.width + inset.right - view.bounds.width),
+                                  y: max(minimum.y, view.contentSize.height + inset.bottom - view.bounds.height))
+            let offset = view.contentOffset
+            view.contentOffset = CGPoint(
+                x: min(maximum.x, max(minimum.x, offset.x + distance.x / CGFloat(frames))),
+                y: min(maximum.y, max(minimum.y, offset.y + distance.y / CGFloat(frames))))
+            try? await Task.sleep(for: pause)
+        }
+        var target = view.contentOffset
+        view.delegate?.scrollViewWillEndDragging?(view, withVelocity: .zero, targetContentOffset: &target)
+        view.delegate?.scrollViewDidEndDragging?(view, willDecelerate: false)
+    }
+
     var firstResponder: UIResponder? {
         func find(_ view: UIView) -> UIResponder? {
             if view.isFirstResponder { return view }
@@ -391,6 +431,9 @@ private final class MobileAutomationRun {
             _ = try await wait(timeout: step.timeout) {
                 try MobileAutomationTree.current.scroll(direction, on: target) ? true : nil
             }
+        case .drag(let direction, let target):
+            let view = try await wait(timeout: step.timeout) { try MobileAutomationTree.current.scrollView(target) }
+            await MobileAutomationTree.drag(view, direction)
         case .back(let ifPresent):
             let tree = try await wait(timeout: step.timeout) {
                 let tree = MobileAutomationTree.current

@@ -119,6 +119,10 @@ view.
   direct content-offset changes, and captures still wait for settled layout.
   The target must handle this public action. Some SwiftUI Form containers decline it, so this
   is not a finger-scroll substitute.
+  `{"drag":"up","on":"conversation-transcript"}` moves that unique UIScrollView's content offset
+  across 80% of its visible size over 24 frames, clamped to the content, between the delegate's
+  begin- and end-dragging callbacks. Scroll phases and geometry-driven behavior such as paging
+  older history follow a finger's path. There's no pan gesture, deceleration or rubber-banding.
   This drives accessibility activation, native control primary actions and text insertion, not
   finger touch. Rerunning a
   script repeats its actions, including sends. Use demo servers only for write scripts.

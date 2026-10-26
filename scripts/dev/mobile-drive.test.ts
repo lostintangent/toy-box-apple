@@ -16,6 +16,8 @@ test("drive actions are strict and native display identifiers are normalized", (
     for (const direction of ["up", "down", "left", "right"] as const) {
         expect(parseMobileDrive([{ scroll: direction, on: "overview-form", timeout: 20 }]))
             .toEqual([{ scroll: direction, on: "overview-form", timeout: 20 }]);
+        expect(parseMobileDrive([{ drag: direction, on: "conversation-transcript" }]))
+            .toEqual([{ drag: direction, on: "conversation-transcript" }]);
     }
     expect(parseMobileDrive([{ posture: "folded" }, { posture: "unfolded", timeout: 60 }]))
         .toEqual([{ posture: "folded" }, { posture: "unfolded", timeout: 60 }]);
@@ -29,7 +31,8 @@ test("drive actions are strict and native display identifiers are normalized", (
         [{ scroll: "up", on: "form", display: 1 }],
         [{ posture: "open" }], [{ posture: 0 }], [{ posture: "folded", fold: true }],
         [{ posture: "folded", display: 1 }], [{ posture: "folded", scroll: "down", on: "form" }],
-        [{ posture: "folded", on: "form" }]]) {
+        [{ posture: "folded", on: "form" }], [{ drag: "up" }], [{ drag: "forward", on: "list" }],
+        [{ drag: "up", on: "list", scroll: "up" }]]) {
         expect(() => parseMobileDrive(value)).toThrow();
     }
 });
