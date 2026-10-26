@@ -180,15 +180,18 @@ struct AutomationTests {
     }
 
     @Test func postureRequiresTheVerifiedSceneSizeNotAnArbitraryResize() {
-        #expect(MobileAutomationPosture.folded.matches([386, 678]))
-        #expect(MobileAutomationPosture.unfolded.matches([871, 669]))
-        let otherViewports: [[Double]] = [[], [386], [386, 678, 1], [678, 386], [810, 1080], [0, 0]]
+        #expect(MobileAutomationPosture.folded.matches([466, 678]))
+        #expect(MobileAutomationPosture.unfolded.matches([669, 951]))
+        let otherViewports: [[Double]] = [
+            [], [466], [466, 678, 1], [678, 466], [951, 669], [810, 1080], [0, 0],
+            [386, 678], [871, 669], [465, 678], [669, 950], [.nan, 678], [669, .infinity],
+        ]
         for viewport in otherViewports {
             #expect(!MobileAutomationPosture.folded.matches(viewport))
             #expect(!MobileAutomationPosture.unfolded.matches(viewport))
         }
-        #expect(!MobileAutomationPosture.folded.matches([871, 669]))
-        #expect(!MobileAutomationPosture.unfolded.matches([386, 678]))
+        #expect(!MobileAutomationPosture.folded.matches([669, 951]))
+        #expect(!MobileAutomationPosture.unfolded.matches([466, 678]))
     }
 
     @Test func treeUsesAccessibilityContainersWithoutDuplicatingOrExposingHiddenViews() throws {
