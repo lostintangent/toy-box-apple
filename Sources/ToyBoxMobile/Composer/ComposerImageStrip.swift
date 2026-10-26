@@ -1,6 +1,5 @@
 import ChannelClient
 import SwiftUI
-import UIKit
 
 struct ComposerImageStrip: View {
     let draft: ComposerDraft
@@ -12,8 +11,8 @@ struct ComposerImageStrip: View {
                 ForEach(draft.images) { image in
                     VStack(spacing: 4) {
                         Group {
-                            if let bitmap = UIImage(data: image.data) {
-                                Image(uiImage: bitmap).resizable().scaledToFill()
+                            if let bitmap = draft.thumbnail(for: image) {
+                                Image(decorative: bitmap, scale: 1).resizable().scaledToFill()
                             } else {
                                 Button(action: onReattach) {
                                     Image(systemName: "exclamationmark.triangle")
