@@ -742,6 +742,7 @@ private struct ImageViewerStage: View {
     @Environment(\.colorSchemeContrast) private var contrast
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.displayScale) private var displayScale
+    @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
     @Environment(\.channelIntelligence) private var intelligence
     @AppStorage(TranscriptIntelligenceSettings.describesImages) private var describesImages = true
     @ViewState private var isRevealed = false
@@ -895,7 +896,8 @@ private struct ImageViewerStage: View {
 
     /// The current image goes ahead of tiles in the description queue.
     private func descriptionRequest(_ position: Int) -> AltTextRequest? {
-        guard TranscriptImageDescriptions.shared.isActive(using: intelligence, isOn: describesImages) else { return nil }
+        guard TranscriptImageDescriptions.isActive(voiceOver: voiceOver, isOn: describesImages, using: intelligence)
+        else { return nil }
         return TranscriptImageDescriptions.request(for: session.images[position], api: session.api,
                                                    file: viewer.items[position]?.file, priority: .focused)
     }

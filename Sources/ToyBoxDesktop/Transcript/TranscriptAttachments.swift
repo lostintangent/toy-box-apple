@@ -127,6 +127,7 @@ private struct TranscriptAttachment: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.colorSchemeContrast) private var contrast
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
     @Environment(\.channelIntelligence) private var intelligence
     @AppStorage(TranscriptIntelligenceSettings.describesImages) private var describesImages = true
 
@@ -134,7 +135,7 @@ private struct TranscriptAttachment: View {
 
     /// Asked for as the tile appears, while VoiceOver is running.
     private var descriptionRequest: AltTextRequest? {
-        guard isImage, TranscriptImageDescriptions.shared.isActive(using: intelligence, isOn: describesImages)
+        guard isImage, TranscriptImageDescriptions.isActive(voiceOver: voiceOver, isOn: describesImages, using: intelligence)
         else { return nil }
         return TranscriptImageDescriptions.request(for: attachment, api: api, file: localURL, priority: .visible)
     }
