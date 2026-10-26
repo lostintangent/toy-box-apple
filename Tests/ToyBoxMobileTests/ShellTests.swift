@@ -112,6 +112,33 @@ struct ShellTests {
         }
     }
 
+    @Test func composerSessionsSurviveNavigationAndAreScopedToTheCurrentServer() async throws {
+        try await withDefaults { defaults in
+            let model = AppModel(arguments: ["--server", "https://first.example"], environment: [:],
+                                 defaults: defaults)
+            model.selectedChannelID = "first"
+            let first = try #require(model.selectedStore)
+            let session = model.composerSession(for: first)
+            model.selectedChannelID = "second"
+            let second = try #require(model.selectedStore)
+            weak let secondSession: ComposerSession? = model.composerSession(for: second)
+            #expect(secondSession != nil)
+            #expect(secondSession !== session)
+            model.selectedChannelID = nil
+            model.selectedChannelID = "first"
+            #expect(model.composerSession(for: first) === session)
+
+            let replacement = ChannelStore(id: first.id, api: first.api)
+            #expect(model.composerSession(for: replacement) !== session)
+            try model.configure(serverURL: "https://second.example")
+            #expect(secondSession == nil)
+            model.selectedChannelID = "first"
+            let changedServer = try #require(model.selectedStore)
+            #expect(model.composerSession(for: changedServer) !== session)
+            #expect(model.composerSession(for: changedServer).store === changedServer)
+        }
+    }
+
     private func fixtureSession() -> URLSession {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [ShellFixtureProtocol.self]
