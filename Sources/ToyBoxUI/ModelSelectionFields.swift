@@ -26,8 +26,18 @@ public struct ModelSelectionFields<ExtraRows: View>: View {
     public init(model: Binding<ModelConfiguration?>, api: ChannelAPI, provider: String?, allowsInheritance: Bool,
          title: String = "Model", memberScope: (channelId: String, agentId: String)? = nil,
          help: [String] = [], violation: String? = nil, @ViewBuilder extraRows: () -> ExtraRows) {
+        self.init(model: model, openingModel: model.wrappedValue, api: api, provider: provider,
+                  allowsInheritance: allowsInheritance, title: title, memberScope: memberScope,
+                  help: help, violation: violation, extraRows: extraRows)
+    }
+
+    /// Retains the original override across reconstruction, including an explicitly inherited nil.
+    public init(model: Binding<ModelConfiguration?>, openingModel: ModelConfiguration?,
+         api: ChannelAPI, provider: String?, allowsInheritance: Bool,
+         title: String = "Model", memberScope: (channelId: String, agentId: String)? = nil,
+         help: [String] = [], violation: String? = nil, @ViewBuilder extraRows: () -> ExtraRows) {
         _model = model
-        _initialModel = ViewState(initialValue: model.wrappedValue)
+        _initialModel = ViewState(initialValue: openingModel)
         self.api = api
         self.provider = provider
         self.allowsInheritance = allowsInheritance
@@ -177,6 +187,15 @@ public struct ModelSelectionFields<ExtraRows: View>: View {
 }
 
 extension ModelSelectionFields where ExtraRows == EmptyView {
+    public init(model: Binding<ModelConfiguration?>, openingModel: ModelConfiguration?,
+         api: ChannelAPI, provider: String?, allowsInheritance: Bool,
+         title: String = "Model", memberScope: (channelId: String, agentId: String)? = nil,
+         help: [String] = [], violation: String? = nil) {
+        self.init(model: model, openingModel: openingModel, api: api, provider: provider,
+                  allowsInheritance: allowsInheritance, title: title, memberScope: memberScope,
+                  help: help, violation: violation) { EmptyView() }
+    }
+
     public init(model: Binding<ModelConfiguration?>, api: ChannelAPI, provider: String?, allowsInheritance: Bool,
          title: String = "Model", memberScope: (channelId: String, agentId: String)? = nil,
          help: [String] = [], violation: String? = nil) {
