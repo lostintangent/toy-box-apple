@@ -174,12 +174,6 @@ final class TranscriptCatchUp {
     static func isReplied(_ sequence: Int, in messages: [ChannelMessage]) -> Bool {
         messages.contains { $0.sender.type == "user" && $0.sequence > sequence }
     }
-
-    static func resetSession() {
-        dismissed = []
-        results = [:]
-        resultOrder = []
-    }
 }
 
 /// Reads only the store's messages and roster, so it follows new messages but not every event.
