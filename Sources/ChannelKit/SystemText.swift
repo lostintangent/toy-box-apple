@@ -44,6 +44,7 @@ public enum ChannelSystemText {
             detail.map { phrase + " " + value($0) } ?? phrase
         }
         switch system.type {
+        case "tasks_completed": return phrase
         case "member_joined", "member_left":
             guard let name = system.member?.name else { return phrase }
             return "\(name) \(membershipAction(system.type))"

@@ -36,6 +36,19 @@ struct SystemTextTests {
         #expect(ChannelSystemText.phrase(for: nil) == "Channel updated")
     }
 
+    @Test func completedTasksIgnoreRetainedUnknownDescriptions() throws {
+        for raw in [
+            #"{"type":"future","description":""}"#,
+            #"{"type":"future","description":"Hidden server metadata\nMore words"}"#
+        ] {
+            var system = try JSONDecoder().decode(ChannelSystemContent.self, from: Data(raw.utf8))
+            #expect(system.unknownFields?["description"]?.string != nil)
+            // Known-event decoding discards extra fields. Retain a future payload through the public type setter.
+            system.type = "tasks_completed"
+            #expect(text(system) == "All tasks completed")
+        }
+    }
+
     @Test func groupedMembershipKeepsTheSameCountAndActionWords() throws {
         let joined = ["Ada", "Moss", "Finch"].enumerated().map {
             ChannelSystemContent(type: "member_joined", member: .init(id: "\($0.offset)", name: $0.element))
