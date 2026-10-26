@@ -55,7 +55,7 @@ enum ArtifactWebPolicy {
 
 enum ArtifactWebError: LocalizedError {
     case invalidServer, missingRules, blockedNavigation, browserUnavailable, rootDocumentUnavailable, rootNavigationUnavailable
-    case invalidReadingState, probeWindowUnavailable
+    case invalidReadingState
 
     var errorDescription: String? {
         switch self {
@@ -66,7 +66,6 @@ enum ArtifactWebError: LocalizedError {
         case .rootDocumentUnavailable: "The document's sandboxed address could not be created."
         case .rootNavigationUnavailable: "This document cannot replace its sandboxed page. Forms that navigate and other page navigation are not supported in the artifact viewer."
         case .invalidReadingState: "The document's reading position could not be saved."
-        case .probeWindowUnavailable: "The artifact viewer's diagnostic window hierarchy is unavailable."
         }
     }
 }
@@ -141,10 +140,6 @@ final class ArtifactWebContent: NSObject, WKNavigationDelegate, WKUIDelegate {
     @ObservationIgnored private var generation = UUID()
     @ObservationIgnored private let rootDocument: ArtifactRootDocument
     @ObservationIgnored private var pendingPosition: CGPoint?
-    @ObservationIgnored private let probeOutput: URL?
-    private var probesEndPosition: Bool {
-        probeOutput != nil && ProcessInfo.processInfo.environment["TOY_BOX_ARTIFACT_PROBE_POSITION"] == "end"
-    }
 
     init(openURL: @escaping (URL) -> Bool = { NSWorkspace.shared.open($0) }) {
         let configuration = WKWebViewConfiguration()
@@ -154,9 +149,6 @@ final class ArtifactWebContent: NSObject, WKNavigationDelegate, WKUIDelegate {
         let rootDocument = ArtifactRootDocument()
         configuration.setURLSchemeHandler(rootDocument, forURLScheme: ArtifactRootDocument.scheme)
         self.rootDocument = rootDocument
-        probeOutput = Bundle.main.bundleIdentifier == "dev.toybox.desktop.test"
-            ? ProcessInfo.processInfo.environment["TOY_BOX_ARTIFACT_PROBE_OUTPUT"].map { URL(fileURLWithPath: $0) }
-            : nil
         webView = WKWebView(frame: .zero, configuration: configuration)
         self.openURL = openURL
         super.init()
@@ -183,7 +175,7 @@ final class ArtifactWebContent: NSObject, WKNavigationDelegate, WKUIDelegate {
         generation = token
         error = nil
         isLoading = true
-        pendingPosition = probeOutput == nil ? nil : CGPoint(x: 0, y: 900)
+        pendingPosition = nil
         self.directory = directory
         self.resource = resource
         do {
@@ -234,23 +226,11 @@ final class ArtifactWebContent: NSObject, WKNavigationDelegate, WKUIDelegate {
         Task { @MainActor [weak self] in
             guard let self, generation == token else { return }
             do {
-                let result = try await webView.callAsyncJavaScript("""
-                    window.scrollTo(x,end ? document.scrollingElement.scrollHeight : y);
-                    const position = {x:window.scrollX,y:window.scrollY};
-                    if (probe) {
-                        position.viewportHeight = innerHeight;
-                        position.documentHeight = document.scrollingElement.scrollHeight;
-                    }
-                    return position;
-                    """, arguments: ["x": position.x, "y": position.y,
-                                     "end": probesEndPosition, "probe": probeOutput != nil],
-                    in: nil, contentWorld: Self.readingWorld)
+                _ = try await webView.callAsyncJavaScript("window.scrollTo(x,y);",
+                                                         arguments: ["x": position.x, "y": position.y],
+                                                         in: nil, contentWorld: Self.readingWorld)
                 guard generation == token else { return }
                 isLoading = false
-                if let probeOutput {
-                    guard let actual = result as? [String: Double] else { throw ArtifactWebError.invalidReadingState }
-                    try recordPocketProbe(to: probeOutput, requested: position, actual: actual)
-                }
             } catch {
                 guard generation == token else { return }
                 record(error)
@@ -389,69 +369,6 @@ final class ArtifactWebContent: NSObject, WKNavigationDelegate, WKUIDelegate {
         guard var parts = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return false }
         parts.fragment = nil
         return parts.url == directory || parts.url == resource
-    }
-
-    private func recordPocketProbe(to output: URL, requested: CGPoint, actual: [String: Double]) throws {
-        guard let window = webView.window, var root = window.contentView else {
-            throw ArtifactWebError.probeWindowUnavailable
-        }
-        while let parent = root.superview { root = parent }
-        root.layoutSubtreeIfNeeded()
-        var views: [NSView] = []
-        func visit(_ view: NSView) {
-            views.append(view)
-            for child in view.subviews { visit(child) }
-        }
-        visit(root)
-        func identifier(_ view: NSView) -> String { String(describing: ObjectIdentifier(view)) }
-        func describe(_ view: NSView) -> [String: Any] {
-            [
-                "id": identifier(view),
-                "class": NSStringFromClass(type(of: view)),
-                "frameInWindow": NSStringFromRect(view.convert(view.bounds, to: nil)),
-                "hidden": view.isHiddenOrHasHiddenAncestor,
-                "alpha": Double(view.alphaValue),
-            ]
-        }
-        let scrollViews = views.compactMap { $0 as? NSScrollView }
-        let pockets = views.filter { NSStringFromClass(type(of: $0)).contains("NSScrollPocket") }
-        let document: [String: Any] = [
-            "sourceRevision": Bundle.main.object(forInfoDictionaryKey: "ToyBoxSourceRevision") ?? NSNull(),
-            "pid": ProcessInfo.processInfo.processIdentifier,
-            "window": window.windowNumber,
-            "renderer": "root",
-            "frameCoordinates": "window points, origin at lower left",
-            "active": NSApp.isActive,
-            "key": window.isKeyWindow,
-            "visible": window.isVisible,
-            "exposed": window.occlusionState.contains(.visible),
-            "root": describe(root),
-            "webView": describe(webView),
-            "requestedOffset": ["x": Double(requested.x), "y": Double(requested.y)],
-            "requestedPosition": probesEndPosition ? "end" : "offset",
-            "actualOffset": actual,
-            "scrollViews": scrollViews.map { scroll in
-                var result = describe(scroll)
-                result["insideWebView"] = scroll.isDescendant(of: webView)
-                result["containsWebView"] = webView.isDescendant(of: scroll)
-                if let document = scroll.documentView { result["documentView"] = describe(document) }
-                return result
-            },
-            "pockets": pockets.map { pocket in
-                var result = describe(pocket)
-                var ancestors: [NSView] = []
-                var parent = pocket.superview
-                while let view = parent {
-                    ancestors.append(view)
-                    parent = view.superview
-                }
-                result["ancestors"] = ancestors.map(describe)
-                result["scrollViewAncestors"] = ancestors.compactMap { $0 as? NSScrollView }.map(identifier)
-                return result
-            },
-        ]
-        let data = try JSONSerialization.data(withJSONObject: document, options: [.prettyPrinted, .sortedKeys])
-        try data.write(to: output, options: .atomic)
     }
 
     private func record(_ error: any Error) {
