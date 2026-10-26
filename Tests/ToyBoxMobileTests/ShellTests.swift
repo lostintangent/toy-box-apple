@@ -1,6 +1,7 @@
 import ChannelClient
 import ChannelKit
 import Foundation
+import SwiftUI
 import Testing
 @testable import ToyBoxMobile
 
@@ -39,7 +40,45 @@ struct ShellTests {
                 #expect(model.configurationError != nil)
                 #expect(defaults.string(forKey: "serverURL") == "https://saved.example")
             }
+            let emptyEnvironment = AppModel(arguments: [], environment: ["TOY_BOX_SERVER_URL": ""],
+                                            defaults: defaults)
+            #expect(emptyEnvironment.catalog == nil)
+            #expect(emptyEnvironment.configurationError != nil)
         }
+    }
+
+    @Test func firstLaunchAndUnavailableBrowserLinksStayExplicit() async throws {
+        try await withDefaults { defaults in
+            let model = AppModel(arguments: [], environment: [:], defaults: defaults)
+            #expect(model.catalog == nil)
+            #expect(model.configurationError == nil)
+            model.openInToyBox(channelID: "first")
+            #expect(model.browserFailure?.url == nil)
+            #expect(model.browserFailure?.message.isEmpty == false)
+            try model.configure(serverURL: "https://fixture.example")
+            #expect(model.browserFailure == nil)
+        }
+    }
+
+    @Test func channelRowsKeepTheirMinimumAndGrowForAccessibilityText() {
+        let channel = Channel(id: "layout", name: "A team with a deliberately long channel name",
+                              directory: "/Projects/a-deliberately-long-folder-name",
+                              model: .init(provider: "test", name: "test"), updatedAt: "2026-10-25T12:00:00Z")
+        let lead = ChannelAgent.lead(id: channel.id, profile: .init(
+            name: "Lead", role: "Coordinator", avatar: .init(mark: "M4 12H20", color: "#123456")
+        ))
+        func fitted(_ size: DynamicTypeSize) -> CGSize {
+            let host = UIHostingController(rootView: ChannelSidebarRow(
+                channel: channel, agents: [lead], working: [lead], attention: .waiting,
+                now: Date(timeIntervalSince1970: 1_793_000_000)
+            ).environment(\.dynamicTypeSize, size))
+            host.loadViewIfNeeded()
+            return host.sizeThatFits(in: CGSize(width: 240, height: CGFloat.greatestFiniteMagnitude))
+        }
+        let regular = fitted(.large)
+        let accessible = fitted(.accessibility5)
+        #expect(regular.height >= 96)
+        #expect(accessible.height > regular.height)
     }
 
     @Test func storesAndInteractionSurviveNavigationAndInactiveStopsTheConnection() async throws {
