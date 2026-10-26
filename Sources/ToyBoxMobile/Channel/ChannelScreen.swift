@@ -40,6 +40,10 @@ struct ChannelScreen: View {
                     Menu("Channel Actions", systemImage: "ellipsis") {
                         Button("Refresh", systemImage: "arrow.clockwise") { store.reconnect() }
                             .disabled(!model.isActive)
+                        Button("Open in Toy Box", systemImage: "arrow.up.forward.square") {
+                            model.openInToyBox(channelID: store.id)
+                        }
+                        Divider()
                         Button("Edit Channel", systemImage: "pencil") {
                             management.present(.editChannel(channelId: store.id))
                         }

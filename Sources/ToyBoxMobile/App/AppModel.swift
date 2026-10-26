@@ -3,6 +3,7 @@ import ChannelKit
 import Foundation
 import Observation
 import ToyBoxUI
+import UIKit
 
 @MainActor @Observable
 final class AppModel {
@@ -14,6 +15,8 @@ final class AppModel {
     var visibleChannelID: String?
     var isSettingsPresented = false
     var navigationNotice: String?
+    var browserFailure: BrowserFailure?
+    let requestedRefresh = RequestedCatalogRefresh()
     var selectedChannelID: String? {
         didSet {
             guard oldValue != selectedChannelID else { return }
@@ -53,7 +56,10 @@ final class AppModel {
         }
         guard let address else { return }
         do { try configure(serverURL: address, persist: false) }
-        catch { configurationError = error.localizedDescription }
+        catch {
+            serverURL = address
+            configurationError = error.localizedDescription
+        }
     }
 
     var api: ChannelAPI? { catalog?.api }
@@ -84,6 +90,7 @@ final class AppModel {
         catalog = ChannelCatalogStore(api: api)
         configurationError = nil
         navigationNotice = nil
+        browserFailure = nil
         restoredSelection = false
         if persist { defaults.set(self.serverURL, forKey: "serverURL") }
         if isActive { catalog?.startPolling() }
@@ -128,8 +135,27 @@ final class AppModel {
     }
 
     func refreshCatalog() async {
-        await catalog?.refresh()
+        guard let catalog else { return }
+        await requestedRefresh.run(catalog)
         reconcileSelection()
+    }
+
+    func openInToyBox(channelID: String) {
+        guard let api, let url = api.channelURL(channelID: channelID) else {
+            browserFailure = BrowserFailure(
+                url: nil, message: "A link to this channel couldn't be created. Check the server address in Settings."
+            )
+            return
+        }
+        Task {
+            let opened = await UIApplication.shared.open(url)
+            guard self.api?.baseURL == api.baseURL else { return }
+            if !opened {
+                browserFailure = BrowserFailure(
+                    url: url, message: "The browser couldn't open this channel. You can copy its link and try again."
+                )
+            }
+        }
     }
 
     func interaction(for channelID: String) -> ChannelInteraction {
@@ -165,4 +191,9 @@ final class AppModel {
         selections[serverIdentity] = selectedChannelID
         defaults.set(selections, forKey: "lastChannelByServer")
     }
+}
+
+struct BrowserFailure {
+    let url: URL?
+    let message: String
 }
