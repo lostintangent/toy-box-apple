@@ -361,6 +361,13 @@ struct OverviewTests {
             hidden: [IndexPath(item: count - 1, section: 0)])
     }
 
+    @Test(arguments: ["plan.md", "workshop.html", "shapes.svg", "reference.png", "unknown.bin"])
+    func artifactSymbolsKeepTheCurrentDocumentIconsBounds(path: String) throws {
+        let renderer = ImageRenderer(content: OverviewArtifactSymbol(artifact: artifact(path), size: 22))
+        let image = try #require(renderer.uiImage)
+        #expect(image.size == CGSize(width: 22, height: 22))
+    }
+
     @Test(arguments: [DynamicTypeSize.large, .accessibility5])
     func artifactRowsUseTheTeamsCompactTwoLineRhythmAndGrowWithText(size: DynamicTypeSize) async throws {
         let store = ChannelStore(id: "channel", api: try ChannelAPI(serverURL: "https://fixture.example"))

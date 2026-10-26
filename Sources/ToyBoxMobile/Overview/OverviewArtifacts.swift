@@ -57,14 +57,13 @@ struct OverviewArtifactLabel: View {
     let share: ChannelArtifactShare?
     var preparing = false
     @Environment(\.dynamicTypeSize) private var typeSize
+    @ScaledMetric(relativeTo: .title2) private var iconSize = 22
+    @ScaledMetric(relativeTo: .title2) private var iconLane = 24
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: ChannelArtifactSymbol.name(for: ArtifactContentKind(artifact)))
-                .font(.title2)
-                .foregroundStyle(.primary)
-                .frame(width: 24)
-                .accessibilityHidden(true)
+            OverviewArtifactSymbol(artifact: artifact, size: iconSize)
+                .frame(width: iconLane)
             VStack(alignment: .leading, spacing: 2) {
                 Text(artifact.title).font(.body).lineLimit(typeSize.isAccessibilitySize ? nil : 2)
                 if let date = (share?.sharedAt ?? artifact.sharedAt).flatMap(ChannelDates.date) {
@@ -79,6 +78,20 @@ struct OverviewArtifactLabel: View {
         }
         .frame(minHeight: 44, alignment: .leading)
         .contentShape(Rectangle())
+    }
+}
+
+struct OverviewArtifactSymbol: View {
+    let artifact: ChannelArtifact
+    let size: CGFloat
+
+    var body: some View {
+        Image(systemName: ChannelArtifactSymbol.name(for: ArtifactContentKind(artifact)))
+            .resizable()
+            .scaledToFit()
+            .foregroundStyle(.primary)
+            .frame(width: size, height: size)
+            .accessibilityHidden(true)
     }
 }
 
