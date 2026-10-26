@@ -40,7 +40,6 @@ struct NativeComposerInput: NSViewRepresentable {
     /// takes the new draft's text with a fresh caret and undo history.
     var document: ObjectIdentifier? = nil
     @Binding var height: CGFloat
-    @Binding var focused: Bool
     @Binding var dragging: Bool
     var fontSize: CGFloat
     var focusRequest: UUID
@@ -831,18 +830,9 @@ extension NativeComposerInput.Coordinator: DictationTextTarget {
         super.pasteAsPlainText(sender)
     }
 
-    override func becomeFirstResponder() -> Bool {
-        let result = super.becomeFirstResponder()
-        if result { coordinator?.parent.focused = true }
-        return result
-    }
-
     override func resignFirstResponder() -> Bool {
         let result = super.resignFirstResponder()
-        if result {
-            coordinator?.parent.focused = false
-            coordinator?.dismissCompletion()
-        }
+        if result { coordinator?.dismissCompletion() }
         return result
     }
 
