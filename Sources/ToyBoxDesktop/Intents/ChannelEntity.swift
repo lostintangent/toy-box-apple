@@ -92,10 +92,6 @@ struct ChannelQuery: EntityStringQuery, EnumerableEntityQuery {
         ChannelQuery.matching(string, in: try await context.entities())
     }
 
-    func suggestedEntities() async throws -> [ChannelEntity] {
-        try await context.entities()
-    }
-
     func allEntities() async throws -> [ChannelEntity] {
         try await context.entities()
     }
