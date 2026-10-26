@@ -149,12 +149,13 @@ struct PolicyTests {
         let message = ChannelMessage(id: "m12", sequence: 12, timestamp: "2026-10-01T00:00:00Z",
                                      sender: .user, content: .text("Review this"),
                                      reactions: [.init(agentId: "finch", reaction: "agree")])
-        let working = channelMessageReactions(message, agents: [agent], presence: ["ada": .init(state: "working")])
-        #expect(working.map(\.reaction) == ["agree", "looking", "working"])
-        #expect(channelMessageReactions(message, agents: [agent], presence: [:]).map(\.reaction) == ["agree"])
+        let working = channelStatusReactions(agents: [agent], presence: ["ada": .init(state: "working")])
+        #expect(channelMessageReactions(message, status: working).map(\.reaction) == ["agree", "looking", "working"])
+        let absent = channelStatusReactions(agents: [agent], presence: [:])
+        #expect(channelMessageReactions(message, status: absent).map(\.reaction) == ["agree"])
         agent.status = .init(state: "waiting", text: "Waiting", lookingAt: 12)
-        #expect(channelMessageReactions(message, agents: [agent],
-                                       presence: ["ada": .init(state: "working")]).map(\.reaction) == ["agree"])
+        let waiting = channelStatusReactions(agents: [agent], presence: ["ada": .init(state: "working")])
+        #expect(channelMessageReactions(message, status: waiting).map(\.reaction) == ["agree"])
     }
 
     @Test func statusReactionsGroupBySequenceInAgentOrder() {
@@ -170,7 +171,7 @@ struct PolicyTests {
         let message = ChannelMessage(id: "m14", sequence: 14, timestamp: "2026-10-22T17:23:00.000Z",
                                      sender: .user, content: .text("Ship it"),
                                      reactions: [.init(agentId: "lead", reaction: "done")])
-        #expect(channelMessageReactions(message, status: reactions)
-                == channelMessageReactions(message, agents: [ada, finch], presence: presence))
+        #expect(channelMessageReactions(message, status: reactions).map { "\($0.agentId) \($0.reaction)" }
+                == ["lead done", "ada working", "finch looking", "finch working"])
     }
 }
