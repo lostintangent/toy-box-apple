@@ -243,6 +243,13 @@ Agents never create these accounts, accept agreements, read private keys or set 
   reimplement reducer, audience, task, attention or transcript-grouping rules. Ask Core for a
   domain or store change instead of working around it in a view.
 - `TranscriptView` is ChannelKit's message filter enum, so SwiftUI views use other names.
+- `ToyBoxUI.TranscriptMarkdown` owns portable Markdown, mention styling and find decorations.
+  Hosts inject text scale, resolved mention ink and Copy Code, keeping native font preferences,
+  system-color resolution and clipboard access in the platform target. The shared
+  `TranscriptMentionContrast` accepts composited sRGB backgrounds. Transcript landing, reveal,
+  viewport coordinates and accessible message/divider labels live beside the renderer.
+  Portable assertions run in `ToyBoxUITests` on both platforms. Native selection, window,
+  system-color and rendering assertions remain in `ToyBoxDesktopTests`.
 
 ## Client rules
 
