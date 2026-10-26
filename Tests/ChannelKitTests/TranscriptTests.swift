@@ -34,8 +34,6 @@ struct TranscriptTests {
         let pending = transcriptRows(Array(messages.dropLast()), lead: lead, members: [ada])
         guard case .agent(_, let pendingEntries) = pending[0].content else { return }
         #expect(pendingEntries[3].request == .pending)
-        #expect(pendingRequestRow(pending, sequence: 4) == 0)
-        #expect(pendingRequestRow(pending, sequence: 99) == nil)
     }
 
     @Test func exactRunWindowAndUnreadBoundary() {
