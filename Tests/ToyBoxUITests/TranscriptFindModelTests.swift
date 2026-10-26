@@ -198,6 +198,23 @@ struct TranscriptFindModelTests {
             return []
         }
     }
+
+    @Test func aHostThatRevealsOnlyOnNavigationStillSelectsAndWraps() {
+        let find = make([message(1, "hit"), message(2, "no"), message(3, "hit")])
+        find.revealsWhileTyping = false
+        find.query = "hit"
+        #expect(find.selectedSequence == 1)
+        #expect(find.revealRequest == nil)
+        find.move(1)
+        #expect(find.revealRequest?.sequence == 1)
+        find.move(1)
+        #expect(find.revealRequest?.sequence == 3)
+        find.move(1)
+        #expect(find.revealRequest?.sequence == 1)
+        find.query = "hi"
+        #expect(find.revealRequest == nil)
+        #expect(find.selectedSequence == 1)
+    }
 }
 
 private extension ChannelAgent {

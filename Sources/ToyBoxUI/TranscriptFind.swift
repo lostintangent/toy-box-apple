@@ -8,6 +8,8 @@ public final class TranscriptFind {
     public init() {}
 
     public var isPresented = false
+    /// The Mac reveals the first loaded match as you type. The phone reveals only on Next or Previous.
+    public var revealsWhileTyping = true
     public var query = "" {
         didSet { if query != oldValue { changedQuery() } }
     }
@@ -72,7 +74,7 @@ public final class TranscriptFind {
         generation = UUID()
         isSearching = isPresented && !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && before != nil
         updateMatches()
-        if let sequence = selectedSequence, loadedSequences.contains(sequence) {
+        if revealsWhileTyping, let sequence = selectedSequence, loadedSequences.contains(sequence) {
             revealRequest = (sequence, UUID())
         }
     }
