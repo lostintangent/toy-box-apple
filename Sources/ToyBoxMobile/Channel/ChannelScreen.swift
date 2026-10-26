@@ -8,6 +8,7 @@ struct ChannelScreen: View {
     @Environment(AppModel.self) private var model
     @Environment(ChannelInteraction.self) private var interaction
     @Environment(ManagementPresenter.self) private var management
+    @Environment(ChannelArtifactSession.self) private var artifacts
 
     var body: some View {
         @Bindable var interaction = interaction
@@ -19,6 +20,12 @@ struct ChannelScreen: View {
             .navigationBarTitleDisplayMode(.inline)
             .onAppear { model.visibleChannelID = store.id }
             .onChange(of: store.id) { _, id in model.visibleChannelID = id }
+            .onChange(of: store.artifacts, initial: true) { _, current in
+                artifacts.configure(api: store.api, channelID: store.id, artifacts: current)
+            }
+            .onChange(of: store.phase) { _, phase in
+                if phase == .deleted { artifacts.close() }
+            }
             .onDisappear {
                 if model.visibleChannelID == store.id { model.visibleChannelID = nil }
             }
@@ -48,8 +55,7 @@ struct ChannelScreen: View {
                 }
             }
             .inspector(isPresented: $interaction.isInspectorPresented) {
-                ContentUnavailableView("Overview", systemImage: "sidebar.trailing",
-                                       description: Text("Overview is being built."))
+                OverviewView(store: store)
                     .inspectorColumnWidth(min: 280, ideal: 296, max: 360)
             }
     }
