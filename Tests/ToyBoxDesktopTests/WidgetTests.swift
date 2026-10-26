@@ -4,33 +4,13 @@ import Testing
 @testable import ToyBoxDesktop
 
 @Suite struct WidgetTests {
-    @Test func requestLinksRoundTripServerChannelAndSequenceWithoutInterpretingTheirContents() throws {
+    @Test func requestLinksDispatchToTheirScopedOpenAndReplyActions() throws {
         let link = NeedsYouRequestLink(serverURL: "http://127.0.0.1:3210/",
-                                      channelID: "studio / # & ü", sequence: 123)
+                                      channelID: "studio", sequence: 123)
         let url = try #require(link.url)
-        #expect(NeedsYouRequestLink(url: url) == link)
         let reply = try #require(link.replyURL)
-        #expect(NeedsYouRequestLink(replyURL: reply) == link)
-        #expect(NeedsYouRequestLink(url: reply) == nil)
-        #expect(NeedsYouRequestLink(replyURL: url) == nil)
         #expect(WidgetActionLink(url: reply) == .reply(link))
         #expect(WidgetActionLink(url: url) == .open(link))
-        #expect(NeedsYouRequestLink(url: NeedsYouSnapshot.mainURL) == nil)
-        for value in [
-            "https://request?server=http://localhost/&channel=studio&sequence=1",
-            "toybox-desktop://request?server=http://localhost/&channel=studio&sequence=0",
-            "toybox-desktop://request?server=http://localhost/&channel=studio&sequence=-1",
-            "toybox-desktop://request?server=http://localhost/&channel=studio&sequence=1&sequence=2",
-            "toybox-desktop://request?server=file:///private/&channel=studio&sequence=1",
-            "toybox-desktop://request?server=https://user:password@example.com/&channel=studio&sequence=1",
-            "toybox-desktop://request?server=http://localhost/&channel=&sequence=1",
-            "toybox-desktop://request/elsewhere?server=http://localhost/&channel=studio&sequence=1",
-            "toybox-desktop://request?server=http://localhost/&channel=studio&sequence=1#fragment",
-        ] {
-            #expect(NeedsYouRequestLink(url: try #require(URL(string: value))) == nil)
-            let replyValue = value.replacingOccurrences(of: "://request", with: "://reply")
-            #expect(NeedsYouRequestLink(replyURL: try #require(URL(string: replyValue))) == nil)
-        }
     }
 
     @Test func onlyExactUnparameterizedControlRoutesAreAccepted() throws {

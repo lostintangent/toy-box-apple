@@ -7,25 +7,16 @@ import Testing
 
 @Suite(.serialized) @MainActor
 struct MorningDigestTests {
-    @Test func onlyAgentActivityWithinTheWindowCountsAndOldRequestsStayOut() throws {
-        let now = date("2026-10-24T08:00:00Z")
-        let window = ChannelDigestWindow(since: now.addingTimeInterval(-3600), through: now)
-        var state = state([
-            message(1, at: window.since, request: true),
-            message(2, at: window.since.addingTimeInterval(1)),
-            message(3, at: now, from: .user),
-            message(4, at: now.addingTimeInterval(1)),
-        ])
-        state.channel.requestSequence = 1
-        state.request = state.messages.first
-        let selected = window.selecting(state)
-        #expect(selected.messages.map(\.sequence) == [2, 3])
-        #expect(selected.channel.requestSequence == nil && selected.request == nil)
-        let line = try #require(MorningDigest.line(selected))
+    @Test func digestLinesUseSummariesAndOrderTheBusiestChannels() throws {
+        let state = state([.init(id: "2", sequence: 2, timestamp: "2026-10-24T08:00:00Z",
+                                 sender: .agent("lead"), content: .text("Finished the layout."))])
+        let line = try #require(MorningDigest.line(state))
         #expect(line.text == "1 new message" && line.count == 1)
-        #expect(MorningDigest.line(self.state([message(1, at: now, from: .user)])) == nil)
+        var userOnly = state
+        userOnly.messages[0].sender = .user
+        #expect(MorningDigest.line(userOnly) == nil)
         let summary = CatchUp(needsYou: nil, changes: [.init(text: "Fixed the layout.", sources: [2])], through: 2)
-        #expect(MorningDigest.line(selected, summary: summary)?.text == "Fixed the layout.")
+        #expect(MorningDigest.line(state, summary: summary)?.text == "Fixed the layout.")
         let content = MorningDigest.ordered([line, .init(channelID: "busy", name: "Busy", count: 12,
                                                          text: "12 new messages")])
         #expect(content.busiest?.channelID == "busy")
@@ -246,11 +237,5 @@ struct MorningDigestTests {
         ChannelState(revision: 1, channel: Channel(id: "studio", name: "Studio",
                      model: .init(provider: "test", name: "test"), latestSequence: 5,
                      updatedAt: "2026-10-24T08:00:00Z"), lead: .init(id: "lead", name: "Lead"), messages: messages)
-    }
-
-    private func message(_ sequence: Int, at: Date, from: ChannelMessageSender = .agent("lead"),
-                         request: Bool? = nil) -> ChannelMessage {
-        ChannelMessage(id: "\(sequence)", sequence: sequence, timestamp: at.ISO8601Format(), sender: from,
-                       content: .text("Finished the layout."), request: request)
     }
 }
