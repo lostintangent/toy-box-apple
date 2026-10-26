@@ -115,6 +115,11 @@ view.
   the same deadline for dismissal and settled layout, then performs the retained leaf through the public
   `UIMenuLeaf` API. Missing, dismissed, ambiguous or changed-scene menus fail explicitly.
   This does not prove finger selection, menu accessibility or hardware-key delivery.
+  DEBUG drive status includes `traits.contentSizeCategory` (UIKit's raw category) and
+  `traits.interfaceStyle` (`light`, `dark` or `unspecified`) from the selected window's
+  effective loaded content, with presented content taking priority. It never substitutes
+  screen traits or requested launch arguments. Multiple visible content controllers must
+  agree. Missing or ambiguous selection emits `traitsError` instead of invented values.
   Other actions are never skipped or retried. Each step accepts a
   timeout in seconds (default 12, maximum 60). Screenshots are acknowledged by the host only after
   the app reports a settled accessibility/layout snapshot and go under `SCRATCH_PATH/mobile-drive/`.

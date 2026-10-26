@@ -44,6 +44,22 @@ test("malformed app statuses never look like completion", () => {
     expect(() => parseMobileDriveStatus({ state: "ready", step: 0, labels: [7], viewport: [] })).toThrow();
 });
 
+test("status preserves observed native traits or an explicit selection failure without inventing defaults", () => {
+    const status: ReturnType<typeof parseMobileDriveStatus> = {
+        state: "completed", step: 0, labels: [], viewport: [386, 678],
+    };
+    expect(parseMobileDriveStatus(status)).toEqual(status);
+    const traits = { contentSizeCategory: "UICTContentSizeCategoryAccessibilityXXXL", interfaceStyle: "dark" };
+    expect(parseMobileDriveStatus({ ...status, traits })).toEqual({ ...status, traits });
+    expect(parseMobileDriveStatus({ ...status, traitsError: "ambiguousContent" }))
+        .toEqual({ ...status, traitsError: "ambiguousContent" });
+    for (const invalid of [{ traits: null }, { traits: [] }, { traits: {} },
+        { traits: { ...traits, contentSizeCategory: "" } }, { traits: { ...traits, interfaceStyle: 0 } },
+        { traitsError: "" }, { traitsError: false }, { traits, traitsError: "missingContent" }]) {
+        expect(() => parseMobileDriveStatus({ ...status, ...invalid })).toThrow();
+    }
+});
+
 const frame = { step: 0, labels: ["Message"], viewport: [440, 956] };
 const unexpected = async () => { throw new Error("Unexpected host action"); };
 function drive(steps: unknown) {

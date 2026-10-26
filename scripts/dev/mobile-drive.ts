@@ -9,8 +9,9 @@ export type MobileDriveStep = Timed & (
     | { posture: "folded" | "unfolded" }
     | { menuAction: string }
 );
+type Traits = { contentSizeCategory: string; interfaceStyle: string };
 type Status = { state: "running" | "ready" | "completed" | "failed"; step: number;
-    labels: string[]; viewport: number[]; error?: string };
+    labels: string[]; viewport: number[]; traits?: Traits; traitsError?: string; error?: string };
 
 function record(value: unknown): value is Record<string, unknown> {
     return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -72,11 +73,25 @@ export function parseMobileDriveStatus(value: unknown): Status {
         || typeof value.step !== "number" || !Number.isInteger(value.step) || value.step < 0
         || !Array.isArray(value.labels) || !value.labels.every(item => typeof item === "string")
         || !Array.isArray(value.viewport) || !value.viewport.every(item => typeof item === "number")
+        || (value.traitsError !== undefined && (typeof value.traitsError !== "string" || !value.traitsError.length))
+        || (value.traits !== undefined && value.traitsError !== undefined)
         || (value.error !== undefined && typeof value.error !== "string")) {
         throw new Error("The app published an invalid drive status.");
     }
+    let traits: Traits | undefined;
+    if (value.traits !== undefined) {
+        const observed = value.traits;
+        if (!record(observed) || typeof observed.contentSizeCategory !== "string" || !observed.contentSizeCategory.length
+            || typeof observed.interfaceStyle !== "string" || !observed.interfaceStyle.length) {
+            throw new Error("The app published invalid native drive traits.");
+        }
+        traits = { contentSizeCategory: observed.contentSizeCategory, interfaceStyle: observed.interfaceStyle };
+    }
     return { state: value.state as Status["state"], step: value.step,
-        labels: value.labels, viewport: value.viewport, ...(value.error === undefined ? {} : { error: value.error }) };
+        labels: value.labels, viewport: value.viewport,
+        ...(traits === undefined ? {} : { traits }),
+        ...(value.traitsError === undefined ? {} : { traitsError: value.traitsError }),
+        ...(value.error === undefined ? {} : { error: value.error }) };
 }
 
 async function atomicJSON(path: string, value: unknown) {
