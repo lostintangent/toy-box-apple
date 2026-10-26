@@ -339,21 +339,14 @@ struct ComposerTests {
         }
         try #require(view.becomeFirstResponder())
         let undo = try #require(view.undoManager)
-        func trace(_ stage: String) {
-            print("Focused dictation undo \(stage): type=\(String(reflecting: type(of: undo))), level=\(undo.groupingLevel), byEvent=\(undo.groupsByEvent)")
-        }
         if typedBefore { view.insertText("Typed") }
-        trace("before")
         try #require(coordinator.beginDictation())
         var transcript = DictationTranscript()
         transcript.receive("Spoken", isFinal: false)
         coordinator.showDictation(transcript)
-        trace("live")
         coordinator.endDictation(transcript.visible)
-        trace("final")
         let dictated = typedBefore ? "Typed Spoken" : "Spoken"
         view.insertText("!")
-        trace("typed")
         #expect(text == dictated + "!")
         undo.undo()
         #expect(text == dictated, "Typing after dictation is its own undo step in the focused native editor")
@@ -467,12 +460,10 @@ struct ComposerTests {
         coordinator.input = view
         view.insertText("Typed")
         let undo = try #require(view.undoManager)
-        print("Unfocused dictation undo before: type=\(String(reflecting: type(of: undo))), level=\(undo.groupingLevel), byEvent=\(undo.groupsByEvent)")
         coordinator.anchorDictation()
         var transcript = DictationTranscript()
         transcript.receive("Spoken", isFinal: false)
         coordinator.showDictation(transcript)
-        print("Unfocused dictation undo live: type=\(String(reflecting: type(of: undo))), level=\(undo.groupingLevel), byEvent=\(undo.groupsByEvent)")
         coordinator.endDictation("")
         #expect(view.text == "Typed")
         undo.undo()
