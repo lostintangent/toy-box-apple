@@ -14,7 +14,7 @@ public struct TranscriptCollapsibleBody<Content: View, Toggle: View>: View {
     let endPadding: CGFloat
     let content: Content
     let toggle: Toggle
-    /// Only accessibility follows this, a pass later. Layout never waits for it.
+    /// Only the toggle's accessibility and hit testing follow this, a pass later. Layout never waits for it.
     @ViewState private var overflows = false
 
     /// - Parameters:
@@ -39,10 +39,12 @@ public struct TranscriptCollapsibleBody<Content: View, Toggle: View>: View {
                     TranscriptClampMask(clamp: Self.clampHeight, fade: Self.fadeHeight, isExpanded: isExpanded)
                 }
                 .onGeometryChange(for: Bool.self) { $0.size.height > Self.clampHeight } action: { overflows = $0 }
+            // A short body places the toggle below its bounds. Clipping hides it from sight, but not
+            // from touch or accessibility, so those stay off until the body overflows.
             toggle
                 .accessibilityHidden(!overflows)
+                .allowsHitTesting(overflows)
         }
-        // A short body places the toggle below the bounds, where this hides it from sight and touch.
         .clipped()
     }
 }
