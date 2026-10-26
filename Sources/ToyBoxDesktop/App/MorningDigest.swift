@@ -25,15 +25,10 @@ final class MorningDigest {
         var body: String { lines.map { "\($0.name): \($0.text)" }.joined(separator: "\n") }
     }
 
-    struct Window: Equatable {
-        var since: Date
-        var through: Date
-    }
-
     struct Host {
         var server: () -> String
         var authorized: () async -> Bool
-        var build: (Window) async throws -> Content
+        var build: (ChannelDigestWindow) async throws -> Content
         var deliver: (Content, String, String) async throws -> Void
     }
 
@@ -86,19 +81,6 @@ final class MorningDigest {
         bundleID == "dev.toybox.desktop" && options.allowsUserIntegrations(environment: environment)
     }
 
-    /// Local wall-clock scheduling also handles DST, clock changes and a missed wake-up. A later
-    /// time preference cannot cause a second delivery on a day already covered.
-    static func window(now: Date, calendar: Calendar, minutes: Int, lastRun: Date?,
-                       coveredThrough: Date?) -> Window? {
-        let minutes = (0..<720).contains(minutes) ? minutes : 480
-        guard let due = calendar.date(bySettingHour: minutes / 60, minute: minutes % 60, second: 0, of: now),
-              let noon = calendar.date(bySettingHour: 12, minute: 0, second: 0, of: now),
-              now >= due, now < noon,
-              lastRun.map({ $0 < calendar.startOfDay(for: now) }) ?? true else { return nil }
-        return Window(since: max(now.addingTimeInterval(-86_400), min(coveredThrough ?? .distantPast, now)),
-                      through: now)
-    }
-
     func check() async {
         guard allowed, !isRunning,
               defaults.object(forKey: Self.enabledKey) as? Bool != false,
@@ -106,9 +88,9 @@ final class MorningDigest {
         let server = host.server()
         let coverageKey = "morningDigestThrough.\(server)"
         let minutes = defaults.object(forKey: Self.timeKey) as? Int ?? 480
-        guard let window = Self.window(now: now(), calendar: calendar(), minutes: minutes,
-                                       lastRun: defaults.object(forKey: Self.lastRunKey) as? Date,
-                                       coveredThrough: defaults.object(forKey: coverageKey) as? Date) else { return }
+        guard let window = ChannelDigestWindow.morning(now: now(), calendar: calendar(), minutes: minutes,
+                                                       lastRun: defaults.object(forKey: Self.lastRunKey) as? Date,
+                                                       coveredThrough: defaults.object(forKey: coverageKey) as? Date) else { return }
         isRunning = true
         defer { isRunning = false }
         guard await host.authorized() else { return }
@@ -118,10 +100,10 @@ final class MorningDigest {
             guard !Task.isCancelled, host.server() == server,
                   defaults.object(forKey: Self.enabledKey) as? Bool != false,
                   defaults.bool(forKey: "notificationsEnabled"),
-                  Self.window(now: now(), calendar: calendar(),
-                              minutes: defaults.object(forKey: Self.timeKey) as? Int ?? 480,
-                              lastRun: defaults.object(forKey: Self.lastRunKey) as? Date,
-                              coveredThrough: nil) != nil else { return }
+                  ChannelDigestWindow.morning(now: now(), calendar: calendar(),
+                                              minutes: defaults.object(forKey: Self.timeKey) as? Int ?? 480,
+                                              lastRun: defaults.object(forKey: Self.lastRunKey) as? Date,
+                                              coveredThrough: nil) != nil else { return }
             if !content.lines.isEmpty {
                 let day = calendar().startOfDay(for: window.through).timeIntervalSince1970
                 try await host.deliver(content, server, "morningDigest.\(Int(day))")
@@ -148,7 +130,7 @@ final class MorningDigest {
         do {
             guard host.server() == server else { return }
             let date = now()
-            let content = try await host.build(Window(since: date.addingTimeInterval(-86_400), through: date))
+            let content = try await host.build(ChannelDigestWindow(since: date.addingTimeInterval(-86_400), through: date))
             guard host.server() == server else { return }
             guard !content.lines.isEmpty else {
                 error = "The test server has no activity from agents in the last 24 hours."
@@ -171,21 +153,6 @@ final class MorningDigest {
 }
 
 extension MorningDigest {
-    /// A bounded time window, unlike the unread window: messages already read still belong in a
-    /// daily recap, and an old unanswered question does not become overnight activity.
-    static func selected(_ state: ChannelState, window: Window) -> ChannelState {
-        var state = state
-        state.messages = state.messages.filter {
-            guard let date = ChannelDates.date($0.timestamp) else { return false }
-            return date > window.since && date <= window.through
-        }
-        if !state.messages.contains(where: { $0.sequence == state.channel.requestSequence }) {
-            state.channel.requestSequence = nil
-            state.request = nil
-        }
-        return state
-    }
-
     static func line(_ state: ChannelState, summary: CatchUp? = nil) -> Content.Line? {
         let count = channelAgentMessageCount(state.messages)
         guard count > 0 else { return nil }
@@ -202,26 +169,7 @@ extension MorningDigest {
         })
     }
 
-    /// Snapshot and older history are read-only. Paging stops at the time boundary or an exhausted
-    /// cursor, including servers that return overlapping pages.
-    static func history(_ initial: ChannelState, window: Window,
-                        page: (Int) async throws -> [ChannelMessage]) async throws -> ChannelState {
-        var state = initial
-        var seen = Set(state.messages.map(\.sequence))
-        var before = state.messages.map(\.sequence).min() ?? state.channel.latestSequence + 1
-        while before > 1,
-              !state.messages.contains(where: { ChannelDates.date($0.timestamp).map { $0 <= window.since } ?? false }) {
-            try Task.checkCancellation()
-            let older = try await page(before).filter { $0.sequence < before }
-            guard let next = older.map(\.sequence).min(), next < before else { break }
-            state.messages += older.filter { seen.insert($0.sequence).inserted }
-            before = next
-        }
-        state.messages.sort { $0.sequence < $1.sequence }
-        return selected(state, window: window)
-    }
-
-    static func build(api: ChannelAPI, window: Window, summarizes: Bool,
+    static func build(api: ChannelAPI, window: ChannelDigestWindow, summarizes: Bool,
                       intelligence: any ChannelIntelligenceService) async throws -> Content {
         let channels = try await api.catalog().channels
         var lines: [Content.Line] = []
@@ -237,7 +185,7 @@ extension MorningDigest {
                 break
             }
             guard let snapshot else { throw ChannelAPIError.streamEnded }
-            let state = try await history(snapshot, window: window) {
+            let state = try await window.history(snapshot) {
                 try await api.history(channelId: channel.id, before: $0).messages
             }
             guard line(state) != nil else { continue }
