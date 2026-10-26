@@ -56,6 +56,13 @@ final class AppModel {
 
     var api: ChannelAPI? { catalog?.api }
 
+    func acquire(_ store: ChannelStore) {
+        connections.acquire(store)
+        if !isActive { store.disconnect() }
+    }
+
+    func release(_ store: ChannelStore) { connections.release(store) }
+
     func configure(serverURL: String, persist: Bool = true) throws {
         let api = try ChannelAPI(serverURL: serverURL, session: session)
         guard let identity = ChannelWaitingRequest.normalizedServer(api.baseURL.absoluteString) else {
@@ -84,6 +91,7 @@ final class AppModel {
         catalog?.setActive(active)
         if active {
             catalog?.startPolling()
+            for store in connections.stores { store.connect() }
             connectSelection()
         } else {
             catalog?.stopPolling()
