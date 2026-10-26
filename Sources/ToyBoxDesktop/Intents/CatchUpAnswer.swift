@@ -200,7 +200,7 @@ enum CatchUpAnswer {
             subtitle = count.map(capitalized) ?? (request != nil ? nil : "All tasks completed")
         }
 
-        let reply = asked.map { CatchUpCard.Reply(recipient: recipient(of: $0, in: state), request: $0) }
+        let reply = asked.map { CatchUpCard.Reply(recipient: ChannelWaitingRequest.recipient(of: $0, in: state), request: $0) }
         let card = CatchUpCard(channelID: info.id, title: info.name, subtitle: subtitle, isSummary: summary != nil,
                                lines: lines, footnote: footnote, reply: reply)
         return Answer(spoken: spoken, headline: headline, card: card)
@@ -243,14 +243,6 @@ enum CatchUpAnswer {
         }
         if let event = source?.system { return .event(event.type) }
         return .info
-    }
-
-    /// Who a reply mentions: the agent who asked, unless they've left.
-    private static func recipient(of sequence: Int, in state: ChannelState) -> String? {
-        let asking = state.request?.sequence == sequence ? state.request : state.messages.first { $0.sequence == sequence }
-        guard let agentId = asking?.sender.agentId else { return nil }
-        let agent = channelAgentIdentity(state.agents, id: agentId)
-        return agent.deleted == true ? nil : agent.name
     }
 
     private static func isCompleted(_ channel: Channel, unreadAfter: Int?) -> Bool {

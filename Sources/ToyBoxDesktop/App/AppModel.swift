@@ -35,7 +35,7 @@ final class AppModel {
     var navigationRequest: ChannelNavigationRequest?
     var newChannelRequest: UUID?
     /// Pending requests' messages shared by the menu bar, Dock and widget, by channel.
-    private(set) var menuBarRequests: [String: ChannelNotifications.ResolvedRequest] = [:]
+    private(set) var menuBarRequests: [String: ChannelRequestMessage] = [:]
     @ObservationIgnored var openChannelWindow: ((String) -> Void)?
     @ObservationIgnored var openMainWindow: (() -> Void)?
     @ObservationIgnored private var menuBarLookups: [String: Int] = [:]
@@ -301,13 +301,11 @@ final class AppModel {
     }
 
     /// An open channel's live request, otherwise the one looked up for its sequence.
-    private func menuBarRequest(_ channel: Channel) -> ChannelNotifications.ResolvedRequest? {
+    private func menuBarRequest(_ channel: Channel) -> ChannelRequestMessage? {
         guard let sequence = channel.requestSequence else { return nil }
-        if openChannelIDs.contains(channel.id), let store = catalog?.channel(id: channel.id),
-           let request = store.request, request.sequence == sequence {
-            return .init(message: request, agents: store.roster)
-        }
-        return menuBarRequests[channel.id].flatMap { $0.message.sequence == sequence ? $0 : nil }
+        let store = openChannelIDs.contains(channel.id) ? catalog?.channel(id: channel.id) : nil
+        return ChannelWaitingRequest.message(at: sequence, live: store?.request, agents: store?.roster ?? [],
+                                             cached: menuBarRequests[channel.id])
     }
 
     /// Looks up each new request once, including when the menu bar item is hidden.
@@ -358,15 +356,7 @@ final class AppModel {
     func sidebarChannel(_ channel: Channel) -> Channel {
         guard openChannelIDs.contains(channel.id), let store = catalog?.channel(id: channel.id),
               let details = store.details else { return channel }
-        var live = channel
-        live.name = details.name
-        live.purpose = details.purpose
-        live.directory = details.directory
-        live.model = details.model
-        live.preview = details.preview
-        live.previewUrl = details.previewUrl
-        live.requestSequence = store.requestSequence
-        return live
+        return details.applying(to: channel, requestSequence: store.requestSequence)
     }
 
     /// The attention the sidebar shows for a channel. The title menu and the menu bar mirror it.
@@ -400,12 +390,12 @@ final class AppModel {
     }
 
     /// A request's message, from an open channel's live state, otherwise from its history.
-    private func resolveRequest(channel: Channel, sequence: Int) async -> ChannelNotifications.ResolvedRequest? {
-        if let known = menuBarRequests[channel.id], known.message.sequence == sequence { return known }
+    private func resolveRequest(channel: Channel, sequence: Int) async -> ChannelRequestMessage? {
+        if let known = ChannelWaitingRequest.message(at: sequence, live: nil, agents: [],
+                                                     cached: menuBarRequests[channel.id]) { return known }
         if let state = connections.stores.first(where: { $0.id == channel.id })?.state,
-           let message = state.request?.sequence == sequence ? state.request
-               : state.messages.first(where: { $0.sequence == sequence }) {
-            return .init(message: message, agents: state.agents)
+           let request = ChannelRequestMessage(sequence: sequence, in: state) {
+            return request
         }
         guard let catalog else { return nil }
         let agents = catalogAgents(channelID: channel.id)

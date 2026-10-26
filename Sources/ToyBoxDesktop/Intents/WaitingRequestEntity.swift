@@ -13,29 +13,18 @@ struct WaitingRequestEntry: Equatable, Sendable {
     let requestedAt: Date?
 
     init?(item: MenuBarStatus.Item, serverURL: String) {
-        guard let sequence = item.sequence, sequence > 0, let question = item.quote,
-              !question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-              let agent = item.agent, let server = Self.normalizedServer(serverURL) else { return nil }
-        let link = NeedsYouRequestLink(serverURL: server, channelID: item.id, sequence: sequence)
+        guard let request = ChannelWaitingRequest(serverURL: serverURL, channelID: item.id, sequence: item.sequence,
+                                                question: item.quote, agent: item.agent, channelName: item.name,
+                                                requestedAt: item.requestedAt) else { return nil }
+        let link = NeedsYouRequestLink(serverURL: request.id.serverURL, channelID: request.id.channelID,
+                                      sequence: request.id.sequence)
         guard let url = link.url, NeedsYouRequestLink(url: url) != nil else { return nil }
         id = url.absoluteString
         self.link = link
-        self.question = question
-        self.agent = ChannelAgent(id: agent.id, name: agent.name, avatar: agent.avatar, deleted: agent.deleted)
-        channelName = item.name
-        requestedAt = item.requestedAt
-    }
-
-    static func normalizedServer(_ server: String) -> String? {
-        guard var parts = URLComponents(string: server.trimmingCharacters(in: .whitespacesAndNewlines)),
-              let scheme = parts.scheme?.lowercased(), ["http", "https"].contains(scheme),
-              let host = parts.host?.lowercased(), !host.isEmpty, parts.user == nil, parts.password == nil,
-              parts.query == nil, parts.fragment == nil else { return nil }
-        parts.scheme = scheme
-        parts.host = host
-        if (scheme == "http" && parts.port == 80) || (scheme == "https" && parts.port == 443) { parts.port = nil }
-        parts.percentEncodedPath = parts.percentEncodedPath.replacingOccurrences(of: "/+$", with: "", options: .regularExpression)
-        return parts.string
+        question = request.question
+        agent = request.agent
+        channelName = request.channelName
+        requestedAt = request.requestedAt
     }
 }
 

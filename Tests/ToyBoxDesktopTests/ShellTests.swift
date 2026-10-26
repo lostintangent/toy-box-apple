@@ -1283,7 +1283,7 @@ struct MenuBarExtraTests {
     }
 
     private func request(_ text: String, sequence: Int = 12, at timestamp: String = "2026-10-22T08:00:00Z",
-                         from sender: String = "ada") -> ChannelNotifications.ResolvedRequest {
+                         from sender: String = "ada") -> ChannelRequestMessage {
         .init(message: ChannelMessage(id: "m\(sequence)", sequence: sequence, timestamp: timestamp,
                                       sender: .init(type: "agent", agentId: sender), content: .text(text),
                                       request: true),

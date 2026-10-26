@@ -18,17 +18,11 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
         var focusComposer = false
     }
 
-    /// A request's message and the agents its mentions can name.
-    struct ResolvedRequest {
-        var message: ChannelMessage
-        var agents: [ChannelAgent]
-    }
-
     private(set) var authorization: UNAuthorizationStatus = .notDetermined
     private(set) var error: String?
     @ObservationIgnored var onActivate: ((Activation) -> Void)?
     /// Finds a request's message, from an open channel's state or else its history.
-    @ObservationIgnored var resolveRequest: ((Channel, Int) async -> ResolvedRequest?)?
+    @ObservationIgnored var resolveRequest: ((Channel, Int) async -> ChannelRequestMessage?)?
     /// The API for a server, only while it's the current one.
     @ObservationIgnored var api: ((String) -> ChannelAPI?)?
     @ObservationIgnored private var policy = Policy()
@@ -124,7 +118,7 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
         case .request:
             if let request = await resolve(event) {
                 content.body = NotificationText.requestBody(request.message, agents: request.agents)
-                if let requester = request.agents.first(where: { $0.id == request.message.sender.agentId }) {
+                if let requester = request.requester {
                     content.subtitle = NotificationText.subtitle(requester: requester.name)
                     info["handle"] = agentHandleFromName(requester.name)
                 }
@@ -139,7 +133,7 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
     }
 
     /// Never waits longer than the deadline, and never delivers twice when the text arrives late.
-    private func resolve(_ event: Event) async -> ResolvedRequest? {
+    private func resolve(_ event: Event) async -> ChannelRequestMessage? {
         guard let resolveRequest else { return nil }
         let work = Task { await resolveRequest(event.channel, event.sequence) }
         let deadline = Task {
