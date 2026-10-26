@@ -184,7 +184,7 @@ struct ChannelScreen: View {
             Button("Tasks", systemImage: "checklist") {
                 interaction.showOverviewTasks()
             }
-            .accessibilityValue("\(progress.done) of \(progress.total) done")
+            .accessibilityLabel("Tasks, \(progress.done) of \(progress.total) done")
             .accessibilityIdentifier("channel-tasks")
             .disabled(store.phase == .deleted)
         }
