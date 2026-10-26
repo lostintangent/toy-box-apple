@@ -37,8 +37,9 @@ struct TranscriptSystemMessages: View {
 
     @ViewBuilder
     private var content: some View {
+        let phrase = ChannelSystemText.phrase(for: first)
         switch first?.type {
-        case "tasks_completed": sentence("All tasks completed")
+        case "tasks_completed": sentence(phrase)
         case "member_joined", "member_left":
             if messages.count > 1 && expandsMembership {
                 VStack(spacing: 4) {
@@ -53,62 +54,62 @@ struct TranscriptSystemMessages: View {
                 }
             } else { sentence(membershipLabel.text, spoken: membershipLabel.spoken) }
         case "channel_renamed":
-            event("Channel renamed", value: first?.name).lineLimit(3)
+            event(phrase, value: first?.name).lineLimit(3)
         case "channel_purpose_changed":
-            event(first?.purpose == nil ? "Purpose cleared" : "Purpose updated", value: first?.purpose).lineLimit(3)
+            event(phrase, value: first?.purpose).lineLimit(3)
         case "channel_directory_changed":
             if let directory = first?.directory {
-                valueLine("Working directory changed", findText: "Working directory changed \(directory)") {
-                    findText(directory, in: "Working directory changed \(directory)",
-                             offset: "Working directory changed ".utf16.count)
+                valueLine(phrase, findText: "\(phrase) \(directory)") {
+                    findText(directory, in: "\(phrase) \(directory)", offset: "\(phrase) ".utf16.count)
                         .foregroundStyle(.primary).fontWeight(.medium)
                         .lineLimit(1).truncationMode(.middle)
                 }
-            } else { sentence("Working directory cleared") }
+            } else { sentence(phrase) }
         case "preview_changed":
             if let preview = first?.preview ?? first?.previewUrl.map({ ChannelPreview(kind: "url", url: $0) }) {
                 if preview.kind == "url" {
                     if let address = preview.url, let url = api.resourceURL(address) {
-                        valueLine("Preview updated", findText: "Preview updated \(address)") {
+                        valueLine(phrase, findText: "\(phrase) \(address)") {
                             Link(destination: url) {
                                 TranscriptSystemLinkLabel(title: address, findHighlight: findHighlight,
-                                                          findText: "Preview updated \(address)",
-                                                          findOffset: "Preview updated ".utf16.count)
+                                                          findText: "\(phrase) \(address)",
+                                                          findOffset: "\(phrase) ".utf16.count)
                             }
                                 .transcriptSystemLink()
                                 .lineLimit(1).truncationMode(.middle)
                         }
                     } else {
-                        sentence("Preview link unavailable").help(preview.url ?? "Missing URL")
+                        sentence(ChannelSystemText.unavailablePreview).help(preview.url ?? "Missing URL")
                     }
                 } else if preview.kind == "screen" {
                     if let url = app?.channelURL(channelID: channelID) {
-                        valueLine("Preview updated", findText: "Preview updated Open screen in Toy Box") {
+                        let screen = ChannelSystemText.openScreen
+                        valueLine(phrase, findText: "\(phrase) \(screen)") {
                             Link(destination: url) {
-                                TranscriptSystemLinkLabel(title: "Open screen in Toy Box", findHighlight: findHighlight,
-                                                          findText: "Preview updated Open screen in Toy Box",
-                                                          findOffset: "Preview updated ".utf16.count)
+                                TranscriptSystemLinkLabel(title: screen, findHighlight: findHighlight,
+                                                          findText: "\(phrase) \(screen)",
+                                                          findOffset: "\(phrase) ".utf16.count)
                             }
                                 .transcriptSystemLink()
                                 .lineLimit(1)
                         }
-                    } else { sentence("Preview updated") }
+                    } else { sentence(phrase) }
                 } else {
-                    sentence("Preview updated").help("Unsupported preview kind: \(preview.kind)")
+                    sentence(phrase).help("Unsupported preview kind: \(preview.kind)")
                 }
-            } else { sentence("Preview cleared") }
+            } else { sentence(phrase) }
         case "artifact_shared":
-            TranscriptArtifactShares(icon: icon, actorName: Self.actorName(first, agents: agents), messages: messages,
+            TranscriptArtifactShares(icon: icon, actorName: ChannelSystemText.actor(first, agents: agents), messages: messages,
                                      historyStart: historyStart,
                                      findHighlights: findHighlights,
                                      onOpen: artifactOpener.open)
         case "routine_scheduled", "routine_edited", "routine_deleted":
-            event(Self.routinePhrase(first?.type), value: first?.routine?.title ?? "Routine").lineLimit(3)
+            event(phrase, value: first?.routine?.title ?? "Routine").lineLimit(3)
         default:
             if let description = first?.unknownFields?["description"]?.string {
-                sentence(findText("Channel updated\n\(description)"), spoken: "Channel updated. \(description)")
+                sentence(findText("\(phrase)\n\(description)"), spoken: "\(phrase). \(description)")
                     .lineLimit(4)
-            } else { sentence("Channel updated") }
+            } else { sentence(phrase) }
         }
     }
 
@@ -135,7 +136,7 @@ struct TranscriptSystemMessages: View {
     }
 
     private func event(_ name: String, value: String?) -> some View {
-        sentence(eventLabel(name, value: value), spoken: value.map { "\(name) \(transcriptSystemValue($0))" } ?? name)
+        sentence(eventLabel(name, value: value), spoken: value.map { "\(name) \(ChannelSystemText.value($0))" } ?? name)
     }
 
     /// A phrase followed by one value that truncates in place, so the sentence keeps one line.
@@ -168,7 +169,7 @@ struct TranscriptSystemMessages: View {
 
     private func eventLabel(_ event: String, value: String?) -> Text {
         guard let value else { return findText(event) }
-        var detail = AttributedString(transcriptSystemValue(value))
+        var detail = AttributedString(ChannelSystemText.value(value))
         detail.foregroundColor = .primary
         detail.font = .system(size: 11 * textScale, weight: .medium)
         let label = AttributedString(event + " ") + detail
@@ -176,30 +177,15 @@ struct TranscriptSystemMessages: View {
     }
 
     private var membershipLabel: (text: Text, spoken: String) {
-        let names = contents.compactMap { $0.member?.name }
-        let action = first?.type == "member_joined" ? "joined" : "left"
-        guard let name = names.first else { return (Text("Channel membership changed"), "Channel membership changed") }
-        let identities = names.count == 1 ? name
-            : "\(name) and \(names.count - 1) \(names.count == 2 ? "other" : "others")"
-        var styledNames = AttributedString(identities)
+        guard let membership = ChannelSystemText.membership(contents) else {
+            let phrase = ChannelSystemText.phrase(for: first)
+            return (Text(phrase), phrase)
+        }
+        var styledNames = AttributedString(membership.names)
         styledNames.foregroundColor = .primary
         styledNames.font = .system(size: 11 * textScale, weight: .medium)
-        let label = styledNames + AttributedString(" \(action) the channel")
-        return (Text(findHighlight?.applying(to: label) ?? label), "\(identities) \(action) the channel")
-    }
-
-    /// Who shared an artifact. Find matches the same words.
-    static func actorName(_ system: ChannelSystemContent?, agents: [ChannelAgent]) -> String {
-        system?.actor?.type == "user" ? "You"
-            : channelAgentIdentity(agents, id: system?.actor?.agentId ?? "").name
-    }
-
-    static func routinePhrase(_ type: String?) -> String {
-        switch type {
-        case "routine_scheduled": "New routine scheduled"
-        case "routine_edited": "Routine edited"
-        default: "Routine deleted"
-        }
+        let label = styledNames + AttributedString(" \(membership.action)")
+        return (Text(findHighlight?.applying(to: label) ?? label), "\(membership.names) \(membership.action)")
     }
 
     private var help: String {
@@ -218,12 +204,6 @@ struct TranscriptSystemMessages: View {
             .formatted(date: .complete, time: .shortened) ?? ""
         return [detail, timestamp].filter { !$0.isEmpty }.joined(separator: "\n")
     }
-}
-
-/// Collapses whitespace and keeps at most 120 characters, as the pane does for changed values.
-func transcriptSystemValue(_ text: String) -> String {
-    let line = text.split(whereSeparator: \.isWhitespace).joined(separator: " ")
-    return line.count <= 120 ? line : "\(line.prefix(117))..."
 }
 
 struct TranscriptArtifactShares: View {

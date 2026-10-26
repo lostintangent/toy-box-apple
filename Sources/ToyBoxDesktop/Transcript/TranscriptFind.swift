@@ -164,32 +164,7 @@ final class TranscriptFind {
                 ? withoutLeadingMentions(message.text, agents: agents) : message.text
             return TranscriptMarkdownText(MarkdownBlock.parse(body)).text
         }
-        func event(_ phrase: String, _ value: String?) -> String {
-            value.map { phrase + " " + transcriptSystemValue($0) } ?? phrase
-        }
-        switch system.type {
-        case "tasks_completed": return "All tasks completed"
-        case "member_joined", "member_left":
-            guard let name = system.member?.name else { return "Channel membership changed" }
-            return "\(name) \(system.type == "member_joined" ? "joined" : "left") the channel"
-        case "channel_renamed": return event("Channel renamed", system.name)
-        case "channel_purpose_changed":
-            return event(system.purpose == nil ? "Purpose cleared" : "Purpose updated", system.purpose)
-        case "channel_directory_changed":
-            return system.directory.map { "Working directory changed \($0)" } ?? "Working directory cleared"
-        case "preview_changed":
-            if let preview = system.preview ?? system.previewUrl.map({ ChannelPreview(kind: "url", url: $0) }) {
-                return preview.kind == "screen" ? "Preview updated Open screen in Toy Box"
-                    : event("Preview updated", preview.url)
-            }
-            return "Preview cleared"
-        case "artifact_shared":
-            return "\(TranscriptSystemMessages.actorName(system, agents: agents)) shared \(system.artifact?.title ?? "")"
-        case "routine_scheduled", "routine_edited", "routine_deleted":
-            return event(TranscriptSystemMessages.routinePhrase(system.type), system.routine?.title ?? "Routine")
-        default:
-            return system.unknownFields?["description"]?.string.map { "Channel updated\n\($0)" } ?? "Channel updated"
-        }
+        return ChannelSystemText.rendered(system, agents: agents)
     }
 }
 
