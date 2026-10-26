@@ -244,28 +244,6 @@ func withoutLeadingMentions(_ content: String, handles: Set<String>) -> String {
     return body.isEmpty ? content : body
 }
 
-public struct AgentMentionSegment: Equatable, Sendable {
-    public var content: String
-    public var handle: String?
-}
-
-public func splitAgentMentionText(_ content: String) -> [AgentMentionSegment] {
-    guard mayMention(content) else { return [.init(content: content)] }
-    var segments: [AgentMentionSegment] = []
-    var cursor = content.startIndex
-    for match in content.matches(of: agentMentionPattern) {
-        let start = content.index(before: match.1.startIndex)
-        if cursor < start { segments.append(.init(content: String(content[cursor..<start]))) }
-        segments.append(.init(content: String(content[start..<match.range.upperBound]),
-                              handle: match.1.lowercased()))
-        cursor = match.range.upperBound
-    }
-    if cursor < content.endIndex || segments.isEmpty {
-        segments.append(.init(content: String(content[cursor...])))
-    }
-    return segments
-}
-
 public enum ChannelDates {
     public static func date(_ value: String) -> Date? {
         if let date = try? Date(value, strategy: .iso8601) { return date }
