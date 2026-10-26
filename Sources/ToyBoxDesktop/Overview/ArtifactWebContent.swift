@@ -1,74 +1,8 @@
 import AppKit
+import ChannelClient
 import CryptoKit
 import Observation
 import WebKit
-
-enum ArtifactWebPolicy {
-    static let htmlPermissions = [
-        "allow-downloads", "allow-forms", "allow-modals", "allow-popups",
-        "allow-scripts", "allow-top-navigation-by-user-activation",
-    ]
-
-    static func document(_ content: String, directory: URL) -> String {
-        let base = "<base data-toybox-file-base href=\"\(attribute(directory.absoluteString))\">"
-        if let head = content.range(of: #"<head(?:\s[^>]*)?>"#, options: [.regularExpression, .caseInsensitive]) {
-            return String(content[..<head.upperBound]) + base + content[head.upperBound...]
-        } else if let html = content.range(of: #"<html(?:\s[^>]*)?>"#, options: [.regularExpression, .caseInsensitive]) {
-            return String(content[..<html.upperBound]) + "<head>\(base)</head>" + content[html.upperBound...]
-        } else {
-            return "<head>\(base)</head>" + content
-        }
-    }
-
-    static func blockingRules(server: URL) throws -> String {
-        guard var origin = URLComponents(url: server, resolvingAgainstBaseURL: false) else {
-            throw ArtifactWebError.invalidServer
-        }
-        let prefix = origin.percentEncodedPath.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        origin.path = ""
-        origin.query = nil
-        origin.fragment = nil
-        guard let address = origin.url?.absoluteString else { throw ArtifactWebError.invalidServer }
-        let escapedOrigin = NSRegularExpression.escapedPattern(for: address.trimmingCharacters(in: CharacterSet(charactersIn: "/")))
-        let filePath = (prefix.isEmpty ? "" : "/\(prefix)") + "/api/serve/"
-        let files = escapedOrigin + NSRegularExpression.escapedPattern(for: filePath)
-        let rules: [[String: Any]] = [
-            ["trigger": ["url-filter": "^\(escapedOrigin)/"], "action": ["type": "block"]],
-            ["trigger": ["url-filter": "^https?://[^/]+/.*api/v1"],
-             "action": ["type": "block"]],
-            ["trigger": ["url-filter": "^wss?://[^/]+/.*api/v1"],
-             "action": ["type": "block"]],
-            ["trigger": ["url-filter": "^\(files)"], "action": ["type": "ignore-previous-rules"]],
-        ]
-        let data = try JSONSerialization.data(withJSONObject: rules, options: [.sortedKeys])
-        guard let encoded = String(data: data, encoding: .utf8) else { throw ArtifactWebError.invalidServer }
-        return encoded
-    }
-
-    private static func attribute(_ value: String) -> String {
-        value.replacingOccurrences(of: "&", with: "&amp;")
-            .replacingOccurrences(of: "\"", with: "&quot;")
-            .replacingOccurrences(of: "<", with: "&lt;")
-            .replacingOccurrences(of: ">", with: "&gt;")
-    }
-}
-
-enum ArtifactWebError: LocalizedError {
-    case invalidServer, missingRules, blockedNavigation, browserUnavailable, rootDocumentUnavailable, rootNavigationUnavailable
-    case invalidReadingState
-
-    var errorDescription: String? {
-        switch self {
-        case .invalidServer: "The artifact's server address is unavailable."
-        case .missingRules: "The artifact's network isolation could not be installed."
-        case .blockedNavigation: "This document tried to open an unsupported address."
-        case .browserUnavailable: "The link could not be opened in your default browser."
-        case .rootDocumentUnavailable: "The document's sandboxed address could not be created."
-        case .rootNavigationUnavailable: "This document cannot replace its sandboxed page. Forms that navigate and other page navigation are not supported in the artifact viewer."
-        case .invalidReadingState: "The document's reading position could not be saved."
-        }
-    }
-}
 
 @MainActor
 struct ArtifactWebReadingState {
@@ -78,25 +12,18 @@ struct ArtifactWebReadingState {
 
 @MainActor
 private final class ArtifactRootDocument: NSObject, WKURLSchemeHandler {
-    static let scheme = "toybox-artifact"
     private(set) var url: URL?
     private var data: Data?
 
     func prepare(_ html: String, identity: URL) throws -> URL {
-        let digest = SHA256.hash(data: Data((identity.absoluteString + "\n" + html).utf8))
-            .map { String(format: "%02x", $0) }.joined()
-        guard let url = URL(string: "\(Self.scheme)://document/\(digest)") else {
-            throw ArtifactWebError.rootDocumentUnavailable
-        }
+        let url = try ArtifactWebPolicy.rootDocumentURL(html, identity: identity)
         self.url = url
         data = Data(html.utf8)
         return url
     }
 
     func contains(_ candidate: URL) -> Bool {
-        guard var components = URLComponents(url: candidate, resolvingAgainstBaseURL: false) else { return false }
-        components.fragment = nil
-        return url != nil && components.url == url
+        ArtifactWebPolicy.contains(candidate, root: url)
     }
 
     func clear() {
@@ -110,12 +37,8 @@ private final class ArtifactRootDocument: NSObject, WKURLSchemeHandler {
             urlSchemeTask.didFailWithError(URLError(.unsupportedURL))
             return
         }
-        let headers = [
-            "Content-Type": "text/html; charset=utf-8",
-            "Content-Security-Policy": "sandbox " + ArtifactWebPolicy.htmlPermissions.joined(separator: " "),
-            "Referrer-Policy": "no-referrer",
-        ]
-        guard let response = HTTPURLResponse(url: candidate, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: headers) else {
+        guard let response = HTTPURLResponse(url: candidate, statusCode: 200, httpVersion: "HTTP/1.1",
+                                            headerFields: ArtifactWebPolicy.responseHeaders) else {
             urlSchemeTask.didFailWithError(URLError(.badServerResponse))
             return
         }
@@ -145,9 +68,9 @@ final class ArtifactWebContent: NSObject, WKNavigationDelegate, WKUIDelegate {
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .nonPersistent()
         configuration.defaultWebpagePreferences.allowsContentJavaScript = true
-        configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
+        configuration.preferences.javaScriptCanOpenWindowsAutomatically = ArtifactWebPolicy.allowsUnsolicitedPopups
         let rootDocument = ArtifactRootDocument()
-        configuration.setURLSchemeHandler(rootDocument, forURLScheme: ArtifactRootDocument.scheme)
+        configuration.setURLSchemeHandler(rootDocument, forURLScheme: ArtifactWebPolicy.scheme)
         self.rootDocument = rootDocument
         webView = WKWebView(frame: .zero, configuration: configuration)
         self.openURL = openURL
@@ -249,68 +172,40 @@ final class ArtifactWebContent: NSObject, WKNavigationDelegate, WKUIDelegate {
 
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
                  decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void) {
-        guard !blockFormNavigation(navigationAction) else {
+        switch ArtifactWebPolicy.navigation(navigationAction.request.url, kind: kind(navigationAction),
+                                             mainFrame: navigationAction.targetFrame?.isMainFrame,
+                                             root: rootDocument.url, directory: directory, resource: resource) {
+        case .allow:
+            decisionHandler(.allow)
+        case .block(let reason):
+            error = reason.localizedDescription
             decisionHandler(.cancel)
-            return
-        }
-        guard let url = navigationAction.request.url else {
-            error = ArtifactWebError.blockedNavigation.localizedDescription
-            decisionHandler(.cancel)
-            return
-        }
-        let scheme = url.scheme?.lowercased() ?? ""
-        if navigationAction.targetFrame?.isMainFrame == true {
-            if rootDocument.contains(url) {
-                decisionHandler(.allow)
-                return
-            }
-            if navigationAction.navigationType != .linkActivated || !["http", "https"].contains(scheme) {
-                error = ArtifactWebError.rootNavigationUnavailable.localizedDescription
-                decisionHandler(.cancel)
-                return
-            }
-        }
-        guard ["http", "https", "about", "data", "blob"].contains(scheme) else {
-            error = ArtifactWebError.blockedNavigation.localizedDescription
-            decisionHandler(.cancel)
-            return
-        }
-        if navigationAction.navigationType == .linkActivated, ["http", "https"].contains(scheme) {
-            if let fragment = url.fragment, isSameDocument(url) {
-                decisionHandler(.cancel)
-                Task { @MainActor [weak self] in
-                    do {
-                        _ = try await webView.callAsyncJavaScript("""
-                            if (!fragment) { window.scrollTo(0, 0); }
-                            else {
-                                const target = document.getElementById(fragment) || document.getElementsByName(fragment)[0];
-                                if (target) target.scrollIntoView();
-                            }
-                            """, arguments: ["fragment": fragment], in: navigationAction.sourceFrame, contentWorld: .page)
-                    } catch {
-                        self?.error = error.localizedDescription
-                    }
-                }
-                return
-            }
+        case .external(let url):
             openInBrowser(url)
             decisionHandler(.cancel)
-        } else if url.scheme == "about" || navigationAction.targetFrame?.isMainFrame == false
-                    || navigationAction.targetFrame == nil {
-            decisionHandler(.allow)
-        } else {
-            error = ArtifactWebError.blockedNavigation.localizedDescription
+        case .fragment(let fragment):
             decisionHandler(.cancel)
+            Task { @MainActor [weak self] in
+                do {
+                    _ = try await webView.callAsyncJavaScript("""
+                        if (!fragment) { window.scrollTo(0, 0); }
+                        else {
+                            const target = document.getElementById(fragment) || document.getElementsByName(fragment)[0];
+                            if (target) target.scrollIntoView();
+                        }
+                        """, arguments: ["fragment": fragment], in: navigationAction.sourceFrame, contentWorld: .page)
+                } catch {
+                    self?.error = error.localizedDescription
+                }
+            }
         }
     }
 
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
                  for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
-        guard !blockFormNavigation(navigationAction) else { return nil }
-        if let url = navigationAction.request.url, ["http", "https"].contains(url.scheme?.lowercased() ?? "") {
-            openInBrowser(url)
-        } else {
-            error = ArtifactWebError.blockedNavigation.localizedDescription
+        switch ArtifactWebPolicy.popup(navigationAction.request.url, kind: kind(navigationAction)) {
+        case .external(let url): openInBrowser(url)
+        case .block(let reason): error = reason.localizedDescription
         }
         return nil
     }
@@ -359,16 +254,12 @@ final class ArtifactWebContent: NSObject, WKNavigationDelegate, WKUIDelegate {
         if !openURL(url) { error = ArtifactWebError.browserUnavailable.localizedDescription }
     }
 
-    private func blockFormNavigation(_ action: WKNavigationAction) -> Bool {
-        guard action.navigationType == .formSubmitted || action.navigationType == .formResubmitted else { return false }
-        error = ArtifactWebError.rootNavigationUnavailable.localizedDescription
-        return true
-    }
-
-    private func isSameDocument(_ url: URL) -> Bool {
-        guard var parts = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return false }
-        parts.fragment = nil
-        return parts.url == directory || parts.url == resource
+    private func kind(_ action: WKNavigationAction) -> ArtifactWebPolicy.NavigationKind {
+        switch action.navigationType {
+        case .linkActivated: .link
+        case .formSubmitted, .formResubmitted: .form
+        default: .other
+        }
     }
 
     private func record(_ error: any Error) {
