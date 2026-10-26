@@ -14,121 +14,17 @@ import UniformTypeIdentifiers
 
 @MainActor @Suite(.timeLimit(.minutes(1)))
 struct ComposerTests {
-    @Test func textAndOriginalSendIDSurviveRestoration() async throws {
-        try await withDraft { draft, url in
-            #expect(!draft.hasContent)
-            draft.text = "@lead First draft"
-            draft.associateSend(id: "original-send-id")
-            let restored = ComposerDraft(fileURL: url)
-            #expect(draft.error == nil)
-            #expect(restored.text == draft.text)
-            #expect(restored.sendAttemptID == "original-send-id")
-            draft.text = "A newer draft"
-            #expect(draft.sendAttemptID == nil)
-        }
-    }
-
-    @Test func anOldCompletionCannotEraseANewerDraft() async throws {
-        try await withDraft { draft, _ in
-            draft.text = "Original"
-            let originalRevision = draft.revision
-            draft.associateSend(id: "original")
-            draft.text = "A newer draft"
-            draft.clear(ifUnchanged: originalRevision)
-            #expect(draft.text == "A newer draft")
-            #expect(draft.hasContent)
-        }
-    }
-
-    @Test func imagesPersistSeparatelyFromTextMetadata() async throws {
-        try await withDraft { draft, url in
-            let image = try sampleImage()
-            draft.append(image)
-            #expect(draft.hasContent)
-            #expect(!draft.hasUnreadableImage)
-            let restored = ComposerDraft(fileURL: url)
-            #expect(restored.images.first?.data == image.data)
-            let metadata = try #require(String(data: Data(contentsOf: url), encoding: .utf8))
-            #expect(!metadata.contains(image.data.base64EncodedString()))
-            draft.associateSend(id: "with-image")
-            draft.removeImage(id: image.id)
-            #expect(draft.images.isEmpty)
-            #expect(draft.sendAttemptID == nil)
-            let imageURL = url.deletingPathExtension().appendingPathComponent(image.id.uuidString)
-            #expect(!FileManager.default.fileExists(atPath: imageURL.path))
-        }
-    }
-
-    @Test func missingRestoredImagesRequireReattachment() async throws {
-        try await withDraft { draft, url in
-            let image = try sampleImage()
-            draft.append(image)
-            let imageURL = url.deletingPathExtension().appendingPathComponent(image.id.uuidString)
-            try FileManager.default.removeItem(at: imageURL)
-            let restored = ComposerDraft(fileURL: url)
-            #expect(restored.images.count == 1)
-            #expect(restored.hasUnreadableImage)
-            #expect(restored.error?.contains("attach") == true)
-        }
-    }
-
-    @Test func attachmentOnlyDraftClearsItsOriginalUUID() async throws {
-        try await withDraft { draft, url in
-            draft.append(try sampleImage())
-            draft.associateSend(id: "attachment-only")
-            draft.clear(ifUnchanged: draft.revision)
-            #expect(!draft.hasContent)
-            #expect(draft.images.isEmpty)
-            #expect(draft.sendAttemptID == nil)
-            let restored = ComposerDraft(fileURL: url)
-            #expect(!restored.hasContent)
-            #expect(restored.sendAttemptID == nil)
-        }
-    }
-
-    @Test func restoringASendRetainsUnreadableImagesUntilReattachment() async throws {
-        try await withDraft { draft, url in
-            let readable = try sampleImage()
-            let attachments: [ChannelAttachment] = [
-                .init(name: "Missing.png", mimeType: "image/png"),
-                .init(name: "Corrupt.png", mimeType: "image/png",
-                      base64: Data([1, 2, 3]).base64EncodedString()),
-                .init(name: "Missing type.png", base64: readable.data.base64EncodedString()),
-                readable.attachment,
-            ]
-            draft.restore(content: "Keep every attachment", attachments: attachments,
-                          sendAttemptID: "original")
-            #expect(draft.images.count == attachments.count)
-            #expect(draft.hasUnreadableImage)
-            #expect(draft.images.last?.data == readable.data)
-            #expect(draft.sendAttemptID == "original")
-            #expect(draft.error?.contains("before sending") == true)
-            let restored = ComposerDraft(fileURL: url)
-            #expect(restored.images.count == attachments.count)
-            #expect(restored.hasUnreadableImage)
-            #expect(restored.error?.contains("attach") == true)
-            for image in draft.images where image.image == nil { draft.removeImage(id: image.id) }
-            #expect(draft.images.count == 1)
-            #expect(!draft.hasUnreadableImage)
-            #expect(draft.sendAttemptID == nil)
-        }
-    }
-
-    @Test func storageKeysNormalizeAndIsolateServersAndChannels() throws {
-        let upper = try #require(URL(string: "HTTP://LOCALHOST:80/prefix///"))
-        let normalized = try #require(URL(string: "http://localhost/prefix"))
-        let otherServer = try #require(URL(string: "http://localhost:3210/prefix"))
-        let key = ComposerDraft.storageKey(serverURL: upper, channelID: "channel")
-        #expect(key == "7666436268910164a35f2ac26b9f08b3bf3ebed835c132e3d2c6e8984549822e")
-        #expect(key == ComposerDraft.storageKey(serverURL: normalized, channelID: "channel"))
-        #expect(key != ComposerDraft.storageKey(serverURL: otherServer, channelID: "channel"))
-        #expect(key != ComposerDraft.storageKey(serverURL: normalized, channelID: "another"))
-        let quickSend = ComposerDraft.storageKey(serverURL: normalized, channelID: "channel", scope: .quickSend)
-        let reply = ComposerDraft.storageKey(serverURL: normalized, channelID: "channel", scope: .inboxReply(sequence: 8))
-        #expect(Set([key, quickSend, reply]).count == 3)
-        #expect(reply != ComposerDraft.storageKey(serverURL: normalized, channelID: "channel",
-                                                scope: .inboxReply(sequence: 9)))
-        #expect(quickSend == ComposerDraft.storageKey(serverURL: upper, channelID: "channel", scope: .quickSend))
+    @Test func sharedDraftKeepsTheMacsNativeSVGValidation() {
+        let data = Data("""
+            <svg xmlns="http://www.w3.org/2000/svg" width="2" height="2">
+            <rect width="2" height="2" fill="red"/>
+            </svg>
+            """.utf8)
+        let draft = ComposerDraft()
+        draft.append(.init(name: "Mark.svg", mimeType: "image/svg+xml", data: data))
+        #expect(draft.images.count == 1)
+        #expect(!draft.hasUnreadableImage)
+        #expect(draft.error == nil)
     }
 
     @Test func auxiliaryRepliesSeedOnceAndKeepStaleRequestsUnsent() async throws {
@@ -514,27 +410,6 @@ struct ComposerTests {
         #expect(created == ["New Person"])
     }
 
-    @Test func importingImagesRejectsUnsupportedAndUnreadableFilesExplicitly() async throws {
-        try await withDraft { draft, url in
-            let image = try sampleImage()
-            let imageURL = url.deletingLastPathComponent().appendingPathComponent("sample.png")
-            try image.data.write(to: imageURL)
-            draft.attachFiles([imageURL])
-            try await finishLoading(draft)
-            #expect(draft.images.count == 1)
-            #expect(draft.error == nil)
-            let unsupported = url.deletingLastPathComponent().appendingPathComponent("not-image.txt")
-            try Data("Not an image".utf8).write(to: unsupported)
-            draft.attachFiles([unsupported])
-            try await finishLoading(draft)
-            #expect(draft.images.count == 1)
-            #expect(draft.error?.contains("not-image.txt") == true)
-            draft.append(.init(name: "broken.png", mimeType: "image/png", data: Data([1, 2, 3])))
-            #expect(draft.images.count == 1)
-            #expect(draft.error?.contains("broken.png") == true)
-        }
-    }
-
     @Test func persistenceFailureIsVisibleAndDoesNotEraseText() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("tbm-composer-\(UUID())")
         try Data("Not a directory".utf8).write(to: directory)
@@ -556,24 +431,6 @@ struct ComposerTests {
         let revision = target.revision
         #expect(!inbox.apply(to: session))
         #expect(target.revision == revision)
-    }
-
-    @Test func aDropIsPendingUntilItsImageDataHasBeenRead() async throws {
-        try await withDraft { draft, _ in
-            let image = try sampleImage()
-            let provider = NSItemProvider()
-            provider.suggestedName = "Dropped.png"
-            provider.registerDataRepresentation(forTypeIdentifier: UTType.png.identifier, visibility: .all) { completion in
-                completion(image.data, nil)
-                return nil
-            }
-            #expect(draft.attachProvider(provider))
-            #expect(draft.isLoadingImages)
-            try await finishLoading(draft)
-            #expect(draft.images.count == 1)
-            #expect(draft.images.first?.name == "Dropped.png")
-            #expect(draft.images.first?.data == image.data)
-        }
     }
 
     @Test func nativeEditingKeepsNewlinesUndoAndAccessibilityEditsButOnlyReturnSends() throws {
@@ -1113,39 +970,6 @@ struct ComposerTests {
     }
 
     /// Every switch reconnects the channel it shows, so a quick connect mustn't flash the reason Send is off.
-    @Test func aBriefConnectDoesNotFlashWhySendIsOff() async {
-        let grace = ConnectGrace()
-        grace.duration = .milliseconds(100)
-        let first = ComposerDraft()
-        let second = ComposerDraft()
-        let shown = ObjectIdentifier(first)
-        #expect(grace.explains(.stale(message: "Offline", retryAt: .now), for: shown))
-        #expect(grace.explains(.deleted, for: shown))
-        #expect(!grace.explains(.live, for: shown))
-        #expect(!grace.explains(.idle, for: shown), "A switch shows the channel before it connects")
-        #expect(!grace.explains(.connecting, for: shown), "A connect starts without the explanation")
-
-        let finished = Task { await grace.watch(.connecting, for: shown) }
-        finished.cancel()
-        await finished.value
-        #expect(!grace.explains(.connecting, for: shown), "A connect that finishes in time never explains")
-
-        let started = ContinuousClock.now
-        await grace.watch(.connecting, for: shown)
-        #expect(ContinuousClock.now - started >= .milliseconds(100))
-        #expect(grace.explains(.connecting, for: shown), "A slow connect explains")
-        #expect(!grace.explains(.connecting, for: ObjectIdentifier(second)),
-                "Another channel's slow connect doesn't carry over")
-
-        await grace.watch(.live, for: shown)
-        #expect(!grace.explains(.connecting, for: shown), "The next connect starts quiet again")
-        await grace.watch(.idle, for: shown)
-        #expect(grace.explains(.idle, for: shown), "A channel that never starts connecting explains")
-        await grace.watch(.connecting, for: shown)
-        grace.reset()
-        #expect(!grace.explains(.connecting, for: shown), "A switch starts quiet before its first frame")
-    }
-
     @Test func sendingWaitsForFinalWordsAndKeepsUnconfirmedWordsUnsent() async throws {
         var revision = UUID()
         let recognizer = ManualDictationRecognizer()

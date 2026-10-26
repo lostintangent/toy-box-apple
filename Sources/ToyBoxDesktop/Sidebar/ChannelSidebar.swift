@@ -1,6 +1,7 @@
 import AppKit
 import ChannelKit
 import SwiftUI
+import ToyBoxUI
 
 struct ChannelSidebar: View {
     @Environment(AppModel.self) private var model
@@ -16,9 +17,7 @@ struct ChannelSidebar: View {
         let channels = model.catalog?.channels ?? []
         let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return channels }
-        return channels.filter {
-            [$0.name, $0.purpose ?? "", $0.directory ?? ""].contains { $0.localizedStandardContains(query) }
-        }
+        return channels.filter { channelMatchesQuery($0, query: query) }
     }
 
     private var connection: SidebarConnection {

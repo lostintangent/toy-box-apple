@@ -78,7 +78,7 @@ struct TranscriptRowContent: View, @MainActor Equatable {
                                       statusReactions: statusReactions[message.sequence] ?? [],
                                       findHighlight: findHighlights[message.sequence])
                     .background(highlightedSequence == message.sequence
-                                ? Color.accentColor.opacity(0.09) : .clear,
+                                ? ChannelColors.userWash : .clear,
                                 in: RoundedRectangle(cornerRadius: 12))
                     .transcriptMessageFrame(id: message.id, sequence: message.sequence,
                                             historyStart: context.historyStart)
@@ -97,7 +97,7 @@ struct TranscriptRowContent: View, @MainActor Equatable {
                                                    onSetExpanded: onSetExpanded)
                                 .equatable()
                                 .background(highlightedSequence == entry.message.sequence
-                                            ? Color.accentColor.opacity(0.09) : .clear,
+                                            ? ChannelColors.userWash : .clear,
                                             in: RoundedRectangle(cornerRadius: 12))
                                 .transcriptMessageFrame(id: entry.message.id, sequence: entry.message.sequence,
                                                         historyStart: context.historyStart)
@@ -115,7 +115,7 @@ struct TranscriptRowContent: View, @MainActor Equatable {
                                          api: context.api, findHighlights: findHighlights,
                                          expandsMembership: expandsMembership)
                     .background(messages.contains { $0.sequence == highlightedSequence }
-                                ? Color.accentColor.opacity(0.09) : .clear,
+                                ? ChannelColors.userWash : .clear,
                                 in: RoundedRectangle(cornerRadius: 6))
                     .transcriptMessageFrame(id: individualMessages ? "system-group-\(row.id)" : row.id,
                                             sequence: individualMessages ? 0 : messages.map(\.sequence).max() ?? 0,
@@ -167,7 +167,7 @@ private struct TranscriptRule: View {
             }
             if divider.unread {
                 HStack(spacing: 6) {
-                    Rectangle().fill(Color.blue.opacity(0.7)).frame(height: 1)
+                    Rectangle().fill(ChannelColors.newRule).frame(height: 1)
                     Text("New")
                         .font(.system(size: 11 * textScale, weight: .semibold))
                         .foregroundStyle(.blue)

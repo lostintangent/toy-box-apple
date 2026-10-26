@@ -309,12 +309,6 @@ struct QuickSendIntakeTests {
 
 @Suite("Shell launch configuration")
 struct ShellTests {
-    @Test func avatarHexColorsKeepShorthandAndInvalidInputRules() {
-        let expected = Color(.sRGB, red: 170.0 / 255, green: 187.0 / 255, blue: 204.0 / 255)
-        #expect(["#abc", "abc", "#aAbBcC", "AABBCC"].allSatisfy { Color(hex: $0) == expected })
-        #expect(["", "#12", "#12345", "#1234567", "#12ggff"].allSatisfy { Color(hex: $0) == nil })
-    }
-
     @Test func ordinaryLaunchKeepsNativeDefaults() throws {
         let options = try LaunchOptions.parse([])
         #expect(options.serverURL == nil)
@@ -593,33 +587,6 @@ struct ShellTests {
         let quantities = ["0 channels", "1 channel", "2 channels"]
         #expect(SettingsView.connectionSummary(serverURL: "https://example.test", channelCount: count)
                 == "Connected to https://example.test. \(quantities[count]) available.")
-    }
-
-    @Test func lastActivityFollowsMailDayBuckets() throws {
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = try #require(TimeZone(identifier: "America/Los_Angeles"))
-        let now = try #require(calendar.date(from: DateComponents(year: 2026, month: 10, day: 22, hour: 0, minute: 30)))
-        func ago(days: Int, hour: Int) throws -> Date {
-            let day = try #require(calendar.date(byAdding: .day, value: -days, to: calendar.startOfDay(for: now)))
-            return try #require(calendar.date(byAdding: .hour, value: hour, to: day))
-        }
-        let cases: [(Date, ChannelActivityTime.Day)] = [
-            (try ago(days: 0, hour: 0), .today),
-            (now.addingTimeInterval(3600), .today),
-            (try ago(days: 1, hour: 23), .yesterday),
-            (try ago(days: 1, hour: 0), .yesterday),
-            (try ago(days: 2, hour: 12), .weekday),
-            (try ago(days: 6, hour: 0), .weekday),
-            (try ago(days: 7, hour: 23), .older),
-            (try ago(days: 400, hour: 9), .older),
-        ]
-        for (date, expected) in cases {
-            #expect(ChannelActivityTime.day(of: date, now: now, calendar: calendar) == expected, "\(date)")
-        }
-        let yesterday = try ago(days: 1, hour: 9)
-        #expect(ChannelActivityTime.label(for: yesterday, now: now, calendar: calendar) == "Yesterday")
-        #expect(ChannelActivityTime.accessibilityLabel(for: now, now: now, calendar: calendar)
-                .hasPrefix("Last activity today at "))
     }
 
     @Test(arguments: [
@@ -1736,100 +1703,6 @@ struct ChannelTitleFitTests {
             fit.update(windowWidth: width)
         }
         #expect(changes.withLock { $0 } == 0)
-    }
-}
-
-@Suite("Channel connections")
-@MainActor
-struct ChannelConnectionsTests {
-    @MainActor final class FakeChannel: ConnectableChannel {
-        var events: [String] = []
-        var isConnected = false
-        func captureUnreadBoundary() { events.append("boundary") }
-        func connect() {
-            events.append("connect")
-            isConnected = true
-        }
-        func disconnect() {
-            events.append("disconnect")
-            isConnected = false
-        }
-    }
-
-    @Test func lastReleaseLingersAndReacquiringKeepsTheConnection() {
-        let connections = ChannelConnections<FakeChannel>(linger: .seconds(60))
-        let a = FakeChannel()
-        connections.acquire(a)
-        connections.release(a)
-        #expect(a.isConnected)
-        #expect(connections.lingeringCount == 1)
-
-        connections.acquire(a)
-        #expect(a.events == ["boundary", "connect", "boundary", "connect"])
-        #expect(a.isConnected)
-        #expect(connections.lingeringCount == 0)
-        #expect(connections.stores.count == 1)
-    }
-
-    @Test func expiryDisconnectsOnlyTheStoreThatWasNotReacquired() async throws {
-        let connections = ChannelConnections<FakeChannel>(linger: .milliseconds(20))
-        let a = FakeChannel(), b = FakeChannel()
-        connections.acquire(a)
-        connections.release(a)
-        connections.acquire(a)
-        connections.acquire(b)
-        connections.release(b)
-        try await waitForShellCondition { !b.isConnected }
-        #expect(a.isConnected)
-        #expect(!a.events.contains("disconnect"))
-        #expect(b.events == ["boundary", "connect", "disconnect"])
-        #expect(connections.stores.count == 1 && connections.stores.first === a)
-    }
-
-    @Test func onlyTheNewestStoresLinger() {
-        let connections = ChannelConnections<FakeChannel>(linger: .seconds(60), capacity: 2)
-        let channels = (0..<3).map { _ in FakeChannel() }
-        for channel in channels {
-            connections.acquire(channel)
-            connections.release(channel)
-        }
-        #expect(channels.map(\.isConnected) == [false, true, true])
-        #expect(connections.lingeringCount == 2)
-    }
-
-    @Test func nestedHoldsKeepTheStoreHeld() {
-        let connections = ChannelConnections<FakeChannel>(linger: .seconds(60))
-        let a = FakeChannel()
-        connections.acquire(a)
-        connections.acquire(a)
-        connections.release(a)
-        #expect(connections.lingeringCount == 0)
-        #expect(a.events == ["boundary", "connect"])
-        connections.release(a)
-        #expect(connections.lingeringCount == 1)
-        connections.release(a)
-        #expect(connections.lingeringCount == 1)
-    }
-
-    @Test func disconnectAllDropsHeldAndLingeringStores() {
-        let connections = ChannelConnections<FakeChannel>(linger: .seconds(60))
-        let held = FakeChannel(), lingering = FakeChannel()
-        connections.acquire(held)
-        connections.acquire(lingering)
-        connections.release(lingering)
-        connections.disconnectAll()
-        #expect(!held.isConnected)
-        #expect(!lingering.isConnected)
-        #expect(connections.stores.isEmpty)
-    }
-
-    @Test func noLingerDisconnectsAtOnce() {
-        let connections = ChannelConnections<FakeChannel>(linger: .zero)
-        let a = FakeChannel()
-        connections.acquire(a)
-        connections.release(a)
-        #expect(!a.isConnected)
-        #expect(connections.stores.isEmpty)
     }
 }
 

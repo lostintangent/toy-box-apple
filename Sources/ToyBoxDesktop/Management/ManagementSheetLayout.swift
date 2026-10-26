@@ -114,10 +114,6 @@ struct ManagementLongTextField: View {
 /// The sidebar's cyan channel mark at sheet size.
 struct ManagementChannelMark: View {
     var body: some View {
-        Image(systemName: "number")
-            .font(.system(size: 19, weight: .semibold))
-            .foregroundStyle(.white)
-            .frame(width: 40, height: 40)
-            .background(Circle().fill(ChannelSidebarRow.cyan.gradient))
+        ChannelMark(size: 40, symbolSize: 19)
     }
 }

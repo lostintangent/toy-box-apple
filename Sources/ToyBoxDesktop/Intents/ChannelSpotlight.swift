@@ -182,11 +182,6 @@ private struct ChannelSpotlightIcon: View {
     private static let size: CGFloat = 64
 
     var body: some View {
-        Image(systemName: "number")
-            // The sidebar's 14-point mark in its 30-point circle.
-            .font(.system(size: Self.size * 14 / 30, weight: .semibold))
-            .foregroundStyle(.white)
-            .frame(width: Self.size, height: Self.size)
-            .background(Circle().fill(ChannelSidebarRow.cyan.gradient))
+        ChannelMark(size: Self.size)
     }
 }

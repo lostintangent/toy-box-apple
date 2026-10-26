@@ -4,6 +4,7 @@ import ChannelIntelligence
 import ChannelKit
 import Foundation
 import Observation
+import ToyBoxUI
 
 enum AppConfiguration {
     static let serverURLKey = "serverURL"
@@ -448,16 +449,7 @@ final class AppModel {
     }
 
     func channelURL(channelID: String, files: [WorkspaceFile] = []) -> URL? {
-        guard let api, var components = URLComponents(url: api.baseURL, resolvingAgainstBaseURL: false),
-              let data = try? JSONEncoder().encode([channelID]),
-              let value = String(data: data, encoding: .utf8) else { return nil }
-        components.queryItems = [URLQueryItem(name: "channels", value: value)]
-        if !files.isEmpty {
-            guard let data = try? JSONEncoder().encode(files),
-                  let value = String(data: data, encoding: .utf8) else { return nil }
-            components.queryItems?.append(URLQueryItem(name: "files", value: value))
-        }
-        return components.url
+        api?.channelURL(channelID: channelID, files: files)
     }
 }
 

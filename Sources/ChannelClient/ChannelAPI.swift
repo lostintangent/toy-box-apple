@@ -134,6 +134,19 @@ public struct ChannelAPI: Sendable {
         return parts.url!
     }
 
+    public func channelURL(channelID: String, files: [WorkspaceFile] = []) -> URL? {
+        guard var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false),
+              let data = try? JSONEncoder().encode([channelID]),
+              let value = String(data: data, encoding: .utf8) else { return nil }
+        components.queryItems = [URLQueryItem(name: "channels", value: value)]
+        if !files.isEmpty {
+            guard let data = try? JSONEncoder().encode(files),
+                  let value = String(data: data, encoding: .utf8) else { return nil }
+            components.queryItems?.append(URLQueryItem(name: "files", value: value))
+        }
+        return components.url
+    }
+
     public func resourceURL(_ address: String) -> URL? {
         if let url = URL(string: address), url.scheme != nil {
             return ["http", "https"].contains(url.scheme?.lowercased() ?? "") ? url : nil

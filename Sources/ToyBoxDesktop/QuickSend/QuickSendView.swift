@@ -384,11 +384,8 @@ private struct QuickSendChannelChooser: View {
     @Environment(\.dismiss) private var dismiss
 
     private var matches: [Channel] {
-        history?.choices(channels: channels, query: query) ?? channels.filter {
-            query.isEmpty || $0.name.localizedStandardContains(query)
-                || $0.purpose?.localizedStandardContains(query) == true
-                || $0.directory?.localizedStandardContains(query) == true
-        }
+        history?.choices(channels: channels, query: query)
+            ?? channels.filter { channelMatchesQuery($0, query: query) }
     }
 
     var body: some View {

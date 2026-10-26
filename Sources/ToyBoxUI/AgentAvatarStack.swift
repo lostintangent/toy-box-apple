@@ -4,15 +4,22 @@ import SwiftUI
 /// Overlapping agent avatars with the first agent in front. Each later avatar has a 1.5-point gap
 /// cut around the one before it, so whatever is behind the stack (glass, the accent selection, a
 /// capsule) shows through instead of a guessed ring color.
-struct AgentAvatarStack: View {
-    let agents: [ChannelAgent]
-    var size: CGFloat = 16
-    var limit = 3
-    var showsOverflow = true
+public struct AgentAvatarStack: View {
+    public let agents: [ChannelAgent]
+    public var size: CGFloat
+    public var limit: Int
+    public var showsOverflow: Bool
+
+    public init(agents: [ChannelAgent], size: CGFloat = 16, limit: Int = 3, showsOverflow: Bool = true) {
+        self.agents = agents
+        self.size = size
+        self.limit = limit
+        self.showsOverflow = showsOverflow
+    }
 
     private var faces: [ChannelAgent] { Array(agents.prefix(max(limit, 1))) }
 
-    var body: some View {
+    public var body: some View {
         HStack(spacing: -AgentAvatarStack.overlap) {
             ForEach(Array(faces.enumerated()), id: \.element.id) { index, agent in
                 AgentAvatarView(agent: agent, size: size)

@@ -1,16 +1,20 @@
-import AppKit
 import ChannelKit
 import SwiftUI
 
 /// The shared agent avatar, matching the pane's `AgentAvatar`: the agent's 24-unit vector mark
 /// stroked at 64% on its color, an initial when it has no profile, or a removed-agent symbol.
 /// Profile colors fill with their soft top-light gradient so avatars read as slightly raised.
-struct AgentAvatarView: View {
-    let agent: ChannelAgent
-    var size: CGFloat = 32
+public struct AgentAvatarView: View {
+    public let agent: ChannelAgent
+    public var size: CGFloat
     @Environment(\.colorSchemeContrast) private var contrast
 
-    var body: some View {
+    public init(agent: ChannelAgent, size: CGFloat = 32) {
+        self.agent = agent
+        self.size = size
+    }
+
+    public var body: some View {
         ZStack {
             if agent.deleted == true {
                 Circle().fill(.quaternary)
@@ -57,7 +61,7 @@ private struct AvatarMark: Shape {
 
 extension Color {
     /// Parses `#rgb` or `#rrggbb` agent colors.
-    init?(hex: String) {
+    public init?(hex: String) {
         var digits = hex.hasPrefix("#") ? String(hex.dropFirst()) : hex
         if digits.count == 3 { digits = digits.map { "\($0)\($0)" }.joined() }
         guard digits.count == 6, let value = UInt32(digits, radix: 16) else { return nil }

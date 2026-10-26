@@ -26,9 +26,10 @@ let package = Package(
         .target(name: "ChannelKit"),
         .target(name: "ChannelClient", dependencies: ["ChannelKit"]),
         .target(name: "ChannelIntelligence", dependencies: ["ChannelKit"]),
-        .target(name: "ToyBoxUI", dependencies: ["ChannelKit"]),
+        .target(name: "ToyBoxUI", dependencies: ["ChannelKit", "ChannelClient"]),
     ] + (mobile ? [
         .executableTarget(name: "ToyBoxMobile", dependencies: ["ChannelClient", "ChannelIntelligence", "ToyBoxUI"]),
+        .testTarget(name: "ToyBoxMobileTests", dependencies: ["ToyBoxMobile"]),
     ] : [
         .target(name: "ToyBoxControlIntents", swiftSettings: [.unsafeFlags(["-application-extension"])]),
         .executableTarget(

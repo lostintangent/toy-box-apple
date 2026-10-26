@@ -228,34 +228,6 @@ private struct TranscriptCopyCodeButtonStyle: ButtonStyle {
     }
 }
 
-/// The surface a block of transcript text sits on. Rows draw their bubbles from these fills, and
-/// mention ink is clamped against the same composite, so the two can't drift apart.
-enum TranscriptSurface: Hashable, Sendable {
-    case canvas, agent, pendingAgent, user
-
-    /// Fills layered over the transcript canvas, bottom first.
-    func fills(isDark: Bool) -> [Color] {
-        let neutral = Color.primary.opacity(isDark ? 0.07 : 0.045)
-        switch self {
-        case .canvas: return []
-        case .agent: return [neutral]
-        // In dark, the wash sits over the neutral fill so it reads warm gray rather than brown.
-        case .pendingAgent: return isDark ? [neutral, .orange.opacity(0.10)] : [.orange.opacity(0.10)]
-        case .user: return [.accentColor.opacity(0.09)]
-        }
-    }
-
-    /// The 1-point edge Increase Contrast adds, so every bubble keeps a boundary however close its
-    /// fill sits to the canvas. A pending request keeps its orange.
-    var increasedContrastEdge: Color? {
-        switch self {
-        case .canvas: nil
-        case .agent, .user: .primary.opacity(0.5)
-        case .pendingAgent: .orange
-        }
-    }
-}
-
 extension View {
     /// Draws a message bubble for `surface` behind the content: its fills and, under Increase
     /// Contrast, its edge.

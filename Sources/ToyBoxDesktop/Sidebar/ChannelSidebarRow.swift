@@ -14,8 +14,6 @@ struct ChannelSidebarRow: View {
     var openFolder: () -> Void
     var onTap: () -> Void
 
-    static let cyan = Color(.sRGB, red: 8.0 / 255, green: 145.0 / 255, blue: 178.0 / 255)
-
     var body: some View {
         // The content is its own view so its environment reads, such as the selection's
         // prominence, invalidate it. Reads inside this closure wouldn't.
@@ -115,17 +113,7 @@ private struct ChannelSidebarRowContent: View {
     }
 
     private var icon: some View {
-        Image(systemName: "number")
-            .font(.system(size: 14, weight: .semibold))
-            .foregroundStyle(.white)
-            .frame(width: 30, height: 30)
-            .background {
-                if emphasized {
-                    Circle().fill(Color.white.opacity(0.22))
-                } else {
-                    Circle().fill(ChannelSidebarRow.cyan.gradient)
-                }
-            }
+        ChannelMark(emphasized: emphasized)
     }
 
     private var showsFolder: Bool {
@@ -151,13 +139,14 @@ private struct ChannelSidebarRowContent: View {
     @ViewBuilder private var attentionIndicator: some View {
         switch attention {
         case .waiting:
-            Image(systemName: "questionmark.bubble.fill").font(.system(size: 13))
-                .foregroundStyle(emphasized ? Color.white : Color.orange)
+            Image(systemName: ChannelAttentionStyle.symbol(for: .waiting)).font(.system(size: 13))
+                .foregroundStyle(emphasized ? .white : ChannelAttentionStyle.color(for: .waiting, in: colorScheme))
         case .finished:
-            Image(systemName: "checkmark.circle.fill").font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(emphasized ? .white : ChannelTaskColors.changes(in: colorScheme).added)
+            Image(systemName: ChannelAttentionStyle.symbol(for: .finished)).font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(emphasized ? .white : ChannelAttentionStyle.color(for: .finished, in: colorScheme))
         case .unread:
-            Circle().fill(emphasized ? .white : .blue).frame(width: 7, height: 7)
+            Circle().fill(emphasized ? .white : ChannelAttentionStyle.color(for: .unread, in: colorScheme))
+                .frame(width: 7, height: 7)
         case nil:
             EmptyView()
         }

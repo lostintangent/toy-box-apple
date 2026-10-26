@@ -1,26 +1,30 @@
-import AppKit
 import ChannelKit
 import CryptoKit
 import Foundation
 import Observation
 import UniformTypeIdentifiers
 
-struct ComposerImage: Codable, Equatable, Identifiable, Sendable {
-    var id = UUID()
-    var name: String
-    var mimeType: String
-    var data: Data
+public struct ComposerImage: Codable, Equatable, Identifiable, Sendable {
+    public var id: UUID
+    public var name: String
+    public var mimeType: String
+    public var data: Data
 
-    var attachment: ChannelAttachment {
-        .init(name: name, mimeType: mimeType, base64: data.base64EncodedString())
+    public init(id: UUID = UUID(), name: String, mimeType: String, data: Data) {
+        self.id = id
+        self.name = name
+        self.mimeType = mimeType
+        self.data = data
     }
 
-    var image: NSImage? { NSImage(data: data) }
+    public var attachment: ChannelAttachment {
+        .init(name: name, mimeType: mimeType, base64: data.base64EncodedString())
+    }
 }
 
 @MainActor @Observable
-final class ComposerDraft {
-    enum Scope: Hashable {
+public final class ComposerDraft {
+    public enum Scope: Hashable {
         case conversation
         case quickSend
         case quickSendIncoming
@@ -49,7 +53,7 @@ final class ComposerDraft {
     }
 
     private static var drafts: [String: ComposerDraft] = [:]
-    var text = "" {
+    public var text = "" {
         didSet {
             if text != oldValue {
                 revision = UUID()
@@ -58,18 +62,19 @@ final class ComposerDraft {
             }
         }
     }
-    private(set) var images: [ComposerImage] = []
-    private(set) var revision = UUID()
+    public private(set) var images: [ComposerImage] = []
+    public private(set) var revision = UUID()
     private var loadingImageCount = 0
-    private(set) var sendAttemptID: String?
-    private(set) var isSavedLocally = true
-    private(set) var isNew = true
-    var error: String?
+    public private(set) var sendAttemptID: String?
+    public private(set) var isSavedLocally = true
+    public private(set) var isNew = true
+    public var error: String?
     private let fileURL: URL?
     private let imagesURL: URL?
+    private let imageIsReadable: @MainActor (Data) -> Bool
     private var restoring = true
 
-    static func storageKey(serverURL: URL, channelID: String, scope: Scope = .conversation) -> String {
+    public static func storageKey(serverURL: URL, channelID: String, scope: Scope = .conversation) -> String {
         var components = URLComponents(url: serverURL, resolvingAgainstBaseURL: false)
         let scheme = components?.scheme?.lowercased()
         let host = components?.host?.lowercased()
@@ -86,18 +91,20 @@ final class ComposerDraft {
             .map { String(format: "%02x", $0) }.joined()
     }
 
-    static func shared(serverURL: URL, channelID: String, scope: Scope = .conversation) -> ComposerDraft {
+    public static func shared(serverURL: URL, channelID: String, scope: Scope = .conversation,
+                              imageIsReadable: @escaping @MainActor (Data) -> Bool) -> ComposerDraft {
         let key = storageKey(serverURL: serverURL, channelID: channelID, scope: scope)
         if let draft = drafts[key] { return draft }
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         let fileURL = support.appendingPathComponent("ToyBoxDesktop/Drafts", isDirectory: true)
             .appendingPathComponent("\(key).json")
-        let draft = ComposerDraft(fileURL: fileURL)
+        let draft = ComposerDraft(fileURL: fileURL, imageIsReadable: imageIsReadable)
         drafts[key] = draft
         return draft
     }
 
-    init(fileURL: URL? = nil) {
+    public init(fileURL: URL? = nil, imageIsReadable: @escaping @MainActor (Data) -> Bool) {
+        self.imageIsReadable = imageIsReadable
         self.fileURL = fileURL
         imagesURL = fileURL?.deletingPathExtension()
         isSavedLocally = fileURL != nil
@@ -116,7 +123,7 @@ final class ComposerDraft {
                         self.error = "\(image.name) could not be restored. Remove it and attach the image again: \(error.localizedDescription)"
                     }
                 }
-                if images.contains(where: { $0.image == nil }), error == nil {
+                if images.contains(where: { !imageIsReadable($0.data) }), error == nil {
                     error = "A saved image cannot be decoded. Remove it and attach the image again."
                 }
             } catch {
@@ -127,22 +134,22 @@ final class ComposerDraft {
         restoring = false
     }
 
-    var hasContent: Bool {
+    public var hasContent: Bool {
         !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !images.isEmpty
     }
 
-    var hasUnreadableImage: Bool { images.contains { $0.image == nil } }
-    var isLoadingImages: Bool { loadingImageCount > 0 }
+    public var hasUnreadableImage: Bool { images.contains { !imageIsReadable($0.data) } }
+    public var isLoadingImages: Bool { loadingImageCount > 0 }
 
-    func removeImage(id: UUID) {
+    public func removeImage(id: UUID) {
         images.removeAll { $0.id == id }
         revision = UUID()
         sendAttemptID = nil
         save()
     }
 
-    func append(_ image: ComposerImage) {
-        guard image.image != nil else {
+    public func append(_ image: ComposerImage) {
+        guard imageIsReadable(image.data) else {
             error = "\(image.name) cannot be decoded as an image. Attach a readable image file."
             return
         }
@@ -152,11 +159,11 @@ final class ComposerDraft {
         save()
     }
 
-    func attachFiles(_ urls: [URL]) {
+    public func attachFiles(_ urls: [URL]) {
         attachFiles(urls, allowingLocalPaths: false)
     }
 
-    func attachFiles(_ urls: [URL], allowingLocalPaths: Bool) {
+    public func attachFiles(_ urls: [URL], allowingLocalPaths: Bool) {
         guard !urls.isEmpty else { return }
         loadingImageCount += 1
         Task {
@@ -192,7 +199,7 @@ final class ComposerDraft {
     }
 
     @discardableResult
-    func attachProvider(_ provider: NSItemProvider) -> Bool {
+    public func attachProvider(_ provider: NSItemProvider) -> Bool {
         if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
             loadingImageCount += 1
             _ = provider.loadObject(ofClass: URL.self) { url, error in
@@ -227,7 +234,7 @@ final class ComposerDraft {
         return true
     }
 
-    func restore(content: String, attachments: [ChannelAttachment], sendAttemptID: String? = nil) {
+    public func restore(content: String, attachments: [ChannelAttachment], sendAttemptID: String? = nil) {
         text = content
         images = attachments.map { attachment in
             let data: Data
@@ -248,7 +255,7 @@ final class ComposerDraft {
         save()
     }
 
-    func clear(ifUnchanged revision: UUID) {
+    public func clear(ifUnchanged revision: UUID) {
         guard self.revision == revision else { return }
         text = ""
         images = []
@@ -257,18 +264,18 @@ final class ComposerDraft {
         save()
     }
 
-    func associateSend(id: String) {
+    public func associateSend(id: String) {
         sendAttemptID = id
         save()
     }
 
-    func editAsNewMessage() {
+    public func editAsNewMessage() {
         sendAttemptID = nil
         revision = UUID()
         save()
     }
 
-    func append(contentsOf other: ComposerDraft) {
+    public func append(contentsOf other: ComposerDraft) {
         guard other !== self else { return }
         text = joinedComposerText(text, other.text)
         for image in other.images {
@@ -281,6 +288,11 @@ final class ComposerDraft {
             sendAttemptID = nil
         }
         if let error = other.error { self.error = error }
+        save()
+    }
+
+    public func retrySave() {
+        error = nil
         save()
     }
 
@@ -331,6 +343,6 @@ final class ComposerDraft {
     }
 }
 
-func joinedComposerText(_ existing: String, _ incoming: String) -> String {
+public func joinedComposerText(_ existing: String, _ incoming: String) -> String {
     [existing, incoming].filter { !$0.isEmpty }.joined(separator: "\n\n")
 }

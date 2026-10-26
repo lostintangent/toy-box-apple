@@ -23,7 +23,9 @@ if (import.meta.main) await main(async () => {
         try {
             const { bin } = await buildMobile(false, true);
             const developer = join(mobileEnvironment.DEVELOPER_DIR, "Platforms/iPhoneSimulator.platform/Developer");
-            for (const name of ["ChannelKitTests", "ChannelClientTests", "ChannelIntelligenceTests", "ToyBoxUITests"]) {
+            for (const name of [
+                "ChannelKitTests", "ChannelClientTests", "ChannelIntelligenceTests", "ToyBoxUITests", "ToyBoxMobileTests",
+            ]) {
                 const result = await command(["xcrun", "simctl", "spawn", simulator.udid,
                     join(developer, "Library/Xcode/Agents/xctest"), join(bin, `${name}.xctest`)], {
                     env: {

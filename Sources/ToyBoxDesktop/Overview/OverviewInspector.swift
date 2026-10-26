@@ -2,6 +2,7 @@ import AppKit
 import ChannelClient
 import ChannelKit
 import SwiftUI
+import ToyBoxUI
 
 /// The channel's property inspector: About, then collapsible Team, Tasks, Artifacts and Routines.
 ///
