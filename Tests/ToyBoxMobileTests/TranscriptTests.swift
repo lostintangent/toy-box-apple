@@ -335,6 +335,30 @@ struct TranscriptTests {
         }
     }
 
+    @Test func workingNowStatusInkClearsTextContrastOnTheSheet() {
+        func rgb(_ traits: UITraitCollection, _ color: UIColor) -> TranscriptRGB {
+            var (red, green, blue, alpha): (CGFloat, CGFloat, CGFloat, CGFloat) = (0, 0, 0, 0)
+            color.resolvedColor(with: traits).getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+            return TranscriptRGB(red: red, green: green, blue: blue, alpha: alpha)
+        }
+        let ink = UIColor(ChannelInk.secondary)
+        for style in [UIUserInterfaceStyle.light, .dark] {
+            let traits = UITraitCollection {
+                $0.userInterfaceStyle = style
+                $0.userInterfaceLevel = .elevated
+            }
+            var backgrounds = [rgb(traits, .systemBackground), rgb(traits, .secondarySystemBackground)]
+            // The darkest and lightest glass Designer sampled behind Ada and Pixel in Dark.
+            if style == .dark {
+                backgrounds += [TranscriptRGB(red: 0x21 / 255, green: 0x21 / 255, blue: 0x21 / 255, alpha: 1),
+                                TranscriptRGB(red: 0x3D / 255, green: 0x3D / 255, blue: 0x3D / 255, alpha: 1)]
+            }
+            for background in backgrounds {
+                #expect(background.under(rgb(traits, ink)).contrast(with: background) >= 4.5)
+            }
+        }
+    }
+
     @Test func longMessagesCollapseInTheSamePassThatMeasuresThem() {
         func height(_ text: String, expanded: Bool) -> CGFloat {
             UIHostingController(rootView: TranscriptCollapsibleBody(isExpanded: expanded, endPadding: 10) {
