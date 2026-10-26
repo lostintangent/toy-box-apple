@@ -41,6 +41,7 @@ struct ChannelSidebar: View {
                 if initialLoading {
                     ForEach(0..<3) { _ in
                         ChannelSidebarPlaceholder()
+                            .listRowInsets(.vertical, 0)
                             .listRowSeparator(.hidden)
                     }
                 } else {
@@ -48,6 +49,7 @@ struct ChannelSidebar: View {
                         NavigationLink(value: channel.id) {
                             row(channel, now: now)
                         }
+                        .listRowInsets(.vertical, 0)
                         .contextMenu {
                             contextMenu(channel)
                         } preview: {
