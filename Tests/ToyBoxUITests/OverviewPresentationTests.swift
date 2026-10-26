@@ -6,6 +6,19 @@ import Testing
 import ToyBoxUI
 
 struct OverviewPresentationTests {
+    @Test func artifactSymbolsKeepTheSameFileTypeMeaningOnBothHosts() {
+        let cases: [(String, String)] = [
+            ("plan.md", "doc.text"), ("plan.MARKDOWN", "doc.text"), ("data.bin", "doc.text"),
+            ("page.html", "chevron.left.forwardslash.chevron.right"),
+            ("page.HTM", "chevron.left.forwardslash.chevron.right"),
+            ("diagram.svg", "square.on.circle"), ("photo.png", "photo"), ("photo.jpeg", "photo"),
+        ]
+        for (path, expected) in cases {
+            let artifact = ChannelArtifact(file: .init(kind: "machine", path: path), title: path)
+            #expect(ChannelArtifactSymbol.name(for: ArtifactContentKind(artifact)) == expected)
+        }
+    }
+
     @Test func countsKeepKnownZeroUnavailableAndNaturalSingularPluralDistinct() {
         let empty = ChannelOverviewSummary.tasks(channelTasksProgress([]))
         #expect(empty.count == "0" && empty.spoken == "Tasks, no tasks")

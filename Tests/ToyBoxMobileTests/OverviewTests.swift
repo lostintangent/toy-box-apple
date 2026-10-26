@@ -218,7 +218,7 @@ struct OverviewTests {
     }
 
     @Test(arguments: [false, true])
-    func plainOverviewUsesExactCollapsedAndExpandedNativeRowGaps(expanded: Bool) async throws {
+    func plainOverviewSeparatesSectionsWithStrongerHeadingsAndDeliberateGaps(expanded: Bool) async throws {
         let store = ChannelStore(id: "channel", api: try ChannelAPI(serverURL: "https://fixture.example"))
         let session = OverviewSession(store: store)
         session.expandedSections[.team] = expanded
@@ -246,27 +246,160 @@ struct OverviewTests {
         host.view.layoutIfNeeded()
         let list = try #require(nativeList(in: host.view))
         list.layoutIfNeeded()
-        var frames: [CGRect] = []
-        for section in 0..<list.numberOfSections {
-            for item in 0..<list.numberOfItems(inSection: section) {
-                frames.append(try #require(list.layoutAttributesForItem(
-                    at: IndexPath(item: item, section: section))).frame)
-            }
+        let headings = try (0..<2).map { section in
+            try #require(list.layoutAttributesForItem(at: IndexPath(item: 0, section: section))).frame
         }
-        try #require(frames.count == (expanded ? 4 : 2))
-        let first = try #require(frames.first)
+        let first = headings[0]
         let top = list.convert(first, to: host.view).minY - host.view.safeAreaInsets.top
         #expect(abs(top - 12) < 0.5,
-                "Top \(top), inset \(list.adjustedContentInset), offset \(list.contentOffset), frames \(frames)")
+                "Top \(top), inset \(list.adjustedContentInset), offset \(list.contentOffset), headings \(headings)")
+        #expect(abs(first.height - (expanded ? 48 : 44)) < 0.5)
         if expanded {
-            #expect(abs(first.height - 48) < 0.5)
-            #expect(abs(frames[1].height - 44) < 0.5)
-            #expect(abs(frames[1].minY - first.maxY) < 0.5)
-            #expect(abs(frames[2].minY - frames[1].maxY - 16) < 0.5)
+            let body = try #require(list.layoutAttributesForItem(at: IndexPath(item: 1, section: 0))).frame
+            #expect(abs(body.height - 44) < 0.5)
+            #expect(abs(body.minY - first.maxY) < 0.5)
+            #expect(abs(headings[1].minY - body.maxY - 24) < 0.5)
         } else {
-            #expect(abs(first.height - 44) < 0.5)
-            #expect(abs(frames[1].minY - first.maxY - 8) < 0.5)
-            #expect(abs(frames[1].minY - first.minY - 52) < 0.5)
+            #expect(list.numberOfItems(inSection: 0) == 1)
+            #expect(list.numberOfItems(inSection: 1) == 1)
+            #expect(abs(headings[1].minY - first.maxY - 12) < 0.5)
+        }
+    }
+
+    @Test(arguments: [UserInterfaceSizeClass.compact, .regular])
+    func overviewRootHasNoNavigationBarButNestedScreensKeepTheirs(sizeClass: UserInterfaceSizeClass) async throws {
+        let store = ChannelStore(id: "channel", api: try ChannelAPI(serverURL: "https://fixture.example"))
+        let session = OverviewSession(store: store)
+        let host = UIHostingController(rootView:
+            OverviewView(store: store, session: session, placement: .sheet)
+                .environment(OverviewPresentation())
+                .environment(ChannelInteraction())
+                .environment(ManagementPresenter())
+                .environment(\.horizontalSizeClass, sizeClass))
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 466, height: 678))
+        window.rootViewController = host
+        window.isHidden = false
+        defer { window.isHidden = true }
+        host.view.layoutIfNeeded()
+        await Task.yield()
+        host.view.layoutIfNeeded()
+        let navigation = try #require(nativeNavigation(in: host))
+        #expect(navigation.isNavigationBarHidden)
+        let close = try #require(MobileAutomationTree(windows: [window]).elements.first {
+            $0.label == "Close Overview" && $0.traits.contains(.button)
+        })
+        #expect(close.frame.minY - window.safeAreaInsets.top <= 12)
+        session.navigationPath = [.agent("agent")]
+        let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+        while navigation.isNavigationBarHidden || navigation.topViewController?.navigationItem.title != "About Agent",
+              ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(5))
+            host.view.layoutIfNeeded()
+        }
+        #expect(!navigation.isNavigationBarHidden)
+        #expect(navigation.topViewController?.navigationItem.title == "About Agent")
+    }
+
+    @Test func listRowsKeepTheSeparatorBetweenRowsButNotBelowTheLastRow() async throws {
+        let store = ChannelStore(id: "channel", api: try ChannelAPI(serverURL: "https://fixture.example"))
+        let session = OverviewSession(store: store)
+        let host = UIHostingController(rootView:
+            OverviewList {
+                OverviewSectionRows(summary: .artifacts(2), section: .artifacts, session: session,
+                                    isFirstSection: true) {
+                    Text("First").listRowSeparatorTint(.red)
+                        .modifier(OverviewListRowBoundary(isLast: false))
+                    Text("Last").listRowSeparatorTint(.red)
+                        .modifier(OverviewListRowBoundary(isLast: true))
+                }
+            }
+            .environment(\.colorScheme, .light))
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 400))
+        window.rootViewController = host
+        window.isHidden = false
+        defer { window.isHidden = true }
+        host.view.layoutIfNeeded()
+        await Task.yield()
+        host.view.layoutIfNeeded()
+        let list = try #require(nativeList(in: host.view))
+        try expectSeparators(in: list, window: window, visible: [IndexPath(item: 1, section: 0)],
+                             hidden: [IndexPath(item: 2, section: 0)])
+    }
+
+    @Test(arguments: [false, true])
+    func finalRoutineKeepsItsInteriorSeparatorsButNotTheLastOne(expanded: Bool) async throws {
+        let suite = "mobile-overview-routines-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let model = AppModel(arguments: ["--server", "https://fixture.example"], environment: [:], defaults: defaults)
+        let store = ChannelStore(id: "channel", api: try ChannelAPI(serverURL: "https://fixture.example"))
+        let state = OverviewRoutineState()
+        state.expanded = expanded
+        let host = UIHostingController(rootView:
+            OverviewList {
+                OverviewRoutineRow(
+                    routine: .init(id: "routine", title: "Daily review", schedule: "0 9 * * *",
+                                   prompt: "Review the workshop."),
+                    store: store, state: state, isLast: true)
+                    .listRowSeparatorTint(.red)
+            }
+            .environment(model).environment(ManagementPresenter())
+            .environment(\.colorScheme, .light))
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 900))
+        window.rootViewController = host
+        window.isHidden = false
+        defer { window.isHidden = true }
+        host.view.layoutIfNeeded()
+        await Task.yield()
+        host.view.layoutIfNeeded()
+        let list = try #require(nativeList(in: host.view))
+        let count = list.numberOfItems(inSection: 0)
+        try #require(count == (expanded ? 6 : 1))
+        try expectSeparators(
+            in: list, window: window,
+            visible: (0..<max(0, count - 1)).map { IndexPath(item: $0, section: 0) },
+            hidden: [IndexPath(item: count - 1, section: 0)])
+    }
+
+    @Test(arguments: ["plan.md", "workshop.html", "shapes.svg", "reference.png", "unknown.bin"])
+    func artifactSymbolsKeepTheCurrentDocumentIconsBounds(path: String) throws {
+        let renderer = ImageRenderer(content: OverviewArtifactSymbol(artifact: artifact(path), size: 22))
+        let image = try #require(renderer.uiImage)
+        #expect(image.size == CGSize(width: 22, height: 22))
+    }
+
+    @Test(arguments: [DynamicTypeSize.large, .accessibility5])
+    func artifactRowsUseTheTeamsCompactTwoLineRhythmAndGrowWithText(size: DynamicTypeSize) async throws {
+        let store = ChannelStore(id: "channel", api: try ChannelAPI(serverURL: "https://fixture.example"))
+        let session = OverviewSession(store: store)
+        let viewer = try artifactSession(artifacts: [])
+        let host = UIHostingController(rootView:
+            OverviewList {
+                OverviewTeamRow(agent: .init(id: "agent", name: "Design"), store: store,
+                                session: session, isLead: true)
+                OverviewArtifactRow(
+                    artifact: .init(file: .init(kind: "machine", path: "plan.md"), title: "Design"),
+                    share: nil, api: store.api, channelID: store.id)
+                    .listRowInsets(.vertical, 0)
+            }
+            .environment(ManagementPresenter()).environment(ChannelInteraction()).environment(viewer)
+            .dynamicTypeSize(size))
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 900))
+        window.rootViewController = host
+        window.isHidden = false
+        defer { window.isHidden = true }
+        host.view.layoutIfNeeded()
+        await Task.yield()
+        host.view.layoutIfNeeded()
+        let list = try #require(nativeList(in: host.view))
+        let team = try #require(list.layoutAttributesForItem(at: IndexPath(item: 0, section: 0))).frame
+        let artifact = try #require(list.layoutAttributesForItem(at: IndexPath(item: 1, section: 0))).frame
+        #expect(artifact.height >= 44)
+        if size == .large {
+            #expect(artifact.height <= team.height + 1)
+            #expect(artifact.height < 64)
+        } else {
+            #expect(team.height > 64 && artifact.height > 64)
         }
     }
 
@@ -604,6 +737,36 @@ struct OverviewTests {
     private func nativeList(in view: UIView) -> UICollectionView? {
         if let list = view as? UICollectionView { return list }
         return view.subviews.lazy.compactMap { nativeList(in: $0) }.first
+    }
+
+    private func nativeNavigation(in controller: UIViewController) -> UINavigationController? {
+        if let navigation = controller as? UINavigationController { return navigation }
+        return controller.children.lazy.compactMap { nativeNavigation(in: $0) }.first
+    }
+
+    private func expectSeparators(in list: UICollectionView, window: UIWindow,
+                                  visible: [IndexPath], hidden: [IndexPath]) throws {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 3
+        let image = try #require(UIGraphicsImageRenderer(bounds: window.bounds, format: format).image { context in
+            window.layer.render(in: context.cgContext)
+        }.cgImage)
+        let pixels = try rgba(image)
+        for (path, shouldBeVisible) in visible.map({ ($0, true) }) + hidden.map({ ($0, false) }) {
+            let frame = try #require(list.layoutAttributesForItem(at: path)).frame
+            let bottom = list.convert(frame, to: window).maxY
+            var count = 0
+            for y in 0..<image.height where abs(CGFloat(y) / 3 - bottom) <= 1 {
+                for x in 0..<image.width {
+                    let offset = (y * image.width + x) * 4
+                    if pixels[offset] > 180,
+                       Int(pixels[offset]) > Int(pixels[offset + 1]) + 80,
+                       Int(pixels[offset]) > Int(pixels[offset + 2]) + 80 { count += 1 }
+                }
+            }
+            #expect(shouldBeVisible ? count > 100 : count == 0,
+                    "Row \(path): found \(count) separator pixels at \(bottom), expected visible: \(shouldBeVisible)")
+        }
     }
 
     private func rgba(_ image: CGImage) throws -> [UInt8] {

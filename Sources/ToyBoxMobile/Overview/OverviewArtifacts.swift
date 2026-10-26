@@ -13,10 +13,14 @@ struct OverviewArtifactsSection: View {
         OverviewSectionRows(summary: .artifacts(store.artifacts.count), section: .artifacts, session: session) {
             if store.artifacts.isEmpty {
                 Text("Nothing shared yet").foregroundStyle(ChannelInk.secondary)
+                    .modifier(OverviewListRowBoundary(isLast: true))
             } else {
-                ForEach(channelArtifactsNewestFirst(store.artifacts)) { artifact in
+                let artifacts = channelArtifactsNewestFirst(store.artifacts)
+                ForEach(artifacts) { artifact in
                     OverviewArtifactRow(artifact: artifact, share: store.artifactShares[artifact.file.id],
                                         api: store.api, channelID: store.id)
+                        .listRowInsets(.vertical, 0)
+                        .modifier(OverviewListRowBoundary(isLast: artifact.id == artifacts.last?.id))
                 }
             }
         }
@@ -39,6 +43,7 @@ struct OverviewArtifactList: View {
                         OverviewArtifactLabel(artifact: artifact, share: store.artifactShares[artifact.file.id])
                     }
                     .buttonStyle(.plain)
+                    .listRowInsets(.vertical, 0)
                     .accessibilityIdentifier("artifact-list-\(artifact.id)")
                 }
             }
@@ -47,19 +52,20 @@ struct OverviewArtifactList: View {
     }
 }
 
-private struct OverviewArtifactLabel: View {
+struct OverviewArtifactLabel: View {
     let artifact: ChannelArtifact
     let share: ChannelArtifactShare?
     var preparing = false
+    @Environment(\.dynamicTypeSize) private var typeSize
+    @ScaledMetric(relativeTo: .title2) private var iconSize = 22
+    @ScaledMetric(relativeTo: .title2) private var iconLane = 24
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: ArtifactContentKind(artifact) == .image ? "photo" : "doc.text")
-                .font(.title2)
-                .frame(width: 24)
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 4) {
-                Text(artifact.title).font(.body).lineLimit(2)
+            OverviewArtifactSymbol(artifact: artifact, size: iconSize)
+                .frame(width: iconLane)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(artifact.title).font(.body).lineLimit(typeSize.isAccessibilitySize ? nil : 2)
                 if let date = (share?.sharedAt ?? artifact.sharedAt).flatMap(ChannelDates.date) {
                     Text(date, format: .dateTime.month(.abbreviated).day().hour().minute())
                         .font(.footnote).foregroundStyle(ChannelInk.secondary)
@@ -70,12 +76,26 @@ private struct OverviewArtifactLabel: View {
             Spacer(minLength: 0)
             if preparing { ProgressView().accessibilityLabel("Preparing original file") }
         }
-        .frame(minHeight: 64, alignment: .leading)
+        .frame(minHeight: 44, alignment: .leading)
         .contentShape(Rectangle())
     }
 }
 
-private struct OverviewArtifactRow: View {
+struct OverviewArtifactSymbol: View {
+    let artifact: ChannelArtifact
+    let size: CGFloat
+
+    var body: some View {
+        Image(systemName: ChannelArtifactSymbol.name(for: ArtifactContentKind(artifact)))
+            .resizable()
+            .scaledToFit()
+            .foregroundStyle(.primary)
+            .frame(width: size, height: size)
+            .accessibilityHidden(true)
+    }
+}
+
+struct OverviewArtifactRow: View {
     let artifact: ChannelArtifact
     let share: ChannelArtifactShare?
     let api: ChannelAPI

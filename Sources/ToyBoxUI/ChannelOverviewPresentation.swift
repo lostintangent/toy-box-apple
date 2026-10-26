@@ -1,6 +1,17 @@
 import ChannelKit
 import SwiftUI
 
+package enum ChannelArtifactSymbol {
+    package static func name(for kind: ArtifactContentKind) -> String {
+        switch kind {
+        case .markdown, .file: "doc.text"
+        case .html: "chevron.left.forwardslash.chevron.right"
+        case .svg: "square.on.circle"
+        case .image: "photo"
+        }
+    }
+}
+
 package enum ChannelOverviewSummary {
     case team(Int?), tasks(TaskProgress?), artifacts(Int?), routines(Int?)
 

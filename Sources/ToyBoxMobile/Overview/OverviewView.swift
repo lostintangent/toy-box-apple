@@ -23,35 +23,28 @@ struct OverviewView: View {
                         description: Text(store.phase == .deleted
                                           ? "This channel is no longer available."
                                           : "Overview appears when the channel connects."))
+                        .overlay(alignment: .topTrailing) {
+                            OverviewRootActions(store: store).padding(.trailing, 16).padding(.top, 12)
+                        }
                 }
             }
-            .navigationTitle("Overview")
-            .navigationBarTitleDisplayMode(.inline)
+            .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(for: OverviewRoute.self) { route in
-                switch route {
-                case .agent(let id):
-                    OverviewAgentDetails(agentID: id, store: store)
-                case .subtasks(let id):
-                    OverviewSubtasksScreen(parentID: id, store: store, session: session,
-                                           placement: placement, scroll: session.taskScroll(id))
-                }
-            }
-            .toolbar {
-                ToolbarItem(placement: .primaryAction) {
-                    Menu("Channel Actions", systemImage: "ellipsis") {
-                        Button("Edit Channel", systemImage: "pencil") {
-                            management.present(.editChannel(channelId: store.id))
-                        }
-                        Button("Delete Channel", systemImage: "trash", role: .destructive) {
-                            management.present(.deleteChannel(channelId: store.id))
-                        }
+                Group {
+                    switch route {
+                    case .agent(let id):
+                        OverviewAgentDetails(agentID: id, store: store)
+                    case .subtasks(let id):
+                        OverviewSubtasksScreen(parentID: id, store: store, session: session,
+                                               placement: placement, scroll: session.taskScroll(id))
                     }
-                    .accessibilityIdentifier("overview-channel-actions")
-                    .disabled(!store.phase.isLive)
                 }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button(role: .close) { interaction.isInspectorPresented = false }
-                        .accessibilityLabel("Close Overview")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar(.visible, for: .navigationBar)
+                .toolbar {
+                    ToolbarItem(placement: .primaryAction) {
+                        OverviewRootActions(store: store)
+                    }
                 }
             }
         }
@@ -66,6 +59,33 @@ struct OverviewView: View {
                 session.prepareForTaskReveal()
             }
         }
+    }
+}
+
+struct OverviewRootActions: View {
+    let store: ChannelStore
+    @Environment(ChannelInteraction.self) private var interaction
+    @Environment(ManagementPresenter.self) private var management
+
+    var body: some View {
+        HStack(spacing: 0) {
+            Menu("Channel Actions", systemImage: "ellipsis") {
+                Button("Edit Channel", systemImage: "pencil") {
+                    management.present(.editChannel(channelId: store.id))
+                }
+                Button("Delete Channel", systemImage: "trash", role: .destructive) {
+                    management.present(.deleteChannel(channelId: store.id))
+                }
+            }
+            .frame(minWidth: 44, minHeight: 44)
+            .accessibilityIdentifier("overview-channel-actions")
+            .disabled(!store.phase.isLive)
+            Button(role: .close) { interaction.isInspectorPresented = false }
+                .frame(minWidth: 44, minHeight: 44)
+                .accessibilityLabel("Close Overview")
+        }
+        .fixedSize()
+        .buttonStyle(.borderless)
     }
 }
 

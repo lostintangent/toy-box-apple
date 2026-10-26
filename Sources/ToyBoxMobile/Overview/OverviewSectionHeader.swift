@@ -3,6 +3,14 @@ import SwiftUI
 import ToyBoxUI
 import UIKit
 
+struct OverviewListRowBoundary: ViewModifier {
+    let isLast: Bool
+
+    func body(content: Content) -> some View {
+        content.listRowSeparator(isLast ? .hidden : .visible, edges: .bottom)
+    }
+}
+
 struct OverviewSectionRows<Content: View>: View {
     let summary: ChannelOverviewSummary
     let section: OverviewSection
@@ -32,7 +40,8 @@ struct OverviewSectionRows<Content: View>: View {
         }
         .id("overview-\(section)")
         .listSectionMargins(.top, isFirstSection ? 12 : 0)
-        .listSectionMargins(.bottom, session.isExpanded(section) ? 16 : 8)
+        .listSectionMargins(.bottom, session.isExpanded(section) ? 24 : 12)
+        .listSectionSeparator(.hidden, edges: .all)
     }
 }
 
@@ -56,7 +65,7 @@ struct OverviewSectionHeader: View {
         } label: {
             ChannelOverviewHeaderLayout(stacksLeading: typeSize.isAccessibilitySize, direction: direction) {
                 Text(summary.title)
-                    .font(.subheadline.weight(.semibold))
+                    .font(.title3.weight(.semibold))
                     .foregroundStyle(Color(uiColor: .label))
                 Text(summary.count)
                     .font(.footnote.weight(.regular))
