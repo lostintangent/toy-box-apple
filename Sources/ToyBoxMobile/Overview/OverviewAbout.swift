@@ -5,14 +5,14 @@ import UIKit
 
 struct OverviewAboutSection: View {
     let store: ChannelStore
+    @Bindable var session: OverviewSession
     @Environment(\.openURL) private var openURL
-    @ViewState private var error: String?
 
     var body: some View {
         Section("About") {
             if let details = store.details {
                 if let purpose = details.purpose, !purpose.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    OverviewPurpose(purpose: purpose)
+                    OverviewPurpose(purpose: purpose, expanded: $session.purposeExpanded)
                 }
                 if let directory = details.directory, !directory.isEmpty {
                     VStack(alignment: .leading, spacing: 8) {
@@ -26,7 +26,7 @@ struct OverviewAboutSection: View {
                     }
                 }
                 if let preview = details.resolvedPreview { previewRow(preview) }
-                if let error { ManagementError(message: error) }
+                if let error = session.previewError { ManagementError(message: error) }
             }
         }
     }
@@ -35,9 +35,9 @@ struct OverviewAboutSection: View {
     private func previewRow(_ preview: ChannelPreview) -> some View {
         if let address = previewAddress(preview) {
             Button {
-                error = nil
+                session.previewError = nil
                 openURL(address) { accepted in
-                    if !accepted { error = "The preview could not be opened." }
+                    if !accepted { session.previewError = "The preview could not be opened." }
                 }
             } label: {
                 VStack(alignment: .leading, spacing: 4) {
@@ -74,7 +74,7 @@ struct OverviewAboutSection: View {
 
 private struct OverviewPurpose: View {
     let purpose: String
-    @ViewState private var expanded = false
+    @Binding var expanded: Bool
     @ViewState private var fullHeight: CGFloat = 0
     @ViewState private var shownHeight: CGFloat = 0
 

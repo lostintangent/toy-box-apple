@@ -19,9 +19,7 @@ struct OverviewTeamSection: View {
     var body: some View {
         Section {
             ForEach(ordered) { agent in
-                NavigationLink {
-                    OverviewAgentDetails(agentID: agent.id, store: store)
-                } label: {
+                NavigationLink(value: agent.id) {
                     HStack(alignment: .top, spacing: 12) {
                         AgentAvatarView(agent: agent, size: 24)
                         VStack(alignment: .leading, spacing: 4) {
@@ -39,7 +37,7 @@ struct OverviewTeamSection: View {
                         interaction.isInspectorPresented = false
                         interaction.reply(to: agent)
                     }
-                    NavigationLink("About \(agent.name)") { OverviewAgentDetails(agentID: agent.id, store: store) }
+                    NavigationLink("About \(agent.name)", value: agent.id)
                     if agent.id != store.roster.first?.id {
                         Button("Edit Agent", systemImage: "pencil") {
                             management.present(.editMember(channelId: store.id, agentId: agent.id))
@@ -56,6 +54,7 @@ struct OverviewTeamSection: View {
                 management.present(.addMember(channelId: store.id, name: ""))
             }
             .frame(minHeight: 44)
+            .accessibilityIdentifier("overview-add-agent")
             .disabled(!store.phase.isLive)
         } header: {
             Text("Team · \(store.roster.count)")
@@ -63,7 +62,7 @@ struct OverviewTeamSection: View {
     }
 }
 
-private struct OverviewAgentDetails: View {
+struct OverviewAgentDetails: View {
     let agentID: String
     let store: ChannelStore
     private var agent: ChannelAgent { channelAgentIdentity(store.roster, id: agentID) }

@@ -54,9 +54,5 @@ struct ChannelScreen: View {
                     }
                 }
             }
-            .inspector(isPresented: $interaction.isInspectorPresented) {
-                OverviewView(store: store)
-                    .inspectorColumnWidth(min: 280, ideal: 296, max: 360)
-            }
     }
 }

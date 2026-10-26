@@ -5,6 +5,7 @@ import ToyBoxUI
 
 struct OverviewTasksSection: View {
     let store: ChannelStore
+    let session: OverviewSession
 
     var body: some View {
         let progress = channelTasksProgress(store.tasks)
@@ -13,7 +14,7 @@ struct OverviewTasksSection: View {
                 Text("No tasks yet").foregroundStyle(.secondary)
             } else {
                 ForEach(store.tasks) { task in
-                    OverviewTaskRow(task: task, agents: store.roster, artifacts: store.artifacts)
+                    OverviewTaskRow(task: task, agents: store.roster, artifacts: store.artifacts, session: session)
                 }
             }
         } header: {
@@ -33,20 +34,20 @@ private struct OverviewTaskRow: View {
     let artifacts: [ChannelArtifact]
     @Environment(ChannelArtifactSession.self) private var viewer
     @Environment(\.colorScheme) private var colorScheme
-    @ViewState private var expanded: Bool
+    @Bindable var session: OverviewSession
 
-    init(task: ChannelTask, agents: [ChannelAgent], artifacts: [ChannelArtifact]) {
-        self.task = task
-        self.agents = agents
-        self.artifacts = artifacts
-        _expanded = ViewState(initialValue: task.isExpandedByDefault)
+    private var expanded: Binding<Bool> {
+        Binding(
+            get: { session.taskDisclosure[task.id]?.expanded ?? task.isExpandedByDefault },
+            set: { session.taskDisclosure[task.id] = .init(status: task.status, expanded: $0) }
+        )
     }
 
     var body: some View {
         Group {
             if let children = task.children, !children.isEmpty {
-                DisclosureGroup(isExpanded: $expanded) {
-                    ForEach(children) { OverviewTaskRow(task: $0, agents: agents, artifacts: artifacts) }
+                DisclosureGroup(isExpanded: expanded) {
+                    ForEach(children) { OverviewTaskRow(task: $0, agents: agents, artifacts: artifacts, session: session) }
                 } label: {
                     header
                 }
@@ -54,7 +55,6 @@ private struct OverviewTaskRow: View {
                 header
             }
         }
-        .onChange(of: task.status) { _, _ in expanded = task.isExpandedByDefault }
     }
 
     private var header: some View {

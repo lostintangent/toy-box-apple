@@ -89,6 +89,7 @@ struct ConversationView: View {
     @Environment(AppModel.self) private var model
     @Environment(ManagementPresenter.self) private var management
     @Environment(ChannelInteraction.self) private var interaction
+    @Environment(OverviewPresentation.self) private var overviewPresentation
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.horizontalSizeClass) private var sizeClass
     @ViewState private var rowBuilder = TranscriptRowBuilder()
@@ -259,7 +260,8 @@ struct ConversationView: View {
     /// sheet all hide it, while the regular-width Overview column sits beside it.
     private var isUncovered: Bool {
         model.isActive && model.visibleChannelID == store.id && !model.isSettingsPresented
-            && management.flow == nil && !(sizeClass == .compact && interaction.isInspectorPresented)
+            && management.flow == nil && !overviewPresentation.isCompactSheetPresented
+            && !(sizeClass == .compact && interaction.isInspectorPresented)
     }
 
     /// Reads advance only for committed rows the reader can see in an active scene.

@@ -5,13 +5,16 @@ import ToyBoxUI
 
 struct OverviewRoutinesSection: View {
     let store: ChannelStore
+    let session: OverviewSession
 
     var body: some View {
         Section("Routines · \(store.routines.count)") {
             if store.routines.isEmpty {
                 Text("No routines").foregroundStyle(.secondary)
             } else {
-                ForEach(store.routines) { OverviewRoutineRow(routine: $0, store: store) }
+                ForEach(store.routines) {
+                    OverviewRoutineRow(routine: $0, store: store, state: session.routine($0.id))
+                }
             }
         }
     }
@@ -22,16 +25,16 @@ private struct OverviewRoutineRow: View {
     let store: ChannelStore
     @Environment(AppModel.self) private var app
     @Environment(ManagementPresenter.self) private var management
-    @ViewState private var expanded = false
-    @ViewState private var pending = false
-    @ViewState private var requestedAt: Date?
-    @ViewState private var recovery = ChannelManagementWriteRecovery()
+    @Bindable var state: OverviewRoutineState
+    private var pending: Bool { state.pending }
+    private var requestedAt: Date? { state.requestedAt }
+    private var recovery: ChannelManagementWriteRecovery { state.recovery }
 
     private var canRun: Bool { store.phase.isLive && !pending && !recovery.blocksWrites }
     private var schedule: String { (try? cronSummary(routine.schedule)) ?? routine.schedule }
 
     var body: some View {
-        DisclosureGroup(isExpanded: $expanded) {
+        DisclosureGroup(isExpanded: $state.expanded) {
             Text(routine.prompt).textSelection(.enabled)
             TimelineView(.everyMinute) { context in
                 switch Result(catching: { try nextCronOccurrence(routine.schedule, from: context.date) }) {
@@ -75,7 +78,7 @@ private struct OverviewRoutineRow: View {
             do { try await Task.sleep(for: .seconds(max(0, 4 + requestedAt.timeIntervalSinceNow))) }
             catch is CancellationError { return }
             catch { recovery.record(error); return }
-            self.requestedAt = nil
+            state.requestedAt = nil
         }
         if let error = recovery.error { ManagementError(message: error) }
         if let state = recovery.state {
@@ -91,15 +94,15 @@ private struct OverviewRoutineRow: View {
 
     private func run() {
         guard canRun else { return }
-        pending = true
-        requestedAt = nil
+        state.pending = true
+        state.requestedAt = nil
         recovery.clearError()
         let catalog = matchingCatalog
         Task {
-            defer { pending = false }
+            defer { state.pending = false }
             do {
                 try await store.api.runRoutine(channelId: store.id, routineId: routine.id)
-                requestedAt = .now
+                state.requestedAt = .now
             } catch {
                 if recovery.record(error) { await check(catalog: catalog) }
             }

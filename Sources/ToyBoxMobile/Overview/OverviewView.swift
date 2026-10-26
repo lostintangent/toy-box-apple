@@ -5,15 +5,18 @@ import ToyBoxUI
 
 struct OverviewView: View {
     let store: ChannelStore
+    @Bindable var session: OverviewSession
+    let placement: OverviewPlacement
+    @Environment(OverviewPresentation.self) private var presentation
     @Environment(ChannelInteraction.self) private var interaction
     @Environment(ManagementPresenter.self) private var management
     @Environment(\.horizontalSizeClass) private var sizeClass
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $session.navigationPath) {
             Group {
                 if store.details != nil, store.phase != .deleted {
-                    OverviewForm(store: store).id(ObjectIdentifier(store))
+                    OverviewForm(store: store, session: session, placement: placement).id(ObjectIdentifier(store))
                 } else {
                     ContentUnavailableView(
                         store.phase == .deleted ? "Channel Deleted" : "Connecting",
@@ -25,6 +28,9 @@ struct OverviewView: View {
             }
             .navigationTitle("Overview")
             .navigationBarTitleDisplayMode(.inline)
+            .navigationDestination(for: String.self) { id in
+                OverviewAgentDetails(agentID: id, store: store)
+            }
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Menu("Channel Actions", systemImage: "ellipsis") {
@@ -35,6 +41,7 @@ struct OverviewView: View {
                             management.present(.deleteChannel(channelId: store.id))
                         }
                     }
+                    .accessibilityIdentifier("overview-channel-actions")
                     .disabled(!store.phase.isLive)
                 }
                 ToolbarItem(placement: .confirmationAction) {
@@ -47,12 +54,20 @@ struct OverviewView: View {
                 }
             }
         }
-        .presentationDetents([.large])
+        .sheet(item: Binding(
+            get: { placement == presentation.placement ? management.flow : nil },
+            set: { if placement == presentation.placement { management.flow = $0 } }
+        )) { flow in
+            ManagementSheet(flow: flow, presenter: management, host: placement)
+        }
     }
 }
 
 private struct OverviewForm: View {
     let store: ChannelStore
+    @Bindable var session: OverviewSession
+    let placement: OverviewPlacement
+    @Environment(OverviewPresentation.self) private var presentation
     @Environment(ChannelInteraction.self) private var interaction
 
     var body: some View {
@@ -67,11 +82,28 @@ private struct OverviewForm: View {
                         Button("Reconnect", action: store.reconnect)
                     }
                 }
-                OverviewAboutSection(store: store)
+                OverviewAboutSection(store: store, session: session)
                 OverviewTeamSection(store: store)
-                OverviewTasksSection(store: store).id("overview-tasks")
+                OverviewTasksSection(store: store, session: session).id("overview-tasks")
                 OverviewArtifactsSection(store: store)
-                OverviewRoutinesSection(store: store)
+                OverviewRoutinesSection(store: store, session: session)
+            }
+            .accessibilityIdentifier("overview-form")
+            .scrollPosition(Binding(
+                get: { session.scrollPosition },
+                set: { if placement == presentation.placement { session.scrollPosition = $0 } }
+            ))
+            .onScrollGeometryChange(for: CGFloat.self, of: { $0.contentOffset.y + $0.contentInsets.top }) { _, offset in
+                if placement == presentation.placement, interaction.isInspectorPresented,
+                   session.restorationOffset == nil {
+                    session.scrollOffset = offset
+                }
+            }
+            .onChange(of: store.tasks, initial: true) { _, tasks in session.reconcileTasks(tasks) }
+            .task {
+                await Task.yield()
+                guard placement == presentation.placement, !Task.isCancelled else { return }
+                session.restoreScroll()
             }
             .scrollEdgeEffectStyle(.hard, for: .top)
             .task(id: interaction.overviewTasksRequest) {

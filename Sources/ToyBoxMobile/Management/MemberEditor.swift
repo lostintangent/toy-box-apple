@@ -4,31 +4,25 @@ import SwiftUI
 import ToyBoxUI
 
 struct MemberEditor: View {
-    private enum Field { case name, role }
     let channel: ChannelDetails
     let store: ChannelStore
-    let api: ChannelAPI
     let presenter: ManagementPresenter
+    @Bindable var session: ManagementSession
+    let host: OverviewPlacement?
     @Environment(AppModel.self) private var app
-    @ViewState private var member: ChannelMember?
-    @ViewState private var name: String
-    @ViewState private var role: String
-    @ViewState private var model: ModelConfiguration?
-    @ViewState private var saving = false
-    @ViewState private var recovery = ChannelManagementWriteRecovery()
-    @FocusState private var focus: Field?
+    @Environment(ManagementSessions.self) private var sessions
+    @Environment(OverviewPresentation.self) private var presentation
+    @FocusState private var focus: ManagementField?
 
-    init(channel: ChannelDetails, member: ChannelMember?, initialName: String, store: ChannelStore,
-         api: ChannelAPI, presenter: ManagementPresenter) {
-        self.channel = channel
-        self.store = store
-        self.api = api
-        self.presenter = presenter
-        _member = ViewState(initialValue: member)
-        _name = ViewState(initialValue: initialName)
-        _role = ViewState(initialValue: member?.role ?? "")
-        _model = ViewState(initialValue: member?.model)
-    }
+    private var api: ChannelAPI { session.api }
+    private var member: ChannelMember? { session.member }
+    private var name: String { session.name }
+    private var role: String { session.role }
+    private var model: ModelConfiguration? { session.model }
+    private var saving: Bool { session.pending }
+    private var recovery: ChannelManagementWriteRecovery { session.recovery }
+    private var isCurrent: Bool { sessions.isCurrent(session, app: app, presenter: presenter) }
+    private var isCurrentHost: Bool { host == nil || host == presentation.placement }
 
     private var nextName: String { name.trimmingCharacters(in: .whitespacesAndNewlines) }
     private var nextRole: String { role.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -44,7 +38,7 @@ struct MemberEditor: View {
         !nextName.isEmpty && violation == nil && changed && !saving && !recovery.blocksWrites && store.phase.isLive
     }
     private var catalog: ChannelCatalogStore? {
-        app.catalog.flatMap { $0.api.baseURL == api.baseURL ? $0 : nil }
+        app.catalog === session.catalog ? session.catalog : nil
     }
     private var refreshedMember: ChannelMember? {
         guard let member else { return nil }
@@ -54,22 +48,27 @@ struct MemberEditor: View {
     var body: some View {
         Form {
             Section {
-                TextField("Name", text: $name, prompt: Text("Required"))
+                Text(member == nil ? "Joins \(channel.name) and starts onboarding right away." : "Member of \(channel.name).")
+                    .font(.footnote).foregroundStyle(.secondary)
+            }
+            Section {
+                TextField("Name", text: $session.name, prompt: Text("Required"))
                     .focused($focus, equals: .name)
                     .submitLabel(.next)
                     .onSubmit { focus = .role }
                     .accessibilityIdentifier("member-name")
-                TextField("Role", text: $role,
+                TextField("Role", text: $session.role,
                           prompt: Text("What this agent owns and how it works, including its persona."), axis: .vertical)
-                    .lineLimit(5...14)
+                    .lineLimit(5...10)
                     .focused($focus, equals: .role)
                     .accessibilityIdentifier("member-role")
             } footer: {
-                if let violation { Text(violation).foregroundStyle(.red) }
+                if let violation { Label(violation, systemImage: "exclamationmark.circle.fill").foregroundStyle(.red) }
                 Text(nextName.isEmpty ? "Names are unique in this channel."
                      : "Mentioned as @\(agentHandleFromName(nextName)). Names are unique in this channel.")
             }
-            ModelSelectionFields(model: $model, api: api, provider: member?.model?.provider,
+            ModelSelectionFields(model: $session.model, openingModel: session.openingModel,
+                                 api: api, provider: member?.model?.provider,
                                  allowsInheritance: true, memberScope: member.map { (channel.id, $0.id) },
                                  help: member.map { ["Model changes apply the next time \($0.name) works. Its history is kept."] } ?? [])
             if let member {
@@ -95,24 +94,35 @@ struct MemberEditor: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
-                Button("Cancel", role: .cancel) { presenter.flow = nil }.disabled(saving)
+                Button("Cancel", role: .cancel) { sessions.cancel(session, presenter: presenter) }.disabled(saving)
             }
             ToolbarItem(placement: .confirmationAction) {
-                Button(saving ? (member == nil ? "Adding…" : "Saving…") : member == nil ? "Add" : "Save",
-                       action: submit)
-                    .keyboardShortcut(.return, modifiers: .command)
-                    .disabled(!canSave)
+                Button(action: submit) {
+                    ManagementActionLabel(
+                        title: saving ? (member == nil ? "Adding…" : "Saving…") : member == nil ? "Add Agent" : "Save",
+                        pendingSince: session.pendingSince)
+                }
+                .keyboardShortcut(.return, modifiers: .command)
+                .disabled(!canSave)
             }
         }
         .interactiveDismissDisabled(saving)
-        .onAppear { focus = .name }
+        .onAppear {
+            focus = session.focus
+        }
+        .onChange(of: focus) { _, field in
+            if isCurrentHost, isCurrent { session.focus = field }
+        }
+        .onChange(of: session.focus) { _, field in
+            if isCurrentHost { focus = field }
+        }
     }
 
     private func submit() {
         guard canSave else { return }
         let submittedFocus = focus
         let submittedFlow = presenter.flow
-        saving = true
+        session.pending = true
         recovery.clearError()
         let catalog = catalog
         Task {
@@ -124,22 +134,22 @@ struct MemberEditor: View {
                         changes: .init(name: nextName == member.name ? nil : nextName,
                                        role: nextRole == (member.role ?? "") ? nil : nextRole,
                                        model: model == member.model ? nil : model.map { .set($0) } ?? .clear))
-                    if app.api?.baseURL == api.baseURL { presenter.flow = nil }
+                    if isCurrent { presenter.flow = nil }
                 } else {
                     _ = try await api.createMember(
                         channelId: channel.id, input: .init(name: nextName, role: nextRole.isEmpty ? nil : nextRole, model: model))
-                    if app.api?.baseURL == api.baseURL { presenter.finishAddingMember(channelId: channel.id) }
+                    if isCurrent { presenter.finishAddingMember(channelId: channel.id) }
                 }
                 await catalog?.refresh()
             } catch {
                 failed = true
                 if recovery.record(error) { await check(catalog: catalog) }
             }
-            saving = false
-            if failed, presenter.flow == submittedFlow, app.api?.baseURL == api.baseURL {
+            session.pending = false
+            if failed, presenter.flow == submittedFlow, isCurrent {
                 await Task.yield()
-                guard presenter.flow == submittedFlow, app.api?.baseURL == api.baseURL else { return }
-                focus = submittedFocus
+                guard presenter.flow == submittedFlow, isCurrent else { return }
+                session.focus = submittedFocus
             }
         }
     }
@@ -159,10 +169,10 @@ struct MemberEditor: View {
 
     private func useCurrentValues() {
         guard let current = refreshedMember else { return }
-        member = current
-        name = current.name
-        role = current.role ?? ""
-        model = current.model
+        session.member = current
+        session.name = current.name
+        session.role = current.role ?? ""
+        session.model = current.model
         recovery.finishReview()
     }
 }

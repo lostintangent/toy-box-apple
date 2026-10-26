@@ -7,11 +7,16 @@ struct ManagementConfirmation: View {
     let flow: ManagementFlow
     let channel: ChannelDetails
     let store: ChannelStore
-    let api: ChannelAPI
     let presenter: ManagementPresenter
+    @Bindable var session: ManagementSession
+    let host: OverviewPlacement?
     @Environment(AppModel.self) private var app
-    @ViewState private var deleting = false
-    @ViewState private var recovery = ChannelManagementWriteRecovery()
+    @Environment(ManagementSessions.self) private var sessions
+    @Environment(OverviewPresentation.self) private var presentation
+    private var api: ChannelAPI { session.api }
+    private var deleting: Bool { session.pending }
+    private var recovery: ChannelManagementWriteRecovery { session.recovery }
+    private var isCurrentHost: Bool { host == nil || host == presentation.placement }
 
     private var member: ChannelMember? {
         guard case .removeMember(_, let id) = flow else { return nil }
@@ -60,7 +65,7 @@ struct ManagementConfirmation: View {
         }
     }
     private var catalog: ChannelCatalogStore? {
-        app.catalog.flatMap { $0.api.baseURL == api.baseURL ? $0 : nil }
+        app.catalog === session.catalog ? session.catalog : nil
     }
 
     var body: some View {
@@ -80,28 +85,49 @@ struct ManagementConfirmation: View {
                 }
             }
             Section {
-                Button(deleting ? "Deleting…" : buttonTitle, role: .destructive, action: remove)
-                    .frame(minHeight: 44)
-                    .disabled(deleting || recovery.blocksWrites || !exists || !store.phase.isLive)
+                Button(role: .destructive) {
+                    session.isConfirmationPresented = true
+                } label: {
+                    ManagementActionLabel(
+                        title: deleting ? "Deleting…" : buttonTitle, pendingSince: session.pendingSince)
+                        .frame(minHeight: 44)
+                }
+                .disabled(deleting || recovery.blocksWrites || !exists || !store.phase.isLive)
             }
         }
         .navigationTitle(buttonTitle)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
-                Button("Cancel", role: .cancel) { presenter.flow = nil }.disabled(deleting)
+                Button("Cancel", role: .cancel) { sessions.cancel(session, presenter: presenter) }.disabled(deleting)
             }
         }
         .interactiveDismissDisabled(deleting)
+        .alert(title, isPresented: Binding(
+            get: { isCurrentHost && session.isConfirmationPresented },
+            set: { if isCurrentHost { session.isConfirmationPresented = $0 } }
+        )) {
+            Button(buttonTitle, role: .destructive, action: remove)
+                .disabled(deleting || recovery.blocksWrites || !exists || !store.phase.isLive)
+            Button("Cancel", role: .cancel) { sessions.cancel(session, presenter: presenter) }
+        } message: {
+            Text(consequence)
+        }
+        .task(id: store.phase.isLive) {
+            guard isCurrentHost, sessions.isCurrent(session, app: app, presenter: presenter),
+                  exists, store.phase.isLive, !session.hasRequestedConfirmation else { return }
+            session.hasRequestedConfirmation = true
+            session.isConfirmationPresented = true
+        }
     }
 
     private func remove() {
         guard !deleting, !recovery.blocksWrites, exists, store.phase.isLive else { return }
-        deleting = true
+        session.pending = true
         recovery.clearError()
         let catalog = catalog
         Task {
-            defer { deleting = false }
+            defer { session.pending = false }
             do {
                 switch flow {
                 case .deleteChannel(let id): try await api.deleteChannel(id: id)
@@ -109,7 +135,7 @@ struct ManagementConfirmation: View {
                 case .deleteRoutine(let id, let routineID): try await api.deleteRoutine(channelId: id, routineId: routineID)
                 default: throw ChannelAPIError.invalidMessage("This management action is unavailable.")
                 }
-                if app.api?.baseURL == api.baseURL { presenter.flow = nil }
+                if sessions.isCurrent(session, app: app, presenter: presenter) { presenter.flow = nil }
                 await catalog?.refresh()
             } catch {
                 if recovery.record(error) { await check(catalog: catalog) }

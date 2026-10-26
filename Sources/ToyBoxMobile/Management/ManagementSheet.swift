@@ -6,7 +6,9 @@ import ToyBoxUI
 struct ManagementSheet: View {
     let flow: ManagementFlow
     let presenter: ManagementPresenter
+    let host: OverviewPlacement?
     @Environment(AppModel.self) private var app
+    @Environment(ManagementSessions.self) private var sessions
     @ViewState private var store: ChannelStore?
 
     private var channelID: String? {
@@ -20,11 +22,23 @@ struct ManagementSheet: View {
     var body: some View {
         NavigationStack {
             Group {
-                if let api = app.api {
+                if let catalog = app.catalog {
+                    let session = sessions.session(for: flow, catalog: catalog)
                     if flow == .newChannel {
-                        ChannelEditor(channel: nil, store: nil, api: api, presenter: presenter)
+                        ChannelEditor(store: nil, presenter: presenter, session: session, host: host)
                     } else if let store, let channel = store.details {
-                        content(channel: channel, store: store, api: api)
+                        if session.hasLoaded {
+                            content(channel: channel, store: store, session: session)
+                        } else {
+                            ProgressView("Loading current values")
+                                .task {
+                                    let member: ChannelMember?
+                                    if case .editMember(_, let id) = flow {
+                                        member = store.roster.dropFirst().first { $0.id == id }
+                                    } else { member = nil }
+                                    session.load(channel: channel, member: member)
+                                }
+                        }
                     } else {
                         VStack(spacing: 16) {
                             if store?.phase == .deleted {
@@ -59,24 +73,25 @@ struct ManagementSheet: View {
     }
 
     @ViewBuilder
-    private func content(channel: ChannelDetails, store: ChannelStore, api: ChannelAPI) -> some View {
+    private func content(channel: ChannelDetails, store: ChannelStore, session: ManagementSession) -> some View {
         switch flow {
         case .newChannel:
-            ChannelEditor(channel: nil, store: nil, api: api, presenter: presenter)
+            ChannelEditor(store: nil, presenter: presenter, session: session, host: host)
         case .editChannel:
-            ChannelEditor(channel: channel, store: store, api: api, presenter: presenter)
-        case .addMember(_, let name):
-            MemberEditor(channel: channel, member: nil, initialName: name, store: store, api: api, presenter: presenter)
+            ChannelEditor(store: store, presenter: presenter, session: session, host: host)
+        case .addMember:
+            MemberEditor(channel: channel, store: store, presenter: presenter, session: session, host: host)
         case .editMember(_, let id):
-            if let member = store.roster.dropFirst().first(where: { $0.id == id }) {
-                MemberEditor(channel: channel, member: member, initialName: member.name,
-                             store: store, api: api, presenter: presenter)
+            if store.roster.dropFirst().contains(where: { $0.id == id }) {
+                MemberEditor(channel: channel, store: store, presenter: presenter, session: session, host: host)
             } else {
                 unavailable("This agent is no longer in the channel.")
             }
         case .deleteChannel, .removeMember, .deleteRoutine:
-            ManagementConfirmation(flow: flow, channel: channel, store: store, api: api, presenter: presenter)
+            ManagementConfirmation(flow: flow, channel: channel, store: store, presenter: presenter,
+                                   session: session, host: host)
         }
+
     }
 
     private func unavailable(_ message: String) -> some View {
@@ -86,6 +101,35 @@ struct ManagementSheet: View {
             Text(message)
         } actions: {
             Button("Close") { presenter.flow = nil }
+        }
+    }
+}
+
+struct ManagementActionLabel: View {
+    let title: String
+    let pendingSince: ContinuousClock.Instant?
+    @ViewState private var showsProgress = false
+
+    var body: some View {
+        HStack {
+            if showsProgress {
+                ProgressView().controlSize(.small).accessibilityHidden(true)
+            }
+            Text(title)
+        }
+        .task(id: pendingSince) {
+            showsProgress = false
+            guard let pendingSince else { return }
+            let delay = Duration.milliseconds(300) - pendingSince.duration(to: .now)
+            do {
+                if delay > .zero { try await Task.sleep(for: delay) }
+                guard !Task.isCancelled else { return }
+                showsProgress = true
+            } catch is CancellationError {
+                return
+            } catch {
+                NSLog("Management progress delay failed: %@", error.localizedDescription)
+            }
         }
     }
 }
