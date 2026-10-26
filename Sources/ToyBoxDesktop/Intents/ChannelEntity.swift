@@ -34,7 +34,7 @@ struct ChannelEntity: IndexedEntity, Identifiable {
     init(_ channel: Channel) {
         self.init(id: channel.id, name: channel.name, attention: channelStatus(channel),
                   unreadCount: max(0, channel.latestSequence - channel.seenThrough),
-                  purpose: ChannelSidebarRow.firstLine(channel.purpose))
+                  purpose: channelPurposePreview(channel.purpose))
     }
 
     /// A channel as a card remembers it, for its buttons, or as Spotlight indexes it.
