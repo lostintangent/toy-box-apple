@@ -159,22 +159,41 @@ struct ManagementTests {
         override func stopLoading() {}
     }
 
-    @Test func clearingMemberModelDoesNotRequireCatalogChoicesOrACompatibleDefault() throws {
+    @Test(arguments: [false, true])
+    func clearingMemberModelDoesNotRequireCatalogChoicesOrACompatibleDefault(_ existingMember: Bool) throws {
         let api = try ChannelAPI(serverURL: "http://localhost:3210")
         var model: ModelConfiguration? = .init(provider: "copilot", name: "existing-model")
         let fields = ModelSelectionFields(
             model: Binding(get: { model }, set: { model = $0 }),
             api: api, provider: "copilot", allowsInheritance: true,
-            memberScope: (channelId: "channel", agentId: "member"))
-        #expect(fields.isSelectionEnabled)
+            memberScope: existingMember ? (channelId: "channel", agentId: "member") : nil)
         #expect(fields.selection.wrappedValue == "copilot/existing-model")
         fields.selection.wrappedValue = ""
         #expect(model == nil)
         #expect(fields.selection.wrappedValue == "")
 
-        let leadFields = ModelSelectionFields(model: .constant(nil), api: api,
-                                              provider: nil, allowsInheritance: false)
-        #expect(!leadFields.isSelectionEnabled)
+    }
+
+    @Test func modelBindingRetainsUnavailableOptionsAndAvoidsUnchangedWrites() throws {
+        let api = try ChannelAPI(serverURL: "http://localhost:3210")
+        let opening = ModelConfiguration(provider: "copilot", name: "existing-model",
+                                         options: ["reasoningEffort": .string("high")])
+        var model: ModelConfiguration? = opening
+        var writes = 0
+        let fields = ModelSelectionFields(
+            model: Binding(get: { model }, set: { model = $0; writes += 1 }),
+            api: api, provider: "copilot", allowsInheritance: true)
+        fields.selection.wrappedValue = "copilot/existing-model"
+        fields.selection.wrappedValue = "unknown/model"
+        #expect(model == opening)
+        #expect(writes == 0)
+        fields.selection.wrappedValue = ""
+        fields.selection.wrappedValue = ""
+        #expect(model == nil)
+        #expect(writes == 1)
+        fields.selection.wrappedValue = "copilot/existing-model"
+        #expect(model == opening)
+        #expect(writes == 2)
     }
 
     @Test func missingModelEndpointHasAnHonestCapabilityMessage() {

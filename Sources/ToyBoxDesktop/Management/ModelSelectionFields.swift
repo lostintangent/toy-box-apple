@@ -36,33 +36,16 @@ struct ModelSelectionFields<ExtraRows: View>: View {
         self.extraRows = extraRows()
     }
 
-    private var choices: [ProviderModel] {
-        let constraint = catalog?.provider ?? provider
-        return (catalog?.models ?? []).filter { constraint == nil || $0.provider == constraint }
-    }
-    var isSelectionEnabled: Bool { allowsInheritance || !choices.isEmpty }
-    private var selected: ProviderModel? {
-        choices.first { $0.provider == model?.provider && $0.id == model?.name }
-    }
-    /// The current choice, or the original override after it was cleared, when the catalog doesn't list it.
-    private var retainedModel: ModelConfiguration? {
-        guard let retained = model ?? (allowsInheritance ? initialModel : nil),
-              !choices.contains(where: { $0.provider == retained.provider && $0.id == retained.name })
-        else { return nil }
-        return retained
+    private var selectionPolicy: ChannelModelSelection {
+        ChannelModelSelection(model: model, openingModel: initialModel, catalog: catalog,
+                              provider: provider, scope: allowsInheritance ? .member : .channel)
     }
     var selection: Binding<String> {
         Binding {
-            model.map { "\($0.provider)/\($0.name)" } ?? ""
+            selectionPolicy.key
         } set: { key in
-            if key.isEmpty, allowsInheritance { model = nil }
-            else if let retainedModel, key == "\(retainedModel.provider)/\(retainedModel.name)" {
-                if model != retainedModel { model = retainedModel }
-            } else if let choice = choices.first(where: { "\($0.provider)/\($0.id)" == key }) {
-                if model?.provider != choice.provider || model?.name != choice.id {
-                    model = choice.configuration
-                }
-            }
+            let selected = selectionPolicy.selecting(key)
+            if model != selected { model = selected }
         }
     }
     private var workspaceDefaultTitle: String {
@@ -74,7 +57,7 @@ struct ModelSelectionFields<ExtraRows: View>: View {
         var lines: [String] = []
         if let error {
             lines.append(Self.catalogErrorMessage(error, memberScoped: memberScope != nil))
-        } else if catalog != nil, choices.isEmpty {
+        } else if catalog != nil, selectionPolicy.choices.isEmpty {
             lines.append("No models are available for this provider.")
         }
         if allowsInheritance, memberScope != nil, catalog != nil, catalog?.defaultModel == nil {
@@ -93,7 +76,7 @@ struct ModelSelectionFields<ExtraRows: View>: View {
                 LabeledContent(title) {
                     HStack(spacing: 8) {
                         // A member's override stays clearable without a catalog, as the spec requires.
-                        if retainedModel != nil {
+                        if selectionPolicy.retainedModel != nil {
                             picker.labelsHidden().fixedSize()
                         } else {
                             Text("Couldn't Load").foregroundStyle(.secondary)
@@ -103,8 +86,8 @@ struct ModelSelectionFields<ExtraRows: View>: View {
                     }
                 }
             } else {
-                picker.disabled(!isSelectionEnabled)
-                if let selected {
+                picker.disabled(!selectionPolicy.isEnabled)
+                if let selected = selectionPolicy.selected {
                     optionPicker("Reasoning", key: "reasoningEffort",
                                  values: selected.supportedReasoningEfforts ?? [])
                     optionPicker("Context", key: "contextTier",
@@ -130,13 +113,13 @@ struct ModelSelectionFields<ExtraRows: View>: View {
             if allowsInheritance {
                 Text(workspaceDefaultTitle).tag("")
             }
-            if let retainedModel {
+            if let retainedModel = selectionPolicy.retainedModel {
                 Text(error == nil ? "\(retainedModel.name) (current, unavailable)" : "\(retainedModel.name) (current)")
                     .tag("\(retainedModel.provider)/\(retainedModel.name)")
             } else if model == nil, !allowsInheritance {
                 Text("Choose a Model").tag("")
             }
-            ForEach(choices, id: \.selfKey) { choice in
+            ForEach(selectionPolicy.choices, id: \.selfKey) { choice in
                 Text("\(choice.name) · \(choice.providerName ?? choice.provider)")
                     .tag(choice.selfKey)
             }
@@ -175,11 +158,7 @@ struct ModelSelectionFields<ExtraRows: View>: View {
                 result = try await api.models()
             }
             catalog = result
-            if model == nil, !allowsInheritance,
-               let defaultModel = result.defaultModel,
-               result.models.contains(where: {
-                   $0.id == defaultModel.name && $0.provider == defaultModel.provider
-               }), provider == nil || defaultModel.provider == provider {
+            if let defaultModel = selectionPolicy.defaultModel {
                 model = defaultModel
             }
         } catch {
