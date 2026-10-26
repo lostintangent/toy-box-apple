@@ -78,6 +78,8 @@ struct GenerationQueueTests {
             })
             await eventually { await queue.waiterCount(for: key) == 1 }
         }
+        #expect(await queue.pendingCount == 3)
+        #expect(await recorder.events == ["block"])
         await gate.open()
         _ = await blocker.value
         for task in tasks { _ = await task.value }
