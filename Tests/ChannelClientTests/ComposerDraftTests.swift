@@ -345,6 +345,149 @@ struct ComposerDraftTests {
         #expect(draft.thumbnail(for: restored) == nil)
     }
 
+    @Test func reattachmentReplacesOnlyItsSlotAndPersistsNormalizedBytesUnderANewAttempt() async throws {
+        let replacement = try await Task.detached {
+            try Self.generatedImage(width: 64, height: 32, type: .heic)
+        }.value
+        try await withDraft { _, url in
+            let draft = imageIODraft(fileURL: url)
+            let readable = try sampleImage()
+            draft.restore(content: "Keep this caption", attachments: [
+                readable.attachment, .init(name: "Missing.png", mimeType: "image/png"), readable.attachment,
+            ], sendAttemptID: "old-attempt")
+            let original = draft.images
+            let slot = original[1]
+            #expect(draft.thumbnail(for: slot) == nil)
+            let replacementURL = url.deletingLastPathComponent().appendingPathComponent(replacement.name)
+            try replacement.data.write(to: replacementURL)
+            #expect(await draft.reattachImage(id: slot.id, from: replacementURL))
+            #expect(draft.images.count == original.count)
+            #expect(draft.images[0] == original[0])
+            #expect(draft.images[2] == original[2])
+            let prepared = draft.images[1]
+            #expect(prepared.id == slot.id)
+            #expect(prepared.name == "Generated.jpg")
+            #expect(prepared.mimeType == "image/jpeg")
+            #expect(prepared.data.count <= 5_000_000)
+            #expect(draft.thumbnail(for: prepared) != nil)
+            #expect(draft.text == "Keep this caption")
+            #expect(draft.sendAttemptID == nil)
+            #expect(!draft.hasUnreadableImage)
+            #expect(!draft.isLoadingImages)
+            #expect(draft.error == nil)
+            let bytes = try Data(contentsOf: url.deletingPathExtension().appendingPathComponent(slot.id.uuidString))
+            #expect(bytes == prepared.data)
+            let reopened = imageIODraft(fileURL: url)
+            #expect(reopened.images == draft.images)
+            #expect(reopened.sendAttemptID == nil)
+        }
+    }
+
+    @Test func failedReattachmentKeepsItsSlotAndOriginalAttemptWithANamedError() async throws {
+        try await withDraft { _, url in
+            let draft = imageIODraft()
+            draft.restore(content: "Keep this caption", attachments: [
+                .init(name: "Missing.png", mimeType: "image/png"),
+            ], sendAttemptID: "old-attempt")
+            let original = draft.images
+            let slot = try #require(original.first)
+            for name in ["Corrupt.png", "Unsupported.txt", "Does not exist.png"] {
+                let replacement = url.deletingLastPathComponent().appendingPathComponent(name)
+                if name != "Does not exist.png" { try Data("Not an image".utf8).write(to: replacement) }
+                #expect(await !draft.reattachImage(id: slot.id, from: replacement))
+                #expect(draft.images == original)
+                #expect(draft.sendAttemptID == "old-attempt")
+                #expect(draft.text == "Keep this caption")
+                #expect(draft.error?.contains(name) == true)
+                #expect(draft.hasUnreadableImage)
+                #expect(!draft.isLoadingImages)
+            }
+        }
+    }
+
+    @Test func reattachmentNeverClearsARepeatedDraftPersistenceFailure() async throws {
+        try await withDraft { _, url in
+            let blocked = url.deletingLastPathComponent().appendingPathComponent("blocked")
+            try Data("Not a directory".utf8).write(to: blocked)
+            let draft = imageIODraft(fileURL: blocked.appendingPathComponent("draft.json"))
+            draft.restore(content: "Keep this caption", attachments: [
+                .init(name: "Missing.png", mimeType: "image/png"),
+            ], sendAttemptID: "old-attempt")
+            let slot = try #require(draft.images.first)
+            let previousError = try #require(draft.error)
+            let image = try sampleImage()
+            let replacement = url.deletingLastPathComponent().appendingPathComponent(image.name)
+            try image.data.write(to: replacement)
+            #expect(await draft.reattachImage(id: slot.id, from: replacement))
+            #expect(!draft.isSavedLocally)
+            #expect(draft.error == previousError)
+            #expect(draft.images.first?.data == image.data)
+            #expect(draft.sendAttemptID == nil)
+        }
+    }
+
+    @Test(arguments: ["cancel", "remove", "replace"])
+    func anInFlightReattachmentCannotOutliveItsCancellationOrSlot(change: String) async throws {
+        let context = try #require(CGContext(
+            data: nil, width: 2, height: 2, bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ))
+        let bitmap = try #require(context.makeImage())
+        let started = AsyncStream.makeStream(of: Void.self)
+        let release = DispatchSemaphore(value: 0)
+        defer { release.signal() }
+        try await withDraft { _, url in
+            let draft = ComposerDraft(imageIsReadable: { !$0.isEmpty }, rasterizeImage: { _, _ in
+                started.continuation.yield()
+                release.wait()
+                return bitmap
+            })
+            draft.restore(content: "Keep this caption", attachments: [
+                .init(name: "Missing.svg", mimeType: "image/svg+xml"),
+            ], sendAttemptID: "old-attempt")
+            let original = try #require(draft.images.first)
+            let replacement = url.deletingLastPathComponent().appendingPathComponent("First.svg")
+            try Data("<svg/>".utf8).write(to: replacement)
+            let first = Task { await draft.reattachImage(id: original.id, from: replacement) }
+            var events = started.stream.makeAsyncIterator()
+            await events.next()
+            #expect(draft.isLoadingImages)
+            #expect(draft.images == [original])
+            switch change {
+            case "cancel":
+                first.cancel()
+            case "remove":
+                draft.removeImage(id: original.id)
+            default:
+                let second = url.deletingLastPathComponent().appendingPathComponent("Second.png")
+                let image = try sampleImage()
+                try image.data.write(to: second)
+                #expect(await draft.reattachImage(id: original.id, from: second))
+                #expect(draft.images.first?.data == image.data)
+            }
+            release.signal()
+            #expect(await !first.value)
+            #expect(!draft.isLoadingImages)
+            #expect(draft.text == "Keep this caption")
+            switch change {
+            case "cancel":
+                #expect(draft.images == [original])
+                #expect(draft.sendAttemptID == "old-attempt")
+                #expect(draft.error?.contains("First.svg") == true)
+                #expect(draft.error?.contains("cancelled") == true)
+            case "remove":
+                #expect(draft.images.isEmpty)
+                #expect(draft.sendAttemptID == nil)
+            default:
+                #expect(draft.images.count == 1)
+                #expect(draft.images.first?.name == "Second.png")
+                #expect(draft.images.first?.id == original.id)
+                #expect(draft.sendAttemptID == nil)
+                #expect(draft.error == nil)
+            }
+        }
+    }
+
     private func imageIODraft(fileURL: URL? = nil) -> ComposerDraft {
         ComposerDraft(fileURL: fileURL, imageIsReadable: { data in
             guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return false }
