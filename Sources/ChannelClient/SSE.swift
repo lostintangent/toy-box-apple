@@ -115,15 +115,16 @@ public extension ChannelAPI {
                                 .lowercased().hasPrefix("text/event-stream") == true else {
                                 throw ChannelAPIError.invalidResponse
                             }
-                            var decoder = SSEDecoder()
+                            var frameDecoder = SSEDecoder()
+                            let eventDecoder = JSONDecoder()
                             var count = 0
                             for try await byte in bytes {
                                 try Task.checkCancellation()
                                 count += 1
                                 if byte == 10 || byte == 13 || count % 4096 == 0 { await heartbeat.touch() }
-                                if let frame = try decoder.consume(byte) {
-                                    let event = try JSONDecoder().decode(ChannelObservationEvent.self,
-                                                                         from: Data(frame.data.utf8))
+                                if let frame = try frameDecoder.consume(byte) {
+                                    let event = try eventDecoder.decode(ChannelObservationEvent.self,
+                                                                        from: Data(frame.data.utf8))
                                     try validate(event)
                                     continuation.yield(event)
                                     if event.type == "deleted" { return }
