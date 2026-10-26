@@ -3,6 +3,11 @@ import Foundation
 import SwiftUI
 import Testing
 import ToyBoxUI
+#if os(macOS)
+import AppKit
+#else
+import UIKit
+#endif
 
 @Suite("Shared transcript rendering inputs")
 struct TranscriptMarkdownTests {
@@ -92,5 +97,46 @@ struct TranscriptMarkdownTests {
         #expect(white.contrast(with: black) == 21)
         #expect(black.contrast(with: white) == 21)
         #expect(white.luminance == 1 && black.luminance == 0)
+    }
+
+    @MainActor
+    @Test(arguments: [false, true], [CGFloat(1), 1.2, 1.5])
+    func wrappedTableCellsKeepBothVerticalInsets(selectable: Bool, scale: CGFloat) {
+        let rows = [
+            ["Relationship that deliberately wraps across multiple lines in a header cell", "Target"],
+            ["Inline navigation bar's bottom safe-area edge to the first purpose text", "12pt"],
+            ["A second wrapping row that has enough text to span several full lines in this bounded cell", "16pt"],
+        ]
+        let markdown = rows.enumerated().map { index, row in
+            (index == 1 ? "| --- | --- |\n" : "") + "| " + row.joined(separator: " | ") + " |"
+        }.joined(separator: "\n")
+        let expected = rows.enumerated().reduce(CGFloat.zero) { height, row in
+            height + row.element.map {
+                fittingHeight(Text($0)
+                    .font(.system(size: 13 * scale, weight: row.offset == 0 ? .semibold : .regular))
+                    .lineSpacing(3 * scale)
+                    .fixedSize(horizontal: false, vertical: true), width: 280)
+            }.max()! + 14
+        }
+        for width in [CGFloat(260), 400, 700] {
+            let actual = fittingHeight(
+                TranscriptMarkdown(content: markdown, selectable: selectable, textScale: scale,
+                                   copyCode: { _ in }, mentionInk: { _ in .purple }), width: width)
+            #expect(abs(actual - expected) <= 1)
+        }
+
+        let singleLine = fittingHeight(Text("12pt").font(.system(size: 13 * scale)), width: 280)
+        #expect(expected > 3 * (singleLine + 14))
+    }
+
+    @MainActor
+    private func fittingHeight(_ content: some View, width: CGFloat) -> CGFloat {
+        #if os(macOS)
+        let host = NSHostingView(rootView: content.frame(width: width).fixedSize(horizontal: false, vertical: true))
+        return host.fittingSize.height
+        #else
+        let host = UIHostingController(rootView: content.frame(width: width).fixedSize(horizontal: false, vertical: true))
+        return host.sizeThatFits(in: CGSize(width: width, height: .greatestFiniteMagnitude)).height
+        #endif
     }
 }
