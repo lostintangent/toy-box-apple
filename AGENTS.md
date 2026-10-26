@@ -10,7 +10,8 @@ view.
   macOS 27 on Apple Silicon, plus the iOS 27 iPhone companion in `Sources/ToyBoxMobile`.
 - `ChannelKit` is the domain: Codable models, the reducer, transcript grouping, attention, tasks
   and cron. `ChannelClient` is transport: HTTP commands, SSE, reconnect and observable stores.
-  `ChannelIntelligence` is on-device Foundation Models. `ToyBoxDesktop` is the app.
+  `ChannelIntelligence` is on-device Foundation Models. `ToyBoxUI` is shared SwiftUI presentation
+  without AppKit or UIKit. `ToyBoxDesktop` and `ToyBoxMobile` own native platform integration.
 - It talks to the same `/api/v1` HTTP and SSE routes as the Minecraft client. The conformance
   fixtures are copied unchanged from that client.
 
@@ -77,7 +78,7 @@ view.
 
 ### iPhone development
 
-- `SCRATCH_PATH=/tmp/tbm-<you> bun run mobile` builds and bundles the placeholder, installs it
+- `SCRATCH_PATH=/tmp/tbm-<you> bun run mobile` builds and bundles the app, installs it
   and launches `dev.toybox.mobile` on the shared **Toy Box Mobile** iPhone Duo simulator.
   It does not open or focus Device Hub (`com.apple.dt.Devices`). Choose that device there to
   view it, using the native Closed / Open controls to fold or unfold.
@@ -85,14 +86,20 @@ view.
   `flock` and waits its turn, printing the holder's PID, command and worktree. Use
   `bun run mobile --hold` to keep that lock during manual UI checks. Ctrl-C or the 15-minute
   lease expiry shuts down the simulator and releases it. Never boot another simulator or run `simctl` by hand.
+  Launches explicitly pass `--server`, defaulting to `TOY_BOX_SERVER_URL` or the demo at
+  `http://127.0.0.1:3210`. `bun run mobile --server <URL>` overrides it without saving Settings
+  and wins over stale simulator launch environment.
   `bun run mobile --screenshot <file.png>` captures the shared device under the same lock.
+  Combine `--hold --screenshot <file.png>` to capture the current pose at lease end, before
+  shutdown, without a second command waiting for the lock. `--displays` lists native display IDs.
+  `--display <ID>` chooses one for a screenshot, including a secondary Duo display.
   `bun run mobile --shutdown` shuts it down. `MOBILE_SIMULATOR=<UDID>` is only for selecting an
   agreed shared device, not for creating one per agent.
 - `bun run mobile --build-only` builds the Simulator bundle without booting a device.
   `bun run mobile --device` builds an **unsigned** arm64 device bundle, without reading signing
   identities or provisioning profiles. Neither command produces a distributable TestFlight build.
-- `SCRATCH_PATH=/tmp/tbm-<you> bun run test:mobile` builds and runs the existing ChannelKit,
-  ChannelClient and ChannelIntelligence tests on iOS Simulator. It uses Apple's simulator
+- `SCRATCH_PATH=/tmp/tbm-<you> bun run test:mobile` builds and runs ChannelKit,
+  ChannelClient, ChannelIntelligence, ToyBoxUI and ToyBoxMobile tests on iOS Simulator. It uses Apple's simulator
   `xctest` host and rejects interrupted, failed and empty Swift Testing runs. Existing opt-ins
   stay off. It shuts down the simulator only if it booted it.
 - Mobile commands default to `/Applications/Xcode.app/Contents/Developer`. Set `DEVELOPER_DIR`
@@ -267,6 +274,7 @@ Agents never create these accounts, accept agreements, read private keys or set 
 | Path | Owner |
 | --- | --- |
 | `Sources/ChannelKit/`, `Sources/ChannelClient/`, `Sources/ToyBoxControlIntents/`, `Tests/` (except below), `scripts/`, `Package.swift`, `package.json` | Core |
+| `Sources/ToyBoxUI/` shared presentation, identity and interaction models | Core, with the originating UI owner |
 | `Sources/ToyBoxDesktop/App`, `Shell`, `Sidebar`, `Settings`, `Shared`, `Channel/ChannelDetailView.swift` | Shell |
 | `Sources/ToyBoxDesktop/Transcript`, `Tests/ToyBoxDesktopTests/TranscriptTests.swift` | Transcript |
 | `Sources/ToyBoxDesktop/Composer` (composer and tray), `Tests/ToyBoxDesktopTests/ComposerTests.swift` | Composer |
@@ -285,9 +293,18 @@ Edit only files you own. Ask the owner for anything else in the channel.
 
 - `AppModel` (environment): server URL, `ChannelCatalogStore` and its `ChannelAPI`.
 - `ChannelStore` (passed in): one per channel, shared by every window that shows the channel.
-- `ChannelInteraction` (environment, one per channel window) carries cross-surface intents:
+- `ChannelInteraction` (ToyBoxUI, environment, one per channel window) carries cross-surface intents:
   Reply, Focus Composer, Reveal message, Jump to Latest, the Message View filter and inspector
   visibility. Any owner may add a narrowly scoped intent here. Announce it in the channel.
-- `ManagementPresenter` (environment, one per window): `present(_:)` opens any management flow.
+- `ManagementPresenter` (ToyBoxUI, environment, one per window): `present(_:)` opens any management flow.
   Overview implements the flows behind it. Every other surface only calls `present`.
-- `AgentAvatarView` (Shared) renders agent identity exactly like the pane's `AgentAvatar`.
+- `AgentAvatarView`, `AgentAvatarStack`, `ChannelMark`, `ChannelTaskColors`, `ChannelColors`,
+  `ChannelAttentionStyle` and `TranscriptSurface` (ToyBoxUI) preserve the Mac's identity and colors.
+  Typography, navigation and layout stay platform-native.
+- `ComposerDraft`, `ComposerImage`, `ConnectGrace` and `ChannelConnections` live in ChannelClient.
+  Supply a native image-readability check to the shared draft. Mac uses its existing lazy NSImage
+  validation and iPhone uses UIImage. Keep persistence keys and send-attempt identity unchanged.
+- `channelMatchesQuery` (ChannelKit) matches name, purpose and directory. Callers retain their
+  existing query normalization and ordering. `ChannelAPI.channelURL(channelID:files:)` builds
+  browser routes, preserving deployment prefixes. `SidebarConnection` (ToyBoxUI) projects the
+  shared footer connection state and server label.

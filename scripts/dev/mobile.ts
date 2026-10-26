@@ -1,4 +1,4 @@
-import { copyFile, mkdir, symlink } from "node:fs/promises";
+import { copyFile, lstat, mkdir, readlink, symlink, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
 import { command, machineLock, main, plist, root, scratchPath, text } from "../lib.ts";
@@ -10,6 +10,26 @@ export const mobileEnvironment = {
 };
 export const mobileBundleID = "dev.toybox.mobile";
 
+export async function linkMobileWorkspace(sourceRoot: string, workspace: string) {
+    await mkdir(workspace, { recursive: true });
+    for (const name of ["Package.swift", "Sources", "Tests"]) {
+        const target = join(sourceRoot, name);
+        const link = join(workspace, name);
+        try {
+            await symlink(target, link);
+        } catch (error) {
+            if (!(error instanceof Error) || !("code" in error) || error.code !== "EEXIST") throw error;
+            if (!(await lstat(link)).isSymbolicLink()) {
+                throw new Error(`Refusing to replace ${link}: the mobile workspace entry is not a symlink.`);
+            }
+            if (await readlink(link) !== target) {
+                await unlink(link);
+                await symlink(target, link);
+            }
+        }
+    }
+}
+
 export async function buildMobile(device = false, tests = false) {
     const platform = device ? "iphoneos" : "iphonesimulator";
     const sdk = await text(["xcrun", "--sdk", platform, "--show-sdk-path"], { env: mobileEnvironment });
@@ -17,12 +37,7 @@ export async function buildMobile(device = false, tests = false) {
     if (Number(version.split(".")[0]) < 27) throw new Error("Toy Box Mobile requires iOS SDK 27 or later.");
     const scratch = join(scratchPath(), device ? "mobile-device" : "mobile-simulator");
     const workspace = join(scratch, "package");
-    await mkdir(workspace, { recursive: true });
-    for (const name of ["Package.swift", "Sources", "Tests"]) {
-        await symlink(join(root, name), join(workspace, name)).catch(error => {
-            if (error.code !== "EEXIST") throw error;
-        });
-    }
+    await linkMobileWorkspace(root, workspace);
     const args = ["xcrun", "swift", "build", "--package-path", workspace, "--scratch-path", scratch,
         "--sdk", sdk, "--triple", `arm64-apple-ios27.0${device ? "" : "-simulator"}`, "--jobs", "4"];
     await command([...args, ...(tests ? ["--build-tests"] : ["--product", "ToyBoxMobile"])],
@@ -96,10 +111,14 @@ export async function bundleMobile(device = false) {
 if (import.meta.main) await main(async () => {
     const { values } = parseArgs({ args: process.argv.slice(2), options: {
         "build-only": { type: "boolean" }, device: { type: "boolean" }, shutdown: { type: "boolean" },
-        screenshot: { type: "string" }, hold: { type: "boolean" },
+        screenshot: { type: "string" }, hold: { type: "boolean" }, display: { type: "string" },
+        displays: { type: "boolean" }, server: { type: "string" },
     } });
+    if (values.display && !values.screenshot) throw new Error("--display requires --screenshot.");
     if (values.device || values["build-only"]) {
-        if (values.shutdown || values.screenshot || values.hold) throw new Error("Build-only commands cannot use a simulator.");
+        if (values.shutdown || values.screenshot || values.hold || values.displays || values.server) {
+            throw new Error("Build-only commands cannot use a simulator or set launch arguments.");
+        }
         console.log(await bundleMobile(values.device));
         return;
     }
@@ -107,25 +126,42 @@ if (import.meta.main) await main(async () => {
     try {
         const simulator = await prepareMobileSimulator(true);
         if (!simulator) throw new Error("No iPhone simulator is available.");
+        if (values.displays) {
+            const ports = await text(["xcrun", "simctl", "io", simulator.udid, "enumerate"],
+                { env: mobileEnvironment });
+            const displays = ports.split(/(?=^Port:\n)/m)
+                .find(port => /^\s+Class: DisplayAdapter$/m.test(port));
+            if (!displays) throw new Error("The simulator did not report its native display adapter.");
+            console.log(displays.trim());
+            if (!values.hold) return;
+        }
         if (values.shutdown) {
             await command(["xcrun", "simctl", "shutdown", simulator.udid], { env: mobileEnvironment });
             return;
         }
-        if (values.screenshot) {
-            await command(["xcrun", "simctl", "io", simulator.udid, "screenshot", values.screenshot],
+        const capture = async () => {
+            if (!values.screenshot) return;
+            await command(["xcrun", "simctl", "io", simulator.udid, "screenshot",
+                ...(values.display ? [`--display=${values.display}`] : []), values.screenshot],
                 { env: mobileEnvironment });
+        };
+        if (values.screenshot && !values.hold) {
+            await capture();
             return;
         }
         const app = await bundleMobile();
         console.log(app);
         await command(["xcrun", "simctl", "install", simulator.udid, app], { env: mobileEnvironment });
-        await command(["xcrun", "simctl", "launch", "--terminate-running-process", simulator.udid, mobileBundleID],
+        const server = values.server ?? process.env.TOY_BOX_SERVER_URL ?? "http://127.0.0.1:3210";
+        await command(["xcrun", "simctl", "launch", "--terminate-running-process", simulator.udid, mobileBundleID,
+            "--server", server],
             { env: mobileEnvironment });
-        console.log(`Running on ${simulator.udid}`);
+        console.log(`Running on ${simulator.udid}, server ${server}`);
         console.log(`App data: ${await text(["xcrun", "simctl", "get_app_container", simulator.udid, mobileBundleID, "data"],
             { env: mobileEnvironment })}`);
         if (values.hold) {
             console.log("Simulator lock held for UI checks for at most 15 minutes. Ctrl-C releases it and shuts down.");
+            if (values.screenshot) console.log(`The current pose will be captured to ${values.screenshot} before shutdown.`);
             await new Promise<void>(resolve => {
                 const finish = () => {
                     clearTimeout(timer);
@@ -140,7 +176,10 @@ if (import.meta.main) await main(async () => {
                 process.once("SIGINT", finish);
                 process.once("SIGTERM", finish);
             });
-            await command(["xcrun", "simctl", "shutdown", simulator.udid], { env: mobileEnvironment });
+            try { await capture(); }
+            finally {
+                await command(["xcrun", "simctl", "shutdown", simulator.udid], { env: mobileEnvironment });
+            }
         }
     } finally { unlock(); }
 });

@@ -78,7 +78,7 @@ struct TranscriptRowContent: View, @MainActor Equatable {
                                       statusReactions: statusReactions[message.sequence] ?? [],
                                       findHighlight: findHighlights[message.sequence])
                     .background(highlightedSequence == message.sequence
-                                ? ChannelColors.userWash : .clear,
+                                ? ChannelColors.sourceHighlight : .clear,
                                 in: RoundedRectangle(cornerRadius: 12))
                     .transcriptMessageFrame(id: message.id, sequence: message.sequence,
                                             historyStart: context.historyStart)
@@ -97,7 +97,7 @@ struct TranscriptRowContent: View, @MainActor Equatable {
                                                    onSetExpanded: onSetExpanded)
                                 .equatable()
                                 .background(highlightedSequence == entry.message.sequence
-                                            ? ChannelColors.userWash : .clear,
+                                            ? ChannelColors.sourceHighlight : .clear,
                                             in: RoundedRectangle(cornerRadius: 12))
                                 .transcriptMessageFrame(id: entry.message.id, sequence: entry.message.sequence,
                                                         historyStart: context.historyStart)
@@ -115,7 +115,7 @@ struct TranscriptRowContent: View, @MainActor Equatable {
                                          api: context.api, findHighlights: findHighlights,
                                          expandsMembership: expandsMembership)
                     .background(messages.contains { $0.sequence == highlightedSequence }
-                                ? ChannelColors.userWash : .clear,
+                                ? ChannelColors.sourceHighlight : .clear,
                                 in: RoundedRectangle(cornerRadius: 6))
                     .transcriptMessageFrame(id: individualMessages ? "system-group-\(row.id)" : row.id,
                                             sequence: individualMessages ? 0 : messages.map(\.sequence).max() ?? 0,
