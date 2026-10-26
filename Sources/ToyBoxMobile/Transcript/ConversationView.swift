@@ -659,7 +659,8 @@ private struct TranscriptWorkingNow: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Done", systemImage: "checkmark") { dismiss() }
+                    Button(role: .close) { dismiss() }
+                        .accessibilityLabel("Close Working Now")
                 }
             }
         }
