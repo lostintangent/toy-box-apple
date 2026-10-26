@@ -351,43 +351,28 @@ final class AppModel {
         dockAttention.update(status: status, serverURL: serverURL, hasCatalog: hasCatalog)
     }
 
-    /// A channel as the sidebar shows it: an open channel's live details and request over its catalog
-    /// entry. It reads only those slices, so the store's other events leave the sidebar and the title
-    /// menu alone. Activity times follow the catalog, and an open channel shows only its request.
+    private var sidebarProjection: ChannelSidebarProjection {
+        .init(catalog: catalog, openChannelIDs: openChannelIDs)
+    }
+
     func sidebarChannel(_ channel: Channel) -> Channel {
-        guard openChannelIDs.contains(channel.id), let store = catalog?.channel(id: channel.id),
-              let details = store.details else { return channel }
-        return details.applying(to: channel, requestSequence: store.requestSequence)
+        sidebarProjection.channel(channel)
     }
 
-    /// The attention the sidebar shows for a channel. The title menu and the menu bar mirror it.
     func sidebarAttention(_ channel: Channel) -> ChannelAttention? {
-        channelSidebarStatus(sidebarChannel(channel), isOpen: openChannelIDs.contains(channel.id))
+        sidebarProjection.attention(channel)
     }
 
-    /// A channel's agents as its sidebar row shows them: an open channel's loaded roster, otherwise
-    /// the catalog's.
     func sidebarAgents(_ channel: Channel) -> [ChannelAgent] {
-        if openChannelIDs.contains(channel.id), let store = catalog?.channel(id: channel.id), store.isLoaded {
-            return store.roster
-        }
-        return catalogAgents(channelID: channel.id)
+        sidebarProjection.agents(channel)
     }
 
-    /// Who's working in a channel: live presence for an open channel, otherwise the catalog's
-    /// `working`. The sidebar row and the menu bar both ask this one function.
     func sidebarWorking(_ channel: Channel, agents: [ChannelAgent]) -> [ChannelAgent] {
-        if openChannelIDs.contains(channel.id), let store = catalog?.channel(id: channel.id) {
-            return store.phase.isLive ? agents.filter { store.presence[$0.id]?.state == "working" } : []
-        }
-        guard let catalog, catalog.error == nil else { return [] }
-        return agents.filter { catalog.working.contains($0.id) }
+        sidebarProjection.working(channel, agents: agents)
     }
 
-    /// A channel's agents as the catalog knows them, for channels that aren't open.
     func catalogAgents(channelID: String) -> [ChannelAgent] {
-        guard let catalog, let lead = catalog.state?.lead else { return [] }
-        return [ChannelAgent.lead(id: channelID, profile: lead)] + catalog.members.filter { $0.channelId == channelID }
+        sidebarProjection.catalogAgents(channelID: channelID)
     }
 
     /// A request's message, from an open channel's live state, otherwise from its history.
@@ -459,29 +444,4 @@ struct ChannelNavigationRequest: Identifiable {
     let sequence: Int?
     /// Set when a reply from a notification wasn't sent and waits in the composer.
     var focusComposer = false
-}
-
-/// The catalog refresh someone asked for, while it runs. The sidebar footer shows progress only for
-/// these, never for background polling.
-@MainActor @Observable
-final class RequestedCatalogRefresh {
-    private var catalog: ObjectIdentifier?
-
-    func isRunning(for catalog: ChannelCatalogStore) -> Bool {
-        self.catalog == ObjectIdentifier(catalog) && catalog.isLoading
-    }
-
-    /// Joins a refresh that is already in flight rather than starting a second one, so progress
-    /// lasts until whichever attempt is running resolves.
-    func run(_ catalog: ChannelCatalogStore) async {
-        let id = ObjectIdentifier(catalog)
-        self.catalog = id
-        await catalog.refresh()
-        while catalog.isLoading {
-            await withCheckedContinuation { continuation in
-                withObservationTracking { _ = catalog.isLoading } onChange: { continuation.resume() }
-            }
-        }
-        if self.catalog == id { self.catalog = nil }
-    }
 }
