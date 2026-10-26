@@ -1134,6 +1134,123 @@ struct ComposerTests {
         #expect(dictation.notice == nil)
     }
 
+    @Test func retainedPhoneAppearanceChecksOnlyLanguageSupport() async throws {
+        let recognizer = ManualDictationRecognizer()
+        let probe = MicrophoneProbe()
+        probe.isConnected = true
+        var assets = 0
+        var system = DictationSystem.manual(recognizer)
+        system.refreshNotifications = []
+        system.hasMicrophone = { probe.deviceChecks += 1; return probe.isConnected }
+        system.microphoneAccess = { probe.accessChecks += 1; return .granted }
+        system.installAssets = { _, _ in assets += 1 }
+        let dictation = ComposerDictation(system: system)
+        let target = RecordingDictationTarget()
+        dictation.target = target
+        defer { dictation.deactivate() }
+
+        await dictation.refreshLanguageSupport()
+        #expect(probe.deviceChecks == 0 && probe.accessChecks == 0 && assets == 0)
+        dictation.toggleRecheckingInput()
+        try await waitUntil("the deliberate phone tap starts listening") { dictation.phase == .listening }
+        dictation.deactivate()
+        let devices = probe.deviceChecks
+        let access = probe.accessChecks
+        let installed = assets
+        await dictation.refreshLanguageSupport()
+        #expect(probe.deviceChecks == devices)
+        #expect(probe.accessChecks == access)
+        #expect(assets == installed)
+        #expect(dictation.phase == .idle)
+    }
+
+    @Test func everyPhoneDictationTapRechecksInputIncludingAPreviouslyMissingMicrophone() async throws {
+        let recognizer = ManualDictationRecognizer()
+        let probe = MicrophoneProbe()
+        var system = DictationSystem.manual(recognizer)
+        system.refreshNotifications = []
+        system.hasMicrophone = { probe.deviceChecks += 1; return probe.isConnected }
+        system.microphoneAccess = { probe.accessChecks += 1; return .granted }
+        let dictation = ComposerDictation(system: system)
+        let target = RecordingDictationTarget()
+        dictation.target = target
+        defer { dictation.deactivate() }
+
+        await dictation.refreshLanguageSupport()
+        dictation.toggleRecheckingInput()
+        try await waitUntil("the phone tap finds no microphone") { dictation.notice == .noMicrophone }
+        #expect(probe.deviceChecks == 1)
+        #expect(dictation.availability == .noMicrophone)
+        dictation.deactivate()
+        await dictation.refreshLanguageSupport()
+        #expect(probe.deviceChecks == 1)
+        #expect(dictation.availability == .available, "The detached result cannot permanently disable a fresh tap")
+
+        probe.isConnected = true
+        dictation.toggleRecheckingInput()
+        try await waitUntil("the returning phone tap finds the connected microphone") { dictation.phase == .listening }
+        #expect(probe.deviceChecks == 2)
+        let access = probe.accessChecks
+        dictation.commitNow()
+        dictation.toggleRecheckingInput()
+        try await waitUntil("another tap rechecks before listening") { dictation.phase == .listening }
+        #expect(probe.deviceChecks == 3)
+        #expect(probe.accessChecks > access)
+
+        dictation.commitNow()
+        dictation.system.microphoneAccess = { .denied }
+        dictation.toggleRecheckingInput()
+        try await waitUntil("the next tap notices access was revoked") { dictation.showsAccessExplanation }
+        #expect(probe.deviceChecks == 4)
+        #expect(dictation.accessOff == .microphone)
+        #expect(target.begins == 2)
+    }
+
+    @Test func anObsoleteHeldInputCheckCannotOverwriteANewerPhoneTap() async throws {
+        let recognizer = ManualDictationRecognizer()
+        var checks = 0
+        var accessChecks = 0
+        var holdsNextCheck = false
+        var held: CheckedContinuation<Bool, Never>?
+        var system = DictationSystem.manual(recognizer)
+        system.refreshNotifications = []
+        system.hasMicrophone = {
+            checks += 1
+            if holdsNextCheck {
+                holdsNextCheck = false
+                return await withCheckedContinuation { held = $0 }
+            }
+            return true
+        }
+        system.microphoneAccess = { accessChecks += 1; return .granted }
+        let dictation = ComposerDictation(system: system)
+        let target = RecordingDictationTarget()
+        dictation.target = target
+        defer {
+            held?.resume(returning: false)
+            dictation.deactivate()
+        }
+
+        await dictation.refresh()
+        await dictation.startTracking()
+        holdsNextCheck = true
+        let obsolete = Task { await dictation.refresh() }
+        try await waitUntil("the old input lookup is held") { held != nil }
+        dictation.deactivate()
+        await dictation.refreshLanguageSupport()
+        dictation.toggleRecheckingInput()
+        try await waitUntil("a newer tap checks input and listens") { dictation.phase == .listening }
+        #expect(checks == 3)
+        let freshAccessChecks = accessChecks
+        held?.resume(returning: false)
+        held = nil
+        await obsolete.value
+        #expect(dictation.availability == .available)
+        #expect(dictation.phase == .listening)
+        #expect(dictation.notice == nil)
+        #expect(accessChecks == freshAccessChecks, "An obsolete device result never reads or changes current access")
+    }
+
     @Test func firstUseDownloadShowsProgressCancelsAndOnlyStartsInTheKeyWindow() async throws {
         let dictation = ComposerDictation(system: .scripted(downloadProgress: 0.35))
         await dictation.refresh()

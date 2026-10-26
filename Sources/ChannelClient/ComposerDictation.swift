@@ -502,6 +502,7 @@ package final class ComposerDictation {
     @ObservationIgnored private var rawLevel: Double = 0
     @ObservationIgnored private var observers: [any NSObjectProtocol] = []
     @ObservationIgnored private var isActive = false
+    @ObservationIgnored private var inputRefreshGeneration = 0
     /// True from the first click on, once devices and access have been checked.
     @ObservationIgnored package private(set) var isTracking = false
 
@@ -521,6 +522,7 @@ package final class ComposerDictation {
     /// Commits any session and stops tracking, such as when the composer goes away.
     package func deactivate() {
         isActive = false
+        inputRefreshGeneration += 1
         observers.forEach(NotificationCenter.default.removeObserver)
         observers.removeAll()
         commitNow()
@@ -558,21 +560,33 @@ package final class ComposerDictation {
     }
 
     package func refresh() async {
+        await refreshSupportedLanguage()
+        if locale != nil, isTracking { await refreshDevicesAndAccess() }
+    }
+
+    /// A returning composer has no current input-device observation until the next deliberate tap.
+    package func refreshLanguageSupport() async {
+        inputRefreshGeneration += 1
+        if availability == .noMicrophone { availability = .checking }
+        await refreshSupportedLanguage()
+    }
+
+    private func refreshSupportedLanguage() async {
         if locale == nil { locale = await system.supportedLocale() }
         guard locale != nil else {
             availability = .unsupported
             return
         }
-        if isTracking {
-            await refreshDevicesAndAccess()
-        } else if availability == .checking {
-            availability = .available
-        }
+        if availability == .checking { availability = .available }
     }
 
-    private func refreshDevicesAndAccess() async {
-        guard availability != .unsupported, locale != nil else { return }
+    @discardableResult
+    private func refreshDevicesAndAccess() async -> Bool {
+        guard availability != .unsupported, locale != nil else { return false }
+        inputRefreshGeneration += 1
+        let refreshGeneration = inputRefreshGeneration
         let hasMicrophone = await system.hasMicrophone()
+        guard inputRefreshGeneration == refreshGeneration else { return false }
         availability = hasMicrophone ? .available : .noMicrophone
         if hasMicrophone, notice == .noMicrophone { notice = nil }
         let restored = switch accessOff {
@@ -586,6 +600,7 @@ package final class ComposerDictation {
         } else if accessOff == nil, system.microphoneAccess() == .denied {
             accessOff = .microphone
         }
+        return true
     }
 
     /// The Dictate button's action.
@@ -603,6 +618,51 @@ package final class ComposerDictation {
             Task { await stop(.button) }
         case .finishing:
             break
+        }
+    }
+
+    /// Rechecks input on every deliberate request, including a retained composer's previous failure.
+    package func toggleRecheckingInput() {
+        guard phase == .idle else {
+            toggle()
+            return
+        }
+        generation += 1
+        let generation = generation
+        notice = nil
+        phase = .preparing
+        isActive = true
+        if isTracking { observe() }
+        preparation = Task {
+            await refreshSupportedLanguage()
+            guard self.generation == generation else { return }
+            guard let locale else {
+                phase = .idle
+                return
+            }
+            if !isTracking {
+                isTracking = true
+                observe()
+            }
+            let checkedCurrentInput = await refreshDevicesAndAccess()
+            guard self.generation == generation else { return }
+            guard checkedCurrentInput else {
+                phase = .idle
+                notice = .failed("The microphone changed. Tap Dictate to try again.")
+                return
+            }
+            guard availability == .available else {
+                phase = .idle
+                notice = .noMicrophone
+                system.announce(Notice.noMicrophone.text)
+                return
+            }
+            if accessOff != nil {
+                phase = .idle
+                showsAccessExplanation = true
+                return
+            }
+            await prepareAndListen(locale: locale, generation: generation)
         }
     }
 
