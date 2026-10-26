@@ -84,28 +84,21 @@ struct OverviewTaskRow: View {
         self.artifacts = artifacts
         self.onArtifactOpen = onArtifactOpen
         var disclosure = OverviewItemState<Bool?>(nil)
-        disclosure[key] = Self.isExpandedByDefault(status: task.status)
+        disclosure[key] = task.isExpandedByDefault
         _disclosure = ViewState(initialValue: disclosure)
     }
 
-    /// As in the pane's checklist, finished work folds down and everything else stays open.
-    static func isExpandedByDefault(status: String) -> Bool { status != "done" }
-
     /// A row handed another task shows its default until the key change stores it.
-    private var isExpanded: Bool { disclosure[key] ?? Self.isExpandedByDefault(status: task.status) }
+    private var isExpanded: Bool { disclosure[key] ?? task.isExpandedByDefault }
 
     private var children: [ChannelTask] { task.children ?? [] }
     private var owner: ChannelAgent? { task.ownerId.map { channelAgentIdentity(agents, id: $0) } }
     private var progress: (done: Int, total: Int)? {
-        guard Self.showsProgress(status: task.status, hasChildren: !children.isEmpty) else { return nil }
+        guard task.showsChildProgress else { return nil }
         let progress = channelTasksProgress(children)
         return (progress.done, progress.total)
     }
 
-    /// Only open parents count their children. A done parent's are all done, and a pending one hasn't started.
-    static func showsProgress(status: String, hasChildren: Bool) -> Bool {
-        hasChildren && status != "pending" && status != "done"
-    }
     private var diff: DiffStats? { task.status == "pending" ? nil : channelTasksDiff([task]) }
     private var linkedArtifact: (id: String, artifact: ChannelArtifact?)? {
         task.artifactId.map { id in (id, artifacts.first { $0.id == id }) }
@@ -126,8 +119,8 @@ struct OverviewTaskRow: View {
         }
         .accessibilityElement(children: .contain)
         // A status change re-derives the disclosure, replacing any manual toggle, as the pane does.
-        .onChange(of: task.status) { _, status in
-            let expanded = Self.isExpandedByDefault(status: status)
+        .onChange(of: task.status) {
+            let expanded = task.isExpandedByDefault
             guard expanded != isExpanded else { return }
             withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) { disclosure[key] = expanded }
         }
@@ -135,7 +128,7 @@ struct OverviewTaskRow: View {
         // animates from it too. A leaf's disclosure shows nothing.
         .onChange(of: key) {
             guard !children.isEmpty else { return }
-            disclosure[key] = Self.isExpandedByDefault(status: task.status)
+            disclosure[key] = task.isExpandedByDefault
         }
     }
 
@@ -253,7 +246,7 @@ struct OverviewTaskRow: View {
     }
 
     private func accessibilityLabel(timing: ChannelTaskTiming?) -> String {
-        var parts = [task.title, OverviewTaskStatusIcon.spoken(task.status)]
+        var parts = [task.title, task.statusDescription]
         if let timing { parts.append(OverviewTaskTimingPresentation(timing: timing).spoken) }
         if let progress {
             parts.append("\(progress.done) of \(progress.total) subtasks done")
@@ -329,15 +322,6 @@ struct OverviewTaskStatusIcon: View {
     @Environment(\.channelTextScale) private var textScale
     @Environment(\.colorScheme) private var colorScheme
     let status: String
-
-    static func spoken(_ status: String) -> String {
-        switch status {
-        case "in_progress": "in progress"
-        case "done": "done"
-        case "blocked": "blocked"
-        default: "pending"
-        }
-    }
 
     var body: some View {
         icon
