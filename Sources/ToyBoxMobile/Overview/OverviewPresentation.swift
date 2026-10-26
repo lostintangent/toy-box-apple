@@ -58,6 +58,12 @@ final class OverviewSession {
 
     func prepareForPresentation() { restorationOffset = scrollOffset }
 
+    func prepareForTaskReveal() {
+        navigationPath = []
+        restorationOffset = nil
+        scrollPosition = ScrollPosition()
+    }
+
     func restoreScroll() {
         guard let restorationOffset else { return }
         scrollPosition.scrollTo(y: restorationOffset)

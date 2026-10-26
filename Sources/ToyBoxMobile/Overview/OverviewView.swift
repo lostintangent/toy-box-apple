@@ -60,6 +60,11 @@ struct OverviewView: View {
         )) { flow in
             ManagementSheet(flow: flow, presenter: management, host: placement)
         }
+        .onChange(of: interaction.overviewTasksRequest, initial: true) { _, request in
+            if request != nil, placement == presentation.placement {
+                session.prepareForTaskReveal()
+            }
+        }
     }
 }
 
@@ -100,18 +105,19 @@ private struct OverviewForm: View {
                 }
             }
             .onChange(of: store.tasks, initial: true) { _, tasks in session.reconcileTasks(tasks) }
-            .task {
-                await Task.yield()
-                guard placement == presentation.placement, !Task.isCancelled else { return }
-                session.restoreScroll()
-            }
             .scrollEdgeEffectStyle(.hard, for: .top)
             .task(id: interaction.overviewTasksRequest) {
-                guard let token = interaction.overviewTasksRequest else { return }
+                let request = interaction.overviewTasksRequest
                 await Task.yield()
-                guard interaction.overviewTasksRequest == token, !Task.isCancelled else { return }
-                proxy.scrollTo("overview-tasks", anchor: .top)
-                interaction.consumeOverviewTasksRequest(token)
+                guard placement == presentation.placement, !Task.isCancelled,
+                      interaction.overviewTasksRequest == request else { return }
+                if let request {
+                    session.prepareForTaskReveal()
+                    proxy.scrollTo("overview-tasks", anchor: .top)
+                    interaction.consumeOverviewTasksRequest(request)
+                } else {
+                    session.restoreScroll()
+                }
             }
         }
     }
