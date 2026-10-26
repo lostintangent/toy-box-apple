@@ -2685,14 +2685,13 @@ struct TranscriptCatchUpTests {
     }
 
     @Test func imagesAreDescribedOnlyForVoiceOverAndOnlyOnce() async throws {
-        let descriptions = TranscriptImageDescriptions(observesVoiceOver: false)
+        let descriptions = TranscriptImageDescriptions()
         let service = StubChannelIntelligence(descriptions: ["chart": "A chart of weekly signups rising."])
-        #expect(!descriptions.isActive(using: service, isOn: true))
-        descriptions.isVoiceOverRunning = true
-        #expect(descriptions.isActive(using: service, isOn: true))
-        #expect(!descriptions.isActive(using: service, isOn: false))
-        #expect(!descriptions.isActive(using: StubChannelIntelligence(availability: .unavailable(.deviceNotEligible)),
-                                       isOn: true))
+        #expect(!TranscriptImageDescriptions.isActive(voiceOver: false, isOn: true, using: service))
+        #expect(TranscriptImageDescriptions.isActive(voiceOver: true, isOn: true, using: service))
+        #expect(!TranscriptImageDescriptions.isActive(voiceOver: true, isOn: false, using: service))
+        #expect(!TranscriptImageDescriptions.isActive(
+            voiceOver: true, isOn: true, using: StubChannelIntelligence(availability: .unavailable(.deviceNotEligible))))
 
         let request = describedImage("chart")
         #expect(descriptions.text(for: request) == nil)
@@ -2713,7 +2712,7 @@ struct TranscriptCatchUpTests {
     }
 
     @Test func aDescriptionGivenUpWhenItsTileScrollsAwayIsAskedForAgain() async throws {
-        let descriptions = TranscriptImageDescriptions(observesVoiceOver: false)
+        let descriptions = TranscriptImageDescriptions()
         let slow = StubChannelIntelligence(delay: .seconds(30), descriptions: ["chart": "A chart."])
         let request = describedImage("chart")
         let task = Task { await descriptions.describe(request, using: slow) }

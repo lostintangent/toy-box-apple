@@ -1,4 +1,4 @@
-import AppKit
+import Foundation
 import ChannelClient
 import ChannelIntelligence
 import ChannelKit
@@ -20,23 +20,12 @@ enum TranscriptIntelligenceSettings {
 final class TranscriptImageDescriptions {
     static let shared = TranscriptImageDescriptions()
 
-    var isVoiceOverRunning: Bool
     private var texts: [String: String] = [:]
     @ObservationIgnored private var finished: Set<String> = []
-    @ObservationIgnored private var observation: NSKeyValueObservation?
-
-    init(observesVoiceOver: Bool = true) {
-        isVoiceOverRunning = observesVoiceOver && NSWorkspace.shared.isVoiceOverEnabled
-        guard observesVoiceOver else { return }
-        observation = NSWorkspace.shared.observe(\.isVoiceOverEnabled, options: [.new]) { [weak self] workspace, _ in
-            let running = workspace.isVoiceOverEnabled
-            Task { @MainActor in self?.isVoiceOverRunning = running }
-        }
-    }
 
     /// Descriptions are made only while VoiceOver is running, the setting is on and the model can run.
-    func isActive(using service: any ChannelIntelligenceService, isOn: Bool) -> Bool {
-        isVoiceOverRunning && isOn && service.availability.isAvailable
+    static func isActive(voiceOver: Bool, isOn: Bool, using service: any ChannelIntelligenceService) -> Bool {
+        voiceOver && isOn && service.availability.isAvailable
     }
 
     func text(for request: AltTextRequest?) -> String? {
