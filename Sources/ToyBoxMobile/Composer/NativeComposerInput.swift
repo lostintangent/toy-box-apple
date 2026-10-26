@@ -184,6 +184,19 @@ struct NativeComposerInput: UIViewRepresentable {
             let replacedText: String
             let attributes: [NSAttributedString.Key: Any]
             var span: NSRange
+            var undoEdit: DictationUndoEdit?
+        }
+
+        final class DictationUndoEdit {
+            var range: NSRange
+            let replacement: NSAttributedString
+            let selection: NSRange
+
+            init(range: NSRange, replacement: NSAttributedString, selection: NSRange) {
+                self.range = range
+                self.replacement = replacement
+                self.selection = selection
+            }
         }
 
         init(parent: NativeComposerInput) { self.parent = parent }
@@ -268,6 +281,7 @@ extension NativeComposerInput.Coordinator: DictationTextTarget {
             return
         }
         session.span = NSRange(location: old.location, length: display.length)
+        updateDictationUndo(&session, hasWords: !visible.isEmpty)
         dictationSession = session
         restoreSelection(selection, replacing: old, with: session.span,
                          caret: visible.isEmpty ? session.span
@@ -283,40 +297,106 @@ extension NativeComposerInput.Coordinator: DictationTextTarget {
     }
 
     func endDictation(_ finalized: String) {
-        guard let session = dictationSession else { return }
+        guard var session = dictationSession else { return }
         dictationSession = nil
         guard let input else {
             parent.text = dictatedText(session, finalized: finalized)
             return
         }
         let selection = input.selectedRange
+        let oldSpan = session.span
+        let (previous, next) = neighbors(of: session)
+        let (leading, trailing) = DictationTranscript.padding(for: finalized, after: previous, before: next)
+        let words = finalized.isEmpty ? session.replacedText : leading + finalized + trailing
         isApplyingDictation = true
         guard replaceDictationDisplay(
             in: input, range: session.span,
-            with: NSAttributedString(string: session.replacedText, attributes: session.attributes)
+            with: NSAttributedString(string: words, attributes: session.attributes)
         ) else {
             recoverDictation(session, finalized: finalized)
             return
         }
         input.typingAttributes = session.attributes
-        let (previous, next) = neighbors(of: session)
-        let (leading, trailing) = DictationTranscript.padding(for: finalized, after: previous, before: next)
-        let words = finalized.isEmpty ? session.replacedText : leading + finalized + trailing
-        if !finalized.isEmpty {
-            guard let range = nativeRange(in: input, for: session.replaced) else {
-                recoverDictation(session, finalized: finalized)
-                return
-            }
-            input.replace(range, withText: words)
-            input.undoManager?.setActionName("Dictation")
+        session.span = NSRange(location: session.replaced.location, length: words.utf16.count)
+        if finalized.isEmpty, let edit = session.undoEdit {
+            input.undoManager?.removeAllActions(withTarget: edit)
+        } else {
+            updateDictationUndo(&session, hasWords: !finalized.isEmpty)
         }
         restoreSelection(
-            selection, replacing: session.span,
-            with: NSRange(location: session.replaced.location, length: words.utf16.count),
+            selection, replacing: oldSpan, with: session.span,
             caret: finalized.isEmpty ? session.replaced
                 : NSRange(location: session.replaced.location + words.utf16.count - trailing.utf16.count, length: 0)
         )
         isApplyingDictation = false
+        lastModelText = input.text
+        parent.text = input.text
+        parent.editor.update(from: input)
+        input.invalidateIntrinsicContentSize()
+    }
+
+    private func updateDictationUndo(_ session: inout DictationSession, hasWords: Bool) {
+        if let edit = session.undoEdit {
+            edit.range = session.span
+        } else if hasWords {
+            let edit = DictationUndoEdit(
+                range: session.span,
+                replacement: NSAttributedString(string: session.replacedText, attributes: session.attributes),
+                selection: session.replaced
+            )
+            session.undoEdit = edit
+            registerDictationUndo(edit)
+        }
+    }
+
+    private func registerDictationUndo(_ edit: DictationUndoEdit) {
+        guard let undo = input?.undoManager else {
+            Self.logger.error("Dictation could not register its native undo operation.")
+            return
+        }
+        // Keep the action's range alive without retaining the coordinator or text view.
+        undo.registerUndo(withTarget: edit) { [weak self, edit] _ in
+            self?.applyDictationUndo(edit)
+        }
+        undo.setActionName("Dictation")
+    }
+
+    private func applyDictationUndo(_ edit: DictationUndoEdit) {
+        guard let input else {
+            Self.logger.error("Dictation undo no longer has a native text view.")
+            return
+        }
+        dictationSession = nil
+        isApplyingDictation = true
+        defer { isApplyingDictation = false }
+        parent.dictation?.commitNow()
+        guard nativeRange(in: input, for: edit.range) != nil else {
+            Self.logger.error("Dictation undo lost its native text range. Keeping the current draft.")
+            lastModelText = input.text
+            parent.text = input.text
+            parent.editor.update(from: input)
+            return
+        }
+        let inverseText = NSMutableAttributedString(
+            attributedString: input.attributedText.attributedSubstring(from: edit.range)
+        )
+        inverseText.addAttribute(.foregroundColor, value: UIColor.label,
+                                 range: NSRange(location: 0, length: inverseText.length))
+        let inverse = DictationUndoEdit(
+            range: NSRange(location: edit.range.location, length: edit.replacement.length),
+            replacement: inverseText,
+            selection: input.selectedRange
+        )
+        guard replaceDictationDisplay(in: input, range: edit.range, with: edit.replacement) else {
+            Self.logger.error("Dictation undo could not replace its validated native text range.")
+            return
+        }
+        let length = input.text.utf16.count
+        let location = min(max(edit.selection.location, 0), length)
+        input.selectedRange = NSRange(
+            location: location, length: min(max(edit.selection.length, 0), length - location)
+        )
+        registerDictationUndo(inverse)
         lastModelText = input.text
         parent.text = input.text
         parent.editor.update(from: input)
