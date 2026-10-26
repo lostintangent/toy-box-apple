@@ -10,6 +10,7 @@ public final class ChannelInteraction {
     public var messageView: TranscriptView = .all
     public var isInspectorPresented: Bool
     public var isArtifactViewerPresented = false
+    public private(set) var overviewTasksRequest: UUID?
 
     /// The composer consumes these. `token` changes on every request so repeats still fire.
     public private(set) var replyRequest: (agent: ChannelAgent, sequence: Int?, token: UUID)?
@@ -48,4 +49,11 @@ public final class ChannelInteraction {
     public func jumpToLatest() { jumpToLatestRequest = UUID() }
     public func findInChannel() { findRequest = UUID() }
     public func findNext(_ direction: Int) { findNavigation = (direction, UUID()) }
+    public func showOverviewTasks() {
+        overviewTasksRequest = UUID()
+        isInspectorPresented = true
+    }
+    public func consumeOverviewTasksRequest(_ token: UUID) {
+        if overviewTasksRequest == token { overviewTasksRequest = nil }
+    }
 }
