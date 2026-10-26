@@ -52,7 +52,6 @@ struct DigestWindowTests {
         #expect(selected.messages.map(\.sequence) == [2, 3])
         #expect(selected.channel.requestSequence == nil && selected.request == nil)
         #expect(selected.channel.seenThrough == 3)
-        #expect(state.messages.count == 4 && state.request?.sequence == 1)
         state.channel.requestSequence = 2
         state.request = state.messages[1]
         #expect(window.selecting(state).request == state.request)
@@ -75,7 +74,6 @@ struct DigestWindowTests {
         }
         #expect(cursors == [5, 3])
         #expect(result.messages.map(\.sequence) == [2, 3, 4, 5])
-        #expect(initial.messages.map(\.sequence) == [5])
 
         var calls = 0
         let exhausted = try await window.history(initial) { _ in

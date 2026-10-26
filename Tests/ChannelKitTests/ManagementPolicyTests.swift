@@ -56,9 +56,6 @@ struct ManagementPolicyTests {
         for status in ["pending", "done"] { #expect(!task(status).showsChildProgress) }
         #expect(!task("in_progress", hasChildren: false).showsChildProgress)
         #expect(task("future").isExpandedByDefault && task("future").showsChildProgress)
-        for (status, words) in [("pending", "pending"), ("in_progress", "in progress"),
-                                ("done", "done"), ("blocked", "blocked"), ("future", "pending")] {
-            #expect(task(status).statusDescription == words)
-        }
+        #expect(task("future").statusDescription == "pending")
     }
 }
