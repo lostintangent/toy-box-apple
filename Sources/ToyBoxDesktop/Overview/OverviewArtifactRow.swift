@@ -54,9 +54,8 @@ struct OverviewArtifactRow: View {
         VStack(alignment: .leading, spacing: 2) {
             Button(action: open) {
                 HStack(spacing: 10) {
-                    Image(nsImage: NSWorkspace.shared.icon(for: type ?? .data))
-                        .resizable()
-                        .interpolation(.high)
+                    Image(systemName: ChannelArtifactSymbol.name(for: ArtifactContentKind(artifact)))
+                        .font(.system(size: 20 * textScale))
                         .frame(width: 28, height: 28)
                         .accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: 1) {
