@@ -1,4 +1,5 @@
 import ChannelKit
+import CoreGraphics
 import CryptoKit
 import Foundation
 import Observation
@@ -72,6 +73,8 @@ public final class ComposerDraft {
     private let fileURL: URL?
     private let imagesURL: URL?
     private let imageIsReadable: @MainActor (Data) -> Bool
+    // AppKit also renders SVG sources for which ImageIO reports zero images.
+    private let rasterizeImage: (@MainActor (Data, Int) -> CGImage?)?
     private var restoring = true
 
     public static func storageKey(serverURL: URL, channelID: String, scope: Scope = .conversation) -> String {
@@ -92,19 +95,22 @@ public final class ComposerDraft {
     }
 
     public static func shared(serverURL: URL, channelID: String, scope: Scope = .conversation,
-                              imageIsReadable: @escaping @MainActor (Data) -> Bool) -> ComposerDraft {
+                              imageIsReadable: @escaping @MainActor (Data) -> Bool,
+                              rasterizeImage: (@MainActor (Data, Int) -> CGImage?)? = nil) -> ComposerDraft {
         let key = storageKey(serverURL: serverURL, channelID: channelID, scope: scope)
         if let draft = drafts[key] { return draft }
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         let fileURL = support.appendingPathComponent("ToyBoxDesktop/Drafts", isDirectory: true)
             .appendingPathComponent("\(key).json")
-        let draft = ComposerDraft(fileURL: fileURL, imageIsReadable: imageIsReadable)
+        let draft = ComposerDraft(fileURL: fileURL, imageIsReadable: imageIsReadable, rasterizeImage: rasterizeImage)
         drafts[key] = draft
         return draft
     }
 
-    public init(fileURL: URL? = nil, imageIsReadable: @escaping @MainActor (Data) -> Bool) {
+    public init(fileURL: URL? = nil, imageIsReadable: @escaping @MainActor (Data) -> Bool,
+                rasterizeImage: (@MainActor (Data, Int) -> CGImage?)? = nil) {
         self.imageIsReadable = imageIsReadable
+        self.rasterizeImage = rasterizeImage
         self.fileURL = fileURL
         imagesURL = fileURL?.deletingPathExtension()
         isSavedLocally = fileURL != nil
@@ -153,10 +159,36 @@ public final class ComposerDraft {
             error = "\(image.name) cannot be decoded as an image. Attach a readable image file."
             return
         }
+        if let prepared = ComposerImageEncoding.passthrough(image) {
+            appendPrepared(prepared)
+        } else {
+            editAsNewMessage()
+            loadingImageCount += 1
+            let fallback = ComposerImageEncoding.needsNativeRasterization(image.data)
+                ? rasterizeImage?(image.data, ComposerImageEncoding.maximumDimension) : nil
+            Task {
+                defer { loadingImageCount -= 1 }
+                do {
+                    let prepared = try await Task.detached {
+                        try ComposerImageEncoding.normalize(image, fallback: fallback)
+                    }.value
+                    appendPrepared(prepared)
+                } catch {
+                    self.error = "\(image.name): \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+
+    private func appendPrepared(_ image: ComposerImage) {
         images.append(image)
         revision = UUID()
         sendAttemptID = nil
         save()
+    }
+
+    public func thumbnail(for image: ComposerImage) -> CGImage? {
+        ComposerThumbnails.image(for: image, rasterize: rasterizeImage)
     }
 
     public func attachFiles(_ urls: [URL]) {
@@ -281,7 +313,8 @@ public final class ComposerDraft {
         for image in other.images {
             var copy = image
             copy.id = UUID()
-            images.append(copy)
+            if imageIsReadable(copy.data) { append(copy) }
+            else { images.append(copy) }
         }
         if !other.images.isEmpty {
             revision = UUID()
@@ -292,9 +325,36 @@ public final class ComposerDraft {
     }
 
     func append(content: String, attachments: [ChannelAttachment]) {
-        let recovered = ComposerDraft(imageIsReadable: imageIsReadable)
+        let recovered = ComposerDraft(imageIsReadable: imageIsReadable, rasterizeImage: rasterizeImage)
         recovered.restore(content: content, attachments: attachments)
         append(contentsOf: recovered)
+    }
+
+    @MainActor
+    private enum ComposerThumbnails {
+        private final class Entry {
+            let image: CGImage?
+            init(_ image: CGImage?) { self.image = image }
+        }
+
+        private static let cache: NSCache<NSUUID, Entry> = {
+            let cache = NSCache<NSUUID, Entry>()
+            cache.countLimit = 128
+            cache.totalCostLimit = 16 * 1024 * 1024
+            return cache
+        }()
+
+        static func image(for image: ComposerImage,
+                          rasterize: (@MainActor (Data, Int) -> CGImage?)?) -> CGImage? {
+            let key = image.id as NSUUID
+            if let cached = cache.object(forKey: key) { return cached.image }
+            let thumbnail = ChannelImageDecoder.thumbnail(
+                data: image.data, maxPixelSize: ComposerImageEncoding.thumbnailDimension
+            ) ?? rasterize?(image.data, ComposerImageEncoding.thumbnailDimension)
+            cache.setObject(Entry(thumbnail), forKey: key,
+                            cost: thumbnail.map { $0.bytesPerRow * $0.height } ?? 0)
+            return thumbnail
+        }
     }
 
     public func retrySave() {

@@ -23,6 +23,7 @@ struct ComposerSurface: View {
 
     private var draft: ComposerDraft { session.draft }
     private var store: ChannelStore { session.store }
+    private var composer: ChannelComposerSession { session.composer }
     private var editor: ComposerEditorState { session.editor }
     private var draftID: ObjectIdentifier { ObjectIdentifier(draft) }
     private var mentionContext: ChannelMentionContext? {
@@ -34,9 +35,9 @@ struct ComposerSurface: View {
         return ChannelMentionChoice.choices(matching: context.query, among: store.roster)
     }
     private var hasNotices: Bool {
-        draft.error != nil || session.error != nil || store.attemptPersistenceError != nil
+        draft.error != nil || composer.error != nil || store.attemptPersistenceError != nil
             || draft.text.utf16.count > 12_000 || session.isLoadingImages
-            || connectionGrace.explains(store.phase, for: draftID) || session.attempt?.canRetry == true
+            || connectionGrace.explains(store.phase, for: draftID) || composer.attempt?.canRetry == true
     }
 
     var body: some View {
@@ -80,33 +81,33 @@ struct ComposerSurface: View {
                   let attempt = store.sendAttempts.first(where: { $0.id == id }) else { return }
             session.edit(attempt)
         }
-        .onChange(of: session.isConfirmed) { _, confirmed in
-            if confirmed { session.reconcile(); interaction.jumpToLatest() }
+        .onChange(of: composer.isConfirmed) { _, confirmed in
+            if confirmed { composer.reconcile(); interaction.jumpToLatest() }
         }
         .onChange(of: draft.revision) { _, _ in registerDraft() }
-        .onAppear { session.reconcile(); registerDraft() }
+        .onAppear { composer.reconcile(); registerDraft() }
         .task(id: store.phase) { await connectionGrace.watch(store.phase, for: draftID) }
         .confirmationDialog("Keep your current draft?", isPresented: Binding(
-            get: { session.pendingEdit != nil },
-            set: { if !$0 { session.pendingEdit = nil } }
+            get: { composer.pendingEdit != nil },
+            set: { if !$0 { composer.pendingEdit = nil } }
         ), titleVisibility: .visible) {
             Button("Append Unsent Message") { session.appendPendingEdit() }
-            Button("Cancel", role: .cancel) { session.pendingEdit = nil }
+            Button("Cancel", role: .cancel) { composer.pendingEdit = nil }
         } message: {
-            Text("Your newer draft will not be replaced. Sending edited text creates a new message, and an earlier unconfirmed send may already have arrived.")
+            Text(ChannelComposerSession.appendExplanation)
         }
     }
 
     private var container: some View {
         VStack(spacing: 0) {
             if hasNotices { notices.padding(.vertical, 8) }
-            if let source = session.replySource {
+            if let source = composer.replySource {
                 HStack(spacing: 4) {
                     Button { interaction.reveal(sequence: source.sequence) } label: {
                         Label("Replying to \(source.name)", systemImage: "arrowshape.turn.up.left")
                             .lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    Button { session.replySource = nil } label: {
+                    Button { composer.replySource = nil } label: {
                         Image(systemName: "xmark").frame(width: 44, height: 44)
                     }
                     .accessibilityLabel("Dismiss reply context")
@@ -129,7 +130,7 @@ struct ComposerSurface: View {
                     text: Bindable(draft).text, editor: editor, completionIsVisible: !choices.isEmpty,
                     onSend: send, onCompletionKey: handleCompletionKey,
                     onPasteImages: { providers in for provider in providers { draft.attachProvider(provider) } },
-                    onEscape: session.replySource == nil ? nil : { session.replySource = nil }
+                    onEscape: composer.replySource == nil ? nil : { composer.replySource = nil }
                 )
             }
             .padding(.bottom, 6)
@@ -183,10 +184,10 @@ struct ComposerSurface: View {
     private var sendButton: some View {
         Button(action: send) {
             Group {
-                if session.isSubmitting || session.attempt?.phase == .sending {
+                if composer.isSubmitting || composer.attempt?.phase == .sending {
                     ProgressView().frame(width: 32, height: 32)
                 } else {
-                    Image(systemName: session.attempt?.canRetry == true ? "arrow.clockwise" : "arrow.up")
+                    Image(systemName: composer.attempt?.canRetry == true ? "arrow.clockwise" : "arrow.up")
                         .font(.system(size: 17, weight: .medium))
                         .frame(width: 32, height: 32)
                         .background(session.canSend ? Color.accentColor : Color(uiColor: .quaternaryLabel),
@@ -199,7 +200,7 @@ struct ComposerSurface: View {
         .buttonStyle(.plain)
         .disabled(!session.canSend || scenePhase != .active)
         .keyboardShortcut(.return, modifiers: .command)
-        .accessibilityLabel(session.attempt?.canRetry == true ? "Send Again" : "Send message")
+        .accessibilityLabel(composer.attempt?.canRetry == true ? "Send Again" : "Send message")
     }
 
     private var notices: some View {
@@ -208,7 +209,7 @@ struct ComposerSurface: View {
                 notice(draft.isSavedLocally ? error : "Couldn't save this draft on this iPhone. \(error)")
                 if !draft.isSavedLocally { Button("Retry Saving Draft") { draft.retrySave() } }
             }
-            if let error = session.error { notice(error) }
+            if let error = composer.error { notice(error) }
             if let error = store.attemptPersistenceError { notice(error) }
             if draft.text.utf16.count > 12_000 { notice("Messages are limited to 12,000 characters.") }
             if session.isLoadingImages { Label("Reading images", systemImage: "photo") }
@@ -217,7 +218,7 @@ struct ComposerSurface: View {
                       : "Reconnect before sending so the audience is current.", systemImage: "wifi.slash")
                 if store.phase != .deleted { Button("Reconnect") { store.reconnect() } }
             }
-            if let attempt = session.attempt, attempt.canRetry {
+            if let attempt = composer.attempt, attempt.canRetry {
                 Label(attempt.phase == .notSent ? "\(attempt.phase.label). \(attempt.error ?? "Try sending again.")"
                       : "\(attempt.phase.label). It may have arrived.", systemImage: "exclamationmark.circle")
                 Button("Edit") { editor.focus() }
