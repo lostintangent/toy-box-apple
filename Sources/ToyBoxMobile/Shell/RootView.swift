@@ -153,7 +153,7 @@ struct RootView: View {
         let interaction = store.map { model.interaction(for: $0.id) }
         guard interaction?.isArtifactViewerPresented != true else { return nil }
         let conversation = interaction.flatMap {
-            sizeClass == .compact && $0.isInspectorPresented ? nil : $0
+            overview.isCompactSheetPresented || (sizeClass == .compact && $0.isInspectorPresented) ? nil : $0
         }
         let channels = model.catalog?.channels ?? []
         let attention = Set(channels.filter { model.sidebarProjection.attention($0) != nil }.map(\.id))

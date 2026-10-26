@@ -45,7 +45,7 @@ struct OverviewAboutSection: View {
                           systemImage: preview.kind == "screen" ? "display" : "globe")
                     Text(preview.kind == "screen" ? (preview.screenId ?? "Screen") : address.absoluteString)
                         .font(.footnote)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color(uiColor: .secondaryLabel))
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .frame(minHeight: 44, alignment: .leading)
