@@ -189,6 +189,15 @@ struct TranscriptFindTests {
         #expect(find.matches.map(\.sequence) == [1])
         find.query = "channel_renamed"
         #expect(find.matches.isEmpty)
+
+        let edited = ChannelMessage(id: "routine", sequence: 2, timestamp: "2026-10-24T12:00:00Z", sender: .system,
+                                    content: .system(.init(type: "routine_edited", routine: .init(
+                                        id: "r", title: "Daily review", schedule: "0 9 * * *", prompt: "blockers"))))
+        let shared = ChannelMessage(id: "share", sequence: 3, timestamp: "2026-10-24T12:00:00Z", sender: .system,
+                                    content: .system(.init(type: "artifact_shared", actor: .user, artifact: .init(
+                                        file: .init(kind: "session", path: "plan.md"), title: "Workshop plan"))))
+        #expect(TranscriptFind.renderedText(edited, agents: []) == "Routine edited Daily review")
+        #expect(TranscriptFind.renderedText(shared, agents: []) == "You shared Workshop plan")
     }
 
     @Test func loadedMessageUpdatesInvalidateRenderedTextAndPreserveHistoryCompletion() async {

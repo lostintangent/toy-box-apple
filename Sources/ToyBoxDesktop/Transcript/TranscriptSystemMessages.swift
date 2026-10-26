@@ -98,12 +98,12 @@ struct TranscriptSystemMessages: View {
                 }
             } else { sentence("Preview cleared") }
         case "artifact_shared":
-            TranscriptArtifactShares(icon: icon, actorName: actorName, messages: messages,
+            TranscriptArtifactShares(icon: icon, actorName: Self.actorName(first, agents: agents), messages: messages,
                                      historyStart: historyStart,
                                      findHighlights: findHighlights,
                                      onOpen: artifactOpener.open)
         case "routine_scheduled", "routine_edited", "routine_deleted":
-            event(routineLabel, value: first?.routine?.title ?? "Routine").lineLimit(3)
+            event(Self.routinePhrase(first?.type), value: first?.routine?.title ?? "Routine").lineLimit(3)
         default:
             if let description = first?.unknownFields?["description"]?.string {
                 sentence(findText("Channel updated\n\(description)"), spoken: "Channel updated. \(description)")
@@ -188,13 +188,14 @@ struct TranscriptSystemMessages: View {
         return (Text(findHighlight?.applying(to: label) ?? label), "\(identities) \(action) the channel")
     }
 
-    private var actorName: String {
-        first?.actor?.type == "user" ? "You"
-            : channelAgentIdentity(agents, id: first?.actor?.agentId ?? "").name
+    /// Who shared an artifact. Find matches the same words.
+    static func actorName(_ system: ChannelSystemContent?, agents: [ChannelAgent]) -> String {
+        system?.actor?.type == "user" ? "You"
+            : channelAgentIdentity(agents, id: system?.actor?.agentId ?? "").name
     }
 
-    private var routineLabel: String {
-        switch first?.type {
+    static func routinePhrase(_ type: String?) -> String {
+        switch type {
         case "routine_scheduled": "New routine scheduled"
         case "routine_edited": "Routine edited"
         default: "Routine deleted"
