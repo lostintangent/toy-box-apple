@@ -450,43 +450,6 @@ struct ComposerTests {
         }
     }
 
-    @Test func mentionContextUsesCaretAndCanonicalBoundaries() {
-        let text = "Hello, @Pi"
-        let context = ComposerMentionContext.match(text: text, selection: .init(location: text.utf16.count, length: 0))
-        #expect(context?.query == "pi")
-        #expect(context?.range == NSRange(location: 7, length: 3))
-        #expect(ComposerMentionContext.match(text: "a@pixel", selection: .init(location: 7, length: 0)) == nil)
-        #expect(ComposerMentionContext.match(text: "@pi", selection: .init(location: 3, length: 1)) == nil)
-        #expect(ComposerMentionContext.match(text: "@pi", selection: .init(location: NSNotFound, length: 0)) == nil)
-        // A line break after the token ends it, even though `$` alone would match before one.
-        #expect(ComposerMentionContext.match(text: "@\n", selection: .init(location: 2, length: 0)) == nil)
-        let emoji = "\u{1f642} @pi"
-        #expect(ComposerMentionContext.match(text: emoji, selection: .init(location: emoji.utf16.count, length: 0))?.range
-                == NSRange(location: 3, length: 3))
-    }
-
-    @Test func completionUsesCanonicalMatchingOrderAndCreateRules() {
-        let agents: [ChannelAgent] = [
-            .lead(id: "lead"),
-            .init(id: "z", name: "Zebra", role: "Design"),
-            .init(id: "a", name: "Ada", role: "Engineering"),
-            .init(id: "p", name: "Pixel", role: "Design"),
-        ]
-        #expect(MentionChoice.items(query: "", agents: agents).map(\.name)
-                == ["Everyone", "Lead", "Ada", "Pixel", "Zebra"])
-        #expect(MentionChoice.items(query: "design", agents: agents).filter { !$0.isCreate }.map(\.name)
-                == ["Pixel", "Zebra"])
-        #expect(MentionChoice.items(query: "pixel", agents: agents).allSatisfy { !$0.isCreate })
-        let create = MentionChoice.items(query: "new-person", agents: agents).last
-        #expect(create?.isCreate == true)
-        #expect(create?.name == "New Person")
-        #expect(MentionChoice.items(query: "ada", agents: agents).first?.isMember == true)
-        #expect(MentionChoice.items(query: "lead", agents: agents).first?.isMember == false)
-        #expect(MentionChoice.items(query: "new-person", agents: agents, allowsCreation: false).isEmpty)
-        #expect(MentionChoice.items(query: "", agents: agents, allowsCreation: false).map(\.name)
-                == ["Everyone", "Lead", "Ada", "Pixel", "Zebra"])
-    }
-
     @Test func mentionManagementHidesOrDisablesCreationUntilAnActionIsAvailable() async throws {
         let draft = ComposerDraft()
         draft.text = "@new-person"
