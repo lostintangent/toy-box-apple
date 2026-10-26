@@ -58,6 +58,28 @@ private final class SVGDimensions: NSObject, XMLParserDelegate {
     private var invalid = false
 
     static func size(of data: Data) throws -> CGSize {
+        // XMLParser can accept external entity declarations without invoking its declaration delegate.
+        // XML syntax is ASCII; dropping NUL padding also covers UTF-16/32 before the parser validates encoding.
+        let syntax = String(decoding: data.filter { $0 != 0 }, as: UTF8.self)
+        var remaining = syntax[...]
+        while let declaration = remaining.range(of: "<!DOCTYPE") {
+            var quote: Character?
+            var end = remaining.endIndex
+            for index in remaining[declaration.upperBound...].indices {
+                let character = remaining[index]
+                if let current = quote {
+                    if character == current { quote = nil }
+                } else if character == "\"" || character == "'" {
+                    quote = character
+                } else if character == "[" {
+                    throw ChannelAttachmentError.invalidImage
+                } else if character == ">" {
+                    end = remaining.index(after: index)
+                    break
+                }
+            }
+            remaining = remaining[end...]
+        }
         let delegate = SVGDimensions()
         let parser = XMLParser(data: data)
         parser.shouldProcessNamespaces = true
