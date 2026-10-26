@@ -375,7 +375,7 @@ struct OverviewTaskDiff: View {
     let diff: DiffStats
 
     var body: some View {
-        let colors = Self.textColors(in: colorScheme)
+        let colors = ChannelTaskColors.changes(in: colorScheme)
         HStack(spacing: 4) {
             Text("+\(Self.compact(diff.added))").foregroundStyle(colors.added)
             Text("\u{2212}\(Self.compact(diff.removed))").foregroundStyle(colors.removed)
@@ -391,10 +391,6 @@ struct OverviewTaskDiff: View {
         let added = diff.added.formatted()
         let removed = diff.removed.formatted()
         return "\(added) \(diff.added == 1 ? "addition" : "additions"), \(removed) \(diff.removed == 1 ? "deletion" : "deletions")"
-    }
-
-    static func textColors(in scheme: ColorScheme) -> (added: Color, removed: Color) {
-        ChannelTaskColors.changes(in: scheme)
     }
 
     static func compact(_ count: Int) -> String {
