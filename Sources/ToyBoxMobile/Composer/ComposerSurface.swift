@@ -58,9 +58,13 @@ struct ComposerSurface: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            if !choices.isEmpty { completion.padding(.horizontal, 12) }
-            container
+        container
+        .overlay(alignment: .topLeading) {
+            if !choices.isEmpty {
+                completion
+                    .padding(.horizontal, 12)
+                    .alignmentGuide(.top) { $0[.bottom] + 8 }
+            }
         }
         .padding(.horizontal, sizeClass == .compact ? 12 : 16)
         .frame(maxWidth: 720)
@@ -308,10 +312,13 @@ struct ComposerSurface: View {
             ScrollView {
                 VStack(spacing: 0) {
                     ForEach(choices) { choice in
-                        completionRow(choice).id(choice.id)
-                        if choice.id != choices.last?.id {
-                            Divider().padding(.leading, 46)
-                        }
+                        completionRow(choice)
+                            .overlay(alignment: .bottom) {
+                                if choice.id != choices.last?.id {
+                                    Divider().padding(.leading, 46)
+                                }
+                            }
+                            .id(choice.id)
                     }
                 }
                 .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { completionHeight = $0 }
@@ -322,10 +329,11 @@ struct ComposerSurface: View {
                 if let id { proxy.scrollTo(id, anchor: .center) }
             }
         }
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
-        .clipShape(RoundedRectangle(cornerRadius: 16))
         .frame(maxWidth: 320)
         .frame(maxHeight: min(264, completionHeight))
+        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .glassEffect(.regular.tint(Color(uiColor: .systemBackground).opacity(0.3)),
+                     in: RoundedRectangle(cornerRadius: 24, style: .continuous))
     }
 
     private func completionRow(_ choice: ChannelMentionChoice) -> some View {
@@ -337,8 +345,8 @@ struct ComposerSurface: View {
                         .frame(width: 24, height: 24)
                 }
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(choice.isCreate ? "Create \(choice.name)" : choice.name).font(.headline)
-                    Text(choice.detail).font(.caption).foregroundStyle(.secondary)
+                    Text(choice.isCreate ? "Create \(choice.name)" : choice.name).font(.headline).lineLimit(1)
+                    Text(choice.detail).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 }
                 Spacer(minLength: 0)
             }
