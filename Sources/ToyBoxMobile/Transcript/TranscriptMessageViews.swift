@@ -68,7 +68,7 @@ struct TranscriptRule: View {
             line
             Text(label)
                 .font(.caption.weight(.semibold))
-                .foregroundStyle(divider.unread ? Color.blue : .secondary)
+                .foregroundStyle(divider.unread ? Color.blue : TranscriptInk.secondary)
             line
         }
         .padding(.vertical, 12)
@@ -120,7 +120,7 @@ struct TranscriptUserMessage: View {
                 HStack(spacing: 6) {
                     Text("You").fontWeight(.semibold)
                     TranscriptTimestamp(timestamp: message.timestamp)
-                    if let deliveryLabel { Text(deliveryLabel).foregroundStyle(.secondary) }
+                    if let deliveryLabel { Text(deliveryLabel).foregroundStyle(TranscriptInk.secondary) }
                 }
                 .font(.footnote)
                 .accessibilityHidden(true)
@@ -262,20 +262,20 @@ struct TranscriptAgentMessage: View {
     private var headerItems: some View {
         if entry.startsRun {
             Text(agent.name).fontWeight(.semibold).italic(agent.deleted == true)
-                .foregroundStyle(agent.deleted == true ? .secondary : .primary)
+                .foregroundStyle(agent.deleted == true ? TranscriptInk.secondary : Color.primary)
         }
         if let addressee = entry.addressee {
-            Label(addressee, systemImage: "arrow.right").foregroundStyle(.secondary).lineLimit(1)
+            Label(addressee, systemImage: "arrow.right").foregroundStyle(TranscriptInk.secondary).lineLimit(1)
         }
         TranscriptTimestamp(timestamp: entry.message.timestamp)
         if let request = entry.request {
             Label {
                 Text(request == .pending ? "Needs your reply" : "Replied")
                     .fontWeight(request == .pending ? .medium : nil)
-                    .foregroundStyle(request == .pending ? Color.primary : .secondary)
+                    .foregroundStyle(request == .pending ? Color.primary : TranscriptInk.secondary)
             } icon: {
                 Image(systemName: request == .pending ? "questionmark.bubble.fill" : "checkmark")
-                    .foregroundStyle(request == .pending ? Color.orange : .secondary)
+                    .foregroundStyle(request == .pending ? Color.orange : TranscriptInk.secondary)
             }
             .fixedSize()
         }
@@ -337,13 +337,22 @@ struct TranscriptBody: View {
     }
 }
 
+/// Secondary label ink measures 3.4:1 on white, so metadata uses opaque grays that clear 4.5:1
+/// on the transcript, the gallery and Find's filled field in both appearances.
+enum TranscriptInk {
+    static let secondary = Color(uiColor: UIColor { traits in
+        traits.userInterfaceStyle == .dark ? UIColor(red: 0xAE / 255, green: 0xAE / 255, blue: 0xB2 / 255, alpha: 1)
+            : UIColor(red: 0x63 / 255, green: 0x63 / 255, blue: 0x66 / 255, alpha: 1)
+    })
+}
+
 struct TranscriptTimestamp: View {
     let timestamp: String
 
     var body: some View {
         if let date = ChannelDates.date(timestamp) {
             Text(date, format: .dateTime.hour().minute())
-                .foregroundStyle(.secondary)
+                .foregroundStyle(TranscriptInk.secondary)
                 .monospacedDigit()
         }
     }
@@ -365,7 +374,7 @@ struct TranscriptSystemMessages: View {
             let label = Text(findHighlight?.applying(to: AttributedString(text)) ?? AttributedString(text))
             Text("\(symbol) \(label)")
                 .font(.footnote)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(TranscriptInk.secondary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: .infinity, minHeight: 44)
                 .contentShape(.rect)

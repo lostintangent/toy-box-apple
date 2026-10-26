@@ -196,7 +196,7 @@ struct TranscriptImageGallery: View {
                         Text(parts.sent == nil ? position : " · \(position)").fixedSize()
                     }
                 }
-                .font(.caption).foregroundStyle(Self.subtitleInk)
+                .font(.caption).foregroundStyle(TranscriptInk.secondary)
             }
             .accessibilityElement(children: .combine)
             .accessibilityAddTraits(.isHeader)
@@ -243,12 +243,6 @@ struct TranscriptImageGallery: View {
     static func pageAnimation(reduceMotion: Bool) -> Animation {
         reduceMotion ? .easeInOut(duration: 0.2) : .smooth(duration: 0.3)
     }
-
-    /// Secondary label ink measures 3.4:1 on white, so Light uses a darker gray that clears 4.5:1.
-    static let subtitleInk = Color(uiColor: UIColor { traits in
-        traits.userInterfaceStyle == .dark ? .secondaryLabel.resolvedColor(with: traits)
-            : UIColor(red: 0x6C / 255, green: 0x6C / 255, blue: 0x70 / 255, alpha: 1)
-    })
 
     private func move(_ offset: Int) {
         withAnimation(Self.pageAnimation(reduceMotion: reduceMotion)) { presenter.move(by: offset) }

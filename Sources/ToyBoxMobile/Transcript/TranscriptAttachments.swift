@@ -116,7 +116,7 @@ private struct TranscriptFileRow: View {
                     if failed {
                         Text("Couldn't open. Tap to try again.").font(.caption).foregroundStyle(.red)
                     } else if let kind = attachment.contentType?.localizedDescription {
-                        Text(kind).font(.caption).foregroundStyle(.secondary)
+                        Text(kind).font(.caption).foregroundStyle(TranscriptInk.secondary)
                     }
                 }
             } icon: {
