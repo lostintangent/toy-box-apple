@@ -9,8 +9,6 @@ import SwiftUI
 final class MenuBarPresence {
     private(set) var isInserted = false
     private(set) var presentationRequest: UUID?
-    @ObservationIgnored private var explicitPresentation = false
-    @ObservationIgnored private var explicitWasPresented = false
     @ObservationIgnored var visibility: MenuBarVisibility = .whenActive {
         didSet { if visibility != oldValue { settle() } }
     }
@@ -58,27 +56,19 @@ final class MenuBarPresence {
     }
 
     func popoverVisibilityChanged(_ visible: Bool) {
+        if isPopoverOpen && !visible { presentationRequest = nil }
         isPopoverOpen = visible
-        if visible && explicitPresentation { explicitWasPresented = true }
-        if !visible && explicitWasPresented {
-            explicitPresentation = false
-            explicitWasPresented = false
-            presentationRequest = nil
-        }
         settle()
     }
 
     func requestPresentation() {
         guard !isPopoverOpen else { return }
-        explicitPresentation = true
         presentationRequest = UUID()
         settle()
     }
 
     func presentationFailed(id: UUID) {
         guard presentationRequest == id else { return }
-        explicitPresentation = false
-        explicitWasPresented = false
         presentationRequest = nil
         settle()
     }
@@ -89,7 +79,7 @@ final class MenuBarPresence {
         case .never: false
         case .whenActive: isActive || lingers || (isInserted && (isMenuOpen || isPopoverOpen))
         }
-        let next = inserted || explicitPresentation
+        let next = inserted || presentationRequest != nil
         if next != isInserted { isInserted = next }
     }
 }
