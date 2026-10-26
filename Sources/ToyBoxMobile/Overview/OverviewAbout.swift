@@ -1,6 +1,7 @@
 import ChannelClient
 import ChannelKit
 import SwiftUI
+import ToyBoxUI
 import UIKit
 
 struct OverviewAboutSection: View {
@@ -16,7 +17,7 @@ struct OverviewAboutSection: View {
             let directory = details.directory.flatMap { $0.isEmpty ? nil : $0 }
             let preview = details.resolvedPreview
             if purpose != nil || directory != nil || preview != nil {
-                Section("About") {
+                Section {
                     if let purpose {
                         OverviewPurpose(purpose: purpose, expanded: $session.purposeExpanded)
                     }
@@ -35,6 +36,8 @@ struct OverviewAboutSection: View {
                         previewRow(preview)
                         if let error = session.previewError { ManagementError(message: error) }
                     }
+                } header: {
+                    Text("About").foregroundStyle(ChannelInk.secondary)
                 }
             }
         }
@@ -54,7 +57,7 @@ struct OverviewAboutSection: View {
                           systemImage: preview.kind == "screen" ? "display" : "globe")
                     Text(preview.kind == "screen" ? (preview.screenId ?? "Screen") : address.absoluteString)
                         .font(.footnote)
-                        .foregroundStyle(Color(uiColor: .secondaryLabel))
+                        .foregroundStyle(ChannelInk.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .frame(minHeight: 44, alignment: .leading)
@@ -66,7 +69,7 @@ struct OverviewAboutSection: View {
                      : preview.kind == "screen" ? "The screen preview has no screen identity."
                      : "This preview type is not supported: \(preview.kind).")
                     .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(ChannelInk.secondary)
             }
         }
     }

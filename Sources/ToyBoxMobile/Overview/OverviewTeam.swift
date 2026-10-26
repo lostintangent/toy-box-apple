@@ -25,7 +25,7 @@ struct OverviewTeamSection: View {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(agent.name).font(.headline)
                             if let role = agent.role, !role.isEmpty {
-                                Text(role).font(.footnote).foregroundStyle(.secondary).lineLimit(2)
+                                Text(role).font(.footnote).foregroundStyle(ChannelInk.secondary).lineLimit(2)
                             }
                             OverviewAgentStatus(presence: store.presence[agent.id], live: store.phase.isLive)
                         }
@@ -57,7 +57,7 @@ struct OverviewTeamSection: View {
             .accessibilityIdentifier("overview-add-agent")
             .disabled(!store.phase.isLive)
         } header: {
-            Text("Team · \(store.roster.count)")
+            Text("Team · \(store.roster.count)").foregroundStyle(ChannelInk.secondary)
         }
     }
 }
@@ -77,23 +77,32 @@ struct OverviewAgentDetails: View {
                     AgentAvatarView(agent: agent, size: 32)
                     VStack(alignment: .leading, spacing: 4) {
                         Text(agent.name).font(.headline)
-                        Text("@\(agentHandleFromName(agent.name))").font(.footnote).foregroundStyle(.secondary)
+                        Text("@\(agentHandleFromName(agent.name))").font(.footnote).foregroundStyle(ChannelInk.secondary)
                     }
                 }
                 Text(agent.role.flatMap { $0.isEmpty ? nil : $0 } ?? "No role provided")
                     .textSelection(.enabled)
             }
-            Section("Status") {
+            Section {
                 OverviewAgentStatus(presence: store.presence[agentID], live: store.phase.isLive)
                 if store.phase.isLive, let presence = store.presence[agentID], presence.state == "waiting",
                    let wake = presence.wakeAt.flatMap(ChannelDates.date) {
-                    LabeledContent("Checks again", value: wake.formatted(date: .abbreviated, time: .shortened))
+                    LabeledContent("Checks again") {
+                        Text(wake.formatted(date: .abbreviated, time: .shortened))
+                            .foregroundStyle(ChannelInk.secondary)
+                    }
                 }
+            } header: {
+                Text("Status").foregroundStyle(ChannelInk.secondary)
             }
-            Section("Model") {
+            Section {
                 if let model {
-                    LabeledContent("Provider", value: model.provider)
-                    LabeledContent("Model", value: model.name)
+                    LabeledContent("Provider") {
+                        Text(model.provider).foregroundStyle(ChannelInk.secondary)
+                    }
+                    LabeledContent("Model") {
+                        Text(model.name).foregroundStyle(ChannelInk.secondary)
+                    }
                     if !model.options.isEmpty {
                         switch Result(catching: { try JSONEncoder().encode(model.options) }) {
                         case .success(let data):
@@ -105,8 +114,10 @@ struct OverviewAgentDetails: View {
                         }
                     }
                 } else {
-                    Text("Workspace default. No member override is set.").foregroundStyle(.secondary)
+                    Text("Workspace default. No member override is set.").foregroundStyle(ChannelInk.secondary)
                 }
+            } header: {
+                Text("Model").foregroundStyle(ChannelInk.secondary)
             }
         }
         .textSelection(.enabled)
@@ -122,16 +133,16 @@ private struct OverviewAgentStatus: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             if !live || presence == nil {
-                Text("Status unavailable").foregroundStyle(.secondary)
+                Text("Status unavailable").foregroundStyle(ChannelInk.secondary)
             } else if let presence {
                 Text(presence.state == "working" ? "Working" : presence.state == "waiting" ? "Waiting" : "Idle")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(ChannelInk.secondary)
                 if let text = presence.text, !text.isEmpty { Text(text) }
                 if presence.state == "waiting", let wake = presence.wakeAt.flatMap(ChannelDates.date) {
                     TimelineView(.everyMinute) { context in
                         let minutes = max(0, Int(ceil(wake.timeIntervalSince(context.date) / 60)))
                         Text(minutes == 0 ? "Check-in due" : "Checks again in \(minutes) min")
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(ChannelInk.secondary)
                             .monospacedDigit()
                     }
                 }

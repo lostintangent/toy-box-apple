@@ -8,14 +8,16 @@ struct OverviewRoutinesSection: View {
     let session: OverviewSession
 
     var body: some View {
-        Section("Routines · \(store.routines.count)") {
+        Section {
             if store.routines.isEmpty {
-                Text("No routines").foregroundStyle(.secondary)
+                Text("No routines").foregroundStyle(ChannelInk.secondary)
             } else {
                 ForEach(store.routines) {
                     OverviewRoutineRow(routine: $0, store: store, state: session.routine($0.id))
                 }
             }
+        } header: {
+            Text("Routines · \(store.routines.count)").foregroundStyle(ChannelInk.secondary)
         }
     }
 }
@@ -39,15 +41,18 @@ private struct OverviewRoutineRow: View {
             TimelineView(.everyMinute) { context in
                 switch Result(catching: { try nextCronOccurrence(routine.schedule, from: context.date) }) {
                 case .success(let date):
-                    LabeledContent("Next run", value: date.formatted(date: .abbreviated, time: .shortened))
+                    LabeledContent("Next run") {
+                        Text(date.formatted(date: .abbreviated, time: .shortened))
+                            .foregroundStyle(ChannelInk.secondary)
+                    }
                 case .failure:
-                    Text("Next run unavailable").foregroundStyle(.secondary)
+                    Text("Next run unavailable").foregroundStyle(ChannelInk.secondary)
                 }
             }
             VStack(alignment: .leading, spacing: 4) {
                 Text(routine.schedule).font(.footnote.monospaced())
                 Text(TimeZone.current.localizedName(for: .generic, locale: .current) ?? TimeZone.current.identifier)
-                    .font(.footnote).foregroundStyle(.secondary)
+                    .font(.footnote).foregroundStyle(ChannelInk.secondary)
             }
             .textSelection(.enabled)
             Button("Run Now", systemImage: "play", action: run)
@@ -62,7 +67,7 @@ private struct OverviewRoutineRow: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(routine.title).font(.body)
                 Text(pending ? "Requesting run…" : requestedAt != nil ? "Run requested" : schedule)
-                    .font(.footnote).foregroundStyle(.secondary)
+                    .font(.footnote).foregroundStyle(ChannelInk.secondary)
             }
             .frame(minHeight: 64, alignment: .leading)
         }
