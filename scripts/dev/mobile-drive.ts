@@ -9,9 +9,11 @@ export type MobileDriveStep = Timed & (
     | { scroll: "up" | "down" | "left" | "right"; on: string }
     | { drag: "up" | "down" | "left" | "right"; on: string }
     | { posture: "folded" | "unfolded" }
+    | { menuAction: string }
 );
+export type MobileDriveTraits = { contentSizeCategory: string; interfaceStyle: string };
 type Status = { state: "running" | "ready" | "completed" | "failed"; step: number;
-    labels: string[]; viewport: number[]; error?: string };
+    labels: string[]; viewport: number[]; error?: string; traits?: MobileDriveTraits; traitsError?: string };
 
 function record(value: unknown): value is Record<string, unknown> {
     return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -22,8 +24,9 @@ export function parseMobileDrive(value: unknown): MobileDriveStep[] {
     return value.map((step: unknown, index) => {
         const fail = (message: string): never => { throw new Error(`Drive step ${index + 1}: ${message}`); };
         if (!record(step)) return fail("expected an action object.");
-        const actions = ["tap", "type", "wait", "screenshot", "back", "fold", "action", "scroll", "drag", "posture"].filter(key => key in step);
-        if (actions.length !== 1) return fail("expected exactly one of tap, type, wait, screenshot, back, fold, action, scroll, drag or posture.");
+        const actions = ["tap", "type", "wait", "screenshot", "back", "fold", "action", "scroll", "drag", "posture", "menuAction"]
+            .filter(key => key in step);
+        if (actions.length !== 1) return fail("expected one supported action.");
         const action = actions[0]!;
         const allowed = new Set([action, "timeout", ...(action === "screenshot" ? ["display"] : []),
             ...(action === "back" ? ["ifPresent"] : []), ...(["action", "scroll", "drag"].includes(action) ? ["on"] : []),
@@ -50,6 +53,7 @@ export function parseMobileDrive(value: unknown): MobileDriveStep[] {
         if (typeof label !== "string" || !label.length) return fail(`${action} needs nonempty text.`);
         if (action === "tap") return { tap: label, ...timed };
         if (action === "type") return { type: label, ...timed };
+        if (action === "menuAction") return { menuAction: label, ...timed };
         if (action === "wait") {
             if (step.absent !== undefined && typeof step.absent !== "boolean") return fail("absent must be a boolean.");
             return { wait: label, ...timed, ...(step.absent === undefined ? {} : { absent: step.absent }) };
@@ -78,11 +82,22 @@ export function parseMobileDriveStatus(value: unknown): Status {
         || typeof value.step !== "number" || !Number.isInteger(value.step) || value.step < 0
         || !Array.isArray(value.labels) || !value.labels.every(item => typeof item === "string")
         || !Array.isArray(value.viewport) || !value.viewport.every(item => typeof item === "number")
-        || (value.error !== undefined && typeof value.error !== "string")) {
+        || (value.error !== undefined && typeof value.error !== "string")
+        || (value.traitsError !== undefined && (typeof value.traitsError !== "string" || !value.traitsError.length))
+        || value.traits !== undefined && value.traitsError !== undefined) {
         throw new Error("The app published an invalid drive status.");
     }
+    let traits: MobileDriveTraits | undefined;
+    if (value.traits !== undefined) {
+        if (!record(value.traits) || typeof value.traits.contentSizeCategory !== "string"
+            || !value.traits.contentSizeCategory.length || typeof value.traits.interfaceStyle !== "string"
+            || !value.traits.interfaceStyle.length) throw new Error("The app published invalid effective content traits.");
+        traits = { contentSizeCategory: value.traits.contentSizeCategory, interfaceStyle: value.traits.interfaceStyle };
+    }
     return { state: value.state as Status["state"], step: value.step,
-        labels: value.labels, viewport: value.viewport, ...(value.error === undefined ? {} : { error: value.error }) };
+        labels: value.labels, viewport: value.viewport, ...(value.error === undefined ? {} : { error: value.error }),
+        ...(traits === undefined ? {} : { traits }),
+        ...(value.traitsError === undefined ? {} : { traitsError: value.traitsError }) };
 }
 
 async function atomicJSON(path: string, value: unknown) {
@@ -146,7 +161,24 @@ export class MobileDriveSession {
     private acknowledged = new Set<number>();
     private hostError: string | undefined;
 
-    constructor(private drive: MobileDrive, private host: DriveHost) {}
+    constructor(private drive: MobileDrive, private host: DriveHost,
+        private expectedTraits: Partial<MobileDriveTraits> = {}) {}
+
+    private requireTraits(status: Status) {
+        if (!Object.values(this.expectedTraits).some(value => value !== undefined)) return;
+        if (status.traitsError) throw driveFailure(status, `Effective app traits are unavailable: ${status.traitsError}`);
+        if (!status.traits || status.viewport.length !== 2 || status.viewport.some(value => !Number.isFinite(value) || value <= 0)) {
+            throw driveFailure(status, "The app did not report effective content traits for its measured viewport.");
+        }
+        for (const key of ["contentSizeCategory", "interfaceStyle"] as const) {
+            const expected = this.expectedTraits[key];
+            if (expected !== undefined && status.traits[key] !== expected) {
+                throw driveFailure(status, `App ${key} is ${JSON.stringify(status.traits[key])}, expected ${JSON.stringify(expected)}. `
+                    + (key === "interfaceStyle" ? "A saved app override may differ from the requested simulator appearance."
+                        : "Check whether the app applies a content-size override."));
+            }
+        }
+    }
 
     async accept(status: Status, signal?: AbortSignal, deadline?: AbortSignal): Promise<{ step: number; error?: string } | undefined> {
         const step = this.drive.steps[status.step];
@@ -161,10 +193,12 @@ export class MobileDriveSession {
                 throw driveFailure(status, "The app completed before every scripted action finished.");
             }
             if (this.hostError !== undefined) throw driveFailure(status, this.hostError);
+            this.requireTraits(status);
             this.completed = true;
             return;
         }
         if (status.state !== "ready" || this.acknowledged.has(status.step)) return;
+        this.requireTraits(status);
         const operation = AbortSignal.any([
             ...(signal ? [signal] : []), ...(deadline ? [deadline] : []),
             AbortSignal.timeout((step.timeout ?? 12) * 1_000),
@@ -194,10 +228,11 @@ export class MobileDriveSession {
     }
 }
 
-export async function runMobileDrive(drive: MobileDrive, host: DriveHost, signal?: AbortSignal) {
+export async function runMobileDrive(drive: MobileDrive, host: DriveHost, signal?: AbortSignal,
+    expectedTraits: Partial<MobileDriveTraits> = {}) {
     let latest: Status | undefined;
     let deadline = Date.now() + 60_000;
-    const session = new MobileDriveSession(drive, host);
+    const session = new MobileDriveSession(drive, host, expectedTraits);
     while (Date.now() < deadline) {
         if (signal?.aborted) {
             throw latest ? driveFailure(latest, "Drive interrupted.") : new Error("Drive interrupted before app startup.");
@@ -219,11 +254,17 @@ export async function runMobileDrive(drive: MobileDrive, host: DriveHost, signal
                 console.log(`Waiting for ${step.posture} posture. Set Device Hub's deviceChrome.poseHingeSlider `
                     + "through Computer Use after confirming the leased simulator.");
             }
+            if (status.state === "running" && "menuAction" in step) {
+                console.log(`Visible-menu action dispatch (not a tap): ${step.menuAction}`);
+            }
         }
         latest = status;
         const acknowledgement = await session.accept(status, signal,
             AbortSignal.timeout(Math.max(0, deadline - Date.now())));
         if (session.completed) {
+            if (Object.values(expectedTraits).some(value => value !== undefined)) {
+                console.log(`Verified effective app traits: ${JSON.stringify(status.traits)}`);
+            }
             console.log(`Drive complete. Screenshots: ${drive.output}`);
             return session.screenshots;
         }

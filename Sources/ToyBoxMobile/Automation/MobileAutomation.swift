@@ -7,8 +7,8 @@ enum MobileAutomationPosture: String, Decodable {
 
     var viewport: [Double] {
         switch self {
-        case .folded: [386, 678]
-        case .unfolded: [871, 669]
+        case .folded: [466, 678]
+        case .unfolded: [669, 951]
         }
     }
 
@@ -35,6 +35,7 @@ struct MobileAutomationStep: Decodable, Equatable {
         case scroll(ScrollDirection, on: String)
         case drag(ScrollDirection, on: String)
         case posture(MobileAutomationPosture)
+        case menuAction(String)
     }
 
     let action: Action
@@ -50,7 +51,7 @@ struct MobileAutomationStep: Decodable, Equatable {
     init(from decoder: any Decoder) throws {
         let values = try decoder.container(keyedBy: Key.self)
         let names = Set(values.allKeys.map(\.stringValue))
-        let actions = names.intersection(["tap", "type", "wait", "screenshot", "back", "fold", "action", "scroll", "drag", "posture"])
+        let actions = names.intersection(["tap", "type", "wait", "screenshot", "back", "fold", "action", "scroll", "drag", "posture", "menuAction"])
         guard actions.count == 1, names.isSubset(of: actions.union(["display", "timeout", "ifPresent", "on", "absent"])),
               let name = actions.first, let key = Key(stringValue: name),
               (!names.contains("display") || name == "screenshot"),
@@ -66,7 +67,7 @@ struct MobileAutomationStep: Decodable, Equatable {
                                                   debugDescription: "timeout must be greater than 0 and at most 60 seconds.")
         }
         switch name {
-        case "tap", "type", "wait", "screenshot", "action", "scroll", "drag":
+        case "tap", "type", "wait", "screenshot", "action", "scroll", "drag", "menuAction":
             let text = try values.decode(String.self, forKey: key)
             guard !text.isEmpty else {
                 throw DecodingError.dataCorruptedError(forKey: key, in: values,
@@ -75,6 +76,7 @@ struct MobileAutomationStep: Decodable, Equatable {
             switch name {
             case "tap": action = .tap(text)
             case "type": action = .type(text)
+            case "menuAction": action = .menuAction(text)
             case "wait":
                 action = .wait(text, absent: try values.decodeIfPresent(Bool.self, forKey: Key(stringValue: "absent")!) ?? false)
             case "action", "scroll", "drag":
@@ -206,6 +208,20 @@ struct MobileAutomationTree {
     let elements: [Element]
     private let identifiedObjects: [String: [NSObject]]
 
+    struct Traits: Encodable, Equatable {
+        let contentSizeCategory: String
+        let interfaceStyle: String
+    }
+
+    enum TraitFailure: String, Error {
+        case missingWindow, ambiguousWindow, missingContent, ambiguousContent, treeLimit
+    }
+
+    enum TraitObservation: Equatable {
+        case available(Traits)
+        case unavailable(TraitFailure)
+    }
+
     init(windows: [UIWindow]) {
         self.windows = windows.filter { !$0.isHidden && $0.alpha > 0 }
         var seen = Set<ObjectIdentifier>()
@@ -259,9 +275,71 @@ struct MobileAutomationTree {
     }
 
     var labels: [String] { elements.map(\.description) }
+    var primaryWindow: UIWindow? { windows.first(where: \.isKeyWindow) ?? windows.first }
     var viewport: [Double] {
-        guard let window = windows.first(where: \.isKeyWindow) ?? windows.first else { return [] }
+        guard let window = primaryWindow else { return [] }
         return [Double(window.bounds.width), Double(window.bounds.height)]
+    }
+
+    var traits: TraitObservation {
+        let keyWindows = windows.filter(\.isKeyWindow)
+        guard keyWindows.count <= 1 else { return .unavailable(.ambiguousWindow) }
+        guard let window = keyWindows.first ?? (windows.count == 1 ? windows.first : nil) else {
+            return .unavailable(windows.isEmpty ? .missingWindow : .ambiguousWindow)
+        }
+        guard let root = window.rootViewController else { return .unavailable(.missingContent) }
+        var seen = Set<ObjectIdentifier>()
+        func visible(_ view: UIView) -> Bool {
+            guard view.window === window else { return false }
+            var region = window.bounds.intersection(view.convert(view.bounds, to: window))
+            guard !region.isEmpty, !region.isNull, !region.isInfinite else { return false }
+            var ancestor: UIView? = view
+            while let current = ancestor {
+                guard !current.isHidden, current.alpha > 0 else { return false }
+                if current.clipsToBounds {
+                    region = region.intersection(current.convert(current.bounds, to: window))
+                    guard !region.isEmpty, !region.isNull else { return false }
+                }
+                ancestor = current.superview
+            }
+            return true
+        }
+        func collect(_ controller: UIViewController) throws(TraitFailure) -> [Traits] {
+            guard seen.insert(ObjectIdentifier(controller)).inserted, seen.count <= 128 else { throw .treeLimit }
+            if let presented = controller.presentedViewController { return try collect(presented) }
+            if let navigation = controller as? UINavigationController {
+                guard let active = navigation.visibleViewController else { throw .missingContent }
+                return try collect(active)
+            }
+            if let tabs = controller as? UITabBarController {
+                guard let active = tabs.selectedViewController else { throw .missingContent }
+                return try collect(active)
+            }
+            guard let view = controller.viewIfLoaded, visible(view) else { throw .missingContent }
+            let children = controller.children.filter { $0.viewIfLoaded.map(visible) ?? false }
+            if !children.isEmpty {
+                var values: [Traits] = []
+                for child in children { values.append(contentsOf: try collect(child)) }
+                return values
+            }
+            let collection = view.traitCollection
+            let style: String
+            switch collection.userInterfaceStyle {
+            case .unspecified: style = "unspecified"
+            case .light: style = "light"
+            case .dark: style = "dark"
+            @unknown default: style = "unknown-\(collection.userInterfaceStyle.rawValue)"
+            }
+            return [Traits(contentSizeCategory: collection.preferredContentSizeCategory.rawValue, interfaceStyle: style)]
+        }
+        do {
+            let values = try collect(root)
+            guard let first = values.first else { return .unavailable(.missingContent) }
+            guard values.allSatisfy({ $0 == first }) else { return .unavailable(.ambiguousContent) }
+            return .available(first)
+        } catch {
+            return .unavailable(error)
+        }
     }
 
     func matching(_ target: String) -> [Element] {
@@ -359,6 +437,8 @@ private final class MobileAutomationRun {
         let step: Int
         let labels: [String]
         let viewport: [Double]
+        let traits: MobileAutomationTree.Traits?
+        let traitsError: String?
         var error: String?
     }
 
@@ -398,7 +478,14 @@ private final class MobileAutomationRun {
 
     private func publish(_ state: String, error: String? = nil) throws {
         let tree = MobileAutomationTree.current
-        let status = Status(state: state, step: index, labels: tree.labels, viewport: tree.viewport, error: error)
+        let traits: MobileAutomationTree.Traits?
+        let traitsError: String?
+        switch tree.traits {
+        case .available(let value): traits = value; traitsError = nil
+        case .unavailable(let failure): traits = nil; traitsError = failure.rawValue
+        }
+        let status = Status(state: state, step: index, labels: tree.labels, viewport: tree.viewport,
+                            traits: traits, traitsError: traitsError, error: error)
         try JSONEncoder().encode(status).write(to: directory.appending(path: "status.json"), options: .atomic)
     }
 
@@ -467,6 +554,20 @@ private final class MobileAutomationRun {
         case .screenshot:
             try await settle(timeout: step.timeout)
             try await hostAction(timeout: step.timeout)
+        case .menuAction(let title):
+            let selection = try MobileAutomationMenu.select(title, in: .current)
+            defer { selection.marked.restoreIdentifier() }
+            _ = try await wait(timeout: step.timeout) {
+                try selection.isVisible(in: .current) ? true : nil
+            }
+            selection.interaction.dismissMenu()
+            _ = try await wait(timeout: step.timeout) {
+                MobileAutomationMenu.snapshot(selection.interaction).isEmpty ? true : nil
+            }
+            try await settle(timeout: step.timeout)
+            try Task.checkCancellation()
+            guard ContinuousClock.now < deadline else { throw Failure("Menu dismissal exceeded the step deadline.") }
+            try selection.perform(in: .current)
         case .posture(let posture):
             do {
                 try await settle(timeout: step.timeout, posture: posture)

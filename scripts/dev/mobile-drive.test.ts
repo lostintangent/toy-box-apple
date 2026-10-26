@@ -24,6 +24,7 @@ test("drive actions are strict and native display identifiers are normalized", (
     }
     expect(parseMobileDrive([{ posture: "folded" }, { posture: "unfolded", timeout: 60 }]))
         .toEqual([{ posture: "folded" }, { posture: "unfolded", timeout: 60 }]);
+    expect(parseMobileDrive([{ menuAction: "Edit Channel" }])).toEqual([{ menuAction: "Edit Channel" }]);
     for (const value of [[], {}, [{}], [{ tap: "x", wait: "x" }], [{ type: "" }], [{ back: false }],
         [{ fold: 1 }], [{ tap: "x", display: 1 }], [{ screenshot: "x", display: 0 }],
         [{ screenshot: "x", display: "primary" }], [{ wait: "x", timeout: 0 }],
@@ -35,7 +36,8 @@ test("drive actions are strict and native display identifiers are normalized", (
         [{ posture: "open" }], [{ posture: 0 }], [{ posture: "folded", fold: true }],
         [{ posture: "folded", display: 1 }], [{ posture: "folded", scroll: "down", on: "form" }],
         [{ posture: "folded", on: "form" }], [{ drag: "up" }], [{ drag: "forward", on: "list" }],
-        [{ drag: "up", on: "list", scroll: "up" }]]) {
+        [{ drag: "up", on: "list", scroll: "up" }], [{ menuAction: "" }], [{ menuAction: "Edit", on: "menu" }],
+        [{ menuAction: "Edit", tap: "Edit" }]]) {
         expect(() => parseMobileDrive(value)).toThrow();
     }
 });
@@ -53,6 +55,27 @@ test("malformed app statuses never look like completion", () => {
     expect(() => parseMobileDriveStatus({ state: "completed" })).toThrow("invalid drive status");
     expect(() => parseMobileDriveStatus({ state: "completed", step: -1, labels: [], viewport: [] })).toThrow();
     expect(() => parseMobileDriveStatus({ state: "ready", step: 0, labels: [7], viewport: [] })).toThrow();
+    expect(() => parseMobileDriveStatus({ state: "ready", ...frame, traits: { interfaceStyle: "dark" } })).toThrow();
+    expect(() => parseMobileDriveStatus({ state: "ready", ...frame, traitsError: 3 })).toThrow();
+    const traits = { contentSizeCategory: "UICTContentSizeCategoryL", interfaceStyle: "dark" };
+    expect(parseMobileDriveStatus({ state: "ready", ...frame, traits }).traits).toEqual(traits);
+    expect(() => parseMobileDriveStatus({ state: "ready", ...frame, traits, traitsError: "Ambiguous" })).toThrow();
+});
+
+test("status preserves observed native traits or an explicit selection failure without inventing defaults", () => {
+    const status: ReturnType<typeof parseMobileDriveStatus> = {
+        state: "completed", step: 0, labels: [], viewport: [386, 678],
+    };
+    expect(parseMobileDriveStatus(status)).toEqual(status);
+    const traits = { contentSizeCategory: "UICTContentSizeCategoryAccessibilityXXXL", interfaceStyle: "dark" };
+    expect(parseMobileDriveStatus({ ...status, traits })).toEqual({ ...status, traits });
+    expect(parseMobileDriveStatus({ ...status, traitsError: "ambiguousContent" }))
+        .toEqual({ ...status, traitsError: "ambiguousContent" });
+    for (const invalid of [{ traits: null }, { traits: [] }, { traits: {} },
+        { traits: { ...traits, contentSizeCategory: "" } }, { traits: { ...traits, interfaceStyle: 0 } },
+        { traitsError: "" }, { traitsError: false }, { traits, traitsError: "missingContent" }]) {
+        expect(() => parseMobileDriveStatus({ ...status, ...invalid })).toThrow();
+    }
 });
 
 const frame = { step: 0, labels: ["Message"], viewport: [440, 956] };
@@ -114,6 +137,45 @@ test("a screenshot companion write failure cannot acknowledge success or repeat 
     } finally {
         await rm(output, { recursive: true, force: true });
     }
+});
+
+test("requested native content traits are verified before capture and on completion", async () => {
+    const output = await mkdtemp(join(tmpdir(), "tbm-mobile-drive-traits-"));
+    try {
+        let captures = 0;
+        const traits = { contentSizeCategory: "UICTContentSizeCategoryAccessibilityXXXL", interfaceStyle: "dark" };
+        const session = new MobileDriveSession(drive([{ screenshot: "large-dark" }], output), {
+            async capture() { captures += 1; }, fold: unexpected,
+        }, traits);
+        await expect(session.accept({ ...frame, state: "ready" })).rejects.toThrow("did not report effective");
+        await expect(session.accept({ ...frame, state: "ready", traitsError: "Ambiguous native windows" }))
+            .rejects.toThrow("Ambiguous native windows");
+        for (const mismatched of [
+            { ...traits, contentSizeCategory: "UICTContentSizeCategoryL" }, { ...traits, interfaceStyle: "light" },
+        ]) {
+            await expect(session.accept({ ...frame, state: "ready", traits: mismatched })).rejects.toThrow("expected");
+        }
+        expect(captures).toBe(0);
+        expect(await session.accept({ ...frame, state: "ready", traits })).toEqual({ step: 0 });
+        expect(captures).toBe(1);
+        expect(JSON.parse(await readFile(join(output, "large-dark.json"), "utf8")).traits).toEqual(traits);
+        await expect(session.accept({ ...frame, state: "completed" })).rejects.toThrow("did not report effective");
+        expect(session.completed).toBe(false);
+        await session.accept({ ...frame, state: "completed", traits });
+        expect(session.completed).toBe(true);
+    } finally {
+        await rm(output, { recursive: true, force: true });
+    }
+});
+
+test("trait verification also protects scripts without host captures", async () => {
+    const session = new MobileDriveSession(drive([{ wait: "Channels" }]),
+        { capture: unexpected, fold: unexpected }, { interfaceStyle: "dark" });
+    await session.accept({ ...frame, state: "running" });
+    await expect(session.accept({ ...frame, state: "completed",
+        traits: { contentSizeCategory: "UICTContentSizeCategoryL", interfaceStyle: "light" } }))
+        .rejects.toThrow("saved app override");
+    expect(session.completed).toBe(false);
 });
 
 test("an app failure reports its exact step and accessible labels", async () => {
