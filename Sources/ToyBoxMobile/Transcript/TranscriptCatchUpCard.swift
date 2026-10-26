@@ -86,6 +86,7 @@ struct TranscriptCatchUpCard: View {
             HStack(spacing: 6) {
                 Text("Summarized on this iPhone\(newer >= 4 ? " · \(newer) newer messages" : "")")
                     .foregroundStyle(.secondary)
+                TranscriptCatchUpCaveat()
                 if newer >= 4 {
                     Button("Update") {
                         if let state = store.state { catchUp.update(from: state, server: store.api.baseURL) }
@@ -99,6 +100,27 @@ struct TranscriptCatchUpCard: View {
             .frame(minHeight: 32)
             .padding(.trailing, 12)
         }
+    }
+}
+
+/// The Mac's hover help, reachable by touch and VoiceOver.
+private struct TranscriptCatchUpCaveat: View {
+    @ViewState private var isPresented = false
+
+    var body: some View {
+        Button("About This Summary", systemImage: "info.circle") { isPresented = true }
+            .labelStyle(.iconOnly)
+            .foregroundStyle(.secondary)
+            .frame(minWidth: 44, minHeight: 44)
+            .contentShape(.rect)
+            .popover(isPresented: $isPresented) {
+                Text("Made on this iPhone from the messages below. Summaries can be wrong.")
+                    .font(.footnote)
+                    .padding()
+                    .frame(idealWidth: 260)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .presentationCompactAdaptation(.popover)
+            }
     }
 }
 
