@@ -91,7 +91,12 @@ public struct ModelSelectionFields<ExtraRows: View>: View {
                         if selectionPolicy.retainedModel != nil {
                             picker.labelsHidden().fixedSize()
                         } else {
-                            Text("Couldn't Load").foregroundStyle(.secondary)
+                            Text("Couldn't Load")
+                                #if os(iOS)
+                                .foregroundStyle(ChannelInk.secondary)
+                                #else
+                                .foregroundStyle(.secondary)
+                                #endif
                         }
                         Button("Retry") { Task { await load() } }
                             .controlSize(.small)
@@ -222,6 +227,9 @@ public struct ManagementFooter: View {
             if let violation {
                 Label {
                     Text(violation)
+                        #if os(iOS)
+                        .foregroundStyle(Color.primary)
+                        #endif
                 } icon: {
                     Image(systemName: "exclamationmark.circle.fill").foregroundStyle(.red)
                 }
@@ -233,10 +241,11 @@ public struct ManagementFooter: View {
         }
         #if os(iOS)
         .font(.footnote)
+        .foregroundStyle(ChannelInk.secondary)
         #else
         .font(.system(size: 11))
-        #endif
         .foregroundStyle(.secondary)
+        #endif
         .fixedSize(horizontal: false, vertical: true)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
