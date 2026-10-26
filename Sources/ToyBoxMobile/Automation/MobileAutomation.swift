@@ -7,8 +7,8 @@ enum MobileAutomationPosture: String, Decodable {
 
     var viewport: [Double] {
         switch self {
-        case .folded: [386, 678]
-        case .unfolded: [871, 669]
+        case .folded: [466, 678]
+        case .unfolded: [669, 951]
         }
     }
 

@@ -156,10 +156,15 @@ view.
   script repeats its actions, including sends. Use demo servers only for write scripts.
   Posture does not move the hinge itself. While the driver owns the lease, use Computer Use on
   Device Hub and confirm that its window and selected device identify the leased simulator before
-  setting `deviceChrome.poseHingeSlider`. The app waits for a settled **386x678-point folded**
-  or **871x669-point unfolded** scene, not merely a different size. A timeout reports the expected
+  using its native posture controls. The SDK 27.1 proof fixture waits for a settled **466x678-point folded**
+  or **669x951-point unfolded** scene, not merely a different size. These are the measured proof
+  orientations, not general device or hinge detection. A timeout reports the expected
   and measured scene. `scripts/fixtures/mobile-drive-posture.json` checks folded, unfolded and
   folded again without sending or editing a draft.
+  Native Open followed by Rotate Right reached the unfolded scene. Display enumeration reported
+  display **1** for the folded LCD (1398x2034 pixels) and **3** for the unfolded LCD (2007x2853),
+  both at 3x scale. Display **2** is TVOut, not the unfolded capture target. Re-enumerate when the
+  runtime or device configuration changes rather than deriving a display ID from a posture name.
   Slider value **0** was observed with the folded scene. The unfolded value is not yet verified:
   Computer Use refused both setting a value and the advertised increment action. A requested value
   is not a measured result.
