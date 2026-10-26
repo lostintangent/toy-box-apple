@@ -15,7 +15,8 @@ struct RootView: View {
     @ViewState private var preferredCompactColumn = NavigationSplitViewColumn.sidebar
     @ViewState private var searchFocusRequest = UUID()
 
-    var body: some View {
+    @ViewBuilder
+    private var navigationWithOverview: some View {
         @Bindable var model = model
         NavigationSplitView(columnVisibility: $columnVisibility, preferredCompactColumn: $preferredCompactColumn) {
             ChannelSidebar(showsSettings: $model.isSettingsPresented, searchFocusRequest: searchFocusRequest)
@@ -57,6 +58,11 @@ struct RootView: View {
         .onChange(of: sizeClass, initial: true) { _, value in
             overview.move(to: value == .compact ? .sheet : .inspector)
         }
+    }
+
+    var body: some View {
+        @Bindable var model = model
+        navigationWithOverview
         .onChange(of: model.serverURL) { _, _ in
             management.flow = nil
             managementSessions.reset()
