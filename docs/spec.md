@@ -996,6 +996,14 @@ Only coordination entries marked collapsible truncate, at 160 points of body tex
 user and all flagged requests always remain expanded. User-initiated expansion is preserved while
 rows update. The copy action copies the original full message, including its leading mentions.
 
+On the phone, a Show More/Less footer occupies 44 points total at Large and grows with its
+text at larger Dynamic Type. Center the footnote semibold label vertically and align it to
+the body's leading edge. There is no additional 4-point body/footer gap or 10-point bubble
+padding below that target. Retain 12-point horizontal and 10-point top body padding and the
+24-point fade. Do not shrink the tap target or overlap links in the body. Bubbles without
+this action retain their normal bottom padding. Phone mentions follow the identity-ink and
+contrast policy above, not generic primary text.
+
 A pending request asks the user for something, so it offers an action rather than an alarm.
 Never outline it. The bubble keeps its normal shape and padding, but trades the neutral fill
 for a warm wash. In light, use `Color.orange` at 10%. In dark, keep the 7% neutral fill and layer
@@ -1248,6 +1256,22 @@ uses the reveal path's nonmoving alternative.
 
 ### Composer and tray
 
+**Phone input refinement.** Native input text and placeholder share 16-point horizontal and
+14-point top insets, applied once. This is a 4-point increase in each direction, not a change
+to the accepted action-row padding. Keep measured one-to-three-line growth. The placeholder
+uses muted readable-secondary ink rather than primary draft ink and must reach 4.5:1 over
+actual Light/Dark glass. The static audience preview matches the Mac's capsule: 7-point horizontal
+inset, minimum-24 visual height growing with text, neutral secondary at 8% fill, in the existing
+44-point row. Input Needed stays unfilled with the Mac's filled orange question-circle.
+
+Phone conversation dragging dismisses the keyboard interactively. Tapping genuinely empty
+transcript space dismisses it too, without swallowing links, message controls or selection.
+Keep draft, caret and undo. After an explicit dismissal, do not refocus until the user chooses
+the composer or Reply. The working capsule is a minimum-44 button opening Working Now in an
+anchored native popover with compact sheet adaptation: actual working agents, 24-point
+avatars, body-17 names, wrapping subheadline-15 status and 12-point row gaps. No navigation or
+management action is implied by these informational rows.
+
 The composer floats over the conversation in a bottom `safeAreaBar`, as one glass surface
 spanning the full conversation lane from the avatars' leading edge, 16 points above the window's bottom
 edge. Messages scroll beneath it. Do not add a full-width background, separator or second glass
@@ -1389,6 +1413,22 @@ with a zero-spacing `VStack` and 16-point horizontal insets. Order: About (untit
 Tasks, Artifacts, Routines. Separate sections with a native `Divider()` across the content
 width, with 2 points of vertical padding. No cards, count capsules, section fills or uppercase.
 
+**Phone Overview, user feedback 3332 and design 3339/3344.** Use a plain native list,
+including expanded work rows. Opening purpose and details sit directly on the sheet background,
+without an enclosing card. Preserve native row separators, navigation, swipe actions and the
+existing task/team anatomy. Apply the leading content rail once, 16 points inside compact safe
+content or 20 in regular width, not the old 44-point combined grouped-list and row inset.
+Section headings are real minimum-44 button rows, not padded native
+section-header slots over empty bodies. At Large, measure these gaps between layout bounds:
+12 points from the inline navigation bar's bottom safe-area edge to the first purpose text;
+16 from the purpose block to details; 4 between folder label and wrapping path; 8 from folder
+block to Preview; 16 after opening information to the first heading; 4 from an expanded
+heading to content; 16 after expanded content to the next heading; 8 between collapsed
+heading targets. Consecutive collapsed headings are therefore 52 points top-to-top, not 87.
+More/Less belongs to the purpose block, stays minimum 44 and has no extra spacer above it.
+Omit absent content and its gaps. Grow rows and headings with Dynamic Type, never enforce
+52 as a fixed height or add another native section gap. Mac geometry stays unchanged.
+
 **Section headers: names lead, facts follow.** The name is the primary anchor and its count is
 quiet supporting information, never a badge or part of the name. Mac uses 13 semibold primary
 and 13 regular readable secondary; phone uses native subheadline 15 semibold primary and
@@ -1412,8 +1452,8 @@ footnote 13 phone, with its readable colors, tabular digits and 6-point pair gap
 Mac header minimum 28, not fixed height: 8 below divider, 4 to content, 12 after section.
 Keep the Finder convention: trailing 10-point semibold `chevron.down` appears on hover or
 keyboard focus; collapsed `chevron.right` stays visible. Reserve the 16-point lane when hidden
-so nothing jumps. Phone minimum 44 with an always-visible 11-point semibold chevron and native
-Form section spacing. Scale text and symbols with host text sizing, growing the lane as needed.
+so nothing jumps. Phone minimum 44 with an always-visible 11-point semibold chevron and the
+explicit plain-list rhythm above. Scale text and symbols with host text sizing, growing the lane as needed.
 When the complete baseline row cannot fit, move the whole diff to a leading-aligned second
 line, 4 points below. If name/count cannot fit together, keep name and top-trailing disclosure
 first, count next, diff last. Phone accessibility sizes deliberately use this single column.
@@ -1496,6 +1536,15 @@ regular weight. Never render toggleable checkboxes. Root
 status icons sit on the 16-point content rail, aligned with the section heading, with the title
 6 points after. Nothing hangs in the leading margin. Each nesting level indents 22 points, so a
 child's status icon sits directly under its parent's title, as in Reminders.
+
+Expanded inline child groups on both Mac and phone have a native separator-colored ancestry
+hairline, one physical pixel wide, in the existing indent gutter at the parent's status-column
+center. It spans that child group's bounds with 4-point clearance at each end. Nested expanded
+groups add their own guide. No horizontal elbows, root-level rule, extra indent or title-width
+loss. Collapsing removes it with the children. Do not draw a dangling guide to a phone
+"View N subtasks" link; its scoped list starts a fresh local tree. Guides never hit-test or
+enter accessibility. Include the shared Mac Tasks popover, and preserve all disclosure,
+hierarchy and row-action semantics.
 
 A parent's disclosure trails its title inline, as macOS sidebar section headers and the pane do.
 Build the first line as one wrapping `Text`: the title, then two spaces and the progress count
