@@ -79,7 +79,7 @@ export function parseMobileDriveStatus(value: unknown): Status {
         || !Array.isArray(value.labels) || !value.labels.every(item => typeof item === "string")
         || !Array.isArray(value.viewport) || !value.viewport.every(item => typeof item === "number")
         || (value.error !== undefined && typeof value.error !== "string")
-        || (value.traitsError !== undefined && typeof value.traitsError !== "string")
+        || (value.traitsError !== undefined && (typeof value.traitsError !== "string" || !value.traitsError.length))
         || value.traits !== undefined && value.traitsError !== undefined) {
         throw new Error("The app published an invalid drive status.");
     }
