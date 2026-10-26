@@ -135,7 +135,9 @@ struct TranscriptUserMessage: View {
                         }
                 }
                 if let attachments = message.attachments, !attachments.isEmpty {
-                    TranscriptAttachments(attachments: attachments, api: context.api, alignment: .trailing)
+                    TranscriptAttachments(attachments: attachments, api: context.api, alignment: .trailing,
+                                          source: .init(messageID: message.id, sender: "You",
+                                                        timestamp: message.timestamp))
                 }
                 TranscriptReactions(message: message, agents: context.agents, statusReactions: statusReactions,
                                     alignment: .trailing)
@@ -225,7 +227,9 @@ struct TranscriptAgentMessage: View {
                         }
                 }
                 if let attachments = entry.message.attachments, !attachments.isEmpty {
-                    TranscriptAttachments(attachments: attachments, api: context.api, alignment: .leading)
+                    TranscriptAttachments(attachments: attachments, api: context.api, alignment: .leading,
+                                          source: .init(messageID: entry.message.id, sender: agent.name,
+                                                        timestamp: entry.message.timestamp))
                 }
                 TranscriptReactions(message: entry.message, agents: context.agents,
                                     statusReactions: statusReactions)
