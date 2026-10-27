@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { root } from "../lib.ts";
 import { referenceFactory, remapChannel, type Demo, type Snapshot } from "./types.ts";
 import { createDemoPushRoutes } from "./push-routes.ts";
+import { writeHistoryPage } from "./history-fixture.ts";
 
 export function createCompletedDemoFixture(source: Snapshot, now = Date.now()): Snapshot {
     if (source.channel.id !== "studio-demo") throw new Error("The completion fixture needs the canonical Studio demo.");
@@ -58,6 +59,14 @@ export function installDemoCatalogRoutes(demo: Pick<Demo, "server" | "snapshot">
                 response.end(JSON.stringify({ error: "Could not register push delivery." }));
             });
             return;
+        }
+        if (request.method === "GET" && url.pathname.endsWith("/messages")) {
+            const snapshot = snapshots().find(snapshot =>
+                url.pathname === `/api/v1/channels/${encodeURIComponent(snapshot.channel.id)}/messages`);
+            if (snapshot) {
+                writeHistoryPage(response, url, snapshot.messages, snapshot.revision);
+                return;
+            }
         }
         if (request.method === "GET" && ["/api/v1/channels", "/api/v1/models"].includes(url.pathname)) {
             const current = snapshots();
