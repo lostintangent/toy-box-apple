@@ -154,6 +154,59 @@ struct TaskRowsTests {
         #expect(abs(labelHeight - textHeight - ChannelOverviewFactsLayout.titleGap - outerPadding) < 0.5)
     }
 
+    @Test func aScopedNativeAccessoryCannotChangeTheRootReadingWidth() async throws {
+        func task(depth: Int) -> ChannelTask {
+            .init(id: "depth-\(depth)", title: "Keep the six-level task hierarchy", status: "in_progress",
+                  children: depth < 5 ? [task(depth: depth + 1)] : nil)
+        }
+        let store = ChannelStore(id: "channel", api: try ChannelAPI(serverURL: "https://fixture.example"))
+        let session = OverviewSession(store: store)
+        let viewer = ChannelArtifactSession(
+            decodeImage: { _, _, _ in throw ChannelAttachmentError.invalidImage },
+            download: { _, _ in throw URLError(.notConnectedToInternet) })
+        let host = UIHostingController(rootView:
+            NavigationStack {
+                OverviewList {
+                    Section {
+                        OverviewTaskRows(tasks: [task(depth: 0)], store: store, session: session)
+                            .listRowInsets(.vertical, 0)
+                    }
+                }
+                .navigationDestination(for: OverviewRoute.self) { _ in Text("Scoped subtasks") }
+            }
+            .environment(viewer)
+            .environment(\.horizontalSizeClass, .compact)
+            .dynamicTypeSize(.large))
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 354, height: 1400))
+        window.rootViewController = host
+        window.isHidden = false
+        defer { window.isHidden = true; window.rootViewController = nil }
+        host.view.layoutIfNeeded()
+        await Task.yield()
+        host.view.layoutIfNeeded()
+        let list = try #require(nativeList(in: host.view))
+        let expected = Set((0...4).map { "overview-task-depth-\($0)" } + ["overview-subtasks-depth-4"])
+        func rowIDs() -> Set<String> {
+            Set(MobileAutomationTree(windows: [window]).elements
+                .filter { $0.identifier.hasPrefix("overview-task-") || $0.identifier.hasPrefix("overview-subtasks-") }
+                .map(\.identifier))
+        }
+        let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+        while rowIDs() != expected, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(5))
+            host.view.layoutIfNeeded()
+        }
+        #expect(rowIDs() == expected)
+        #expect(list.numberOfItems(inSection: 0) == expected.count)
+        for _ in 0..<4 {
+            host.view.setNeedsLayout()
+            host.view.layoutIfNeeded()
+            await Task.yield()
+            #expect(rowIDs() == expected)
+            #expect(list.numberOfItems(inSection: 0) == expected.count)
+        }
+    }
+
     @Test(arguments: DisclosureChange.allCases)
     func disclosureHonorsAccessibilityTextAndTheSystemMotionPreference(change: DisclosureChange) async throws {
         let store = ChannelStore(id: "channel", api: try ChannelAPI(serverURL: "https://fixture.example"))

@@ -93,7 +93,6 @@ struct OverviewTaskRows: View {
                     }
                 }
                 .padding(.bottom, row.endsRoot ? 8 : 0)
-                .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { width = $0 }
                 .listRowSeparator(.hidden)
                 .listRowBackground(Color(.systemBackground))
         }
@@ -114,6 +113,9 @@ struct OverviewTaskRows: View {
             .accessibilityIdentifier("overview-subtasks-\(row.task.id)")
         } else {
             OverviewTaskNode(task: row.task, store: store, session: session, depth: row.depth, layout: row.layout)
+                .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) {
+                    if row.depth == 0 { width = $0 }
+                }
         }
     }
 }
