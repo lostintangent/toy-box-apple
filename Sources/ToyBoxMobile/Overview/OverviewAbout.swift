@@ -48,6 +48,7 @@ struct OverviewAboutSection: View {
                                 if let error = session.previewError { ManagementError(message: error) }
                             }
                         }
+                        .symbolRenderingMode(.monochrome)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)

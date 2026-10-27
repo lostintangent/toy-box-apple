@@ -1513,6 +1513,7 @@ and gives success sensory feedback. VoiceOver reads "Folder, {name}" with the hi
 full path". A long-press context menu is titled with the full path and offers Copy Path. Do
 not show "Folder on Mac", a path row or a separate copy button. Screen Preview has only its
 icon and title, with no window/display identity line. URL previews keep their address line.
+Folder and Preview symbols share monochrome rendering rather than a mixed outline/filled palette.
 Both sidebars and Overviews use one shared folder-name rule: `NSString.lastPathComponent`,
 falling back to the original path if the component is empty, without expanding or resolving it.
 
