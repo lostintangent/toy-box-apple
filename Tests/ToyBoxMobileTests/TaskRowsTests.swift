@@ -130,6 +130,42 @@ struct TaskRowsTests {
         }
     }
 
+    @Test(arguments: [DynamicTypeSize.large, .accessibility1, .accessibility5])
+    func disclosureHonorsAccessibilityTextAndTheSystemMotionPreference(size: DynamicTypeSize) async throws {
+        let store = ChannelStore(id: "channel", api: try ChannelAPI(serverURL: "https://fixture.example"))
+        let session = OverviewSession(store: store)
+        let record = DisclosureTransactions()
+        let reduceMotion = UIAccessibility.isReduceMotionEnabled
+        let viewer = ChannelArtifactSession(
+            decodeImage: { _, _, _ in throw ChannelAttachmentError.invalidImage },
+            download: { _, _ in throw URLError(.notConnectedToInternet) })
+        let host = UIHostingController(rootView:
+            DisclosureTransactionScene(task: tree[0], store: store, session: session,
+                                       accessibility: size.isAccessibilitySize, record: record)
+                .environment(viewer)
+                .dynamicTypeSize(size))
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 466, height: 1400))
+        window.rootViewController = host
+        window.isHidden = false
+        defer { window.isHidden = true; window.rootViewController = nil }
+        host.view.layoutIfNeeded()
+        await Task.yield()
+        host.view.layoutIfNeeded()
+        let row = try #require(MobileAutomationTree(windows: [window]).matching("overview-task-root").first)
+        let collapse = try #require(row.actions.first { $0.name == "Collapse" })
+        record.entries.removeAll()
+        #expect(row.perform(collapse))
+        let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+        while record.entries.allSatisfy(\.expanded), ContinuousClock.now < deadline {
+            host.view.layoutIfNeeded()
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        let transaction = try #require(record.entries.first { !$0.expanded })
+        #expect(session.taskDisclosure["root"]?.expanded == false)
+        #expect(transaction.animation
+                == (reduceMotion || size.isAccessibilitySize ? nil : .easeInOut(duration: 0.18)))
+    }
+
     @Test(arguments: [466.0, 669.0], [DynamicTypeSize.large, .accessibility5])
     func nativeListHasOneCellPerVisibleTaskAndScopedLink(width: CGFloat, size: DynamicTypeSize) async throws {
         let store = ChannelStore(id: "channel", api: try ChannelAPI(serverURL: "https://fixture.example"))
@@ -217,5 +253,41 @@ struct TaskRowsTests {
     private func nativeList(in view: UIView) -> UICollectionView? {
         if let list = view as? UICollectionView { return list }
         return view.subviews.lazy.compactMap { nativeList(in: $0) }.first
+    }
+
+    private final class DisclosureTransactions {
+        var entries: [(expanded: Bool, animation: Animation?)] = []
+    }
+
+    private struct DisclosureTransactionScene: View {
+        let task: ChannelTask
+        let store: ChannelStore
+        @Bindable var session: OverviewSession
+        let accessibility: Bool
+        let record: DisclosureTransactions
+
+        var body: some View {
+            VStack {
+                OverviewTaskNode(task: task, store: store, session: session, depth: 0,
+                                 layout: .init(contentWidth: 466, statusWidth: 16, titleGap: 6,
+                                               ownerWidth: 20, scaledReadingWidth: 192,
+                                               accessibility: accessibility, rootHasOwner: false))
+                DisclosureTransactionProbe(
+                    expanded: OverviewTaskListRow.isExpanded(task, disclosure: session.taskDisclosure),
+                    record: record)
+                    .frame(height: 0)
+            }
+        }
+    }
+
+    private struct DisclosureTransactionProbe: UIViewRepresentable {
+        let expanded: Bool
+        let record: DisclosureTransactions
+
+        func makeUIView(context: Context) -> UIView { UIView() }
+
+        func updateUIView(_ uiView: UIView, context: Context) {
+            record.entries.append((expanded, context.transaction.animation))
+        }
     }
 }

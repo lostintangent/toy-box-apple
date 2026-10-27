@@ -234,7 +234,7 @@ struct OverviewTaskNode: View {
     }
 
     private func toggle() {
-        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) {
+        withAnimation(reduceMotion || layout.accessibility ? nil : .easeInOut(duration: 0.18)) {
             session.taskDisclosure[task.id] = .init(status: task.status, expanded: !expanded)
         }
     }
