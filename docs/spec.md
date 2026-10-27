@@ -204,6 +204,51 @@ file and XML APIs, and `bun test`. The sole `.sh` helper uses Bash's silent `rea
 user-only credential prompt. Native Swift helpers retain Security-framework identity export and
 AppKit icon rendering. Local builds remain Command Line Tools only.
 
+### iPhone TestFlight
+
+`bun run mobile --testflight` is independent of the Mac release. It builds optimized arm64 with
+the selected Xcode 27+ iPhoneOS SDK through SwiftPM, without an Xcode project or Simulator.
+`--version X.Y.Z` / `MOBILE_VERSION` sets the marketing version. `--build-number N` / `BUILD_NUMBER`
+sets the build and is required for validate/upload. Choose an unused number; App Store Connect
+rejects reused numbers, including uploads from other machines. Build-only may use the source
+plist's build. There is no local counter or TestFlight lease; use your own scratch path.
+
+The user supplies an Apple Distribution identity and three explicit, unexpired App Store Connect
+profiles through the existing `MOBILE_PROVISIONING_PROFILE`, `MOBILE_WIDGET_PROVISIONING_PROFILE`
+and `MOBILE_NOTIFICATION_PROVISIONING_PROFILE` selectors. They must share a team/certificate, grant
+the App Group and required Communication Notifications capabilities, and grant production Push on
+the host. Development, ad-hoc, enterprise and wildcard profiles are rejected. Extensions embed
+their own profiles and sign before the host, whose actual signed entitlements are verified.
+There is no `get-task-allow`, bundled server address, DEBUG driver or proof fixture. First launch
+asks the tester for a server.
+
+Every component has the same version/build, `ITSAppUsesNonExemptEncryption=false` and real Xcode,
+SDK, platform and build-machine metadata. The privacy manifests declare host-local UserDefaults
+(`CA92.1`), cache file timestamps (`C617.1`) and elapsed animation timing (`35F9.1`); the two
+extensions declare only the timing API present in their linked shared presentation code.
+App Group state uses files, not shared UserDefaults. No disk-space API is used. See Apple's
+[required-reason policy](https://developer.apple.com/documentation/bundleresources/describing-use-of-required-reason-api).
+
+`APP_STORE_CONNECT_USERNAME` and numeric `APP_STORE_CONNECT_APP_ID` identify the account/app.
+The user stores the app-specific password in the login keychain as `toy-box-testflight`. From the
+repo root, use the verified Xcode 27 command, which prompts silently and passes only an environment
+reference to Apple's tool:
+
+```sh
+TB_PW="$(scripts/release/read-password.sh 'App-specific password: ')" DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcrun altool --store-password-in-keychain-item --item toy-box-testflight -u joncart@outlook.com -p @env:TB_PW
+```
+
+`APP_STORE_CONNECT_PASSWORD_KEYCHAIN_ITEM` can select another item. CI passes only
+`@env:NOTARY_APP_PASSWORD`; local commands pass only the keychain reference, never a password.
+Apple's tool performs authentication. Agents never create accounts, profiles or credentials,
+accept agreements, read keys/passwords or run real credential setup.
+
+The IPA contains `Payload/Toy Box.app`. `altool --validate-app` must pass before upload.
+`--validate-only` signs/packages and validates without uploading; `--build-only` creates an
+unsigned App Store-form bundle without profiles or credentials. Upload waits for processing and
+requires Apple's reported processing state `VALID`, which is not yet a claim that a tester group
+has access. The first real build remains incomplete until App Store Connect shows Ready to Test.
+
 ## Protocol (v1)
 
 | Request | Use |

@@ -22,14 +22,15 @@ export const mobileExtensions = [
         info: "Notification-Info.plist" },
 ] as const;
 
-export function mobileEntitlements(bundleID: string) {
+export function mobileEntitlements(bundleID: string, distribution = false) {
     if (![mobileBundleID, ...mobileExtensions.map(extension => `${mobileBundleID}.${extension.suffix}`)].includes(bundleID)) {
         throw new Error(`Unknown mobile bundle: ${bundleID}.`);
     }
     return {
         "com.apple.security.application-groups": [mobileAppGroup],
         ...(bundleID !== `${mobileBundleID}.widget` ? { "com.apple.developer.usernotifications.communication": true } : {}),
-        ...(bundleID === mobileBundleID ? { "aps-environment": "development" } : {}),
+        ...(bundleID === mobileBundleID ? { "aps-environment": distribution ? "production" : "development" } : {}),
+        ...(distribution ? { "beta-reports-active": true } : {}),
     };
 }
 
@@ -158,7 +159,7 @@ export function mobileBuildConfiguration(device: boolean, tests: boolean, reques
     return configuration;
 }
 
-export async function buildMobile(device = false, tests = false) {
+export async function buildMobile(device = false, tests = false, testflight = false) {
     const configuration = mobileBuildConfiguration(device, tests);
     console.log(`Building iOS ${device ? "device" : "Simulator"} ${tests ? "tests" : "app"} `
         + `(${configuration}${tests ? "" : configuration === "release" ? ", optimized" : ", unoptimized; not for performance review"}).`);
@@ -168,7 +169,7 @@ export async function buildMobile(device = false, tests = false) {
     if (!/^\d+(?:\.\d+)*$/.test(version) || Number(version.split(".")[0]) < 27) {
         throw new Error("Toy Box Mobile requires iOS SDK 27 or later.");
     }
-    const scratch = join(scratchPath(), device ? "mobile-device" : "mobile-simulator");
+    const scratch = join(scratchPath(), testflight ? "mobile-testflight" : device ? "mobile-device" : "mobile-simulator");
     const workspace = join(scratch, "package");
     await linkMobileWorkspace(root, workspace);
     const simulated = join(scratch, "simulated-entitlements");
@@ -274,9 +275,10 @@ export function checkMobileExtensionEntryPoint(commands: string, symbols: string
     }
 }
 
-export async function bundleMobile(device = false) {
-    const { bin, scratch, version } = await buildMobile(device);
+export async function bundleMobile(device = false, testflight = false) {
+    const { bin, scratch, version } = await buildMobile(device, false, testflight);
     const app = join(scratch, "Toy Box.app");
+    await rm(app, { recursive: true, force: true });
     await mkdir(app, { recursive: true });
     await copyFile(join(bin, "ToyBoxMobile"), join(app, "ToyBoxMobile"));
     await copyFile(join(root, "Resources/Mobile/Info.plist"), join(app, "Info.plist"));
@@ -361,7 +363,25 @@ if (import.meta.main) await main(async () => {
         "foundation-proof": { type: "boolean" }, "activity-fixture-proof": { type: "boolean" },
         autoplay: { type: "boolean" }, "autoplay-ended": { type: "boolean" },
         "notification-proof": { type: "string" },
+        testflight: { type: "boolean" }, "validate-only": { type: "boolean" },
+        version: { type: "string" }, "build-number": { type: "string" },
     } });
+    if (values.testflight) {
+        if (values.device || values["device-id"] || values.server || values.shutdown || values.screenshot
+            || values.hold || values.displays || values.display || values.drive || values["content-size"]
+            || values.appearance || values["foundation-proof"] || values["activity-fixture-proof"]
+            || values.autoplay || values["autoplay-ended"] || values["notification-proof"]
+            || values["validate-only"] && values["build-only"]) {
+            throw new Error("--testflight accepts only --build-only or --validate-only, --version and --build-number.");
+        }
+        const { runTestFlight } = await import("./mobile-testflight.ts");
+        await runTestFlight({ buildOnly: values["build-only"], validateOnly: values["validate-only"],
+            version: values.version, build: values["build-number"] });
+        return;
+    }
+    if (values["validate-only"] || values.version || values["build-number"]) {
+        throw new Error("--validate-only, --version and --build-number require --testflight.");
+    }
     const launch = mobileLaunchOptions(values["content-size"], values.appearance);
     const autoplay = mobileActivityAutoplayArguments(
         values.autoplay, values["autoplay-ended"], values["activity-fixture-proof"]

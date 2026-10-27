@@ -188,6 +188,24 @@ use demo servers only for write scripts. Never skip or retry actions.
   Both apps accept user-selected HTTP/HTTPS, including fully qualified Tailscale names.
   ATS uses `NSAllowsArbitraryLoads` alone, not `NSAllowsLocalNetworking` (which defeats the opt-out).
   Local-network permission is separate. HTTPS retains normal certificate validation.
+- **TestFlight:** `bun run mobile --testflight [--version X.Y.Z] [--build-number N]` builds release
+  arm64, signs the three bundles with matching Apple Distribution/App Store profiles, packages an
+  IPA, validates, uploads and waits for Apple processing. `--validate-only` never uploads.
+  `--build-only` is unsigned and needs no profiles or credentials. All modes omit a bundled server,
+  DEBUG proof code and fixtures. Use `mobile-testflight` under your own `SCRATCH_PATH`.
+- **TestFlight setup:** the user creates the App Store Connect app and three explicit App Store
+  profiles, with the same App Group/Communication Notifications capabilities and production Push.
+  Select them with the same `MOBILE_*_PROVISIONING_PROFILE` variables. Set
+  `APP_STORE_CONNECT_USERNAME` and numeric `APP_STORE_CONNECT_APP_ID`. Apple tools read the password
+  through `@keychain:toy-box-testflight` (override `APP_STORE_CONNECT_PASSWORD_KEYCHAIN_ITEM`), or
+  `@env:NOTARY_APP_PASSWORD` in CI. Never pass a password as a shell argument or read the keychain item.
+  Only the user stores it, from the repo root, with the verified Xcode 27 syntax:
+  `TB_PW="$(scripts/release/read-password.sh 'App-specific password: ')" DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcrun altool --store-password-in-keychain-item --item toy-box-testflight -u joncart@outlook.com -p @env:TB_PW`
+- **TestFlight bundle:** actual Xcode/SDK `DT*` metadata, matching version/build on every component,
+  `ITSAppUsesNonExemptEncryption=false`, production push and no `get-task-allow`. Validate/upload require
+  `--build-number` / `BUILD_NUMBER`; choose an unused App Store build. Build-only may use the plist's
+  build. `MOBILE_VERSION` sets the version. There is no local counter or TestFlight lease. Each
+  executable carries its audited `PrivacyInfo.xcprivacy`. Processing `VALID` is not tester availability.
 - `SCRATCH_PATH=/tmp/tbm-<you> bun run test:mobile` builds the iOS tests and runs
   ChannelClient, ToyBoxUI, ToyBoxMobileIntegrations, ToyBoxMobileWidget and ToyBoxMobile
   tests on iOS Simulator via Apple's `xctest` host. ChannelKit/mocked Intelligence execute on Mac
