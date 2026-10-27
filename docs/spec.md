@@ -2782,15 +2782,19 @@ sandboxed extension lives in `Contents/PlugIns`, shares the app's version/build 
 from isolated test, snapshot and benchmark bundles like the Share extension.
 
 Use system widget margins and `containerBackground`, never a custom glass surface, brand-colored
-plate, orange request card or continuous animation. A 13-point semibold "Needs you" header has the
-waiting count trailing in secondary monospaced digits. The count is channels awaiting a reply,
-not message volume. Requests follow the menu bar's newest-first ordering.
+plate, orange request card or continuous animation. Requests start at the top, with no
+app-owned "Needs you" heading, separate count or normal-state update time. The gallery name
+remains "Needs you". Requests follow the menu bar's newest-first ordering.
 
 | Family | Content |
 | --- | --- |
-| Small | Header/count and the first request. A 24-point agent avatar precedes the channel name, a two-line quote and secondary agent/age. A quiet "+N more" accounts for remaining requests |
-| Medium | Header/count and up to two compact request rows, with 8 points between rows and a single-line quote per row. Overflow uses "+N more" |
-| Large | Header/count and up to five request rows, with 12 points between rows and a single-line quote per row. Overflow uses "+N more", based on the number of rows actually available in the snapshot |
+| Small | The first request. A 24-point agent avatar precedes the channel name, a two-line quote and secondary agent/age |
+| Medium | Up to two compact request rows, with 8 points between rows and a single-line quote per row |
+| Large | Up to five request rows, with 12 points between rows and a single-line quote per row |
+
+When more requests remain than fit, add one 11-point regular secondary footer, "2 more waiting",
+counting only requests not shown. Otherwise omit the footer. Do not prefix the count with "+".
+Reserve space for overflow and reduce complete rows to fit the native available height.
 
 In Medium and Large, each request's content is one Open link, with a separate trailing Reply
 target. WidgetKit gives Small one target for the whole tile, which opens its top request, with
@@ -2822,18 +2826,19 @@ content. Check all three sizes in Light/Dark, full-color and accented content, i
 names, empty and stale states. Off-screen Clear-equivalent or accented renders establish content
 layout only, not the system's actual desktop materials.
 
-The empty state uses `checkmark.bubble`, "Nothing needs you" and the secondary sentence
-"Your teams will appear here when they need a reply." Small may omit the explanatory sentence
-to preserve legibility. Cached requests after a known disconnect retain their content with
-"May be out of date". Small hides "+N more" while offline so the full warning fits without
-truncation. The header count still conveys the additional requests. Medium and Large share one
-secondary footer between overflow and an update age such as "Updated 5m ago", so cached data
-does not imply continuous observation. Without a
-usable snapshot, say "Open Toy Box to connect" instead of claiming nothing needs attention.
+The empty state is a centered quiet status, not a request row. Use a 16-point regular
+`checkmark.circle`, a 6-point vertical gap, then "You're all caught up" at 13-point regular.
+Both use secondary ink. Keep the sentence on one line, with no avatar, row styling or extra
+sentence. The symbol sits above the text to preserve the sentence's width in Small.
+
+After 30 minutes without fresh data, or immediately on a known disconnect, show
+"May be out of date" and the last update, such as "Last update 8:02 AM". Time appears only
+in this stale state, not in fresh Waiting or Empty. A previous zero is not a current all-clear.
+Without a usable snapshot, say "Open Toy Box to connect" instead of claiming nothing needs attention.
 Do not expose requests from the previous server after a switch.
 
 Clicking a request opens Toy Box at that channel and request sequence through a validated URL route.
-The empty Small tile opens the main app. In Medium and Large, the empty state, header, overflow
+The empty Small tile opens the main app. In Medium and Large, the empty state, overflow
 and background open the main app. A stale link never redirects to a
 different channel or sends anything. Normal active-window read policy applies only after opening
 the channel window, not while WidgetKit renders the snapshot or opens a reply panel. Check
@@ -2846,7 +2851,12 @@ The phone offers Home Screen Small, Medium and Large, plus Lock Screen Rectangul
 Its Home content reuses `ToyBoxWidgetViews`, retaining the Mac's text and avatar metrics
 while passing a 44-point sibling Reply target. Reduce complete request rows to fit the
 system-provided height, with overflow based on the rows actually shown. The phone's
-Rectangular widget shows only the waiting-channel count, not a private question.
+Rectangular widget shows only "1 channel needs you" or "[N] channels need you", not a private
+question or update time. Use 15-point regular primary text on up to two lines. Empty uses the
+same centered checkmark and one-line "You're all caught up" status as Home and Mac. Stale shows
+"May be out of date" and its last update. Not connected shows "Open Toy Box to connect".
+There is no generic heading. Keep every line, including timestamp descenders, inside the
+native 157 x 73.5-point rectangular host.
 Both surfaces render waiting, empty, out-of-date and not-connected states from the phone's
 App Group `NeedsYouSnapshot`. Out-of-date phone content says "May be out of date" and
 shows its last update, never a current all-clear. A timeline entry at the shared 30-minute
