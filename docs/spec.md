@@ -260,16 +260,22 @@ response body.
 | --- | --- |
 | `PUT /api/v1/push/devices/:registrationID` | `{registrationID, token, environment, requests, completions}` |
 | `DELETE /api/v1/push/devices/:registrationID` | Remove alerts for this registration, not its followed Activities. Idempotent: return 204 even for an unknown registration |
-| `PUT /api/v1/channels/:channelID/activities/:registrationID` | `{registrationID, token, environment, startedAt}` |
-| `DELETE /api/v1/channels/:channelID/activities/:registrationID` | Remove the followed Activity |
+| `PUT /api/v1/push/activities/:registrationID/:subject` | `{registrationID, token, environment, startedAt}` |
+| `DELETE /api/v1/push/activities/:registrationID/:subject` | Unsubscribe the Activity |
 
 `registrationID` is a caller-owned UUID and must match the path. Tokens are hexadecimal, and
 `environment` is `sandbox` or `production`. The signed host's `ToyBoxPushEnvironment` is derived
 from its validated APNs entitlement, never from `DEBUG`: optimized development builds still use
 sandbox. Request and completion preferences are independent booleans. A token belongs to one device
 registration. Activities do not require an alerts registration, have their own environment, and are
-unique per registration/channel. Token rotation preserves the original `startedAt`, in Unix seconds.
-The demo stores this state only in memory and never contacts APNs.
+unique per registration/subject. A subject is opaque to Push; Channels uses its channel ID.
+Subscription does not require the source to exist. An absent channel receives the channel-deleted
+ending on the next delivery pass. Token rotation preserves the original `startedAt`, in Unix seconds.
+Push owns both stored registrations, transport and dead-token pruning. Channels owns attention,
+read suppression, Activity content and endings, without adding storage. Alert baselines, pending
+alerts, retries and last-announced requests are process-local. A server restart can discard an
+alert not yet accepted by Apple. Only the iPhone app registers devices and subscribes Activities.
+The demo stores all state in memory and never contacts APNs.
 `bun run demo --completed` opts into a separate `completed-demo` channel for completion-alert proof,
 with every task done and an unread completion. The normal screenshot baseline stays unchanged.
 Both channels expose canonical read-only history pages, allowing the notification enricher to

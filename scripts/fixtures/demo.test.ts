@@ -26,7 +26,8 @@ test("demo push routes keep alerts and follows independent and preserve the orig
         const id = "00000000-0000-4000-8000-000000000001";
         const other = "00000000-0000-4000-8000-000000000002";
         const devicePath = `/api/v1/push/devices/${id}`;
-        const activityPath = `/api/v1/channels/studio-demo/activities/${id}`;
+        const activityPath = `/api/v1/push/activities/${id}/studio-demo`;
+        expect(routes.match(`/api/v1/channels/studio-demo/activities/${id}`)).toBeUndefined();
         const put = (path: string, value: unknown) => fetch(base + path, {
             method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(value),
         });
@@ -52,7 +53,10 @@ test("demo push routes keep alerts and follows independent and preserve the orig
         expect(routes.devices.get(other)?.token).toBe("bb");
         expect(routes.devices.get(other)?.requests).toBe(false);
         expect(routes.devices.get(other)?.completions).toBe(true);
-        expect((await put(`/api/v1/channels/missing/activities/${id}`, activity)).status).toBe(404);
+        const unknown = `/api/v1/push/activities/${id}/missing`;
+        expect((await put(unknown, activity)).status).toBe(204);
+        expect(routes.activities.get(`missing\n${id}`)?.subject).toBe("missing");
+        expect((await fetch(base + unknown, { method: "DELETE" })).status).toBe(204);
         expect((await put(devicePath, { ...device, requests: "yes" })).status).toBe(422);
         expect((await put(devicePath, { ...device, environment: "unknown" })).status).toBe(422);
         expect((await put(devicePath, { ...device, extra: "x".repeat(17_000) })).status).toBe(413);
@@ -126,12 +130,12 @@ test("multiple demo channels keep their own history, routes and Activity registr
         expect(await (await fetch(`${base}/api/v1/channels/completed-demo/messages`, { method: "POST" })).text())
             .toBe("Completed: /api/v1/channels/completed-demo/messages");
         const id = "00000000-0000-4000-8000-000000000003";
-        const response = await fetch(`${base}/api/v1/channels/completed-demo/activities/${id}`, {
+        const response = await fetch(`${base}/api/v1/push/activities/${id}/completed-demo`, {
             method: "PUT", headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ registrationID: id, token: "aa", environment: "sandbox", startedAt: 1793086200 }),
         });
         expect(response.status).toBe(204);
-        expect(routes.activities.get(`completed-demo\n${id}`)?.channelID).toBe("completed-demo");
+        expect(routes.activities.get(`completed-demo\n${id}`)?.subject).toBe("completed-demo");
     } finally {
         await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
     }
