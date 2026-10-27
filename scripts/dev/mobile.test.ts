@@ -39,6 +39,7 @@ test("iOS extensions have exact identities, extension points and executable entr
     }
     const host = await readFile(join(import.meta.dir, "../../Resources/Mobile/Info.plist"), "utf8");
     expect(host).toMatch(/<key>NSSupportsLiveActivities<\/key>\s*<true\/>/);
+    expect(host).toMatch(/<key>CFBundleURLSchemes<\/key>\s*<array><string>toybox-desktop<\/string><\/array>/);
     const package_ = await readFile(join(import.meta.dir, "../../Package.swift"), "utf8");
     for (const extension of mobileExtensions) expect(package_).toContain(`name: "${extension.executable}"`);
 });
