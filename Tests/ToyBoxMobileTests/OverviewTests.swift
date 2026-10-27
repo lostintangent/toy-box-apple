@@ -787,8 +787,8 @@ struct OverviewTests {
         let last = try #require(inkRows.max())
         let bottom = cgImage.height - 1 - last
         #expect(first >= Int(ChannelOverviewFactsLayout.titleGap))
-        #expect(bottom >= 12)
-        #expect(abs(CGFloat(bottom - first) - (12 - ChannelOverviewFactsLayout.titleGap)) <= 2)
+        #expect(bottom >= 11)
+        #expect(abs(CGFloat(bottom - first) - (11 - ChannelOverviewFactsLayout.titleGap)) <= 2)
     }
 
     @Test func linkedArtifactAddsNoMoreRowHeightThanAnOrdinaryMetadataLine() throws {

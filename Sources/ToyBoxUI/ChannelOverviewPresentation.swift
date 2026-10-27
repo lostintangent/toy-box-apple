@@ -92,9 +92,15 @@ package struct ChannelTaskStatusSymbol: View {
 
 package struct ChannelTaskAncestryGuide: View {
     private let statusWidth: CGFloat
+    private let topClearance: CGFloat
+    private let bottomClearance: CGFloat
     @Environment(\.displayScale) private var scale
 
-    package init(statusWidth: CGFloat) { self.statusWidth = statusWidth }
+    package init(statusWidth: CGFloat, topClearance: CGFloat = 4, bottomClearance: CGFloat = 4) {
+        self.statusWidth = statusWidth
+        self.topClearance = topClearance
+        self.bottomClearance = bottomClearance
+    }
 
     package var body: some View {
         let lineWidth: CGFloat = 1
@@ -102,7 +108,8 @@ package struct ChannelTaskAncestryGuide: View {
         Rectangle()
             .fill(separator, style: FillStyle(antialiased: false))
             .frame(width: lineWidth)
-            .padding(.vertical, 4)
+            .padding(.top, topClearance)
+            .padding(.bottom, bottomClearance)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.leading, leading)
             .allowsHitTesting(false)
