@@ -1,5 +1,12 @@
 import { expect, test } from "bun:test";
-import { checkMobileTestCompletion } from "./test-mobile.ts";
+import { checkMobileTestCompletion, mobileTestProducts } from "./test-mobile.ts";
+
+test("the iOS runner keeps platform coverage without repeating Mac-only shared logic", () => {
+    expect(mobileTestProducts).toEqual([
+        "ChannelClientTests", "ToyBoxUITests",
+        "ToyBoxMobileIntegrationsTests", "ToyBoxMobileWidgetTests", "ToyBoxMobileTests",
+    ]);
+});
 
 test("the iOS runner rejects a successful process without a completed test run", () => {
     expect(() => checkMobileTestCompletion("")).toThrow();

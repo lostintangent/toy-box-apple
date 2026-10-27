@@ -3,6 +3,11 @@ import { command, machineLock, main } from "../lib.ts";
 import { buildMobile, mobileEnvironment, prepareMobileSimulator } from "./mobile.ts";
 import { checkTestCompletion } from "./test.ts";
 
+export const mobileTestProducts = [
+    "ChannelClientTests", "ToyBoxUITests",
+    "ToyBoxMobileIntegrationsTests", "ToyBoxMobileWidgetTests", "ToyBoxMobileTests",
+];
+
 export function checkMobileTestCompletion(log: string) {
     checkTestCompletion(log);
     if (!/Test run with [1-9][0-9]* tests? .*passed after /.test(log)
@@ -23,10 +28,7 @@ if (import.meta.main) await main(async () => {
         try {
             const { bin } = await buildMobile(false, true);
             const developer = join(mobileEnvironment.DEVELOPER_DIR, "Platforms/iPhoneSimulator.platform/Developer");
-            for (const name of [
-                "ChannelKitTests", "ChannelClientTests", "ChannelIntelligenceTests", "ToyBoxUITests",
-                "ToyBoxMobileIntegrationsTests", "ToyBoxMobileWidgetTests", "ToyBoxMobileTests",
-            ]) {
+            for (const name of mobileTestProducts) {
                 const result = await command(["xcrun", "simctl", "spawn", simulator.udid,
                     join(developer, "Library/Xcode/Agents/xctest"), join(bin, `${name}.xctest`)], {
                     env: {

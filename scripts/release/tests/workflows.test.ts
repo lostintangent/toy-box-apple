@@ -38,7 +38,7 @@ test("the Mac gate emits unbuffered progress and preserves bounded hang diagnost
         expect.objectContaining({
             name: "Test",
             env: expect.objectContaining({ NSUnbufferedIO: "YES" }),
-            run: "bun scripts/dev/test-watchdog.ts",
+            run: "bun scripts/dev/test-watchdog.ts --skip ChannelClientTests",
         }),
         expect.objectContaining({
             name: "Upload blocked test diagnostics",
@@ -57,6 +57,27 @@ test("the Mac gate constrains ChannelClient to one cooperative worker", () => {
                 LIBDISPATCH_COOPERATIVE_POOL_STRICT: "1",
             }),
             run: "bun scripts/dev/test-watchdog.ts --filter ChannelClientTests",
+        }),
+    ]));
+});
+
+test("iOS runs for main and pull requests, not release tags or manual dry runs", () => {
+    expect(workflow()).toHaveProperty("jobs.mobile.if",
+        "github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')");
+    expect(workflow()).toHaveProperty("jobs.release.needs", ["test", "release-checks"]);
+});
+
+test("bundle qualification runs only in the release job and reuses its optimized build", () => {
+    const bundle = expect.objectContaining({ name: "Bundle with Siri and Shortcuts metadata" });
+    expect(workflow()).not.toHaveProperty("jobs.test.steps", expect.arrayContaining([bundle]));
+    expect(workflow()).toHaveProperty("jobs.release.steps", expect.arrayContaining([
+        expect.objectContaining({
+            name: "Bundle with Siri and Shortcuts metadata",
+            env: {
+                CONFIGURATION: "release",
+                SCRATCH_PATH: "${{ runner.temp }}/toy-box-release",
+            },
+            run: expect.stringContaining("bun test scripts/release/tests/native.test.ts"),
         }),
     ]));
 });

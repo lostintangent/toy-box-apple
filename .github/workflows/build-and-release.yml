@@ -53,7 +53,7 @@ jobs:
         env:
           SCRATCH_PATH: ${{ runner.temp }}/toy-box-tests
           NSUnbufferedIO: 'YES'
-        run: bun scripts/dev/test-watchdog.ts
+        run: bun scripts/dev/test-watchdog.ts --skip ChannelClientTests
       - name: Upload blocked test diagnostics
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -62,20 +62,6 @@ jobs:
           path: ${{ runner.temp }}/toy-box-tests/mac-test-watchdog/*.txt
           if-no-files-found: ignore
           retention-days: 7
-      - name: Bundle with Siri and Shortcuts metadata
-        env:
-          SCRATCH_PATH: ${{ runner.temp }}/toy-box-tests
-        run: |
-          app="$(bun run app --no-open | tail -n 1)"
-          actions="$app/Contents/Resources/Metadata.appintents/extract.actionsdata"
-          for intent in CatchMeUpIntent OpenChannelIntent SendMessageIntent CatchUpSnippetIntent ReplyIntent \
-            OpenToyBoxControlIntent OpenRequestIntent ReplyToRequestIntent; do
-            grep -q "\"$intent\"" "$actions"
-          done
-          grep -q '"WaitingRequestEntity"' "$actions"
-          grep -q '"com.apple.appintents.entity.Indexed"' "$actions"
-          tools="$(bun run sparkle-tools)"
-          TOY_BOX_BUNDLE="$app" SPARKLE_TOOLS_DIR="$tools" bun test scripts/release/tests/native.test.ts
       - name: Wait for crash reports
         if: failure()
         run: |
@@ -92,6 +78,7 @@ jobs:
 
   mobile:
     name: iOS foundation
+    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
     runs-on: xcode-27
     timeout-minutes: 25
     steps:
@@ -121,7 +108,7 @@ jobs:
             test -x "$app/PlugIns/$executable.appex/$executable"
             codesign --verify --strict "$app/PlugIns/$executable.appex"
           done
-      - name: Test shared modules when an iOS 27 runtime is installed
+      - name: Test iOS modules when an iOS 27 runtime is installed
         env:
           SCRATCH_PATH: ${{ runner.temp }}/toy-box-mobile
         run: bun run test:mobile --if-available
@@ -148,7 +135,7 @@ jobs:
         run: bun run test:release
 
   release:
-    needs: [test, mobile, release-checks]
+    needs: [test, release-checks]
     if: (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
     runs-on: xcode-27
     timeout-minutes: 45
@@ -177,6 +164,21 @@ jobs:
         with:
           bun-version: 1.4.4
       - run: bun install --frozen-lockfile --ignore-scripts
+      - name: Bundle with Siri and Shortcuts metadata
+        env:
+          CONFIGURATION: release
+          SCRATCH_PATH: ${{ runner.temp }}/toy-box-release
+        run: |
+          app="$(bun run app --no-open | tail -n 1)"
+          actions="$app/Contents/Resources/Metadata.appintents/extract.actionsdata"
+          for intent in CatchMeUpIntent OpenChannelIntent SendMessageIntent CatchUpSnippetIntent ReplyIntent \
+            OpenToyBoxControlIntent OpenRequestIntent ReplyToRequestIntent; do
+            grep -q "\"$intent\"" "$actions"
+          done
+          grep -q '"WaitingRequestEntity"' "$actions"
+          grep -q '"com.apple.appintents.entity.Indexed"' "$actions"
+          tools="$(bun run sparkle-tools)"
+          TOY_BOX_BUNDLE="$app" SPARKLE_TOOLS_DIR="$tools" bun test scripts/release/tests/native.test.ts
       - name: Check update signing configuration and build number
         env:
           SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
