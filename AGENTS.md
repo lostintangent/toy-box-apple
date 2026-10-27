@@ -337,17 +337,23 @@ Agents never create these accounts, accept agreements, read private keys or set 
   that read, rather than assuming a 300 ms sleep establishes the order. The opposite restore-first
   order is covered too. Neither case blocks the main actor or asserts an elapsed-time threshold.
 - `TransportTests.storeReconnectsFromAppliedRevisionZero` and
-  `recoverySnapshotReplacesCachedHistory` are quarantined behind `TOY_BOX_TEST_RECONNECT_TIMING=1`.
+  `recoverySnapshotReplacesCachedHistory` were quarantined behind `TOY_BOX_TEST_RECONNECT_TIMING=1`.
   Both again exceeded the unchanged three-second readiness deadline in the 2026-10-26 full Mac
   run of `51935f4`, after the actor probes were disabled (`t338-isolated-full-mac.log`).
-  No production code cause is established. Core owns the `client-reconnect-readiness` follow-up
-  under t340 to identify the cause and add controlled-event reconnect coverage before restoring
-  these cases. Do not retry an unchanged candidate to clear this failure.
+  They returned to the default gate on 2026-10-27 after a causal watchdog comparison. With a
+  controlled 3.5-second main-actor stall at reconnect scheduling, the former three-second
+  readiness watchdog failed both cases at 3.525 seconds. Event-driven readiness passed the
+  identical stalls and unchanged protocol assertions at 7.039 seconds. This isolates the
+  watchdog's false-failure mechanism, not every source of contention in the historical run. Logs are
+  `t340-controlled-legacy-stall.log` and `t340-controlled-event-stall.log` in Core's session.
+  Both cases retain their immediate-delivery path and add a controlled held-response path that
+  checks the retained state and stale phase before releasing the resumed
+  event or recovery snapshot. The three actor occupancy probes remain opt-in.
 - Client readiness waits use Observation and explicit per-mock request, held-response and stop
   signals, not polling or an elapsed-time assertion. Their suites have a one-minute Swift Testing
   hang limit. This deliberately replaces the shared three-second watchdog with the lead's approval
   in channel message 2590, not a product latency assertion or a retry policy change. Keep actual
-  heartbeat/backoff checks and both quarantine gates unchanged.
+  heartbeat/backoff checks unchanged. The actor occupancy gate remains opt-in.
   Further 2026-10-26 failures include the driver gate on `555d015` (20 Client cases at load 436),
   the composer gate on `2fbdbb6` (28 issues at load 300), and Overview's `c83c7a5` run in
   `/tmp/tbm-overview-mobile-webkit-full-mac.log` (`staleStateRemainsVisibleAndCannotSend`,
@@ -357,13 +363,15 @@ Agents never create these accounts, accept agreements, read private keys or set 
   Composer's `files/mobile/full-mac-28e45b7-failed.log`, and Lead's
   `/tmp/lead-mac-main-cc-1.log`. Core's actor-excluded controls,
   `t340-no-actor-diagnostic-1.log` and `t340-no-actor-diagnostic-2.log`, respectively passed and
-  failed revision-zero reconnect. Core still owns causal restoration under t340. A green
-  readiness gate alone does not establish the quarantined reconnect failures' production cause.
+  failed revision-zero reconnect. Core owns the remaining actor-probe restoration under t340. A green
+  readiness gate alone did not establish the reconnect failures' cause. The controlled watchdog
+  comparison above shows how the former deadline can reject a healthy reconnect, without changing
+  production reconnect behavior or claiming to identify every historical source of contention.
   `ReconnectReadinessTests` separately protects both reconnect contracts with immediate EOF and
   an explicit stream completion after the first snapshot applies. The controlled recovery case
   also loads older history before EOF and checks that the recovery snapshot replaces it.
-  These input-order regressions do not lift either historical quarantine.
-  The original quarantined cases record opt-in mock callback submissions with monotonic elapsed
+  These input-order regressions supplement the restored reconnect cases, not the actor timing probes.
+  The original reconnect cases record mock callback submissions with monotonic elapsed
   times. A failed readiness wait includes those calls and the store's final phase, applied revision,
   presence and transport counters before disconnecting. Callback submission does not prove that
   URLSession or the event iterator consumed it. Diagnostic state is read only after the wait fails,
@@ -390,7 +398,7 @@ Agents never create these accounts, accept agreements, read private keys or set 
   `ComposerThumbnailTests` holds a decoder off the main actor and requires the connected store
   to apply a recovery snapshot before releasing it. This establishes that specific defect and
   protects the fix, but does not by itself close the historical reconnect incidents. Their
-  quarantine gates remain unchanged pending the foundation gate and causal-restoration review.
+  reconnect cases are now restored as described above. The actor timing probes remain opt-in.
 - `ChannelArtifactSessionTests.switchingScopeDiscardsTheVisitAndCancelsItsPendingLoad` is quarantined
   behind `TOY_BOX_TEST_ARTIFACT_SCOPE_TIMING=1`. Its `changingServer: false` argument failed the
   unchanged private three-second polling helper at line 81 in the 2026-10-26 Client diagnostic run
