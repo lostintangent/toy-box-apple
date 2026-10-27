@@ -1238,7 +1238,11 @@ the agent's live presence and matching status target permit them. Group by react
 to three 14-point reactor avatars and `+N`. Chips are 24 high with a subtle border. The phone
 draws the same shared pill at caption size, with its avatars and height scaling with Dynamic Type,
 inside a 44-point target. Chips wrap onto as few lines as fit, with lines as far apart as the
-chips, so their targets overlap where pills are shorter than 44 points. Hover, keyboard
+chips. Where pills are shorter than 44 points, adjacent rows split the gap between their targets
+at its midpoint, so a tap anywhere on a visible pill opens that pill, and the outermost rows keep
+their full reach. On the phone's pure black Dark canvas the pill fills with native
+`tertiarySystemBackground` (`#2C2C2E`) instead of the soft fill, so it reads raised above black and
+the agent bubble. Hover, keyboard
 focus or activation reveals every reactor name. Do not make a reaction chip look like an enabled
 "add reaction" button. The working summary floats as a glass capsule above the composer, outside
 the scrollable history. It has 20-point avatars, "Name is working" or "N agents are working", and status details on

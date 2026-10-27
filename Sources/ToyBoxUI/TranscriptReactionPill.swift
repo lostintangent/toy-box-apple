@@ -10,13 +10,17 @@ public struct TranscriptReactionPill: View {
     let font: Font
     let avatarSize: CGFloat
     let height: CGFloat
+    let fill: Color?
 
-    public init(emoji: String, reactors: [ChannelAgent], font: Font, avatarSize: CGFloat, height: CGFloat) {
+    /// A nil fill uses the soft quaternary fill both apps share on their gray canvases.
+    public init(emoji: String, reactors: [ChannelAgent], font: Font, avatarSize: CGFloat, height: CGFloat,
+                fill: Color? = nil) {
         self.emoji = emoji
         self.reactors = reactors
         self.font = font
         self.avatarSize = avatarSize
         self.height = height
+        self.fill = fill
     }
 
     public static let faceLimit = 3
@@ -35,19 +39,31 @@ public struct TranscriptReactionPill: View {
         .font(font)
         .padding(.horizontal, 6)
         .frame(height: height)
-        .background(.quaternary.opacity(0.5), in: Capsule())
+        .background(fill.map(AnyShapeStyle.init) ?? AnyShapeStyle(.quaternary.opacity(0.5)), in: Capsule())
         .overlay(Capsule().strokeBorder(.separator, lineWidth: 0.5))
     }
 }
 
 /// Wraps reaction chips onto as few lines as fit, in reading order, so VoiceOver follows the rows.
 public struct TranscriptReactionFlow: Layout {
-    let spacing: CGFloat
-    let lineSpacing: CGFloat
+    public let spacing: CGFloat
+    public let lineSpacing: CGFloat
 
     public init(spacing: CGFloat, lineSpacing: CGFloat) {
         self.spacing = spacing
         self.lineSpacing = lineSpacing
+    }
+
+    /// Chips read their row's position in this space to shape their targets.
+    public static let coordinateSpace = "TranscriptReactionFlow"
+
+    /// Where rows of 44-point targets overlap, each side keeps half of the overlap, so a tap anywhere
+    /// on a visible pill opens that pill. The outermost rows keep their full reach.
+    public static func target(of frame: CGRect, in bounds: CGRect, rowOverlap: CGFloat) -> CGRect {
+        let half = max(0, rowOverlap) / 2
+        let top = frame.minY > bounds.minY + 0.5 ? half : 0
+        let bottom = frame.maxY < bounds.maxY - 0.5 ? half : 0
+        return CGRect(x: frame.minX, y: frame.minY + top, width: frame.width, height: frame.height - top - bottom)
     }
 
     public func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
@@ -63,11 +79,14 @@ public struct TranscriptReactionFlow: Layout {
     }
 
     private func frames(for subviews: Subviews, width: CGFloat) -> [CGRect] {
+        frames(for: subviews.map { $0.sizeThatFits(.unspecified) }, width: width)
+    }
+
+    public func frames(for sizes: [CGSize], width: CGFloat) -> [CGRect] {
         var frames: [CGRect] = []
         var origin = CGPoint.zero
         var lineHeight: CGFloat = 0
-        for subview in subviews {
-            let size = subview.sizeThatFits(.unspecified)
+        for size in sizes {
             if origin.x > 0, origin.x + size.width > width {
                 origin = CGPoint(x: 0, y: origin.y + lineHeight + lineSpacing)
                 lineHeight = 0

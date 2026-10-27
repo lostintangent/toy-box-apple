@@ -453,13 +453,15 @@ struct TranscriptReactions: View {
         let groups = groups
         if !groups.isEmpty {
             // Rows sit as far apart as pills, so their 44-point targets overlap where pills are shorter.
-            TranscriptReactionFlow(spacing: 6, lineSpacing: 6 - max(0, 44 - height)) {
+            let flow = TranscriptReactionFlow(spacing: 6, lineSpacing: 6 - max(0, 44 - height))
+            flow {
                 ForEach(groups, id: \.reaction) { group in
                     let presentation = group.presentation
                     TranscriptReactionChip(emoji: presentation.emoji, label: presentation.label, reactors: group.agents,
-                                           avatarSize: avatarSize, height: height)
+                                           avatarSize: avatarSize, height: height, rowOverlap: -flow.lineSpacing)
                 }
             }
+            .coordinateSpace(.named(TranscriptReactionFlow.coordinateSpace))
         }
     }
 }
@@ -471,14 +473,30 @@ struct TranscriptReactionChip: View {
     let reactors: [ChannelAgent]
     let avatarSize: CGFloat
     let height: CGFloat
+    var rowOverlap: CGFloat = 0
+    @Environment(\.colorScheme) private var colorScheme
     @ViewState private var showsReactors = false
 
     var body: some View {
         Button { showsReactors = true } label: {
+            // On the black Dark canvas the shared soft fill matches the agent bubble, so pills lift onto
+            // the system's tertiary background instead.
             TranscriptReactionPill(emoji: emoji, reactors: reactors, font: .caption, avatarSize: avatarSize,
-                                   height: height)
+                                   height: height,
+                                   fill: colorScheme == .dark ? Color(uiColor: .tertiarySystemBackground) : nil)
                 .frame(minWidth: 44, minHeight: 44)
-                .contentShape(.rect)
+                .background {
+                    GeometryReader { proxy in
+                        let space = NamedCoordinateSpace.named(TranscriptReactionFlow.coordinateSpace)
+                        let frame = proxy.frame(in: space)
+                        let target = TranscriptReactionFlow.target(of: frame, in: proxy.bounds(of: space) ?? frame,
+                                                                   rowOverlap: rowOverlap)
+                        Color.clear
+                            .frame(height: target.height)
+                            .contentShape(.rect)
+                            .offset(y: target.minY - frame.minY)
+                    }
+                }
         }
         .buttonStyle(.plain)
         .accessibilityLabel("\(label): \(reactors.map(\.name).joined(separator: ", "))")

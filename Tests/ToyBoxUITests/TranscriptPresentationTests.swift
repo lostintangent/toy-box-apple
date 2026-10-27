@@ -296,6 +296,27 @@ struct TranscriptPresentationTests {
             }
         }
     }
+
+    @Test func aTapOnAWrappedReactionPillOpensThatPillAndOuterRowsKeepTheirReach() {
+        // 24-point pills in 44-point targets, rows 6 points apart like the phone's.
+        let pill: CGFloat = 24
+        let flow = TranscriptReactionFlow(spacing: 6, lineSpacing: 6 - (44 - pill))
+        let frames = flow.frames(for: Array(repeating: CGSize(width: 120, height: 44), count: 3), width: 305)
+        let bounds = frames.reduce(CGRect.null) { $0.union($1) }
+        let targets = frames.map { TranscriptReactionFlow.target(of: $0, in: bounds, rowOverlap: -flow.lineSpacing) }
+        // Later chips draw above earlier ones, so the last target holding a point receives the tap.
+        func chip(at y: CGFloat, x: CGFloat = 60) -> Int? {
+            targets.lastIndex { $0.contains(CGPoint(x: x, y: y)) }
+        }
+        #expect(frames.map(\.minY) == [0, 0, 30])
+        let upperPill = frames[0].midY - pill / 2..<frames[0].midY + pill / 2
+        let lowerPill = frames[2].midY - pill / 2..<frames[2].midY + pill / 2
+        #expect(chip(at: upperPill.upperBound - 2) == 0)
+        #expect(chip(at: lowerPill.lowerBound + 2) == 2)
+        #expect(chip(at: 36.9) == 0 && chip(at: 37) == 2)
+        #expect(chip(at: 0) == 0 && chip(at: bounds.maxY - 0.1) == 2)
+        #expect(chip(at: 0, x: 186) == 1)
+    }
 }
 
 @Suite("Transcript landing policy")
