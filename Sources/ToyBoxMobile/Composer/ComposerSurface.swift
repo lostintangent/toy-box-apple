@@ -117,7 +117,11 @@ struct ComposerSurface: View {
             dismissedCompletion = nil
             highlightedChoice = choices.first?.id
         }
-        .onChange(of: interaction.composerFocusRequest) { _, _ in editor.focus() }
+        .onChange(of: interaction.pendingComposerFocusRequest, initial: true) { _, token in
+            guard let token else { return }
+            interaction.consumeComposerFocusRequest(token)
+            editor.focus()
+        }
         .onChange(of: interaction.replyRequest?.token) { _, _ in
             guard let reply = interaction.replyRequest else { return }
             session.reply(to: reply.agent, sequence: reply.sequence)

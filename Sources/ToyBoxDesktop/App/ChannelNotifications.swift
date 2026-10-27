@@ -6,8 +6,8 @@ import UserNotifications
 
 @MainActor @Observable
 final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
-    nonisolated static let replyAction = "reply"
-    nonisolated static let replyFailedCategory = "replyFailed"
+    nonisolated static let replyAction = ChannelNotificationCategory.reply
+    nonisolated static let replyFailedCategory = ChannelNotificationCategory.replyFailed
     /// How long a request waits for its text before it's delivered without it.
     static let contentDeadline: Duration = .seconds(3)
 
@@ -253,7 +253,7 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
     }
 
     struct Event: Equatable {
-        enum Kind: String { case request, completion }
+        typealias Kind = ChannelPushPayload.Kind
         let channel: Channel
         let sequence: Int
         let kind: Kind

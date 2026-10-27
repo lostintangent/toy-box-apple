@@ -6,6 +6,7 @@ import WidgetKit
 struct ToyBoxMobileWidgets: WidgetBundle {
     var body: some Widget {
         MobileNeedsYouWidget()
+        ChannelActivityWidget()
         #if DEBUG && targetEnvironment(simulator)
         FoundationActivityWidget()
         #endif

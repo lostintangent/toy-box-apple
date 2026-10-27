@@ -1,7 +1,10 @@
 import ChannelClient
 import ChannelKit
+import Combine
 import SwiftUI
+import TipKit
 import ToyBoxUI
+import UIKit
 
 struct ChannelScreen: View {
     let store: ChannelStore
@@ -14,6 +17,9 @@ struct ChannelScreen: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
     @ScaledMetric(relativeTo: .body) private var minimumTrayHeight: CGFloat = 660
     @ViewState private var usableHeight: CGFloat = 0
+    @ViewState private var keyboardIsVisible = false
+    @ViewState private var permissionTipIsAvailable = false
+    private let permissionTip = NotificationPermissionTip()
 
     private var reader: ChannelReaderVisibility {
         ChannelReaderVisibility(
@@ -22,6 +28,16 @@ struct ChannelScreen: View {
             compactOverviewRequested: sizeClass == .compact && interaction.isInspectorPresented,
             compactOverviewPresented: overview.isCompactSheetPresented
         )
+    }
+
+    private var showsPermissionTip: Bool {
+        permissionTipIsAvailable && model.notifications.canOfferPermissionTip
+            && model.isActive && model.visibleChannelID == store.id
+            && store.phase.isLive && store.requestSequence != nil && !model.isSettingsPresented
+            && management.flow == nil && !reader.requested && !overview.isCompactSheetPresented
+            && !(sizeClass == .compact && interaction.isInspectorPresented)
+            && !interaction.isRequestPreviewPresented && !keyboardIsVisible
+            && !model.composerSession(for: store).editor.isFocused
     }
 
     var body: some View {
@@ -39,6 +55,16 @@ struct ChannelScreen: View {
                 }
             }
         }
+            .safeAreaBar(edge: .top, spacing: 0) {
+                if showsPermissionTip {
+                    TipView(permissionTip) { _ in
+                        permissionTip.invalidate(reason: .actionPerformed)
+                        Task { await model.notifications.enable() }
+                    }
+                    .padding(.horizontal, sizeClass == .compact ? 16 : 20)
+                    .padding(.vertical, 8)
+                }
+            }
             .background {
                 // Measuring behind the keyboard must not opt the composer out of avoidance.
                 GeometryReader { geometry in
@@ -61,7 +87,20 @@ struct ChannelScreen: View {
             }
             .navigationTitle(store.details?.name ?? model.catalog?.channels.first { $0.id == store.id }?.name ?? "")
             .navigationBarTitleDisplayMode(.inline)
+            .task(id: model.notifications.tipsAvailable) {
+                guard model.notifications.tipsAvailable else { return }
+                for await available in permissionTip.shouldDisplayUpdates {
+                    permissionTipIsAvailable = available
+                }
+            }
             .onAppear { model.visibleChannelID = store.id }
+            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillChangeFrameNotification)) { event in
+                guard let window = model.composerSession(for: store).editor.textView?.window,
+                      let screenFrame = event.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect else { return }
+                keyboardIsVisible = ComposerBottomSpacing.keyboardIsVisible(
+                    frame: window.convert(screenFrame, from: window.screen.coordinateSpace), in: window.bounds,
+                    safeAreaBottom: window.safeAreaInsets.bottom)
+            }
             .onChange(of: store.id) { _, id in model.visibleChannelID = id }
             .onChange(of: store.artifacts, initial: true) { _, current in
                 artifacts.configure(api: store.api, channelID: store.id, artifacts: current)
@@ -152,6 +191,7 @@ struct ChannelScreen: View {
                 interaction.findInChannel()
             }
             .disabled(store.phase == .deleted)
+            ChannelFollowMenuAction(store: store)
             Button("Refresh", systemImage: "arrow.clockwise") { store.reconnect() }
                 .disabled(!model.isActive || store.phase == .deleted)
             Button("Open in Toy Box", systemImage: "arrow.up.forward.square") {

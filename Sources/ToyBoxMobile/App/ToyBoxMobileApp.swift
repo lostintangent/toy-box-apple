@@ -6,7 +6,7 @@ typealias ViewState<Value> = SwiftUI.State<Value>
 
 @main
 struct ToyBoxMobileApp: App {
-    @ViewState private var model = AppModel()
+    @UIApplicationDelegateAdaptor(MobileAppDelegate.self) private var appDelegate
     @AppStorage("appearance") private var appearance: AppAppearance = .system
 
     var body: some Scene {
@@ -15,8 +15,10 @@ struct ToyBoxMobileApp: App {
                 #if DEBUG && targetEnvironment(simulator)
                 .mobileFoundationProofIfRequested()
                 #endif
-                .environment(model)
+                .environment(appDelegate.model)
+                .environment(appDelegate.model.following)
                 .preferredColorScheme(appearance.colorScheme)
+                .task { await appDelegate.model.startIntegrations() }
                 #if DEBUG
                 .task { await MobileAutomation.runIfRequested() }
                 #endif

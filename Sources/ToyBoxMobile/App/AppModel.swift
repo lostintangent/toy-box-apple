@@ -2,16 +2,22 @@ import ChannelClient
 import ChannelKit
 import Foundation
 import Observation
+import OSLog
+import SwiftUI
+import ToyBoxMobileIntegrations
 import ToyBoxUI
 import UIKit
 
 @MainActor @Observable
 final class AppModel {
+    let notifications: ChannelNotifications
+    let following: ChannelFollowController
     private(set) var serverURL = ""
     private(set) var catalog: ChannelCatalogStore?
     private(set) var configurationError: String?
     private(set) var isActive = false
     private(set) var selectedStore: ChannelStore?
+    private(set) var isResolvingNavigation = false
     var visibleChannelID: String?
     var isSettingsPresented = false
     var navigationNotice: String?
@@ -20,6 +26,7 @@ final class AppModel {
     var selectedChannelID: String? {
         didSet {
             guard oldValue != selectedChannelID else { return }
+            cancelNavigation()
             if let selectedStore {
                 closeReaders(for: selectedStore.id)
             }
@@ -36,18 +43,43 @@ final class AppModel {
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let session: URLSession
     @ObservationIgnored private var restoredSelection = false
+    @ObservationIgnored private var navigationGeneration = UUID()
     @ObservationIgnored private var serverIdentity = ""
     @ObservationIgnored private var interactions: [String: ChannelInteraction] = [:]
     @ObservationIgnored private var composerSessions: [String: ComposerSession] = [:]
     @ObservationIgnored private var artifactSessions: [String: (store: ChannelStore, session: ChannelArtifactSession)] = [:]
     @ObservationIgnored private var galleryPresenters: [String: (store: ChannelStore, presenter: TranscriptGalleryPresenter)] = [:]
+    @ObservationIgnored private var integrationsStarted = false
+    @ObservationIgnored private var integrationsGeneration = UUID()
+    @ObservationIgnored private var resumeCatalogBaseline: Date?
+    @ObservationIgnored private var widgetPublisher: MobileWidgetSnapshotPublisher?
+    @ObservationIgnored private var widgetUpdate: Task<Void, Never>?
+    @ObservationIgnored private var widgetUpdateRequested = false
+    @ObservationIgnored private let integrationLogger = Logger(subsystem: "dev.toybox.mobile", category: "Integrations")
 
     init(arguments: [String] = ProcessInfo.processInfo.arguments,
          environment: [String: String] = ProcessInfo.processInfo.environment,
          bundleDefaultServerURL: String? = Bundle.main.object(forInfoDictionaryKey: "ToyBoxDefaultServerURL") as? String,
-         defaults: UserDefaults = .standard, session: URLSession = .shared) {
+         defaults: UserDefaults = .standard, session: URLSession = .shared,
+         notifications: ChannelNotifications? = nil, following: ChannelFollowController? = nil) {
+        self.notifications = notifications ?? ChannelNotifications(defaults: defaults)
+        self.following = following ?? ChannelFollowController(defaults: defaults)
         self.defaults = defaults
         self.session = session
+        self.notifications.onActivate = { [weak self] activation in
+            await self?.openChannel(id: activation.channelID, sequence: activation.sequence,
+                                    focusComposer: activation.focusComposer, expectedServer: activation.serverURL)
+        }
+        self.notifications.onReply = { [weak self] payload, text, handle in
+            guard let self, self.notifications.isCurrent(payload), let catalog else { return .notSent }
+            let result = await ComposerNotificationReply.send(
+                text, to: handle, store: catalog.channel(id: payload.channelID),
+                isCurrentRegistration: { [weak self] in
+                    self?.catalog === catalog && self?.notifications.isCurrent(payload) == true
+                })
+            if result == .sent { await catalog.refresh() }
+            return result
+        }
         let address: String?
         if let index = arguments.firstIndex(of: "--server") {
             guard arguments.indices.contains(index + 1) else {
@@ -100,6 +132,10 @@ final class AppModel {
         guard let identity = ChannelWaitingRequest.normalizedServer(api.baseURL.absoluteString) else {
             throw ChannelAPIError.invalidServerURL
         }
+        integrationsGeneration = UUID()
+        widgetUpdate?.cancel()
+        widgetUpdate = nil
+        cancelNavigation()
         catalog?.stopPolling()
         connections.disconnectAll()
         holdsSelectedConnection = false
@@ -113,17 +149,21 @@ final class AppModel {
         self.serverURL = api.baseURL.absoluteString
         serverIdentity = identity
         catalog = ChannelCatalogStore(api: api)
+        notifications.configure(api: api)
         configurationError = nil
         navigationNotice = nil
         browserFailure = nil
         restoredSelection = false
+        resumeCatalogBaseline = nil
         if persist { defaults.set(self.serverURL, forKey: "serverURL") }
         if isActive { catalog?.startPolling() }
+        if integrationsStarted { observeIntegrations(generation: integrationsGeneration) }
     }
 
     func setActive(_ active: Bool) {
         guard isActive != active else { return }
         isActive = active
+        if active { resumeCatalogBaseline = catalog?.lastRefreshedAt }
         catalog?.setActive(active)
         if active {
             catalog?.startPolling()
@@ -146,7 +186,7 @@ final class AppModel {
     }
 
     func reconcileSelection() {
-        guard !restoredSelection, let catalog, catalog.hasLoaded else { return }
+        guard !restoredSelection, !isResolvingNavigation, let catalog, catalog.hasLoaded else { return }
         restoredSelection = true
         guard selectedChannelID == nil, let id = rememberedSelections[serverIdentity] else { return }
         if catalog.channels.contains(where: { $0.id == id }) {
@@ -163,6 +203,141 @@ final class AppModel {
         guard let catalog else { return }
         await requestedRefresh.run(catalog)
         reconcileSelection()
+    }
+
+    func startIntegrations() async {
+        guard !integrationsStarted else { return }
+        integrationsStarted = true
+        do {
+            widgetPublisher = try MobileWidgetSnapshotPublisher(avatarPNG: Self.widgetAvatar)
+        } catch {
+            integrationLogger.error("Could not prepare the Needs You widget: \(error.localizedDescription)")
+        }
+        await notifications.start()
+        observeFollowing()
+        observeIntegrations(generation: integrationsGeneration)
+    }
+
+    func observeFollowing() {
+        let context = withObservationTracking {
+            (registration: notifications.currentRegistration, catalog: catalog, isActive: isActive)
+        } onChange: { [weak self] in
+            Task { @MainActor in self?.observeFollowing() }
+        }
+        following.configure(
+            registration: context.registration, catalog: context.catalog, isActive: context.isActive,
+            acquire: { [weak self] in self?.acquire($0) },
+            release: { [weak self] in self?.release($0) }
+        )
+    }
+
+    private func observeIntegrations(generation: UUID) {
+        guard generation == integrationsGeneration else { return }
+        let context = withObservationTracking {
+            let channels = catalog?.channels.map(sidebarProjection.channel) ?? []
+            let active = isActive && !isSettingsPresented
+                && selectedStore.map({ interaction(for: $0.id).isArtifactViewerPresented != true }) != false
+                ? visibleChannelID : nil
+            return (channels: channels, active: active,
+                    withdraw: isActive && catalog?.hasLoaded == true && catalog?.error == nil
+                        && catalog?.lastRefreshedAt != resumeCatalogBaseline,
+                    refreshed: catalog?.lastRefreshedAt, failure: catalog?.error,
+                    registration: notifications.currentRegistration?.registrationID)
+        } onChange: { [weak self] in
+            Task { @MainActor in self?.observeIntegrations(generation: generation) }
+        }
+        Task { [weak self] in
+            guard let self, generation == integrationsGeneration else { return }
+            await notifications.update(channels: context.channels, activeChannelID: context.active,
+                                       withdraw: context.withdraw)
+        }
+        updateWidget(generation: generation)
+    }
+
+    private func updateWidget(generation: UUID) {
+        guard widgetPublisher != nil else { return }
+        widgetUpdateRequested = true
+        guard widgetUpdate == nil else { return }
+        widgetUpdate = Task { [weak self] in
+            guard let self, generation == integrationsGeneration, !Task.isCancelled else { return }
+            repeat {
+                widgetUpdateRequested = false
+                do {
+                    try await widgetPublisher?.update(catalog: catalog, serverURL: serverURL)
+                } catch {
+                    if Task.isCancelled || error is CancellationError
+                        || (error as? URLError)?.code == .cancelled { break }
+                    integrationLogger.error("Could not update the Needs You widget: \(error.localizedDescription)")
+                }
+            } while widgetUpdateRequested && generation == integrationsGeneration && !Task.isCancelled
+            if generation == integrationsGeneration { widgetUpdate = nil }
+        }
+    }
+
+    private static func widgetAvatar(_ agent: ChannelAgent) -> Data? {
+        let renderer = ImageRenderer(content: AgentAvatarView(agent: agent, size: 24))
+        renderer.scale = 3
+        return renderer.uiImage?.pngData()
+    }
+
+    func openChannel(id: String, sequence: Int? = nil, focusComposer: Bool = false,
+                     expectedServer: String) async {
+        cancelNavigation()
+        guard expectedServer == serverURL, let catalog else {
+            navigationNotice = "This channel isn't available."
+            return
+        }
+        let generation = UUID()
+        navigationGeneration = generation
+        isResolvingNavigation = true
+        if !catalog.hasLoaded { await requestedRefresh.run(catalog) }
+        guard navigationGeneration == generation, self.catalog === catalog else { return }
+        isResolvingNavigation = false
+        restoredSelection = true
+        guard catalog.hasLoaded, catalog.channels.contains(where: { $0.id == id }) else {
+            selectedChannelID = nil
+            navigationNotice = "This channel isn't available."
+            return
+        }
+        let interaction = interaction(for: id)
+        if let sequence {
+            interaction.messageView = .all
+            interaction.reveal(sequence: sequence)
+        }
+        closeReaders(for: id)
+        interaction.isInspectorPresented = false
+        if focusComposer { interaction.focusComposer() }
+        navigationNotice = nil
+        selectedChannelID = id
+    }
+
+    func openExternalURL(_ url: URL) async {
+        cancelNavigation()
+        if url == NeedsYouSnapshot.mainURL {
+            restoredSelection = true
+            selectedChannelID = nil
+        } else if let request = NeedsYouRequestLink(url: url) {
+            await openChannel(id: request.channelID, sequence: request.sequence,
+                              expectedServer: request.serverURL)
+        } else if let request = NeedsYouRequestLink(replyURL: url) {
+            await openChannel(id: request.channelID, sequence: request.sequence, focusComposer: true,
+                              expectedServer: request.serverURL)
+        } else if let activity = ChannelActivityLink(url: url) {
+            guard let registration = notifications.currentRegistration,
+                  registration.registrationID == activity.registrationID else {
+                navigationNotice = "This channel isn't available."
+                return
+            }
+            await openChannel(id: activity.channelID, sequence: activity.sequence,
+                              expectedServer: registration.serverURL)
+        } else {
+            navigationNotice = "This link couldn't be opened."
+        }
+    }
+
+    private func cancelNavigation() {
+        navigationGeneration = UUID()
+        isResolvingNavigation = false
     }
 
     func openInToyBox(channelID: String) {
