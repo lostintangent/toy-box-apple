@@ -47,8 +47,7 @@ export async function generateAppcast(tag: string, repository = root) {
         throw new Error("The archive is missing a valid EdDSA signature.");
     }
     await signingTool("sign_update", ["--verify", archive, signature]);
-    await signingTool("sign_update", ["--verify", join(output, "appcast.xml")]);
-    console.log(`Signed update feed: ${join(output, "appcast.xml")}`);
+    console.log(`Update feed with verified archive signature: ${join(output, "appcast.xml")}`);
 }
 
 if (import.meta.main) await main(async () => { await generateAppcast(releaseTag(process.argv[2])); });

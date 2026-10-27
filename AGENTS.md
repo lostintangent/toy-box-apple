@@ -352,7 +352,7 @@ analysis errors/completion/text detection and load.
 - Workflow actions stay pinned to full commit hashes with readable version comments. Dependabot
   checks them weekly. The Release checks job validates workflows and credential-free release tools.
 - Push a `vX.Y.Z` tag, only with the user's approval. Actions tests the tag, then signs,
-  notarizes, staples and publishes the zip, its checksum and a signed `appcast.xml`. Running the
+  notarizes, staples and publishes the signed zip, its checksum and `appcast.xml`. Running the
   workflow by hand on `main` is a dry run that keeps all three as artifacts.
 - iPhone releases are independent `mobile-vX.Y.Z` tags in `mobile-release.yml`. They upload to
   TestFlight, never GitHub Releases. Manual `main` runs use `--validate-only`, never upload.
@@ -367,22 +367,27 @@ analysis errors/completion/text detection and load.
   silently or from piped stdin, exports only that Apple Distribution identity and deletes its
   temporary encrypted export. It sets `MOBILE_SIGNING_CERTIFICATE`, `MOBILE_SIGNING_PASSWORD`,
   the three `MOBILE_*_PROVISIONING_PROFILE` secrets, and public `MOBILE_SIGNING_IDENTITY` /
-  `APP_STORE_CONNECT_APP_ID` variables. It never reads or replaces `NOTARY_APP_PASSWORD`.
-  Actions imports the identity, profiles and checksum-pinned public WWDR G3 intermediate only
+  `MOBILE_SIGNING_CERTIFICATE_CHAIN` / `APP_STORE_CONNECT_APP_ID` variables. It never reads or replaces
+  `NOTARY_APP_PASSWORD`.
+  Actions imports the identity with its verified issuer chain and the profiles only
   into job-temporary storage, then restores the keychain search list and removes the material.
   Agents never run real setup or read the exported identity/password.
 - Certificate-owner-only setup:
   `bun run setup-release-secrets SHA1 APPLE_ID TEAM_ID`, using an Apple ID app-specific password
   entered silently or piped on stdin, never as an argument. It configures `toy-box-channels-notary`
-  and GitHub secrets `MACOS_SIGNING_CERTIFICATE`, `MACOS_SIGNING_PASSWORD`, `NOTARY_APP_PASSWORD`.
-  Keep the workflow's pinned public certificate SHA-1, Apple ID and Team ID in sync on rotation.
+  and GitHub secrets `MACOS_SIGNING_CERTIFICATE`, `MACOS_SIGNING_PASSWORD`, `NOTARY_APP_PASSWORD`,
+  plus public `MACOS_SIGNING_IDENTITY` / `MACOS_SIGNING_CERTIFICATE_CHAIN` variables.
+  Setup exports its verified public chain alongside the encrypted identity,
+  so certificate renewal needs setup again, not a workflow fingerprint/intermediate edit.
   Agents never run setup with real credentials, create secrets or read keys/passwords.
   `bun run test:release` uses fake commands unless native checks are explicitly enabled.
   The only shell helper is `read-password.sh`, using `read -rs` for echo/piped-input handling.
 - Update signing setup, by the user only: `bun run setup-update-secrets [OWNER/REPO]`. It reuses
   or creates the `dev.toybox.desktop` Sparkle Keychain account, uploads `SPARKLE_ED_PRIVATE_KEY`
   as a secret and `SPARKLE_ED_PUBLIC_KEY` as a public repository variable, then deletes the temporary
-  export. Back up the trusted key, never replace casually. Agents never run setup or read the key.
+  export. No key backup is required: on a new Mac it creates a replacement, authorized by the same
+  app's Developer ID signing requirement. Keep the bundle ID and Apple team unchanged.
+  Agents never run setup or read the key.
   Opt-in `scripts/release/tests/native.test.ts` uses a throwaway CryptoKit file, never Keychain.
   Run it with `TOY_BOX_BUNDLE=<app> SPARKLE_TOOLS_DIR=<tools> bun test scripts/release/tests/native.test.ts`.
 - Locally: `SPARKLE_ED_PUBLIC_KEY=... SIGNING_IDENTITY=SHA1 BUILD_NUMBER=N NOTARY_PROFILE=toy-box-channels-notary
@@ -415,10 +420,14 @@ analysis errors/completion/text detection and load.
   preferences. Feed:
   `https://github.com/lostintangent/toy-box-apple/releases/latest/download/appcast.xml`.
   Automatic checks default on without prompting. Installation is opt-in. After notarization,
-  `bun run generate-appcast` verifies archive/feed signatures, accepting key stdin from
+  `bun run generate-appcast` verifies the archive signature, accepting key stdin from
   `SPARKLE_ED_PRIVATE_KEY` or explicit `SPARKLE_ED_KEY_FILE` for isolated tests. Never default Keychain.
-- The Developer ID certificate and its G1 intermediate expire February 1, 2027. Before then, move
-  to a G2 certificate, rerun the setup, and update the workflow's intermediate URL and SHA-256.
+- Recovery from a lost Mac: sign in to the same Apple account/team, create replacement Developer ID
+  and Apple Distribution certificates/profiles, then rerun `setup-release-secrets`,
+  `setup-testflight-secrets` and `setup-update-secrets`. Neither workflow pins an issuing intermediate.
+  The current Developer ID expires February 1, 2027. Renew and rerun setup before then.
+  Sparkle's archive key stays required, but the feed is unsigned and both strict flags stay absent.
+  Existing v0.1.8 has the strict policy: install the first replacement manually once.
 - Icon source: `Resources/AppIcon.icon` (Designer). After changes, `bun run icon`, then commit it with
   `Resources/AppIcon.icns` / `Resources/Assets.car`. Generation needs Icon Composer/Xcode `actool`.
   Mac builds only copy outputs, so CLT/Mac CI need neither. Mobile uses Xcode `actool` for the

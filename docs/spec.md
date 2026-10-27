@@ -82,7 +82,7 @@ Reference sources (read-only):
 ## Releases
 
 Releases are Developer ID signed, notarized and stapled, then published with their SHA-256 checksum
-and signed Sparkle appcast by `.github/workflows/build-and-release.yml` on an approved `vX.Y.Z` tag.
+and Sparkle appcast by `.github/workflows/build-and-release.yml` on an approved `vX.Y.Z` tag.
 A manual run on `main` performs the same signing, notarization and appcast generation but keeps them
 as artifacts, without publishing.
 Local builds use Command Line Tools. CI uses its selected Xcode 27 toolchain on the `xcode-27` runner.
@@ -132,10 +132,12 @@ as the final argument and configures the local
 `MACOS_SIGNING_PASSWORD` and `NOTARY_APP_PASSWORD` secrets. Setup exports only the pinned
 certificate's identity into a temporary encrypted file, then removes it on exit.
 
-The workflow pins the public signing certificate SHA-1 (`69A492FDF7DDFC679B93DB465E0D5E94F22DAC6A`),
-Apple ID (`joncart@outlook.com`) and Team ID (`RHFNBL7EG4`) directly, not as secrets. Keep those values
-in sync with the setup arguments when rotating identities. CI stores the notarization login in a
-temporary keychain profile. Missing or rejected credentials fail the release explicitly.
+Setup writes the selected public certificate SHA-1 to `MACOS_SIGNING_IDENTITY`; the workflow reads
+that variable, not a hard-coded fingerprint. Apple ID (`joncart@outlook.com`) and Team ID
+(`RHFNBL7EG4`) remain public account settings. Setup also exports the verified public issuer chain
+to `MACOS_SIGNING_CERTIFICATE_CHAIN`, alongside the encrypted identity, allowing issuer renewal
+through setup without a workflow edit. CI stores the notarization login in a temporary keychain
+profile. Missing or rejected credentials fail the release explicitly.
 
 Agents never run setup with real credentials or read signing keys and passwords. The credential-free
 regression suite, `bun run test:release`, replaces every credential, signing and
@@ -166,9 +168,11 @@ installation off by default. Both choices remain user-configurable through Spark
 The user runs `bun run setup-update-secrets [OWNER/REPO]` once. Sparkle generates or reuses the
 app-specific `dev.toybox.desktop` Keychain account, without touching its global default key.
 Setup uploads the exported key as `SPARKLE_ED_PRIVATE_KEY`, configures `SPARKLE_ED_PUBLIC_KEY` as a
-public repository variable, and removes the temporary export. Keep a secure backup of the Keychain
-key. Existing installs trust its public half, so losing or casually rotating it breaks the update
-chain. Agents never run this setup with real credentials or read that key.
+public repository variable, and removes the temporary export. The archive key is independent of
+Apple, but disposable: a new Mac creates a replacement if the old Keychain account is unavailable.
+Sparkle authorizes that replacement when the update satisfies the installed app's Developer ID
+signing requirement and its archive matches the new embedded key. Keep the bundle ID and Apple
+team unchanged. Agents never run this setup with real credentials or read that key.
 
 The user completed the one-time identity and unshipped update-key rotation before v0.1.1.
 The active Sparkle Keychain account is `dev.toybox.desktop`. The Developer ID certificate and
@@ -176,10 +180,12 @@ Apple ID app-specific password are unchanged. The renamed app needs new macOS no
 and microphone grants, and Computer Use needs approval for `dev.toybox.desktop.test`.
 
 After notarization and stapling, `bun run generate-appcast` uses Sparkle's checksum-pinned tools to
-sign the finished archive and the whole feed with Ed25519. The archive signature, length, URL,
+sign the finished archive with Ed25519. The archive signature, length, URL,
 machine and human-readable versions, and minimum macOS version are checked before publishing.
-The feed signature is independently verified with `sign_update`. Archive verification is required
-before extraction, and signed feeds are required. The matching `## Mac X.Y.Z` changelog entry supplies
+The archive signature is verified with `sign_update`. The feed and release notes are not separately
+signed, and `SUVerifyUpdateBeforeExtraction` / `SURequireSignedFeed` stay absent. This trades the
+extra pre-extraction/feed checks for normal Sparkle key rotation through Apple code signing.
+The matching `## Mac X.Y.Z` changelog entry supplies
 both Sparkle and GitHub Release notes. There is no tag-annotation or commit-message fallback.
 Deltas are intentionally omitted
 for these small apps.
@@ -194,7 +200,7 @@ set `PREVIOUS_APPCAST` to apply the same monotonicity guard.
 `bun run test:release` exercises packaging, inside-out signing, key setup, failure propagation
 and numeric build ordering without real credentials. Its macOS native checks verify the bundled
 architectures and signatures. A real `generate_appcast`/`sign_update` round trip uses an isolated
-throwaway CryptoKit key file and verifies rejection of a modified archive and feed, never accessing the
+throwaway CryptoKit key file and verifies rejection of a modified archive, never accessing the
 default Sparkle Keychain entry.
 
 Tooling is grouped under `scripts/dev/`, `scripts/release/` and `scripts/fixtures/`, with every
@@ -262,11 +268,12 @@ The user runs `bun run setup-testflight-secrets SHA1 APP_STORE_CONNECT_APP_ID [O
 The shared signing selector validates the three App Store profiles and chosen Apple Distribution
 identity before export. A silent prompt or piped stdin supplies the export's encryption password,
 not the Apple Account password. Five secrets hold the encrypted certificate, its password and the
-three profiles. Public variables hold the certificate fingerprint and numeric app ID. The existing
-`NOTARY_APP_PASSWORD` is reused for uploads without reading or replacing it during setup.
+three profiles. Public variables hold the certificate fingerprint, verified issuer chain and
+numeric app ID. The existing `NOTARY_APP_PASSWORD` is reused for uploads without reading or replacing
+it during setup.
 Temporary export files are removed even on a failed secret upload.
 
-The mobile job imports its identity and checksum-pinned public WWDR G3 intermediate into an isolated
+The mobile job imports its identity and exported verified issuer chain into an isolated
 temporary keychain and uses profile files only under the runner's temporary directory. Cleanup
 restores the original keychain search list and removes signing material, including failures.
 No iPhone GitHub Release is created, so the Mac's latest-release feed remains untouched.
@@ -274,6 +281,21 @@ The iPhone changelog entry is retained as a workflow summary/artifact. Apple's d
 notes endpoint uses API-key authentication; the installed `altool --beta-app-store-text` exposes
 marketing-version metadata but no verified per-build password path. “What to Test” remains manual
 until that path is proven. No API key is required or read by the release tools.
+
+### Recovery without laptop-held backups
+
+Actions holds the working signing material, so publishing does not use this Mac. If the laptop or
+repository secrets are lost, sign in to the same Apple account/team on another Mac, make new
+Developer ID and Apple Distribution certificates and matching App Store profiles, then rerun
+`setup-release-secrets`, `setup-testflight-secrets` and `setup-update-secrets`. The first two update
+their public fingerprint/issuer-chain variables and encrypted identity exports. No workflow edit
+or private-key backup is required. Apple account access and the app/team identities must be retained.
+
+If only the Sparkle key is lost, the third setup creates a new key pair. Sparkle 2.10's normal update
+validator allows that rotation through the installed app's Apple signing requirement, while still
+requiring the new archive signature to match its embedded public key. Current v0.1.8 installs have
+the stricter feed/pre-extraction policy and need a one-time manual installation of this replacement.
+No actual key rotation or credential setup is performed by agents.
 
 ## Protocol (v1)
 

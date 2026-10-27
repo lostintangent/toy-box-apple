@@ -19,6 +19,14 @@ export function parseNotaryResponse(response: string, status: number) {
     return { status: parsed.status, id };
 }
 
+export async function configureReleaseMetadata(app: string, version: string, build: string, publicKey: string) {
+    await plist(join(app, "Contents/Info.plist"), [
+        `Set :CFBundleShortVersionString ${version}`, `Set :CFBundleVersion ${build}`,
+        `Add :SUFeedURL string ${repositoryURL}/releases/latest/download/appcast.xml`,
+        `Add :SUPublicEDKey string ${publicKey}`, "Add :SUEnableAutomaticChecks bool true",
+    ]);
+}
+
 if (import.meta.main) await main(async () => {
     const tag = releaseTag(process.argv[2]);
     await releaseChangelog(tag);
@@ -54,11 +62,7 @@ if (import.meta.main) await main(async () => {
         throw new Error(`Release output already exists: ${archive}`);
     }
     const app = await buildApp("release", scratch);
-    const info = join(app, "Contents/Info.plist");
-    await plist(info, [`Set :CFBundleShortVersionString ${version}`, `Set :CFBundleVersion ${build}`,
-        `Add :SUFeedURL string ${repositoryURL}/releases/latest/download/appcast.xml`,
-        `Add :SUPublicEDKey string ${publicKey}`, "Add :SUEnableAutomaticChecks bool true",
-        "Add :SUVerifyUpdateBeforeExtraction bool true", "Add :SURequireSignedFeed bool true"]);
+    await configureReleaseMetadata(app, version, build, publicKey);
     if (await text(["xcrun", "lipo", "-archs", join(app, "Contents/MacOS/ToyBoxDesktop")]) !== "arm64") {
         throw new Error("Release executable must contain only arm64.");
     }

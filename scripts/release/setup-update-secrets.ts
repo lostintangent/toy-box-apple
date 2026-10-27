@@ -19,6 +19,6 @@ if (import.meta.main) await main(async () => {
         await command(["gh", "secret", "set", "SPARKLE_ED_PRIVATE_KEY", "--repo", repo],
             { input: new Uint8Array(await Bun.file(key).arrayBuffer()) });
         await command(["gh", "variable", "set", "SPARKLE_ED_PUBLIC_KEY", "--repo", repo, "--body", publicKey]);
-        console.log(`Update signing configured for ${repo}. Keep the ${bundleIdentity} Sparkle key in your Keychain backed up.`);
+        console.log(`Update signing configured for ${repo}. If this key is lost, rerun setup on another Mac; a Developer ID for the same app and Apple team can authorize its replacement.`);
     });
 });
