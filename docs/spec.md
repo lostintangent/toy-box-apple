@@ -1502,10 +1502,19 @@ Apply the compact 16-point / regular 20-point outer rail once, without the old c
 44-point list margin. Treat purpose, folder and Preview as the headerless first section.
 Use one 24-point section-gap constant from that block's last row to Team and between every
 pair of sections, whether collapsed or expanded. This replaces the earlier 16-point opening
-gap and 12-point collapsed gap. At Large, keep 16 points from purpose to details, 4 from folder
-label to wrapping path, 8 from folder block to Preview, and 4 from heading to content.
+gap and 12-point collapsed gap. At Large, keep 16 points from purpose to details, 8 from the
+folder button to Preview, and 4 from heading to content.
 More/Less stays minimum 44 with no extra spacer above it. Omit absent content and its gaps.
 Headings and rows grow with Dynamic Type. Mac container geometry stays unchanged.
+
+On the phone, Folder is one minimum-44-point button showing the folder icon and name. A tap
+copies the original full server path, briefly changes the label to a checkmark and "Copied",
+and gives success sensory feedback. VoiceOver reads "Folder, {name}" with the hint "Copies the
+full path". A long-press context menu is titled with the full path and offers Copy Path. Do
+not show "Folder on Mac", a path row or a separate copy button. Screen Preview has only its
+icon and title, with no window/display identity line. URL previews keep their address line.
+Both sidebars and Overviews use one shared folder-name rule: `NSString.lastPathComponent`,
+falling back to the original path if the component is empty, without expanding or resolving it.
 
 Phone Team avatars are 28 points at default text size, scaling natively up to a 36-point cap.
 Keep the accepted name/single-status hierarchy, text sizing, row growth and agent actions.
@@ -1556,11 +1565,11 @@ an inline "More" link that expands in place ("Less" collapses it). A missing pur
 a purpose…" in secondary and opens Edit Channel. Below it, 10 points down, come compact property
 rows, each 22 high: an 18-point secondary SF Symbol column, a 6-point gap and a 12-point value.
 
-- Folder: `folder` and the path, middle-truncated and selectable. Abbreviate it with `~` only when
-  the server runs on this Mac, because a remote home isn't this Mac's home. When the folder is
+- Folder: `folder` and the shared folder name, middle-truncated and selectable. Keep the original
+  full server path in help, the accessibility value and Copy Path. When the folder is
   openable (the same rule and cached check as the sidebar's folder token), help shows the full
   path and a trailing tertiary
-  `arrow.forward.circle.fill` (Xcode's reveal arrow, 4 points after the path) shows it in
+  `arrow.forward.circle.fill` (Xcode's reveal arrow, 4 points after the name) shows it in
   Finder. Remote and missing folders use `folder` or `questionmark.folder` in the same ink, with
   no arrow, and reuse the sidebar token's help strings as both help and VoiceOver hint, so the
   missing arrow is always explained. The context menu offers Show in Finder (when openable), Copy

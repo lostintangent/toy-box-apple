@@ -417,6 +417,50 @@ struct OverviewTests {
                 "About-to-Team \(team.minY - about.maxY), Team-to-Tasks \(tasks.minY - lastTeam.maxY)")
     }
 
+    @Test(arguments: ["screen", "url"], [ColorScheme.light, .dark])
+    func openingShowsACopyableFolderNameAndOnlyURLPreviewsShowAnAddress(
+        kind: String, scheme: ColorScheme
+    ) async throws {
+        let directory = "/srv/work/toy-box-desktop/"
+        let screenID = "window:12345:67890:123456789"
+        let address = "https://example.com/preview"
+        let store = ChannelStore(id: "channel", api: try ChannelAPI(serverURL: "https://fixture.example"),
+                                 sendJournal: nil)
+        _ = try store.apply(.init(type: "snapshot", state: .init(
+            revision: 1,
+            channel: .init(id: "channel", name: "Workshop", purpose: "Build.", directory: directory,
+                           model: .init(provider: "test", name: "test"),
+                           preview: kind == "screen" ? .init(kind: kind, screenId: screenID)
+                               : .init(kind: kind, url: address),
+                           updatedAt: "2026-10-26T00:00:00Z"),
+            lead: .lead(id: "channel", profile: .init(name: "Lead", role: "Coordinator",
+                                                    avatar: .init(mark: "M4 12H20", color: "#123456")))
+        )))
+        let host = UIHostingController(rootView:
+            OverviewView(store: store, session: OverviewSession(store: store), placement: .sheet)
+                .environment(OverviewPresentation()).environment(ChannelInteraction())
+                .environment(ManagementPresenter()).environment(try artifactSession(artifacts: []))
+                .environment(\.horizontalSizeClass, .compact)
+                .environment(\.colorScheme, scheme)
+                .dynamicTypeSize(.large))
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 466, height: 1200))
+        window.rootViewController = host
+        window.isHidden = false
+        defer { window.isHidden = true }
+        host.view.layoutIfNeeded()
+        await Task.yield()
+        host.view.layoutIfNeeded()
+        let tree = MobileAutomationTree(windows: [window])
+        let folder = try #require(tree.elements.first { $0.identifier == "overview-folder" })
+        #expect(folder.label == "Folder, toy-box-desktop" && folder.traits.contains(.button))
+        #expect(folder.frame.height >= 44)
+        for removed in [directory, screenID, "Folder on Mac", "Copy Folder Path"] {
+            #expect(!tree.elements.contains { $0.label.contains(removed) || $0.value.contains(removed) })
+        }
+        #expect(tree.elements.contains { $0.label == "Screen Preview" } == (kind == "screen"))
+        #expect(tree.elements.contains { $0.label.contains(address) } == (kind == "url"))
+    }
+
     @Test(arguments: [UserInterfaceSizeClass.compact, .regular])
     func overviewRootHasNoNavigationBarButNestedScreensKeepTheirs(sizeClass: UserInterfaceSizeClass) async throws {
         let store = ChannelStore(id: "channel", api: try ChannelAPI(serverURL: "https://fixture.example"))

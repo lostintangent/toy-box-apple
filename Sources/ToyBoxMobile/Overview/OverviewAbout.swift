@@ -40,15 +40,8 @@ struct OverviewAboutSection: View {
                     if directory != nil || preview != nil {
                         VStack(alignment: .leading, spacing: 8) {
                             if let directory {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Label("Folder on Mac", systemImage: "folder")
-                                    Text(directory)
-                                        .font(.footnote.monospaced())
-                                        .textSelection(.enabled)
-                                        .fixedSize(horizontal: false, vertical: true)
-                                    Button("Copy Folder Path") { UIPasteboard.general.string = directory }
-                                        .frame(minHeight: 44)
-                                }
+                                OverviewFolderButton(directory: directory)
+                                    .id(directory)
                             }
                             if let preview {
                                 previewRow(preview)
@@ -80,10 +73,12 @@ struct OverviewAboutSection: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Label(preview.kind == "screen" ? "Screen Preview" : "Open Preview",
                           systemImage: preview.kind == "screen" ? "display" : "globe")
-                    Text(preview.kind == "screen" ? (preview.screenId ?? "Screen") : address.absoluteString)
-                        .font(.footnote)
-                        .foregroundStyle(ChannelInk.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                    if preview.kind != "screen" {
+                        Text(address.absoluteString)
+                            .font(.footnote)
+                            .foregroundStyle(ChannelInk.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
                 .frame(minHeight: 44, alignment: .leading)
             }
@@ -106,6 +101,42 @@ struct OverviewAboutSection: View {
             preview.screenId?.isEmpty == false ? store.api.channelURL(channelID: store.id) : nil
         default: nil
         }
+    }
+}
+
+private struct OverviewFolderButton: View {
+    let directory: String
+    @ViewState private var copyToken: UUID?
+
+    private var name: String { ChannelFolderName.name(of: directory) }
+
+    var body: some View {
+        Button(action: copyPath) {
+            Label(copyToken == nil ? name : "Copied", systemImage: copyToken == nil ? "folder" : "checkmark")
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                .contentShape(Rectangle())
+        }
+        .accessibilityIdentifier("overview-folder")
+        .accessibilityLabel("Folder, \(name)")
+        .accessibilityValue(copyToken == nil ? "" : "Copied")
+        .accessibilityHint("Copies the full path")
+        .contextMenu {
+            Section(directory) {
+                Button("Copy Path", systemImage: "doc.on.doc", action: copyPath)
+            }
+        }
+        .sensoryFeedback(.success, trigger: copyToken) { _, token in token != nil }
+        .task(id: copyToken) {
+            guard let token = copyToken else { return }
+            try? await Task.sleep(for: .seconds(1.5))
+            guard !Task.isCancelled, copyToken == token else { return }
+            copyToken = nil
+        }
+    }
+
+    private func copyPath() {
+        UIPasteboard.general.string = directory
+        copyToken = UUID()
     }
 }
 

@@ -457,11 +457,21 @@ struct ManagementTests {
         #expect(try inkRightEdge(.openable) > remote + 24)
     }
 
-    @Test func folderRowAbbreviatesOnlyAPathOnThisMac() {
-        let home = NSHomeDirectory() + "/Desktop/toy-box"
-        #expect(OverviewFolderRow.shownPath(home, availability: .openable) == "~/Desktop/toy-box")
-        #expect(OverviewFolderRow.shownPath(home, availability: .missing) == "~/Desktop/toy-box")
-        #expect(OverviewFolderRow.shownPath(home, availability: .remote(host: "build.example.com")) == home)
+    @Test func folderRowShowsTheSameNameForLocalRemoteAndMissingFolders() throws {
+        func pixels(_ directory: String, availability: ChannelFolderAvailability) throws -> Data {
+            let renderer = ImageRenderer(content:
+                OverviewFolderRow(directory: directory, availability: availability, channelURL: { nil })
+                    .frame(width: 280, alignment: .leading)
+                    .background(Color.white)
+                    .environment(\.colorScheme, .light))
+            renderer.scale = 2
+            return try #require(renderer.cgImage?.dataProvider?.data) as Data
+        }
+        for availability in [ChannelFolderAvailability.openable, .missing, .remote(host: "build.example.com")] {
+            let directory = "/srv/a/long/server/path/to/toy-box/"
+            #expect(try pixels(directory, availability: availability)
+                    == pixels(ChannelFolderName.name(of: directory), availability: availability))
+        }
     }
 
     @Test func routineSchedulesUseReadableSummariesAndKeepUnknownSyntax() throws {

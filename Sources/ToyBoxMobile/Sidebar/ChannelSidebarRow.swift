@@ -90,7 +90,7 @@ struct ChannelSidebarRow: View {
         if let path = channel.directory, !path.isEmpty {
             HStack(alignment: .firstTextBaseline, spacing: 4) {
                 Image(systemName: "folder")
-                Text((path as NSString).lastPathComponent)
+                Text(ChannelFolderName.name(of: path))
             }
                 .font(.footnote)
                 .foregroundStyle(ChannelInk.secondary)
