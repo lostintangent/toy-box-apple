@@ -51,7 +51,7 @@ enum ArtifactImageDecoder {
     }
 }
 
-private final class SVGDimensions: NSObject, XMLParserDelegate {
+final class SVGDimensions: NSObject, XMLParserDelegate {
     private var root: [String: String]?
     private var invalid = false
 

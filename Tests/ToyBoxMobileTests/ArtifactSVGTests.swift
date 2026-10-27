@@ -27,12 +27,14 @@ struct ArtifactSVGTests {
         return bytes
     }
 
-    @Test func aStaticFixtureRendersRealColoredPixelsAndPreservesItsNaturalSize() async throws {
+    @Test func aStaticExportRendersColorTransformsTransparencyAndNaturalSize() async throws {
         let file = try fixture("""
-            <svg xmlns="http://www.w3.org/2000/svg" width="200" height="100" viewBox="0 0 200 100">
+            <?xml version="1.0" encoding="UTF-8"?>
+            <!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+            <svg xmlns="http://www.w3.org/2000/svg" width="200" height="100" viewBox="0 0 20000 10000">
               <defs><linearGradient id="ink"><stop stop-color="#ff0000"/><stop offset="1" stop-color="#ff0000"/></linearGradient></defs>
-              <rect width="100" height="100" fill="url(#ink)"/>
-              <g transform="translate(100 0)"><path d="M0 0H100V100H0Z" fill="#0000ff"/></g>
+              <rect width="10000" height="10000" fill="url(#ink)"/>
+              <g transform="translate(10000 0)"><path d="M0 0H5000V10000H0Z" fill="#0000ff"/></g>
             </svg>
             """)
         defer { try? FileManager.default.removeItem(at: file.deletingLastPathComponent()) }
@@ -40,9 +42,10 @@ struct ArtifactSVGTests {
         #expect(decoded.size == CGSize(width: 200, height: 100))
         #expect(decoded.image.width == 128 && decoded.image.height == 64)
         let red = try pixel(decoded.image, x: 20, y: 20)
-        let blue = try pixel(decoded.image, x: 100, y: 20)
+        let blue = try pixel(decoded.image, x: 80, y: 20)
         #expect(red[0] > 240 && red[1] < 15 && red[2] < 15 && red[3] > 240)
         #expect(blue[0] < 15 && blue[1] < 15 && blue[2] > 240 && blue[3] > 240)
+        #expect(try pixel(decoded.image, x: 112, y: 20)[3] == 0)
     }
 
     @Test func embeddedScriptsAndLoadHandlersCannotChangeTheDrawing() async throws {
@@ -59,17 +62,17 @@ struct ArtifactSVGTests {
         #expect(color[0] > 240 && color[1] < 15 && color[2] < 15 && color[3] > 240)
     }
 
-    @Test func transparentPixelsAndViewBoxAspectRatioSurviveRasterization() async throws {
-        let file = try fixture("""
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20000 10000">
-              <rect width="10000" height="10000" fill="#00ff00"/>
-            </svg>
-            """)
-        defer { try? FileManager.default.removeItem(at: file.deletingLastPathComponent()) }
-        let decoded = try await ArtifactImageDecoder.decode(file, kind: .svg, maximumPixelSize: 64)
-        #expect(decoded.size == CGSize(width: 20000, height: 10000))
-        #expect(decoded.image.width == 64 && decoded.image.height == 32)
-        #expect(try pixel(decoded.image, x: 50, y: 16)[3] == 0)
+    @Test func explicitDimensionsAndViewBoxPreserveNaturalSizeWithoutRendering() throws {
+        let square = Data("""
+            <svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"/>
+            """.utf8)
+        #expect(try SVGDimensions.size(of: square) == CGSize(width: 100, height: 100))
+        let viewBox = Data("""
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20000 10000"/>
+            """.utf8)
+        let size = try SVGDimensions.size(of: viewBox)
+        #expect(size == CGSize(width: 20000, height: 10000))
+        #expect(ArtifactImageDecoder.pixelSize(size, maximum: 64) == CGSize(width: 64, height: 32))
     }
 
     @Test func theRasterBoundNeverExceeds8192AndNeverAllocatesAZeroEdge() {
@@ -77,20 +80,6 @@ struct ArtifactSVGTests {
                 == CGSize(width: 8192, height: 4096))
         #expect(ArtifactImageDecoder.pixelSize(CGSize(width: 1, height: 10000), maximum: 0)
                 == CGSize(width: 1, height: 1))
-    }
-
-    @Test func aPlainPublicDTDFromADesignExportStillRenders() async throws {
-        let file = try fixture("""
-            <?xml version="1.0" encoding="UTF-8"?>
-            <!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
-            <svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
-              <rect width="100" height="100" fill="#ff0000"/>
-            </svg>
-            """)
-        defer { try? FileManager.default.removeItem(at: file.deletingLastPathComponent()) }
-        let decoded = try await ArtifactImageDecoder.decode(file, kind: .svg, maximumPixelSize: 32)
-        let color = try pixel(decoded.image, x: 16, y: 16)
-        #expect(color[0] > 240 && color[1] < 15 && color[2] < 15 && color[3] > 240)
     }
 
     @Test func malformedDocumentsAndExternalEntityDeclarationsFailBeforeRendering() async throws {

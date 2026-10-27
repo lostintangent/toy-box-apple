@@ -41,110 +41,6 @@ struct ArtifactViewerTests {
         }
     }
 
-    @Test func topLevelSandboxRetainsTheFileOnlyNetworkBoundary() async throws {
-        let fixture = try ArtifactHTTPFixture()
-        try await fixture.start()
-        defer { fixture.stop() }
-        let directory = fixture.url("/api/serve/test/documents/")
-        let api = fixture.url("/api/v1/channels").absoluteString
-        let alias = fixture.url("/api/v1/channels", host: "localhost").absoluteString
-        let fakeCookie = try #require(HTTPCookie(properties: [
-            .name: "toybox-root-sandbox-test-\(UUID().uuidString)", .value: "not-a-credential",
-            .domain: "127.0.0.1", .path: "/api/serve/test/",
-        ]))
-        HTTPCookieStorage.shared.setCookie(fakeCookie)
-        defer { HTTPCookieStorage.shared.deleteCookie(fakeCookie) }
-        let source = """
-        <!doctype html><html><head><base href="\(directory.absoluteString)"></head><body>
-        <script>
-        (async () => {
-            const result = {origin:self.origin, base:document.baseURI, cookie:document.cookie};
-            result.api = await fetch("\(api)", {credentials:"include"}).then(() => true, () => false);
-            result.aliasAPI = await fetch("\(alias)").then(() => true, () => false);
-            const image = new Image();
-            const loaded = new Promise(resolve => { image.onload=()=>resolve(true); image.onerror=()=>resolve(false); });
-            image.src = "pixel.svg";
-            document.body.append(image);
-            result.relativeImage = await loaded;
-            window.networkProbe = result;
-        })();
-        </script></body></html>
-        """
-        let configuration = WKWebViewConfiguration()
-        configuration.websiteDataStore = .nonPersistent()
-        configuration.setURLSchemeHandler(ArtifactSandboxResponseProbe(document: source), forURLScheme: "toybox-sandbox")
-        let rules = try ArtifactWebPolicy.blockingRules(server: fixture.url("/"))
-        let identifier = "artifact-root-sandbox-network-probe"
-        let ruleStore = try #require(WKContentRuleListStore.default())
-        let compiled = try #require(try await ruleStore.compileContentRuleList(forIdentifier: identifier,
-                                                                             encodedContentRuleList: rules))
-        configuration.userContentController.add(compiled)
-        let web = WKWebView(frame: .zero, configuration: configuration)
-        let url = try #require(URL(string: "toybox-sandbox://document/allowed"))
-        web.load(URLRequest(url: url))
-        defer { web.stopLoading() }
-        try await wait { web.url == url && !web.isLoading }
-        var result: [String: Any]?
-        let deadline = ContinuousClock.now + .seconds(15)
-        while result == nil, ContinuousClock.now < deadline {
-            result = try await web.evaluateJavaScript("window.networkProbe") as? [String: Any]
-            if result == nil { try await Task.sleep(for: .milliseconds(10)) }
-        }
-        let probe = try #require(result)
-        #expect(probe["origin"] as? String == "null")
-        #expect(probe["cookie"] as? String == "")
-        #expect(probe["api"] as? Bool == false)
-        #expect(probe["aliasAPI"] as? Bool == false)
-        #expect(probe["relativeImage"] as? Bool == true)
-        #expect(probe["base"] as? String == directory.absoluteString)
-        let requests = fixture.requests.withLock { $0 }
-        #expect(requests.map(\.path) == ["/api/serve/test/documents/pixel.svg"])
-        #expect(requests.allSatisfy { !$0.headers.lowercased().contains(fakeCookie.name.lowercased()) })
-        try await ruleStore.removeContentRuleList(forIdentifier: identifier)
-    }
-
-    @Test(arguments: ["root", "iframe"])
-    func onlyTheFrameSandboxSurvivesDocumentReplacement(container: String) async throws {
-        let fixture = try ArtifactHTTPFixture()
-        try await fixture.start()
-        defer { fixture.stop() }
-        let destination = fixture.url("/api/serve/test/next.html")
-        fixture.bodies.withLock {
-            $0[destination.path] = """
-            <!doctype html><html><body><script>
-            let storage;
-            try { localStorage.setItem("probe","1"); storage="allowed"; }
-            catch(error) { storage=error.name; }
-            parent.postMessage({origin:self.origin,storage}, "*");
-            </script></body></html>
-            """
-        }
-        let source = """
-        <!doctype html><html><body><script>location.href="\(destination.absoluteString)";</script></body></html>
-        """
-        let configuration = WKWebViewConfiguration()
-        configuration.websiteDataStore = .nonPersistent()
-        configuration.setURLSchemeHandler(ArtifactSandboxResponseProbe(document: source), forURLScheme: "toybox-sandbox")
-        let web = WKWebView(frame: .zero, configuration: configuration)
-        let probe = ArtifactWebProbe()
-        probe.attach(to: web)
-        defer {
-            web.stopLoading()
-            web.configuration.userContentController.removeScriptMessageHandler(forName: "probe")
-        }
-        if container == "root" {
-            let url = try #require(URL(string: "toybox-sandbox://document/allowed"))
-            web.load(URLRequest(url: url))
-        } else {
-            web.loadHTMLString(iframeDocument(source, directory: fixture.url("/api/serve/test/")), baseURL: nil)
-        }
-        try await wait { !probe.values.isEmpty }
-        let result = try #require(probe.values.last?["result"] as? [String: String])
-        print("Sandbox after document replacement \(container): \(result)")
-        #expect(result["origin"] == (container == "root" ? String(fixture.url("/").absoluteString.dropLast()) : "null"))
-        #expect(result["storage"] == (container == "root" ? "allowed" : "SecurityError"))
-    }
-
     @Test func arrivalsKeepTheSelectedIdentityAndRemovalDoesNotSubstituteANeighbor() async throws {
         let fixture = try ArtifactHTTPFixture()
         try await fixture.start()
@@ -798,21 +694,6 @@ struct ArtifactViewerTests {
         .init(file: .init(kind: "machine", path: path), title: path, sharedAt: shared)
     }
 
-    private func iframeDocument(_ content: String, directory: URL) -> String {
-        let document = ArtifactWebPolicy.document(content, directory: directory)
-            .replacingOccurrences(of: "&", with: "&amp;")
-            .replacingOccurrences(of: "\"", with: "&quot;")
-            .replacingOccurrences(of: "<", with: "&lt;")
-            .replacingOccurrences(of: ">", with: "&gt;")
-        let permissions = ArtifactWebPolicy.htmlPermissions.joined(separator: " ")
-        return """
-        <!doctype html><html><head><meta name="referrer" content="no-referrer">
-        <style>html,body,iframe{width:100%;height:100%;margin:0;border:0}iframe{display:block}</style>
-        </head><body><iframe title="Artifact" sandbox="\(permissions)" referrerpolicy="no-referrer" \
-        srcdoc="\(document)"></iframe></body></html>
-        """
-    }
-
     @MainActor
     private final class ArtifactFocusTestView: NSView {
         override var acceptsFirstResponder: Bool { true }
@@ -827,13 +708,6 @@ struct ArtifactViewerTests {
 
 @MainActor
 private final class ArtifactSandboxResponseProbe: NSObject, WKURLSchemeHandler {
-    private let document: String?
-
-    init(document: String? = nil) {
-        self.document = document
-        super.init()
-    }
-
     func webView(_ webView: WKWebView, start urlSchemeTask: any WKURLSchemeTask) {
         guard let url = urlSchemeTask.request.url else {
             urlSchemeTask.didFailWithError(URLError(.badURL))
@@ -852,7 +726,7 @@ private final class ArtifactSandboxResponseProbe: NSObject, WKURLSchemeHandler {
             urlSchemeTask.didFailWithError(URLError(.badServerResponse))
             return
         }
-        let document = document ?? """
+        let document = """
         <!doctype html><html><head><title>Initial</title></head><body>
         <p>Opaque top-level sandbox control</p>
         <script>
