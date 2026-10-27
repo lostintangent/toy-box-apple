@@ -28,6 +28,10 @@ struct RootView: View {
     /// The channel whose composer takes focus once it appears, after a notification's reply
     /// wasn't sent and waits there as a draft.
     @ViewState private var composerFocusChannelID: String?
+    @ViewState private var handoff = ChannelHandoffNavigation()
+    #if DEBUG
+    @ViewState private var didRunHandoffProof = false
+    #endif
 
     static let sidebarIdealWidth: CGFloat = 248
 
@@ -40,24 +44,28 @@ struct RootView: View {
 
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
-            ChannelSidebar(selection: $selectedId, searchFocusRequest: searchFocusRequest)
+            ChannelSidebar(selection: Binding(get: { selectedId }, set: selectChannel),
+                           searchFocusRequest: searchFocusRequest)
                 .settledLayout()
                 .navigationSplitViewColumnWidth(min: 220, ideal: Self.sidebarIdealWidth, max: 320)
         } detail: {
-            if let catalog = model.catalog, let selectedId {
+            if handoff.phase != .idle {
+                handoffContent
+                    .modifier(DetailMinimumWidth())
+            } else if let catalog = model.catalog, let selectedId {
                 ChannelDetailView(store: catalog.channel(id: selectedId),
                                   placement: placement,
                                   isNarrow: isNarrow,
                                   windowHeight: windowHeight ?? CGFloat(model.launchOptions.height),
                                   isOverviewSheetPresented: $isOverviewSheetPresented,
                                   focusesComposer: composerFocusChannelID == selectedId,
-                                  onBack: { self.selectedId = nil },
-                                  onSelect: { self.selectedId = $0 },
+                                  onBack: { selectChannel(nil) },
+                                  onSelect: { selectChannel($0) },
                                   onComposerFocused: { composerFocusChannelID = nil })
                     // A switch keeps the detail and its toolbar, which hand per-channel state to
                     // the new store. Only another server starts over.
                     .id(model.serverURL)
-                    .channelActivity(selectedId)
+                    .channelActivity(selectedId, handoff: model.launchOptions.allowsUserIntegrations())
             } else {
                 ContentUnavailableView("Choose a Channel", systemImage: "bubble.left.and.bubble.right",
                                        description: Text("Your teams and their shared work appear here."))
@@ -108,9 +116,21 @@ struct RootView: View {
                     : restoredSelectedId ?? initialChannelID ?? launchChannelID
             }
             columnVisibility = model.launchOptions.isSnapshot || sidebarVisible ? .all : .detailOnly
+            #if DEBUG
+            if !didRunHandoffProof, let id = ProcessInfo.processInfo.environment["TOY_BOX_HANDOFF_CHANNEL"] {
+                didRunHandoffProof = true
+                let activity = NSUserActivity(activityType: ChannelHandoff.activityType)
+                activity.userInfo = ChannelHandoff(channelID: id).userInfo
+                continueHandoff(activity)
+            }
+            #endif
         }
-        .onDisappear { model.removeWindow(windowID) }
+        .onDisappear {
+            handoff.cancel()
+            model.removeWindow(windowID)
+        }
         .onChange(of: selectedId) { _, id in
+            if id != nil { handoff.cancel() }
             imageViewer.close(animated: false)
             artifactOpener.close(animated: false)
             isOverviewSheetPresented = false
@@ -119,13 +139,17 @@ struct RootView: View {
             model.updateWindow(windowID, channelID: id, isKey: isKeyWindow)
         }
         .onChange(of: model.serverURL) { _, _ in
+            handoff.cancel()
             imageViewer.close(animated: false)
             selectedId = nil
             management.flow = nil
             artifactOpener.close(animated: false)
         }
         .onChange(of: management.createdChannel?.token) { _, _ in
-            if let created = management.createdChannel { selectedId = created.channel.id }
+            if let created = management.createdChannel { selectChannel(created.channel.id) }
+        }
+        .onChange(of: management.flow) { _, flow in
+            if flow != nil { handoff.cancel() }
         }
         .onChange(of: columnVisibility) { _, value in
             if !model.launchOptions.isSnapshot { sidebarVisible = value != .detailOnly }
@@ -141,6 +165,41 @@ struct RootView: View {
             }
         }
         .onChange(of: model.snapshot?.requestedState) { _, state in prepareSnapshotState(state) }
+        .onContinueUserActivity(ChannelHandoff.activityType, perform: continueHandoff)
+    }
+
+    @ViewBuilder
+    private var handoffContent: some View {
+        if handoff.phase == .opening {
+            ProgressView("Opening channel…")
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            ContentUnavailableView {
+                Label("Channel unavailable", systemImage: "bubble.left.and.bubble.right")
+            } description: {
+                Text("This channel isn't available.")
+            } actions: {
+                Button("Show Channels") {
+                    handoff.cancel()
+                    columnVisibility = .all
+                }
+                .keyboardShortcut(.defaultAction)
+            }
+        }
+    }
+
+    private func continueHandoff(_ activity: NSUserActivity) {
+        imageViewer.close(animated: false)
+        artifactOpener.close(animated: false)
+        management.flow = nil
+        setOverviewVisible(false)
+        composerFocusChannelID = nil
+        selectedId = nil
+        Task {
+            await handoff.continueActivity(activity, currentCatalog: { model.catalog }) { id in
+                selectedId = id
+            }
+        }
     }
 
     private func prepareSnapshotState(_ state: String?) {
@@ -172,6 +231,7 @@ struct RootView: View {
 
     private func consumeNavigationRequest() {
         guard let request = model.navigationRequest, isKeyWindow else { return }
+        handoff.cancel()
         selectedId = request.channelID
         if let sequence = request.sequence { interaction.reveal(sequence: sequence) }
         composerFocusChannelID = request.focusComposer ? request.channelID : nil
@@ -180,6 +240,7 @@ struct RootView: View {
 
     private func consumeNewChannelRequest() {
         guard model.newChannelRequest != nil, isKeyWindow else { return }
+        handoff.cancel()
         management.present(.newChannel)
         model.newChannelRequest = nil
     }
@@ -193,7 +254,7 @@ struct RootView: View {
             messageView: interaction.messageView,
             imageZoom: imageZoom,
             isViewerPresented: artifactOpener.isPresented,
-            newChannel: { management.present(.newChannel) },
+            newChannel: { handoff.cancel(); management.present(.newChannel) },
             openNewWindow: { if let selectedId { openWindow(value: ChannelWindowValue(channelID: selectedId)) } },
             openInToyBox: {
                 if artifactOpener.isPresented { artifactOpener.openInToyBox(app: model) }
@@ -238,7 +299,7 @@ struct RootView: View {
     private func selectAdjacent(_ direction: ChannelNavigation.Direction) {
         let ids = model.catalog?.channels.map(\.id) ?? []
         if let id = ChannelNavigation.adjacent(in: ids, from: selectedId, direction: direction) {
-            selectedId = id
+            selectChannel(id)
         }
     }
 
@@ -247,7 +308,12 @@ struct RootView: View {
         let attention = Set(channels.filter { channelStatus($0) != nil }.map(\.id))
         if let id = ChannelNavigation.nextAttention(in: channels.map(\.id), from: selectedId,
                                                     attentionIDs: attention) {
-            selectedId = id
+            selectChannel(id)
         }
+    }
+
+    private func selectChannel(_ id: String?) {
+        handoff.cancel()
+        selectedId = id
     }
 }

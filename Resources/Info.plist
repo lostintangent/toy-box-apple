@@ -76,6 +76,10 @@
     </array>
     <key>LSMinimumSystemVersion</key>
     <string>27.0</string>
+    <key>NSUserActivityTypes</key>
+    <array>
+        <string>dev.toybox.desktop.channel</string>
+    </array>
     <key>NSHighResolutionCapable</key>
     <true/>
     <key>NSMicrophoneUsageDescription</key>

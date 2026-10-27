@@ -29,6 +29,35 @@ struct ShellTests {
     }
 
     #if DEBUG && targetEnvironment(simulator)
+    @Test func handoffUnavailableStaysVisibleWhenTheNormalPhoneRootIsReplaced() async {
+        await withDefaults { defaults in
+            let model = AppModel(arguments: [], environment: [:], bundleDefaultServerURL: nil,
+                                 defaults: defaults)
+            let navigation = ChannelHandoffNavigation()
+            let root = RootView(handoff: navigation).environment(model).environment(\.scenePhase, .inactive)
+            let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 466, height: 678))
+            let host = UIHostingController(rootView: root)
+            window.rootViewController = host
+            window.isHidden = false
+            defer { window.isHidden = true }
+            host.view.frame = window.bounds
+            host.view.layoutIfNeeded()
+            await navigation.continueActivity(NSUserActivity(activityType: ChannelHandoff.activityType),
+                                              currentCatalog: { nil }) { _ in
+                Issue.record("An invalid continuation opened a channel.")
+            }
+            host.rootView = root
+            host.view.setNeedsLayout()
+            host.view.layoutIfNeeded()
+            let labels = MobileAutomationTree(windows: [window]).elements.map(\.label)
+            #expect(navigation.phase == .unavailable)
+            #expect(labels.contains("Channel unavailable"), "\(labels)")
+            #expect(labels.contains("This channel isn't available."), "\(labels)")
+            #expect(labels.contains("Show Channels"), "\(labels)")
+            #expect(model.selectedChannelID == nil)
+        }
+    }
+
     @Test(arguments: [false, true])
     func registrationErrorsAreShownOnlyWhileNotificationsAreEnabled(enabled: Bool) async {
         await withDefaults { defaults in
@@ -514,6 +543,55 @@ struct ShellTests {
             notifications.disable()
             await notifications.refreshAuthorization()
             #expect(!notifications.isEnabled)
+        }
+    }
+
+    @Test func handoffOpensInTheReceivingCatalogWithoutRestoringAnotherChannelOrReplacingItsDraft() async throws {
+        try await withDefaults { defaults in
+            let server = "https://handoff-\(UUID().uuidString).example"
+            let model = AppModel(arguments: ["--server", server], environment: [:],
+                                 defaults: defaults, session: fixtureSession())
+            defaults.set([model.serverURL: "second"], forKey: "lastChannelByServer")
+            let store = try #require(model.catalog?.channel(id: "first"))
+            let draft = model.composerSession(for: store).draft
+            draft.text = "This device's draft"
+            defer { draft.text = "" }
+            let generation = model.beginHandoffNavigation()
+            await model.catalog?.refresh()
+            model.reconcileSelection()
+            #expect(model.selectedChannelID == nil)
+            let activity = NSUserActivity(activityType: ChannelHandoff.activityType)
+            activity.userInfo = [
+                ChannelHandoff.channelIDKey: "first", "draft": "Another device's draft",
+                "serverURL": "https://another.example"
+            ]
+            let navigation = ChannelHandoffNavigation()
+            await navigation.continueActivity(activity, currentCatalog: { model.catalog }) { id in
+                model.openHandoffChannel(id: id, generation: generation)
+            }
+            #expect(model.selectedStore === store)
+            #expect(model.serverURL == server)
+            #expect(draft.text == "This device's draft")
+            model.selectedChannelID = nil
+            model.reconcileSelection()
+            #expect(model.selectedChannelID == nil)
+            #expect(model.composerSession(for: store).draft === draft)
+        }
+    }
+
+    @Test func newerLocalNavigationOrServerSelectionInvalidatesThePhoneHandoffDestination() async throws {
+        try await withDefaults { defaults in
+            let model = AppModel(arguments: ["--server", "https://fixture.example"], environment: [:],
+                                 defaults: defaults, session: fixtureSession())
+            let generation = model.beginHandoffNavigation()
+            model.selectedChannelID = "second"
+            model.openHandoffChannel(id: "first", generation: generation)
+            #expect(model.selectedChannelID == "second")
+            let beforeSwitch = model.beginHandoffNavigation()
+            try model.configure(serverURL: "https://another.example")
+            model.openHandoffChannel(id: "first", generation: beforeSwitch)
+            #expect(model.selectedChannelID == nil)
+            #expect(model.serverURL == "https://another.example")
         }
     }
 
