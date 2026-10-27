@@ -269,6 +269,23 @@ question. The service must match the current registration before resolving ident
 The fixtures are `Tests/ChannelKitTests/Fixtures/push-request.apns`, `push-completion.apns` and
 `push-activity.apns`. Use the selected simulator's actual registration ID for routed alert proof.
 
+`MobileNotificationEnricher.start(_:completion:)` is the shared production service and local
+simulator-proof path. It reads the selected registration, fetches the catalog and original request
+through `ChannelAPI`, and applies the unchanged Mac text policy, including the 400-character limit.
+Request identity uses the real shared `AgentAvatarView` rendering and an incoming donated
+`INSendMessageIntent`. The enriched local metadata adds the resolved requester's `handle` for Reply;
+that handle is not part of the APNs routing contract. Completion uses the Mac task-count text and
+the app icon, with no Reply category.
+
+The three-second enrichment budget includes cache preparation. Expiry delivers once without
+waiting for canceled work, and late work cannot create a duplicate. The snapshot publisher also
+caches the selected registration's catalog in `notification-catalog.json` for generic offline
+alerts with valid cached identity. Failed lookups never use cached questions or task details as
+fresh text. Missing or mismatched registration gets plain Toy Box content, no action and no routing.
+Delivery rechecks the registration to prevent an in-flight lookup crossing a server switch.
+`simctl push` does not invoke the notification service on this runtime. A local proof can exercise
+the exact same enricher, but actual service invocation remains a real-APNs check.
+
 `ChannelActivityAttributes` has `channelID`, `channelName` and `registrationID`. Its `ContentState`
 has working agent identities, top-level tasks done/total, optional waiting request sequence,
 `updatedAt` and optional ending. Its custom Codable implementation uses Unix seconds for
@@ -2760,6 +2777,40 @@ freshness boundary makes this change without requiring the foreground app to run
 Widget rendering never connects, sends, marks read or changes a draft. Open and Reply
 use the existing `NeedsYouRequestLink` routes. Native widget backgrounds, tint and
 margins remain system-owned, with no custom largest-text layout.
+
+### Following a channel on iPhone
+
+Channel Actions offers "Follow This Channel" after Find and before Refresh. Overview Actions
+offers the same action before its Edit/Delete section. Both use one app-scoped controller,
+show "Starting…" during registration and "Stop Following" while active. Starting requires a
+live snapshot with unfinished direct-root tasks, measured by `channelTasksProgress`. Stop
+stays available offline and immediately removes the local Activity without confirmation or
+changing the team's work. A failed start tears down its partial Activity and shows only the
+native "Couldn't follow this channel" alert, "Try again." and OK.
+
+The controller requests an ActivityKit push token and registers it with the current server's
+registration ID and signing-derived push environment. It persists each Activity's original
+start time across relaunch and token rotation. Registration writes are serialized per channel,
+so cleanup from an old follow cannot delete its successor's registration. Foreground content
+comes from the canonical `ContentState(state:updatedAt:)` projection, with a five-minute refresh
+only while its store is live. Following holds a counted channel connection and never marks read.
+Alert preferences do not start or stop an Activity.
+
+Lock Screen content uses native background, 16-point padding, an 8-point heading-to-summary gap
+and 4-point related gaps. The channel name is subheadline semibold, state headline, task detail
+footnote and update time caption2. Compact Dynamic Island uses the conversation mark and actual
+working count or state symbol. Minimal uses one symbol. Expanded and the small supplemental
+Activity family retain the same hierarchy without progress animations, percentages or an ETA.
+
+Working and quiet content show actual working-agent and task counts. A current request says
+"Needs your reply" and its tap carries the exact request sequence. After the shared 15-minute
+stale date, content says "May be out of date" and "Last update", hides live counts and opens only
+the channel. Completion takes precedence over stale/request content, ends with "All N tasks
+completed", "Following ended" and its completion time, and may remain for 15 minutes. Other
+automatic endings say only "Following ended" and the end time. The original eight-hour lifetime
+is never extended. Channel deletion and server changes remove local content immediately.
+Ended follows never restart automatically, and their menu action simply becomes available again
+when the channel has live unfinished work.
 
 ### Control Center and menu bar controls
 

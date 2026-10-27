@@ -16,15 +16,18 @@ private struct MobileFoundationProof: ViewModifier {
 }
 
 import ActivityKit
+import ChannelKit
 import ToyBoxMobileIntegrations
 import UserNotifications
 import WidgetKit
 
 @MainActor
 private struct FoundationProofView: View {
+    @Environment(AppModel.self) private var model
     @ViewState private var marker = ""
     @ViewState private var result = "Not prepared"
     @ViewState private var activityID: String?
+    @ViewState private var isSchedulingNotification = false
 
     var body: some View {
         NavigationStack {
@@ -42,6 +45,11 @@ private struct FoundationProofView: View {
                             } catch { result = error.localizedDescription }
                         }
                     }
+                    Group {
+                        Button("Deliver Enriched Request") { scheduleNotification(.request) }
+                        Button("Deliver Enriched Completion") { scheduleNotification(.completion) }
+                    }
+                    .disabled(isSchedulingNotification)
                     Button("Start Local Activity") {
                         do {
                             let activity = try Activity.request(
@@ -80,6 +88,20 @@ private struct FoundationProofView: View {
                     try Data(sizes.joined(separator: "\n").utf8)
                         .write(to: container.appending(path: "foundation-type-sizes.txt"), options: .atomic)
                 } catch { result = "Type probe failed: \(error.localizedDescription)" }
+            }
+        }
+    }
+
+    private func scheduleNotification(_ kind: ChannelPushPayload.Kind) {
+        isSchedulingNotification = true
+        result = "Preparing \(kind.rawValue) alert"
+        Task {
+            defer { isSchedulingNotification = false }
+            do {
+                try await model.notifications.scheduleProofNotification(kind)
+                result = "Enriched \(kind.rawValue) scheduled. Lock the simulator within five seconds."
+            } catch {
+                result = "Notification failed: \(error.localizedDescription)"
             }
         }
     }
