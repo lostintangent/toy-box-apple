@@ -253,29 +253,32 @@ keeps no copy of it.
 ### Mobile push and topic subscriptions (Release 2)
 
 The shared client and the 3210 demo implement these additions. The shipping server uses the same
-contract before device push proof. Registration writes make one attempt and return 204 without a
-response body.
+contract before device push proof. Writes make one attempt and return no response body. Registration
+PUT returns 201 when created and 204 when updated. Subscription writes and deletes return 204.
 
 | Request | Body or effect |
 | --- | --- |
-| `PUT /api/v1/push/devices/:registrationID` | `{registrationID, token, environment, requests, completions}` |
-| `DELETE /api/v1/push/devices/:registrationID` | Remove alerts for this registration, not its followed Activities. Idempotent: return 204 even for an unknown registration |
-| `PUT /api/v1/push/devices/:registrationID/topics/:topic` | `{registrationID, token, environment, startedAt}` |
-| `DELETE /api/v1/push/devices/:registrationID/topics/:topic` | Unsubscribe from the topic |
+| `PUT /api/v1/push/:registrationID` | `{registrationID, token, environment}` |
+| `DELETE /api/v1/push/:registrationID` | Remove the registration and its subscriptions. Idempotent even when unknown |
+| `PUT /api/v1/push/:registrationID/topics/:topic` | `{registrationID}` uses the registration address. Optional `{token, environment, startedAt}` together supply an independent activity address |
+| `DELETE /api/v1/push/:registrationID/topics/:topic` | Unsubscribe from the topic |
 
 `registrationID` is a caller-owned UUID and must match the path. Tokens are hexadecimal, and
 `environment` is `sandbox` or `production`. The signed host's `ToyBoxPushEnvironment` is derived
 from its validated APNs entitlement, never from `DEBUG`: optimized development builds still use
-sandbox. Request and completion preferences are independent booleans. A token belongs to one device
-registration. Topic subscriptions do not require a device row, have their own token/environment, and
-are unique per registration/topic. A topic is opaque to Push; Channels uses its channel ID and the
+sandbox. Request and completion preferences independently subscribe `requests` and `completions`.
+A token belongs to one
+registration. Topic subscriptions can inherit the registration address or supply their own, and
+are unique per registration/topic. A topic is opaque to Push; Channels uses `channel:<id>` and the
 iPhone presents that subscription as a Live Activity.
 Subscription does not require the source to exist. An absent channel receives the channel-deleted
 ending on the next delivery pass. Token rotation preserves the original `startedAt`, in Unix seconds.
-Push owns devices and topic subscriptions, transport and dead-token pruning. Channels owns attention,
-read suppression, Activity content and endings, without adding storage. Alert baselines, pending
-alerts, retries and last-announced requests are process-local. A server restart can discard an
-alert not yet accepted by Apple. Only the iPhone app registers devices and subscribes Activities.
+Push owns registrations, subscriptions, cached routing, Apple delivery, refresh/expiry and pruning.
+Channels publishes committed notification milestones lazily, with a three-second unread check only
+when subscribed, and holds a metadata-only channel stream only while its topic is followed. It has
+no startup catalog or delivery scheduler. Normal registration updates do not rewrite subscriptions. A 201
+restores current choices and active Follows; unacknowledged preference writes also recover on launch.
+Allow notifications off unsubscribes only the two notification topics, retaining Follow and the address.
 The demo stores all state in memory and never contacts APNs.
 `bun run demo --completed` opts into a separate `completed-demo` channel for completion-alert proof,
 with every task done and an unread completion. The normal screenshot baseline stays unchanged.
