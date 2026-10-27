@@ -165,6 +165,11 @@ struct RootView: View {
             }
         }
         .onChange(of: model.snapshot?.requestedState) { _, state in prepareSnapshotState(state) }
+        .onChange(of: handoff.phase) { _, _ in
+            if model.snapshot?.requestedState == "handoff-unavailable" {
+                prepareSnapshotState("handoff-unavailable")
+            }
+        }
         .onContinueUserActivity(ChannelHandoff.activityType, perform: continueHandoff)
     }
 
@@ -200,7 +205,7 @@ struct RootView: View {
                 selectedId = id
             }
             #if DEBUG
-            await HandoffProof.captureIfRequested(window: placement.window)
+            await HandoffProof.captureIfRequested(window: { placement.window })
             #endif
         }
     }
@@ -214,6 +219,8 @@ struct RootView: View {
         case "conversation", "title-hover":
             setOverviewVisible(false)
             snapshot.markStateReady(state)
+        case "handoff-unavailable":
+            if handoff.phase == .unavailable { snapshot.markStateReady(state) }
         case "new-channel":
             management.present(.newChannel)
             snapshot.markStateReady(state)

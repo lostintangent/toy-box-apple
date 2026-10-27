@@ -4,11 +4,11 @@ import Foundation
 
 @MainActor
 enum HandoffProof {
-    static func captureIfRequested(window: NSWindow?) async {
+    static func captureIfRequested(window: () -> NSWindow?) async {
         guard let path = ProcessInfo.processInfo.environment["TOY_BOX_HANDOFF_CAPTURE"] else { return }
         do {
-            guard let window else { throw LaunchArgumentError("The Handoff window is unavailable for capture") }
             try await Task.sleep(for: .seconds(1))
+            guard let window = window() else { throw LaunchArgumentError("The Handoff window is unavailable for capture") }
             window.contentView?.layoutSubtreeIfNeeded()
             window.displayIfNeeded()
             let bitmap = try await WindowSnapshot.compositedCapture(of: window)

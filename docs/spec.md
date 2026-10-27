@@ -2519,6 +2519,10 @@ Recording authorization. Capture failures are logged without a fallback image. T
 receiver-state proof hooks, not proof of native cross-device discovery or delivery, which requires
 the signed phone and Mac on real devices.
 
+For unavailable-state layout checks, combine the Mac channel hook with
+`bun run snapshot --state handoff-unavailable` and the normal snapshot arguments. This waits for
+the receiver's unavailable presentation rather than a live conversation it intentionally never opens.
+
 Catch Me Up without a channel says "You're all caught up." when nothing needs you, catches up on
 the one channel that does, or gives an overview: "You have updates in 4 channels." and then one
 line for each of the first 3 in attention order (waiting, completed, unread, then most recently
