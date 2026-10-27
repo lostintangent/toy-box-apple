@@ -1,9 +1,9 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 
 type Environment = "sandbox" | "production";
-type Device = { registrationID: string; token: string; environment: Environment; requests: boolean; completions: boolean };
-type Subscription = { registrationID: string; topic: string; token: string; environment: Environment; startedAt: number };
-type Route = { kind: "device"; id: string } | { kind: "subscription"; id: string; topic: string };
+type Registration = { registrationID: string; token: string; environment: Environment };
+type Subscription = { registrationID: string; topic: string; token: string | null; environment: Environment | null; startedAt: number | null };
+type Route = { kind: "registration"; id: string } | { kind: "subscription"; id: string; topic: string };
 
 function reply(response: ServerResponse, status: number, error?: string) {
     response.writeHead(status, { "Content-Type": "application/json", "Cache-Control": "no-store" });
@@ -23,12 +23,12 @@ async function body(request: IncomingMessage): Promise<unknown> {
 }
 
 export function createDemoPushRoutes() {
-    const devices = new Map<string, Device>();
+    const registrations = new Map<string, Registration>();
     const subscriptions = new Map<string, Subscription>();
     function match(path: string): Route | undefined {
-        const device = /^\/api\/v1\/push\/devices\/([^/]+)$/.exec(path);
-        if (device) return { kind: "device", id: device[1]! };
-        const subscription = /^\/api\/v1\/push\/devices\/([^/]+)\/topics\/([^/]+)$/.exec(path);
+        const registration = /^\/api\/v1\/push\/([^/]+)$/.exec(path);
+        if (registration) return { kind: "registration", id: registration[1]! };
+        const subscription = /^\/api\/v1\/push\/([^/]+)\/topics\/([^/]+)$/.exec(path);
         if (subscription) return { kind: "subscription", id: subscription[1]!, topic: subscription[2]! };
     }
     async function handle(request: IncomingMessage, response: ServerResponse, route: Route) {
@@ -48,7 +48,11 @@ export function createDemoPushRoutes() {
         }
         const key = `${topic}\n${id}`;
         if (request.method === "DELETE") {
-            if (route.kind === "device") devices.delete(id);
+            if (route.kind === "registration") {
+                registrations.delete(id);
+                for (const [key, subscription] of subscriptions)
+                    if (subscription.registrationID === id) subscriptions.delete(key);
+            }
             else subscriptions.delete(key);
             reply(response, 204);
             return;
@@ -70,36 +74,45 @@ export function createDemoPushRoutes() {
             return;
         }
         const input = value as Record<string, unknown>;
-        if (input.registrationID !== id || typeof input.token !== "string"
-            || !/^(?:[0-9a-f]{2}){1,512}$/i.test(input.token)
-            || (input.environment !== "sandbox" && input.environment !== "production")) {
-            reply(response, 422, "Invalid registration ID, token or APNs environment.");
+        if (input.registrationID !== id) {
+            reply(response, 422, "Invalid registration ID.");
             return;
         }
-        const common = { registrationID: id, token: input.token.toLowerCase(), environment: input.environment };
-        if (route.kind === "device") {
-            if (typeof input.requests !== "boolean" || typeof input.completions !== "boolean") {
-                reply(response, 422, "Request and completion preferences must be booleans.");
+        const addressed = typeof input.token === "string" && /^(?:[0-9a-f]{2}){1,512}$/i.test(input.token)
+            && (input.environment === "sandbox" || input.environment === "production");
+        let created = false;
+        if (route.kind === "registration") {
+            if (!addressed || typeof input.token !== "string" ||
+                (input.environment !== "sandbox" && input.environment !== "production")) {
+                reply(response, 422, "Invalid notification token or APNs environment.");
                 return;
             }
-            for (const [otherID, device] of devices) {
-                if (device.token === common.token && device.environment === common.environment && otherID !== id) devices.delete(otherID);
+            const common = { registrationID: id, token: input.token.toLowerCase(), environment: input.environment };
+            created = !registrations.has(id);
+            for (const [otherID, registration] of registrations) {
+                if (registration.token === common.token && registration.environment === common.environment && otherID !== id) registrations.delete(otherID);
             }
-            devices.set(id, { ...common, environment: input.environment,
-                              requests: input.requests, completions: input.completions });
+            registrations.set(id, { ...common, environment: input.environment });
         } else {
             if (topic === undefined) {
                 reply(response, 400, "Invalid topic.");
                 return;
             }
-            if (typeof input.startedAt !== "number" || !Number.isFinite(input.startedAt) || input.startedAt < 0) {
+            const standard = input.token == null && input.environment == null && input.startedAt == null;
+            if (!standard && (!addressed || typeof input.startedAt !== "number" ||
+                !Number.isFinite(input.startedAt) || input.startedAt < 0)) {
                 reply(response, 422, "Subscription start time must be Unix seconds.");
                 return;
             }
-            subscriptions.set(key, { ...common, topic, environment: input.environment,
-                                  startedAt: subscriptions.get(key)?.startedAt ?? input.startedAt });
+            subscriptions.set(key, {
+                registrationID: id, topic,
+                token: typeof input.token === "string" ? input.token.toLowerCase() : null,
+                environment: input.environment === "sandbox" || input.environment === "production" ? input.environment : null,
+                startedAt: standard ? null : subscriptions.get(key)?.startedAt ??
+                    (typeof input.startedAt === "number" ? input.startedAt : null),
+            });
         }
-        reply(response, 204);
+        reply(response, created ? 201 : 204);
     }
-    return { devices, subscriptions, match, handle };
+    return { registrations, subscriptions, match, handle };
 }

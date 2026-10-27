@@ -9,6 +9,7 @@ import ToyBoxMobileIntegrations
 final class MobileNotificationRegistration {
     private(set) var current: MobilePushRegistration?
     private(set) var error: String?
+    @ObservationIgnored var onCreated: ((MobilePushRegistration) async -> Void)?
 
     private struct Preferences: Equatable {
         var enabled: Bool
@@ -19,18 +20,21 @@ final class MobileNotificationRegistration {
     private struct Operation: Equatable {
         let api: ChannelAPI
         let registrationID: String
-        let input: PushDeviceRegistration?
+        let input: PushRegistration?
+        let topics: [String]
 
         static func == (lhs: Self, rhs: Self) -> Bool {
             lhs.api.baseURL == rhs.api.baseURL && lhs.registrationID == rhs.registrationID
-                && lhs.input == rhs.input
+                && lhs.input == rhs.input && lhs.topics == rhs.topics
         }
     }
 
     @ObservationIgnored private let store: MobilePushRegistrationStore
     @ObservationIgnored private let environment: PushEnvironment
-    @ObservationIgnored private let register: (ChannelAPI, PushDeviceRegistration) async throws -> Void
+    @ObservationIgnored private let register: (ChannelAPI, PushRegistration) async throws -> Bool
     @ObservationIgnored private let remove: (ChannelAPI, String) async throws -> Void
+    @ObservationIgnored private let subscribe: (ChannelAPI, String, String) async throws -> Void
+    @ObservationIgnored private let unsubscribe: (ChannelAPI, String, String) async throws -> Void
     @ObservationIgnored private let requestToken: () -> Void
     @ObservationIgnored private let logger = Logger(subsystem: "dev.toybox.mobile", category: "PushRegistration")
     @ObservationIgnored private var api: ChannelAPI?
@@ -44,17 +48,25 @@ final class MobileNotificationRegistration {
 
     init(store: MobilePushRegistrationStore, environment: PushEnvironment,
          requestToken: @escaping () -> Void,
-         register: @escaping (ChannelAPI, PushDeviceRegistration) async throws -> Void = {
-             try await $0.registerPushDevice($1)
+         register: @escaping (ChannelAPI, PushRegistration) async throws -> Bool = {
+             try await $0.register($1)
          },
          remove: @escaping (ChannelAPI, String) async throws -> Void = {
-             try await $0.deletePushDevice(registrationID: $1)
+             try await $0.unregister(registrationID: $1)
+         },
+         subscribe: @escaping (ChannelAPI, String, String) async throws -> Void = {
+             try await $0.subscribe(topic: $2, PushSubscription(registrationID: $1))
+         },
+         unsubscribe: @escaping (ChannelAPI, String, String) async throws -> Void = {
+             try await $0.unsubscribe(topic: $2, registrationID: $1)
          }) {
         self.store = store
         self.environment = environment
         self.requestToken = requestToken
         self.register = register
         self.remove = remove
+        self.subscribe = subscribe
+        self.unsubscribe = unsubscribe
         current = store.current
     }
 
@@ -65,11 +77,12 @@ final class MobileNotificationRegistration {
         let changed = previous?.registrationID != selected.registrationID
         if changed, let previous {
             let oldAPI = try self.api ?? ChannelAPI(serverURL: previous.serverURL)
-            removals.append(Operation(api: oldAPI, registrationID: previous.registrationID, input: nil))
+            removals.append(Operation(api: oldAPI, registrationID: previous.registrationID, input: nil, topics: []))
         }
         self.api = api
         current = selected
         updateDesired()
+        obtainTokenIfNeeded()
         return changed && previous != nil
     }
 
@@ -110,24 +123,21 @@ final class MobileNotificationRegistration {
     func waitUntilIdle() async { await work?.value }
 
     private func obtainTokenIfNeeded() {
-        guard preferences?.enabled == true, token == nil, !requestedToken else { return }
+        guard api != nil, token == nil, !requestedToken else { return }
         requestedToken = true
         requestToken()
     }
 
     private func updateDesired() {
         let next: Operation?
-        if let api, let current, let preferences {
-            if !preferences.enabled {
-                next = Operation(api: api, registrationID: current.registrationID, input: nil)
-            } else if let token {
+        if let api, let current, let token {
+                let topics = preferences?.enabled == true
+                    ? [(preferences?.requests == true ? "requests" : nil),
+                       (preferences?.completions == true ? "completions" : nil)].compactMap { $0 } : []
                 next = Operation(api: api, registrationID: current.registrationID,
-                                 input: PushDeviceRegistration(
-                                    registrationID: current.registrationID, token: token, environment: environment,
-                                    requests: preferences.requests, completions: preferences.completions))
-            } else {
-                next = nil
-            }
+                                 input: PushRegistration(
+                                    registrationID: current.registrationID, token: token, environment: environment),
+                                 topics: topics)
         } else {
             next = nil
         }
@@ -156,7 +166,26 @@ final class MobileNotificationRegistration {
             guard let operation = desired, operation != attempted else { return }
             attempted = operation
             do {
-                if let input = operation.input { try await register(operation.api, input) }
+                if let input = operation.input {
+                    let created = try await register(operation.api, input)
+                    if desired != operation { continue }
+                    if created, let current, current.registrationID == operation.registrationID {
+                        await onCreated?(current)
+                        if desired != operation { continue }
+                    }
+                    var resend = created
+                    if !created { resend = try store.acknowledgedTopics(registrationID: operation.registrationID) != operation.topics }
+                    if resend {
+                        for topic in ["requests", "completions"] {
+                            if operation.topics.contains(topic) {
+                                try await subscribe(operation.api, operation.registrationID, topic)
+                            } else {
+                                try await unsubscribe(operation.api, operation.registrationID, topic)
+                            }
+                        }
+                        try store.acknowledge(topics: operation.topics, registrationID: operation.registrationID)
+                    }
+                }
                 else { try await remove(operation.api, operation.registrationID) }
                 if desired == operation { error = nil }
             } catch {

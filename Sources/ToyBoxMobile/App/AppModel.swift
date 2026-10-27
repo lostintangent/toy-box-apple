@@ -66,6 +66,12 @@ final class AppModel {
         self.following = following ?? ChannelFollowController(defaults: defaults)
         self.defaults = defaults
         self.session = session
+        self.notifications.onRegistrationCreated = { [weak self] registration in
+            guard let self, self.notifications.currentRegistration == registration,
+                  self.serverURL == registration.serverURL else { return }
+            self.configureFollowing()
+            await self.following.registrationCreated(registration)
+        }
         self.notifications.onActivate = { [weak self] activation in
             await self?.openChannel(id: activation.channelID, sequence: activation.sequence,
                                     focusComposer: activation.focusComposer, expectedServer: activation.serverURL)
@@ -219,13 +225,19 @@ final class AppModel {
     }
 
     func observeFollowing() {
-        let context = withObservationTracking {
-            (registration: notifications.currentRegistration, catalog: catalog, isActive: isActive)
+        withObservationTracking {
+            _ = notifications.currentRegistration
+            _ = catalog
+            _ = isActive
         } onChange: { [weak self] in
             Task { @MainActor in self?.observeFollowing() }
         }
+        configureFollowing()
+    }
+
+    private func configureFollowing() {
         following.configure(
-            registration: context.registration, catalog: context.catalog, isActive: context.isActive,
+            registration: notifications.currentRegistration, catalog: catalog, isActive: isActive,
             acquire: { [weak self] in self?.acquire($0) },
             release: { [weak self] in self?.release($0) }
         )

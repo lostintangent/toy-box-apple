@@ -169,20 +169,23 @@ public struct ChannelAPI: Sendable {
         return catalog
     }
 
-    public func registerPushDevice(_ input: PushDeviceRegistration) async throws {
-        try await noContent("PUT", ["api", "v1", "push", "devices", input.registrationID], body: input)
+    @discardableResult
+    public func register(_ input: PushRegistration) async throws -> Bool {
+        let (_, response) = try await response(for: commandRequest("PUT", ["api", "v1", "push", input.registrationID], body: input))
+        guard response.statusCode == 201 || response.statusCode == 204 else { throw ChannelAPIError.invalidResponse }
+        return response.statusCode == 201
     }
 
-    public func deletePushDevice(registrationID: String) async throws {
-        try await noContent("DELETE", ["api", "v1", "push", "devices", registrationID])
+    public func unregister(registrationID: String) async throws {
+        try await noContent("DELETE", ["api", "v1", "push", registrationID])
     }
 
     public func subscribe(topic: String, _ input: PushSubscription) async throws {
-        try await noContent("PUT", ["api", "v1", "push", "devices", input.registrationID, "topics", topic], body: input)
+        try await noContent("PUT", ["api", "v1", "push", input.registrationID, "topics", topic], body: input)
     }
 
     public func unsubscribe(topic: String, registrationID: String) async throws {
-        try await noContent("DELETE", ["api", "v1", "push", "devices", registrationID, "topics", topic])
+        try await noContent("DELETE", ["api", "v1", "push", registrationID, "topics", topic])
     }
 
     public func memberModels(channelId: String, agentId: String) async throws -> ModelCatalog {
@@ -317,6 +320,10 @@ public struct ChannelAPI: Sendable {
     }
 
     private func data(for request: URLRequest) async throws -> Data {
+        try await response(for: request).0
+    }
+
+    private func response(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
         let (data, response) = try await session.data(for: request)
         guard let response = response as? HTTPURLResponse else { throw ChannelAPIError.invalidResponse }
         guard (200..<300).contains(response.statusCode) else {
@@ -325,7 +332,7 @@ public struct ChannelAPI: Sendable {
                 ?? HTTPURLResponse.localizedString(forStatusCode: response.statusCode)
             throw ChannelAPIError.http(status: response.statusCode, message: message)
         }
-        return data
+        return (data, response)
     }
 
     private func requireVersion(_ version: Int) throws {

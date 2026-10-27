@@ -25,46 +25,45 @@ test("demo push routes keep alerts and follows independent and preserve the orig
         const base = `http://127.0.0.1:${address.port}`;
         const id = "00000000-0000-4000-8000-000000000001";
         const other = "00000000-0000-4000-8000-000000000002";
-        const devicePath = `/api/v1/push/devices/${id}`;
-        const activityPath = `/api/v1/push/devices/${id}/topics/studio-demo`;
+        const registrationPath = `/api/v1/push/${id}`;
+        const subscriptionPath = `/api/v1/push/${id}/topics/studio-demo`;
         expect(routes.match(`/api/v1/push/activities/${id}/studio-demo`)).toBeUndefined();
         const put = (path: string, value: unknown) => fetch(base + path, {
             method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(value),
         });
-        const activity = { registrationID: id, token: "aa", environment: "sandbox", startedAt: 1793086200 };
-        expect((await put(activityPath, activity)).status).toBe(204);
-        expect(routes.devices.size).toBe(0);
+        const subscription = { registrationID: id, token: "aa", environment: "sandbox", startedAt: 1793086200 };
+        expect((await put(subscriptionPath, subscription)).status).toBe(204);
+        expect(routes.registrations.size).toBe(0);
         expect(routes.subscriptions.size).toBe(1);
-        const device = { registrationID: id, token: "bb", environment: "sandbox" as const, requests: true, completions: false };
-        expect((await put(devicePath, device)).status).toBe(204);
-        expect(routes.devices.get(id)).toEqual(device);
-        expect((await put(activityPath, { ...activity, token: "cc", startedAt: activity.startedAt + 600 })).status).toBe(204);
-        expect(routes.subscriptions.get(`studio-demo\n${id}`)?.startedAt).toBe(activity.startedAt);
+        const registration = { registrationID: id, token: "bb", environment: "sandbox" as const };
+        expect((await put(registrationPath, registration)).status).toBe(201);
+        expect(routes.registrations.get(id)).toEqual(registration);
+        expect((await put(subscriptionPath, { ...subscription, token: "cc", startedAt: subscription.startedAt + 600 })).status).toBe(204);
+        expect(routes.subscriptions.get(`studio-demo\n${id}`)?.startedAt).toBe(subscription.startedAt);
         expect(routes.subscriptions.get(`studio-demo\n${id}`)?.token).toBe("cc");
-        expect((await fetch(base + devicePath, { method: "DELETE" })).status).toBe(204);
-        expect((await fetch(base + devicePath, { method: "DELETE" })).status).toBe(204);
-        expect(routes.devices.size).toBe(0);
-        expect(routes.subscriptions.size).toBe(1);
-        expect((await put(devicePath, device)).status).toBe(204);
-        expect((await put(`/api/v1/push/devices/${other}`, {
-            ...device, registrationID: other, token: "BB", requests: false, completions: true,
-        })).status).toBe(204);
-        expect([...routes.devices.keys()]).toEqual([other]);
-        expect(routes.devices.get(other)?.token).toBe("bb");
-        expect(routes.devices.get(other)?.requests).toBe(false);
-        expect(routes.devices.get(other)?.completions).toBe(true);
-        const unknown = `/api/v1/push/devices/${id}/topics/missing`;
-        expect((await put(unknown, activity)).status).toBe(204);
+        expect((await fetch(base + registrationPath, { method: "DELETE" })).status).toBe(204);
+        expect((await fetch(base + registrationPath, { method: "DELETE" })).status).toBe(204);
+        expect(routes.registrations.size).toBe(0);
+        expect(routes.subscriptions.size).toBe(0);
+        expect((await put(subscriptionPath, subscription)).status).toBe(204);
+        expect((await put(registrationPath, registration)).status).toBe(201);
+        expect((await put(`/api/v1/push/${other}`, {
+            ...registration, registrationID: other, token: "BB",
+        })).status).toBe(201);
+        expect([...routes.registrations.keys()]).toEqual([other]);
+        expect(routes.registrations.get(other)?.token).toBe("bb");
+        const unknown = `/api/v1/push/${id}/topics/missing`;
+        expect((await put(unknown, subscription)).status).toBe(204);
         expect(routes.subscriptions.get(`missing\n${id}`)?.topic).toBe("missing");
         expect((await fetch(base + unknown, { method: "DELETE" })).status).toBe(204);
-        expect((await put(devicePath, { ...device, requests: "yes" })).status).toBe(422);
-        expect((await put(devicePath, { ...device, environment: "unknown" })).status).toBe(422);
-        expect((await put(devicePath, { ...device, extra: "x".repeat(17_000) })).status).toBe(413);
-        expect((await fetch(base + devicePath, { method: "PUT", body: "invalid" })).status).toBe(400);
-        expect(routes.devices.size).toBe(1);
-        expect((await fetch(base + activityPath, { method: "DELETE" })).status).toBe(204);
+        expect((await put(registrationPath, { ...registration, token: "not-hex" })).status).toBe(422);
+        expect((await put(registrationPath, { ...registration, environment: "unknown" })).status).toBe(422);
+        expect((await put(registrationPath, { ...registration, extra: "x".repeat(17_000) })).status).toBe(413);
+        expect((await fetch(base + registrationPath, { method: "PUT", body: "invalid" })).status).toBe(400);
+        expect(routes.registrations.size).toBe(1);
+        expect((await fetch(base + subscriptionPath, { method: "DELETE" })).status).toBe(204);
         expect(routes.subscriptions.size).toBe(0);
-        expect((await fetch(base + devicePath)).status).toBe(405);
+        expect((await fetch(base + registrationPath)).status).toBe(405);
     } finally {
         await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
     }
@@ -130,7 +129,7 @@ test("multiple demo channels keep their own history, routes and Activity registr
         expect(await (await fetch(`${base}/api/v1/channels/completed-demo/messages`, { method: "POST" })).text())
             .toBe("Completed: /api/v1/channels/completed-demo/messages");
         const id = "00000000-0000-4000-8000-000000000003";
-        const response = await fetch(`${base}/api/v1/push/devices/${id}/topics/completed-demo`, {
+        const response = await fetch(`${base}/api/v1/push/${id}/topics/completed-demo`, {
             method: "PUT", headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ registrationID: id, token: "aa", environment: "sandbox", startedAt: 1793086200 }),
         });

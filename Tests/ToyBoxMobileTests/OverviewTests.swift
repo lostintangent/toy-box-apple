@@ -1161,6 +1161,50 @@ struct ChannelFollowTests {
         #expect(!fixture.controller.startFailed)
     }
 
+    @Test func aRecreatedRegistrationRestoresCurrentFollowsWithoutRestartingActivities() async throws {
+        let fixture = try FollowFixture()
+        defer { fixture.close() }
+        await fixture.controller.follow(fixture.store)
+        let second = fixture.catalog.channel(id: "second")
+        _ = try second.apply(.init(type: "snapshot", state: .init(
+            revision: 1,
+            channel: .init(id: second.id, name: "Second", model: .init(provider: "test", name: "test"),
+                           tasks: [.init(id: "work", title: "Work")], updatedAt: "2026-10-27T00:00:00Z"),
+            lead: .init(id: second.id, name: "Lead")
+        )))
+        await fixture.controller.follow(second)
+        let activity = try #require(fixture.pool.activities.first)
+        activity.rotate(Data([2]))
+        await fixture.wait { fixture.requests.count == 3 }
+        let content = fixture.pool.activities.map(\.content)
+
+        await fixture.controller.registrationCreated(.init(
+            serverURL: fixture.registration.serverURL, registrationID: UUID().uuidString
+        ))
+        await fixture.controller.registrationCreated(.init(
+            serverURL: "https://another-server.invalid", registrationID: fixture.registration.registrationID
+        ))
+        #expect(fixture.requests.count == 3)
+
+        fixture.date.addTimeInterval(60)
+        await fixture.controller.registrationCreated(fixture.registration)
+        let restored = fixture.requests.suffix(2)
+        #expect(fixture.requests.map(\.method) == Array(repeating: "PUT", count: 5))
+        #expect(Set(restored.compactMap { $0.input?.token }) == ["01", "02"])
+        #expect(restored.allSatisfy {
+            $0.input?.registrationID == fixture.registration.registrationID
+                && $0.input?.startedAt == fixture.originalDate && $0.input?.environment == .sandbox
+        })
+        #expect(fixture.pool.activities.count == 2)
+        #expect(fixture.pool.activities.allSatisfy { $0.isActive && $0.endings.isEmpty })
+        #expect(fixture.pool.activities.map(\.content) == content)
+        #expect(fixture.controller.state(for: fixture.store) == .following)
+        #expect(fixture.controller.state(for: second) == .following)
+        #expect(fixture.acquired == 2)
+        #expect(fixture.released == 0)
+        #expect(!fixture.controller.startFailed)
+    }
+
     @Test func onlyLiveUnfinishedRootTasksEnableFollow() throws {
         let fixture = try FollowFixture()
         defer { fixture.close() }

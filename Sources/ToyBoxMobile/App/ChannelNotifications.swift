@@ -46,6 +46,7 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
     }
 
     @ObservationIgnored var onPreferencesChange: (() -> Void)?
+    @ObservationIgnored var onRegistrationCreated: ((MobilePushRegistration) async -> Void)?
     @ObservationIgnored var onActivate: ((Activation) async -> Void)?
     @ObservationIgnored var onReply: ((ChannelPushPayload, String, String?) async -> ComposerNotificationReply.Outcome)?
     private var center: UNUserNotificationCenter { .current() }
@@ -157,6 +158,10 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
                 registration = MobileNotificationRegistration(
                     store: try MobilePushRegistrationStore(), environment: environment,
                     requestToken: { UIApplication.shared.registerForRemoteNotifications() })
+            }
+            registration?.onCreated = { [weak self] registration in
+                guard let self, self.currentRegistration == registration else { return }
+                await self.onRegistrationCreated?(registration)
             }
             if try registration?.select(api: configuredAPI) == true {
                 center.removeAllDeliveredNotifications()

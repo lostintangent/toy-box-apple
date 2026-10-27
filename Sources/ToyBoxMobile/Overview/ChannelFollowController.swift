@@ -67,10 +67,10 @@ final class ChannelFollowController {
                                           as? String).flatMap(PushEnvironment.init(rawValue:)),
          now: @escaping () -> Date = { .now },
          registerActivity: @escaping @MainActor (ChannelStore, PushSubscription) async throws -> Void = {
-             try await $0.api.subscribe(topic: $0.id, $1)
+             try await $0.api.subscribe(topic: "channel:\($0.id)", $1)
          },
          unregisterActivity: @escaping @MainActor (ChannelStore, String) async throws -> Void = {
-             try await $0.api.unsubscribe(topic: $0.id, registrationID: $1)
+             try await $0.api.unsubscribe(topic: "channel:\($0.id)", registrationID: $1)
          }) {
         self.client = client
         self.defaults = defaults
@@ -183,6 +183,20 @@ final class ChannelFollowController {
                 starting.remove(store.id)
                 startFailed = true
                 logger.error("Could not follow a channel: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    func registrationCreated(_ registration: MobilePushRegistration) async {
+        guard registration == currentRegistration else { return }
+        for entry in Array(entries.values) where entry.registration == registration {
+            guard let token = entry.activity.pushToken ?? entry.token else { continue }
+            do {
+                try await register(token, for: entry)
+            } catch {
+                if isCurrent(entry) {
+                    logger.error("Could not restore a followed channel subscription: \(error.localizedDescription)")
+                }
             }
         }
     }

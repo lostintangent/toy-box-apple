@@ -4,27 +4,26 @@ import Testing
 @testable import ChannelClient
 
 struct PushRegistrationTests {
-    @Test func deviceAndSubscriptionWritesUseTheDocumentedRoutesAndUnixStartTime() async throws {
+    @Test func registrationAndSubscriptionWritesUseTheDocumentedRoutesAndUnixStartTime() async throws {
         let mock = MockTransport { _, _ in MockResponse(status: 204) }
         let base = try mock.api()
         let api = try ChannelAPI(baseURL: base.baseURL.appendingPathComponent("prefix"), session: base.session)
         let id = UUID().uuidString
-        let device = PushDeviceRegistration(registrationID: id, token: "abcd", environment: .sandbox,
-                                            requests: true, completions: false)
+        let registration = PushRegistration(registrationID: id, token: "abcd", environment: .sandbox)
         let activity = PushSubscription(registrationID: id, token: "cdef", environment: .production,
                                                 startedAt: Date(timeIntervalSince1970: 1793086200))
-        try await api.registerPushDevice(device)
-        try await api.deletePushDevice(registrationID: id)
+        try await api.register(registration)
+        try await api.unregister(registrationID: id)
         try await api.subscribe(topic: "studio-demo", activity)
         try await api.unsubscribe(topic: "studio-demo", registrationID: id)
         let requests = mock.requests
         #expect(requests.map(\.httpMethod) == ["PUT", "DELETE", "PUT", "DELETE"])
         #expect(requests.map { $0.url?.path } == [
-            "/prefix/api/v1/push/devices/\(id)", "/prefix/api/v1/push/devices/\(id)",
-            "/prefix/api/v1/push/devices/\(id)/topics/studio-demo",
-            "/prefix/api/v1/push/devices/\(id)/topics/studio-demo",
+            "/prefix/api/v1/push/\(id)", "/prefix/api/v1/push/\(id)",
+            "/prefix/api/v1/push/\(id)/topics/studio-demo",
+            "/prefix/api/v1/push/\(id)/topics/studio-demo",
         ])
-        #expect(try JSONDecoder().decode(PushDeviceRegistration.self, from: requestBody(requests[0])) == device)
+        #expect(try JSONDecoder().decode(PushRegistration.self, from: requestBody(requests[0])) == registration)
         let activityData = try requestBody(requests[2])
         #expect(try JSONDecoder().decode(PushSubscription.self, from: activityData) == activity)
         let activityJSON = try #require(JSONSerialization.jsonObject(with: activityData) as? [String: Any])
@@ -39,8 +38,8 @@ struct PushRegistrationTests {
         let mock = MockTransport { _, _ in MockResponse(status: status, body: Data(#"{"error":"Rejected"}"#.utf8)) }
         let api = try mock.api()
         await #expect(throws: ChannelAPIError.http(status: status, message: "Rejected")) {
-            try await api.registerPushDevice(.init(registrationID: UUID().uuidString, token: "abcd",
-                                                   environment: .sandbox, requests: true, completions: true))
+            try await api.register(.init(registrationID: UUID().uuidString, token: "abcd",
+                                                   environment: .sandbox))
         }
         #expect(mock.requests.count == 1)
     }
