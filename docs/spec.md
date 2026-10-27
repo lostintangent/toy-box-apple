@@ -368,8 +368,10 @@ Subscription does not require the source to exist. An absent channel receives th
 ending on the next delivery pass. Token rotation preserves the original `startedAt`, in Unix seconds.
 Push owns registrations, subscriptions, cached routing, Apple delivery, refresh/expiry and pruning.
 Channels publishes committed notification milestones lazily, with a three-second unread check only
-when subscribed, and holds a metadata-only channel stream only while its topic is followed. It has
-no startup catalog or delivery scheduler. Normal registration updates do not rewrite subscriptions. A 201
+when subscribed, and opens a channel stream only while its topic is followed. The stream bootstraps
+with a full snapshot including recent messages, then retains only metadata, roster and presence.
+Channels has no startup catalog or delivery scheduler. Normal registration updates do not rewrite
+subscriptions. A 201
 restores current choices and active Follows; unacknowledged preference writes also recover on launch.
 Allow notifications off unsubscribes only the two notification topics, retaining Follow and the address.
 The demo stores all state in memory and never contacts APNs.
