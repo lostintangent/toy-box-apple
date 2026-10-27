@@ -330,6 +330,11 @@ Agents never create these accounts, accept agreements, read private keys or set 
   established. Core owns `artifact-removal-readiness` under t340: capture the stalled stage,
   identify its cause and add deterministic removal-during-load coverage before restoring this case.
   The test body and deadline are unchanged. Do not restore it based on passing reruns.
+  Separately, the default `anObsoleteLoadCannotEndOrReplaceItsSuccessorsPendingVisit` contract
+  covers channel changes, server changes and removal using signaled download requests and actual
+  load-task completion, without readiness polling. It releases the obsolete request while its
+  successor is still held, checking both the selected content and loading state. This adds
+  controlled coverage, but does not establish either historical failure's cause or lift its gate.
 
 ## Validating the running app
 
