@@ -2,12 +2,15 @@
 import ActivityKit
 import ChannelKit
 import Foundation
+import OSLog
 import SwiftUI
+import UIKit
 
 @MainActor
 enum MobileActivityFixtureProof {
     enum Failure: LocalizedError {
         case missingFixture, invalidEnvelope, needsUpdate, unavailableActivity, notDemoServer, missingDemoChannel
+        case needsForeground, needsBackground
 
         var errorDescription: String? {
             switch self {
@@ -17,6 +20,8 @@ enum MobileActivityFixtureProof {
             case .unavailableActivity: "Start a local fixture Activity for the current registration first."
             case .notDemoServer: "Connect to the local demo server on port 3210 first."
             case .missingDemoChannel: "The demo server has no studio-demo channel."
+            case .needsForeground: "Autoplay needs the foreground to start its local Activity."
+            case .needsBackground: "Return Home or lock the simulator to begin autoplay."
             }
         }
     }
@@ -56,6 +61,34 @@ enum MobileActivityFixtureProof {
         }
         return push
     }
+
+    static func autoplay(endedOnly: Bool,
+                         apply: (String) async throws -> Void,
+                         pause: () async throws -> Void = { try await Task.sleep(for: .seconds(4)) }) async throws {
+        let states = endedOnly ? ["ended"] : ["working", "quiet", "request", "stale", "completed"]
+        for (index, state) in states.enumerated() {
+            try Task.checkCancellation()
+            try await apply(state)
+            if index < states.count - 1 { try await pause() }
+        }
+    }
+
+    struct AutoplayStatus: Codable {
+        enum Phase: String, Codable { case ready, applied, finished, failed }
+        let phase: Phase
+        let activityID: String?
+        let state: String?
+        let updatedAt: Date
+        let error: String?
+    }
+
+    static func autoplayStatusURL() throws -> URL {
+        let directory = try FileManager.default.url(for: .documentDirectory, in: .userDomainMask,
+                                                     appropriateFor: nil, create: true)
+            .appending(path: "Automation", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        return directory.appending(path: "activity-fixture-autoplay.json")
+    }
 }
 
 @MainActor
@@ -64,6 +97,9 @@ struct ActivityFixtureProofView: View {
     @ViewState private var activityID: String?
     @ViewState private var isApplying = false
     @ViewState private var result = "No fixture Activity started"
+    @ViewState private var autoplayStarted = false
+    @ViewState private var autoplayState: String?
+    private let logger = Logger(subsystem: "dev.toybox.mobile", category: "ActivityFixtureProof")
 
     var body: some View {
         NavigationStack {
@@ -82,6 +118,117 @@ struct ActivityFixtureProofView: View {
                 .disabled(isApplying)
             }
             .navigationTitle("Activity Fixture Proof")
+        }
+        .task(id: model.notifications.hasLoadedAuthorization ? model.notifications.currentRegistration?.registrationID : nil) {
+            guard ProcessInfo.processInfo.arguments.contains("--autoplay"), !autoplayStarted else { return }
+            guard model.notifications.hasLoadedAuthorization, model.notifications.currentRegistration != nil else {
+                result = "Waiting for local integration startup"
+                return
+            }
+            autoplayStarted = true
+            let task = Task { await runAutoplay() }
+            let background = UIApplication.shared.beginBackgroundTask(withName: "Activity fixture autoplay") {
+                task.cancel()
+            }
+            if background == .invalid {
+                logger.error("Could not reserve background time for Activity fixture autoplay.")
+                task.cancel()
+            }
+            defer {
+                if background != .invalid { UIApplication.shared.endBackgroundTask(background) }
+            }
+            await withTaskCancellationHandler {
+                await task.value
+            } onCancel: {
+                task.cancel()
+            }
+        }
+    }
+
+    private func demoAttributes() async throws -> ChannelActivityAttributes {
+        guard let api = model.catalog?.api, let registration = model.notifications.currentRegistration,
+              ["localhost", "127.0.0.1", "::1"].contains(api.baseURL.host ?? ""), api.baseURL.port == 3210
+        else { throw MobileActivityFixtureProof.Failure.notDemoServer }
+        let catalog = try await api.catalog()
+        guard let channel = catalog.channels.first(where: { $0.id == "studio-demo" })
+        else { throw MobileActivityFixtureProof.Failure.missingDemoChannel }
+        guard model.notifications.currentRegistration == registration
+        else { throw MobileActivityFixtureProof.Failure.notDemoServer }
+        return .init(channelID: channel.id, channelName: channel.name, registrationID: registration.registrationID)
+    }
+
+    private func waitForApplicationState(_ state: UIApplication.State) async throws {
+        let deadline = ContinuousClock.now.advanced(by: .seconds(60))
+        while UIApplication.shared.applicationState != state {
+            try Task.checkCancellation()
+            guard ContinuousClock.now < deadline else {
+                throw state == .active ? MobileActivityFixtureProof.Failure.needsForeground
+                    : MobileActivityFixtureProof.Failure.needsBackground
+            }
+            try await Task.sleep(for: .milliseconds(100))
+        }
+    }
+
+    private func publishAutoplay(_ phase: MobileActivityFixtureProof.AutoplayStatus.Phase,
+                                 error: String? = nil) throws {
+        let status = MobileActivityFixtureProof.AutoplayStatus(
+            phase: phase, activityID: activityID, state: autoplayState, updatedAt: .now, error: error
+        )
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .secondsSince1970
+        try encoder.encode(status).write(to: MobileActivityFixtureProof.autoplayStatusURL(), options: .atomic)
+    }
+
+    private func runAutoplay() async {
+        isApplying = true
+        defer { isApplying = false }
+        do {
+            try Task.checkCancellation()
+            let attributes = try await demoAttributes()
+            try await waitForApplicationState(.active)
+            try Task.checkCancellation()
+            let statusURL = try MobileActivityFixtureProof.autoplayStatusURL()
+            if FileManager.default.fileExists(atPath: statusURL.path) {
+                let decoder = JSONDecoder()
+                decoder.dateDecodingStrategy = .secondsSince1970
+                let previous = try decoder.decode(MobileActivityFixtureProof.AutoplayStatus.self, from: Data(contentsOf: statusURL))
+                if let activity = ChannelActivityClient.system.activities().first(where: {
+                    $0.id == previous.activityID && $0.attributes.registrationID == attributes.registrationID
+                }) {
+                    await activity.end(activity.content, dismissAt: nil)
+                }
+            }
+            let working = try MobileActivityFixtureProof.data(named: "push-activity-working")
+            activityID = try MobileActivityFixtureProof.startLocal(working, attributes: attributes)
+            result = "Autoplay ready. Return Home or lock the simulator. No push token or Follow registration."
+            try publishAutoplay(.ready)
+            try await waitForApplicationState(.background)
+            try await Task.sleep(for: .seconds(2))
+            try await MobileActivityFixtureProof.autoplay(
+                endedOnly: ProcessInfo.processInfo.arguments.contains("--autoplay-ended"),
+                apply: { state in
+                    guard model.notifications.currentRegistration?.registrationID == attributes.registrationID,
+                          let activityID else { throw MobileActivityFixtureProof.Failure.unavailableActivity }
+                    let name = state == "request" ? "push-activity" : "push-activity-\(state)"
+                    let data = try MobileActivityFixtureProof.data(named: name)
+                    _ = try await MobileActivityFixtureProof.apply(
+                        data, activityID: activityID, registrationID: attributes.registrationID
+                    )
+                    autoplayState = state
+                    result = "Autoplay applied \(state) fixture"
+                    try publishAutoplay(.applied)
+                }
+            )
+            result = "Autoplay finished. The terminal card keeps its fixture dismissal date."
+            try publishAutoplay(.finished)
+        } catch {
+            result = "Autoplay failed: \(error.localizedDescription)"
+            logger.error("\(result)")
+            if let activity = ChannelActivityClient.system.activities().first(where: { $0.id == activityID }) {
+                await activity.end(activity.content, dismissAt: nil)
+            }
+            do { try publishAutoplay(.failed, error: error.localizedDescription) }
+            catch { logger.error("Could not write autoplay status: \(error.localizedDescription)") }
         }
     }
 
@@ -103,14 +250,7 @@ struct ActivityFixtureProofView: View {
                     if push.event == .end { self.activityID = nil }
                     result = "Applied \(state) fixture"
                 } else {
-                    let catalog = try await api.catalog()
-                    guard let channel = catalog.channels.first(where: { $0.id == "studio-demo" })
-                    else { throw MobileActivityFixtureProof.Failure.missingDemoChannel }
-                    guard model.notifications.currentRegistration == registration
-                    else { throw MobileActivityFixtureProof.Failure.notDemoServer }
-                    activityID = try MobileActivityFixtureProof.startLocal(data, attributes: .init(
-                        channelID: channel.id, channelName: channel.name, registrationID: registration.registrationID
-                    ))
+                    activityID = try MobileActivityFixtureProof.startLocal(data, attributes: try await demoAttributes())
                     result = "Local working fixture started. No push token or Follow registration."
                 }
             } catch {

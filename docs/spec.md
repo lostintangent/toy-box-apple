@@ -310,6 +310,14 @@ proves decoding and foreground ActivityKit updates, not remote Activity delivery
 demo, then applies each decoded fixture through `ChannelActivityClient.system`. Updates are
 restricted to that Activity ID and the selected registration. End fixtures preserve their
 15-minute dismissal date. This screen never registers Follow and is absent from optimized builds.
+Add `--autoplay` to create the token-free Activity in the foreground, then apply Working, Quiet,
+Request, Stale and Completed at four-second intervals after the app enters the background.
+Run again with `--autoplay --autoplay-ended` for a fresh foreground Activity going to Ended.
+Terminal fixtures stay last because ActivityKit cannot request a replacement in the background.
+Autoplay uses bounded native background time, never answers a permission prompt, and writes
+its current state, Activity ID, timestamp and any failure atomically to
+`Documents/Automation/activity-fixture-autoplay.json` for capture synchronization.
+Each run dismisses only the Activity identified by its previous autoplay status before starting.
 
 `ChannelActivityLink` carries channel ID, registration ID and an optional positive request sequence
 in `toybox-desktop://activity` URLs. The receiving app checks the selected registration before

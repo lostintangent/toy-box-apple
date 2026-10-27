@@ -74,6 +74,12 @@ export function mobileLaunchOptions(contentSize?: string, appearance?: string): 
         arguments: category ? ["-UIPreferredContentSizeCategoryName", category] : [] };
 }
 
+export function mobileActivityAutoplayArguments(enabled = false, endedOnly = false, fixtureProof = false) {
+    if (enabled && !fixtureProof) throw new Error("--autoplay requires --activity-fixture-proof.");
+    if (endedOnly && !enabled) throw new Error("--autoplay-ended requires --autoplay.");
+    return enabled ? ["--autoplay", ...(endedOnly ? ["--autoplay-ended"] : [])] : [];
+}
+
 export async function withMobileAppearance<T>(simulator: string, appearance: Appearance | undefined,
     run: SimulatorCommand, signal: AbortSignal, body: () => Promise<T>): Promise<T> {
     if (!appearance) return body();
@@ -345,8 +351,12 @@ if (import.meta.main) await main(async () => {
         displays: { type: "boolean" }, server: { type: "string" },
         drive: { type: "string" }, "content-size": { type: "string" }, appearance: { type: "string" },
         "foundation-proof": { type: "boolean" }, "activity-fixture-proof": { type: "boolean" },
+        autoplay: { type: "boolean" }, "autoplay-ended": { type: "boolean" },
     } });
     const launch = mobileLaunchOptions(values["content-size"], values.appearance);
+    const autoplay = mobileActivityAutoplayArguments(
+        values.autoplay, values["autoplay-ended"], values["activity-fixture-proof"]
+    );
     if (values["foundation-proof"] && values["activity-fixture-proof"]) {
         throw new Error("Choose one simulator proof screen.");
     }
@@ -438,7 +448,7 @@ if (import.meta.main) await main(async () => {
             (args, signal) => runMobileSimulatorCommand(args, mobileEnvironment, signal), interruption.signal, async () => {
             const result = await runMobileSimulatorCommand([
                 "launch", "--terminate-running-process", simulator.udid, mobileBundleID,
-                "--server", server, ...launch.arguments, ...(proof ? [`--${proof}`] : []),
+                "--server", server, ...launch.arguments, ...(proof ? [`--${proof}`] : []), ...autoplay,
             ], { ...mobileEnvironment, ...(drive ? { SIMCTL_CHILD_TOY_BOX_AUTOMATION_SCRIPT: drive.script } : {}) },
             AbortSignal.any([interruption.signal, AbortSignal.timeout(30_000)]));
             if (result.exitCode) throw new Error(`Mobile launch failed: ${result.stderr.trim()}`);
