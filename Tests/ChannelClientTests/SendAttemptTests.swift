@@ -97,6 +97,41 @@ struct SendAttemptTests {
         #expect(store.phase == .idle)
     }
 
+    @Test @MainActor func backgroundReplyDuringAnotherSendIsDurablyRetainedWithoutPosting() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("tbm-background-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let journal = ChannelSendJournal(directory: directory)
+        let release = DispatchSemaphore(value: 0)
+        defer { release.signal() }
+        let mock = MockTransport { request, _ in
+            release.wait()
+            let body = try Self.posted(request)
+            return try .json(MessageEnvelope(message: ChannelMessage(
+                id: body.id, sequence: 17, timestamp: "2026-10-01T00:00:00Z",
+                sender: .user, content: .text(body.content)
+            )), status: 201)
+        }
+        let api = try mock.api()
+        let store = ChannelStore(id: "test", api: api, sendJournal: journal)
+        let firstID = UUID().uuidString
+        let first = Task { try await store.postInBackground(id: firstID, content: "First") }
+        try await eventually(observing: mock) { mock.requests.count == 1 }
+        let replyID = UUID().uuidString
+        await #expect(throws: ChannelAPIError.invalidMessage("A message is already being sent.")) {
+            try await store.postInBackground(id: replyID, content: "@lead Keep this reply")
+        }
+        let reply = try #require(store.sendAttempts.first { $0.id == replyID })
+        #expect(reply.phase == .notSent)
+        #expect(reply.content == "@lead Keep this reply")
+        #expect(store.sendAttempts.first { $0.id == firstID }?.phase == .sending)
+        #expect(try await journal.load(server: api.baseURL, channelId: "test").first { $0.id == replyID } == reply)
+        #expect(mock.requests.count == 1)
+        release.signal()
+        _ = try await first.value
+        #expect(store.sendAttempts == [reply])
+        #expect(try await journal.load(server: api.baseURL, channelId: "test") == [reply])
+    }
+
     @Test @MainActor func backgroundPostNeverSendsWhenTheJournalCannotBeWritten() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("tbm-background-\(UUID())")
         let journal = ChannelSendJournal(directory: directory)

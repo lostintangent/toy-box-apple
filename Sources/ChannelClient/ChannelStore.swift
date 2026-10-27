@@ -271,7 +271,8 @@ public final class ChannelStore {
         if !requiresLiveConnection, phase == .deleted {
             throw ChannelAPIError.http(status: 404, message: "Channel not found.")
         }
-        guard !isSending else { throw ChannelAPIError.invalidMessage("A message is already being sent.") }
+        let busyError = ChannelAPIError.invalidMessage("A message is already being sent.")
+        guard !isSending || !requiresLiveConnection else { throw busyError }
         let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty || !attachments.isEmpty else {
             throw ChannelAPIError.invalidMessage("A message or attachment is required.")
@@ -285,6 +286,7 @@ public final class ChannelStore {
                 throw ChannelAPIError.invalidMessage("The attempted message changed. Send it as a new message.")
             }
             if existing.phase == .confirmed { return .alreadyAccepted(id: id) }
+            guard !isSending else { throw busyError }
             return try await retrySend(id: id, requiresLiveConnection: requiresLiveConnection)
         }
         if let committed = state?.messages.first(where: { $0.id == id }) {
@@ -299,6 +301,10 @@ public final class ChannelStore {
                                          phase: .sending)
         sendAttempts.append(attempt)
         optimisticMessageIds.insert(id)
+        if isSending {
+            recordSendFailure(id: id, phase: .notSent, error: busyError.localizedDescription)
+            throw busyError
+        }
         return try await deliver(attempt, requiresLiveConnection: requiresLiveConnection)
     }
 
