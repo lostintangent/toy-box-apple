@@ -230,8 +230,10 @@ view.
   names. Their ATS dictionaries use `NSAllowsArbitraryLoads` alone: adding `NSAllowsLocalNetworking`
   makes iOS and macOS ignore that opt-out. Local-network permission remains separate from ATS,
   and HTTPS still uses normal certificate validation.
-- `SCRATCH_PATH=/tmp/tbm-<you> bun run test:mobile` builds and runs ChannelKit,
-  ChannelClient, ChannelIntelligence, ToyBoxUI, ToyBoxMobileIntegrations, ToyBoxMobileWidget and ToyBoxMobile tests on iOS Simulator. It uses Apple's simulator
+- `SCRATCH_PATH=/tmp/tbm-<you> bun run test:mobile` builds the iOS tests and runs
+  ChannelClient, ToyBoxUI, ToyBoxMobileIntegrations, ToyBoxMobileWidget and ToyBoxMobile
+  tests on iOS Simulator. ChannelKit and mocked Intelligence execute on Mac only,
+  but still compile in the iOS test build. It uses Apple's simulator
   `xctest` host and rejects interrupted, failed and empty Swift Testing runs. Existing opt-ins
   stay off. It shuts down the simulator only if it booted it.
 - Mobile commands default to `/Applications/Xcode.app/Contents/Developer`. Set `DEVELOPER_DIR`
@@ -254,9 +256,12 @@ view.
   service extension, so successful submission proves delivery only, not enrichment or its receipt.
   Real APNs delivery must prove the extension itself. This is not the release payload or activity schema.
   Remove the proof hook, harness and placeholder activity when t408/t409 ship real flows.
-- CI always builds the mobile app, both embedded extensions and shared modules for Simulator,
-  and verifies the extension signatures. It runs the shared tests
-  only when an iOS 27+ runtime is already installed, otherwise reporting the explicit skip.
+- Main and pull-request CI builds the mobile app, both embedded extensions and shared modules
+  for Simulator, and verifies the extension signatures. It runs the simulator suites only when
+  an iOS 27+ runtime is already installed, otherwise reporting the explicit skip.
+  Tags and manual release dry runs skip iOS. The Mac gate runs ChannelClient once under the
+  strict cooperative pool, then the remaining suites. Bundle, Siri and native Sparkle checks
+  run in the release job only.
 - Mobile views use SwiftUI's safe areas, layout margins, size classes and adaptive navigation.
   Never hard-code a safe-area inset, device size or Duo fold width. The layout adapts to the
   scene the system provides. Mockup canvas measurements are not implementation constants.
