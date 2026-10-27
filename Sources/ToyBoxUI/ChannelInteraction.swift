@@ -17,6 +17,7 @@ public final class ChannelInteraction {
     /// The composer consumes these. `token` changes on every request so repeats still fire.
     public private(set) var replyRequest: (agent: ChannelAgent, sequence: Int?, token: UUID)?
     public private(set) var composerFocusRequest = UUID()
+    public private(set) var pendingComposerFocusRequest: UUID?
     public var hasDraft = false
     public var copyDraft: (() -> Void)?
     public private(set) var editSendAttemptRequest: (id: String, token: UUID)?
@@ -41,7 +42,13 @@ public final class ChannelInteraction {
         replyRequest = (agent, sequence, UUID())
     }
 
-    public func focusComposer() { composerFocusRequest = UUID() }
+    public func focusComposer() {
+        composerFocusRequest = UUID()
+        pendingComposerFocusRequest = composerFocusRequest
+    }
+    public func consumeComposerFocusRequest(_ token: UUID) {
+        if pendingComposerFocusRequest == token { pendingComposerFocusRequest = nil }
+    }
     public func editSendAttempt(id: String) { editSendAttemptRequest = (id, UUID()) }
     @discardableResult
     public func reveal(sequence: Int) -> UUID {

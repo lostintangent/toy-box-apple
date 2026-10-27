@@ -36,15 +36,24 @@ final class ComposerEditorState {
     private var readerFocus = ComposerReaderFocus()
     var isReaderCovered: Bool { readerFocus.isCovered }
     @ObservationIgnored private var allowsEditing = true
+    @ObservationIgnored private var pendingFocus = false
     @ObservationIgnored weak var textView: ComposerTextView?
 
     func focus() {
         guard !isReaderCovered, allowsEditing else { return }
-        textView?.becomeFirstResponder()
+        pendingFocus = true
+        applyPendingFocus()
+    }
+
+    fileprivate func applyPendingFocus() {
+        guard pendingFocus, !isReaderCovered, allowsEditing,
+              let textView, textView.window != nil else { return }
+        if textView.becomeFirstResponder() { pendingFocus = false }
     }
 
     func setReaderCovered(_ covered: Bool, canRestoreFocus: Bool) {
         if covered {
+            pendingFocus = false
             readerFocus.cover(ownsFocus: textView?.isFirstResponder == true)
             textView?.resignFirstResponder()
             if let textView { update(from: textView) }
@@ -58,10 +67,14 @@ final class ComposerEditorState {
 
     func setEditingAllowed(_ allowed: Bool) {
         allowsEditing = allowed
+        if !allowed { pendingFocus = false }
         textView?.isEditable = allowed && !isReaderCovered
     }
 
-    func cancelReaderFocusRestoration() { readerFocus.cancelRestoration() }
+    func cancelReaderFocusRestoration() {
+        readerFocus.cancelRestoration()
+        pendingFocus = false
+    }
 
     @discardableResult
     func replace(_ range: NSRange, with text: String) -> Bool {
@@ -164,6 +177,7 @@ struct NativeComposerInput: UIViewRepresentable {
         view.onCompletionKey = onCompletionKey
         view.onPasteImages = onPasteImages
         view.onEscape = onEscape
+        editor.applyPendingFocus()
     }
 
     private func clampedSelection(for view: UITextView) -> NSRange {
@@ -517,6 +531,11 @@ final class ComposerTextView: UITextView {
     required init?(coder: NSCoder) {
         super.init(coder: coder)
         textColor = .label
+    }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        coordinator?.parent.editor.applyPendingFocus()
     }
 
     override func insertText(_ text: String) {
