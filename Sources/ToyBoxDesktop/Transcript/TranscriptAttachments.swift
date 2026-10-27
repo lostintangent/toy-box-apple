@@ -72,7 +72,6 @@ private struct TranscriptAttachment: View {
     @AccessibilityFocusState private var isAccessibilityFocused: Bool
     @Environment(ImageViewer.self) private var viewer: ImageViewer?
     @Environment(\.colorScheme) private var colorScheme
-    @Environment(\.colorSchemeContrast) private var contrast
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
     @Environment(\.channelIntelligence) private var intelligence
@@ -188,10 +187,7 @@ private struct TranscriptAttachment: View {
             }
             .frame(width: max(44, size.width), height: max(44, size.height))
             .clipShape(tile)
-            // Keeps an edge on screenshots with white or black margins.
-            .overlay(tile.strokeBorder(Color.primary.opacity(contrast == .increased ? 0.4
-                                                             : colorScheme == .dark ? 0.14 : 0.1),
-                                       lineWidth: 1))
+            .transcriptAttachmentEdge(tile)
             .shadow(color: .black.opacity(thumbnail == nil || colorScheme == .dark ? 0 : 0.1), radius: 3, y: 1)
             .onGeometryChange(for: CGRect.self) { proxy in
                 // The image's own frame inside the tile, which the viewer zooms out of and back into.

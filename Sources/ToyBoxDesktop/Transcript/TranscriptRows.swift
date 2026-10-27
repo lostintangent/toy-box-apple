@@ -568,17 +568,8 @@ struct TranscriptReactionChip: View {
         Button {
             showsReactors.toggle()
         } label: {
-            HStack(spacing: 4) {
-                Text(emoji)
-                ForEach(reactors.prefix(3)) { agent in AgentAvatarView(agent: agent, size: 14) }
-                if reactors.count > 3 { Text("+\(reactors.count - 3)").monospacedDigit() }
-            }
-            .font(.system(size: 11))
-            .padding(.horizontal, 6)
-            .frame(height: 24)
-            .background(.quaternary.opacity(0.5), in: Capsule())
-            .overlay(Capsule().strokeBorder(.separator, lineWidth: 0.5))
-            .frame(minWidth: 28, minHeight: 28)
+            TranscriptReactionPill(emoji: emoji, reactors: reactors, font: .system(size: 11), avatarSize: 14, height: 24)
+                .frame(minWidth: 28, minHeight: 28)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

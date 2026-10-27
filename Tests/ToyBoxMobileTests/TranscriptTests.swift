@@ -380,12 +380,96 @@ struct TranscriptTests {
                 for surface in [TranscriptSurface.agent, .pendingAgent, .user] {
                     let ink = rgb(TranscriptMentionInk(surface: surface, isDark: dark, isContrastIncreased: increased)
                         .color(for: pale))
-                    let background = surface.fills(isDark: dark)
+                    let background = surface.fills(isDark: dark, canvasIsBlack: true)
                         .reduce(rgb(Color(uiColor: .systemBackground))) { $0.under(rgb($1)) }
                     #expect(ink.contrast(with: background) >= (increased ? 7 : 4.5))
                 }
             }
         }
+    }
+
+    @Test func fiveReactionKindsWrapIntoTwoRowsWhenFoldedAndStillFitAtTheLargestSize() {
+        let agents = (1...5).map { ChannelAgent(id: "a\($0)", name: "Agent \($0)") }
+        let kinds: [(String, Int)] = [("done", 5), ("agree", 1), ("celebrate", 3), ("love", 2), ("laugh", 1)]
+        let reactions = kinds.flatMap { kind, count in
+            agents.prefix(count).map { ChannelReaction(agentId: $0.id, reaction: kind) }
+        }
+        let message = ChannelMessage(id: "m", sequence: 1, timestamp: "2026-10-25T12:00:00Z",
+                                     sender: .agent("a1"), content: .text("Reacted"), reactions: reactions)
+        // The folded phone's agent bubble column, measured in the native frame.
+        let column = CGSize(width: 305, height: CGFloat.infinity)
+        func size(_ type: DynamicTypeSize) -> CGSize {
+            UIHostingController(rootView: TranscriptReactions(message: message, agents: agents)
+                .environment(\.dynamicTypeSize, type)).sizeThatFits(in: column)
+        }
+
+        let folded = size(.large)
+        #expect(folded.width <= column.width)
+        // Two rows of 44-point targets, 6 points apart between their 24-point pills.
+        let twoRows: CGFloat = 44 + 24 + 6
+        #expect(folded.height.rounded() == twoRows, "\(folded.height)")
+        #expect(size(.accessibility5).width <= column.width)
+    }
+
+    @Test func voiceOverReadsWrappedReactionsRowByRowInTheirOrder() async {
+        let agents = (1...5).map { ChannelAgent(id: "a\($0)", name: "Agent \($0)") }
+        let kinds: [(String, Int)] = [("done", 5), ("agree", 1), ("celebrate", 3), ("love", 2), ("laugh", 1)]
+        let reactions = kinds.flatMap { kind, count in
+            agents.prefix(count).map { ChannelReaction(agentId: $0.id, reaction: kind) }
+        }
+        let message = ChannelMessage(id: "m", sequence: 1, timestamp: "2026-10-25T12:00:00Z",
+                                     sender: .agent("a1"), content: .text("Reacted"), reactions: reactions)
+        let host = UIHostingController(rootView: TranscriptReactions(message: message, agents: agents)
+            .frame(width: 305, alignment: .leading).dynamicTypeSize(.large))
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 305, height: 400))
+        window.rootViewController = host
+        window.isHidden = false
+        defer { window.isHidden = true }
+        host.view.layoutIfNeeded()
+        await Task.yield()
+        host.view.layoutIfNeeded()
+
+        let expected = ChannelReactionGroup.groups(for: message, agents: agents).map(\.presentation.label)
+        let chips = MobileAutomationTree(windows: [window]).elements.filter { element in
+            expected.contains { element.label.hasPrefix("\($0): ") }
+        }
+        #expect(chips.map { String($0.label.prefix { $0 != ":" }) } == expected)
+        let rows = chips.map { $0.frame.midY.rounded() }
+        #expect(Set(rows).count == 2, "\(chips.map(\.frame))")
+        for (previous, next) in zip(chips, chips.dropFirst()) {
+            let sameRow = previous.frame.midY.rounded() == next.frame.midY.rounded()
+            #expect(sameRow ? next.frame.minX > previous.frame.maxX : next.frame.midY > previous.frame.midY,
+                    "\(previous.label) then \(next.label)")
+        }
+    }
+
+    @Test func aMiddleRowOfReactionTargetsGivesHalfOfEachGapToItsNeighbors() async {
+        // Three rows of 44-point targets around 24-point pills, measured natively in each chip's space.
+        let flow = TranscriptReactionFlow(spacing: 6, lineSpacing: -14)
+        var targets: [Int: CGRect] = [:]
+        let host = UIHostingController(rootView: flow {
+            ForEach(0..<3) { row in
+                Color.clear.frame(width: 200, height: 44).background {
+                    GeometryReader { proxy in
+                        let target = TranscriptReactionFlow.target(in: proxy, rowOverlap: 14)
+                        Color.clear.onAppear { targets[row] = target }
+                    }
+                }
+            }
+        }
+        .coordinateSpace(.named(TranscriptReactionFlow.coordinateSpace))
+        .frame(width: 305, alignment: .topLeading))
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 305, height: 400))
+        window.rootViewController = host
+        window.isHidden = false
+        defer { window.isHidden = true }
+        host.view.layoutIfNeeded()
+        await Task.yield()
+        host.view.layoutIfNeeded()
+
+        #expect(targets[0] == CGRect(x: 0, y: 0, width: 200, height: 37))
+        #expect(targets[1] == CGRect(x: 0, y: 7, width: 200, height: 30))
+        #expect(targets[2] == CGRect(x: 0, y: 7, width: 200, height: 37))
     }
 
     @Test func messagesRenderMarkdownBlocksLikeTheMac() {
