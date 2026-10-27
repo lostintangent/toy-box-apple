@@ -11,6 +11,7 @@ import UIKit
 @MainActor @Observable
 final class AppModel {
     let notifications: ChannelNotifications
+    let following: ChannelFollowController
     private(set) var serverURL = ""
     private(set) var catalog: ChannelCatalogStore?
     private(set) var configurationError: String?
@@ -60,8 +61,9 @@ final class AppModel {
          environment: [String: String] = ProcessInfo.processInfo.environment,
          bundleDefaultServerURL: String? = Bundle.main.object(forInfoDictionaryKey: "ToyBoxDefaultServerURL") as? String,
          defaults: UserDefaults = .standard, session: URLSession = .shared,
-         notifications: ChannelNotifications? = nil) {
+         notifications: ChannelNotifications? = nil, following: ChannelFollowController? = nil) {
         self.notifications = notifications ?? ChannelNotifications(defaults: defaults)
+        self.following = following ?? ChannelFollowController(defaults: defaults)
         self.defaults = defaults
         self.session = session
         self.notifications.onActivate = { [weak self] activation in
@@ -212,7 +214,21 @@ final class AppModel {
             integrationLogger.error("Could not prepare the Needs You widget: \(error.localizedDescription)")
         }
         await notifications.start()
+        observeFollowing()
         observeIntegrations(generation: integrationsGeneration)
+    }
+
+    func observeFollowing() {
+        let context = withObservationTracking {
+            (registration: notifications.currentRegistration, catalog: catalog, isActive: isActive)
+        } onChange: { [weak self] in
+            Task { @MainActor in self?.observeFollowing() }
+        }
+        following.configure(
+            registration: context.registration, catalog: context.catalog, isActive: context.isActive,
+            acquire: { [weak self] in self?.acquire($0) },
+            release: { [weak self] in self?.release($0) }
+        )
     }
 
     private func observeIntegrations(generation: UUID) {

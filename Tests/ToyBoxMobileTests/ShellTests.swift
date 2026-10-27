@@ -1,7 +1,7 @@
-import ChannelClient
 import ChannelIntelligence
 import ChannelKit
 import Foundation
+import Observation
 import SwiftUI
 import Testing
 import ToyBoxMobileIntegrations
@@ -9,6 +9,7 @@ import ToyBoxUI
 import UIKit
 import UniformTypeIdentifiers
 import UserNotifications
+@testable import ChannelClient
 @testable import ToyBoxMobile
 
 @Suite("Mobile Shell")
@@ -210,6 +211,70 @@ struct ShellTests {
                 #expect(notices.count == 1)
                 #expect(notices.first?.content.body == "Your reply wasn't sent.")
                 #expect(notices.first?.content.userInfo.isEmpty == true)
+            }
+        }
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func followingObservesTheSelectedCatalogAndRegistrationIndependentlyOfAlertOptIn() async throws {
+        try await withDefaults { defaults in
+            try await withRegistrationStore { store in
+                let firstAPI = try ChannelAPI(serverURL: "https://first.example")
+                let registration = MobileNotificationRegistration(
+                    store: store, environment: .sandbox, requestToken: {},
+                    register: { _, _ in }, remove: { _, _ in })
+                try registration.select(api: firstAPI)
+                let notifications = ChannelNotifications(defaults: defaults, registration: registration)
+                var restorations = 0
+                let following = ChannelFollowController(
+                    client: .init(activities: {
+                        restorations += 1
+                        return []
+                    },
+                                  request: { _, _ in throw CocoaError(.featureUnsupported) }),
+                    defaults: defaults, environment: .sandbox)
+                defer { following.shutdown() }
+                let model = AppModel(arguments: ["--server", firstAPI.baseURL.absoluteString], environment: [:],
+                                     defaults: defaults, session: fixtureSession(),
+                                     notifications: notifications, following: following)
+                @MainActor func prepare(_ store: ChannelStore) throws {
+                    _ = try store.apply(.init(type: "snapshot", state: .init(
+                        revision: 1,
+                        channel: .init(id: store.id, name: "Workshop",
+                                       model: .init(provider: "test", name: "test"),
+                                       tasks: [.init(id: "root", title: "Work")],
+                                       updatedAt: "2026-10-27T00:00:00Z"),
+                        lead: .init(id: store.id, name: "Lead")
+                    )))
+                }
+                @MainActor func waitFor(_ state: ChannelFollowAction.State, for store: ChannelStore) async {
+                    for await current in Observations({ following.state(for: store) }) {
+                        if current == state { return }
+                    }
+                }
+                let first = try #require(model.catalog?.channel(id: "first"))
+                try prepare(first)
+                #expect(following.state(for: first) == .unavailable)
+                model.observeFollowing()
+                #expect(following.state(for: first) == .available)
+                #expect(!notifications.isEnabled)
+                #expect(restorations == 1)
+
+                try model.configure(serverURL: "https://second.example")
+                let secondAPI = try #require(model.api)
+                try registration.select(api: secondAPI)
+                let second = try #require(model.catalog?.channel(id: "first"))
+                try prepare(second)
+                await waitFor(.available, for: second)
+                #expect(following.state(for: first) == .unavailable)
+                #expect(restorations == 2)
+
+                try registration.select(api: firstAPI)
+                await waitFor(.unavailable, for: second)
+                try registration.select(api: secondAPI)
+                await waitFor(.available, for: second)
+                #expect(restorations == 3)
+                #expect(!notifications.isEnabled)
             }
         }
     }

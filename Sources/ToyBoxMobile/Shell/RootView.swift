@@ -133,6 +133,15 @@ struct RootView: View {
         } message: {
             Text(model.notifications.error ?? "")
         }
+        .alert("Couldn't follow this channel", isPresented: Binding(
+            get: { model.following.startFailed },
+            set: { model.following.startFailed = $0 }
+        )) {
+            Button("OK") { model.following.startFailed = false }
+        } message: {
+            Text("Try again.")
+        }
+        .environment(model.following)
     }
 
     private var channelNavigation: some View {

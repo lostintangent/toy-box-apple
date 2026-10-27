@@ -16,6 +16,7 @@ struct ToyBoxMobileApp: App {
                 .mobileFoundationProofIfRequested()
                 #endif
                 .environment(appDelegate.model)
+                .environment(appDelegate.model.following)
                 .preferredColorScheme(appearance.colorScheme)
                 .task { await appDelegate.model.startIntegrations() }
                 #if DEBUG
