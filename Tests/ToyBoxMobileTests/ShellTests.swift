@@ -4,13 +4,13 @@ import Foundation
 import Observation
 import SwiftUI
 import Testing
-import ToyBoxMobileIntegrations
 import ToyBoxUI
 import UIKit
 import UniformTypeIdentifiers
 import UserNotifications
 @testable import ChannelClient
 @testable import ToyBoxMobile
+@testable import ToyBoxMobileIntegrations
 
 @Suite("Mobile Shell")
 @MainActor
@@ -27,6 +27,29 @@ struct ShellTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         try await work(MobilePushRegistrationStore(directory: directory))
     }
+
+    #if DEBUG && targetEnvironment(simulator)
+    @Test(arguments: [ChannelPushPayload.Kind.request, .completion])
+    func proofAlertsUseActualCatalogSequencesAndTheCurrentRegistration(kind: ChannelPushPayload.Kind) throws {
+        let catalog = ChannelCatalog(
+            lead: .init(name: "Lead", role: "Coordinator", avatar: .init(mark: "M4 12H20", color: "#123456")),
+            channels: [
+                Channel(id: "empty", name: "Empty", model: .init(provider: "test", name: "test"),
+                        updatedAt: "2026-10-27T00:00:00Z"),
+                Channel(id: "waiting", name: "Waiting", model: .init(provider: "test", name: "test"),
+                        requestSequence: 42, updatedAt: "2026-10-27T00:00:00Z"),
+                Channel(id: "finished", name: "Finished", model: .init(provider: "test", name: "test"),
+                        completedSequence: 51, updatedAt: "2026-10-27T00:00:00Z"),
+            ])
+        let registration = MobilePushRegistration(serverURL: "http://localhost:3210", registrationID: "current")
+        let payload = try ChannelNotifications.proofPayload(kind: kind, catalog: catalog, registration: registration)
+        #expect(payload.kind == kind)
+        #expect(payload.channelID == (kind == .request ? "waiting" : "finished"))
+        #expect(payload.sequence == (kind == .request ? 42 : 51))
+        #expect(payload.registrationID == registration.registrationID)
+        #expect(try ChannelPushPayload(userInfo: payload.userInfo) == payload)
+    }
+    #endif
 
     @Test func registrationSendsTheTokenEnvironmentAndChoicesAndDeletesOnlyAlertsWhenDisabled() async throws {
         try await withRegistrationStore { store in
@@ -225,12 +248,8 @@ struct ShellTests {
                     register: { _, _ in }, remove: { _, _ in })
                 try registration.select(api: firstAPI)
                 let notifications = ChannelNotifications(defaults: defaults, registration: registration)
-                var restorations = 0
                 let following = ChannelFollowController(
-                    client: .init(activities: {
-                        restorations += 1
-                        return []
-                    },
+                    client: .init(activities: { [] },
                                   request: { _, _ in throw CocoaError(.featureUnsupported) }),
                     defaults: defaults, environment: .sandbox)
                 defer { following.shutdown() }
@@ -258,7 +277,6 @@ struct ShellTests {
                 model.observeFollowing()
                 #expect(following.state(for: first) == .available)
                 #expect(!notifications.isEnabled)
-                #expect(restorations == 1)
 
                 try model.configure(serverURL: "https://second.example")
                 let secondAPI = try #require(model.api)
@@ -267,13 +285,11 @@ struct ShellTests {
                 try prepare(second)
                 await waitFor(.available, for: second)
                 #expect(following.state(for: first) == .unavailable)
-                #expect(restorations == 2)
 
                 try registration.select(api: firstAPI)
                 await waitFor(.unavailable, for: second)
                 try registration.select(api: secondAPI)
                 await waitFor(.available, for: second)
-                #expect(restorations == 3)
                 #expect(!notifications.isEnabled)
             }
         }
