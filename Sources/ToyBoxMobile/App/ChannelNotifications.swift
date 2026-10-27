@@ -261,17 +261,29 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
 
     typealias ProofEnrichment = @MainActor (ChannelPushPayload) async throws -> UNNotificationContent
 
+    struct ProofDelivery: Codable {
+        var enrichmentSeconds: Double
+        var schedulingSeconds: Double
+        var scheduledAt: Double
+        var title: String
+        var subtitle: String
+        var body: String
+        var category: String
+    }
+
+    @discardableResult
     func runProofNotificationAction(_ action: ProofAction, directory: URL? = nil,
-                                    enrich: ProofEnrichment? = nil) async throws {
+                                    enrich: ProofEnrichment? = nil) async throws -> ProofDelivery? {
         switch action {
         case .request:
-            try await scheduleProofNotification(.request, enrich: enrich)
+            return try await scheduleProofNotification(.request, enrich: enrich)
         case .prepareOffline:
             let prepared = try await prepareProofNotification(.request, enrich: enrich)
             try prepared.write(directory: directory ?? MobileSharedContainer.url())
+            return nil
         case .deliverOffline:
             let prepared = try PreparedProofNotification.read(directory: directory ?? MobileSharedContainer.url())
-            try await schedulePreparedProofNotification(prepared, enrich: enrich)
+            return try await schedulePreparedProofNotification(prepared, enrich: enrich)
         }
     }
 
@@ -283,23 +295,37 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
         return prepared
     }
 
+    @discardableResult
     func scheduleProofNotification(_ kind: ChannelPushPayload.Kind,
-                                   enrich: ProofEnrichment? = nil) async throws {
+                                   enrich: ProofEnrichment? = nil) async throws -> ProofDelivery {
         let prepared = try await proofRouting(kind)
-        try await schedulePreparedProofNotification(prepared, enrich: enrich)
+        return try await schedulePreparedProofNotification(prepared, enrich: enrich)
     }
 
+    @discardableResult
     func schedulePreparedProofNotification(_ prepared: PreparedProofNotification,
-                                           enrich: ProofEnrichment? = nil) async throws {
+                                           enrich: ProofEnrichment? = nil) async throws -> ProofDelivery {
         try validateProofRegistration(prepared.registration)
         guard prepared.payload.registrationID == prepared.registration.registrationID else {
             throw ProofFailure.registrationChanged
         }
+        let started = ContinuousClock.now
         let content = try await (enrich ?? Self.proofContent)(prepared.payload)
+        let enriched = ContinuousClock.now
         try validateProofRegistration(prepared.registration)
         try await addNotice(UNNotificationRequest(
             identifier: "proof-\(UUID().uuidString)", content: content,
             trigger: UNTimeIntervalNotificationTrigger(timeInterval: 30, repeats: false)))
+        return ProofDelivery(
+            enrichmentSeconds: Self.proofSeconds(started.duration(to: enriched)),
+            schedulingSeconds: Self.proofSeconds(enriched.duration(to: .now)),
+            scheduledAt: Date.now.timeIntervalSince1970, title: content.title,
+            subtitle: content.subtitle, body: content.body, category: content.categoryIdentifier)
+    }
+
+    private static func proofSeconds(_ duration: Duration) -> Double {
+        let components = duration.components
+        return Double(components.seconds) + Double(components.attoseconds) / 1e18
     }
 
     private func proofRouting(_ kind: ChannelPushPayload.Kind) async throws -> PreparedProofNotification {

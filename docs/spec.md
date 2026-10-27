@@ -280,6 +280,10 @@ Request identity uses the real shared `AgentAvatarView` rendering and an incomin
 `INSendMessageIntent`. The enriched local metadata adds the resolved requester's `handle` for Reply;
 that handle is not part of the APNs routing contract. Completion uses the Mac task-count text and
 the app icon, with no Reply category.
+The intent names the channel as its group, identifies the local user as the recipient, and
+counts the local user and channel agents other than the incoming sender as recipients.
+Its conversation identifier remains server-qualified. Native
+presentation must retain both the sender's identity and the channel's name.
 
 The three-second enrichment budget includes cache preparation. Expiry delivers once without
 waiting for canceled work, and late work cannot create a duplicate. The snapshot publisher also
@@ -301,7 +305,10 @@ Use `--notification-proof prepare-offline --hold` while online, then a separate
 `--notification-proof deliver-offline --hold` launch after stopping the demo for N05.
 Preparation persists only routing and its registration. Each launch writes
 `notification-proof-result.json` in the shared group with completion, failure and action elapsed
-time. These options require a DEBUG simulator lease and never request notification permission.
+time. Delivery receipts separately measure production enrichment through its callback and OS
+scheduling, and include the resolved demo content and scheduling timestamp for capture alignment.
+The real service logs entry and content-handler elapsed time, excluding OS launch latency.
+These options require a DEBUG simulator lease and never request notification permission.
 
 `ChannelActivityAttributes` has `channelID`, `channelName` and `registrationID`. Its `ContentState`
 has working agent identities, top-level tasks done/total, optional waiting request sequence,

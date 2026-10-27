@@ -116,6 +116,7 @@ private struct FoundationProofView: View {
         var state: String
         var elapsedSeconds: Double
         var message: String
+        var delivery: ChannelNotifications.ProofDelivery?
 
         func write(to file: URL) throws {
             try JSONEncoder().encode(self).write(to: file, options: .atomic)
@@ -141,7 +142,7 @@ private struct FoundationProofView: View {
             result = receipt.message
             let started = ContinuousClock.now
             do {
-                try await model.notifications.runProofNotificationAction(action, directory: directory)
+                receipt.delivery = try await model.notifications.runProofNotificationAction(action, directory: directory)
                 receipt.state = "completed"
                 receipt.message = action == .prepareOffline
                     ? "Routing prepared online. Stop the demo before the deliver-offline launch."

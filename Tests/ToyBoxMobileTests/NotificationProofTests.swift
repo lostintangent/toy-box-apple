@@ -14,17 +14,25 @@ struct NotificationProofTests {
     @Test func theRequestLaunchActionUsesTheExistingOneStepPath() async throws {
         let fixture = try ProofFixture()
         defer { fixture.close() }
-        try await fixture.notifications.runProofNotificationAction(.request, enrich: fixture.enrich)
+        let delivery = try #require(
+            try await fixture.notifications.runProofNotificationAction(.request, enrich: fixture.enrich))
         #expect(OfflineProofProtocol.requests == 1)
         #expect(fixture.capture.payloads.count == 1)
         #expect(fixture.capture.notices.count == 1)
+        #expect(delivery.enrichmentSeconds >= 0)
+        #expect(delivery.schedulingSeconds >= 0)
+        #expect(delivery.scheduledAt > 0)
+        #expect(delivery.title == "Studio")
+        #expect(delivery.body == NotificationText.waitingBody)
+        #expect(delivery.category == ChannelNotificationCategory.request)
     }
 
     @Test func launchActionsPersistRoutingAcrossNotificationInstancesWithoutAnOfflineCatalogLookup() async throws {
         let fixture = try ProofFixture()
         defer { fixture.close() }
-        try await fixture.notifications.runProofNotificationAction(
+        let preparation = try await fixture.notifications.runProofNotificationAction(
             .prepareOffline, directory: fixture.directory, enrich: fixture.enrich)
+        #expect(preparation == nil)
         let prepared = try ChannelNotifications.PreparedProofNotification.read(directory: fixture.directory)
         #expect(prepared.payload == fixture.capture.payloads.first)
         #expect(fixture.capture.notices.isEmpty)
