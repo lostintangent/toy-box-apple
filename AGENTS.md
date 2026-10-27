@@ -255,6 +255,16 @@ Agents never create these accounts, accept agreements, read private keys or set 
   and WindowServer-event checks remain opt-in and must run locally before changes to their behavior.
 - Restore a quarantined test to CI only after identifying the cause and adding deterministic
   regression coverage. Do not loosen assertions or add retries to turn an unexplained failure green.
+- `ComposerTests.imageStripKeepsOneHeightWhenItsImagesOverflowAndStillScrolls` is quarantined behind
+  `TOY_BOX_TEST_IMAGE_STRIP_SCROLLING=1`. Core's 2026-10-26 foundation Mac gate, based on `9bada33`
+  with no Mac/view changes, failed at `ComposerTests.swift:1468` after 31.199 seconds:
+  "Timed out waiting until the overflowing strip scrolls sideways" (373 desktop tests, one issue).
+  The failed run is `r2-foundation-mac-gate.log` in Core's session files, preserved in Composer's
+  session as `image-strip-scroll-readiness-failed-9bada33.log`. No cause is established. The saved
+  log lacks clip/document geometry; opt-in failures now print that geometry and window visibility.
+  Composer owns t412: identify the native scrolling failure and add deterministic regression
+  coverage before restoring the case. Its assertions and 30-second deadline remain unchanged.
+  Do not restore it based on passing reruns.
 - The three `MainActorTurnTests` occupancy probes remain quarantined behind
   `TOY_BOX_TEST_MAIN_ACTOR_TIMING=1 bun run test --filter MainActorTurnTests`.
   The 2026-10-26 Mac run of `c4c761d` recorded nine Client readiness failures in
