@@ -142,6 +142,73 @@ struct TranscriptFindModelTests {
         #expect(find.matches.map(\.sequence) == [1, 3, 5])
     }
 
+    @Test func theStatusSlotIsBlankThenSpinsAndShowsOnlyAFinalResult() async {
+        let find = make([message(5, "target"), message(6, "target")], hasOlder: true)
+        #expect(find.status(progressDelayElapsed: true) == .hidden)
+        find.query = "target"
+        #expect(find.status(progressDelayElapsed: false) == .blank)
+        #expect(find.status(progressDelayElapsed: true) == .progress)
+        await find.searchOlder { _ in
+            find.move(1)
+            // Partial matches are navigable, but the slot never shows a provisional count.
+            #expect(find.selectedSequence == 6)
+            #expect(find.status(progressDelayElapsed: true) == .progress)
+            #expect(find.navigationAnnouncement == "2 of 2 found so far, still searching")
+            return [message(1, "target")]
+        }
+        #expect(find.status(progressDelayElapsed: false) == .result("3 of 3"))
+        #expect(find.navigationAnnouncement == "3 of 3")
+        find.query = "violet"
+        #expect(find.status(progressDelayElapsed: true) == .result("No matches"))
+        find.query = " "
+        #expect(find.status(progressDelayElapsed: true) == .hidden)
+    }
+
+    @Test func aFailedSearchIsIncompleteAndRetryKeepsTheQueryAndSelection() async {
+        let find = make([message(5, "target"), message(6, "target")], hasOlder: true)
+        find.query = "target"
+        await find.searchOlder { _ in throw ChannelAPIError.http(status: 503, message: "Try later") }
+        guard case .incomplete(let error) = find.status(progressDelayElapsed: true) else {
+            Issue.record("A failed history search must be incomplete, never a final count.")
+            return
+        }
+        #expect(error == find.error)
+        #expect(find.partialCountLabel == "2 matches found so far")
+        find.move(1)
+        #expect(find.navigationAnnouncement == "2 of 2 found so far, search incomplete")
+        let work = find.work
+        find.retryHistory()
+        #expect(find.work != work, "Retry must restart the history search.")
+        await find.searchOlder { _ in
+            #expect(find.status(progressDelayElapsed: true) == .progress)
+            return [message(1, "target")]
+        }
+        #expect(find.query == "target")
+        #expect(find.selectedSequence == 6)
+        #expect(find.status(progressDelayElapsed: true) == .result("3 of 3"))
+    }
+
+    @Test func announcementsSpeakProgressOnceAndOneOutcomePerQuery() async {
+        let find = make([message(5, "target")], hasOlder: true)
+        var announcements = TranscriptFindAnnouncements()
+        #expect(announcements.receive(find) == nil)
+        find.query = "target"
+        #expect(announcements.receive(find) == "Searching older messages")
+        #expect(announcements.receive(find) == nil, "Older pages must not repeat the progress announcement.")
+        await find.searchOlder { _ in throw ChannelAPIError.http(status: 503, message: "Try later") }
+        #expect(announcements.receive(find) == "Couldn't search older messages. 1 match found so far")
+        #expect(announcements.receive(find) == nil)
+        find.retryHistory()
+        await find.searchOlder { _ in
+            #expect(announcements.receive(find) == nil, "Retry keeps the query, so progress isn't repeated.")
+            return [message(1, "target")]
+        }
+        #expect(announcements.receive(find) == "2 matches")
+        #expect(announcements.receive(find) == nil)
+        find.query = "violet"
+        #expect(announcements.receive(find) == "No matches")
+    }
+
     @Test func malformedHistoryIsAnExplicitErrorAndDoesNotLoop() async {
         let find = make([message(3, "target")], hasOlder: true)
         find.query = "target"
