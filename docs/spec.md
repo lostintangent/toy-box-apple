@@ -293,6 +293,16 @@ has working agent identities, top-level tasks done/total, optional waiting reque
 15 minutes. Confirmed endings have no stale date, and distinguish completion from Stop, expiry,
 deletion, server change and removal of the task list.
 
+`ChannelActivityPush` decodes the complete APNs `aps` envelope, including `update`/`end`,
+`timestamp`, `content-state`, `stale-date` and optional `dismissal-date`, with Unix seconds
+throughout. The Activity fixtures cover working, quiet, request, completed, other ending and
+stale states. `push-activity.apns` is the request state; its five named sibling fixtures cover
+the others. Every payload fits APNs' 4 KB limit. `reanchored(at:)` shifts all dates together for
+native proof, preserving the stale fixture's 16-minute age rather than making it fresh.
+Debug simulator bundles copy those exact files into `ActivityFixtures`. Optimized bundles
+exclude them and remove any left by a previous debug bundle. Simulator fixture application
+proves decoding and foreground ActivityKit updates, not remote Activity delivery.
+
 `ChannelActivityLink` carries channel ID, registration ID and an optional positive request sequence
 in `toybox-desktop://activity` URLs. The receiving app checks the selected registration before
 opening anything. Stale Activity taps omit the sequence and open only the channel.
