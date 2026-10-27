@@ -84,7 +84,20 @@ final class ChannelFollowController {
                    acquire: @escaping (ChannelStore) -> Void, release: @escaping (ChannelStore) -> Void) {
         let changed = self.registration != registration || self.catalog !== catalog
         if changed {
-            for entry in Array(entries.values) { finish(entry, ending: .serverChanged, immediately: true) }
+            let registrationChanged = self.registration.map {
+                $0.registrationID != registration?.registrationID
+            } ?? false
+            let serverChanged = self.catalog.map { $0.api.baseURL != catalog?.api.baseURL } ?? false
+            if registrationChanged || serverChanged {
+                let tracked = Set(entries.values.map { $0.activity.id })
+                for entry in Array(entries.values) { finish(entry, ending: .serverChanged, immediately: true) }
+                for activity in client.activities() where !tracked.contains(activity.id) {
+                    startTimes[activity.id] = nil
+                    Task { await activity.end(activity.content, dismissAt: nil) }
+                }
+            } else {
+                shutdown()
+            }
             starting = []
             self.registration = registration
             self.catalog = catalog

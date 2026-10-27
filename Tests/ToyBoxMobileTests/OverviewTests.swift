@@ -1267,6 +1267,51 @@ struct ChannelFollowTests {
         #expect(fixture.controller.state(for: fixture.store) == .following)
         #expect(!fixture.controller.startFailed)
     }
+
+    @Test func reconnectingTheSameServerKeepsTheActivityAndItsOriginalStart() async throws {
+        let fixture = try FollowFixture()
+        defer { fixture.close() }
+        await fixture.controller.follow(fixture.store)
+        let activity = try #require(fixture.pool.activities.first)
+        let replacement = ChannelCatalogStore(api: fixture.catalog.api)
+        fixture.controller.configure(
+            registration: fixture.registration, catalog: replacement, isActive: false,
+            acquire: { _ in }, release: { _ in }
+        )
+        #expect(fixture.controller.state(for: replacement.channel(id: fixture.store.id)) == .following)
+        #expect(activity.endings.isEmpty)
+        #expect(fixture.defaults.dictionary(forKey: ChannelFollowController.startTimesKey)?[activity.id]
+                as? Double == fixture.originalDate.timeIntervalSince1970)
+    }
+
+    @Test func switchingServersAlsoRemovesARetainedCompletionCard() async throws {
+        let fixture = try FollowFixture()
+        defer { fixture.close() }
+        await fixture.controller.follow(fixture.store)
+        let activity = try #require(fixture.pool.activities.first)
+        fixture.configure(active: true)
+        try fixture.apply(tasks: [.init(id: "root", title: "Done", status: "done")])
+        await fixture.wait { activity.endings.count == 1 }
+        fixture.controller.configure(registration: nil, catalog: nil, isActive: false,
+                                     acquire: { _ in }, release: { _ in })
+        await fixture.wait { activity.endings.count == 2 }
+        #expect(activity.endings.last?.dismissAt == nil)
+    }
+
+    @Test func restoringWaitsForTheSavedRegistrationWithoutRemovingTheActivity() async throws {
+        let fixture = try FollowFixture()
+        defer { fixture.close() }
+        await fixture.controller.follow(fixture.store)
+        let activity = try #require(fixture.pool.activities.first)
+        fixture.controller.shutdown()
+        fixture.controller = fixture.makeController()
+        fixture.controller.configure(registration: nil, catalog: fixture.catalog, isActive: false,
+                                     acquire: { _ in }, release: { _ in })
+        #expect(activity.endings.isEmpty)
+        fixture.configure()
+        #expect(fixture.controller.state(for: fixture.store) == .following)
+        #expect(activity.endings.isEmpty)
+    }
 }
 
 @MainActor @Observable
