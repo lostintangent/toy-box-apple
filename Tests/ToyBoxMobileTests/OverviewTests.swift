@@ -564,6 +564,25 @@ struct OverviewTests {
         }
     }
 
+    @Test(arguments: [DynamicTypeSize.large, .accessibility5])
+    func artifactTitleKeepsFourPointsBeforeItsModifiedTime(size: DynamicTypeSize) async throws {
+        let host = UIHostingController(rootView:
+            OverviewArtifactLabel(artifact: artifact("plan.md"), share: nil)
+                .frame(width: 350).dynamicTypeSize(size))
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 900))
+        window.rootViewController = host
+        window.isHidden = false
+        defer { window.isHidden = true }
+        host.view.layoutIfNeeded()
+        await Task.yield()
+        host.view.layoutIfNeeded()
+        let tree = MobileAutomationTree(windows: [window])
+        let title = try #require(tree.elements.first { $0.label == "plan.md" })
+        let modified = try #require(tree.elements.first { $0.label == "Share date unavailable" })
+        #expect(abs(modified.frame.minY - title.frame.maxY - 4) < 0.5,
+                "Title \(title.frame), modified \(modified.frame)")
+    }
+
     @Test func taskRevealScrollsToTheNativeSectionInsteadOfOnlyExpandingIt() async throws {
         let store = ChannelStore(id: "channel", api: try ChannelAPI(serverURL: "https://fixture.example"))
         let session = OverviewSession(store: store)
