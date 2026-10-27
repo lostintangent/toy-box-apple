@@ -66,6 +66,14 @@ struct TaskRowsTests {
         #expect(scoped.map(\.endsRoot) == [false, true, true])
     }
 
+    @Test(arguments: [1, 2])
+    func scopedTitlesUseTheRightSubtaskPlural(count: Int) throws {
+        let parent = ChannelTask(id: "parent", title: "Parent", children:
+            (0..<count).map { .init(id: "child-\($0)", title: "Child") })
+        let row = try #require(project([parent], accessibility: true).first { $0.isSubtasks })
+        #expect(row.subtasksTitle == (count == 1 ? "View 1 subtask" : "View 2 subtasks"))
+    }
+
     @Test func guideSegmentsClearOnlyTheWholeChildGroupsEnds() {
         let rows = project(tree)
         #expect(rows[0].guides.isEmpty)
@@ -146,12 +154,18 @@ struct TaskRowsTests {
         let label = ImageRenderer(content: OverviewTaskArtifactLabel(title: "Plan").dynamicTypeSize(size))
         label.proposedSize = ProposedViewSize(width: 466, height: nil)
         label.scale = 3
-        let text = ImageRenderer(content: Text("Plan").font(.footnote).dynamicTypeSize(size))
-        text.scale = 3
+        let content = ImageRenderer(content:
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Image(systemName: "doc.text")
+                Text("Plan")
+            }
+            .font(.footnote)
+            .dynamicTypeSize(size))
+        content.scale = 3
         let labelHeight = try #require(label.uiImage).size.height
-        let textHeight = try #require(text.uiImage).size.height
+        let contentHeight = try #require(content.uiImage).size.height
         let outerPadding: CGFloat = size.isAccessibilitySize ? 12 : 11
-        #expect(abs(labelHeight - textHeight - ChannelOverviewFactsLayout.titleGap - outerPadding) < 0.5)
+        #expect(abs(labelHeight - contentHeight - ChannelOverviewFactsLayout.titleGap - outerPadding) < 0.5)
     }
 
     @Test func aScopedNativeAccessoryCannotChangeTheRootReadingWidth() async throws {
@@ -198,6 +212,8 @@ struct TaskRowsTests {
         }
         #expect(rowIDs() == expected)
         #expect(list.numberOfItems(inSection: 0) == expected.count)
+        #expect(MobileAutomationTree(windows: [window]).matching("overview-subtasks-depth-4").first?.label
+                == "View 1 subtask of Keep the six-level task hierarchy")
         for _ in 0..<4 {
             host.view.setNeedsLayout()
             host.view.layoutIfNeeded()

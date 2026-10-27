@@ -26,6 +26,10 @@ struct OverviewTaskListRow: Identifiable {
     var endsRoot = false
 
     var id: ID { isSubtasks ? .subtasks(task.id) : .task(task.id) }
+    var subtasksTitle: String {
+        let count = task.children?.count ?? 0
+        return "View \(count) \(count == 1 ? "subtask" : "subtasks")"
+    }
 
     static func isExpanded(_ task: ChannelTask, disclosure: [String: OverviewSession.Disclosure]) -> Bool {
         guard let saved = disclosure[task.id], saved.status == task.status else {
@@ -102,14 +106,14 @@ struct OverviewTaskRows: View {
     private func rowContent(_ row: OverviewTaskListRow) -> some View {
         if row.isSubtasks {
             NavigationLink(value: OverviewRoute.subtasks(row.task.id)) {
-                Text("View \((row.task.children ?? []).count) subtasks")
+                Text(row.subtasksTitle)
                     .font(.body)
                     .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .padding(.leading, row.layout.accessibility ? 0 : row.layout.statusWidth + row.layout.titleGap)
-            .accessibilityLabel("View \((row.task.children ?? []).count) subtasks of \(row.task.title)")
+            .accessibilityLabel("\(row.subtasksTitle) of \(row.task.title)")
             .accessibilityIdentifier("overview-subtasks-\(row.task.id)")
         } else {
             OverviewTaskNode(task: row.task, store: store, session: session, depth: row.depth, layout: row.layout)
