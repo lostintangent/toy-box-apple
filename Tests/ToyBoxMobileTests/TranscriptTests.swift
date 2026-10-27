@@ -163,6 +163,20 @@ struct TranscriptTests {
         #expect(scroll.visibleRows.contains("p40") && !scroll.visibleRows.contains("r10"))
     }
 
+    /// A store that's already loaded can route its reveal at first appearance, so the conversation
+    /// holds the reveal until this first layout instead of reporting the row as unavailable.
+    @Test func aRevealNeedsTheFirstLayoutBeforeItCanPlaceItsRow() {
+        let scroll = TranscriptScroll()
+        scroll.sync((0..<20).map { .init(id: "r\($0)", order: $0) })
+        #expect(scroll.layout == nil && scroll.update(.reveal("r4")) == nil && !scroll.hasLanded)
+
+        for index in 0..<20 { scroll.measure("r\(index)", frame: CGRect(x: 0, y: CGFloat(index) * 100, width: 386, height: 100)) }
+        scroll.metrics = .init(viewport: .init(width: 386, height: 600, topInset: 0, bottomInset: 0),
+                               origin: 1400, documentEnd: 2000)
+        let placement = scroll.update(.reveal("r4"))
+        #expect(scroll.layout != nil && placement?.unavailableTarget == nil && placement?.origin == 150 && scroll.hasLanded)
+    }
+
     @Test func aRevealThatCantFindItsRowLeavesTheFirstLandingToTheDivider() {
         let viewport = TranscriptScrollModel.Viewport(width: 386, height: 600, topInset: 0, bottomInset: 0)
         let scroll = TranscriptScroll()
