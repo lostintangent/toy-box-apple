@@ -1,8 +1,9 @@
 import { expect, test } from "bun:test";
 import {
     defaultDeviceServer, developmentIdentities, deviceControlArguments, deviceServerArguments,
-    selectDevelopmentSigning, selectMobileDevice, type DevelopmentProfile,
+    selectDevelopmentSigning, selectMobileDevelopmentSigning, selectMobileDevice, type DevelopmentProfile,
 } from "./mobile-device.ts";
+import { mobileAppGroup, mobileBundleID, mobileEntitlements } from "./mobile.ts";
 
 function phone(name = "My iPhone", reality = "physical", version = "27.1", pairingState = "paired") {
     return {
@@ -46,8 +47,9 @@ const identity = { fingerprint, name: "Apple Development: Test User (PERSON)" };
 function profile(overrides: Partial<DevelopmentProfile> = {}): DevelopmentProfile {
     return {
         path: "/profiles/dev.mobileprovision", name: "Development", uuid: "profile",
-        team: "TEAM", prefix: "TEAM", applicationIdentifier: "TEAM.*",
+        team: "TEAM", prefix: "TEAM", applicationIdentifier: "TEAM.dev.toybox.mobile",
         expires: "2027-01-01T00:00:00Z", devices: ["phone"], certificates: [fingerprint],
+        entitlements: mobileEntitlements(mobileBundleID),
         ...overrides,
     };
 }
@@ -62,15 +64,73 @@ test("signing requires a matching development identity, device, app and valid ex
         profile({ devices: ["other"] }), profile({ applicationIdentifier: "TEAM.other.*" }),
         profile({ applicationIdentifier: "TEAM.dev.other" }), profile({ certificates: [] }),
     ]) {
-        expect(() => selectDevelopmentSigning([invalid], [identity], "phone", now)).toThrow("No unexpired");
+        expect(() => selectDevelopmentSigning([invalid], [identity], "phone", now)).toThrow("No unexpired explicit");
     }
     expect(() => selectDevelopmentSigning([profile()], [], "phone", now)).toThrow("No unexpired");
-    expect(selectDevelopmentSigning([profile({ applicationIdentifier: "TEAM.dev.toybox.*" })],
-        [identity], "phone", now).applicationIdentifier).toBe("TEAM.dev.toybox.mobile");
+    for (const applicationIdentifier of ["TEAM.*", "TEAM.dev.toybox.*"]) {
+        expect(() => selectDevelopmentSigning([profile({ applicationIdentifier })], [identity], "phone", now))
+            .toThrow("Wildcard profiles are not accepted");
+    }
     expect(selectDevelopmentSigning([profile({ applicationIdentifier: "TEAM.dev.toybox.mobile" })],
         [identity], "phone", now).applicationIdentifier).toBe("TEAM.dev.toybox.mobile");
-    expect(selectDevelopmentSigning([profile({ prefix: "LEGACY", applicationIdentifier: "LEGACY.*" })],
+    expect(selectDevelopmentSigning([profile({ prefix: "LEGACY", applicationIdentifier: "LEGACY.dev.toybox.mobile" })],
         [identity], "phone", now).applicationIdentifier).toBe("LEGACY.dev.toybox.mobile");
+});
+
+function profileSet(team = "TEAM", certificate = fingerprint) {
+    return ["dev.toybox.mobile", "dev.toybox.mobile.widget", "dev.toybox.mobile.notification"].map(bundleID => profile({
+        path: `/profiles/${team}/${bundleID}`, uuid: `${team}-${bundleID}`, team, prefix: team,
+        applicationIdentifier: `${team}.${bundleID}`, certificates: [certificate],
+        entitlements: mobileEntitlements(bundleID),
+    }));
+}
+
+test("each mobile bundle needs its own exact profile, capabilities and shared container", () => {
+    const profiles = profileSet();
+    const selected = selectMobileDevelopmentSigning(profiles, [identity], "phone", now);
+    expect(selected.map(value => value.bundleID)).toEqual([
+        "dev.toybox.mobile", "dev.toybox.mobile.widget", "dev.toybox.mobile.notification",
+    ]);
+    expect(new Set(selected.map(value => value.profile.uuid)).size).toBe(3);
+    for (const index of [0, 1, 2]) {
+        expect(() => selectMobileDevelopmentSigning(profiles.filter((_, n) => n !== index), [identity], "phone", now))
+            .toThrow("Your Apple steps");
+        const missingGroup = profiles.map((value, n) => n === index
+            ? { ...value, entitlements: { ...value.entitlements, "com.apple.security.application-groups": [] } } : value);
+        expect(() => selectMobileDevelopmentSigning(missingGroup, [identity], "phone", now)).toThrow("App Group");
+    }
+    for (const [index, key, wrong] of [
+        [0, "aps-environment", undefined], [0, "aps-environment", "production"],
+        [0, "com.apple.developer.usernotifications.communication", false],
+        [2, "com.apple.developer.usernotifications.communication", undefined],
+    ] as const) {
+        const invalid = profiles.map((value, n) => n === index
+            ? { ...value, entitlements: { ...value.entitlements, [key]: wrong } } : value);
+        expect(() => selectMobileDevelopmentSigning(invalid, [identity], "phone", now)).toThrow("No compatible");
+    }
+    expect(mobileEntitlements("dev.toybox.mobile.widget")).toEqual({
+        "com.apple.security.application-groups": [mobileAppGroup],
+    });
+    expect(() => mobileEntitlements("dev.toybox.other")).toThrow("Unknown mobile bundle");
+});
+
+test("the profile set must share a team and one available signing identity", () => {
+    const otherFingerprint = "ABCDEF1234567890ABCDEF1234567890ABCDEF12";
+    const other = { fingerprint: otherFingerprint, name: "Apple Development: Other" };
+    const profiles = profileSet();
+    expect(() => selectMobileDevelopmentSigning([profiles[0]!, ...profileSet("OTHER").slice(1)],
+        [identity], "phone", now)).toThrow("one development identity and team");
+    expect(() => selectMobileDevelopmentSigning(profiles.map((value, index) => index === 1
+        ? { ...value, certificates: [otherFingerprint] } : value), [identity, other], "phone", now))
+        .toThrow("one development identity and team");
+    expect(() => selectMobileDevelopmentSigning([...profiles, ...profileSet("OTHER")], [identity], "phone", now))
+        .toThrow("Multiple development teams");
+    expect(selectMobileDevelopmentSigning([...profiles, ...profileSet("OTHER")], [identity], "phone", now, {
+        "dev.toybox.mobile": profiles[0]!.path,
+    }).map(value => value.profile.team)).toEqual(["TEAM", "TEAM", "TEAM"]);
+    expect(() => selectMobileDevelopmentSigning(profiles, [identity], "phone", now, {
+        "dev.toybox.mobile.widget": "/wrong-profile",
+    })).toThrow("Your Apple steps");
 });
 
 test("same-team profiles choose the latest expiration but different teams require an explicit profile", () => {

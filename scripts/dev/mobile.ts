@@ -1,4 +1,4 @@
-import { copyFile, lstat, mkdir, readlink, symlink, unlink } from "node:fs/promises";
+import { copyFile, lstat, mkdir, readlink, rm, symlink, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
 import { command, machineLock, main, plist, root, scratchPath, text } from "../lib.ts";
@@ -11,6 +11,27 @@ export const mobileEnvironment = {
     TOY_BOX_MOBILE: "1",
 };
 export const mobileBundleID = "dev.toybox.mobile";
+export const mobileAppGroup = "group.dev.toybox.mobile";
+export const mobileExtensions = [
+    { executable: "ToyBoxMobileWidget", suffix: "widget", point: "com.apple.widgetkit-extension", info: "Widget-Info.plist" },
+    { executable: "ToyBoxMobileNotification", suffix: "notification", point: "com.apple.usernotifications.service",
+        info: "Notification-Info.plist" },
+] as const;
+
+export function mobileEntitlements(bundleID: string) {
+    if (![mobileBundleID, ...mobileExtensions.map(extension => `${mobileBundleID}.${extension.suffix}`)].includes(bundleID)) {
+        throw new Error(`Unknown mobile bundle: ${bundleID}.`);
+    }
+    return {
+        "com.apple.security.application-groups": [mobileAppGroup],
+        ...(bundleID !== `${mobileBundleID}.widget` ? { "com.apple.developer.usernotifications.communication": true } : {}),
+        ...(bundleID === mobileBundleID ? { "aps-environment": "development" } : {}),
+    };
+}
+
+export function mobileSimulatorEntitlements(bundleID: string) {
+    return { ...mobileEntitlements(bundleID), "application-identifier": bundleID };
+}
 
 const contentSizeCategories = {
     extraSmall: "UICTContentSizeCategoryXS", small: "UICTContentSizeCategoryS",
@@ -124,12 +145,24 @@ export async function buildMobile(device = false, tests = false) {
     const scratch = join(scratchPath(), device ? "mobile-device" : "mobile-simulator");
     const workspace = join(scratch, "package");
     await linkMobileWorkspace(root, workspace);
+    const simulated = join(scratch, "simulated-entitlements");
+    const environment = { ...mobileEnvironment, TOY_BOX_SIMULATOR_ENTITLEMENTS: device ? undefined : simulated };
+    if (!device) {
+        await mkdir(simulated, { recursive: true });
+        for (const bundleID of [mobileBundleID, ...mobileExtensions.map(extension => `${mobileBundleID}.${extension.suffix}`)]) {
+            const path = join(simulated, `${bundleID}.plist`);
+            await writeFile(path, JSON.stringify(mobileSimulatorEntitlements(bundleID)));
+            await command(["plutil", "-convert", "xml1", path]);
+            await command(["xcrun", "derq", "query", "-f", "xml", "-i", path, "-o", `${path}.der`, "--raw"],
+                { env: mobileEnvironment });
+        }
+    }
     const args = ["xcrun", "swift", "build", "--package-path", workspace, "--scratch-path", scratch,
         "--configuration", configuration,
         "--sdk", sdk, "--triple", `arm64-apple-ios27.0${device ? "" : "-simulator"}`, "--jobs", "4"];
-    await command([...args, ...(tests ? ["--build-tests"] : ["--product", "ToyBoxMobile"])],
-        { env: mobileEnvironment });
-    const bin = await text([...args, "--show-bin-path"], { env: mobileEnvironment });
+    await command([...args, ...(tests ? ["--build-tests"] : [])],
+        { env: environment });
+    const bin = await text([...args, "--show-bin-path"], { env: environment });
     return { bin, scratch, version };
 }
 
@@ -199,6 +232,22 @@ export function checkMobileBuildVersion(output: string, device: boolean, minimum
     }
 }
 
+export function checkMobileExtensionEntryPoint(commands: string, symbols: string) {
+    const loads = commands.split(/(?=Load command \d+)/);
+    const text = loads.filter(load => /^\s*segname __TEXT$/m.test(load) && /^\s*cmd LC_SEGMENT_64$/m.test(load));
+    const main = loads.filter(load => /^\s*cmd LC_MAIN$/m.test(load));
+    const address = text.length === 1 ? text[0]?.match(/^\s*vmaddr (0x[\da-f]+)$/mi)?.[1] : undefined;
+    const offset = main.length === 1 ? main[0]?.match(/^\s*entryoff (\d+)$/m)?.[1] : undefined;
+    const fileOffset = text[0]?.match(/^\s*fileoff (\d+)$/m)?.[1];
+    const stubs = symbols.split(/(?=Indirect symbols for )/)
+        .find(table => table.startsWith("Indirect symbols for (__TEXT,__stubs)"));
+    const bootstrap = [...(stubs ?? "").matchAll(/^\s*(0x[\da-f]+)\s+\d+\s+_NSExtensionMain$/gmi)];
+    if (address === undefined || offset === undefined || fileOffset === undefined
+        || !bootstrap.some(match => BigInt(match[1]!) === BigInt(address) + BigInt(offset) - BigInt(fileOffset))) {
+        throw new Error("Mobile extensions must enter through _NSExtensionMain before their Swift entry point.");
+    }
+}
+
 export async function bundleMobile(device = false) {
     const { bin, scratch, version } = await buildMobile(device);
     const app = join(scratch, "Toy Box.app");
@@ -217,8 +266,50 @@ export async function bundleMobile(device = false) {
         "-replace", "-output", binary, binary], { env: mobileEnvironment });
     checkMobileBuildVersion(await text(["xcrun", "vtool", "-show-build", binary], { env: mobileEnvironment }),
         device, minimumOS, version);
-    if (!device) await command(["codesign", "--force", "--sign", "-", app]);
+    for (const extension of mobileExtensions) {
+        const bundle = join(app, "PlugIns", `${extension.executable}.appex`);
+        await rm(bundle, { recursive: true, force: true });
+        await mkdir(bundle, { recursive: true });
+        const executable = join(bundle, extension.executable);
+        const info = join(bundle, "Info.plist");
+        await copyFile(join(bin, extension.executable), executable);
+        checkMobileExtensionEntryPoint(
+            await text(["xcrun", "otool", "-l", executable], { env: mobileEnvironment }),
+            await text(["xcrun", "otool", "-Iv", executable], { env: mobileEnvironment }));
+        await copyFile(join(root, "Resources/Mobile", extension.info), info);
+        for (const key of ["CFBundleVersion", "CFBundleShortVersionString", "MinimumOSVersion"]) {
+            await plist(info, [`Set :${key} ${await plist(join(app, "Info.plist"), [`Print :${key}`])}`]);
+        }
+        await plist(info, [
+            "Add :CFBundleSupportedPlatforms array",
+            `Add :CFBundleSupportedPlatforms:0 string ${device ? "iPhoneOS" : "iPhoneSimulator"}`,
+            `Add :DTSDKName string ${device ? "iphoneos" : "iphonesimulator"}${version}`,
+        ]);
+        await command(["xcrun", "vtool", "-set-build-version", device ? "ios" : "iossim", minimumOS, version,
+            "-replace", "-output", executable, executable], { env: mobileEnvironment });
+        checkMobileBuildVersion(await text(["xcrun", "vtool", "-show-build", executable], { env: mobileEnvironment }),
+            device, minimumOS, version);
+        if (await text(["lipo", "-archs", executable]) !== "arm64") {
+            throw new Error(`${extension.executable} must contain only arm64.`);
+        }
+        for (const [key, expected] of Object.entries({
+            CFBundleIdentifier: `${mobileBundleID}.${extension.suffix}`,
+            CFBundleExecutable: extension.executable,
+            "NSExtension:NSExtensionPointIdentifier": extension.point,
+        })) {
+            if (await plist(info, [`Print :${key}`]) !== expected) {
+                throw new Error(`${extension.executable} has an unexpected ${key}.`);
+            }
+        }
+        if (!device) await signMobileSimulatorBundle(bundle);
+    }
+    if (!device) await signMobileSimulatorBundle(app);
     return app;
+}
+
+async function signMobileSimulatorBundle(bundle: string) {
+    await command(["codesign", "--force", "--sign", "-", bundle]);
+    await command(["codesign", "--verify", "--strict", bundle]);
 }
 
 if (import.meta.main) await main(async () => {
@@ -228,8 +319,15 @@ if (import.meta.main) await main(async () => {
         screenshot: { type: "string" }, hold: { type: "boolean" }, display: { type: "string" },
         displays: { type: "boolean" }, server: { type: "string" },
         drive: { type: "string" }, "content-size": { type: "string" }, appearance: { type: "string" },
+        "foundation-proof": { type: "boolean" },
     } });
     const launch = mobileLaunchOptions(values["content-size"], values.appearance);
+    if (values["foundation-proof"] && (values.device || values["build-only"] || !(values.hold || values.drive))) {
+        throw new Error("--foundation-proof requires a debug Simulator --hold or --drive.");
+    }
+    if (values["foundation-proof"] && mobileBuildConfiguration(false, false) !== "debug") {
+        throw new Error("--foundation-proof is available only in debug Simulator builds.");
+    }
     if (values["device-id"] && !values.device) throw new Error("--device-id requires --device.");
     if (values["device-id"] && values["build-only"]) throw new Error("--device-id cannot be used with --build-only.");
     if (values.drive && (values.hold || values.screenshot || values.displays || values.shutdown)) {
@@ -310,7 +408,7 @@ if (import.meta.main) await main(async () => {
             (args, signal) => runMobileSimulatorCommand(args, mobileEnvironment, signal), interruption.signal, async () => {
             const result = await runMobileSimulatorCommand([
                 "launch", "--terminate-running-process", simulator.udid, mobileBundleID,
-                "--server", server, ...launch.arguments,
+                "--server", server, ...launch.arguments, ...(values["foundation-proof"] ? ["--foundation-proof"] : []),
             ], { ...mobileEnvironment, ...(drive ? { SIMCTL_CHILD_TOY_BOX_AUTOMATION_SCRIPT: drive.script } : {}) },
             AbortSignal.any([interruption.signal, AbortSignal.timeout(30_000)]));
             if (result.exitCode) throw new Error(`Mobile launch failed: ${result.stderr.trim()}`);

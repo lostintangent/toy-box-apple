@@ -3,7 +3,10 @@ import { mkdir, mkdtemp, readFile, readlink, rm, writeFile } from "node:fs/promi
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-    checkMobileBuildVersion, linkMobileWorkspace, mobileBuildConfiguration, mobileLaunchOptions, withMobileAppearance,
+    checkMobileBuildVersion, checkMobileExtensionEntryPoint, linkMobileWorkspace, mobileBuildConfiguration,
+    mobileExtensions, mobileLaunchOptions,
+    mobileSimulatorEntitlements,
+    withMobileAppearance,
 } from "./mobile.ts";
 
 function buildVersion(platform = "IOSSIMULATOR", minimumOS = "27.0", sdk = "27.1") {
@@ -25,6 +28,59 @@ test("phone builds are always optimized while Simulator tests stay debug", () =>
     expect(mobileBuildConfiguration(false, false, "debug")).toBe("debug");
     expect(mobileBuildConfiguration(false, false, "release")).toBe("release");
     expect(() => mobileBuildConfiguration(false, false, "profile")).toThrow("CONFIGURATION");
+});
+
+test("iOS extensions have exact identities, extension points and executable entry points", async () => {
+    for (const extension of mobileExtensions) {
+        const info = await readFile(join(import.meta.dir, "../../Resources/Mobile", extension.info), "utf8");
+        expect(info).toContain(`<string>dev.toybox.mobile.${extension.suffix}</string>`);
+        expect(info).toContain(`<string>${extension.point}</string>`);
+        expect(info).toContain(`<string>${extension.executable}</string>`);
+    }
+    const host = await readFile(join(import.meta.dir, "../../Resources/Mobile/Info.plist"), "utf8");
+    expect(host).toMatch(/<key>NSSupportsLiveActivities<\/key>\s*<true\/>/);
+    const package_ = await readFile(join(import.meta.dir, "../../Package.swift"), "utf8");
+    for (const extension of mobileExtensions) expect(package_).toContain(`name: "${extension.executable}"`);
+});
+
+test("extension binaries bootstrap their context before calling generated Swift main", () => {
+    const commands = `Load command 0
+          cmd LC_SEGMENT_64
+      segname __TEXT
+       vmaddr 0x0000000100000000
+      fileoff 0
+Load command 1
+          cmd LC_MAIN
+     entryoff 4096`;
+    const symbols = `Indirect symbols for (__TEXT,__stubs) 2 entries
+address            index name
+0x0000000100001000  42 _NSExtensionMain
+0x000000010000100C  43 _other`;
+    expect(() => checkMobileExtensionEntryPoint(commands, symbols)).not.toThrow();
+    for (const output of [
+        commands.replace("entryoff 4096", "entryoff 8192"),
+        commands.replace("LC_MAIN", "LC_UNIXTHREAD"),
+        `${commands}\nLoad command 2\ncmd LC_MAIN\nentryoff 4096`,
+        commands.replace("vmaddr 0x0000000100000000", "vmaddr invalid"),
+        "",
+    ]) expect(() => checkMobileExtensionEntryPoint(output, symbols)).toThrow("_NSExtensionMain");
+    for (const output of [
+        symbols.replace("_NSExtensionMain", "_main"),
+        symbols.replace("(__TEXT,__stubs)", "(__DATA,__got)"),
+        "",
+    ]) expect(() => checkMobileExtensionEntryPoint(commands, output)).toThrow("_NSExtensionMain");
+});
+
+test("simulated capabilities include each bundle identity without a device team or signing profile", () => {
+    for (const suffix of ["", ".widget", ".notification"]) {
+        const bundleID = `dev.toybox.mobile${suffix}`;
+        const entitlements = mobileSimulatorEntitlements(bundleID);
+        expect(entitlements["application-identifier"]).toBe(bundleID);
+        expect(entitlements["com.apple.security.application-groups"]).toEqual(["group.dev.toybox.mobile"]);
+        expect(entitlements).not.toHaveProperty("com.apple.developer.team-identifier");
+        expect(entitlements).not.toHaveProperty("get-task-allow");
+    }
+    expect(() => mobileSimulatorEntitlements("another.app")).toThrow("Unknown mobile bundle");
 });
 
 for (const [platform, path] of [["phone", "Mobile/Info.plist"], ["Mac", "Info.plist"]] as const) {
