@@ -174,7 +174,9 @@ test("the bundled push environment comes from signing rather than optimization",
     expect(() => mobilePushEnvironment({ "aps-environment": "sandbox" })).toThrow("validated APNs");
 });
 
-for (const [platform, path] of [["phone", "Mobile/Info.plist"], ["Mac", "Info.plist"]] as const) {
+for (const [platform, path] of [
+    ["phone", "Mobile/Info.plist"], ["phone widget", "Mobile/Widget-Info.plist"], ["Mac", "Info.plist"],
+] as const) {
     test(`${platform} ATS allows user-selected HTTP servers without a local-only override`, async () => {
         const info = await readFile(join(import.meta.dir, "../../Resources", path), "utf8");
         const ats = info.match(/<key>NSAppTransportSecurity<\/key>\s*<dict>([\s\S]*?)<\/dict>/)?.[1];

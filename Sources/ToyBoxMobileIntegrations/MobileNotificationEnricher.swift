@@ -7,6 +7,7 @@ import SwiftUI
 import ToyBoxUI
 import UIKit
 import UserNotifications
+import WidgetKit
 
 struct MobileNotificationCatalogCache: Codable, Equatable {
     static let fileName = "notification-catalog.json"
@@ -52,6 +53,7 @@ public final class MobileNotificationEnricher {
     private let avatarPNG: @MainActor (ChannelAgent) -> Data?
     private let fetch: Fetch
     private let pause: @Sendable (Duration) async throws -> Void
+    private let reloadWidgets: @MainActor () -> Void
     private let logger = Logger(subsystem: "dev.toybox.mobile", category: "Notification")
     private var completion: (@MainActor (UNNotificationContent) -> Void)?
     private(set) var work: Task<Void, Never>?
@@ -62,16 +64,19 @@ public final class MobileNotificationEnricher {
 
     public convenience init(directory: URL? = nil,
                             avatarPNG: @escaping @MainActor (ChannelAgent) -> Data? = MobileNotificationAvatar.png) throws {
-        try self.init(directory: directory ?? MobileSharedContainer.url(), avatarPNG: avatarPNG, fetch: Self.fetch)
+        try self.init(directory: directory ?? MobileSharedContainer.url(), avatarPNG: avatarPNG, fetch: Self.fetch,
+                      reloadWidgets: { WidgetCenter.shared.reloadTimelines(ofKind: NeedsYouSnapshot.kind) })
     }
 
     init(directory: URL, avatarPNG: @escaping @MainActor (ChannelAgent) -> Data?,
          fetch: @escaping Fetch,
+         reloadWidgets: @escaping @MainActor () -> Void = {},
          pause: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }) {
         self.directory = directory
         self.avatarPNG = avatarPNG
         self.fetch = fetch
         self.pause = pause
+        self.reloadWidgets = reloadWidgets
     }
 
     public func start(_ payload: ChannelPushPayload,
@@ -184,6 +189,10 @@ public final class MobileNotificationEnricher {
             }
             do { result = try result.updating(from: pendingIntent) }
             catch { logger.error("Could not apply notification identity: \(error.localizedDescription)") }
+        }
+        if result.categoryIdentifier == ChannelNotificationCategory.request
+            || result.categoryIdentifier == ChannelNotificationCategory.completion {
+            reloadWidgets()
         }
         completion(result)
     }

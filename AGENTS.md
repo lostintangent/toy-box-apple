@@ -262,6 +262,13 @@ view.
   Tags and manual release dry runs skip iOS. The Mac gate runs ChannelClient once under the
   strict cooperative pool, then the remaining suites. Bundle, Siri and native Sparkle checks
   run in the release job only.
+- The phone widget fetches its saved server through the app's snapshot publisher on every
+  timeline refresh, with a ten-second total network deadline. Failed refreshes preserve cached
+  requests and their last-success time. The notification service requests a widget reload before
+  handing each routed alert back to iOS. WidgetKit still decides when to run it. Simulator push injection
+  does not invoke that service, so prove the real APNs-to-service wake on a device.
+  Successful Mac catalog polls also feed the widget's existing fifteen-minute heartbeat,
+  even when channel content is unchanged. Offline polls never advance the last-success time.
 - Mobile views use SwiftUI's safe areas, layout margins, size classes and adaptive navigation.
   Never hard-code a safe-area inset, device size or Duo fold width. The layout adapts to the
   scene the system provides. Mockup canvas measurements are not implementation constants.

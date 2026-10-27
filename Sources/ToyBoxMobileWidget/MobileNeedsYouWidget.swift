@@ -28,8 +28,20 @@ struct MobileNeedsYouProvider: TimelineProvider {
         completion(.init(date: .now, snapshot: MobileWidgetSnapshotReader.load()))
     }
 
-    func getTimeline(in context: Context, completion: @escaping (Timeline<NeedsYouEntry>) -> Void) {
-        completion(Self.timeline(snapshot: MobileWidgetSnapshotReader.load(), now: .now))
+    func getTimeline(in context: Context, completion: @escaping @Sendable (Timeline<NeedsYouEntry>) -> Void) {
+        Task { @MainActor in
+            let snapshot: NeedsYouSnapshot?
+            do {
+                let publisher = try MobileWidgetSnapshotPublisher(
+                    avatarPNG: MobileNotificationAvatar.png, reload: {})
+                snapshot = try await publisher.refresh()
+            } catch {
+                Logger(subsystem: "dev.toybox.mobile.widget", category: "Snapshot")
+                    .error("Could not refresh the widget timeline: \(error.localizedDescription, privacy: .public)")
+                snapshot = MobileWidgetSnapshotReader.load()
+            }
+            completion(Self.timeline(snapshot: snapshot, now: .now))
+        }
     }
 
     static func timeline(snapshot: NeedsYouSnapshot?, now: Date) -> Timeline<NeedsYouEntry> {
