@@ -227,7 +227,7 @@ view.
   makes iOS and macOS ignore that opt-out. Local-network permission remains separate from ATS,
   and HTTPS still uses normal certificate validation.
 - `SCRATCH_PATH=/tmp/tbm-<you> bun run test:mobile` builds and runs ChannelKit,
-  ChannelClient, ChannelIntelligence, ToyBoxUI, ToyBoxMobileIntegrations and ToyBoxMobile tests on iOS Simulator. It uses Apple's simulator
+  ChannelClient, ChannelIntelligence, ToyBoxUI, ToyBoxMobileIntegrations, ToyBoxMobileWidget and ToyBoxMobile tests on iOS Simulator. It uses Apple's simulator
   `xctest` host and rejects interrupted, failed and empty Swift Testing runs. Existing opt-ins
   stay off. It shuts down the simulator only if it booted it.
 - Mobile commands default to `/Applications/Xcode.app/Contents/Developer`. Set `DEVELOPER_DIR`
@@ -545,7 +545,8 @@ Agents never create these accounts, accept agreements, read private keys or set 
 | `Sources/ToyBoxMobile/Transcript` | Transcript |
 | `Sources/ToyBoxMobile/Composer` (composer and tray) | Composer |
 | `Sources/ToyBoxMobile/Overview`, `Management` | Overview |
-| `Sources/ToyBoxMobileIntegrations/`, `Sources/ToyBoxMobileWidget/`, `Sources/ToyBoxMobileNotification/`, `Resources/Mobile/` | Core |
+| `Sources/ToyBoxMobileIntegrations/`, `Sources/ToyBoxMobileNotification/`, `Resources/Mobile/` | Core |
+| `Sources/ToyBoxWidgetViews/`, `Sources/ToyBoxMobileWidget/`, `Tests/ToyBoxMobileWidgetTests/` | Overview |
 | `Sources/ToyBoxMobile/Automation/MobileFoundationProof.swift` (temporary t405 harness) | Core |
 
 UI engineers may add one `Tests/ToyBoxDesktopTests/<Surface>Tests.swift` file for their own surface.
