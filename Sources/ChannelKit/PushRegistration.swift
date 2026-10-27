@@ -22,7 +22,7 @@ public struct PushDeviceRegistration: Codable, Equatable, Sendable {
 
 }
 
-public struct PushActivityRegistration: Codable, Equatable, Sendable {
+public struct PushSubscription: Codable, Equatable, Sendable {
     public var registrationID: String
     public var token: String
     public var environment: PushEnvironment

@@ -18,7 +18,7 @@ final class ChannelFollowController {
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let now: () -> Date
     @ObservationIgnored private let environment: PushEnvironment?
-    @ObservationIgnored private let registerActivity: @MainActor (ChannelStore, PushActivityRegistration) async throws -> Void
+    @ObservationIgnored private let registerActivity: @MainActor (ChannelStore, PushSubscription) async throws -> Void
     @ObservationIgnored private let unregisterActivity: @MainActor (ChannelStore, String) async throws -> Void
     private var registration: MobilePushRegistration?
     private var catalog: ChannelCatalogStore?
@@ -66,11 +66,11 @@ final class ChannelFollowController {
          environment: PushEnvironment? = (Bundle.main.object(forInfoDictionaryKey: "ToyBoxPushEnvironment")
                                           as? String).flatMap(PushEnvironment.init(rawValue:)),
          now: @escaping () -> Date = { .now },
-         registerActivity: @escaping @MainActor (ChannelStore, PushActivityRegistration) async throws -> Void = {
-             try await $0.api.registerPushActivity(channelId: $0.id, $1)
+         registerActivity: @escaping @MainActor (ChannelStore, PushSubscription) async throws -> Void = {
+             try await $0.api.subscribe(topic: $0.id, $1)
          },
          unregisterActivity: @escaping @MainActor (ChannelStore, String) async throws -> Void = {
-             try await $0.api.deletePushActivity(channelId: $0.id, registrationID: $1)
+             try await $0.api.unsubscribe(topic: $0.id, registrationID: $1)
          }) {
         self.client = client
         self.defaults = defaults
@@ -357,7 +357,7 @@ final class ChannelFollowController {
 
     private func register(_ token: Data, for entry: Follow) async throws {
         guard let environment else { throw Failure.invalidEnvironment }
-        let input = PushActivityRegistration(
+        let input = PushSubscription(
             registrationID: entry.registration.registrationID,
             token: token.map { String(format: "%02x", $0) }.joined(),
             environment: environment, startedAt: entry.startedAt

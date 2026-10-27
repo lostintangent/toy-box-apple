@@ -1323,7 +1323,7 @@ struct ChannelFollowTests {
 private final class FollowFixture {
     struct Write {
         let method: String
-        let input: PushActivityRegistration?
+        let input: PushSubscription?
     }
 
     let suite = "follow-\(UUID().uuidString)"
@@ -1392,7 +1392,7 @@ private final class FollowFixture {
         }
     }
 
-    func register(_ input: PushActivityRegistration) async throws {
+    func register(_ input: PushSubscription) async throws {
         requests.append(Write(method: "PUT", input: input))
         if holdRegistration {
             try await withCheckedThrowingContinuation { pending.append($0) }
