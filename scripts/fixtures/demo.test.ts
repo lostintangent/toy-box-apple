@@ -1,8 +1,18 @@
 import { expect, test } from "bun:test";
 import { createServer } from "node:http";
 import fixture from "../../Tests/ChannelKitTests/Fixtures/channel-snapshot.json";
-import { createCompletedDemoFixture, installDemoCatalogRoutes } from "./demo.ts";
+import { createCompletedDemoFixture, demoOptions, installDemoCatalogRoutes } from "./demo.ts";
 import type { Snapshot } from "./types.ts";
+
+test("the normal demo baseline stays unchanged unless completion proof is explicitly requested", () => {
+    expect(demoOptions([])).toEqual({ reference: undefined, completed: false });
+    expect(demoOptions(["../reference"])).toEqual({ reference: "../reference", completed: false });
+    for (const args of [["--completed", "../reference"], ["../reference", "--completed"]]) {
+        expect(demoOptions(args)).toEqual({ reference: "../reference", completed: true });
+    }
+    expect(() => demoOptions(["one", "two"])).toThrow("Usage");
+    expect(() => demoOptions(["--unknown"])).toThrow();
+});
 
 test("demo push routes keep alerts and follows independent and preserve the original Activity start", async () => {
     const snapshot: Snapshot = { ...fixture, messages: [], request: null };
