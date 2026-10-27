@@ -32,31 +32,12 @@ struct MobileNeedsYouWidgetContent: View {
         .widgetURL(destination)
     }
 
-    @ViewBuilder private var homeScreen: some View {
-        switch state {
-        case .waiting, .empty:
-            ViewThatFits(in: .vertical) {
-                ForEach(rowLimits, id: \.self) { limit in
-                    NeedsYouWidgetContent(entry: entry, family: family,
-                                          replyTargetSize: 44, maximumRequests: limit)
-                }
+    private var homeScreen: some View {
+        ViewThatFits(in: .vertical) {
+            ForEach(rowLimits, id: \.self) { limit in
+                NeedsYouWidgetContent(entry: entry, family: family,
+                                      replyTargetSize: 44, maximumRequests: limit)
             }
-        case .stale, .notConnected:
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Needs you").font(.system(size: 13, weight: .semibold)).widgetAccentable()
-                Spacer(minLength: 0)
-                Image(systemName: stateSymbol).font(.title2).foregroundStyle(.secondary)
-                Text(stateTitle).font(.headline)
-                if family != .systemSmall, state == .stale {
-                    Text("Open Toy Box to refresh").font(.footnote).foregroundStyle(.secondary)
-                }
-                Spacer(minLength: 0)
-                if let snapshot = entry.snapshot, state == .stale {
-                    Text("Last update \(snapshot.updatedAt, format: .dateTime.hour().minute())")
-                        .font(.system(size: 11)).foregroundStyle(.secondary)
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
@@ -79,40 +60,28 @@ struct MobileNeedsYouWidgetContent: View {
 
     private var lockScreen: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text("Needs you").font(.headline)
             switch state {
             case .waiting:
                 if let snapshot = entry.snapshot {
-                    Text(snapshot.waitingCount == 1 ? "1 channel" : "\(snapshot.waitingCount) channels")
+                    Text(snapshot.waitingCount == 1
+                         ? "1 channel needs you" : "\(snapshot.waitingCount) channels need you")
                         .font(.subheadline)
-                    Text("Updated \(snapshot.updatedAt, format: .dateTime.hour().minute())")
-                        .font(.caption2).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             case .empty:
-                Text("Nothing needs you").font(.subheadline)
-                if let snapshot = entry.snapshot {
-                    Text("Updated \(snapshot.updatedAt, format: .dateTime.hour().minute())")
-                        .font(.caption2).foregroundStyle(.secondary)
-                }
+                NeedsYouEmptyState()
             case .stale:
                 Text("May be out of date").font(.subheadline)
+                    .fixedSize(horizontal: false, vertical: true)
                 if let snapshot = entry.snapshot {
                     Text("Last update \(snapshot.updatedAt, format: .dateTime.hour().minute())")
                         .font(.caption2).foregroundStyle(.secondary)
                 }
             case .notConnected:
-                Text("Open Toy Box").font(.subheadline)
-                Text("Open to connect").font(.caption2).foregroundStyle(.secondary)
+                Text("Open Toy Box to connect").font(.subheadline)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private var stateTitle: String {
-        state == .stale ? "May be out of date" : "Open Toy Box to connect"
-    }
-
-    private var stateSymbol: String {
-        state == .stale ? "clock" : "bubble.left.and.bubble.right"
     }
 }
