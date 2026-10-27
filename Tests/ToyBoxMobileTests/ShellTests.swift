@@ -4,9 +4,11 @@ import ChannelKit
 import Foundation
 import SwiftUI
 import Testing
+import ToyBoxMobileIntegrations
 import ToyBoxUI
 import UIKit
 import UniformTypeIdentifiers
+import UserNotifications
 @testable import ToyBoxMobile
 
 @Suite("Mobile Shell")
@@ -17,6 +19,426 @@ struct ShellTests {
         let defaults = UserDefaults(suiteName: name)!
         defer { defaults.removePersistentDomain(forName: name) }
         try await work(defaults)
+    }
+
+    private func withRegistrationStore(_ work: (MobilePushRegistrationStore) async throws -> Void) async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("shell-push-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try await work(MobilePushRegistrationStore(directory: directory))
+    }
+
+    @Test func registrationSendsTheTokenEnvironmentAndChoicesAndDeletesOnlyAlertsWhenDisabled() async throws {
+        try await withRegistrationStore { store in
+            var tokenRequests = 0
+            var inputs: [PushDeviceRegistration] = []
+            var deleted: [String] = []
+            let registration = MobileNotificationRegistration(
+                store: store, environment: .production, requestToken: { tokenRequests += 1 },
+                register: { _, input in inputs.append(input) }, remove: { _, id in deleted.append(id) })
+            try registration.select(api: ChannelAPI(serverURL: "https://first.example"))
+            let id = try #require(registration.current?.registrationID)
+            registration.update(enabled: true, requests: false, completions: true)
+            #expect(tokenRequests == 1)
+            #expect(inputs.isEmpty)
+            registration.receivedToken(Data([0x00, 0x12, 0xab, 0xff]))
+            await registration.waitUntilIdle()
+            #expect(inputs == [PushDeviceRegistration(registrationID: id, token: "0012abff",
+                                                     environment: .production, requests: false, completions: true)])
+            registration.update(enabled: true, requests: false, completions: true)
+            await registration.waitUntilIdle()
+            #expect(inputs.count == 1)
+            registration.update(enabled: true, requests: true, completions: false)
+            await registration.waitUntilIdle()
+            #expect(inputs.last?.requests == true)
+            #expect(inputs.last?.completions == false)
+            registration.update(enabled: false, requests: true, completions: false)
+            await registration.waitUntilIdle()
+            #expect(deleted == [id])
+            #expect(registration.current?.registrationID == id)
+            registration.update(enabled: true, requests: true, completions: false)
+            await registration.waitUntilIdle()
+            #expect(inputs.count == 3)
+            #expect(inputs.last?.registrationID == id)
+            #expect(tokenRequests == 1)
+        }
+    }
+
+    @Test func aServerSwitchAndOptOutWaitForTheOldInFlightRegistrationBeforeDeletingIt() async throws {
+        try await withRegistrationStore { store in
+            var events: [String] = []
+            var release: CheckedContinuation<Void, Never>?
+            var began: (() -> Void)?
+            let registration = MobileNotificationRegistration(
+                store: store, environment: .sandbox, requestToken: {},
+                register: { api, _ in
+                    events.append("register:\(api.baseURL.host ?? "")")
+                    await withCheckedContinuation { continuation in
+                        release = continuation
+                        began?()
+                    }
+                },
+                remove: { api, _ in events.append("delete:\(api.baseURL.host ?? "")") })
+            try registration.select(api: ChannelAPI(serverURL: "https://first.example"))
+            let firstID = try #require(registration.current?.registrationID)
+            registration.update(enabled: true, requests: true, completions: true)
+            await withCheckedContinuation { continuation in
+                began = { continuation.resume() }
+                registration.receivedToken(Data([1]))
+            }
+            try registration.select(api: ChannelAPI(serverURL: "https://second.example"))
+            let secondID = try #require(registration.current?.registrationID)
+            registration.update(enabled: false, requests: true, completions: true)
+            #expect(firstID != secondID)
+            #expect(events == ["register:first.example"])
+            release?.resume()
+            await registration.waitUntilIdle()
+            #expect(events == ["register:first.example", "delete:first.example", "delete:second.example"])
+            try registration.select(api: ChannelAPI(serverURL: "https://first.example"))
+            #expect(registration.current?.registrationID != firstID)
+            #expect(registration.current?.registrationID != secondID)
+            await registration.waitUntilIdle()
+        }
+    }
+
+    @Test func aFailedRegistrationStaysVisibleAndRetriesOnlyOnAnExplicitAttempt() async throws {
+        try await withRegistrationStore { store in
+            var inputs: [PushDeviceRegistration] = []
+            let failure = NSError(domain: "MobileShellPushTests", code: 1,
+                                  userInfo: [NSLocalizedDescriptionKey: "Registration unavailable"])
+            let registration = MobileNotificationRegistration(
+                store: store, environment: .sandbox, requestToken: {},
+                register: { _, input in
+                    inputs.append(input)
+                    if inputs.count == 1 { throw failure }
+                }, remove: { _, _ in })
+            try registration.select(api: ChannelAPI(serverURL: "https://first.example"))
+            registration.update(enabled: true, requests: true, completions: true)
+            registration.receivedToken(Data([1]))
+            await registration.waitUntilIdle()
+            #expect(registration.error == "Registration unavailable")
+            registration.update(enabled: true, requests: true, completions: true)
+            registration.receivedToken(Data([1]))
+            await registration.waitUntilIdle()
+            #expect(inputs.count == 1)
+            #expect(registration.error == "Registration unavailable")
+            registration.retry()
+            await registration.waitUntilIdle()
+            #expect(inputs.count == 2)
+            #expect(inputs[0] == inputs[1])
+            #expect(registration.error == nil)
+        }
+    }
+
+    @Test func aTokenFailureDoesNotRepeatAnUnchangedRequestUntilTryAgain() async throws {
+        try await withRegistrationStore { store in
+            var requests = 0
+            let registration = MobileNotificationRegistration(
+                store: store, environment: .sandbox, requestToken: { requests += 1 },
+                register: { _, _ in }, remove: { _, _ in })
+            try registration.select(api: ChannelAPI(serverURL: "https://first.example"))
+            registration.update(enabled: true, requests: true, completions: true)
+            registration.failedToReceiveToken("Token unavailable")
+            registration.update(enabled: true, requests: true, completions: true)
+            #expect(requests == 1)
+            #expect(registration.error == "Token unavailable")
+            registration.retry()
+            #expect(requests == 2)
+            #expect(registration.error == nil)
+        }
+    }
+
+    @Test func notificationTapsUseTheCurrentRegistrationAndPrepareOnlyRequestReveals() async throws {
+        try await withDefaults { defaults in
+            try await withRegistrationStore { store in
+                let registration = MobileNotificationRegistration(
+                    store: store, environment: .sandbox, requestToken: {},
+                    register: { _, _ in }, remove: { _, _ in })
+                try registration.select(api: ChannelAPI(serverURL: "https://fixture.example"))
+                let id = try #require(registration.current?.registrationID)
+                let notifications = ChannelNotifications(defaults: defaults, registration: registration)
+                let model = AppModel(arguments: ["--server", "https://fixture.example"], environment: [:],
+                                     defaults: defaults, session: fixtureSession(), notifications: notifications)
+                await notifications.receive(
+                    ChannelPushPayload(kind: .request, channelID: "first", sequence: 42, registrationID: id),
+                    action: UNNotificationDefaultActionIdentifier, text: nil, handle: nil, identifier: "request")
+                #expect(model.selectedChannelID == "first")
+                #expect(model.interaction(for: "first").revealRequest?.sequence == 42)
+                await notifications.receive(
+                    ChannelPushPayload(kind: .completion, channelID: "second", sequence: 51, registrationID: id),
+                    action: UNNotificationDefaultActionIdentifier, text: nil, handle: nil, identifier: "completion")
+                #expect(model.selectedChannelID == "second")
+                #expect(model.interaction(for: "second").revealRequest == nil)
+                await notifications.receive(
+                    ChannelPushPayload(kind: .request, channelID: "first", sequence: 88, registrationID: "old"),
+                    action: UNNotificationDefaultActionIdentifier, text: nil, handle: nil, identifier: "old")
+                #expect(model.selectedChannelID == "second")
+                #expect(model.serverURL == "https://fixture.example")
+            }
+        }
+    }
+
+    @Test func nativeReplyDispatchKeepsTheOriginalPayloadAndRejectsAnOldRegistrationWithOnePlainNotice() async throws {
+        try await withDefaults { defaults in
+            try await withRegistrationStore { store in
+                let api = try ChannelAPI(serverURL: "https://fixture.example")
+                let registration = MobileNotificationRegistration(
+                    store: store, environment: .sandbox, requestToken: {},
+                    register: { _, _ in }, remove: { _, _ in })
+                try registration.select(api: api)
+                let id = try #require(registration.current?.registrationID)
+                var notices: [UNNotificationRequest] = []
+                let notifications = ChannelNotifications(
+                    defaults: defaults, registration: registration, addNotice: { notices.append($0) })
+                notifications.configure(api: api)
+                let payload = ChannelPushPayload(kind: .request, channelID: "first", sequence: 42, registrationID: id)
+                var replies = 0
+                notifications.onReply = { received, text, handle in
+                    #expect(received == payload)
+                    #expect(text == "Keep the library by the desks")
+                    #expect(handle == "lead")
+                    replies += 1
+                    return .failed(id: "durable-outbox-id")
+                }
+                await notifications.receive(payload, action: ChannelNotificationCategory.reply,
+                                            text: "Keep the library by the desks", handle: "lead", identifier: "request")
+                #expect(replies == 1)
+                #expect(notices.isEmpty)
+                await notifications.receive(
+                    ChannelPushPayload(kind: .request, channelID: "first", sequence: 42, registrationID: "old"),
+                    action: ChannelNotificationCategory.reply, text: "Don't send this", handle: "lead", identifier: "old")
+                #expect(replies == 1)
+                #expect(notices.count == 1)
+                #expect(notices.first?.content.body == "Your reply wasn't sent.")
+                #expect(notices.first?.content.userInfo.isEmpty == true)
+            }
+        }
+    }
+
+    @Test func activityLinksUseOnlyTheSelectedRegistrationAndRevealTheirOptionalRequest() async throws {
+        try await withDefaults { defaults in
+            try await withRegistrationStore { store in
+                let registration = MobileNotificationRegistration(
+                    store: store, environment: .sandbox, requestToken: {},
+                    register: { _, _ in }, remove: { _, _ in })
+                try registration.select(api: ChannelAPI(serverURL: "https://fixture.example"))
+                let id = try #require(registration.current?.registrationID)
+                let notifications = ChannelNotifications(defaults: defaults, registration: registration)
+                let model = AppModel(arguments: ["--server", "https://fixture.example"], environment: [:],
+                                     defaults: defaults, session: fixtureSession(), notifications: notifications)
+                await model.openExternalURL(try #require(
+                    ChannelActivityLink(channelID: "first", registrationID: id, sequence: 42).url))
+                #expect(model.selectedChannelID == "first")
+                #expect(model.interaction(for: "first").revealRequest?.sequence == 42)
+                await model.openExternalURL(try #require(
+                    ChannelActivityLink(channelID: "second", registrationID: id).url))
+                #expect(model.selectedChannelID == "second")
+                #expect(model.interaction(for: "second").revealRequest == nil)
+                await model.openExternalURL(try #require(
+                    ChannelActivityLink(channelID: "first", registrationID: "old", sequence: 88).url))
+                #expect(model.selectedChannelID == "second")
+                #expect(model.navigationNotice == "This channel isn't available.")
+                #expect(model.serverURL == "https://fixture.example")
+            }
+        }
+    }
+
+    @Test func presentationKeepsTheVisibleChannelQuietAndCompletionsInNotificationCenter() async throws {
+        try await withDefaults { defaults in
+            try await withRegistrationStore { store in
+                defaults.set(true, forKey: "notificationsEnabled")
+                let api = try ChannelAPI(serverURL: "https://fixture.example")
+                let registration = MobileNotificationRegistration(
+                    store: store, environment: .sandbox, requestToken: {},
+                    register: { _, _ in }, remove: { _, _ in })
+                try registration.select(api: api)
+                let id = try #require(registration.current?.registrationID)
+                let notifications = ChannelNotifications(defaults: defaults, registration: registration,
+                                                          readAuthorization: { .authorized })
+                notifications.configure(api: api)
+                await notifications.refreshAuthorization()
+                await notifications.update(channels: [], activeChannelID: "first", withdraw: false)
+                let visible = ChannelPushPayload(kind: .request, channelID: "first", sequence: 42, registrationID: id)
+                let other = ChannelPushPayload(kind: .request, channelID: "second", sequence: 45, registrationID: id)
+                #expect(notifications.presentation(for: visible, category: ChannelNotificationCategory.request).isEmpty)
+                #expect(notifications.presentation(for: other, category: ChannelNotificationCategory.request)
+                        == [.banner, .list, .sound])
+                #expect(notifications.presentation(for: other, category: ChannelNotificationCategory.completion) == [.list])
+                notifications.disable()
+                #expect(notifications.presentation(for: other, category: ChannelNotificationCategory.request).isEmpty)
+                #expect(notifications.presentation(for: nil, category: ChannelNotificationCategory.replyFailed)
+                        == [.banner, .list, .sound])
+                await registration.waitUntilIdle()
+            }
+        }
+    }
+
+    @Test func withdrawalRemovesAnsweredRequestsSeenCompletionsAndTheOpenChannelsAlerts() {
+        let channels = [
+            Channel(id: "first", name: "First", model: .init(provider: "test", name: "test"),
+                    seenThrough: 30, completedSequence: 30, requestSequence: 40, updatedAt: ""),
+            Channel(id: "open", name: "Open", model: .init(provider: "test", name: "test"), updatedAt: "")
+        ]
+        let records: [ChannelNotifications.Delivered] = [
+            .init(identifier: "answered", payload: .init(kind: .request, channelID: "first", sequence: 20, registrationID: "now")),
+            .init(identifier: "waiting", payload: .init(kind: .request, channelID: "first", sequence: 40, registrationID: "now")),
+            .init(identifier: "seen", payload: .init(kind: .completion, channelID: "first", sequence: 30, registrationID: "now")),
+            .init(identifier: "unseen", payload: .init(kind: .completion, channelID: "first", sequence: 50, registrationID: "now")),
+            .init(identifier: "open", payload: .init(kind: .request, channelID: "open", sequence: 1, registrationID: "now")),
+            .init(identifier: "deleted", payload: .init(kind: .request, channelID: "gone", sequence: 1, registrationID: "now")),
+            .init(identifier: "foreign", payload: .init(kind: .request, channelID: "first", sequence: 1, registrationID: "old")),
+        ]
+        #expect(ChannelNotifications.stale(records, channels: channels, registrationID: "now", activeChannelID: "open")
+                == ["answered", "seen", "open", "deleted"])
+    }
+
+    @Test func enablingNotificationsRequestsPermissionOnceAndKeepsCategoryChoicesWhenTurnedOff() async {
+        await withDefaults { defaults in
+            var status = UNAuthorizationStatus.notDetermined
+            var prompts = 0
+            let notifications = ChannelNotifications(defaults: defaults, readAuthorization: { status },
+                                                      requestAuthorization: {
+                prompts += 1
+                status = .authorized
+                return true
+            })
+            #expect(!notifications.isEnabled)
+            #expect(notifications.requests)
+            #expect(notifications.completions)
+            #expect(!notifications.hasLoadedAuthorization)
+            await notifications.enable()
+            #expect(prompts == 1)
+            #expect(notifications.authorization == .authorized)
+            #expect(notifications.isEnabled)
+            #expect(defaults.bool(forKey: "notificationsEnabled"))
+            notifications.requests = false
+            notifications.disable()
+            #expect(!notifications.isEnabled)
+            #expect(!notifications.requests)
+            #expect(notifications.completions)
+            await notifications.enable()
+            #expect(prompts == 1)
+            #expect(notifications.isEnabled)
+            #expect(!notifications.requests)
+            let restored = ChannelNotifications(defaults: defaults, readAuthorization: { status })
+            await restored.refreshAuthorization()
+            #expect(restored.isEnabled)
+            #expect(!restored.requests)
+            #expect(restored.completions)
+        }
+    }
+
+    @Test func returningFromSettingsRechecksPermissionWithoutEnablingAnIntentionalOptOut() async {
+        await withDefaults { defaults in
+            defaults.set(true, forKey: "notificationsEnabled")
+            var status = UNAuthorizationStatus.authorized
+            var prompts = 0
+            let notifications = ChannelNotifications(defaults: defaults, readAuthorization: { status },
+                                                      requestAuthorization: {
+                prompts += 1
+                return false
+            })
+            await notifications.refreshAuthorization()
+            #expect(notifications.isEnabled)
+            status = .denied
+            await notifications.refreshAuthorization()
+            #expect(notifications.authorization == .denied)
+            #expect(!notifications.isEnabled)
+            #expect(!defaults.bool(forKey: "notificationsEnabled"))
+            await notifications.enable()
+            #expect(prompts == 0)
+            status = .authorized
+            await notifications.refreshAuthorization()
+            #expect(!notifications.isEnabled)
+            await notifications.enable()
+            #expect(notifications.isEnabled)
+            #expect(prompts == 0)
+        }
+    }
+
+    @Test func aPermissionFailureRemainsExplicitAndNeverEnablesNotifications() async {
+        await withDefaults { defaults in
+            let failure = NSError(domain: "MobileShellNotificationTests", code: 1,
+                                  userInfo: [NSLocalizedDescriptionKey: "Permission service unavailable"])
+            let notifications = ChannelNotifications(defaults: defaults, readAuthorization: { .notDetermined },
+                                                      requestAuthorization: { throw failure })
+            await notifications.enable()
+            #expect(!notifications.isEnabling)
+            #expect(!notifications.isEnabled)
+            #expect(notifications.error == failure.localizedDescription)
+            #expect(notifications.authorization == .notDetermined)
+        }
+    }
+
+    @Test func grantingPermissionThroughOpenSettingsEnablesTheExplicitRequestOnReturn() async {
+        await withDefaults { defaults in
+            var status = UNAuthorizationStatus.denied
+            var opened = 0
+            let notifications = ChannelNotifications(
+                defaults: defaults, readAuthorization: { status }, requestAuthorization: { false },
+                openSettings: { opened += 1; return true })
+            await notifications.refreshAuthorization()
+            await notifications.openSystemSettings()
+            #expect(opened == 1)
+            #expect(!notifications.isEnabled)
+            status = .authorized
+            await notifications.refreshAuthorization()
+            #expect(notifications.isEnabled)
+            notifications.disable()
+            await notifications.refreshAuthorization()
+            #expect(!notifications.isEnabled)
+        }
+    }
+
+    @Test func widgetRequestRoutingPreparesTheOriginalRevealBeforeOpeningAndKeepsTheDraft() async throws {
+        try await withDefaults { defaults in
+            let server = "https://widget-open-\(UUID().uuidString).example"
+            let model = AppModel(arguments: ["--server", server], environment: [:],
+                                 defaults: defaults, session: fixtureSession())
+            let store = try #require(model.catalog?.channel(id: "first"))
+            let draft = model.composerSession(for: store).draft
+            draft.text = "Keep this local draft"
+            defer { draft.text = "" }
+            defaults.set([model.serverURL: "second"], forKey: "lastChannelByServer")
+            let request = NeedsYouRequestLink(serverURL: model.serverURL, channelID: "first", sequence: 42)
+            await model.openExternalURL(try #require(request.url))
+            #expect(model.selectedStore === store)
+            #expect(model.selectedChannelID == "first")
+            #expect(model.interaction(for: "first").revealRequest?.sequence == 42)
+            #expect(model.interaction(for: "first").messageView == .all)
+            #expect(!model.isResolvingNavigation)
+            #expect(draft.text == "Keep this local draft")
+        }
+    }
+
+    @Test func widgetReplyRequestsComposerFocusAndTheMainLinkReturnsToChannels() async throws {
+        try await withDefaults { defaults in
+            let model = AppModel(arguments: ["--server", "https://fixture.example"], environment: [:],
+                                 defaults: defaults, session: fixtureSession())
+            let interaction = model.interaction(for: "first")
+            let previousFocus = interaction.composerFocusRequest
+            let request = NeedsYouRequestLink(serverURL: model.serverURL, channelID: "first", sequence: 42)
+            await model.openExternalURL(try #require(request.replyURL))
+            #expect(model.selectedChannelID == "first")
+            #expect(interaction.composerFocusRequest != previousFocus)
+            #expect(interaction.revealRequest?.sequence == 42)
+            await model.openExternalURL(NeedsYouSnapshot.mainURL)
+            #expect(model.selectedChannelID == nil)
+            model.reconcileSelection()
+            #expect(model.selectedChannelID == nil)
+        }
+    }
+
+    @Test func aWidgetRequestNeverSwitchesToItsForeignServer() async throws {
+        try await withDefaults { defaults in
+            let model = AppModel(arguments: ["--server", "https://fixture.example"], environment: [:],
+                                 defaults: defaults, session: fixtureSession())
+            model.selectedChannelID = "second"
+            let request = NeedsYouRequestLink(serverURL: "https://other.example", channelID: "first", sequence: 42)
+            await model.openExternalURL(try #require(request.url))
+            #expect(model.serverURL == "https://fixture.example")
+            #expect(model.selectedChannelID == "second")
+            #expect(model.navigationNotice == "This channel isn't available.")
+        }
     }
 
     @Test func theTrayUsesTheMeasuredHeightAndScaledMinimumWithoutDroppingBelowTheFloor() {

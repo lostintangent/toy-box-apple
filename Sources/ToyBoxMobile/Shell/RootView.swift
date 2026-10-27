@@ -89,10 +89,12 @@ struct RootView: View {
         }
         .onChange(of: scenePhase, initial: true) { _, phase in
             model.setActive(phase == .active)
+            if phase == .active { Task { await model.notifications.refreshAuthorization() } }
         }
         .onChange(of: model.catalog?.hasLoaded, initial: true) { _, _ in
             model.reconcileSelection()
         }
+        .onOpenURL { url in Task { await model.openExternalURL(url) } }
         .sheet(isPresented: $model.isSettingsPresented) {
             NavigationStack { SettingsView() }
         }
@@ -122,6 +124,14 @@ struct RootView: View {
             Button("Cancel", role: .cancel) {}
         } message: { failure in
             Text(failure.message)
+        }
+        .alert("Couldn't Enable Notifications", isPresented: Binding(
+            get: { model.notifications.error != nil && !model.isSettingsPresented },
+            set: { if !$0 { model.notifications.clearError() } }
+        )) {
+            Button("OK") { model.notifications.clearError() }
+        } message: {
+            Text(model.notifications.error ?? "")
         }
     }
 
