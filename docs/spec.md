@@ -284,6 +284,8 @@ The intent names the channel as its group, identifies the local user as the reci
 counts the local user and channel agents other than the incoming sender as recipients.
 Its conversation identifier remains server-qualified. Native
 presentation must retain both the sender's identity and the channel's name.
+Named group banners use the requester's same real avatar as the intent's group image, rather
+than falling back to the app icon.
 
 The three-second enrichment budget includes cache preparation. Expiry delivers once without
 waiting for canceled work, and late work cannot create a duplicate. The snapshot publisher also

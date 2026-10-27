@@ -3,6 +3,7 @@ import ChannelKit
 import Foundation
 import Intents
 import Testing
+import UIKit
 import UserNotifications
 @testable import ToyBoxMobileIntegrations
 
@@ -16,8 +17,9 @@ struct MobileNotificationEnricherTests {
         catalog.members = (0..<memberCount).map { .init(id: "member-\($0)", name: "Member \($0)", channelId: "studio") }
         catalog.members.append(.init(id: "other", name: "Other", channelId: "other-channel"))
         let fetched = catalog
+        let png = try #require(UIImage(systemName: "star.fill")?.pngData())
         let enricher = MobileNotificationEnricher(
-            directory: directory, avatarPNG: { _ in nil }, fetch: { _, _ in .init(catalog: fetched) })
+            directory: directory, avatarPNG: { _ in png }, fetch: { _, _ in .init(catalog: fetched) })
         enricher.start(Self.payload(registration: registration)) { _ in }
         let work = try #require(enricher.work)
         await work.value
@@ -29,6 +31,7 @@ struct MobileNotificationEnricherTests {
         let metadata = try #require(intent.donationMetadata as? INSendMessageIntentDonationMetadata)
         #expect(metadata.recipientCount == memberCount + 1)
         #expect(intent.sender?.displayName == catalog.lead.name)
+        #expect(intent.image(forParameterNamed: \.speakableGroupName) != nil)
     }
 
     @Test(arguments: [ChannelPushPayload.Kind.request, .completion])
