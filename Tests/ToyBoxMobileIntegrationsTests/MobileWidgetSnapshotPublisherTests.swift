@@ -47,6 +47,35 @@ struct MobileWidgetSnapshotPublisherTests {
         #expect(switched.requests.isEmpty)
     }
 
+    @Test @MainActor func offlineUpdatesKeepTheCachedObservationTimeWithoutAHeartbeatRewrite() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("tbm-widget-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var reloads = 0
+        let now = Date(timeIntervalSince1970: 1793086200)
+        let snapshot = Self.snapshot(now: now)
+        let publisher = try MobileWidgetSnapshotPublisher(
+            directory: directory, avatarPNG: { _ in nil }, reload: { reloads += 1 })
+        try publisher.publish(snapshot, now: now)
+        #expect(reloads == 1)
+
+        try await publisher.update(catalog: nil, serverURL: snapshot.serverURL)
+        let file = directory.appendingPathComponent(NeedsYouSnapshot.fileName)
+        let cached = try JSONDecoder().decode(NeedsYouSnapshot.self, from: Data(contentsOf: file))
+        #expect(cached.isOffline)
+        #expect(cached.isAvailable)
+        #expect(cached.updatedAt == now)
+        #expect(cached.requests == snapshot.requests)
+        #expect(reloads == 2)
+        let fileNumber = try #require(
+            FileManager.default.attributesOfItem(atPath: file.path)[.systemFileNumber] as? NSNumber)
+
+        try await publisher.update(catalog: nil, serverURL: snapshot.serverURL)
+        let repeated = try JSONDecoder().decode(NeedsYouSnapshot.self, from: Data(contentsOf: file))
+        #expect(repeated == cached)
+        #expect(reloads == 2)
+        #expect(try FileManager.default.attributesOfItem(atPath: file.path)[.systemFileNumber] as? NSNumber == fileNumber)
+    }
+
     private static func snapshot(now: Date) -> NeedsYouSnapshot {
         NeedsYouSnapshot(
             serverURL: "https://server.test", updatedAt: now, isOffline: false, isAvailable: true,

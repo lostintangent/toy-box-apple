@@ -353,6 +353,8 @@ URL spelling preserves the UUID. `MobileWidgetSnapshotPublisher.update(catalog:s
 the same `NeedsYouSnapshot` schema and filename as Mac, resolves questions through history without
 starting SSE, and reloads `ToyBoxNeedsYou`. It preserves a same-server offline cache, discards that
 cache on a server change, and keeps the Mac's 30-minute freshness and 15-minute unchanged refresh.
+Offline-only writes preserve the cached observation time and never heartbeat. They write and
+reload only when visible snapshot content changes. Live writes retain the unchanged refresh.
 
 ## Parity checklist
 
