@@ -32,6 +32,9 @@ struct SettingsView: View {
                     ForEach(AppAppearance.allCases) { value in Text(value.title).tag(value) }
                 }
             }
+            NotificationSettingsSection(notifications: model.notifications,
+                                        registrationError: model.notifications.registrationError,
+                                        retryRegistration: model.notifications.retryRegistration)
             intelligenceSection
             Section("About") {
                 LabeledContent("App", value: Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
@@ -40,10 +43,11 @@ struct SettingsView: View {
                                as? String ?? "Unavailable")
                 LabeledContent("Build", value: Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion")
                                as? String ?? "Unavailable")
-                Text("Toy Box connects while this app is in the foreground. Keep your Mac awake with Toy Box running. This release doesn't monitor channels or deliver push notifications after you leave.")
+                Text("Toy Box connects to your server while open. Notifications and followed-channel updates can arrive while it is closed. Keep the Mac running your Toy Box server awake.")
                     .font(.footnote).foregroundStyle(.secondary)
             }
         }
+        .accessibilityIdentifier("settings-form")
         .navigationTitle("Settings")
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
@@ -58,9 +62,13 @@ struct SettingsView: View {
         }
         .onDisappear { connection.cancel() }
         .onChange(of: scenePhase) { _, phase in
-            if phase == .active { availability = intelligence.availability }
+            if phase == .active {
+                availability = intelligence.availability
+                Task { await model.notifications.refreshAuthorization() }
+            }
             else { connection.cancel() }
         }
+        .task { await model.notifications.refreshAuthorization() }
         .sheet(item: $pendingChange) { change in
             NavigationStack {
                 Form {
