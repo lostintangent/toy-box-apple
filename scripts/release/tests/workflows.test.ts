@@ -48,6 +48,19 @@ test("the Mac gate emits unbuffered progress and preserves bounded hang diagnost
     ]));
 });
 
+test("the Mac gate constrains ChannelClient to one cooperative worker", () => {
+    expect(workflow()).toHaveProperty("jobs.test.steps", expect.arrayContaining([
+        expect.objectContaining({
+            name: "Test ChannelClient with a single cooperative worker",
+            env: expect.objectContaining({
+                NSUnbufferedIO: "YES",
+                LIBDISPATCH_COOPERATIVE_POOL_STRICT: "1",
+            }),
+            run: "bun scripts/dev/test-watchdog.ts --filter ChannelClientTests",
+        }),
+    ]));
+});
+
 test("workflow actions remain pinned to full commit hashes with readable versions", () => {
     const actions = [...source.matchAll(/uses:\s+([^\s#]+)([^\n]*)/g)];
     expect(actions.length).toBeGreaterThan(0);

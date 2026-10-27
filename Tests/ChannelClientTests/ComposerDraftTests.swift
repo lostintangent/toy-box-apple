@@ -435,12 +435,14 @@ struct ComposerDraftTests {
         ))
         let bitmap = try #require(context.makeImage())
         let started = AsyncStream.makeStream(of: Void.self)
-        let release = DispatchSemaphore(value: 0)
-        defer { release.signal() }
+        defer { started.continuation.finish() }
+        let release = AsyncStream.makeStream(of: Void.self, bufferingPolicy: .bufferingNewest(1))
+        defer { release.continuation.finish() }
         try await withDraft { _, url in
             let draft = ComposerDraft(imageIsReadable: { !$0.isEmpty }, rasterizeImage: { _, _ in
                 started.continuation.yield()
-                release.wait()
+                var releases = release.stream.makeAsyncIterator()
+                _ = await releases.next()
                 return bitmap
             })
             draft.restore(content: "Keep this caption", attachments: [
@@ -466,7 +468,7 @@ struct ComposerDraftTests {
                 #expect(await draft.reattachImage(id: original.id, from: second))
                 #expect(draft.images.first?.data == image.data)
             }
-            release.signal()
+            release.continuation.yield()
             #expect(await !first.value)
             #expect(!draft.isLoadingImages)
             #expect(draft.text == "Keep this caption")

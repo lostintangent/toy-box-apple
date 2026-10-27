@@ -79,8 +79,8 @@ public final class ComposerDraft {
     private let imagesURL: URL?
     private let imageIsReadable: @MainActor (Data) -> Bool
     // AppKit also renders SVG sources for which ImageIO reports zero images.
-    private let rasterizeImage: (@Sendable (Data, Int) -> CGImage?)?
-    @ObservationIgnored var thumbnailDecoder: @Sendable (Data, Int) -> CGImage? = {
+    private let rasterizeImage: (@Sendable (Data, Int) async -> CGImage?)?
+    @ObservationIgnored var thumbnailDecoder: @Sendable (Data, Int) async -> CGImage? = {
         ChannelImageDecoder.thumbnail(data: $0, maxPixelSize: $1)
     }
     private var restoring = true
@@ -104,7 +104,7 @@ public final class ComposerDraft {
 
     public static func shared(serverURL: URL, channelID: String, scope: Scope = .conversation,
                               imageIsReadable: @escaping @MainActor (Data) -> Bool,
-                              rasterizeImage: (@Sendable (Data, Int) -> CGImage?)? = nil) -> ComposerDraft {
+                              rasterizeImage: (@Sendable (Data, Int) async -> CGImage?)? = nil) -> ComposerDraft {
         let key = storageKey(serverURL: serverURL, channelID: channelID, scope: scope)
         if let draft = drafts[key] { return draft }
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -116,7 +116,7 @@ public final class ComposerDraft {
     }
 
     public init(fileURL: URL? = nil, imageIsReadable: @escaping @MainActor (Data) -> Bool,
-                rasterizeImage: (@Sendable (Data, Int) -> CGImage?)? = nil) {
+                rasterizeImage: (@Sendable (Data, Int) async -> CGImage?)? = nil) {
         self.imageIsReadable = imageIsReadable
         self.rasterizeImage = rasterizeImage
         self.fileURL = fileURL
@@ -277,8 +277,12 @@ public final class ComposerDraft {
                 try Task.checkCancellation()
                 return prepared
             }
-            let fallback = ComposerImageEncoding.needsNativeRasterization(image.data)
-                ? rasterize?(image.data, ComposerImageEncoding.maximumDimension) : nil
+            let fallback: CGImage?
+            if ComposerImageEncoding.needsNativeRasterization(image.data) {
+                fallback = await rasterize?(image.data, ComposerImageEncoding.maximumDimension)
+            } else {
+                fallback = nil
+            }
             try Task.checkCancellation()
             let prepared = try ComposerImageEncoding.normalize(image, fallback: fallback)
             try Task.checkCancellation()
@@ -471,8 +475,8 @@ public final class ComposerDraft {
             cache.object(forKey: image.id as NSUUID)?.image
         }
 
-        static func load(for image: ComposerImage, decode: @escaping @Sendable (Data, Int) -> CGImage?,
-                         rasterize: (@Sendable (Data, Int) -> CGImage?)?) async -> CGImage? {
+        static func load(for image: ComposerImage, decode: @escaping @Sendable (Data, Int) async -> CGImage?,
+                         rasterize: (@Sendable (Data, Int) async -> CGImage?)?) async -> CGImage? {
             let key = image.id as NSUUID
             if let cached = cache.object(forKey: key) { return cached.image }
             let work: Pending
@@ -482,7 +486,12 @@ public final class ComposerDraft {
                 work = Pending(task: Task.detached(priority: .userInitiated) {
                     guard !Task.isCancelled else { return nil }
                     let bound = ComposerImageEncoding.thumbnailDimension
-                    let thumbnail = decode(image.data, bound) ?? rasterize?(image.data, bound)
+                    let thumbnail: CGImage?
+                    if let decoded = await decode(image.data, bound) {
+                        thumbnail = decoded
+                    } else {
+                        thumbnail = await rasterize?(image.data, bound)
+                    }
                     return Task.isCancelled ? nil : thumbnail
                 })
                 pending[image.id] = work

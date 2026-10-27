@@ -101,21 +101,21 @@ struct SendAttemptTests {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("tbm-background-\(UUID())")
         defer { try? FileManager.default.removeItem(at: directory) }
         let journal = ChannelSendJournal(directory: directory)
-        let release = DispatchSemaphore(value: 0)
-        defer { release.signal() }
         let mock = MockTransport { request, _ in
-            release.wait()
             let body = try Self.posted(request)
-            return try .json(MessageEnvelope(message: ChannelMessage(
+            var response = try MockResponse.json(MessageEnvelope(message: ChannelMessage(
                 id: body.id, sequence: 17, timestamp: "2026-10-01T00:00:00Z",
                 sender: .user, content: .text(body.content)
             )), status: 201)
+            response.keepOpen = true
+            return response
         }
+        defer { _ = mock.finishPendingResponses() }
         let api = try mock.api()
         let store = ChannelStore(id: "test", api: api, sendJournal: journal)
         let firstID = UUID().uuidString
         let first = Task { try await store.postInBackground(id: firstID, content: "First") }
-        try await eventually(observing: mock) { mock.requests.count == 1 }
+        try await eventually(observing: mock) { mock.pendingResponseCount == 1 }
         let replyID = UUID().uuidString
         await #expect(throws: ChannelAPIError.invalidMessage("A message is already being sent.")) {
             try await store.postInBackground(id: replyID, content: "@lead Keep this reply")
@@ -126,7 +126,7 @@ struct SendAttemptTests {
         #expect(store.sendAttempts.first { $0.id == firstID }?.phase == .sending)
         #expect(try await journal.load(server: api.baseURL, channelId: "test").first { $0.id == replyID } == reply)
         #expect(mock.requests.count == 1)
-        release.signal()
+        #expect(mock.finishPendingResponses() == 1)
         _ = try await first.value
         #expect(store.sendAttempts == [reply])
         #expect(try await journal.load(server: api.baseURL, channelId: "test") == [reply])
@@ -296,7 +296,21 @@ struct SendAttemptTests {
     @MainActor func restoredAttemptsReconcileWithTheFirstSnapshot(snapshotArrivesFirst: Bool) async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("tbm-outbox-\(UUID())")
         defer { try? FileManager.default.removeItem(at: directory) }
-        let journal = ChannelSendJournal(directory: directory)
+        let started = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
+        let release = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
+        defer {
+            started.continuation.finish()
+            release.continuation.finish()
+        }
+        let journal = if snapshotArrivesFirst {
+            ChannelSendJournal(directory: directory, beforeLoad: {
+                started.continuation.yield()
+                var releases = release.stream.makeAsyncIterator()
+                _ = await releases.next()
+            })
+        } else {
+            ChannelSendJournal(directory: directory)
+        }
         let id = UUID().uuidString
         let content = "Accepted before the app quit"
         let message = ChannelMessage(id: id, sequence: 1, timestamp: "2026-10-01T00:00:00Z",
@@ -315,27 +329,19 @@ struct SendAttemptTests {
                                server: api.baseURL, channelId: "test")
         let store = ChannelStore(id: "test", api: api, sendJournal: journal)
         defer { store.disconnect() }
-        let release = DispatchSemaphore(value: 0)
-        defer { release.signal() }
-        var hold: Task<Void, Never>?
-        if snapshotArrivesFirst {
-            let started = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
-            defer { started.continuation.finish() }
-            hold = Task.detached { await journal.hold(started: started.continuation, until: release) }
-            var iterator = started.stream.makeAsyncIterator()
-            try #require(await iterator.next() != nil)
-        } else {
+        if !snapshotArrivesFirst {
             await #expect(throws: ChannelAPIError.disconnected) { try await store.retrySend(id: "unknown") }
             #expect(store.sendAttempts.map(\.id) == [id])
         }
         store.connect()
         if snapshotArrivesFirst {
+            var loads = started.stream.makeAsyncIterator()
+            try #require(await loads.next() != nil)
             var iterator = received.stream.makeAsyncIterator()
             try #require(await iterator.next() != nil)
             #expect(store.state == nil)
             #expect(store.phase == .connecting)
-            release.signal()
-            await hold?.value
+            release.continuation.yield()
         }
         try await eventually { store.phase.isLive }
         await #expect(throws: ChannelAPIError.self) { try await store.retrySend(id: "unknown") }
@@ -413,12 +419,5 @@ struct SendAttemptTests {
         #expect(store.lastSendFailure == nil)
         #expect(store.sendAttempts.isEmpty)
         #expect(mock.requests.allSatisfy { $0.httpMethod == "GET" })
-    }
-}
-
-private extension ChannelSendJournal {
-    func hold(started: AsyncStream<Void>.Continuation, until release: DispatchSemaphore) {
-        started.yield(())
-        release.wait()
     }
 }

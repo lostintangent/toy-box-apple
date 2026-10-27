@@ -18,7 +18,7 @@ export function testProcessTree(source: string, parentPID: number) {
 }
 
 if (import.meta.main) await main(async () => {
-    const child = Bun.spawn([process.execPath, "run", "test"], {
+    const child = Bun.spawn([process.execPath, "run", "test", ...process.argv.slice(2)], {
         cwd: root, stdin: "inherit", stdout: "inherit", stderr: "inherit",
     });
     const deadline = Promise.withResolvers<undefined>();

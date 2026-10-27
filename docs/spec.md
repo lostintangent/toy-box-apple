@@ -92,7 +92,9 @@ their serialized, non-cancellable publication group. Portable tooling tests run 
 native iPhone icon tests that use PlistBuddy run explicitly in the Mac job and skip on other hosts.
 The Mac gate emits unbuffered test progress. Its twelve-minute watchdog samples only its own
 SwiftPM and XCTest descendants, prints their stacks and uploads diagnostics before failing.
-The job's twenty-minute limit remains unchanged.
+The job's twenty-minute limit remains unchanged. It runs ChannelClient with
+`LIBDISPATCH_COOPERATIVE_POOL_STRICT=1` before the full suite, so test gates must suspend rather than
+block a cooperative worker.
 
 Every normal bundle embeds `Contents/PlugIns/ToyBoxShare.appex`, a SwiftPM executable linked with
 `_NSExtensionMain` for `com.apple.share-services`. Its activation rules accept text, URLs, images

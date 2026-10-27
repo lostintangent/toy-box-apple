@@ -13,21 +13,20 @@ struct ComposerThumbnailTests {
         let bitmap = try fixtureBitmap()
         let started = AsyncStream<Void>.makeStream()
         defer { started.continuation.finish() }
-        let release = DispatchSemaphore(value: 0)
-        defer { release.signal() }
+        let release = AsyncStream.makeStream(of: Void.self, bufferingPolicy: .bufferingNewest(1))
+        defer { release.continuation.finish() }
         let observed = Mutex((calls: 0, onMainThread: false, bound: 0))
         let draft = ComposerDraft(imageIsReadable: { _ in true })
         draft.append(image)
         draft.thumbnailDecoder = { _, bound in
-            let onMainThread = Thread.isMainThread
             observed.withLock {
                 $0.calls += 1
-                $0.onMainThread = onMainThread
+                $0.onMainThread = Thread.isMainThread
                 $0.bound = bound
             }
             started.continuation.yield(())
-            // A regression must fail, not block the main actor and the test's cleanup.
-            if !onMainThread { release.wait() }
+            var releases = release.stream.makeAsyncIterator()
+            _ = await releases.next()
             return bitmap
         }
         #expect(draft.thumbnail(for: image) == nil)
@@ -61,7 +60,7 @@ struct ComposerThumbnailTests {
         #expect(observed.withLock { $0.bound } == 224)
 
         loading.cancel()
-        release.signal()
+        release.continuation.yield()
         #expect(await loading.value == nil)
         #expect(await anotherTile.value === bitmap)
         #expect(draft.thumbnail(for: image) === bitmap)
@@ -75,8 +74,8 @@ struct ComposerThumbnailTests {
         let nextBitmap = try fixtureBitmap()
         let started = AsyncStream<Void>.makeStream()
         defer { started.continuation.finish() }
-        let release = DispatchSemaphore(value: 0)
-        defer { release.signal() }
+        let release = AsyncStream.makeStream(of: Void.self, bufferingPolicy: .bufferingNewest(1))
+        defer { release.continuation.finish() }
         let calls = Mutex(0)
         let draft = ComposerDraft(imageIsReadable: { _ in true })
         draft.append(image)
@@ -84,14 +83,15 @@ struct ComposerThumbnailTests {
             let call = calls.withLock { $0 += 1; return $0 }
             guard call == 1 else { return nextBitmap }
             started.continuation.yield(())
-            if !Thread.isMainThread { release.wait() }
+            var releases = release.stream.makeAsyncIterator()
+            _ = await releases.next()
             return oldBitmap
         }
         let loading = Task { await draft.loadThumbnail(for: image) }
         var iterator = started.stream.makeAsyncIterator()
         _ = await iterator.next()
         draft.removeImage(id: image.id)
-        release.signal()
+        release.continuation.yield()
         #expect(await loading.value == nil)
         #expect(draft.thumbnail(for: image) == nil)
 

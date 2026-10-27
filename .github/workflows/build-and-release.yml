@@ -43,6 +43,12 @@ jobs:
       - run: bun install --frozen-lockfile --ignore-scripts
       - name: Test native icon tooling
         run: bun test scripts/dev/mobile-icon.test.ts
+      - name: Test ChannelClient with a single cooperative worker
+        env:
+          SCRATCH_PATH: ${{ runner.temp }}/toy-box-tests
+          NSUnbufferedIO: 'YES'
+          LIBDISPATCH_COOPERATIVE_POOL_STRICT: '1'
+        run: bun scripts/dev/test-watchdog.ts --filter ChannelClientTests
       - name: Test
         env:
           SCRATCH_PATH: ${{ runner.temp }}/toy-box-tests
