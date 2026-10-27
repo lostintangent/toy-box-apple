@@ -44,6 +44,25 @@ test("debug Activity fixtures are canonical, APNs-sized and removed when reusing
     } finally { await rm(directory, { recursive: true, force: true }); }
 });
 
+test("Activity fixture proof rejects non-debug, device and unleased commands before taking the simulator", async () => {
+    for (const [args, configuration, message] of [
+        [["--activity-fixture-proof"], "debug", "requires a debug Simulator"],
+        [["--activity-fixture-proof", "--hold", "--build-only"], "debug", "requires a debug Simulator"],
+        [["--activity-fixture-proof", "--hold", "--device"], "debug", "requires a debug Simulator"],
+        [["--activity-fixture-proof", "--hold", "--shutdown"], "debug", "requires a debug Simulator"],
+        [["--activity-fixture-proof", "--hold"], "release", "available only in debug Simulator"],
+        [["--activity-fixture-proof", "--foundation-proof", "--hold"], "debug", "Choose one simulator proof"],
+    ] as const) {
+        const process = Bun.spawn([globalThis.process.execPath, join(import.meta.dir, "mobile.ts"), ...args], {
+            cwd: import.meta.dir, stdin: "ignore", stdout: "pipe", stderr: "pipe",
+            env: { ...globalThis.process.env, CONFIGURATION: configuration },
+        });
+        const output = await new Response(process.stderr).text();
+        expect(await process.exited).toBe(1);
+        expect(output).toContain(message);
+    }
+});
+
 test("iOS extensions have exact identities, extension points and executable entry points", async () => {
     for (const extension of mobileExtensions) {
         const info = await readFile(join(import.meta.dir, "../../Resources/Mobile", extension.info), "utf8");
