@@ -12,6 +12,10 @@ export const mobileEnvironment = {
 };
 export const mobileBundleID = "dev.toybox.mobile";
 export const mobileAppGroup = "group.dev.toybox.mobile";
+export const mobileActivityFixtures = [
+    "push-activity-working", "push-activity-quiet", "push-activity",
+    "push-activity-completed", "push-activity-ended", "push-activity-stale",
+] as const;
 export const mobileExtensions = [
     { executable: "ToyBoxMobileWidget", suffix: "widget", point: "com.apple.widgetkit-extension", info: "Widget-Info.plist" },
     { executable: "ToyBoxMobileNotification", suffix: "notification", point: "com.apple.usernotifications.service",
@@ -270,6 +274,7 @@ export async function bundleMobile(device = false) {
     ]);
     const binary = join(app, "ToyBoxMobile");
     const minimumOS = await plist(join(app, "Info.plist"), ["Print :MinimumOSVersion"]);
+    await embedMobileActivityFixtures(app, mobileBuildConfiguration(device, false, process.env.CONFIGURATION) === "debug");
     await embedMobileAppIcon(join(root, "Resources"), app, device, minimumOS, mobileEnvironment);
     await command(["xcrun", "vtool", "-set-build-version", device ? "ios" : "iossim", minimumOS, version,
         "-replace", "-output", binary, binary], { env: mobileEnvironment });
@@ -314,6 +319,17 @@ export async function bundleMobile(device = false) {
     }
     if (!device) await signMobileSimulatorBundle(app);
     return app;
+}
+
+export async function embedMobileActivityFixtures(app: string, debug: boolean) {
+    const directory = join(app, "ActivityFixtures");
+    await rm(directory, { recursive: true, force: true });
+    if (!debug) return;
+    await mkdir(directory, { recursive: true });
+    for (const name of mobileActivityFixtures) {
+        await copyFile(join(root, "Tests/ChannelKitTests/Fixtures", `${name}.apns`),
+            join(directory, `${name}.apns`));
+    }
 }
 
 async function signMobileSimulatorBundle(bundle: string) {

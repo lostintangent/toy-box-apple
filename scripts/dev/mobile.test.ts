@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
     checkMobileBuildVersion, checkMobileExtensionEntryPoint, linkMobileWorkspace, mobileBuildConfiguration,
-    mobileExtensions, mobileLaunchOptions, mobilePushEnvironment,
+    embedMobileActivityFixtures, mobileActivityFixtures, mobileExtensions, mobileLaunchOptions, mobilePushEnvironment,
     mobileSimulatorEntitlements,
     withMobileAppearance,
 } from "./mobile.ts";
@@ -28,6 +28,20 @@ test("phone builds are always optimized while Simulator tests stay debug", () =>
     expect(mobileBuildConfiguration(false, false, "debug")).toBe("debug");
     expect(mobileBuildConfiguration(false, false, "release")).toBe("release");
     expect(() => mobileBuildConfiguration(false, false, "profile")).toThrow("CONFIGURATION");
+});
+
+test("debug Activity fixtures are canonical, APNs-sized and removed when reusing an optimized bundle", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "tbm-activity-fixtures-"));
+    try {
+        await embedMobileActivityFixtures(directory, true);
+        for (const name of mobileActivityFixtures) {
+            const data = await readFile(join(directory, "ActivityFixtures", `${name}.apns`));
+            expect(data).toEqual(await readFile(join(import.meta.dir, "../../Tests/ChannelKitTests/Fixtures", `${name}.apns`)));
+            expect(data.byteLength).toBeLessThanOrEqual(4096);
+        }
+        await embedMobileActivityFixtures(directory, false);
+        expect(await Bun.file(join(directory, "ActivityFixtures", `${mobileActivityFixtures[0]}.apns`)).exists()).toBe(false);
+    } finally { await rm(directory, { recursive: true, force: true }); }
 });
 
 test("iOS extensions have exact identities, extension points and executable entry points", async () => {
