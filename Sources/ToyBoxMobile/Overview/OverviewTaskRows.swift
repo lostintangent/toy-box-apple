@@ -95,6 +95,7 @@ struct OverviewTaskRows: View {
                 .padding(.bottom, row.endsRoot ? 8 : 0)
                 .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { width = $0 }
                 .listRowSeparator(.hidden)
+                .listRowBackground(Color(.systemBackground))
                 .transition(.identity)
         }
     }
