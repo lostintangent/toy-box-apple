@@ -708,13 +708,6 @@ struct ArtifactViewerTests {
 
 @MainActor
 private final class ArtifactSandboxResponseProbe: NSObject, WKURLSchemeHandler {
-    private let document: String?
-
-    init(document: String? = nil) {
-        self.document = document
-        super.init()
-    }
-
     func webView(_ webView: WKWebView, start urlSchemeTask: any WKURLSchemeTask) {
         guard let url = urlSchemeTask.request.url else {
             urlSchemeTask.didFailWithError(URLError(.badURL))
@@ -733,7 +726,7 @@ private final class ArtifactSandboxResponseProbe: NSObject, WKURLSchemeHandler {
             urlSchemeTask.didFailWithError(URLError(.badServerResponse))
             return
         }
-        let document = document ?? """
+        let document = """
         <!doctype html><html><head><title>Initial</title></head><body>
         <p>Opaque top-level sandbox control</p>
         <script>
