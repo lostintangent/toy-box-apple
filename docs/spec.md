@@ -290,6 +290,19 @@ Delivery rechecks the registration to prevent an in-flight lookup crossing a ser
 `simctl push` does not invoke the notification service on this runtime. A local proof can exercise
 the exact same enricher, but actual service invocation remains a real-APNs check.
 
+For an offline local proof, the DEBUG simulator Foundation Proof screen separates
+**Prepare Offline Request** from **Deliver Prepared Offline Request**. Prepare resolves real
+routing while online and runs the production enricher to warm its identity cache. Deliver reuses
+that routing without a catalog preflight, so the server can actually be unreachable. It rechecks
+the selected registration before and after enrichment and retains the thirty-second notification
+delay. The existing one-step request and completion controls are unchanged.
+`bun run mobile --notification-proof request --hold` schedules N01 without taps.
+Use `--notification-proof prepare-offline --hold` while online, then a separate
+`--notification-proof deliver-offline --hold` launch after stopping the demo for N05.
+Preparation persists only routing and its registration. Each launch writes
+`notification-proof-result.json` in the shared group with completion, failure and action elapsed
+time. These options require a DEBUG simulator lease and never request notification permission.
+
 `ChannelActivityAttributes` has `channelID`, `channelName` and `registrationID`. Its `ContentState`
 has working agent identities, top-level tasks done/total, optional waiting request sequence,
 `updatedAt` and optional ending. Its custom Codable implementation uses Unix seconds for

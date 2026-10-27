@@ -5,7 +5,7 @@ import { join } from "node:path";
 import {
     checkMobileBuildVersion, checkMobileExtensionEntryPoint, linkMobileWorkspace, mobileBuildConfiguration,
     embedMobileActivityFixtures, mobileActivityFixtures, mobileExtensions, mobileLaunchOptions, mobilePushEnvironment,
-    mobileSimulatorEntitlements, mobileActivityAutoplayArguments,
+    mobileSimulatorEntitlements, mobileActivityAutoplayArguments, mobileNotificationProofArguments,
     withMobileAppearance,
 } from "./mobile.ts";
 
@@ -28,6 +28,35 @@ test("phone builds are always optimized while Simulator tests stay debug", () =>
     expect(mobileBuildConfiguration(false, false, "debug")).toBe("debug");
     expect(mobileBuildConfiguration(false, false, "release")).toBe("release");
     expect(() => mobileBuildConfiguration(false, false, "profile")).toThrow("CONFIGURATION");
+});
+
+test("notification proof forwards exact actions and rejects unknown actions", () => {
+    expect(mobileNotificationProofArguments()).toEqual([]);
+    for (const action of ["request", "prepare-offline", "deliver-offline"]) {
+        expect(mobileNotificationProofArguments(action)).toEqual(["--notification-proof", action]);
+    }
+    for (const action of ["", "completion", "prepare", "--device"]) {
+        expect(() => mobileNotificationProofArguments(action)).toThrow("--notification-proof");
+    }
+});
+
+test("notification proof rejects unleased, release, device and conflicting launches before taking the simulator", async () => {
+    for (const [args, configuration, message] of [
+        [["--notification-proof", "request"], "debug", "requires a debug Simulator"],
+        [["--notification-proof", "request", "--hold", "--device"], "debug", "requires a debug Simulator"],
+        [["--notification-proof", "request", "--hold", "--build-only"], "debug", "requires a debug Simulator"],
+        [["--notification-proof", "request", "--hold", "--shutdown"], "debug", "requires a debug Simulator"],
+        [["--notification-proof", "request", "--hold"], "release", "available only in debug Simulator"],
+        [["--notification-proof", "request", "--activity-fixture-proof", "--hold"], "debug", "Choose one simulator proof"],
+    ] as const) {
+        const process = Bun.spawn([globalThis.process.execPath, join(import.meta.dir, "mobile.ts"), ...args], {
+            cwd: import.meta.dir, stdin: "ignore", stdout: "pipe", stderr: "pipe",
+            env: { ...globalThis.process.env, CONFIGURATION: configuration },
+        });
+        const output = await new Response(process.stderr).text();
+        expect(await process.exited).toBe(1);
+        expect(output).toContain(message);
+    }
 });
 
 test("debug Activity fixtures are canonical, APNs-sized and removed when reusing an optimized bundle", async () => {

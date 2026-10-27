@@ -236,31 +236,101 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
     func clearError() { error = nil }
 
     #if DEBUG && targetEnvironment(simulator)
-    func scheduleProofNotification(_ kind: ChannelPushPayload.Kind) async throws {
+    enum ProofAction: String, CaseIterable {
+        case request
+        case prepareOffline = "prepare-offline"
+        case deliverOffline = "deliver-offline"
+    }
+
+    struct PreparedProofNotification: Codable {
+        static let fileName = "notification-proof-prepared.json"
+        let payload: ChannelPushPayload
+        let registration: MobilePushRegistration
+
+        func write(directory: URL) throws {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let file = directory.appendingPathComponent(Self.fileName)
+            try JSONEncoder().encode(self).write(to: file, options: .atomic)
+            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
+        }
+
+        static func read(directory: URL) throws -> Self {
+            try JSONDecoder().decode(Self.self, from: Data(contentsOf: directory.appendingPathComponent(fileName)))
+        }
+    }
+
+    typealias ProofEnrichment = @MainActor (ChannelPushPayload) async throws -> UNNotificationContent
+
+    func runProofNotificationAction(_ action: ProofAction, directory: URL? = nil,
+                                    enrich: ProofEnrichment? = nil) async throws {
+        switch action {
+        case .request:
+            try await scheduleProofNotification(.request, enrich: enrich)
+        case .prepareOffline:
+            let prepared = try await prepareProofNotification(.request, enrich: enrich)
+            try prepared.write(directory: directory ?? MobileSharedContainer.url())
+        case .deliverOffline:
+            let prepared = try PreparedProofNotification.read(directory: directory ?? MobileSharedContainer.url())
+            try await schedulePreparedProofNotification(prepared, enrich: enrich)
+        }
+    }
+
+    func prepareProofNotification(_ kind: ChannelPushPayload.Kind,
+                                  enrich: ProofEnrichment? = nil) async throws -> PreparedProofNotification {
+        let prepared = try await proofRouting(kind)
+        _ = try await (enrich ?? Self.proofContent)(prepared.payload)
+        try validateProofRegistration(prepared.registration)
+        return prepared
+    }
+
+    func scheduleProofNotification(_ kind: ChannelPushPayload.Kind,
+                                   enrich: ProofEnrichment? = nil) async throws {
+        let prepared = try await proofRouting(kind)
+        try await schedulePreparedProofNotification(prepared, enrich: enrich)
+    }
+
+    func schedulePreparedProofNotification(_ prepared: PreparedProofNotification,
+                                           enrich: ProofEnrichment? = nil) async throws {
+        try validateProofRegistration(prepared.registration)
+        guard prepared.payload.registrationID == prepared.registration.registrationID else {
+            throw ProofFailure.registrationChanged
+        }
+        let content = try await (enrich ?? Self.proofContent)(prepared.payload)
+        try validateProofRegistration(prepared.registration)
+        try await addNotice(UNNotificationRequest(
+            identifier: "proof-\(UUID().uuidString)", content: content,
+            trigger: UNTimeIntervalNotificationTrigger(timeInterval: 30, repeats: false)))
+    }
+
+    private func proofRouting(_ kind: ChannelPushPayload.Kind) async throws -> PreparedProofNotification {
         guard let api = configuredAPI, let registration = currentRegistration else {
             throw ProofFailure.notConfigured
         }
+        try validateProofRegistration(registration)
+        let payload = try Self.proofPayload(kind: kind, catalog: await api.catalog(), registration: registration)
+        try validateProofRegistration(registration)
+        return PreparedProofNotification(payload: payload, registration: registration)
+    }
+
+    private func validateProofRegistration(_ registration: MobilePushRegistration) throws {
+        guard let api = configuredAPI else { throw ProofFailure.notConfigured }
         guard ["localhost", "127.0.0.1", "::1"].contains(api.baseURL.host ?? ""),
               api.baseURL.port == 3210 else { throw ProofFailure.notDemoServer }
-        let payload = try Self.proofPayload(kind: kind, catalog: await api.catalog(), registration: registration)
         guard currentRegistration == registration else { throw ProofFailure.registrationChanged }
+    }
+
+    private static func proofContent(_ payload: ChannelPushPayload) async throws -> UNNotificationContent {
         let operation = try MobileNotificationEnricher()
         defer { operation.expire() }
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
-            operation.start(payload) { content in
-                guard self.currentRegistration == registration else {
-                    continuation.resume(throwing: ProofFailure.registrationChanged)
-                    return
-                }
-                self.center.add(UNNotificationRequest(
-                    identifier: "proof-\(UUID().uuidString)", content: content,
-                    trigger: UNTimeIntervalNotificationTrigger(timeInterval: 30, repeats: false)
-                )) { error in
-                    if let error { continuation.resume(throwing: error) }
-                    else { continuation.resume() }
-                }
+        var result: UNNotificationContent?
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            operation.start(payload) {
+                result = $0
+                continuation.resume()
             }
         }
+        guard let result else { throw ProofFailure.noContent }
+        return result
     }
 
     static func proofPayload(kind: ChannelPushPayload.Kind, catalog: ChannelCatalog,
@@ -276,7 +346,7 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
     }
 
     private enum ProofFailure: LocalizedError {
-        case notConfigured, notDemoServer, registrationChanged
+        case notConfigured, notDemoServer, registrationChanged, noContent
         case noChannel(ChannelPushPayload.Kind)
 
         var errorDescription: String? {
@@ -284,6 +354,7 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
             case .notConfigured: "Connect to the demo server before preparing an alert."
             case .notDemoServer: "Use the local demo server on port 3210 for proof alerts."
             case .registrationChanged: "The selected server changed while preparing the alert."
+            case .noContent: "Notification enrichment produced no content."
             case .noChannel(.request): "The demo has no waiting request."
             case .noChannel(.completion): "The demo has no completed channel."
             }
