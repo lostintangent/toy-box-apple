@@ -295,20 +295,8 @@ Agents never create these accounts, accept agreements, read private keys or set 
   and WindowServer-event checks remain opt-in and must run locally before changes to their behavior.
 - Restore a quarantined test to CI only after identifying the cause and adding deterministic
   regression coverage. Do not loosen assertions or add retries to turn an unexplained failure green.
-- On 2026-10-27, CI run `40505686393` sampled all three cooperative workers blocked in test
-  semaphores: two `ComposerDraftTests.anInFlightReattachmentCannotOutliveItsCancellationOrSlot`
-  arguments and `SendAttemptTests.restoredAttemptsReconcileWithTheFirstSnapshot` through its
-  journal hold. Their release tasks needed the same pool. Composer preparation/thumbnail hooks
-  and the journal's internal load seam now suspend on async signals instead. The thumbnail
-  cases and held HTTP reply use the same nonblocking discipline. CI runs all ChannelClient
-  tests with `LIBDISPATCH_COOPERATIVE_POOL_STRICT=1` before the full Mac suite. Core owns this
-  regression, with stacks in that run's `mac-test-watchdog` artifact. No case is quarantined.
-- The same run's iOS `CatalogTests.changingActivityDoesNotCancelAnInFlightPoll(initiallyActive: true)`
-  checked `!isLoading` before the main actor adopted its prefetched HTTP request. That is not
-  evidence of completion. `setActive` cancels only the polling delay, not the in-flight request.
-  The regression now controls activity changes both before adoption and during the active load,
-  waits for an applied catalog and retains its state, working-set, error and request-count
-  assertions. Core owns this regression. No production polling behavior or deadline changed.
+- Test gates and hooks suspend, never block a cooperative worker. CI runs ChannelClient with
+  `LIBDISPATCH_COOPERATIVE_POOL_STRICT=1` to enforce this.
 - Composer's t412 image-strip failure was synthetic wheel input during display sleep.
   Core's 2026-10-26 foundation Mac gate, based on `9bada33`
   with no Mac/view changes, failed at `ComposerTests.swift:1468` after 31.199 seconds:
