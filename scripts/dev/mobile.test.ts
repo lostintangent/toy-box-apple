@@ -3,7 +3,9 @@ import { mkdir, mkdtemp, readFile, readlink, rm, writeFile } from "node:fs/promi
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-    checkMobileBuildVersion, linkMobileWorkspace, mobileBuildConfiguration, mobileLaunchOptions, withMobileAppearance,
+    checkMobileBuildVersion, linkMobileWorkspace, mobileBuildConfiguration, mobileExtensions, mobileLaunchOptions,
+    mobileSimulatorEntitlements,
+    withMobileAppearance,
 } from "./mobile.ts";
 
 function buildVersion(platform = "IOSSIMULATOR", minimumOS = "27.0", sdk = "27.1") {
@@ -25,6 +27,31 @@ test("phone builds are always optimized while Simulator tests stay debug", () =>
     expect(mobileBuildConfiguration(false, false, "debug")).toBe("debug");
     expect(mobileBuildConfiguration(false, false, "release")).toBe("release");
     expect(() => mobileBuildConfiguration(false, false, "profile")).toThrow("CONFIGURATION");
+});
+
+test("iOS extensions have exact identities, extension points and executable entry points", async () => {
+    for (const extension of mobileExtensions) {
+        const info = await readFile(join(import.meta.dir, "../../Resources/Mobile", extension.info), "utf8");
+        expect(info).toContain(`<string>dev.toybox.mobile.${extension.suffix}</string>`);
+        expect(info).toContain(`<string>${extension.point}</string>`);
+        expect(info).toContain(`<string>${extension.executable}</string>`);
+    }
+    const host = await readFile(join(import.meta.dir, "../../Resources/Mobile/Info.plist"), "utf8");
+    expect(host).toMatch(/<key>NSSupportsLiveActivities<\/key>\s*<true\/>/);
+    const package_ = await readFile(join(import.meta.dir, "../../Package.swift"), "utf8");
+    for (const extension of mobileExtensions) expect(package_).toContain(`name: "${extension.executable}"`);
+});
+
+test("simulated capabilities include each bundle identity without a device team or signing profile", () => {
+    for (const suffix of ["", ".widget", ".notification"]) {
+        const bundleID = `dev.toybox.mobile${suffix}`;
+        const entitlements = mobileSimulatorEntitlements(bundleID);
+        expect(entitlements["application-identifier"]).toBe(bundleID);
+        expect(entitlements["com.apple.security.application-groups"]).toEqual(["group.dev.toybox.mobile"]);
+        expect(entitlements).not.toHaveProperty("com.apple.developer.team-identifier");
+        expect(entitlements).not.toHaveProperty("get-task-allow");
+    }
+    expect(() => mobileSimulatorEntitlements("another.app")).toThrow("Unknown mobile bundle");
 });
 
 for (const [platform, path] of [["phone", "Mobile/Info.plist"], ["Mac", "Info.plist"]] as const) {

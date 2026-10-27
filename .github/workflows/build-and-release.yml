@@ -92,10 +92,16 @@ jobs:
         with:
           bun-version: 1.4.4
       - run: bun install --frozen-lockfile --ignore-scripts
-      - name: Build the app and shared modules for iOS Simulator
+      - name: Build the app, widget and notification extensions for iOS Simulator
         env:
           SCRATCH_PATH: ${{ runner.temp }}/toy-box-mobile
-        run: bun run mobile --build-only
+        run: |
+          bun run mobile --build-only
+          app="$SCRATCH_PATH/mobile-simulator/Toy Box.app"
+          for executable in ToyBoxMobileWidget ToyBoxMobileNotification; do
+            test -x "$app/PlugIns/$executable.appex/$executable"
+            codesign --verify --strict "$app/PlugIns/$executable.appex"
+          done
       - name: Test shared modules when an iOS 27 runtime is installed
         env:
           SCRATCH_PATH: ${{ runner.temp }}/toy-box-mobile

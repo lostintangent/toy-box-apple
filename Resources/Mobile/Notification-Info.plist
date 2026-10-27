@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleIdentifier</key><string>dev.toybox.mobile.notification</string>
+    <key>CFBundleName</key><string>Toy Box Notification</string>
+    <key>CFBundleDisplayName</key><string>Toy Box</string>
+    <key>CFBundleExecutable</key><string>ToyBoxMobileNotification</string>
+    <key>CFBundlePackageType</key><string>XPC!</string>
+    <key>CFBundleShortVersionString</key><string>0.1.0</string>
+    <key>CFBundleVersion</key><string>1</string>
+    <key>MinimumOSVersion</key><string>27.0</string>
+    <key>NSExtension</key>
+    <dict>
+        <key>NSExtensionPointIdentifier</key><string>com.apple.usernotifications.service</string>
+        <key>NSExtensionPrincipalClass</key><string>ToyBoxMobileNotificationService</string>
+    </dict>
+    <key>NSUserActivityTypes</key>
+    <array><string>INSendMessageIntent</string></array>
+</dict>
+</plist>

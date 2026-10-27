@@ -191,14 +191,29 @@ view.
   Both compile the shared `Resources/AppIcon.icon` for the selected iOS platform with `actool`
   and embed its layered appearances, PNG fallbacks and generated bundle metadata before signing.
   There is no separate phone icon artwork or committed iOS asset catalog.
+  The phone also embeds `PlugIns/ToyBoxMobileWidget.appex` (`dev.toybox.mobile.widget`) and
+  `PlugIns/ToyBoxMobileNotification.appex` (`dev.toybox.mobile.notification`). SwiftPM builds both
+  with application-extension safety. The notification executable uses `_NSExtensionMain`;
+  WidgetKit supplies the widget entry point. Every executable is SDK-stamped and verified.
+  Simulator builds link capabilities into `__TEXT,__entitlements` and `__TEXT,__ents_der`, including
+  all three bundles' `group.dev.toybox.mobile`. Their ad-hoc code signatures contain no restricted
+  device entitlements. Extensions are signed before the host, without device profiles or credentials.
 - `bun run mobile --device [--device-id <name-or-UDID>] [--server <URL>]` builds arm64,
   signs with an existing matching Apple Development identity/profile, installs with
   `xcrun devicectl`, launches and checks that the process is running. It never runs xcodebuild,
   exports private keys, creates signing assets, or uses the shared simulator. Connect, pair,
   enable Developer Mode and unlock your own iOS 27+ iPhone first. Multiple eligible phones
-  require `--device-id`; multiple matching teams require `MOBILE_PROVISIONING_PROFILE=<path>`.
-  An explicit profile must already cover the phone's UDID and this app, remain unexpired and
-  include an available signing certificate. The existing app/data are not uninstalled.
+  require `--device-id`. Device signing requires three explicit, unexpired development profiles,
+  one for each bundle, sharing one team and available certificate and covering the phone's UDID.
+  All require `group.dev.toybox.mobile`; the app additionally requires development
+  `aps-environment` and Communication Notifications, and the notification extension requires
+  Communication Notifications. Wildcard profiles are never accepted.
+  Select paths with `MOBILE_PROVISIONING_PROFILE`, `MOBILE_WIDGET_PROVISIONING_PROFILE` and
+  `MOBILE_NOTIFICATION_PROVISIONING_PROFILE`. Until these exist the command fails before
+  building or installing, pointing to "Your Apple steps" in the Release 2 proposal.
+  The user creates the App Group, the three explicit App IDs and their development profiles.
+  Agents never provision them or read the APNs key. Each extension embeds its own profile
+  and is signed before the containing app. The existing app/data are not uninstalled.
   Device launches default to this Mac's Bonjour host, `http://<LocalHostName>.local:3100`.
   Use `--server` or `TOY_BOX_SERVER_URL` for another phone-reachable LAN/HTTPS server.
   The signed device bundle records that URL as `ToyBoxDefaultServerURL`, a nonpersistent
@@ -210,7 +225,7 @@ view.
   makes iOS and macOS ignore that opt-out. Local-network permission remains separate from ATS,
   and HTTPS still uses normal certificate validation.
 - `SCRATCH_PATH=/tmp/tbm-<you> bun run test:mobile` builds and runs ChannelKit,
-  ChannelClient, ChannelIntelligence, ToyBoxUI and ToyBoxMobile tests on iOS Simulator. It uses Apple's simulator
+  ChannelClient, ChannelIntelligence, ToyBoxUI, ToyBoxMobileIntegrations and ToyBoxMobile tests on iOS Simulator. It uses Apple's simulator
   `xctest` host and rejects interrupted, failed and empty Swift Testing runs. Existing opt-ins
   stay off. It shuts down the simulator only if it booted it.
 - Mobile commands default to `/Applications/Xcode.app/Contents/Developer`. Set `DEVELOPER_DIR`
@@ -223,7 +238,16 @@ view.
   directory links the same manifest, sources and tests into a package workspace, so resolving
   its dependency-free graph cannot rewrite the Mac's Sparkle lockfile. Do not export the flag
   globally or run that graph in the repository root. Do not share a scratch path across builds.
-- CI always builds the mobile app and shared modules for Simulator. It runs the shared tests
+- `bun run mobile --foundation-proof --hold` is DEBUG/Simulator-only scaffolding for t405.
+  It substitutes Core's proof view only on that explicit launch, retaining the normal scene otherwise.
+  It prepares an App Group marker/avatar, requests notification authorization, and starts, updates
+  and ends a local placeholder activity. The widget and simulated mutable-content notification
+  extension write matching receipts into that container. Send the simulated alert with
+  `xcrun simctl push <UDID> dev.toybox.mobile <fixture.apns>`, with `mutable-content: 1`,
+  an alert and `toyBoxFoundationProof: true`. This is not the release payload or activity schema.
+  Remove the proof hook, harness and placeholder activity when t408/t409 ship real flows.
+- CI always builds the mobile app, both embedded extensions and shared modules for Simulator,
+  and verifies the extension signatures. It runs the shared tests
   only when an iOS 27+ runtime is already installed, otherwise reporting the explicit skip.
 - Mobile views use SwiftUI's safe areas, layout margins, size classes and adaptive navigation.
   Never hard-code a safe-area inset, device size or Duo fold width. The layout adapts to the
@@ -499,6 +523,8 @@ Agents never create these accounts, accept agreements, read private keys or set 
 | `Sources/ToyBoxMobile/Transcript` | Transcript |
 | `Sources/ToyBoxMobile/Composer` (composer and tray) | Composer |
 | `Sources/ToyBoxMobile/Overview`, `Management` | Overview |
+| `Sources/ToyBoxMobileIntegrations/`, `Sources/ToyBoxMobileWidget/`, `Sources/ToyBoxMobileNotification/`, `Resources/Mobile/` | Core |
+| `Sources/ToyBoxMobile/Automation/MobileFoundationProof.swift` (temporary t405 harness) | Core |
 
 UI engineers may add one `Tests/ToyBoxDesktopTests/<Surface>Tests.swift` file for their own surface.
 
