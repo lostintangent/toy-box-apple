@@ -1645,11 +1645,18 @@ loss. Collapsing removes it with the children. Do not draw a dangling guide to a
 enter accessibility. Include the shared Mac Tasks popover, and preserve all disclosure,
 hierarchy and row-action semantics.
 
-**Phone disclosure, interim fallback.** Until t380's native-row animation is verified, task
-disclosure changes instantly without an animated transaction, using the existing Reduce
-Motion behavior. No child fade or competing native cell-height animation. Keep the saved
-disclosure state, defaults, scoped subtasks, guide geometry, artifact actions, accessibility
-and timers unchanged. This temporary phone-only fallback does not alter Mac disclosure.
+**Phone task disclosure.** Every visible task and scoped-subtasks link is its own native List
+row, with stable depth-first identities. An opaque `systemBackground` row must resolve to the
+exact surface behind it in Light, Dark, the elevated sheet, the inspector and the pressed state.
+Following rows mask inserted child text instead of letting it show through their moving text.
+Use a tap-scoped 180 ms ease-in-out transaction, leaving UIKit's native row-move settling curve
+unmodified. Do not stage a second content fade, animate the whole list by its visible IDs or
+add a separate transition. Under Reduce Motion or accessibility text sizes, both user-triggered
+and status-driven disclosure change immediately, without a fade, in the root and scoped lists.
+One shared phone motion policy owns this choice. Adjacent row guide segments join continuously,
+retaining 4-point clearance only at the whole child group's ends. Preserve saved disclosure, status
+defaults, measured reading width, scoped subtasks, artifact actions and visible-only timers.
+Mac disclosure is unchanged.
 
 A parent's disclosure trails its title inline, as macOS sidebar section headers and the pane do.
 Build the first line as one wrapping `Text`: the title, then two spaces and the progress count

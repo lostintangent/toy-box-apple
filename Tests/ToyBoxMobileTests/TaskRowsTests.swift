@@ -130,19 +130,37 @@ struct TaskRowsTests {
         }
     }
 
-    @Test(arguments: [DynamicTypeSize.large, .accessibility1, .accessibility5])
-    func disclosureHonorsAccessibilityTextAndTheSystemMotionPreference(size: DynamicTypeSize) async throws {
+    @Test(arguments: [false, true], [false, true])
+    func disclosureMotionPolicyHasOneDurationAndBothInstantInputs(reduceMotion: Bool, accessibility: Bool) {
+        #expect(OverviewTaskMotion.disclosureAnimation(reduceMotion: reduceMotion, accessibility: accessibility)
+                == (reduceMotion || accessibility ? nil : .easeInOut(duration: 0.18)))
+    }
+
+    @Test(arguments: DisclosureChange.allCases)
+    func disclosureHonorsAccessibilityTextAndTheSystemMotionPreference(change: DisclosureChange) async throws {
         let store = ChannelStore(id: "channel", api: try ChannelAPI(serverURL: "https://fixture.example"))
         let session = OverviewSession(store: store)
         let record = DisclosureTransactions()
         let reduceMotion = UIAccessibility.isReduceMotionEnabled
+        let size = change.size
+        var state = ChannelState(
+            revision: 1,
+            channel: .init(id: "channel", name: "Workshop", model: .init(provider: "test", name: "test"),
+                           tasks: tree, updatedAt: "2026-10-26T00:00:00Z"),
+            lead: .lead(id: "channel", profile: .init(name: "Lead", role: "Coordinator",
+                                                    avatar: .init(mark: "M4 12H20", color: "#123456"))))
+        _ = try store.apply(.init(type: "snapshot", state: state))
+        session.reconcileTasks(store.tasks)
         let viewer = ChannelArtifactSession(
             decodeImage: { _, _, _ in throw ChannelAttachmentError.invalidImage },
             download: { _, _ in throw URLError(.notConnectedToInternet) })
         let host = UIHostingController(rootView:
             DisclosureTransactionScene(task: tree[0], store: store, session: session,
-                                       accessibility: size.isAccessibilitySize, record: record)
+                                       accessibility: size.isAccessibilitySize,
+                                       statusDriven: change == .ax1Status, record: record)
                 .environment(viewer)
+                .environment(OverviewPresentation()).environment(ChannelInteraction())
+                .environment(ManagementPresenter())
                 .dynamicTypeSize(size))
         let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 466, height: 1400))
         window.rootViewController = host
@@ -151,10 +169,16 @@ struct TaskRowsTests {
         host.view.layoutIfNeeded()
         await Task.yield()
         host.view.layoutIfNeeded()
-        let row = try #require(MobileAutomationTree(windows: [window]).matching("overview-task-root").first)
-        let collapse = try #require(row.actions.first { $0.name == "Collapse" })
         record.entries.removeAll()
-        #expect(row.perform(collapse))
+        if change == .ax1Status {
+            state.revision += 1
+            state.channel.tasks[0].status = "done"
+            _ = try store.apply(.init(type: "snapshot", state: state))
+        } else {
+            let row = try #require(MobileAutomationTree(windows: [window]).matching("overview-task-root").first)
+            let collapse = try #require(row.actions.first { $0.name == "Collapse" })
+            #expect(row.perform(collapse))
+        }
         let deadline = ContinuousClock.now.advanced(by: .seconds(2))
         while record.entries.allSatisfy(\.expanded), ContinuousClock.now < deadline {
             host.view.layoutIfNeeded()
@@ -162,6 +186,7 @@ struct TaskRowsTests {
         }
         let transaction = try #require(record.entries.first { !$0.expanded })
         #expect(session.taskDisclosure["root"]?.expanded == false)
+        #expect(session.taskDisclosure["root"]?.status == (change == .ax1Status ? "done" : "in_progress"))
         #expect(transaction.animation
                 == (reduceMotion || size.isAccessibilitySize ? nil : .easeInOut(duration: 0.18)))
     }
@@ -255,6 +280,18 @@ struct TaskRowsTests {
         return view.subviews.lazy.compactMap { nativeList(in: $0) }.first
     }
 
+    enum DisclosureChange: CaseIterable {
+        case largeTap, ax1Tap, ax5Tap, ax1Status
+
+        var size: DynamicTypeSize {
+            switch self {
+            case .largeTap: .large
+            case .ax1Tap, .ax1Status: .accessibility1
+            case .ax5Tap: .accessibility5
+            }
+        }
+    }
+
     private final class DisclosureTransactions {
         var entries: [(expanded: Bool, animation: Animation?)] = []
     }
@@ -264,16 +301,21 @@ struct TaskRowsTests {
         let store: ChannelStore
         @Bindable var session: OverviewSession
         let accessibility: Bool
+        let statusDriven: Bool
         let record: DisclosureTransactions
 
         var body: some View {
             VStack {
-                OverviewTaskNode(task: task, store: store, session: session, depth: 0,
-                                 layout: .init(contentWidth: 466, statusWidth: 16, titleGap: 6,
-                                               ownerWidth: 20, scaledReadingWidth: 192,
-                                               accessibility: accessibility, rootHasOwner: false))
+                if statusDriven {
+                    OverviewView(store: store, session: session, placement: .sheet)
+                } else {
+                    OverviewTaskNode(task: task, store: store, session: session, depth: 0,
+                                     layout: .init(contentWidth: 466, statusWidth: 16, titleGap: 6,
+                                                   ownerWidth: 20, scaledReadingWidth: 192,
+                                                   accessibility: accessibility, rootHasOwner: false))
+                }
                 DisclosureTransactionProbe(
-                    expanded: OverviewTaskListRow.isExpanded(task, disclosure: session.taskDisclosure),
+                    expanded: session.taskDisclosure[task.id]?.expanded ?? task.isExpandedByDefault,
                     record: record)
                     .frame(height: 0)
             }

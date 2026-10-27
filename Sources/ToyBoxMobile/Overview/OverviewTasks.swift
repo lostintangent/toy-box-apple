@@ -4,6 +4,12 @@ import SwiftUI
 import ToyBoxUI
 import UIKit
 
+enum OverviewTaskMotion {
+    static func disclosureAnimation(reduceMotion: Bool, accessibility: Bool) -> Animation? {
+        reduceMotion || accessibility ? nil : .easeInOut(duration: 0.18)
+    }
+}
+
 struct OverviewTasksSection: View {
     let store: ChannelStore
     let session: OverviewSession
@@ -29,6 +35,7 @@ struct OverviewSubtasksScreen: View {
     let placement: OverviewPlacement
     @Bindable var scroll: OverviewTaskScroll
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var typeSize
     @Environment(OverviewPresentation.self) private var presentation
     @Environment(ChannelInteraction.self) private var interaction
 
@@ -68,7 +75,9 @@ struct OverviewSubtasksScreen: View {
         .navigationTitle("Subtasks")
         .navigationBarTitleDisplayMode(.inline)
         .onChange(of: store.tasks, initial: true) { _, tasks in
-            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) { session.reconcileTasks(tasks) }
+            withAnimation(OverviewTaskMotion.disclosureAnimation(
+                reduceMotion: reduceMotion, accessibility: typeSize.isAccessibilitySize)
+            ) { session.reconcileTasks(tasks) }
         }
     }
 }
@@ -234,7 +243,9 @@ struct OverviewTaskNode: View {
     }
 
     private func toggle() {
-        withAnimation(reduceMotion || layout.accessibility ? nil : .easeInOut(duration: 0.18)) {
+        withAnimation(OverviewTaskMotion.disclosureAnimation(
+            reduceMotion: reduceMotion, accessibility: layout.accessibility)
+        ) {
             session.taskDisclosure[task.id] = .init(status: task.status, expanded: !expanded)
         }
     }

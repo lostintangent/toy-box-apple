@@ -106,6 +106,7 @@ private struct OverviewContent: View {
     @Environment(OverviewPresentation.self) private var presentation
     @Environment(ChannelInteraction.self) private var interaction
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -137,7 +138,9 @@ private struct OverviewContent: View {
                 }
             }
             .onChange(of: store.tasks, initial: true) { _, tasks in
-                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) { session.reconcileTasks(tasks) }
+                withAnimation(OverviewTaskMotion.disclosureAnimation(
+                    reduceMotion: reduceMotion, accessibility: typeSize.isAccessibilitySize)
+                ) { session.reconcileTasks(tasks) }
             }
             .onDisappear { session.prepareForPresentation() }
             .scrollEdgeEffectStyle(.hard, for: .top)
