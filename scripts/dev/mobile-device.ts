@@ -1,9 +1,9 @@
 import { X509Certificate } from "node:crypto";
-import { copyFile, readdir, writeFile } from "node:fs/promises";
+import { copyFile, readFile, readdir, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { isMissing, machineLock, temporary, text } from "../lib.ts";
-import { bundleMobile, mobileAppGroup, mobileBundleID, mobileEntitlements, mobileEnvironment, mobileExtensions } from "./mobile.ts";
+import { isMissing, machineLock, plist, temporary, text } from "../lib.ts";
+import { bundleMobile, mobileAppGroup, mobileBundleID, mobileEntitlements, mobileEnvironment, mobileExtensions, mobilePushEnvironment } from "./mobile.ts";
 
 function record(value: unknown, label: string): Record<string, unknown> {
     if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -56,26 +56,30 @@ export function selectMobileDevice(result: unknown, requested?: string): MobileD
     return matches[0]!;
 }
 
-export type DevelopmentProfile = {
+export type MobileProvisioningProfile = {
     path: string; name: string; uuid: string; team: string; prefix: string; applicationIdentifier: string;
     expires: string; devices: string[]; certificates: string[];
     entitlements: Record<string, unknown>;
+    distribution?: boolean;
 };
-export type DevelopmentIdentity = { fingerprint: string; name: string };
+export type MobileSigningIdentity = { fingerprint: string; name: string };
 
-export function developmentIdentities(output: string): DevelopmentIdentity[] {
-    return [...output.matchAll(/^\s*\d+\)\s+([A-Fa-f0-9]{40})\s+"(Apple Development: [^"]+)"\s*$/gm)]
+export function mobileSigningIdentities(output: string, distribution = false): MobileSigningIdentity[] {
+    const pattern = new RegExp(`^\\s*\\d+\\)\\s+([A-Fa-f0-9]{40})\\s+"(Apple ${distribution ? "Distribution" : "Development"}: [^"]+)"\\s*$`, "gm");
+    return [...output.matchAll(pattern)]
         .map(match => ({ fingerprint: match[1]!.toUpperCase(), name: match[2]! }));
 }
 
-function compatibleDevelopmentSigning(profiles: DevelopmentProfile[], identities: DevelopmentIdentity[],
-    udid: string, now: number, bundleID: string) {
-    const required = mobileEntitlements(bundleID);
+function compatibleMobileSigning(profiles: MobileProvisioningProfile[], identities: MobileSigningIdentity[],
+    udid: string | undefined, now: number, bundleID: string, distribution = false) {
+    const required = mobileEntitlements(bundleID, distribution);
     return profiles.flatMap(profile => {
         const expiry = Date.parse(profile.expires);
         const applicationIdentifier = `${profile.prefix}.${bundleID}`;
         const groups = profile.entitlements["com.apple.security.application-groups"];
-        if (!Number.isFinite(expiry) || expiry <= now || !profile.devices.includes(udid)
+        if (!Number.isFinite(expiry) || expiry <= now || !!profile.distribution !== distribution
+            || (distribution ? profile.devices.length !== 0 || profile.entitlements["get-task-allow"] === true
+                : !udid || !profile.devices.includes(udid))
             || profile.applicationIdentifier !== applicationIdentifier
             || !Array.isArray(groups) || !groups.includes(mobileAppGroup)
             || Object.entries(required).some(([key, value]) => key !== "com.apple.security.application-groups"
@@ -86,9 +90,9 @@ function compatibleDevelopmentSigning(profiles: DevelopmentProfile[], identities
         || a.profile.uuid.localeCompare(b.profile.uuid));
 }
 
-export function selectDevelopmentSigning(profiles: DevelopmentProfile[], identities: DevelopmentIdentity[],
+export function selectDevelopmentSigning(profiles: MobileProvisioningProfile[], identities: MobileSigningIdentity[],
     udid: string, now = Date.now(), bundleID = mobileBundleID) {
-    const compatible = compatibleDevelopmentSigning(profiles, identities, udid, now, bundleID);
+    const compatible = compatibleMobileSigning(profiles, identities, udid, now, bundleID);
     if (!compatible.length) {
         throw new Error(`No unexpired explicit iOS development profile covers ${bundleID}, this phone, `
             + "its required capabilities and an available Apple Development identity. "
@@ -105,28 +109,34 @@ export const mobileProfileSetupHelp = "Follow “Your Apple steps” in the shar
     + "The app needs sandbox Push and Communication Notifications; the notification extension needs Communication Notifications; "
     + "all three need the App Group. Wildcard profiles are not accepted. No signing assets were created.";
 
-export function selectMobileDevelopmentSigning(profiles: DevelopmentProfile[], identities: DevelopmentIdentity[],
+export function selectMobileDevelopmentSigning(profiles: MobileProvisioningProfile[], identities: MobileSigningIdentity[],
     udid: string, now = Date.now(), paths: Record<string, string | undefined> = {}) {
+    return selectMobileSigning(profiles, identities, false, udid, now, paths);
+}
+
+export function selectMobileSigning(profiles: MobileProvisioningProfile[], identities: MobileSigningIdentity[],
+    distribution: boolean, udid?: string, now = Date.now(), paths: Record<string, string | undefined> = {}) {
     const bundleIDs = [mobileBundleID, ...mobileExtensions.map(extension => `${mobileBundleID}.${extension.suffix}`)];
     const sets = identities.flatMap(identity => [...new Set(profiles.map(profile => profile.team))].flatMap(team => {
         const selected = bundleIDs.map(bundleID => {
             const candidates = profiles.filter(profile => profile.team === team
                 && (!paths[bundleID] || profile.path === paths[bundleID]));
-            const choice = compatibleDevelopmentSigning(candidates, [identity], udid, now, bundleID)[0];
+            const choice = compatibleMobileSigning(candidates, [identity], udid, now, bundleID, distribution)[0];
             return choice ? { bundleID, ...choice } : undefined;
         });
         return selected.every(value => value !== undefined) ? [selected] : [];
     }));
-    if (!sets.length) throw new Error("No compatible app/widget/notification profile set shares one development identity and team. "
-        + mobileProfileSetupHelp);
+    if (!sets.length) throw new Error(`No compatible app/widget/notification ${distribution ? "App Store" : "development"} profile set shares one ${distribution ? "Apple Distribution" : "development"} identity and team. `
+        + (distribution ? "Select three explicit iOS App Store Connect profiles with the App Group, production Push on the host, and Communication Notifications on the host and service. No profiles or certificates were created."
+            : mobileProfileSetupHelp));
     if (new Set(sets.map(set => set[0]!.profile.team)).size !== 1) {
-        throw new Error("Multiple development teams match all three bundles. Select the intended profiles with "
+        throw new Error("Multiple signing teams match all three bundles. Select the intended profiles with "
             + "MOBILE_PROVISIONING_PROFILE, MOBILE_WIDGET_PROVISIONING_PROFILE and MOBILE_NOTIFICATION_PROVISIONING_PROFILE.");
     }
     return sets.sort((a, b) => a[0]!.identity.fingerprint.localeCompare(b[0]!.identity.fingerprint))[0]!;
 }
 
-async function readDevelopmentProfile(path: string): Promise<DevelopmentProfile | undefined> {
+async function readMobileProfile(path: string, distribution: boolean): Promise<MobileProvisioningProfile | undefined> {
     return temporary("toy-box-profile-", async directory => {
         const decoded = join(directory, "profile.plist");
         await text(["security", "cms", "-D", "-i", path, "-o", decoded]);
@@ -134,14 +144,19 @@ async function readDevelopmentProfile(path: string): Promise<DevelopmentProfile 
             text(["plutil", "-extract", key, format, "-o", "-", decoded]);
         const platforms = strings(JSON.parse(await extract("Platform", "json")), "profile platforms");
         const entitlements = record(JSON.parse(await extract("Entitlements", "json")), "profile entitlements");
-        if (!platforms.includes("iOS") || entitlements["get-task-allow"] !== true) {
-            console.log(`Skipping non-iOS-development profile ${path}.`);
+        const xml = await readFile(decoded, "utf8");
+        const hasDevices = /<key>\s*ProvisionedDevices\s*<\/key>/.test(xml);
+        const hasAllDevices = /<key>\s*ProvisionsAllDevices\s*<\/key>\s*<true\s*\/>/.test(xml);
+        if (!platforms.includes("iOS") || (distribution
+            ? entitlements["get-task-allow"] === true || hasDevices || hasAllDevices
+            : entitlements["get-task-allow"] !== true || !hasDevices)) {
+            console.log(`Skipping profile not usable for ${distribution ? "App Store" : "iOS development"}: ${path}.`);
             return undefined;
         }
         const [name, uuid, expires, team, prefix, devices, certificates] = await Promise.all([
             extract("Name"), extract("UUID"), extract("ExpirationDate"),
             extract("TeamIdentifier", "json"), extract("ApplicationIdentifierPrefix", "json"),
-            extract("ProvisionedDevices", "json"),
+            distribution ? Promise.resolve("[]") : extract("ProvisionedDevices", "json"),
             extract("DeveloperCertificates", "xml1"),
         ]);
         const teams = strings(JSON.parse(team), "profile teams");
@@ -156,11 +171,11 @@ async function readDevelopmentProfile(path: string): Promise<DevelopmentProfile 
         if (!fingerprints.length) throw new Error(`Profile ${path} contains no signing certificates.`);
         return { path, name, uuid, expires, team: teams[0]!, prefix: prefixes[0]!,
             applicationIdentifier: string(entitlements["application-identifier"], "profile application identifier"),
-            devices: strings(JSON.parse(devices), "profile devices"), certificates: fingerprints, entitlements };
+            devices: strings(JSON.parse(devices), "profile devices"), certificates: fingerprints, entitlements, distribution };
     });
 }
 
-async function installedProfiles(): Promise<DevelopmentProfile[]> {
+async function installedProfiles(distribution = false): Promise<MobileProvisioningProfile[]> {
     const paths = Object.values(mobileProfilePaths()).filter((value): value is string => value !== undefined);
     for (const directory of [
         join(homedir(), "Library/Developer/Xcode/UserData/Provisioning Profiles"),
@@ -174,20 +189,61 @@ async function installedProfiles(): Promise<DevelopmentProfile[]> {
             if (!isMissing(error)) throw error;
         }
     }
-    const profiles: DevelopmentProfile[] = [];
+    const profiles: MobileProvisioningProfile[] = [];
     for (const path of new Set(paths)) {
-        const profile = await readDevelopmentProfile(path);
+        const profile = await readMobileProfile(path, distribution);
         if (profile) profiles.push(profile);
     }
     return profiles;
 }
 
-function mobileProfilePaths() {
+export function mobileProfilePaths() {
     return {
         [mobileBundleID]: process.env.MOBILE_PROVISIONING_PROFILE,
         [`${mobileBundleID}.widget`]: process.env.MOBILE_WIDGET_PROVISIONING_PROFILE,
         [`${mobileBundleID}.notification`]: process.env.MOBILE_NOTIFICATION_PROVISIONING_PROFILE,
     };
+}
+
+export async function mobileSigning(distribution: boolean, udid?: string) {
+    return selectMobileSigning(await installedProfiles(distribution),
+        mobileSigningIdentities(await text(["security", "find-identity", "-v", "-p", "codesigning"]), distribution),
+        distribution, udid, Date.now(), mobileProfilePaths());
+}
+
+export async function signMobileBundles(app: string, signing: ReturnType<typeof selectMobileSigning>, distribution = false) {
+    const host = signing.find(component => component.bundleID === mobileBundleID);
+    if (!host) throw new Error("Mobile signing has no host profile.");
+    await plist(join(app, "Info.plist"), [`Set :ToyBoxPushEnvironment ${mobilePushEnvironment(host.profile.entitlements)}`]);
+    await temporary("toy-box-mobile-signing-", async directory => {
+        for (const component of [...signing.slice(1), signing[0]!]) {
+            const extension = mobileExtensions.find(value => `${mobileBundleID}.${value.suffix}` === component.bundleID);
+            const bundle = extension ? join(app, "PlugIns", `${extension.executable}.appex`) : app;
+            await copyFile(component.profile.path, join(bundle, "embedded.mobileprovision"));
+            const entitlements = join(directory, `${component.bundleID}.entitlements.plist`);
+            const required = {
+                ...mobileEntitlements(component.bundleID, distribution),
+                "application-identifier": component.applicationIdentifier,
+                "com.apple.developer.team-identifier": component.profile.team,
+                ...(!distribution ? { "get-task-allow": true } : {}),
+                "keychain-access-groups": [component.applicationIdentifier],
+            };
+            await writeFile(entitlements, JSON.stringify(required));
+            await text(["plutil", "-convert", "xml1", entitlements]);
+            await text(["codesign", "--force", "--sign", component.identity.fingerprint,
+                "--entitlements", entitlements, "--generate-entitlement-der", bundle]);
+            await text(["codesign", "--verify", "--strict", bundle]);
+            if (distribution) {
+                const signed = join(directory, "signed.plist");
+                await writeFile(signed, await text(["codesign", "--display", "--entitlements", "-", "--xml", bundle]));
+                const actual = record(JSON.parse(await text(["plutil", "-convert", "json", "-o", "-", signed])), "signed entitlements");
+                if ("get-task-allow" in actual || Object.entries(required).some(([key, value]) =>
+                    JSON.stringify(actual[key]) !== JSON.stringify(value))) {
+                    throw new Error(`The signed App Store entitlements do not match ${component.bundleID}.`);
+                }
+            }
+        }
+    });
 }
 
 async function devicectl(args: string[]): Promise<Record<string, unknown>> {
@@ -228,33 +284,13 @@ export async function runMobileDevice(requested?: string, server?: string) {
     const phone = selectMobileDevice(await devicectl(["list", "devices"]), requested);
     const unlock = await machineLock(`mobile-device-${phone.udid}`);
     try {
-        const signing = selectMobileDevelopmentSigning(await installedProfiles(),
-            developmentIdentities(await text(["security", "find-identity", "-v", "-p", "codesigning"])),
-            phone.udid, Date.now(), mobileProfilePaths());
+        const signing = await mobileSigning(false, phone.udid);
         for (const component of signing) {
             console.log(`${component.bundleID}: ${component.profile.name} (${component.profile.uuid}).`);
         }
         const app = await bundleMobile(true);
         await text(["plutil", "-insert", "ToyBoxDefaultServerURL", "-string", server, join(app, "Info.plist")]);
-        await temporary("toy-box-device-signing-", async directory => {
-            for (const component of [...signing.slice(1), signing[0]!]) {
-                const extension = mobileExtensions.find(value => `${mobileBundleID}.${value.suffix}` === component.bundleID);
-                const bundle = extension ? join(app, "PlugIns", `${extension.executable}.appex`) : app;
-                await copyFile(component.profile.path, join(bundle, "embedded.mobileprovision"));
-                const entitlements = join(directory, `${component.bundleID}.entitlements.plist`);
-                await writeFile(entitlements, JSON.stringify({
-                    ...mobileEntitlements(component.bundleID),
-                    "application-identifier": component.applicationIdentifier,
-                    "com.apple.developer.team-identifier": component.profile.team,
-                    "get-task-allow": true,
-                    "keychain-access-groups": [component.applicationIdentifier],
-                }));
-                await text(["plutil", "-convert", "xml1", entitlements]);
-                await text(["codesign", "--force", "--sign", component.identity.fingerprint,
-                    "--entitlements", entitlements, "--generate-entitlement-der", bundle]);
-                await text(["codesign", "--verify", "--strict", bundle]);
-            }
-        });
+        await signMobileBundles(app, signing);
         console.log(`Signed ${app}. Unlock ${phone.name} for installation and launch.`);
         await devicectl(["device", "install", "app", "--device", phone.identifier, app]);
         console.log(`Installed ${mobileBundleID} on ${phone.name}. Launching.`);

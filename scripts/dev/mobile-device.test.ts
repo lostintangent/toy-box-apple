@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import {
-    defaultDeviceServer, developmentIdentities, deviceControlArguments, deviceServerArguments,
-    selectDevelopmentSigning, selectMobileDevelopmentSigning, selectMobileDevice, type DevelopmentProfile,
+    defaultDeviceServer, mobileSigningIdentities, deviceControlArguments, deviceServerArguments,
+    selectDevelopmentSigning, selectMobileDevelopmentSigning, selectMobileDevice, type MobileProvisioningProfile,
 } from "./mobile-device.ts";
 import { mobileAppGroup, mobileBundleID, mobileEntitlements } from "./mobile.ts";
 
@@ -44,7 +44,7 @@ test("ambiguous, absent or malformed device lists never pick an arbitrary device
 
 const fingerprint = "1234567890ABCDEF1234567890ABCDEF12345678";
 const identity = { fingerprint, name: "Apple Development: Test User (PERSON)" };
-function profile(overrides: Partial<DevelopmentProfile> = {}): DevelopmentProfile {
+function profile(overrides: Partial<MobileProvisioningProfile> = {}): MobileProvisioningProfile {
     return {
         path: "/profiles/dev.mobileprovision", name: "Development", uuid: "profile",
         team: "TEAM", prefix: "TEAM", applicationIdentifier: "TEAM.dev.toybox.mobile",
@@ -124,7 +124,7 @@ test("the profile set must share a team and one available signing identity", () 
         ? { ...value, certificates: [otherFingerprint] } : value), [identity, other], "phone", now))
         .toThrow("one development identity and team");
     expect(() => selectMobileDevelopmentSigning([...profiles, ...profileSet("OTHER")], [identity], "phone", now))
-        .toThrow("Multiple development teams");
+        .toThrow("Multiple signing teams");
     expect(selectMobileDevelopmentSigning([...profiles, ...profileSet("OTHER")], [identity], "phone", now, {
         "dev.toybox.mobile": profiles[0]!.path,
     }).map(value => value.profile.team)).toEqual(["TEAM", "TEAM", "TEAM"]);
@@ -141,7 +141,7 @@ test("same-team profiles choose the latest expiration but different teams requir
 });
 
 test("only valid Apple Development identity fingerprints are considered", () => {
-    expect(developmentIdentities(`
+    expect(mobileSigningIdentities(`
   1) ${fingerprint.toLowerCase()} "${identity.name}"
   2) ${fingerprint} "Developer ID Application: Test User (TEAM)"
   3) NOTAFINGERPRINT "Apple Development: Broken"
