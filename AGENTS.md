@@ -55,8 +55,9 @@ view.
   before changes to landing, paging, following arrivals or native image text selection.
 - `TOY_BOX_TEST_LIVE_TEXT_INTERACTION=1 SCRATCH_PATH=/tmp/tbm-<you> bun run test --filter pressesOnTextReachLiveTextAndEverythingElseReachesTheViewer`
   opts into native Live Text press/drag routing in an ordered off-screen window. WindowServer
-  events can stop the test runner's outer run loop. VisionKit analysis and deterministic geometry
-  and routing-policy checks remain in the default suite.
+  events can stop the test runner's outer run loop. Deterministic geometry and routing-policy
+  checks remain in the default suite. The VisionKit analysis check is quarantined, as described
+  under Test reliability.
 - `SCRATCH_PATH=/tmp/tbm-<you> bun run benchmark [--summaries] [launch|switch|messages|paging|key|idle ...]` is the
   performance regression benchmark. It builds a release bundle as `dev.toybox.desktop.benchmark`,
   runs each scenario against a fresh `bun run perf-demo` fixture on 3292 (`TOY_BOX_PERF_PORT`),
@@ -246,6 +247,14 @@ Agents never create these accounts, accept agreements, read private keys or set 
   The device counterpart and all other 29 tooling cases passed. No icon code changed and no cause
   is established. Core owns `mobile-icon-tooling-readiness`: identify the stalled command and add
   deterministic completion coverage before restoring it. Do not retry the same candidate to green.
+- `ImageViewerLiveTextTests.onlyTheSettledCurrentImageIsAnalyzedAndTheWindowRemembersIt` is
+  quarantined behind `TOY_BOX_TEST_LIVE_TEXT_ANALYSIS=1`. On 2026-10-26, Composer's full Mac run on
+  `9bada33` plus test-gating changes (`image-strip-quarantined-mac-gate.log` in Composer's session
+  files, lines 2523–2526) waited the unchanged 30s at `TranscriptTests.swift:1615` for the first
+  image's Live Text, at a five-minute load average near 99. No viewer code changed and no cause is
+  established. The saved log can't tell whether VisionKit's analysis threw, never returned or found
+  no text, so a timeout now records those states and the load. Transcript owns restoring it:
+  identify the cause and add deterministic analysis-gating coverage first. Don't retry it to green.
 - A test that fails on main without an identified code cause must be quarantined behind an
   explicit opt-in the same day. Do not leave it in the merge gate while rerunning CI or patching
   timing races in place. Record the failed run, test case and diagnostics, with an owner and

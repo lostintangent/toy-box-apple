@@ -1603,7 +1603,11 @@ struct ImageViewerTests {
 @MainActor
 @Suite("Image viewer Live Text", .serialized, .enabled(if: ImageAnalyzer.isSupported))
 struct ImageViewerLiveTextTests {
-    @Test(.readsTextInImages) func onlyTheSettledCurrentImageIsAnalyzedAndTheWindowRemembersIt() async throws {
+    /// Quarantined on 2026-10-26: VisionKit produced no Live Text for the first image within 30s in a
+    /// full Mac run at load average 99, with no code cause found. See AGENTS.md's Test reliability.
+    @Test(.readsTextInImages,
+          .enabled(if: ProcessInfo.processInfo.environment["TOY_BOX_TEST_LIVE_TEXT_ANALYSIS"] == "1"))
+    func onlyTheSettledCurrentImageIsAnalyzedAndTheWindowRemembersIt() async throws {
         let viewer = try Self.openViewer([Self.textPNG("Release notes ship Friday"),
                                           Self.textPNG("Quarterly roadmap review"), Self.textPNG(nil)])
         defer { viewer.close(animated: false) }
@@ -1612,7 +1616,7 @@ struct ImageViewerLiveTextTests {
         // Nothing is analyzed during the opening motion.
         #expect(viewer.items[0]?.analysis == nil && viewer.liveText == nil)
         viewer.openingDidSettle()
-        try await Self.until { viewer.liveText != nil }
+        try await Self.until(diagnostics: { Self.analysisState(viewer, at: 0) }) { viewer.liveText != nil }
         #expect(viewer.liveText?.transcript.contains("Release") == true)
         // An image paged past before it settles is never analyzed.
         viewer.show(1)
@@ -1979,15 +1983,29 @@ struct ImageViewerLiveTextTests {
 
     /// Loads and analyses share the machine with every other suite in a full run, so waits are generous.
     private static func until(_ timeout: Duration = .seconds(30), sourceLocation: SourceLocation = #_sourceLocation,
-                              _ condition: () -> Bool) async throws {
+                              diagnostics: () -> String = { "" }, _ condition: () -> Bool) async throws {
         let deadline = ContinuousClock.now + timeout
         while !condition() {
             guard ContinuousClock.now < deadline else {
-                Issue.record("Timed out", sourceLocation: sourceLocation)
+                let state = diagnostics()
+                Issue.record(state.isEmpty ? "Timed out" : "Timed out: \(state)", sourceLocation: sourceLocation)
                 throw Timeout()
             }
             try await Task.sleep(for: .milliseconds(20))
         }
+    }
+
+    /// Separates an analysis that never arrived (threw or still running) from one that found no text.
+    private static func analysisState(_ viewer: ImageViewer, at position: Int) -> String {
+        let item = viewer.items[position]
+        let analysis = item?.analysis.map { "found text: \($0.hasResults(for: [.text]))" } ?? "none"
+        return "index \(viewer.index), bitmap \(item?.bitmap != nil), analysis \(analysis), "
+            + "settled \(viewer.hasSettledOpening), load \(loadAverage)"
+    }
+
+    private static var loadAverage: String {
+        var load = [Double](repeating: 0, count: 3)
+        return getloadavg(&load, 3) == 3 ? load.map { String(format: "%.0f", $0) }.joined(separator: " ") : "unknown"
     }
 
     private static var visionKitReadsText: Bool?
