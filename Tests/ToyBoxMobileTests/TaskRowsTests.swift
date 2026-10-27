@@ -489,6 +489,7 @@ struct TaskRowsTests {
                     }
                 } else if statusDriven {
                     OverviewView(store: store, session: session, placement: .sheet)
+                        .environment(ChannelFollowController())
                 } else {
                     OverviewTaskNode(task: task, store: store, session: session, depth: 0,
                                      layout: .init(contentWidth: 466, statusWidth: 16, titleGap: 6,
