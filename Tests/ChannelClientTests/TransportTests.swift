@@ -108,17 +108,24 @@ struct TransportTests {
         #expect(mock.requests.count == 1)
     }
 
-    @Test(.enabled(if: ProcessInfo.processInfo.environment["TOY_BOX_TEST_RECONNECT_TIMING"] == "1"))
-    @MainActor func storeReconnectsFromAppliedRevisionZero() async throws {
+    @Test(arguments: [false, true])
+    @MainActor func storeReconnectsFromAppliedRevisionZero(holdsResumed: Bool) async throws {
         let initial = testState()
+        let resumed = ChannelObservationEvent(type: "resumed", presence: ["test": .init(state: "working")])
         let mock = MockTransport(recordingLifecycle: true) { _, count in
             if count == 1 { return try .stream([.init(type: "snapshot", state: initial)], keepOpen: false) }
-            return try .stream([.init(type: "resumed", presence: ["test": .init(state: "working")])])
+            return try .stream(holdsResumed ? [] : [resumed])
         }
         let store = ChannelStore(id: "test", api: try mock.api(),
                                  reconnectPolicy: .init(initialDelay: 0.01), sendJournal: nil)
         store.connect()
         defer { store.disconnect() }
+        if holdsResumed {
+            try await eventually(observing: mock) { mock.requests.count == 2 && mock.pendingResponseCount == 1 }
+            #expect(store.state?.revision == 0)
+            #expect(!store.phase.isLive)
+            #expect(mock.sendPendingBody(try MockResponse.stream([resumed]).body) == 1)
+        }
         try await eventually(observing: mock, diagnostics: {
             reconnectReadinessDiagnostics(store: store, transport: mock)
         }) { mock.requests.count == 2 && store.phase.isLive }
@@ -154,18 +161,25 @@ struct TransportTests {
         #expect(store.state?.channel.id == "test")
     }
 
-    @Test(.enabled(if: ProcessInfo.processInfo.environment["TOY_BOX_TEST_RECONNECT_TIMING"] == "1"))
-    @MainActor func recoverySnapshotReplacesCachedHistory() async throws {
+    @Test(arguments: [false, true])
+    @MainActor func recoverySnapshotReplacesCachedHistory(holdsRecovery: Bool) async throws {
         let initial = testState(revision: 5, messages: [testMessage(1)])
         let recovered = testState(revision: 100, messages: [testMessage(100)])
         let mock = MockTransport(recordingLifecycle: true) { _, count in
-            try .stream([.init(type: "snapshot", state: count == 1 ? initial : recovered)],
+            try .stream(holdsRecovery && count > 1 ? [] : [.init(type: "snapshot", state: count == 1 ? initial : recovered)],
                         keepOpen: count > 1)
         }
         let store = ChannelStore(id: "test", api: try mock.api(),
                                  reconnectPolicy: .init(initialDelay: 0.01), sendJournal: nil)
         store.connect()
         defer { store.disconnect() }
+        if holdsRecovery {
+            try await eventually(observing: mock) { mock.requests.count == 2 && mock.pendingResponseCount == 1 }
+            #expect(store.state?.revision == 5)
+            #expect(store.state?.messages.map(\.sequence) == [1])
+            #expect(!store.phase.isLive)
+            #expect(mock.sendPendingBody(try MockResponse.stream([.init(type: "snapshot", state: recovered)]).body) == 1)
+        }
         try await eventually(diagnostics: {
             reconnectReadinessDiagnostics(store: store, transport: mock)
         }) { store.state?.revision == 100 && store.phase.isLive }

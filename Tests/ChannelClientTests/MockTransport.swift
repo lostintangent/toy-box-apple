@@ -121,6 +121,16 @@ final class MockTransport: Sendable {
         return pending.count
     }
 
+    @discardableResult
+    func sendPendingBody(_ data: Data) -> Int {
+        let pending = state.withLock { Array($0.pending.values) }
+        for response in pending {
+            recordLifecycle("submitting held body: \(data.count) bytes", for: response.request)
+            response.client?.urlProtocol(response, didLoad: data)
+        }
+        return pending.count
+    }
+
     func response(for request: URLRequest) throws -> MockResponse {
         let count = state.withLock { state in
             state.requests.append(request)
@@ -227,6 +237,7 @@ func eventually(observing transport: MockTransport? = nil, diagnostics: (() -> S
         if let observer { transport?.stopObservingChanges(observer) }
         changes.continuation.finish()
     }
+
     var iterator = changes.stream.makeAsyncIterator()
     do {
         while true {
