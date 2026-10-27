@@ -13,8 +13,9 @@ export type Message = {
     sender: { type: string; agentId?: string }; content: string; request?: boolean;
     attachments?: { name: string; url: string }[];
 };
-export type Snapshot = Omit<typeof fixture, "lead" | "members" | "messages" | "request" | "channel"> & {
+export type Snapshot = Omit<typeof fixture, "lead" | "members" | "messages" | "request" | "channel" | "presence"> & {
     lead: Agent; members: Agent[]; messages: Message[]; request: Message | null;
+    presence: Record<string, Status>;
     channel: Omit<typeof fixture.channel, "requestSequence" | "completedSequence"> & {
         requestSequence: number | null; completedSequence: number | null;
     };

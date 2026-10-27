@@ -261,6 +261,8 @@ sandbox. Request and completion preferences are independent booleans. A token be
 registration. Activities do not require an alerts registration, have their own environment, and are
 unique per registration/channel. Token rotation preserves the original `startedAt`, in Unix seconds.
 The demo stores this state only in memory and never contacts APNs.
+The normal demo also serves a separate `completed-demo` channel for completion-alert proof,
+with every task done and an unread completion. Studio's request and unfinished tasks stay intact.
 
 `ChannelPushPayload` carries exactly `kind`, `channelID`, positive `sequence` and `registrationID`
 beside the system `aps` envelope. Its kinds and categories are `request` and `completion`; request
