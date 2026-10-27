@@ -128,6 +128,52 @@ struct TranscriptTests {
         }
     }
 
+    @Test func aRequestAlertsRevealIsTheFirstLandingEvenSeveralPagesBack() {
+        let viewport = TranscriptScrollModel.Viewport(width: 386, height: 600, topInset: 0, bottomInset: 0)
+        let scroll = TranscriptScroll()
+        // The newest page opens at the bottom with its New divider at r10, but nothing lands there.
+        let latest: [TranscriptScrollModel.RowIdentity] = (0..<20).map { .init(id: "r\($0)", order: $0 + 300) }
+        scroll.sync(latest)
+        for index in 0..<20 { scroll.measure("r\(index)", frame: CGRect(x: 0, y: CGFloat(index) * 100, width: 386, height: 100)) }
+        scroll.metrics = .init(viewport: viewport, origin: 1400, documentEnd: 2000)
+        #expect(scroll.update() == nil && !scroll.hasLanded)
+
+        // Three pages arrive above without holding any row, since the reader hasn't seen one.
+        let paged = (0..<300).map { TranscriptScrollModel.RowIdentity(id: "p\($0)", order: $0) } + latest
+        scroll.sync(paged)
+        for index in 0..<300 { scroll.measure("p\(index)", frame: CGRect(x: 0, y: CGFloat(index) * 100, width: 386, height: 100)) }
+        for index in 0..<20 {
+            scroll.measure("r\(index)", frame: CGRect(x: 0, y: 30_000 + CGFloat(index) * 100, width: 386, height: 100))
+        }
+        scroll.metrics = .init(viewport: viewport, origin: 1400, documentEnd: 32_000)
+        #expect(scroll.update() == nil && !scroll.hasLanded)
+
+        let token = UUID()
+        scroll.pendingReveal = (token, "p40")
+        let placement = scroll.update(.reveal("p40"))
+        // The request's row is centered, and the reveal counts as the landing.
+        #expect(placement?.unavailableTarget == nil && placement?.origin == 3750 && scroll.hasLanded)
+        guard case .revealing("p40", _) = scroll.intent else {
+            Issue.record("The reveal should own the first position.")
+            return
+        }
+        scroll.metrics?.origin = 3750
+        _ = scroll.update()
+        #expect(scroll.finishedReveal()! == (token, true))
+        #expect(scroll.visibleRows.contains("p40") && !scroll.visibleRows.contains("r10"))
+    }
+
+    @Test func aRevealThatCantFindItsRowLeavesTheFirstLandingToTheDivider() {
+        let viewport = TranscriptScrollModel.Viewport(width: 386, height: 600, topInset: 0, bottomInset: 0)
+        let scroll = TranscriptScroll()
+        scroll.sync((0..<20).map { .init(id: "r\($0)", order: $0) })
+        for index in 0..<20 { scroll.measure("r\(index)", frame: CGRect(x: 0, y: CGFloat(index) * 100, width: 386, height: 100)) }
+        scroll.metrics = .init(viewport: viewport, origin: 1400, documentEnd: 2000)
+
+        #expect(scroll.update(.reveal("gone"))?.unavailableTarget == "gone" && !scroll.hasLanded)
+        #expect(scroll.update(.land(.row("r10", order: 10)))?.origin == 1000 && scroll.hasLanded)
+    }
+
     @Test func aPageArrivingAtTheTopKeepsTheReadersRowInsteadOfItsOldFrame() {
         let viewport = TranscriptScrollModel.Viewport(width: 386, height: 600, topInset: 0, bottomInset: 0)
         let scroll = TranscriptScroll()
