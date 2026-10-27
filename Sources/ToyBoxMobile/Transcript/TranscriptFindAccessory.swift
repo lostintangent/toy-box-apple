@@ -205,8 +205,8 @@ struct TranscriptFindFieldLayout: Layout {
     }
 }
 
-/// The field's trailing slot keeps one width for every nonempty query, so a spinner, count or
-/// Incomplete swap never resizes the field.
+/// The field's trailing slot keeps one footnote line's size for every nonempty query, so a spinner,
+/// count or Incomplete swap never resizes the field. Incomplete's 44-point target overflows it.
 struct TranscriptFindStatusView: View {
     let status: TranscriptFindStatus
     let found: String
@@ -215,7 +215,9 @@ struct TranscriptFindStatusView: View {
     @ScaledMetric(relativeTo: .footnote) private var width = 84
 
     var body: some View {
-        content.frame(width: width, alignment: .trailing)
+        Text(verbatim: " ").font(.footnote).hidden()
+            .frame(width: width)
+            .overlay(alignment: .trailing) { content }
     }
 
     @ViewBuilder private var content: some View {
