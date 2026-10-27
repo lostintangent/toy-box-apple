@@ -2,6 +2,8 @@ name: Build and release
 
 on:
   push:
+    branches: [main]
+    tags: ['v*']
   pull_request:
   workflow_dispatch:
     inputs:
@@ -15,8 +17,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch') && 'release-publication' || format('build-{0}', github.run_id) }}
-  cancel-in-progress: false
+  group: ${{ (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch') && 'release-publication' || format('build-{0}', github.event.pull_request.number || github.ref) }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/v') && github.event_name != 'workflow_dispatch' }}
 
 jobs:
   test:
@@ -39,6 +41,8 @@ jobs:
         with:
           bun-version: 1.4.4
       - run: bun install --frozen-lockfile --ignore-scripts
+      - name: Test native icon tooling
+        run: bun test scripts/dev/mobile-icon.test.ts
       - name: Test
         env:
           SCRATCH_PATH: ${{ runner.temp }}/toy-box-tests

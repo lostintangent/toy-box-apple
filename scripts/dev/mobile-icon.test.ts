@@ -41,7 +41,7 @@ if (output === "failure") process.exit(17);
 }
 
 for (const device of [false, true]) {
-    test.skipIf(!device && process.env.TOY_BOX_TEST_MOBILE_ICON_TIMING !== "1")(
+    test.skipIf(process.platform !== "darwin" || (!device && process.env.TOY_BOX_TEST_MOBILE_ICON_TIMING !== "1"))(
         `mobile ${device ? "device" : "Simulator"} icons compile the shared document and merge native metadata`, async () => {
         await temporary("toy-box-mobile-icon-test.", async directory => {
             const fixture = await iconFixture(directory);
@@ -65,7 +65,7 @@ for (const device of [false, true]) {
 }
 
 for (const output of ["missing-assets", "empty-assets", "missing-png", "wrong-icon", "failure"]) {
-    test(`mobile icon ${output} is rejected before any bundle mutation`, async () => {
+    test.skipIf(process.platform !== "darwin")(`mobile icon ${output} is rejected before any bundle mutation`, async () => {
         await temporary("toy-box-mobile-icon-test.", async directory => {
             const fixture = await iconFixture(directory, output);
             const original = await Bun.file(join(fixture.app, "Info.plist")).text();
@@ -84,7 +84,7 @@ test("mobile icons require the canonical document instead of silently using a fa
     });
 });
 
-test("mobile icon compilation uses the selected Xcode unless ACTOOL is explicitly overridden", async () => {
+test.skipIf(process.platform !== "darwin")("mobile icon compilation uses the selected Xcode unless ACTOOL is explicitly overridden", async () => {
     await temporary("toy-box-mobile-icon-test.", async directory => {
         const fixture = await iconFixture(directory);
         const developer = join(directory, "Xcode/Contents/Developer");

@@ -86,6 +86,10 @@ and signed Sparkle appcast by `.github/workflows/build-and-release.yml` on an ap
 A manual run on `main` performs the same signing, notarization and appcast generation but keeps them
 as artifacts, without publishing.
 Local builds use Command Line Tools. CI uses its selected Xcode 27 toolchain on the `xcode-27` runner.
+Checks run for pull requests and pushes to `main`, not standalone branch pushes. A newer revision
+cancels unfinished checks for the same pull request or ref. Release tags and manual dry runs retain
+their serialized, non-cancellable publication group. Portable tooling tests run on Linux, while the
+native iPhone icon tests that use PlistBuddy run explicitly in the Mac job and skip on other hosts.
 
 Every normal bundle embeds `Contents/PlugIns/ToyBoxShare.appex`, a SwiftPM executable linked with
 `_NSExtensionMain` for `com.apple.share-services`. Its activation rules accept text, URLs, images
