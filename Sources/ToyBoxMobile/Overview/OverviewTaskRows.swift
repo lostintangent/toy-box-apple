@@ -98,7 +98,6 @@ struct OverviewTaskRows: View {
                 }
                 .padding(.bottom, row.endsRoot ? 8 : 0)
                 .listRowSeparator(.hidden)
-                .listRowBackground(Color(.systemBackground))
         }
     }
 
@@ -111,7 +110,6 @@ struct OverviewTaskRows: View {
                     .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
                     .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
             .padding(.leading, row.layout.accessibility ? 0 : row.layout.statusWidth + row.layout.titleGap)
             .accessibilityLabel("\(row.subtasksTitle) of \(row.task.title)")
             .accessibilityIdentifier("overview-subtasks-\(row.task.id)")

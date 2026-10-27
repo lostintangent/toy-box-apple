@@ -6,7 +6,8 @@ import UIKit
 
 enum OverviewTaskMotion {
     static func disclosureAnimation(reduceMotion: Bool, accessibility: Bool) -> Animation? {
-        reduceMotion || accessibility ? nil : .easeInOut(duration: 0.18)
+        // Keep transparent native rows instant until outline motion no longer overlaps following sections.
+        nil
     }
 }
 

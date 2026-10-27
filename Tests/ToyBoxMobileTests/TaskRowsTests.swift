@@ -139,9 +139,9 @@ struct TaskRowsTests {
     }
 
     @Test(arguments: [false, true], [false, true])
-    func disclosureMotionPolicyHasOneDurationAndBothInstantInputs(reduceMotion: Bool, accessibility: Bool) {
+    func disclosureStaysInstantWhileNativeOutlineMotionIsDeferred(reduceMotion: Bool, accessibility: Bool) {
         #expect(OverviewTaskMotion.disclosureAnimation(reduceMotion: reduceMotion, accessibility: accessibility)
-                == (reduceMotion || accessibility ? nil : .easeInOut(duration: 0.18)))
+                == nil)
     }
 
     @Test(arguments: [false, true])
@@ -223,17 +223,96 @@ struct TaskRowsTests {
         }
     }
 
-    @Test(arguments: DisclosureChange.allCases)
-    func disclosureHonorsAccessibilityTextAndTheSystemMotionPreference(change: DisclosureChange) async throws {
+    @Test(arguments: [ColorScheme.light, .dark], [DynamicTypeSize.large, .accessibility5])
+    func taskAndScopedRowsPreserveTheInheritedSurface(scheme: ColorScheme, size: DynamicTypeSize) async throws {
+        let surface = scheme == .light ? Color.red : Color.blue
+        let store = ChannelStore(id: "channel", api: try ChannelAPI(serverURL: "https://fixture.example"))
+        let session = OverviewSession(store: store)
+        let viewer = ChannelArtifactSession(
+            decodeImage: { _, _, _ in throw ChannelAttachmentError.invalidImage },
+            download: { _, _ in throw URLError(.notConnectedToInternet) })
+        let host = UIHostingController(rootView:
+            NavigationStack {
+                OverviewList {
+                    Section {
+                        OverviewTaskRows(tasks: tree, store: store, session: session)
+                            .listRowInsets(.vertical, 0)
+                        Text("Reference surface")
+                            .frame(minHeight: 44)
+                    }
+                }
+                .background(surface)
+                .backgroundStyle(surface)
+                .navigationDestination(for: OverviewRoute.self) { _ in Text("Scoped subtasks") }
+            }
+            .environment(viewer)
+            .environment(\.colorScheme, scheme)
+            .dynamicTypeSize(size)
+            .transaction { $0.disablesAnimations = true })
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 466, height: 2400))
+        window.overrideUserInterfaceStyle = scheme == .light ? .light : .dark
+        window.rootViewController = host
+        window.isHidden = false
+        defer { window.isHidden = true; window.rootViewController = nil }
+        host.view.layoutIfNeeded()
+        await Task.yield()
+        host.view.layoutIfNeeded()
+        let list = try #require(nativeList(in: host.view))
+        let expected = size.isAccessibilitySize ? 4 : 6
+        let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+        while list.numberOfItems(inSection: 0) != expected, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(5))
+            host.view.layoutIfNeeded()
+        }
+        try #require(list.numberOfItems(inSection: 0) == expected)
+        host.view.layoutIfNeeded()
+
+        func backgroundPixel(item: Int) throws -> [UInt8] {
+            let frame = try #require(list.layoutAttributesForItem(at: IndexPath(item: item, section: 0))).frame
+            let point = list.convert(CGPoint(x: frame.minX + 2, y: frame.midY), to: window)
+            let format = UIGraphicsImageRendererFormat()
+            format.scale = 1
+            format.preferredRange = .standard
+            let image = try #require(UIGraphicsImageRenderer(size: CGSize(width: 1, height: 1), format: format)
+                .image { context in
+                    context.cgContext.translateBy(x: -point.x, y: -point.y)
+                    window.layer.render(in: context.cgContext)
+                }.cgImage)
+            let colorSpace = try #require(CGColorSpace(name: CGColorSpace.sRGB))
+            var bytes = [UInt8](repeating: 0, count: 4)
+            try bytes.withUnsafeMutableBytes { storage in
+                let context = try #require(CGContext(
+                    data: storage.baseAddress, width: 1, height: 1, bitsPerComponent: 8,
+                    bytesPerRow: 4, space: colorSpace,
+                    bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue))
+                context.draw(image, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+            }
+            return bytes
+        }
+
+        let reference = try backgroundPixel(item: expected - 1)
+        #expect(reference[3] == 255)
+        #expect(Set(reference.prefix(3)).count > 1)
+        for item in 0..<(expected - 1) {
+            #expect(try backgroundPixel(item: item) == reference,
+                    "Task or scoped row \(item) must match the unmodified reference row")
+        }
+    }
+
+    @Test(arguments: DisclosureChange.allCases, [false, true])
+    func taskDisclosureDoesNotAnimateTapsOrStatusChanges(change: DisclosureChange, scoped: Bool) async throws {
         let store = ChannelStore(id: "channel", api: try ChannelAPI(serverURL: "https://fixture.example"))
         let session = OverviewSession(store: store)
         let record = DisclosureTransactions()
-        let reduceMotion = UIAccessibility.isReduceMotionEnabled
         let size = change.size
+        var tasks = tree
+        func channelTasks(_ tasks: [ChannelTask]) -> [ChannelTask] {
+            scoped ? [.init(id: "scope", title: "Parent", children: tasks)] : tasks
+        }
         var state = ChannelState(
             revision: 1,
             channel: .init(id: "channel", name: "Workshop", model: .init(provider: "test", name: "test"),
-                           tasks: tree, updatedAt: "2026-10-26T00:00:00Z"),
+                           tasks: channelTasks(tasks), updatedAt: "2026-10-26T00:00:00Z"),
             lead: .lead(id: "channel", profile: .init(name: "Lead", role: "Coordinator",
                                                     avatar: .init(mark: "M4 12H20", color: "#123456"))))
         _ = try store.apply(.init(type: "snapshot", state: state))
@@ -244,7 +323,7 @@ struct TaskRowsTests {
         let host = UIHostingController(rootView:
             DisclosureTransactionScene(task: tree[0], store: store, session: session,
                                        accessibility: size.isAccessibilitySize,
-                                       statusDriven: change == .ax1Status, record: record)
+                                       statusDriven: change.isStatusDriven, scoped: scoped, record: record)
                 .environment(viewer)
                 .environment(OverviewPresentation()).environment(ChannelInteraction())
                 .environment(ManagementPresenter())
@@ -257,9 +336,10 @@ struct TaskRowsTests {
         await Task.yield()
         host.view.layoutIfNeeded()
         record.entries.removeAll()
-        if change == .ax1Status {
+        if change.isStatusDriven {
             state.revision += 1
-            state.channel.tasks[0].status = "done"
+            tasks[0].status = "done"
+            state.channel.tasks = channelTasks(tasks)
             _ = try store.apply(.init(type: "snapshot", state: state))
         } else {
             let row = try #require(MobileAutomationTree(windows: [window]).matching("overview-task-root").first)
@@ -273,9 +353,8 @@ struct TaskRowsTests {
         }
         let transaction = try #require(record.entries.first { !$0.expanded })
         #expect(session.taskDisclosure["root"]?.expanded == false)
-        #expect(session.taskDisclosure["root"]?.status == (change == .ax1Status ? "done" : "in_progress"))
-        #expect(transaction.animation
-                == (reduceMotion || size.isAccessibilitySize ? nil : .easeInOut(duration: 0.18)))
+        #expect(session.taskDisclosure["root"]?.status == (change.isStatusDriven ? "done" : "in_progress"))
+        #expect(transaction.animation == nil)
     }
 
     @Test(arguments: [466.0, 669.0], [DynamicTypeSize.large, .accessibility5])
@@ -370,13 +449,20 @@ struct TaskRowsTests {
     }
 
     enum DisclosureChange: CaseIterable {
-        case largeTap, ax1Tap, ax5Tap, ax1Status
+        case largeTap, ax1Tap, ax5Tap, largeStatus, ax1Status, ax5Status
 
         var size: DynamicTypeSize {
             switch self {
-            case .largeTap: .large
+            case .largeTap, .largeStatus: .large
             case .ax1Tap, .ax1Status: .accessibility1
-            case .ax5Tap: .accessibility5
+            case .ax5Tap, .ax5Status: .accessibility5
+            }
+        }
+
+        var isStatusDriven: Bool {
+            switch self {
+            case .largeStatus, .ax1Status, .ax5Status: true
+            case .largeTap, .ax1Tap, .ax5Tap: false
             }
         }
     }
@@ -391,11 +477,17 @@ struct TaskRowsTests {
         @Bindable var session: OverviewSession
         let accessibility: Bool
         let statusDriven: Bool
+        let scoped: Bool
         let record: DisclosureTransactions
 
         var body: some View {
             VStack {
-                if statusDriven {
+                if scoped {
+                    NavigationStack {
+                        OverviewSubtasksScreen(parentID: "scope", store: store, session: session,
+                                               placement: .sheet, scroll: session.taskScroll("scope"))
+                    }
+                } else if statusDriven {
                     OverviewView(store: store, session: session, placement: .sheet)
                 } else {
                     OverviewTaskNode(task: task, store: store, session: session, depth: 0,

@@ -1658,15 +1658,16 @@ enter accessibility. Include the shared Mac Tasks popover, and preserve all disc
 hierarchy and row-action semantics.
 
 **Phone task disclosure.** Every visible task and scoped-subtasks link is its own native List
-row, with stable depth-first identities. An opaque `systemBackground` row must resolve to the
-exact surface behind it in Light, Dark, the elevated sheet, the inspector and the pressed state.
-Following rows mask inserted child text instead of letting it show through their moving text.
-Use a tap-scoped 180 ms ease-in-out transaction, leaving UIKit's native row-move settling curve
-unmodified. Do not stage a second content fade, animate the whole list by its visible IDs or
-add a separate transition. Under Reduce Motion or accessibility text sizes, both user-triggered
-and status-driven disclosure change immediately, without a fade, in the root and scoped lists.
-One shared phone motion policy owns this choice. Adjacent row guide segments join continuously,
-retaining 4-point clearance only at the whole child group's ends. Preserve saved disclosure, status
+row, with stable depth-first identities. Task and scoped rows inherit the same native surface
+as Team in Light, Dark, the elevated sheet, the inspector and the pressed state. Never add an
+opaque task-only background. Until clean native outline motion is verified separately, both
+user-triggered and status-driven task disclosure change immediately, without a fade, at every
+text size and under Reduce Motion in the root and scoped lists. Following-section text must
+not pass through task rows. Do not stage a second content fade, animate the whole list by its
+visible IDs or add a separate animated height transition. One shared phone motion policy owns
+this shipping fallback. Overview section-header behavior is unchanged. The target 180 ms
+ease-in-out task disclosure remains a separate follow-up. Adjacent row guide segments join
+continuously, retaining 4-point clearance only at the whole child group's ends. Preserve saved disclosure, status
 defaults, measured reading width, scoped subtasks, artifact actions and visible-only timers.
 Mac disclosure is unchanged.
 
