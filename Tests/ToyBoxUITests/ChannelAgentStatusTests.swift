@@ -70,19 +70,29 @@ struct ChannelAgentStatusTests {
         let now = Date(timeIntervalSince1970: 0)
         for (seconds, text, spoken) in [
             (-60.0, "Due", "check-in due"), (0, "Due", "check-in due"),
-            (0.001, "1 min", "checks again in 1 minute"), (60, "1 min", "checks again in 1 minute"),
-            (60.001, "2 min", "checks again in 2 minutes"),
-            (480, "8 min", "checks again in 8 minutes"),
-            (3540, "59 min", "checks again in 59 minutes"),
-            (3540.001, "1 hr", "checks again in 1 hour"),
-            (3600, "1 hr", "checks again in 1 hour"),
-            (3600.001, "1 hr, 1 min", "checks again in 1 hour, 1 minute"),
-            (90060, "25 hr, 1 min", "checks again in 25 hours, 1 minute")
+            (0.001, "1m", "checks again in 1 minute"), (60, "1m", "checks again in 1 minute"),
+            (60.001, "2m", "checks again in 2 minutes"),
+            (480, "8m", "checks again in 8 minutes"),
+            (3540, "59m", "checks again in 59 minutes"),
+            (3540.001, "1h", "checks again in 1 hour"),
+            (3600, "1h", "checks again in 1 hour"),
+            (3600.001, "1h 1m", "checks again in 1 hour, 1 minute"),
+            (3900, "1h 5m", "checks again in 1 hour, 5 minutes"),
+            (90060, "25h 1m", "checks again in 25 hours, 1 minute")
         ] {
             let presentation = ChannelAgentWakePresentation(wake: now.addingTimeInterval(seconds), now: now,
                                                             locale: Locale(identifier: "en_US"))
             #expect(presentation.text == text, "\(seconds)")
             #expect(presentation.spoken == spoken, "\(seconds)")
+        }
+    }
+
+    @Test func wakeCountdownKeepsNarrowUnitsLocalized() {
+        let now = Date(timeIntervalSince1970: 0)
+        for (locale, text) in [("fr", "8min"), ("ja", "8分")] {
+            let presentation = ChannelAgentWakePresentation(wake: now.addingTimeInterval(480), now: now,
+                                                            locale: Locale(identifier: locale))
+            #expect(presentation.text == text)
         }
     }
 
