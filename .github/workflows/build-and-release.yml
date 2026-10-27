@@ -93,7 +93,7 @@ jobs:
   mobile:
     name: iOS foundation
     runs-on: xcode-27
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
       - name: Select and check the iOS toolchain
         run: |
