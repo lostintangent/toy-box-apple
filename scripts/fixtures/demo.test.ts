@@ -79,8 +79,8 @@ test("the completed demo is a separate finished channel and leaves Studio's requ
     expect(Object.values(completed.presence).every(presence => presence.state === "idle")).toBe(true);
 });
 
-test("multiple demo channels keep their own routes and support Activity registrations", async () => {
-    const primary: Snapshot = { ...fixture, messages: [], request: null };
+test("multiple demo channels keep their own history, routes and Activity registrations", async () => {
+    const primary: Snapshot = { ...fixture, messages: [fixture.request], request: fixture.request };
     const completed = createCompletedDemoFixture(primary);
     const makeServer = (name: string) => createServer((request, response) => {
         response.writeHead(200); response.end(`${name}: ${request.url}`);
@@ -97,7 +97,7 @@ test("multiple demo channels keep their own routes and support Activity registra
         const catalog = await (await fetch(`${base}/api/v1/channels`)).json();
         expect(catalog.channels).toEqual([primary.channel, completed.channel]);
         expect(catalog.members).toEqual([...primary.members, ...completed.members]);
-        for (const suffix of ["", "/messages?before=2", "/read"]) {
+        for (const suffix of ["", "/read"]) {
             expect(await (await fetch(`${base}/api/v1/channels/completed-demo${suffix}`)).text())
                 .toBe(`Completed: /api/v1/channels/completed-demo${suffix}`);
         }
@@ -105,6 +105,16 @@ test("multiple demo channels keep their own routes and support Activity registra
             .toBe("Studio: /api/v1/channels/studio-demo");
         expect(await (await fetch(`${base}/api/v1/channels/completed-demo-other`)).text())
             .toBe("Studio: /api/v1/channels/completed-demo-other");
+        for (const [channel, before, message] of [
+            [primary, 16, fixture.request], [completed, 2, completed.messages[0]],
+        ] as const) {
+            const response = await fetch(`${base}/api/v1/channels/${channel.channel.id}/messages?before=${before}`);
+            expect(response.status).toBe(200);
+            expect(await response.json()).toEqual({ version: 1, revision: channel.revision, messages: [message] });
+        }
+        expect((await fetch(`${base}/api/v1/channels/studio-demo/messages?before=0`)).status).toBe(400);
+        expect(await (await fetch(`${base}/api/v1/channels/completed-demo/messages`, { method: "POST" })).text())
+            .toBe("Completed: /api/v1/channels/completed-demo/messages");
         const id = "00000000-0000-4000-8000-000000000003";
         const response = await fetch(`${base}/api/v1/channels/completed-demo/activities/${id}`, {
             method: "PUT", headers: { "Content-Type": "application/json" },
