@@ -90,6 +90,9 @@ Checks run for pull requests and pushes to `main`, not standalone branch pushes.
 cancels unfinished checks for the same pull request or ref. Release tags and manual dry runs retain
 their serialized, non-cancellable publication group. Portable tooling tests run on Linux, while the
 native iPhone icon tests that use PlistBuddy run explicitly in the Mac job and skip on other hosts.
+The Mac gate emits unbuffered test progress. Its twelve-minute watchdog samples only its own
+SwiftPM and XCTest descendants, prints their stacks and uploads diagnostics before failing.
+The job's twenty-minute limit remains unchanged.
 
 Every normal bundle embeds `Contents/PlugIns/ToyBoxShare.appex`, a SwiftPM executable linked with
 `_NSExtensionMain` for `com.apple.share-services`. Its activation rules accept text, URLs, images

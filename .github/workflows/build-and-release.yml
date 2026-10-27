@@ -46,7 +46,16 @@ jobs:
       - name: Test
         env:
           SCRATCH_PATH: ${{ runner.temp }}/toy-box-tests
-        run: bun run test
+          NSUnbufferedIO: 'YES'
+        run: bun scripts/dev/test-watchdog.ts
+      - name: Upload blocked test diagnostics
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: mac-test-watchdog-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/toy-box-tests/mac-test-watchdog/*.txt
+          if-no-files-found: ignore
+          retention-days: 7
       - name: Bundle with Siri and Shortcuts metadata
         env:
           SCRATCH_PATH: ${{ runner.temp }}/toy-box-tests
