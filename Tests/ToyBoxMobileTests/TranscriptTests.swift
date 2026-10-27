@@ -264,13 +264,13 @@ struct TranscriptTests {
         find.query = "layout"
         let bar = TranscriptFindAccessory(find: find, channelName: "Studio demo", focusRequest: UUID(),
                                           navigate: { _ in }, close: {})
-        // The folded Duo leaves 386 points beside its status column. The unfolded conversation column
-        // with Overview open is wider, so every width from there up keeps one 52-point row.
-        for width in [386, 400, 454, 480, 560, 720] as [CGFloat] {
+        // The folded Duo's bar measures 382 points in the native frame. The unfolded conversation column
+        // with Overview open is wider, so every width from just under that up keeps one 52-point row.
+        for width in [380, 386, 400, 454, 480, 560, 720] as [CGFloat] {
             #expect(size(bar, width: width).height.rounded() == 52, "\(width)")
         }
         find.query = String(repeating: "a long typed query ", count: 4)
-        #expect(size(bar, width: 386).height.rounded() == 52)
+        #expect(size(bar, width: 380).height.rounded() == 52)
         // The full-width field sits above the controls instead of shrinking type.
         #expect(size(bar, width: 386, .accessibility5).height > 2 * 44)
 
@@ -282,6 +282,30 @@ struct TranscriptTests {
         }
         #expect(size(field, width: 84 + 4 + 84) == CGSize(width: 172, height: 30))
         #expect(size(field, width: 171) == CGSize(width: 171, height: 30 + 4 + 20))
+    }
+
+    @Test func phoneFindPlacesFieldAndDoneOnOneRowInTheFoldedDuosMeasuredBar() async throws {
+        let find = TranscriptFind()
+        find.present()
+        find.query = "checkpoint"
+        // The folded Duo's native frame gives the bar 382 points, so this hosts it just under that.
+        let host = UIHostingController(rootView: TranscriptFindAccessory(
+            find: find, channelName: "History demo", focusRequest: UUID(), navigate: { _ in }, close: {})
+            .frame(maxHeight: .infinity, alignment: .top).dynamicTypeSize(.large))
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 380, height: 300))
+        window.rootViewController = host
+        window.isHidden = false
+        defer { window.isHidden = true }
+        host.view.layoutIfNeeded()
+        await Task.yield()
+        host.view.layoutIfNeeded()
+
+        func views(in view: UIView) -> [UIView] { view.subviews + view.subviews.flatMap(views) }
+        let field = try #require(views(in: host.view).first { $0 is UITextField })
+        let fieldFrame = field.convert(field.bounds, to: window)
+        let done = try #require(MobileAutomationTree(windows: [window]).elements.first { $0.label == "Close Find" })
+        #expect(abs(done.frame.midY - fieldFrame.midY) < 1, "field \(fieldFrame), Done \(done.frame)")
+        #expect(done.frame.maxX <= 380 - 16 + 0.5)
     }
 
     @Test func phoneFindKeepsMatchTextReadableInBothAppearances() throws {
