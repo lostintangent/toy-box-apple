@@ -210,9 +210,15 @@ struct TranscriptImageGallery: View {
             .background(Color(uiColor: .systemBackground))
             .overlay(alignment: .bottom) {
                 if session.images.count > 1 {
-                    TranscriptGalleryStrip(session: session, select: select, move: move)
-                        .padding(.horizontal, 16)
-                        .padding(.bottom, 8)
+                    PagerCapsule(noun: "Image", label: "Images", ids: Array(session.images.indices),
+                                 selection: session.index, canShowPrevious: session.canShowPrevious,
+                                 canShowNext: session.canShowNext, move: move, select: select) { index in
+                        session.images[index].imageName(index: index, count: session.images.count)
+                    } thumbnail: { index in
+                        TranscriptGalleryThumbnail(attachment: session.images[index], api: session.api)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 8)
                 }
             }
             .background {
@@ -502,69 +508,6 @@ struct TranscriptGalleryCanvas: UIViewRepresentable {
                                shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
             gesture !== doubleTap
         }
-    }
-}
-
-/// The glass capsule of thumbnails between Previous and Next, shown only for several images.
-private struct TranscriptGalleryStrip: View {
-    let session: TranscriptGalleryPresenter.Session
-    let select: (Int) -> Void
-    let move: (Int) -> Void
-
-    var body: some View {
-        HStack(spacing: 6) {
-            Button { move(-1) } label: {
-                Label("Previous Image", systemImage: "chevron.backward")
-                    .labelStyle(.iconOnly)
-                    .frame(width: 44, height: 44)
-                    .contentShape(.rect)
-            }
-            .disabled(!session.canShowPrevious)
-            ScrollViewReader { proxy in
-                ScrollView(.horizontal) {
-                    HStack(spacing: 6) {
-                        ForEach(session.images.indices, id: \.self) { index in
-                            thumbnail(index)
-                        }
-                    }
-                }
-                .scrollIndicators(.hidden)
-                .onChange(of: session.index, initial: true) { _, index in proxy.scrollTo(index, anchor: .center) }
-            }
-            .frame(maxWidth: CGFloat(min(9, session.images.count)) * 50 - 6)
-            Button { move(1) } label: {
-                Label("Next Image", systemImage: "chevron.forward")
-                    .labelStyle(.iconOnly)
-                    .frame(width: 44, height: 44)
-                    .contentShape(.rect)
-            }
-            .disabled(!session.canShowNext)
-        }
-        .buttonStyle(.plain)
-        .padding(8)
-        .fixedSize(horizontal: false, vertical: true)
-        .glassEffect(.regular.interactive(), in: .capsule)
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Images")
-    }
-
-    private func thumbnail(_ index: Int) -> some View {
-        let selected = index == session.index
-        let attachment = session.images[index]
-        return Button { select(index) } label: {
-            TranscriptGalleryThumbnail(attachment: attachment, api: session.api)
-                .frame(width: 40, height: 40)
-                .clipShape(.rect(cornerRadius: 6))
-                .overlay {
-                    if selected { RoundedRectangle(cornerRadius: 6).strokeBorder(.tint, lineWidth: 2) }
-                }
-                .padding(2)
-                .contentShape(.rect)
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("\(attachment.imageName(index: index, count: session.images.count)), \(index + 1) of \(session.images.count)")
-        .accessibilityAddTraits(selected ? .isSelected : [])
-        .id(index)
     }
 }
 
