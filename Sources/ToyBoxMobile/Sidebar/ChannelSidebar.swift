@@ -44,6 +44,7 @@ struct ChannelSidebar: View {
                         NavigationLink(value: channel.id) {
                             row(channel, now: now)
                         }
+                        .navigationLinkIndicatorVisibility(.hidden)
                         .listRowInsets(.vertical, 0)
                         .contextMenu {
                             contextMenu(channel)

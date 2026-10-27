@@ -11,6 +11,7 @@ struct ChannelSidebarRow: View {
     @Environment(\.backgroundProminence) private var prominence
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.horizontalSizeClass) private var sizeClass
 
     var body: some View {
         HStack(spacing: 12) {
@@ -55,13 +56,21 @@ struct ChannelSidebarRow: View {
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    @ViewBuilder private var activity: some View {
-        if let date = ChannelDates.date(channel.updatedAt) {
-            Text(ChannelActivityTime.label(for: date, now: now))
-                .font(.caption)
-                .foregroundStyle(ChannelInk.secondary)
-                .fixedSize()
+    private var activity: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 4) {
+            if let date = ChannelDates.date(channel.updatedAt) {
+                Text(ChannelActivityTime.label(for: date, now: now))
+                    .font(.caption)
+                    .foregroundStyle(ChannelInk.secondary)
+            }
+            if sizeClass == .compact {
+                Image(systemName: "chevron.forward")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(Color(uiColor: prominence == .increased ? .white : .tertiaryLabel))
+                    .accessibilityHidden(true)
+            }
         }
+        .fixedSize()
     }
 
     private var secondLine: some View {
@@ -115,26 +124,22 @@ struct ChannelSidebarRow: View {
 
     @ViewBuilder private var attentionLabel: some View {
         if let attention {
-            HStack(spacing: 4) {
-                if attention == .unread {
-                    Circle().fill(attentionColor)
-                        .frame(width: 7, height: 7)
-                } else {
-                    Image(systemName: ChannelAttentionStyle.symbol(for: attention))
-                        .font(.footnote.weight(.semibold))
-                        .foregroundStyle(attentionColor)
-                }
-                Text(attentionText).foregroundStyle(prominence == .increased ? Color.white : Color.primary)
+            if attention == .unread {
+                Circle().fill(attentionColor)
+                    .frame(width: 7, height: 7)
+            } else {
+                Image(systemName: ChannelAttentionStyle.symbol(for: attention))
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(attentionColor)
             }
-            .font(.footnote)
         }
     }
 
     private var attentionText: String {
         switch attention {
-        case .waiting: "Needs you"
-        case .finished: "Finished"
-        case .unread: "Unread"
+        case .waiting: "Waiting for your response"
+        case .finished: "All tasks completed"
+        case .unread: "Unread messages"
         case nil: ""
         }
     }
