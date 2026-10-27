@@ -1,6 +1,7 @@
 import ChannelKit
 import Foundation
 import Testing
+import UIKit
 @testable import ToyBoxMobile
 
 #if DEBUG && targetEnvironment(simulator)
@@ -72,23 +73,39 @@ struct MobileActivityFixtureProofTests {
         })
         let date = activity.content.updatedAt
         var applied: [String] = []
-        var pauses = 0
-        try await MobileActivityFixtureProof.autoplay(endedOnly: endedOnly, apply: { name in
-            var state = activity.content
-            state.ending = name == "completed" ? .completed : name == "ended" ? .expired : nil
-            let push = ChannelActivityPush(
-                event: state.ending == nil ? .update : .end, timestamp: date, state: state,
-                staleDate: state.staleDate,
-                dismissalDate: state.ending == nil ? nil : date.addingTimeInterval(15 * 60)
-            )
-            _ = try await MobileActivityFixtureProof.apply(
-                JSONEncoder().encode(push), activityID: activity.id, registrationID: "registration",
-                at: date, client: client
-            )
-            applied.append(name)
-        }, pause: { pauses += 1 })
+        var pauses: [Duration] = []
+        var lifecycle: [String] = []
+        let background = UIBackgroundTaskIdentifier(rawValue: 17)
+        try await MobileActivityFixtureProof.withBackgroundTime(waitForBackground: {
+            lifecycle.append("background")
+        }, beginBackgroundTask: { _ in
+            lifecycle.append("begin")
+            return background
+        }, endBackgroundTask: {
+            #expect($0 == background)
+            lifecycle.append("end")
+        }) {
+            try await MobileActivityFixtureProof.autoplay(endedOnly: endedOnly, apply: { name in
+                lifecycle.append(name)
+                var state = activity.content
+                state.ending = name == "completed" ? .completed : name == "ended" ? .expired : nil
+                let push = ChannelActivityPush(
+                    event: state.ending == nil ? .update : .end, timestamp: date, state: state,
+                    staleDate: state.staleDate,
+                    dismissalDate: state.ending == nil ? nil : date.addingTimeInterval(15 * 60)
+                )
+                _ = try await MobileActivityFixtureProof.apply(
+                    JSONEncoder().encode(push), activityID: activity.id, registrationID: "registration",
+                    at: date, client: client
+                )
+                applied.append(name)
+            }, pause: { pauses.append($0) })
+            lifecycle.append("finished")
+        }
         #expect(applied == (endedOnly ? ["ended"] : ["working", "quiet", "request", "stale", "completed"]))
-        #expect(pauses == (endedOnly ? 0 : 4))
+        #expect(lifecycle == ["background", "begin"] + applied + ["finished", "end"])
+        #expect(pauses == Array(repeating: .seconds(2), count: endedOnly ? 0 : 4))
+        #expect(pauses.reduce(.zero, +) < .seconds(10))
         #expect(activity.updates == (endedOnly ? 0 : 4))
         #expect(activity.endings == 1)
         #expect(!activity.isActive)
@@ -99,20 +116,70 @@ struct MobileActivityFixtureProofTests {
     @MainActor func autoplayStopsAtAnApplyFailureOrCancelledInterval(cancelled: Bool) async {
         var applied: [String] = []
         var pauses = 0
+        var released = false
         do {
-            try await MobileActivityFixtureProof.autoplay(endedOnly: false, apply: { name in
-                applied.append(name)
-                if !cancelled { throw URLError(.notConnectedToInternet) }
-            }, pause: {
-                pauses += 1
-                throw CancellationError()
-            })
+            try await MobileActivityFixtureProof.withBackgroundTime(waitForBackground: {},
+                beginBackgroundTask: { _ in .init(rawValue: 17) }, endBackgroundTask: { _ in released = true }
+            ) {
+                try await MobileActivityFixtureProof.autoplay(endedOnly: false, apply: { name in
+                    applied.append(name)
+                    if !cancelled { throw URLError(.notConnectedToInternet) }
+                }, pause: { _ in
+                    pauses += 1
+                    throw CancellationError()
+                })
+            }
             Issue.record("Autoplay must propagate a failed or cancelled step.")
         } catch {
             #expect(cancelled ? error is CancellationError : error is URLError)
         }
         #expect(applied == ["working"])
         #expect(pauses == (cancelled ? 1 : 0))
+        #expect(released)
+    }
+
+    @Test(arguments: [false, true])
+    @MainActor func unavailableOrExpiredBackgroundTimeStopsBeforeTheFirstUpdate(unavailable: Bool) async {
+        var applied: [String] = []
+        var released = false
+        do {
+            try await MobileActivityFixtureProof.withBackgroundTime(waitForBackground: {},
+                beginBackgroundTask: { expiration in
+                    if unavailable { return .invalid }
+                    expiration()
+                    return .init(rawValue: 17)
+                }, endBackgroundTask: { _ in released = true }
+            ) {
+                try await MobileActivityFixtureProof.autoplay(endedOnly: false, apply: { applied.append($0) },
+                    pause: { _ in Issue.record("A cancelled Activity must not pause.") })
+            }
+            Issue.record("Autoplay must surface unavailable or expired background time.")
+        } catch MobileActivityFixtureProof.Failure.backgroundTimeUnavailable {
+            #expect(unavailable)
+        } catch is CancellationError {
+            #expect(!unavailable)
+        } catch {
+            Issue.record(error)
+        }
+        #expect(applied.isEmpty)
+        #expect(released == !unavailable)
+    }
+
+    @Test @MainActor func aFailedBackgroundTransitionNeverReservesBackgroundTime() async {
+        var reserved = false
+        await #expect(throws: MobileActivityFixtureProof.Failure.self) {
+            try await MobileActivityFixtureProof.withBackgroundTime(waitForBackground: {
+                throw MobileActivityFixtureProof.Failure.needsBackground
+            }, beginBackgroundTask: { _ in
+                reserved = true
+                return .init(rawValue: 17)
+            }, endBackgroundTask: { _ in
+                Issue.record("No background task was reserved.")
+            }) {
+                Issue.record("The Activity must wait for the background transition.")
+            }
+        }
+        #expect(!reserved)
     }
 }
 

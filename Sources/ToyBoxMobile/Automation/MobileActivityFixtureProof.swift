@@ -10,7 +10,7 @@ import UIKit
 enum MobileActivityFixtureProof {
     enum Failure: LocalizedError {
         case missingFixture, invalidEnvelope, needsUpdate, unavailableActivity, notDemoServer, missingDemoChannel
-        case needsForeground, needsBackground
+        case needsForeground, needsBackground, backgroundTimeUnavailable
 
         var errorDescription: String? {
             switch self {
@@ -22,6 +22,7 @@ enum MobileActivityFixtureProof {
             case .missingDemoChannel: "The demo server has no studio-demo channel."
             case .needsForeground: "Autoplay needs the foreground to start its local Activity."
             case .needsBackground: "Return Home or lock the simulator to begin autoplay."
+            case .backgroundTimeUnavailable: "Could not reserve background time for Activity fixture autoplay."
             }
         }
     }
@@ -64,12 +65,43 @@ enum MobileActivityFixtureProof {
 
     static func autoplay(endedOnly: Bool,
                          apply: (String) async throws -> Void,
-                         pause: () async throws -> Void = { try await Task.sleep(for: .seconds(4)) }) async throws {
+                         pause: (Duration) async throws -> Void = { try await Task.sleep(for: $0) }) async throws {
         let states = endedOnly ? ["ended"] : ["working", "quiet", "request", "stale", "completed"]
         for (index, state) in states.enumerated() {
             try Task.checkCancellation()
             try await apply(state)
-            if index < states.count - 1 { try await pause() }
+            if index < states.count - 1 { try await pause(.seconds(2)) }
+        }
+    }
+
+    static func withBackgroundTime(
+        waitForBackground: () async throws -> Void,
+        beginBackgroundTask: (_ expiration: @escaping @Sendable () -> Void) -> UIBackgroundTaskIdentifier = {
+            UIApplication.shared.beginBackgroundTask(withName: "Activity fixture autoplay", expirationHandler: $0)
+        },
+        endBackgroundTask: (UIBackgroundTaskIdentifier) -> Void = { UIApplication.shared.endBackgroundTask($0) },
+        run: @escaping @MainActor () async throws -> Void
+    ) async throws {
+        try await waitForBackground()
+        try Task.checkCancellation()
+        let task = Task {
+            try Task.checkCancellation()
+            try await run()
+        }
+        let background = beginBackgroundTask { task.cancel() }
+        if background == .invalid { task.cancel() }
+        defer {
+            if background != .invalid { endBackgroundTask(background) }
+        }
+        do {
+            try await withTaskCancellationHandler {
+                try await task.value
+            } onCancel: {
+                task.cancel()
+            }
+        } catch {
+            if background == .invalid { throw Failure.backgroundTimeUnavailable }
+            throw error
         }
     }
 
@@ -126,22 +158,7 @@ struct ActivityFixtureProofView: View {
                 return
             }
             autoplayStarted = true
-            let task = Task { await runAutoplay() }
-            let background = UIApplication.shared.beginBackgroundTask(withName: "Activity fixture autoplay") {
-                task.cancel()
-            }
-            if background == .invalid {
-                logger.error("Could not reserve background time for Activity fixture autoplay.")
-                task.cancel()
-            }
-            defer {
-                if background != .invalid { UIApplication.shared.endBackgroundTask(background) }
-            }
-            await withTaskCancellationHandler {
-                await task.value
-            } onCancel: {
-                task.cancel()
-            }
+            await runAutoplay()
         }
     }
 
@@ -202,34 +219,44 @@ struct ActivityFixtureProofView: View {
             activityID = try MobileActivityFixtureProof.startLocal(working, attributes: attributes)
             result = "Autoplay ready. Return Home or lock the simulator. No push token or Follow registration."
             try publishAutoplay(.ready)
-            try await waitForApplicationState(.background)
-            try await Task.sleep(for: .seconds(2))
-            try await MobileActivityFixtureProof.autoplay(
-                endedOnly: ProcessInfo.processInfo.arguments.contains("--autoplay-ended"),
-                apply: { state in
-                    guard model.notifications.currentRegistration?.registrationID == attributes.registrationID,
-                          let activityID else { throw MobileActivityFixtureProof.Failure.unavailableActivity }
-                    let name = state == "request" ? "push-activity" : "push-activity-\(state)"
-                    let data = try MobileActivityFixtureProof.data(named: name)
-                    _ = try await MobileActivityFixtureProof.apply(
-                        data, activityID: activityID, registrationID: attributes.registrationID
+            try await MobileActivityFixtureProof.withBackgroundTime(
+                waitForBackground: { try await waitForApplicationState(.background) }
+            ) {
+                do {
+                    try await MobileActivityFixtureProof.autoplay(
+                        endedOnly: ProcessInfo.processInfo.arguments.contains("--autoplay-ended"),
+                        apply: { state in
+                            guard model.notifications.currentRegistration?.registrationID == attributes.registrationID,
+                                  let activityID else { throw MobileActivityFixtureProof.Failure.unavailableActivity }
+                            let name = state == "request" ? "push-activity" : "push-activity-\(state)"
+                            let data = try MobileActivityFixtureProof.data(named: name)
+                            _ = try await MobileActivityFixtureProof.apply(
+                                data, activityID: activityID, registrationID: attributes.registrationID
+                            )
+                            autoplayState = state
+                            result = "Autoplay applied \(state) fixture"
+                            try publishAutoplay(.applied)
+                        }
                     )
-                    autoplayState = state
-                    result = "Autoplay applied \(state) fixture"
-                    try publishAutoplay(.applied)
+                    result = "Autoplay finished. The terminal card keeps its fixture dismissal date."
+                    try publishAutoplay(.finished)
+                } catch {
+                    await failAutoplay(error)
                 }
-            )
-            result = "Autoplay finished. The terminal card keeps its fixture dismissal date."
-            try publishAutoplay(.finished)
-        } catch {
-            result = "Autoplay failed: \(error.localizedDescription)"
-            logger.error("\(result)")
-            if let activity = ChannelActivityClient.system.activities().first(where: { $0.id == activityID }) {
-                await activity.end(activity.content, dismissAt: nil)
             }
-            do { try publishAutoplay(.failed, error: error.localizedDescription) }
-            catch { logger.error("Could not write autoplay status: \(error.localizedDescription)") }
+        } catch {
+            await failAutoplay(error)
         }
+    }
+
+    private func failAutoplay(_ error: any Error) async {
+        result = "Autoplay failed: \(error.localizedDescription)"
+        logger.error("\(result)")
+        if let activity = ChannelActivityClient.system.activities().first(where: { $0.id == activityID }) {
+            await activity.end(activity.content, dismissAt: nil)
+        }
+        do { try publishAutoplay(.failed, error: error.localizedDescription) }
+        catch { logger.error("Could not write autoplay status: \(error.localizedDescription)") }
     }
 
     private func apply(_ state: String?) {

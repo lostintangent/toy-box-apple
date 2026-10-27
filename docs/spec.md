@@ -311,10 +311,12 @@ demo, then applies each decoded fixture through `ChannelActivityClient.system`. 
 restricted to that Activity ID and the selected registration. End fixtures preserve their
 15-minute dismissal date. This screen never registers Follow and is absent from optimized builds.
 Add `--autoplay` to create the token-free Activity in the foreground, then apply Working, Quiet,
-Request, Stale and Completed at four-second intervals after the app enters the background.
+Request, Stale and Completed at two-second intervals after the app enters the background.
 Run again with `--autoplay --autoplay-ended` for a fresh foreground Activity going to Ended.
 Terminal fixtures stay last because ActivityKit cannot request a replacement in the background.
-Autoplay uses bounded native background time, never answers a permission prompt, and writes
+Autoplay reserves bounded native background time only after the background transition, with no
+lead-in delay and eight seconds of total interval waits in the five-state pass. It never answers
+a permission prompt, and writes
 its current state, Activity ID, timestamp and any failure atomically to
 `Documents/Automation/activity-fixture-autoplay.json` for capture synchronization.
 Each run dismisses only the Activity identified by its previous autoplay status before starting.
@@ -2837,6 +2839,8 @@ so cleanup from an old follow cannot delete its successor's registration. Foregr
 comes from the canonical `ContentState(state:updatedAt:)` projection, with a five-minute refresh
 only while its store is live. Following holds a counted channel connection and never marks read.
 Alert preferences do not start or stop an Activity.
+Activity content updates are non-alerting. A request's ordinary notification supplies its alert,
+so updating the Activity never adds a second alert to force the Dynamic Island onscreen.
 
 Lock Screen content uses native background, 16-point padding, an 8-point heading-to-summary gap
 and 4-point related gaps. The channel name is subheadline semibold, state headline, task detail
