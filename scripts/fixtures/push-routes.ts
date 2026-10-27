@@ -23,7 +23,7 @@ async function body(request: IncomingMessage): Promise<unknown> {
     return JSON.parse(Buffer.concat(chunks).toString("utf8"));
 }
 
-export function createDemoPushRoutes(snapshot: () => Snapshot) {
+export function createDemoPushRoutes(snapshots: () => Snapshot[]) {
     const devices = new Map<string, Device>();
     const activities = new Map<string, Activity>();
     function match(path: string): Route | undefined {
@@ -89,7 +89,10 @@ export function createDemoPushRoutes(snapshot: () => Snapshot) {
             devices.set(id, { ...common, environment: input.environment,
                               requests: input.requests, completions: input.completions });
         } else {
-            if (channel !== snapshot().channel.id) { reply(response, 404, "Channel not found."); return; }
+            if (channel === undefined || !snapshots().some(snapshot => snapshot.channel.id === channel)) {
+                reply(response, 404, "Channel not found.");
+                return;
+            }
             if (typeof input.startedAt !== "number" || !Number.isFinite(input.startedAt) || input.startedAt < 0) {
                 reply(response, 422, "Activity start time must be Unix seconds.");
                 return;
