@@ -6,7 +6,8 @@ import { FakeHarness, workflowBody } from "./helpers.ts";
 
 const identity = "0123456789ABCDEF0123456789ABCDEF01234567";
 const password = "fake-app-password\\with a space";
-const signing = { CERTIFICATE: Buffer.from("fake identity").toString("base64"), CERTIFICATE_PASSWORD: "fake-p12-password" };
+const signing = { CERTIFICATE: Buffer.from("fake identity").toString("base64"), CERTIFICATE_PASSWORD: "fake-p12-password",
+    SIGNING_IDENTITY: identity, SIGNING_CERTIFICATE_CHAIN: "fake public issuer chain" };
 const apple = { NOTARY_APPLE_ID: "owner@example.invalid", NOTARY_TEAM_ID: "FAKETEAM12", NOTARY_APP_PASSWORD: password };
 
 describe("release credentials without a real identity or Keychain", () => {
@@ -39,6 +40,10 @@ describe("release credentials without a real identity or Keychain", () => {
         expect(secrets.NOTARY_APP_PASSWORD).toBe(password);
         expect(calls.every(call => JSON.stringify(call.args.slice(3)) === JSON.stringify(["--repo", "example/explicit-repo"]))).toBe(true);
         expect((await fake.calls("xcrun"))[0].args).not.toContain(secrets.MACOS_SIGNING_PASSWORD);
+        expect((await fake.calls("gh")).find(call => call.args[2] === "MACOS_SIGNING_IDENTITY")?.args)
+            .toEqual(["variable", "set", "MACOS_SIGNING_IDENTITY", "--repo", "example/explicit-repo", "--body", identity]);
+        expect((await fake.calls("gh")).find(call => call.args[2] === "MACOS_SIGNING_CERTIFICATE_CHAIN")?.args.at(-1))
+            .toBe("fake public issuer chain");
     });
     test("resolves the default repository and accepts piped passwords without a newline", async () => {
         const result = await setup(args, password);
@@ -68,6 +73,14 @@ describe("release credentials without a real identity or Keychain", () => {
         expect(result.code).toBe(24);
         expect(result.stdout).not.toContain("Release secrets configured");
     });
+    test("a renewed fingerprint replaces the public variable and an invalid export chain uploads nothing", async () => {
+        const renewed = "ABCDEF0123456789ABCDEF0123456789ABCDEF01";
+        expect((await setup([renewed, apple.NOTARY_APPLE_ID, apple.NOTARY_TEAM_ID])).code).toBe(0);
+        expect((await fake.calls("gh")).find(call => call.args[2] === "MACOS_SIGNING_IDENTITY")?.args.at(-1)).toBe(renewed);
+        await Bun.write(fake.log, "");
+        expect((await setup(args, password, { FAIL_EXPORT: "1" })).code).toBe(28);
+        expect((await fake.calls("gh")).some(call => ["secret", "variable"].includes(call.args[0]!))).toBe(false);
+    });
     test.each([[], [identity, "", "team"], [identity, "email", ""],
         ["invalid", "email", "team"], [...args, "repo", "extra"]])("invalid arguments fail before commands: %j", async (...arguments_) => {
         expect((await setup(arguments_)).code).not.toBe(0);
@@ -87,8 +100,10 @@ describe("release credentials without a real identity or Keychain", () => {
     test("the workflow pins only public signing identifiers", async () => {
         const source = await Bun.file(join(root, ".github/workflows/build-and-release.yml")).text();
         for (const [name, value] of Object.entries({
-            SIGNING_IDENTITY: "69A492FDF7DDFC679B93DB465E0D5E94F22DAC6A", NOTARY_APPLE_ID: "joncart@outlook.com", NOTARY_TEAM_ID: "RHFNBL7EG4",
+            NOTARY_APPLE_ID: "joncart@outlook.com", NOTARY_TEAM_ID: "RHFNBL7EG4",
         })) expect(source).toContain(`      ${name}: ${value}\n`);
+        expect(source).toContain("      SIGNING_IDENTITY: ${{ vars.MACOS_SIGNING_IDENTITY }}");
+        expect(source).not.toContain("DeveloperIDCA.cer");
         for (const name of ["MACOS_SIGNING_IDENTITY", "NOTARY_APPLE_ID", "NOTARY_TEAM_ID"]) {
             expect(source).not.toContain(`secrets.${name}`);
         }

@@ -1,7 +1,8 @@
 import { expect, test } from "bun:test";
 import { lstat, mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { command, plist, root, temporary, text } from "../../lib.ts";
+import { command, root, temporary, text } from "../../lib.ts";
+import { configureReleaseMetadata } from "../release.ts";
 import { appcastItems } from "../xml.ts";
 import { shareExtension, validateShareExtension } from "../share-extension.ts";
 import { validateWidgetExtension, widgetExtension } from "../widget-extension.ts";
@@ -58,7 +59,7 @@ for (const relative of ["Contents/Frameworks/Sparkle.framework/Autoupdate",
     });
 }
 
-test.skipIf(!hasTools)("native appcast: ephemeral file key signs archive/feed and rejects tampering", async () => {
+test.skipIf(!hasTools)("native appcast: ephemeral file key signs the archive and rejects archive tampering", async () => {
     await temporary("toy-box-native-appcast.", async directory => {
         const key = join(directory, "throwaway-key.txt");
         const publicKey = await text(["xcrun", "swift", "-e", `
@@ -70,9 +71,12 @@ test.skipIf(!hasTools)("native appcast: ephemeral file key signs archive/feed an
         `, key]);
         const app = join(directory, "Toy Box.app");
         await command(["ditto", process.env.TOY_BOX_BUNDLE!, app]);
-        await plist(join(app, "Contents/Info.plist"), ["Set :CFBundleVersion 200.1", "Set :CFBundleShortVersionString 0.2.0",
-            "Add :SUFeedURL string http://127.0.0.1:3298/appcast.xml", `Add :SUPublicEDKey string ${publicKey}`,
-            "Add :SURequireSignedFeed bool true", "Add :SUVerifyUpdateBeforeExtraction bool true"]);
+        await configureReleaseMetadata(app, "0.2.0", "200.1", publicKey);
+        const info: Record<string, unknown> = JSON.parse(await text(["plutil", "-convert", "json", "-o", "-", join(app, "Contents/Info.plist")]));
+        expect(info.SUPublicEDKey).toBe(publicKey);
+        expect(info.SUEnableAutomaticChecks).toBe(true);
+        expect(info.SUVerifyUpdateBeforeExtraction).toBeUndefined();
+        expect(info.SURequireSignedFeed).toBeUndefined();
         await command([process.execPath, join(root, "scripts/release/sign-app.ts"), app]);
         const output = join(directory, "dist");
         await mkdir(output);
@@ -92,10 +96,6 @@ test.skipIf(!hasTools)("native appcast: ephemeral file key signs archive/feed an
         await Bun.write(archive, Buffer.concat([Buffer.from(bytes), Buffer.from("tampered")]));
         const verify = [join(process.env.SPARKLE_TOOLS_DIR!, "bin/sign_update"), "--ed-key-file", key, "--verify"];
         expect((await command([...verify, archive, signature!], { env, quiet: true, allowFailure: true })).exitCode).not.toBe(0);
-        const original = await Bun.file(feed).text();
-        const tampered = original.replaceAll("0.2.0", "9.2.0");
-        expect(tampered).not.toBe(original);
-        await Bun.write(feed, tampered);
-        expect((await command([...verify, feed], { env, quiet: true, allowFailure: true })).exitCode).not.toBe(0);
+        expect(await Bun.file(feed).text()).not.toContain("<!-- sparkle-signatures:");
     });
 }, 120_000);

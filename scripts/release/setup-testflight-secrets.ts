@@ -9,8 +9,9 @@ export async function uploadTestFlightSigning(signing: Awaited<ReturnType<typeof
     if (!host || !password) throw new Error("TestFlight signing and a nonempty export password are required.");
     await temporary("toy-box-testflight-secrets.", async directory => {
         const exported = join(directory, "identity.p12");
+        const chainFile = join(directory, "issuer-chain.pem");
         await command(["xcrun", "swift", join(root, "scripts/release/export-signing-identity.swift"),
-            host.identity.fingerprint, exported], { env: { P12_PASSWORD: password } });
+            host.identity.fingerprint, exported, chainFile], { env: { P12_PASSWORD: password } });
         const secrets: [string, string][] = [
             ["MOBILE_SIGNING_CERTIFICATE", Buffer.from(await Bun.file(exported).arrayBuffer()).toString("base64")],
             ["MOBILE_SIGNING_PASSWORD", password],
@@ -27,6 +28,7 @@ export async function uploadTestFlightSigning(signing: Awaited<ReturnType<typeof
         for (const [name, input] of secrets)
             await command(["gh", "secret", "set", name, "--repo", repository], { input });
         for (const [name, value] of [
+            ["MOBILE_SIGNING_CERTIFICATE_CHAIN", await Bun.file(chainFile).text()],
             ["MOBILE_SIGNING_IDENTITY", host.identity.fingerprint],
             ["APP_STORE_CONNECT_APP_ID", appID],
         ] as const) await command(["gh", "variable", "set", name, "--repo", repository, "--body", value]);

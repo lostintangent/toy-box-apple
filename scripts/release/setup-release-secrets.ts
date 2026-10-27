@@ -22,14 +22,18 @@ if (import.meta.main) await main(async () => {
         if (status) throw new CommandFailure(status, "Unable to read the app-specific password.");
         const exportPassword = randomBytes(48).toString("base64");
         const identityFile = join(directory, "identity.p12");
+        const chainFile = join(directory, "issuer-chain.pem");
         await command(["xcrun", "swift", join(root, "scripts/release/export-signing-identity.swift"),
-            identity, identityFile], { env: { P12_PASSWORD: exportPassword } });
+            identity, identityFile, chainFile], { env: { P12_PASSWORD: exportPassword } });
         await command(["xcrun", "notarytool", "store-credentials", "toy-box-channels-notary",
             "--apple-id", appleID, "--team-id", teamID, "--password", password]);
         for (const [name, input] of [
             ["MACOS_SIGNING_CERTIFICATE", Buffer.from(await Bun.file(identityFile).arrayBuffer()).toString("base64")],
             ["MACOS_SIGNING_PASSWORD", exportPassword], ["NOTARY_APP_PASSWORD", password],
         ]) await command(["gh", "secret", "set", name, "--repo", repo], { input });
+        await command(["gh", "variable", "set", "MACOS_SIGNING_CERTIFICATE_CHAIN", "--repo", repo,
+            "--body", await Bun.file(chainFile).text()]);
+        await command(["gh", "variable", "set", "MACOS_SIGNING_IDENTITY", "--repo", repo, "--body", identity.toUpperCase()]);
         console.log(`Release secrets configured for ${repo}. Local notarization profile: toy-box-channels-notary.`);
     });
 });

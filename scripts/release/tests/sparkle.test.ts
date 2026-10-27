@@ -183,7 +183,7 @@ describe("signed appcast generation", () => {
     const generate = (extra: NodeJS.ProcessEnv = {}) => fake.run([process.execPath, "-e",
         `const { generateAppcast } = await import(${JSON.stringify(new URL("../generate-appcast.ts", import.meta.url).href)}); await generateAppcast("v0.2.0", ${JSON.stringify(fake.directory)});`],
     { ...env, ...extra });
-    test("generates and verifies both signatures without default-Keychain access", async () => {
+    test("generates a feed and verifies only the required archive signature without Keychain access", async () => {
         const result = await generate();
         expect(result.code).toBe(0);
         const generated = (await fake.calls("generate_appcast"))[0].args;
@@ -191,7 +191,8 @@ describe("signed appcast generation", () => {
         expect(generated).toContain("--embed-release-notes");
         expect(generated).toContain("--maximum-deltas");
         const verified = await fake.calls("sign_update");
-        expect(verified).toHaveLength(2);
+        expect(verified).toHaveLength(1);
+        expect(verified[0].args.at(-2)).toBe(join(env.OUTPUT_DIR!, "ToyBox-0.2.0-arm64.zip"));
         expect(verified.every(call => JSON.stringify(call.args.slice(0, 3)) === JSON.stringify(["--ed-key-file", "-", "--verify"]))).toBe(true);
         expect(result.stdout + result.stderr).not.toContain("fake-sparkle-private-key");
         expect(await Bun.file(join(env.OUTPUT_DIR!, "ToyBox-0.2.0-arm64.txt")).text())
@@ -202,7 +203,7 @@ describe("signed appcast generation", () => {
     ])("missing keys, invalid metadata and verification errors never succeed: %j", async extra => {
         const result = await generate(extra);
         expect(result.code).not.toBe(0);
-        expect(result.stdout).not.toContain("Signed update feed:");
+        expect(result.stdout).not.toContain("Update feed with verified archive signature:");
     });
     test("an explicit file key never falls back to the Keychain", async () => {
         const key = join(fake.directory, "throwaway-key.txt");

@@ -22,6 +22,7 @@ test("phone tags are independent and manual main builds validate without a GitHu
     expect(source).not.toContain("gh release");
     expect(source).not.toContain("simctl");
     expect(source).not.toContain("xcodebuild");
+    expect(source).not.toContain("AppleWWDRCAG3.cer");
     const steps = source.split("\n").filter(line => line.startsWith("      - name: "));
     expect(steps).toContain("      - name: Require the iPhone changelog entry");
     expect(steps.indexOf("      - name: Require the iPhone changelog entry"))
@@ -48,6 +49,7 @@ test.each(["push", "workflow_dispatch"])("%s calls only the shared mobile comman
 const signing = {
     CERTIFICATE: Buffer.from("fake distribution identity").toString("base64"),
     CERTIFICATE_PASSWORD: password,
+    SIGNING_CERTIFICATE_CHAIN: "fake public issuer chain",
     HOST_PROFILE: Buffer.from("host profile").toString("base64"),
     WIDGET_PROFILE: Buffer.from("widget profile").toString("base64"),
     NOTIFICATION_PROFILE: Buffer.from("notification profile").toString("base64"),
@@ -63,6 +65,7 @@ test("CI imports only temporary signing material and restores the original keych
     expect(await Bun.file(join(directory, "app.mobileprovision")).text()).toBe("host profile");
     expect(await Bun.file(join(directory, "widget.mobileprovision")).text()).toBe("widget profile");
     expect(await Bun.file(join(directory, "notification.mobileprovision")).text()).toBe("notification profile");
+    expect(await Bun.file(join(directory, "issuer-chain.pem")).text()).toBe("fake public issuer chain");
     expect(await Bun.file(join(fake.directory, "github-env")).text()).toContain(`MOBILE_PROVISIONING_PROFILE=${directory}/app.mobileprovision`);
     const cleanup = await fake.run(["/bin/bash", "-c",
         await workflowBody("Remove temporary TestFlight signing material", "mobile-release.yml")]);
@@ -118,7 +121,7 @@ test("user setup exports only the selected identity and five stdin-only signing 
     expect(secrets.every(call => !call.args.includes(password))).toBe(true);
     expect(secrets.find(call => call.args[2] === "MOBILE_SIGNING_PASSWORD")!.input).toBe(password);
     expect(calls.filter(call => call.args[0] === "variable").map(call => call.args[2]))
-        .toEqual(["MOBILE_SIGNING_IDENTITY", "APP_STORE_CONNECT_APP_ID"]);
+        .toEqual(["MOBILE_SIGNING_CERTIFICATE_CHAIN", "MOBILE_SIGNING_IDENTITY", "APP_STORE_CONNECT_APP_ID"]);
     expect(calls.some(call => call.args.includes("NOTARY_APP_PASSWORD"))).toBe(false);
     expect((await fake.calls("xcrun"))[0]!.args).not.toContain(password);
     expect(await Array.fromAsync(new Bun.Glob("toy-box-testflight-secrets.*").scan(fake.directory))).toEqual([]);
@@ -128,6 +131,12 @@ test("partial secret failure is reported and the temporary private export is rem
     expect(result.code).toBe(24);
     expect(result.stdout).not.toContain("TestFlight signing configured");
     expect(result.stdout + result.stderr).not.toContain(password);
+    expect(await Array.fromAsync(new Bun.Glob("toy-box-testflight-secrets.*").scan(fake.directory))).toEqual([]);
+});
+test("an issuing-chain export failure never uploads a partial replacement", async () => {
+    const result = await setupSigning({ FAIL_EXPORT: "1" });
+    expect(result.code).toBe(28);
+    expect((await fake.calls("gh")).some(call => ["secret", "variable"].includes(call.args[0]!))).toBe(false);
     expect(await Array.fromAsync(new Bun.Glob("toy-box-testflight-secrets.*").scan(fake.directory))).toEqual([]);
 });
 test("invalid setup arguments fail before credential or repository commands", async () => {

@@ -15,7 +15,13 @@ export async function fake(command: string) {
         else if (args[0] === "swift" && args[1] === "test") {
             process.stdout.write(process.env.TEST_LOG || "");
             process.exit(Number(process.env.TEST_EXIT || 0));
-        } else if (args[0] === "swift") writeFileSync(args.at(-1)!, "fake encrypted identity");
+        } else if (args[0] === "swift") {
+            if (process.env.FAIL_EXPORT === "1") process.exit(28);
+            if (args[1]?.endsWith("export-signing-identity.swift")) {
+                writeFileSync(args.at(-2)!, "fake encrypted identity");
+                writeFileSync(args.at(-1)!, "fake public issuer chain");
+            } else writeFileSync(args.at(-1)!, "fake encrypted identity");
+        }
         else if (args[0] === "notarytool" && args[1] === "store-credentials") {
             if (process.env.FAIL_NOTARY === "1") { console.error("Fake notarization rejection"); process.exit(23); }
         } else throw new Error("Unexpected fake xcrun invocation.");
