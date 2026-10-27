@@ -8,6 +8,8 @@ package struct ChannelAgentStatusPresentation: Equatable, Sendable {
     package let spoken: String
     package let cue: Cue
 
+    package var textColor: Color { cue == .working ? .primary.opacity(0.85) : ChannelInk.secondary }
+
     package init(presence: ChannelAgentPresence?, isLive: Bool) {
         guard isLive else {
             text = "Status unavailable while disconnected"

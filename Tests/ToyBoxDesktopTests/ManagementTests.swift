@@ -365,6 +365,36 @@ struct ManagementTests {
         #expect(field.submits == 1)
     }
 
+    @Test(arguments: [ColorScheme.light, .dark], [0.85, 1, 1.15, 1.4])
+    func waitingPauseCentersOnTheStatusCapitalInk(scheme: ColorScheme, scale: Double) throws {
+        let renderer = ImageRenderer(content:
+            OverviewAgentStatusLine(
+                agent: .init(id: "agent", name: "Agent", role: "Engineer"),
+                status: .init(state: "waiting", text: "WAITING MMMM"), isLive: true)
+                .padding(4)
+                .background(scheme == .dark ? Color.black : Color.white)
+                .environment(\.colorScheme, scheme)
+                .environment(\.channelTextScale, scale))
+        renderer.scale = 3
+        let bitmap = try RenderedPixels(try #require(renderer.cgImage))
+        let background = scheme == .dark ? 0.0 : 1.0
+        var cueRows = Set<Int>(), textRows = Set<Int>()
+        for y in 0..<bitmap.pixelsHigh {
+            for x in 0..<bitmap.pixelsWide {
+                let color = bitmap.colorAt(x: x, y: y)
+                let red = color.redComponent, green = color.greenComponent, blue = color.blueComponent
+                if red > green + 0.08, green > blue + 0.08 { cueRows.insert(y) }
+                if abs(red - green) < 0.02, abs(green - blue) < 0.02, abs(red - background) > 0.1 {
+                    textRows.insert(y)
+                }
+            }
+        }
+        let cueCenter = Double(try #require(cueRows.min()) + #require(cueRows.max())) / 6
+        let textCenter = Double(try #require(textRows.min()) + #require(textRows.max())) / 6
+        #expect(abs(cueCenter - textCenter) <= 0.5,
+                "Pause \(cueCenter), capital ink \(textCenter), scale \(scale), \(scheme)")
+    }
+
     @Test func folderRowOffersRevealOnlyForAnOpenableFolder() throws {
         func inkRightEdge(_ availability: ChannelFolderAvailability) throws -> Int {
             let renderer = ImageRenderer(content:
