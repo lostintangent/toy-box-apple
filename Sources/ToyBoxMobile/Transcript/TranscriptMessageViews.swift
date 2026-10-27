@@ -487,14 +487,11 @@ struct TranscriptReactionChip: View {
                 .frame(minWidth: 44, minHeight: 44)
                 .background {
                     GeometryReader { proxy in
-                        let space = NamedCoordinateSpace.named(TranscriptReactionFlow.coordinateSpace)
-                        let frame = proxy.frame(in: space)
-                        let target = TranscriptReactionFlow.target(of: frame, in: proxy.bounds(of: space) ?? frame,
-                                                                   rowOverlap: rowOverlap)
+                        let target = TranscriptReactionFlow.target(in: proxy, rowOverlap: rowOverlap)
                         Color.clear
                             .frame(height: target.height)
                             .contentShape(.rect)
-                            .offset(y: target.minY - frame.minY)
+                            .offset(y: target.minY)
                     }
                 }
         }

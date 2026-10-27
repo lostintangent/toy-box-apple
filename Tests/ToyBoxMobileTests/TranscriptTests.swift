@@ -443,6 +443,35 @@ struct TranscriptTests {
         }
     }
 
+    @Test func aMiddleRowOfReactionTargetsGivesHalfOfEachGapToItsNeighbors() async {
+        // Three rows of 44-point targets around 24-point pills, measured natively in each chip's space.
+        let flow = TranscriptReactionFlow(spacing: 6, lineSpacing: -14)
+        var targets: [Int: CGRect] = [:]
+        let host = UIHostingController(rootView: flow {
+            ForEach(0..<3) { row in
+                Color.clear.frame(width: 200, height: 44).background {
+                    GeometryReader { proxy in
+                        let target = TranscriptReactionFlow.target(in: proxy, rowOverlap: 14)
+                        Color.clear.onAppear { targets[row] = target }
+                    }
+                }
+            }
+        }
+        .coordinateSpace(.named(TranscriptReactionFlow.coordinateSpace))
+        .frame(width: 305, alignment: .topLeading))
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 305, height: 400))
+        window.rootViewController = host
+        window.isHidden = false
+        defer { window.isHidden = true }
+        host.view.layoutIfNeeded()
+        await Task.yield()
+        host.view.layoutIfNeeded()
+
+        #expect(targets[0] == CGRect(x: 0, y: 0, width: 200, height: 37))
+        #expect(targets[1] == CGRect(x: 0, y: 7, width: 200, height: 30))
+        #expect(targets[2] == CGRect(x: 0, y: 7, width: 200, height: 37))
+    }
+
     @Test func messagesRenderMarkdownBlocksLikeTheMac() {
         func height(_ text: String) -> CGFloat {
             UIHostingController(rootView: TranscriptBody(text: text))

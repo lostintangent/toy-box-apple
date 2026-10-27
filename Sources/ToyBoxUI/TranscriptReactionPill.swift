@@ -66,6 +66,12 @@ public struct TranscriptReactionFlow: Layout {
         return CGRect(x: frame.minX, y: frame.minY + top, width: frame.width, height: frame.height - top - bottom)
     }
 
+    /// A chip's target in its own space, where the flow's bounds arrive converted.
+    public static func target(in proxy: GeometryProxy, rowOverlap: CGFloat) -> CGRect {
+        let frame = CGRect(origin: .zero, size: proxy.size)
+        return target(of: frame, in: proxy.bounds(of: .named(coordinateSpace)) ?? frame, rowOverlap: rowOverlap)
+    }
+
     public func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         let frames = frames(for: subviews, width: proposal.width ?? .infinity)
         return CGSize(width: frames.map(\.maxX).max() ?? 0, height: frames.map(\.maxY).max() ?? 0)
