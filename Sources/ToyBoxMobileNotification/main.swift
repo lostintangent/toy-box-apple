@@ -1,43 +1,57 @@
-import Intents
+import ChannelKit
+import Foundation
 import OSLog
 import ToyBoxMobileIntegrations
 import UserNotifications
 
 @objc(ToyBoxMobileNotificationService)
-final class NotificationService: UNNotificationServiceExtension {
+// System entry points only enqueue work. Mutable extension state stays on the main actor.
+final class NotificationService: UNNotificationServiceExtension, @unchecked Sendable {
+    @MainActor private var enrichment: MobileNotificationEnricher?
+
     override func didReceive(_ request: UNNotificationRequest,
                              withContentHandler contentHandler: @escaping (UNNotificationContent) -> Void) {
-        #if DEBUG && targetEnvironment(simulator)
-        guard request.content.userInfo["toyBoxFoundationProof"] as? Bool == true else {
-            contentHandler(request.content)
+        let delivery = NotificationDelivery(contentHandler)
+        let payload: ChannelPushPayload
+        do { payload = try ChannelPushPayload(userInfo: request.content.userInfo) }
+        catch {
+            Logger(subsystem: "dev.toybox.mobile.notification", category: "Enrichment")
+                .error("Could not read notification routing: \(error.localizedDescription)")
+            Task { @MainActor in delivery.call(MobileNotificationEnricher.generic()) }
             return
         }
-        do {
-            let marker = try MobileFoundationProbe.record("notification")
-            let container = try MobileSharedContainer.url()
-            let image = INImage(imageData: try Data(contentsOf: container.appending(path: "foundation-avatar.png")))
-            let sender = INPerson(personHandle: .init(value: "foundation-agent", type: .unknown),
-                                  nameComponents: nil, displayName: "Foundation Agent",
-                                  image: image, contactIdentifier: nil, customIdentifier: "foundation-agent")
-            let intent = INSendMessageIntent(
-                recipients: nil, outgoingMessageType: .outgoingMessageText,
-                content: "The service extension read shared marker \(marker.prefix(8)).",
-                speakableGroupName: .init(spokenPhrase: "Toy Box Foundation"),
-                conversationIdentifier: "toybox-foundation", serviceName: nil, sender: sender, attachments: nil)
-            guard let content = request.content.mutableCopy() as? UNMutableNotificationContent else {
-                throw MobileSharedContainer.Failure.unavailable
+        Task { @MainActor in
+            do {
+                enrichment?.expire()
+                let operation = try MobileNotificationEnricher()
+                enrichment = operation
+                operation.start(payload, completion: delivery.call)
+            } catch {
+                Logger(subsystem: "dev.toybox.mobile.notification", category: "Enrichment")
+                    .error("Could not prepare notification enrichment: \(error.localizedDescription)")
+                delivery.call(MobileNotificationEnricher.generic())
             }
-            content.title = "Foundation Agent"
-            content.body = "The service extension read shared marker \(marker.prefix(8))."
-            content.threadIdentifier = "toybox-foundation"
-            contentHandler(try content.updating(from: intent))
-        } catch {
-            Logger(subsystem: "dev.toybox.mobile.notification", category: "Foundation")
-                .error("Communication probe failed: \(error.localizedDescription, privacy: .public)")
-            contentHandler(request.content)
         }
-        #else
-        contentHandler(request.content)
-        #endif
+    }
+
+    override func serviceExtensionTimeWillExpire() {
+        Task { @MainActor in enrichment?.expire() }
+    }
+}
+
+// Bridges the Objective-C callback into the task without allowing a second delivery.
+private final class NotificationDelivery: @unchecked Sendable {
+    private let lock = NSLock()
+    private var callback: ((UNNotificationContent) -> Void)?
+
+    init(_ callback: @escaping (UNNotificationContent) -> Void) { self.callback = callback }
+
+    func call(_ content: UNNotificationContent) {
+        let callback = lock.withLock {
+            let result = self.callback
+            self.callback = nil
+            return result
+        }
+        callback?(content)
     }
 }
