@@ -84,7 +84,7 @@ struct TranscriptFindAccessory: View {
                 }
             }
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, 8)
         .padding(.vertical, 4)
         .frame(minHeight: surfaceHeight)
         .glassEffect(.regular, in: .rect(cornerRadius: surfaceHeight / 2))
@@ -131,7 +131,7 @@ struct TranscriptFindAccessory: View {
         Button(action: close) {
             Text("Done")
                 .fontWeight(.semibold)
-                .padding(.horizontal, 10)
+                .padding(.horizontal, 6)
                 .frame(minWidth: 54, minHeight: surfaceHeight)
                 .glassEffect(.regular.interactive(), in: .capsule)
                 .frame(minHeight: 44)
@@ -148,7 +148,7 @@ struct TranscriptFindAccessory: View {
 /// puts it under the query inside the same growing field, in one layout pass.
 struct TranscriptFindFieldLayout: Layout {
     static let minimumQueryWidth: CGFloat = 64
-    var spacing: CGFloat = 6
+    var spacing: CGFloat = 4
 
     private struct Arrangement {
         var wraps = false
@@ -185,14 +185,16 @@ struct TranscriptFindFieldLayout: Layout {
             return Arrangement(queryWidth: width, size: size)
         }
         let status = subviews[1].sizeThatFits(.unspecified)
+        let minimum = query.sizeThatFits(ProposedViewSize(width: 0, height: nil))
+        // Ideal is the narrowest single line, so ViewThatFits keeps one row whenever the query
+        // still gets its 64-point viewport, whatever has been typed.
         guard let width else {
-            let ideal = query.sizeThatFits(.unspecified)
-            return Arrangement(queryWidth: ideal.width, status: status,
-                               size: CGSize(width: ideal.width + spacing + status.width,
-                                            height: max(ideal.height, status.height)))
+            return Arrangement(queryWidth: minimum.width, status: status,
+                               size: CGSize(width: minimum.width + spacing + status.width,
+                                            height: max(minimum.height, status.height)))
         }
         let besideWidth = width - spacing - status.width
-        if besideWidth >= query.sizeThatFits(ProposedViewSize(width: 0, height: nil)).width {
+        if besideWidth >= minimum.width {
             let size = query.sizeThatFits(ProposedViewSize(width: besideWidth, height: nil))
             return Arrangement(queryWidth: besideWidth, status: status,
                                size: CGSize(width: width, height: max(size.height, status.height)))
@@ -233,11 +235,14 @@ struct TranscriptFindStatusView: View {
         case .incomplete(let error):
             Button { showsError = true } label: {
                 ViewThatFits(in: .horizontal) {
-                    incomplete.labelStyle(.titleAndIcon)
-                    incomplete.labelStyle(.iconOnly)
+                    HStack(spacing: 3) {
+                        incomplete
+                        Text("Incomplete")
+                    }
+                    incomplete
                 }
-                .font(.footnote.weight(.medium))
-                .imageScale(.medium)
+                .font(.footnote)
+                .imageScale(.small)
                 .frame(minWidth: 44, minHeight: 44, alignment: .trailing)
                 .contentShape(.rect)
             }
@@ -253,11 +258,7 @@ struct TranscriptFindStatusView: View {
     }
 
     private var incomplete: some View {
-        Label {
-            Text("Incomplete")
-        } icon: {
-            Image(systemName: "exclamationmark.circle").foregroundStyle(.orange)
-        }
+        Image(systemName: "exclamationmark.circle").foregroundStyle(.orange)
     }
 }
 

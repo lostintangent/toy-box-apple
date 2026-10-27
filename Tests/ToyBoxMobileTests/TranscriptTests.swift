@@ -264,6 +264,12 @@ struct TranscriptTests {
         find.query = "layout"
         let bar = TranscriptFindAccessory(find: find, channelName: "Studio demo", focusRequest: UUID(),
                                           navigate: { _ in }, close: {})
+        // The folded Duo leaves 386 points beside its status column. The unfolded conversation column
+        // with Overview open is wider, so every width from there up keeps one 52-point row.
+        for width in [386, 400, 454, 480, 560, 720] as [CGFloat] {
+            #expect(size(bar, width: width).height.rounded() == 52, "\(width)")
+        }
+        find.query = String(repeating: "a long typed query ", count: 4)
         #expect(size(bar, width: 386).height.rounded() == 52)
         // The full-width field sits above the controls instead of shrinking type.
         #expect(size(bar, width: 386, .accessibility5).height > 2 * 44)
@@ -274,8 +280,8 @@ struct TranscriptTests {
                               minHeight: 30, maxHeight: 30)
             Color.clear.frame(width: 84, height: 20)
         }
-        #expect(size(field, width: 6 + 84 + 84) == CGSize(width: 174, height: 30))
-        #expect(size(field, width: 173) == CGSize(width: 173, height: 30 + 6 + 20))
+        #expect(size(field, width: 84 + 4 + 84) == CGSize(width: 172, height: 30))
+        #expect(size(field, width: 171) == CGSize(width: 171, height: 30 + 4 + 20))
     }
 
     @Test func phoneFindKeepsMatchTextReadableInBothAppearances() throws {
