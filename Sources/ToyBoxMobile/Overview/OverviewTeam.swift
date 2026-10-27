@@ -8,6 +8,7 @@ struct OverviewTeamSection: View {
     let store: ChannelStore
     let session: OverviewSession
     @Environment(ManagementPresenter.self) private var management
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     private var ordered: [ChannelAgent] {
         guard let lead = store.roster.first else { return [] }
@@ -18,16 +19,24 @@ struct OverviewTeamSection: View {
     }
 
     var body: some View {
+        let verticalInset: CGFloat = typeSize.isAccessibilitySize ? 15 : 14
         OverviewSectionRows(summary: .team(store.roster.count), section: .team, session: session,
                             isFirstSection: false) {
             ForEach(ordered) { agent in
                 OverviewTeamRow(agent: agent, store: store, session: session,
                                 isLead: agent.id == store.roster.first?.id)
+                    .listRowInsets(.vertical, typeSize.isAccessibilitySize ? nil : 14)
             }
-            Button("Add Agent", systemImage: "person.badge.plus") {
+            Button {
                 management.present(.addMember(channelId: store.id, name: ""))
+            } label: {
+                Label("Add Agent", systemImage: "person.badge.plus")
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, minHeight: 38, alignment: .leading)
+                    .padding(.vertical, verticalInset)
+                    .contentShape(Rectangle())
             }
-            .frame(minHeight: 44)
+            .listRowInsets(.vertical, 0)
             .accessibilityIdentifier("overview-add-agent")
             .disabled(!store.phase.isLive)
             .modifier(OverviewListRowBoundary(isLast: true))

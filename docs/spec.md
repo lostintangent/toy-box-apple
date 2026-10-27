@@ -1575,6 +1575,16 @@ positions are what make the list scannable. Rows are at least 38 high with 4 poi
 padding: a 24-point avatar, a 10-point gap, then the name in 13 regular primary over a one-line
 11-point status, 1 point apart. Status truncates at the tail with the full text in help.
 
+Phone keeps its 38-point content minimum, 12-point avatar/text gap, 2-point name/status gap
+and existing scaled avatar capped at 36. Ordinary text sizes use explicit 14-point native
+vertical row insets, 1 point less at each edge than the measured 15-point system defaults,
+making each row exactly 2 points shorter. Accessibility sizes retain the system's native
+insets and wrapping. Every navigation target remains at least 44 points high. Mac is unchanged.
+Phone Add Agent uses the same 38-point content minimum and vertical spacing, matching a member
+row's height exactly at default text size. Its 14-point ordinary / measured 15-point accessibility
+padding belongs inside the button, with zero native vertical row insets, so the whole row is
+tappable and its accessible target spans that height. Its label grows and wraps without clipping.
+
 | Presence | Status line | Trailing |
 | --- | --- | --- |
 | Working | Presence text, or "Working", in primary at 85%, after a 9-point heavy `ellipsis` in the agent's color, 4 points before the text. This is Messages' typing cue | Nothing |
@@ -1637,8 +1647,10 @@ status icons sit on the 16-point content rail, aligned with the section heading,
 child's status icon sits directly under its parent's title, as in Reminders.
 
 Expanded inline child groups on both Mac and phone have a native separator-colored ancestry
-hairline, one physical pixel wide, in the existing indent gutter at the parent's status-column
-center. It spans that child group's bounds with 4-point clearance at each end. Nested expanded
+guide in the existing indent gutter at the parent's status-column center. Phone uses the native
+list rule's 1-point weight. Mac also uses 1 point, matching its native `Divider()`. Keep both edges
+pixel-aligned at the nearest centered position. It spans that child group's bounds with 4-point
+clearance at each end. Nested expanded
 groups add their own guide. No horizontal elbows, root-level rule, extra indent or title-width
 loss. Collapsing removes it with the children. Do not draw a dangling guide to a phone
 "View N subtasks" link; its scoped list starts a fresh local tree. Guides never hit-test or

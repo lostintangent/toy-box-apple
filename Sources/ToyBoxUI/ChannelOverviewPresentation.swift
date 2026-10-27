@@ -103,11 +103,11 @@ package struct ChannelTaskAncestryGuide: View {
     }
 
     package var body: some View {
-        let pixel = 1 / scale
-        let leading = ((statusWidth / 2 - pixel / 2) * scale).rounded() / scale
+        let lineWidth: CGFloat = 1
+        let leading = ((statusWidth / 2 - lineWidth / 2) * scale).rounded() / scale
         Rectangle()
-            .fill(separator)
-            .frame(width: pixel)
+            .fill(separator, style: FillStyle(antialiased: false))
+            .frame(width: lineWidth)
             .padding(.top, topClearance)
             .padding(.bottom, bottomClearance)
             .frame(maxWidth: .infinity, alignment: .leading)
