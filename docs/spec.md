@@ -2777,7 +2777,7 @@ artificial fixed-height spacer.
 The WidgetKit extension is a glanceable view of the same waiting requests as the menu bar inbox,
 not a second attention model. The host writes a small server-scoped snapshot from `MenuBarStatus`
 to its Team-ID-prefixed app group and requests a timeline reload when that snapshot changes.
-The widget does not connect to a server, send a reply or mark anything read. Its signed,
+The Mac widget does not connect to a server, send a reply or mark anything read. Its signed,
 sandboxed extension lives in `Contents/PlugIns`, shares the app's version/build and is omitted
 from isolated test, snapshot and benchmark bundles like the Share extension.
 
@@ -2858,10 +2858,16 @@ same centered checkmark and one-line "You're all caught up" status as Home and M
 There is no generic heading. Keep every line, including timestamp descenders, inside the
 native 157 x 73.5-point rectangular host.
 Both surfaces render waiting, empty, out-of-date and not-connected states from the phone's
-App Group `NeedsYouSnapshot`. Out-of-date phone content says "May be out of date" and
+App Group `NeedsYouSnapshot`. On timeline refresh, the phone widget extension fetches current
+waiting requests from the saved server through the app publisher's HTTP and snapshot path,
+then writes the shared snapshot. After a request or completion alert, the notification service
+extension asks WidgetKit to reload this widget's timelines. WidgetKit schedules the refresh,
+so this is not an immediate-delivery guarantee. A failed fetch keeps the saved snapshot and
+existing stale rule, without advancing its update time or claiming a fresh all-clear.
+Out-of-date phone content says "May be out of date" and
 shows its last update, never a current all-clear. A timeline entry at the shared 30-minute
 freshness boundary makes this change without requiring the foreground app to run.
-Widget rendering never connects, sends, marks read or changes a draft. Open and Reply
+The widget never sends, marks read or changes a draft. Open and Reply
 use the existing `NeedsYouRequestLink` routes. Native widget backgrounds, tint and
 margins remain system-owned, with no custom largest-text layout.
 
