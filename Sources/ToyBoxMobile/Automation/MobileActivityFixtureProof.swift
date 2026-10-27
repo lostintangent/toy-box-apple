@@ -76,7 +76,7 @@ enum MobileActivityFixtureProof {
 
     static func withBackgroundTime(
         waitForBackground: () async throws -> Void,
-        beginBackgroundTask: (_ expiration: @escaping @Sendable () -> Void) -> UIBackgroundTaskIdentifier = {
+        beginBackgroundTask: (_ expiration: @escaping @MainActor @Sendable () -> Void) -> UIBackgroundTaskIdentifier = {
             UIApplication.shared.beginBackgroundTask(withName: "Activity fixture autoplay", expirationHandler: $0)
         },
         endBackgroundTask: (UIBackgroundTaskIdentifier) -> Void = { UIApplication.shared.endBackgroundTask($0) },
@@ -84,25 +84,30 @@ enum MobileActivityFixtureProof {
     ) async throws {
         try await waitForBackground()
         try Task.checkCancellation()
+        let operation = BackgroundOperation()
+        let background = beginBackgroundTask {
+            operation.expired = true
+            operation.task?.cancel()
+        }
+        guard background != .invalid else { throw Failure.backgroundTimeUnavailable }
+        defer { endBackgroundTask(background) }
         let task = Task {
             try Task.checkCancellation()
             try await run()
         }
-        let background = beginBackgroundTask { task.cancel() }
-        if background == .invalid { task.cancel() }
-        defer {
-            if background != .invalid { endBackgroundTask(background) }
+        operation.task = task
+        if operation.expired { task.cancel() }
+        try await withTaskCancellationHandler {
+            try await task.value
+        } onCancel: {
+            task.cancel()
         }
-        do {
-            try await withTaskCancellationHandler {
-                try await task.value
-            } onCancel: {
-                task.cancel()
-            }
-        } catch {
-            if background == .invalid { throw Failure.backgroundTimeUnavailable }
-            throw error
-        }
+    }
+
+    @MainActor
+    private final class BackgroundOperation {
+        var task: Task<Void, any Error>?
+        var expired = false
     }
 
     struct AutoplayStatus: Codable {

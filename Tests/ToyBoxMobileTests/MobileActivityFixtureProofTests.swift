@@ -142,6 +142,8 @@ struct MobileActivityFixtureProofTests {
     @MainActor func unavailableOrExpiredBackgroundTimeStopsBeforeTheFirstUpdate(unavailable: Bool) async {
         var applied: [String] = []
         var released = false
+        var started = false
+        var consumedError: String?
         do {
             try await MobileActivityFixtureProof.withBackgroundTime(waitForBackground: {},
                 beginBackgroundTask: { expiration in
@@ -150,8 +152,13 @@ struct MobileActivityFixtureProofTests {
                     return .init(rawValue: 17)
                 }, endBackgroundTask: { _ in released = true }
             ) {
-                try await MobileActivityFixtureProof.autoplay(endedOnly: false, apply: { applied.append($0) },
-                    pause: { _ in Issue.record("A cancelled Activity must not pause.") })
+                started = true
+                do {
+                    try await MobileActivityFixtureProof.autoplay(endedOnly: false, apply: { applied.append($0) },
+                        pause: { _ in Issue.record("A cancelled Activity must not pause.") })
+                } catch {
+                    consumedError = error.localizedDescription
+                }
             }
             Issue.record("Autoplay must surface unavailable or expired background time.")
         } catch MobileActivityFixtureProof.Failure.backgroundTimeUnavailable {
@@ -161,6 +168,8 @@ struct MobileActivityFixtureProofTests {
         } catch {
             Issue.record(error)
         }
+        #expect(!started)
+        #expect(consumedError == nil)
         #expect(applied.isEmpty)
         #expect(released == !unavailable)
     }
