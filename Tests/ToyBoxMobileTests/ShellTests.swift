@@ -29,6 +29,28 @@ struct ShellTests {
     }
 
     #if DEBUG && targetEnvironment(simulator)
+    @Test(arguments: [false, true])
+    func registrationErrorsAreShownOnlyWhileNotificationsAreEnabled(enabled: Bool) async {
+        await withDefaults { defaults in
+            let notifications = ChannelNotifications(defaults: defaults, readAuthorization: { .authorized })
+            if enabled { await notifications.enable() }
+            else { await notifications.refreshAuthorization() }
+            let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 466, height: 678))
+            let host = UIHostingController(rootView: Form {
+                NotificationSettingsSection(notifications: notifications, registrationError: "Unavailable",
+                                            retryRegistration: {})
+            })
+            window.rootViewController = host
+            window.isHidden = false
+            defer { window.isHidden = true }
+            host.view.frame = window.bounds
+            host.view.layoutIfNeeded()
+            let labels = MobileAutomationTree(windows: [window]).elements.map(\.label)
+            #expect(labels.contains("Couldn't connect notifications to this server.") == enabled, "\(labels)")
+            #expect(labels.contains("Try Again") == enabled, "\(labels)")
+        }
+    }
+
     @Test(arguments: [ChannelPushPayload.Kind.request, .completion])
     func proofAlertsUseActualCatalogSequencesAndTheCurrentRegistration(kind: ChannelPushPayload.Kind) throws {
         let catalog = ChannelCatalog(
