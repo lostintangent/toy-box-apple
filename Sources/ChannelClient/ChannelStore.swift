@@ -240,8 +240,37 @@ public final class ChannelStore {
     @discardableResult
     public func post(id suppliedId: String? = nil, content: String,
                      attachments: [ChannelAttachment] = []) async throws -> ChannelSendResult {
+        try await post(id: suppliedId, content: content, attachments: attachments, requiresLiveConnection: true)
+    }
+
+    /// Persists before sending once, without starting or waiting for the channel's stream.
+    @discardableResult
+    public func postInBackground(id: String, content: String) async throws -> ChannelSendResult {
+        let result: ChannelSendResult
+        do {
+            result = try await post(id: id, content: content, attachments: [], requiresLiveConnection: false)
+        } catch {
+            if sendAttempts.contains(where: { $0.id == id && $0.canRetry }) {
+                try await persistSendAttempts()
+            }
+            throw error
+        }
+        if let persistenceTask {
+            do { try await persistenceTask.value }
+            catch { attemptPersistenceError = error.localizedDescription }
+        }
+        return result
+    }
+
+    private func post(id suppliedId: String?, content: String, attachments: [ChannelAttachment],
+                      requiresLiveConnection: Bool) async throws -> ChannelSendResult {
         try await restoreSendAttempts()
-        guard phase.isLive, state != nil else { throw ChannelAPIError.disconnected }
+        guard !requiresLiveConnection || (phase.isLive && state != nil) else {
+            throw ChannelAPIError.disconnected
+        }
+        if !requiresLiveConnection, phase == .deleted {
+            throw ChannelAPIError.http(status: 404, message: "Channel not found.")
+        }
         guard !isSending else { throw ChannelAPIError.invalidMessage("A message is already being sent.") }
         let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty || !attachments.isEmpty else {
@@ -256,7 +285,7 @@ public final class ChannelStore {
                 throw ChannelAPIError.invalidMessage("The attempted message changed. Send it as a new message.")
             }
             if existing.phase == .confirmed { return .alreadyAccepted(id: id) }
-            return try await retrySend(id: id)
+            return try await retrySend(id: id, requiresLiveConnection: requiresLiveConnection)
         }
         if let committed = state?.messages.first(where: { $0.id == id }) {
             guard committed.sender == .user, committed.content == .text(trimmed),
@@ -270,19 +299,23 @@ public final class ChannelStore {
                                          phase: .sending)
         sendAttempts.append(attempt)
         optimisticMessageIds.insert(id)
-        return try await deliver(attempt)
+        return try await deliver(attempt, requiresLiveConnection: requiresLiveConnection)
     }
 
     @discardableResult
     public func retrySend(id: String) async throws -> ChannelSendResult {
+        try await retrySend(id: id, requiresLiveConnection: true)
+    }
+
+    private func retrySend(id: String, requiresLiveConnection: Bool) async throws -> ChannelSendResult {
         try await restoreSendAttempts()
-        guard phase.isLive else { throw ChannelAPIError.disconnected }
+        guard !requiresLiveConnection || phase.isLive else { throw ChannelAPIError.disconnected }
         guard !isSending else { throw ChannelAPIError.invalidMessage("A message is already being sent.") }
         guard let attempt = sendAttempts.first(where: { $0.id == id }), attempt.canRetry else {
             throw ChannelAPIError.invalidMessage("This send attempt cannot be repeated.")
         }
         updateAttempt(id: id, phase: .sending, error: nil)
-        return try await deliver(attempt)
+        return try await deliver(attempt, requiresLiveConnection: requiresLiveConnection)
     }
 
     public func discardSendAttempt(id: String) async throws {
@@ -307,7 +340,8 @@ public final class ChannelStore {
         }
     }
 
-    private func deliver(_ attempt: ChannelSendAttempt) async throws -> ChannelSendResult {
+    private func deliver(_ attempt: ChannelSendAttempt,
+                         requiresLiveConnection: Bool) async throws -> ChannelSendResult {
         isSending = true
         sendError = nil
         lastSendFailure = nil
@@ -322,10 +356,12 @@ public final class ChannelStore {
             reconcileSend(id: attempt.id)
             return .committed(committed)
         }
-        guard phase.isLive else {
-            recordSendFailure(id: attempt.id, phase: .notSent, error: ChannelAPIError.disconnected.localizedDescription)
+        guard (!requiresLiveConnection || phase.isLive), phase != .deleted else {
+            let error: ChannelAPIError = !requiresLiveConnection && phase == .deleted
+                ? .http(status: 404, message: "Channel not found.") : .disconnected
+            recordSendFailure(id: attempt.id, phase: .notSent, error: error.localizedDescription)
             saveAttemptsInBackground()
-            throw ChannelAPIError.disconnected
+            throw error
         }
         do {
             let message = try await api.post(channelId: id, id: attempt.id, content: attempt.content,
@@ -344,7 +380,7 @@ public final class ChannelStore {
             }
             updateAttempt(id: attempt.id, phase: .confirmed, error: nil)
             saveAttemptsInBackground()
-            reconnect()
+            if requiresLiveConnection { reconnect() }
             return .alreadyAccepted(id: attempt.id)
         } catch {
             if let message = state?.messages.first(where: { $0.id == attempt.id }) {

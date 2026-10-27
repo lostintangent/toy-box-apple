@@ -68,6 +68,11 @@ Reference sources (read-only):
   status updates don't re-render identity. A catalog poll that changes nothing announces only
   `lastRefreshedAt` and `isLoading`, and a failure that repeats the current one isn't announced
   again. Views that only ask whether the catalog has loaded read `hasLoaded`.
+- **Background sends:** `ChannelStore.postInBackground(id:content:)` accepts a caller-owned UUID
+  without opening or waiting for SSE. It restores the same outbox, durably records the attempt
+  before its one HTTP request, and retains rejection or uncertain-delivery classification before
+  returning a failure. Explicit retries reuse that UUID. Normal `post` and `retrySend` still
+  require a live channel. A duplicate acceptance never starts a stream for a background send.
 - **Wire rules:**
   - Decode leniently, so unknown system message kinds and fields degrade to a generic row instead
     of failing the stream.
