@@ -1,6 +1,6 @@
 import Foundation
 
-public struct AgentAvatar: Codable, Equatable, Sendable {
+public struct AgentAvatar: Codable, Hashable, Sendable {
     public var mark: String
     public var color: String
     public var ink: String?

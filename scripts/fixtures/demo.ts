@@ -2,14 +2,25 @@
 import { resolve } from "node:path";
 import { root } from "../lib.ts";
 import { referenceFactory, type Demo, type Snapshot } from "./types.ts";
+import { createDemoPushRoutes } from "./push-routes.ts";
 
 export function installDemoCatalogRoutes(demo: Pick<Demo, "server" | "snapshot">) {
+    const push = createDemoPushRoutes(demo.snapshot);
     const handlers = demo.server.listeners("request");
     if (handlers.length !== 1) throw new Error("Expected the reference demo server's single HTTP handler.");
     const originalHandler = handlers[0];
     demo.server.removeListener("request", originalHandler);
     demo.server.on("request", (request, response) => {
         const url = new URL(request.url ?? "/", "http://127.0.0.1");
+        const route = push.match(url.pathname);
+        if (route) {
+            void push.handle(request, response, route).catch(error => {
+                console.error("Demo push registration failed:", error);
+                response.writeHead(500, { "Content-Type": "application/json" });
+                response.end(JSON.stringify({ error: "Could not register push delivery." }));
+            });
+            return;
+        }
         if (request.method === "GET" && ["/api/v1/channels", "/api/v1/models"].includes(url.pathname)) {
             const snapshot = demo.snapshot();
             const { name, role, avatar } = snapshot.lead;
@@ -26,6 +37,7 @@ export function installDemoCatalogRoutes(demo: Pick<Demo, "server" | "snapshot">
         }
         originalHandler(request, response);
     });
+    return push;
 }
 
 if (import.meta.main) {

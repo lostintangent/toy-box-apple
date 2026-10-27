@@ -169,6 +169,22 @@ public struct ChannelAPI: Sendable {
         return catalog
     }
 
+    public func registerPushDevice(_ input: PushDeviceRegistration) async throws {
+        try await noContent("PUT", ["api", "v1", "push", "devices", input.registrationID], body: input)
+    }
+
+    public func deletePushDevice(registrationID: String) async throws {
+        try await noContent("DELETE", ["api", "v1", "push", "devices", registrationID])
+    }
+
+    public func registerPushActivity(channelId: String, _ input: PushActivityRegistration) async throws {
+        try await noContent("PUT", channelPath(channelId) + ["activities", input.registrationID], body: input)
+    }
+
+    public func deletePushActivity(channelId: String, registrationID: String) async throws {
+        try await noContent("DELETE", channelPath(channelId) + ["activities", registrationID])
+    }
+
     public func memberModels(channelId: String, agentId: String) async throws -> ModelCatalog {
         let catalog: ModelCatalog = try await get(channelPath(channelId) + ["members", agentId, "models"])
         try requireVersion(catalog.version)
@@ -277,11 +293,21 @@ public struct ChannelAPI: Sendable {
     private func command<Body: Encodable, Result: Decodable>(
         _ method: String, _ path: [String], body: Body
     ) async throws -> Result {
+        try await JSONDecoder().decode(Result.self, from: data(for: commandRequest(method, path, body: body)))
+    }
+
+    private func commandRequest<Body: Encodable>(
+        _ method: String, _ path: [String], body: Body
+    ) throws -> URLRequest {
         var request = URLRequest(url: endpoint(path))
         request.httpMethod = method
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONEncoder().encode(body)
-        return try await JSONDecoder().decode(Result.self, from: data(for: request))
+        return request
+    }
+
+    private func noContent<Body: Encodable>(_ method: String, _ path: [String], body: Body) async throws {
+        _ = try await data(for: commandRequest(method, path, body: body))
     }
 
     private func noContent(_ method: String, _ path: [String]) async throws {

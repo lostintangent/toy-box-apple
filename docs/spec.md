@@ -241,6 +241,52 @@ Attachments are `{name, url}` or inline `{mimeType, base64}`. Avatars are SVG pa
 own profiles set. The server serves the lead's profile in snapshots and the catalog, and the app
 keeps no copy of it.
 
+### Mobile push and Activity registration (Release 2)
+
+The shared client and the 3210 demo implement these additions. The shipping server uses the same
+contract before device push proof. Registration writes make one attempt and return 204 without a
+response body.
+
+| Request | Body or effect |
+| --- | --- |
+| `PUT /api/v1/push/devices/:registrationID` | `{registrationID, token, environment, requests, completions}` |
+| `DELETE /api/v1/push/devices/:registrationID` | Remove alerts for this registration, not its followed Activities |
+| `PUT /api/v1/channels/:channelID/activities/:registrationID` | `{registrationID, token, environment, startedAt}` |
+| `DELETE /api/v1/channels/:channelID/activities/:registrationID` | Remove the followed Activity |
+
+`registrationID` is a caller-owned UUID and must match the path. Tokens are hexadecimal, and
+`environment` is `sandbox` or `production`. The signed host's `ToyBoxPushEnvironment` is derived
+from its validated APNs entitlement, never from `DEBUG`: optimized development builds still use
+sandbox. Request and completion preferences are independent booleans. A token belongs to one device
+registration. Activities do not require an alerts registration, have their own environment, and are
+unique per registration/channel. Token rotation preserves the original `startedAt`, in Unix seconds.
+The demo stores this state only in memory and never contacts APNs.
+
+`ChannelPushPayload` carries exactly `kind`, `channelID`, positive `sequence` and `registrationID`
+beside the system `aps` envelope. Its kinds and categories are `request` and `completion`; request
+uses the `reply` text action. Neither the routing payload nor the generic alert contains a private
+question. The service must match the current registration before resolving identity or content.
+The fixtures are `Tests/ChannelKitTests/Fixtures/push-request.apns`, `push-completion.apns` and
+`push-activity.apns`. Use the selected simulator's actual registration ID for routed alert proof.
+
+`ChannelActivityAttributes` has `channelID`, `channelName` and `registrationID`. Its `ContentState`
+has working agent identities, top-level tasks done/total, optional waiting request sequence,
+`updatedAt` and optional ending. Its custom Codable implementation uses Unix seconds for
+`updatedAt` with an ordinary JSONDecoder, as ActivityKit requires. Active state is stale after
+15 minutes. Confirmed endings have no stale date, and distinguish completion from Stop, expiry,
+deletion, server change and removal of the task list.
+
+`ChannelActivityLink` carries channel ID, registration ID and an optional positive request sequence
+in `toybox-desktop://activity` URLs. The receiving app checks the selected registration before
+opening anything. Stale Activity taps omit the sequence and open only the channel.
+
+The phone stores the selected server's registration in `group.dev.toybox.mobile`. Selecting a
+different server generates a new UUID, including when returning to an earlier server. Equivalent
+URL spelling preserves the UUID. `MobileWidgetSnapshotPublisher.update(catalog:serverURL:)` writes
+the same `NeedsYouSnapshot` schema and filename as Mac, resolves questions through history without
+starting SSE, and reloads `ToyBoxNeedsYou`. It preserves a same-server offline cache, discards that
+cache on a server change, and keeps the Mac's 30-minute freshness and 15-minute unchanged refresh.
+
 ## Parity checklist
 
 ### Sidebar (channel list)

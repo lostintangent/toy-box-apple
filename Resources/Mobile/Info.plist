@@ -29,6 +29,8 @@
     <string>27.0</string>
     <key>NSSupportsLiveActivities</key>
     <true/>
+    <key>ToyBoxPushEnvironment</key>
+    <string>sandbox</string>
     <key>NSUserActivityTypes</key>
     <array><string>INSendMessageIntent</string></array>
     <key>LSRequiresIPhoneOS</key>

@@ -33,6 +33,14 @@ export function mobileSimulatorEntitlements(bundleID: string) {
     return { ...mobileEntitlements(bundleID), "application-identifier": bundleID };
 }
 
+export function mobilePushEnvironment(entitlements: Record<string, unknown>) {
+    switch (entitlements["aps-environment"]) {
+        case "development": return "sandbox";
+        case "production": return "production";
+        default: throw new Error("The mobile host needs a validated APNs signing environment.");
+    }
+}
+
 const contentSizeCategories = {
     extraSmall: "UICTContentSizeCategoryXS", small: "UICTContentSizeCategoryS",
     medium: "UICTContentSizeCategoryM", large: "UICTContentSizeCategoryL",
@@ -258,6 +266,7 @@ export async function bundleMobile(device = false) {
         "Add :CFBundleSupportedPlatforms array",
         `Add :CFBundleSupportedPlatforms:0 string ${device ? "iPhoneOS" : "iPhoneSimulator"}`,
         `Add :DTSDKName string ${device ? "iphoneos" : "iphonesimulator"}${version}`,
+        `Set :ToyBoxPushEnvironment ${mobilePushEnvironment(mobileEntitlements(mobileBundleID))}`,
     ]);
     const binary = join(app, "ToyBoxMobile");
     const minimumOS = await plist(join(app, "Info.plist"), ["Print :MinimumOSVersion"]);

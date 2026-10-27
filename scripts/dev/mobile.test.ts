@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
     checkMobileBuildVersion, checkMobileExtensionEntryPoint, linkMobileWorkspace, mobileBuildConfiguration,
-    mobileExtensions, mobileLaunchOptions,
+    mobileExtensions, mobileLaunchOptions, mobilePushEnvironment,
     mobileSimulatorEntitlements,
     withMobileAppearance,
 } from "./mobile.ts";
@@ -82,6 +82,13 @@ test("simulated capabilities include each bundle identity without a device team 
         expect(entitlements).not.toHaveProperty("get-task-allow");
     }
     expect(() => mobileSimulatorEntitlements("another.app")).toThrow("Unknown mobile bundle");
+});
+
+test("the bundled push environment comes from signing rather than optimization", () => {
+    expect(mobilePushEnvironment({ "aps-environment": "development" })).toBe("sandbox");
+    expect(mobilePushEnvironment({ "aps-environment": "production" })).toBe("production");
+    expect(() => mobilePushEnvironment({})).toThrow("validated APNs");
+    expect(() => mobilePushEnvironment({ "aps-environment": "sandbox" })).toThrow("validated APNs");
 });
 
 for (const [platform, path] of [["phone", "Mobile/Info.plist"], ["Mac", "Info.plist"]] as const) {
