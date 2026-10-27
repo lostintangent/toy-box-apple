@@ -125,7 +125,8 @@ struct ConversationTranscript: View {
                     if find.isPresented && !interaction.isArtifactViewerPresented {
                         TranscriptFindBar(find: find, channelName: store.state?.channel.name ?? store.id,
                                           focusRequest: interaction.findRequest,
-                                          navigate: { find.move($0) }, close: closeFind)
+                                          navigate: navigateFind, close: closeFind,
+                                          announce: { [weak window] in window?.announce($0) })
                     }
                 }
                 .safeAreaBar(edge: .bottom, spacing: 0) { floatingControls }
@@ -138,7 +139,7 @@ struct ConversationTranscript: View {
                     guard !interaction.isArtifactViewerPresented else { return }
                     prepareFind()
                     find.present()
-                    find.move(interaction.findNavigation?.direction ?? 1)
+                    navigateFind(interaction.findNavigation?.direction ?? 1)
                 }
                 .onChange(of: interaction.isArtifactViewerPresented) {
                     if interaction.isArtifactViewerPresented { find.close() }
@@ -149,11 +150,6 @@ struct ConversationTranscript: View {
                     prepareFind()
                     await find.searchOlder {
                         try await store.api.history(channelId: store.id, before: $0).messages
-                    }
-                    if !Task.isCancelled, find.isPresented, find.error == nil,
-                       !find.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        window.announce(find.matches.count == 1 ? "1 matching message"
-                                        : "\(find.matches.count) matching messages")
                     }
                 }
                 .onChange(of: find.revealRequest?.token) {
@@ -407,6 +403,11 @@ struct ConversationTranscript: View {
         expandedMessageIds.formUnion(find.matches.filter {
             $0.system?.type == "member_joined" || $0.system?.type == "member_left"
         }.map(\.id))
+    }
+
+    private func navigateFind(_ direction: Int) {
+        find.move(direction)
+        if !find.matches.isEmpty { window.announce(find.navigationAnnouncement) }
     }
 
     private func closeFind() {

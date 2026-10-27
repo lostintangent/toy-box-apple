@@ -289,7 +289,8 @@ struct ConversationView: View {
         // A bar rather than an overlay, so the scroll edge effect extends under it and a reveal clears it.
         .safeAreaBar(edge: .top, spacing: 0) {
             if find.isPresented {
-                TranscriptFindAccessory(find: find, focusRequest: interaction.findRequest,
+                TranscriptFindAccessory(find: find, channelName: store.state?.channel.name ?? store.id,
+                                        focusRequest: interaction.findRequest,
                                         navigate: navigateFind, close: { find.close() })
             }
         }
@@ -339,6 +340,7 @@ struct ConversationView: View {
     private func navigateFind(_ direction: Int) {
         find.move(direction)
         if let request = find.revealRequest { interaction.reveal(sequence: request.sequence) }
+        if !find.matches.isEmpty { AccessibilityNotification.Announcement(find.navigationAnnouncement).post() }
     }
 
     private func jumpToLatest() {

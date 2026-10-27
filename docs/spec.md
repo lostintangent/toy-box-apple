@@ -1257,23 +1257,39 @@ activation. Waiting belongs in the inspector, not this row.
 
 ### In-channel message search
 
-Find belongs to the open channel, not the channel catalog. Edit > Find > Find… (`Cmd-F`)
+Find belongs to the open channel, not the channel catalog. On Mac, Edit > Find > Find… (`Cmd-F`)
 opens and focuses a native find bar at the top of the conversation column, directly below the
 window toolbar. It does not cover the sidebar or Overview. The bar uses the system control
 background, with no custom glass plate, 12-point horizontal and 6-point vertical insets. Its
-first row places a flexible native search field with the prompt "Search this channel" in a
-28-point row, followed by a secondary 11-point monospaced result position ("3 of 12"),
+single row places a flexible native search field with the prompt "Search this channel" in a
+28-point row, followed by a width-stable status slot in secondary 11-point monospaced digits,
 one native two-segment previous/next control and Done, matching AppKit's find bar rather than
 using separate loose chevrons.
 Controls retain 28-point hit targets, and the field yields width before the controls truncate.
 At the narrow supported window size the count and all controls remain visible.
+
+On iPhone, keep Find immediately below the channel navigation bar in the existing `safeAreaBar`,
+not an overlay or another screen. Remove the opaque plate and divider. Use native regular
+Liquid Glass on three surfaces: a flexible capsule field, one joined Previous/Next capsule and
+Done. Each is 36 points visibly high inside a minimum-44-point touch area. Keep 16-point outer
+insets, 8-point gaps and 4-point top/bottom padding, for a 52-point bar at default text size.
+At 386 points wide, the field is 196, navigation is 88 (44 per button) and Done is 54.
+Use native body text for the query, the compact prompt "Find" and footnote tabular result digits.
+The field retains the accessible scope "Find in [channel]". Reserve its trailing 84-point status
+slot for every nonempty-query state; a spinner/count/error swap must not resize the field.
+Use real Liquid Glass, not thin material, a painted blur or a custom gradient. Preserve the
+native scroll-edge effect and reserve the bar's content inset so revealed senders remain visible.
+At accessibility sizes or failed measured fit, place the full-width field above the controls.
+Grow with native text rather than shrinking it. If status cannot fit beside a 64-point query
+viewport, allow status to wrap within the same growing field. No separate progress sentence.
+The Mac retains its native search field, 28-point controls and bar material, not phone glass.
 
 Find Next (`Cmd-G` or Return in the search field) and Find Previous (`Shift-Cmd-G` or
 Shift-Return) move chronologically through matching messages and wrap at the ends. Each matching
 message is one result, even if its text contains the query more than once. Escape or Done closes
 the bar without moving the conversation or changing its draft. Opening and closing both preserve
 the visible message anchor at the same pixel-aligned screen position after layout, with no bounce.
-Changes to the progress or error row preserve that anchor too. Closing retains the query.
+Changes to progress or error status preserve that anchor too. Closing retains the query.
 Reopening Find selects the current query for replacement. Switching channels cancels that
 channel's in-flight search and closes the bar, so an old response cannot navigate the newly
 selected channel.
@@ -1295,22 +1311,32 @@ If Your Messages hides the result, switch to All Messages.
 Keep the selected message stable when older results arrive, even when its position changes.
 Do not add a second results pane, replace message bubbles or use custom highlight colors.
 
-An empty query shows no count, fetches no pages and leaves the scroll position alone. While
-history remains incomplete, a second, compact secondary row says "Searching older messages…".
-A mini spinner may appear after 300 ms. The first-row count describes only the matches found so
-far, never a finished total. Only a completed search can show "No matches". A history failure
-keeps the query and partial results, replaces the progress row with "Couldn't search older
-messages" and Retry, and never reports a successful zero-result search. Changing the query,
-closing Find or switching server cancels obsolete work.
+Both apps use one status slot, inside the phone field and beside the Mac search field. No
+persistent second row. An empty query shows no count or progress, fetches no pages and leaves
+the scroll position alone. For a nonempty query, the slot stays blank for the first 300 ms,
+then shows a native mini spinner while older history is incomplete. The spinner replaces the
+count even while Previous/Next can navigate partial matches. Do not display a provisional
+"so far" count. Only completion shows the final result position ("7 of 13") or "No matches".
+On history failure, the slot becomes an "Incomplete" button opening a native popover, not a
+sheet, with "Couldn't search older messages", the actual error, the partial-result count and
+Retry. Keep the query, partial results and selected message. Retry searches history again
+without clearing them. At accessibility sizes the phone button may use only the warning
+symbol with its full spoken label and minimum-44-point target. Dismissing the popover restores
+prior focus without reopening a dismissed keyboard. No progress/error transition changes the
+field's width or the conversation anchor. Changing the query dismisses its obsolete error
+popover. Changing the query, closing Find or switching server cancels obsolete work, delayed
+progress and announcements.
 
 Opening Find, fetching history and revealing results never mark messages read or answer a
 request. Read marking remains suspended after search navigation until the reader explicitly
 resumes normal scrolling or Jump to Latest. Closing the bar alone is not a read action.
 VoiceOver gets "Find in [channel]", named Previous Match and Next Match controls, the result
-position and a "Done" button with "Close Find" help. Give one polite completed-result
-announcement, not an announcement for every older page.
-Use the same semantic colors in both appearances and the normal system focus ring. Reduce Motion
-uses the reveal path's nonmoving alternative.
+position and a "Done" button with "Close Find" help. Give one delayed "Searching older messages"
+announcement and one polite completion or error announcement per current query, never per
+older page. User-initiated navigation speaks the position, "found so far" and "still searching"
+when results remain incomplete. Preserve the text field's native editable value.
+Use semantic colors in both appearances, the system focus treatment and native Increase
+Contrast/Reduce Transparency behavior. Reduce Motion uses the reveal path's nonmoving alternative.
 
 ### Phone sheet semantics
 

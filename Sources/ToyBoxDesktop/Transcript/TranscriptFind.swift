@@ -36,39 +36,31 @@ struct TranscriptFindBar: View {
     var focusRequest: UUID
     var navigate: (Int) -> Void
     var close: () -> Void
+    var announce: @MainActor (String) -> Void
+    @ViewState private var progressDelayElapsed = false
+    @ViewState private var showsError = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 8) {
-                TranscriptFindField(query: $find.query, focusRequest: focusRequest, navigate: navigate, close: close)
-                .frame(height: 28)
-                Text(find.countLabel)
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.secondary)
-                    .fixedSize()
-                    .accessibilityLabel("Matching messages: \(find.countLabel)")
-                ControlGroup {
-                    Button("Previous Match", systemImage: "chevron.left") { navigate(-1) }
-                        .help("Previous Match (Shift-Command-G)")
-                    Button("Next Match", systemImage: "chevron.right") { navigate(1) }
-                        .help("Next Match (Command-G)")
-                }
-                .controlGroupStyle(.navigation)
-                .disabled(find.matches.isEmpty)
-                .accessibilityIdentifier("channel-find-navigation")
-                Button("Done", action: close).frame(minHeight: 28)
-                .help("Close Find")
-                .accessibilityLabel("Close Find")
+        HStack(spacing: 8) {
+            TranscriptFindField(query: $find.query, focusRequest: focusRequest, navigate: navigate, close: close)
+            .frame(height: 28)
+            TranscriptFindStatusView(status: find.status(progressDelayElapsed: progressDelayElapsed),
+                                     found: find.partialCountLabel, showsError: $showsError) {
+                showsError = false
+                find.retryHistory()
             }
-            if let error = find.error {
-                HStack {
-                    Text("Couldn't search older messages").foregroundStyle(.secondary).help(error)
-                    Button("Retry") { find.retryHistory() }.buttonStyle(.borderless)
-                }
-                .font(.caption)
-            } else if find.isSearching {
-                Text("Searching older messages...").font(.caption).foregroundStyle(.secondary)
+            ControlGroup {
+                Button("Previous Match", systemImage: "chevron.left") { navigate(-1) }
+                    .help("Previous Match (Shift-Command-G)")
+                Button("Next Match", systemImage: "chevron.right") { navigate(1) }
+                    .help("Next Match (Command-G)")
             }
+            .controlGroupStyle(.navigation)
+            .disabled(find.matches.isEmpty)
+            .accessibilityIdentifier("channel-find-navigation")
+            Button("Done", action: close).frame(minHeight: 28)
+            .help("Close Find")
+            .accessibilityLabel("Close Find")
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
@@ -76,6 +68,67 @@ struct TranscriptFindBar: View {
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Find in \(channelName)")
         .onExitCommand(perform: close)
+        .transcriptFindStatusUpdates(find, progressDelayElapsed: $progressDelayElapsed, announce: announce)
+        .onChange(of: find.query) { showsError = false }
+        .onChange(of: find.error == nil) { if find.error == nil { showsError = false } }
+    }
+}
+
+/// One width for every nonempty query, so a spinner, count or Incomplete swap never moves the field.
+struct TranscriptFindStatusView: View {
+    static let width: CGFloat = 84
+    let status: TranscriptFindStatus
+    let found: String
+    @Binding var showsError: Bool
+    var retry: () -> Void
+
+    var body: some View {
+        content
+            .font(.subheadline.monospacedDigit())
+            .foregroundStyle(.secondary)
+            .frame(width: Self.width, height: 28, alignment: .trailing)
+    }
+
+    @ViewBuilder private var content: some View {
+        switch status {
+        case .hidden, .blank:
+            Color.clear.accessibilityHidden(true)
+        case .progress:
+            ProgressView()
+                .controlSize(.small)
+                .accessibilityLabel("Searching older messages")
+        case .result(let result):
+            Text(result)
+                .lineLimit(1)
+                .accessibilityLabel("Matching messages: \(result)")
+        case .incomplete(let error):
+            Button { showsError = true } label: {
+                Label {
+                    Text("Incomplete").foregroundStyle(.primary)
+                } icon: {
+                    Image(systemName: "exclamationmark.circle").foregroundStyle(.orange)
+                }
+                .frame(minHeight: 28)
+                .contentShape(.rect)
+            }
+            .buttonStyle(.borderless)
+            .help("Couldn't search older messages")
+            .accessibilityLabel("Search incomplete")
+            .accessibilityHint("Shows why older messages couldn't be searched, with Retry.")
+            .popover(isPresented: $showsError, arrowEdge: .bottom) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Couldn't search older messages").font(.headline)
+                    Text(error).foregroundStyle(.secondary)
+                    Text(found).foregroundStyle(.secondary)
+                    Button("Retry", action: retry)
+                        .keyboardShortcut(.defaultAction)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                }
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(width: 260)
+                .padding(14)
+            }
+        }
     }
 }
 

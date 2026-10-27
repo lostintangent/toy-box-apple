@@ -224,7 +224,7 @@ struct TranscriptTests {
         #expect(!startsOwnPost(after: ["old"], in: [attempt("old", .sending)]))
     }
 
-    @Test func phoneFindRevealsOnlyOnNavigationAndCallsProvisionalCountsSoFar() {
+    @Test func phoneFindRevealsOnlyOnNavigationAndSpeaksPartialPositionsAsProvisional() {
         let find = TranscriptFind()
         find.revealsWhileTyping = false
         find.prepare(messages: [
@@ -235,17 +235,53 @@ struct TranscriptTests {
         find.query = "hit"
         #expect(find.revealRequest == nil)
         #expect(find.isSearching)
-        #expect(find.phoneCountLabel == "1 of 2 so far")
+        #expect(find.status(progressDelayElapsed: true) == .progress)
         find.move(1)
         #expect(find.revealRequest?.sequence == 4)
         find.move(1)
         #expect(find.revealRequest?.sequence == 6)
-        #expect(find.phoneCountLabel == "2 of 2 so far")
+        #expect(find.navigationAnnouncement == "2 of 2 found so far, still searching")
         // Closing leaves the reader at the match. Only a real scroll or Jump to Latest reads again.
         find.close()
         #expect(find.blocksRead)
         find.resumeReading()
         #expect(!find.blocksRead)
+    }
+
+    @Test func phoneFindIsOneFiftyTwoPointRowWithAStableStatusSlotAndStacksAtAccessibilitySizes() {
+        func size(_ view: some View, width: CGFloat, _ type: DynamicTypeSize = .large) -> CGSize {
+            UIHostingController(rootView: view.environment(\.dynamicTypeSize, type))
+                .sizeThatFits(in: CGSize(width: width, height: .greatestFiniteMagnitude))
+        }
+        let states: [TranscriptFindStatus] = [.blank, .progress, .result("7 of 13"), .result("No matches"),
+                                              .incomplete(error: "The connection was lost.")]
+        for status in states {
+            let slot = TranscriptFindStatusView(status: status, found: "", showsError: .constant(false)) {}
+            #expect(size(slot, width: 300).width == 84, "\(status)")
+        }
+        let find = TranscriptFind()
+        find.present()
+        find.query = "layout"
+        let bar = TranscriptFindAccessory(find: find, channelName: "Studio demo", focusRequest: UUID(),
+                                          navigate: { _ in }, close: {})
+        // The folded Duo leaves 386 points beside its status column. The unfolded conversation column
+        // with Overview open is wider, so every width from there up keeps one 52-point row.
+        for width in [386, 400, 454, 480, 560, 720] as [CGFloat] {
+            #expect(size(bar, width: width).height.rounded() == 52, "\(width)")
+        }
+        find.query = String(repeating: "a long typed query ", count: 4)
+        #expect(size(bar, width: 386).height.rounded() == 52)
+        // The full-width field sits above the controls instead of shrinking type.
+        #expect(size(bar, width: 386, .accessibility5).height > 2 * 44)
+
+        // Status sits beside a query that keeps 64 points, and otherwise wraps below it.
+        let field = TranscriptFindFieldLayout {
+            Color.clear.frame(minWidth: 20 + TranscriptFindFieldLayout.minimumQueryWidth, maxWidth: .infinity,
+                              minHeight: 30, maxHeight: 30)
+            Color.clear.frame(width: 84, height: 20)
+        }
+        #expect(size(field, width: 84 + 4 + 84) == CGSize(width: 172, height: 30))
+        #expect(size(field, width: 171) == CGSize(width: 171, height: 30 + 4 + 20))
     }
 
     @Test func phoneFindKeepsMatchTextReadableInBothAppearances() throws {

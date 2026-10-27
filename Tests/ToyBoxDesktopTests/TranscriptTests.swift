@@ -870,6 +870,42 @@ struct TranscriptTests {
         #expect(capture.viewport.readSequence(in: capture.frames) == 20)
     }
 
+    @MainActor
+    @Test func findStatusSwapsNeverMoveTheSearchField() async throws {
+        let states: [TranscriptFindStatus] = [.hidden, .blank, .progress, .result("7 of 13"), .result("No matches"),
+                                              .incomplete(error: "The connection was lost.")]
+        for status in states {
+            let slot = NSHostingView(rootView: TranscriptFindStatusView(status: status, found: "", showsError: .constant(false)) {})
+            #expect(slot.fittingSize.width == TranscriptFindStatusView.width, "\(status)")
+        }
+        let find = TranscriptFind()
+        find.prepare(messages: [.init(id: "five", sequence: 5, timestamp: "2026-10-25T12:00:00Z", sender: .user,
+                                      content: .text("target"))], agents: [], hasOlder: true)
+        find.present()
+        let bar = NSHostingView(rootView: TranscriptFindBar(find: find, channelName: "Studio demo", focusRequest: UUID(),
+                                                            navigate: { _ in }, close: {}, announce: { _ in }))
+        bar.frame = CGRect(x: 0, y: 0, width: 600, height: 40)
+        func fieldWidth() throws -> CGFloat {
+            func search(_ view: NSView) -> NSSearchField? {
+                view as? NSSearchField ?? view.subviews.lazy.compactMap(search).first
+            }
+            bar.layoutSubtreeIfNeeded()
+            return try #require(search(bar)).frame.width
+        }
+        let empty = try fieldWidth()
+        find.query = "target"
+        #expect(find.isSearching)
+        #expect(try fieldWidth() == empty)
+        await find.searchOlder { _ in throw ChannelAPIError.http(status: 503, message: "Try later") }
+        #expect(find.error != nil)
+        #expect(try fieldWidth() == empty)
+        find.retryHistory()
+        await find.searchOlder { _ in [.init(id: "one", sequence: 1, timestamp: "2026-10-25T11:00:00Z", sender: .user,
+                                              content: .text("target"))] }
+        #expect(find.countLabel == "2 of 2")
+        #expect(try fieldWidth() == empty)
+    }
+
     @Test func requestAnnouncementsSkipInitialStateAndAnnounceNewSequencesOnce() {
         var announcements = TranscriptRequestAnnouncements()
         let updates: [(Int?, Bool)] = [
