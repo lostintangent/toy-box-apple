@@ -9,7 +9,9 @@ private struct MobileFoundationProof: ViewModifier {
     @ViewState private var showsChannels = false
 
     func body(content: Content) -> some View {
-        if ProcessInfo.processInfo.arguments.contains("--foundation-proof"), !showsChannels {
+        if ProcessInfo.processInfo.arguments.contains("--activity-fixture-proof") {
+            ActivityFixtureProofView()
+        } else if ProcessInfo.processInfo.arguments.contains("--foundation-proof"), !showsChannels {
             FoundationProofView(showChannels: { showsChannels = true })
         } else {
             content

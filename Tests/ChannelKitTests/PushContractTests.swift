@@ -138,4 +138,43 @@ struct PushContractTests {
         #expect(removed.ending == .tasksRemoved)
         #expect(removed.staleDate == nil)
     }
+
+    @Test(arguments: ["push-activity-working", "push-activity-quiet", "push-activity",
+                       "push-activity-completed", "push-activity-ended", "push-activity-stale"])
+    func activityPushFixturesCoverEveryPresentationWithoutChangingTheirRelativeDates(name: String) throws {
+        let file = try #require(Bundle.module.url(forResource: name, withExtension: "apns", subdirectory: "Fixtures"))
+        let data = try Data(contentsOf: file)
+        #expect(data.count <= 4096)
+        let push = try JSONDecoder().decode(ChannelActivityPush.self, from: data)
+        #expect(push.timestamp.timeIntervalSince1970 == 1793086200)
+        #expect(push.staleDate == push.state.staleDate)
+        #expect((push.event == .end) == (push.state.ending != nil))
+        #expect(try JSONDecoder().decode(ChannelActivityPush.self, from: JSONEncoder().encode(push)) == push)
+        let now = Date(timeIntervalSince1970: 1793093400)
+        let rebased = push.reanchored(at: now)
+        #expect(rebased.timestamp == now)
+        #expect(rebased.state.updatedAt.timeIntervalSince(now) == push.state.updatedAt.timeIntervalSince(push.timestamp))
+        #expect(rebased.staleDate == rebased.state.staleDate)
+        #expect(rebased.dismissalDate == (push.event == .end ? now.addingTimeInterval(15 * 60) : nil))
+        switch name {
+        case "push-activity-working":
+            #expect(!push.state.workingAgents.isEmpty)
+            #expect(push.state.waitingRequestSequence == nil)
+        case "push-activity-quiet":
+            #expect(push.state.workingAgents.isEmpty)
+            #expect(push.state.ending == nil)
+            #expect(push.state.tasksDone < push.state.tasksTotal)
+        case "push-activity":
+            #expect(push.state.waitingRequestSequence == 15)
+        case "push-activity-completed":
+            #expect(push.state.ending == .completed)
+            #expect(push.state.tasksDone == push.state.tasksTotal)
+        case "push-activity-ended":
+            #expect(push.state.ending == .expired)
+        case "push-activity-stale":
+            #expect(try #require(rebased.staleDate) < now)
+            #expect(rebased.state.updatedAt == now.addingTimeInterval(-16 * 60))
+        default: Issue.record("Unexpected fixture.")
+        }
+    }
 }

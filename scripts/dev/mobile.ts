@@ -12,6 +12,10 @@ export const mobileEnvironment = {
 };
 export const mobileBundleID = "dev.toybox.mobile";
 export const mobileAppGroup = "group.dev.toybox.mobile";
+export const mobileActivityFixtures = [
+    "push-activity-working", "push-activity-quiet", "push-activity",
+    "push-activity-completed", "push-activity-ended", "push-activity-stale",
+] as const;
 export const mobileExtensions = [
     { executable: "ToyBoxMobileWidget", suffix: "widget", point: "com.apple.widgetkit-extension", info: "Widget-Info.plist" },
     { executable: "ToyBoxMobileNotification", suffix: "notification", point: "com.apple.usernotifications.service",
@@ -270,6 +274,7 @@ export async function bundleMobile(device = false) {
     ]);
     const binary = join(app, "ToyBoxMobile");
     const minimumOS = await plist(join(app, "Info.plist"), ["Print :MinimumOSVersion"]);
+    await embedMobileActivityFixtures(app, mobileBuildConfiguration(device, false, process.env.CONFIGURATION) === "debug");
     await embedMobileAppIcon(join(root, "Resources"), app, device, minimumOS, mobileEnvironment);
     await command(["xcrun", "vtool", "-set-build-version", device ? "ios" : "iossim", minimumOS, version,
         "-replace", "-output", binary, binary], { env: mobileEnvironment });
@@ -316,6 +321,17 @@ export async function bundleMobile(device = false) {
     return app;
 }
 
+export async function embedMobileActivityFixtures(app: string, debug: boolean) {
+    const directory = join(app, "ActivityFixtures");
+    await rm(directory, { recursive: true, force: true });
+    if (!debug) return;
+    await mkdir(directory, { recursive: true });
+    for (const name of mobileActivityFixtures) {
+        await copyFile(join(root, "Tests/ChannelKitTests/Fixtures", `${name}.apns`),
+            join(directory, `${name}.apns`));
+    }
+}
+
 async function signMobileSimulatorBundle(bundle: string) {
     await command(["codesign", "--force", "--sign", "-", bundle]);
     await command(["codesign", "--verify", "--strict", bundle]);
@@ -328,14 +344,19 @@ if (import.meta.main) await main(async () => {
         screenshot: { type: "string" }, hold: { type: "boolean" }, display: { type: "string" },
         displays: { type: "boolean" }, server: { type: "string" },
         drive: { type: "string" }, "content-size": { type: "string" }, appearance: { type: "string" },
-        "foundation-proof": { type: "boolean" },
+        "foundation-proof": { type: "boolean" }, "activity-fixture-proof": { type: "boolean" },
     } });
     const launch = mobileLaunchOptions(values["content-size"], values.appearance);
-    if (values["foundation-proof"] && (values.device || values["build-only"] || !(values.hold || values.drive))) {
-        throw new Error("--foundation-proof requires a debug Simulator --hold or --drive.");
+    if (values["foundation-proof"] && values["activity-fixture-proof"]) {
+        throw new Error("Choose one simulator proof screen.");
     }
-    if (values["foundation-proof"] && mobileBuildConfiguration(false, false) !== "debug") {
-        throw new Error("--foundation-proof is available only in debug Simulator builds.");
+    const proof = values["activity-fixture-proof"] ? "activity-fixture-proof"
+        : values["foundation-proof"] ? "foundation-proof" : undefined;
+    if (proof && (values.device || values["build-only"] || values.shutdown || !(values.hold || values.drive))) {
+        throw new Error(`--${proof} requires a debug Simulator --hold or --drive.`);
+    }
+    if (proof && mobileBuildConfiguration(false, false) !== "debug") {
+        throw new Error(`--${proof} is available only in debug Simulator builds.`);
     }
     if (values["device-id"] && !values.device) throw new Error("--device-id requires --device.");
     if (values["device-id"] && values["build-only"]) throw new Error("--device-id cannot be used with --build-only.");
@@ -417,7 +438,7 @@ if (import.meta.main) await main(async () => {
             (args, signal) => runMobileSimulatorCommand(args, mobileEnvironment, signal), interruption.signal, async () => {
             const result = await runMobileSimulatorCommand([
                 "launch", "--terminate-running-process", simulator.udid, mobileBundleID,
-                "--server", server, ...launch.arguments, ...(values["foundation-proof"] ? ["--foundation-proof"] : []),
+                "--server", server, ...launch.arguments, ...(proof ? [`--${proof}`] : []),
             ], { ...mobileEnvironment, ...(drive ? { SIMCTL_CHILD_TOY_BOX_AUTOMATION_SCRIPT: drive.script } : {}) },
             AbortSignal.any([interruption.signal, AbortSignal.timeout(30_000)]));
             if (result.exitCode) throw new Error(`Mobile launch failed: ${result.stderr.trim()}`);

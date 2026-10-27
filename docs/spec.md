@@ -250,7 +250,7 @@ response body.
 | Request | Body or effect |
 | --- | --- |
 | `PUT /api/v1/push/devices/:registrationID` | `{registrationID, token, environment, requests, completions}` |
-| `DELETE /api/v1/push/devices/:registrationID` | Remove alerts for this registration, not its followed Activities |
+| `DELETE /api/v1/push/devices/:registrationID` | Remove alerts for this registration, not its followed Activities. Idempotent: return 204 even for an unknown registration |
 | `PUT /api/v1/channels/:channelID/activities/:registrationID` | `{registrationID, token, environment, startedAt}` |
 | `DELETE /api/v1/channels/:channelID/activities/:registrationID` | Remove the followed Activity |
 
@@ -296,6 +296,20 @@ has working agent identities, top-level tasks done/total, optional waiting reque
 `updatedAt` with an ordinary JSONDecoder, as ActivityKit requires. Active state is stale after
 15 minutes. Confirmed endings have no stale date, and distinguish completion from Stop, expiry,
 deletion, server change and removal of the task list.
+
+`ChannelActivityPush` decodes the complete APNs `aps` envelope, including `update`/`end`,
+`timestamp`, `content-state`, `stale-date` and optional `dismissal-date`, with Unix seconds
+throughout. The Activity fixtures cover working, quiet, request, completed, other ending and
+stale states. `push-activity.apns` is the request state; its five named sibling fixtures cover
+the others. Every payload fits APNs' 4 KB limit. `reanchored(at:)` shifts all dates together for
+native proof, preserving the stale fixture's 16-minute age rather than making it fresh.
+Debug simulator bundles copy those exact files into `ActivityFixtures`. Optimized bundles
+exclude them and remove any left by a previous debug bundle. Simulator fixture application
+proves decoding and foreground ActivityKit updates, not remote Activity delivery.
+`bun run mobile --activity-fixture-proof --hold` opens the debug proof screen, which starts a token-free local Activity for the 3210
+demo, then applies each decoded fixture through `ChannelActivityClient.system`. Updates are
+restricted to that Activity ID and the selected registration. End fixtures preserve their
+15-minute dismissal date. This screen never registers Follow and is absent from optimized builds.
 
 `ChannelActivityLink` carries channel ID, registration ID and an optional positive request sequence
 in `toybox-desktop://activity` URLs. The receiving app checks the selected registration before
