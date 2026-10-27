@@ -1152,7 +1152,7 @@ struct ChannelFollowTests {
         #expect(fixture.controller.state(for: fixture.store) == .following)
         fixture.controller.stop(channelID: fixture.store.id)
         let activity = try #require(fixture.pool.activities.first)
-        await fixture.wait { !activity.endings.isEmpty && fixture.requests.count == 2 }
+        await fixture.wait { !activity.endings.isEmpty && fixture.completedUnregistrations == 1 }
         #expect(activity.endings.first?.state.ending == .stopped)
         #expect(activity.endings.first?.dismissAt == nil)
         #expect(fixture.controller.state(for: fixture.store) == .unavailable)
@@ -1184,7 +1184,7 @@ struct ChannelFollowTests {
         fixture.registrationStatus = 500
         await fixture.controller.follow(fixture.store)
         let activity = try #require(fixture.pool.activities.first)
-        await fixture.wait { !activity.endings.isEmpty && fixture.requests.last?.method == "DELETE" }
+        await fixture.wait { !activity.endings.isEmpty && fixture.completedUnregistrations == 1 }
         #expect(fixture.controller.startFailed)
         #expect(fixture.controller.state(for: fixture.store) == .available)
         #expect(activity.endings.first?.dismissAt == nil)
@@ -1210,7 +1210,7 @@ struct ChannelFollowTests {
         #expect(fixture.requests[2].input?.startedAt == fixture.originalDate)
         fixture.date = fixture.originalDate.addingTimeInterval(ChannelFollowController.maximumLifetime)
         fixture.configure(active: true)
-        await fixture.wait { !activity.endings.isEmpty }
+        await fixture.wait { !activity.endings.isEmpty && fixture.completedUnregistrations == 1 }
         #expect(activity.endings.last?.state.ending == .expired)
         #expect(fixture.controller.state(for: fixture.store) == .available)
     }
@@ -1223,7 +1223,7 @@ struct ChannelFollowTests {
         let activity = try #require(fixture.pool.activities.first)
         fixture.configure(active: true)
         try fixture.apply(tasks: removed ? [] : [.init(id: "root", title: "Done", status: "done")])
-        await fixture.wait { !activity.endings.isEmpty }
+        await fixture.wait { !activity.endings.isEmpty && fixture.completedUnregistrations == 1 }
         #expect(activity.endings.last?.state.ending == (removed ? .tasksRemoved : .completed))
         #expect(activity.endings.last?.dismissAt
                 == fixture.date.addingTimeInterval(ChannelFollowController.retainedEndingInterval))
@@ -1238,6 +1238,7 @@ struct ChannelFollowTests {
         defer { fixture.close() }
         await fixture.controller.follow(fixture.store)
         let activity = try #require(fixture.pool.activities.first)
+        fixture.holdUnregistration = true
         if changingServer {
             fixture.controller.configure(registration: nil, catalog: nil, isActive: false,
                                          acquire: { _ in }, release: { _ in })
@@ -1245,10 +1246,14 @@ struct ChannelFollowTests {
             fixture.configure(active: true)
             _ = try fixture.store.apply(.init(type: "deleted"))
         }
-        await fixture.wait { !activity.endings.isEmpty }
+        await fixture.wait { !activity.endings.isEmpty && !fixture.pendingUnregistrations.isEmpty }
+        #expect(fixture.completedUnregistrations == 0)
         #expect(activity.endings.last?.state.ending == (changingServer ? .serverChanged : .channelDeleted))
         #expect(activity.endings.last?.dismissAt == nil)
         #expect(fixture.released == 1)
+        fixture.releaseUnregistration()
+        await fixture.wait { fixture.completedUnregistrations == 1 }
+        #expect(fixture.requests.map(\.method) == ["PUT", "DELETE"])
     }
 
     @Test func stoppingAnInflightRegistrationCannotDeleteTheNextFollow() async throws {
@@ -1291,7 +1296,7 @@ struct ChannelFollowTests {
         let activity = try #require(fixture.pool.activities.first)
         fixture.configure(active: true)
         try fixture.apply(tasks: [.init(id: "root", title: "Done", status: "done")])
-        await fixture.wait { activity.endings.count == 1 }
+        await fixture.wait { activity.endings.count == 1 && fixture.completedUnregistrations == 1 }
         fixture.controller.configure(registration: nil, catalog: nil, isActive: false,
                                      acquire: { _ in }, release: { _ in })
         await fixture.wait { activity.endings.count == 2 }
@@ -1332,7 +1337,10 @@ private final class FollowFixture {
     var date: Date
     var requests: [Write] = []
     var pending: [CheckedContinuation<Void, Error>] = []
+    var pendingUnregistrations: [CheckedContinuation<Void, Error>] = []
     var holdRegistration = false
+    var holdUnregistration = false
+    var completedUnregistrations = 0
     var registrationStatus = 204
     var acquired = 0
     var released = 0
@@ -1357,7 +1365,7 @@ private final class FollowFixture {
                                     try await self.register(input)
                                 },
                                 unregisterActivity: { [unowned self] _, _ in
-                                    self.requests.append(Write(method: "DELETE", input: nil))
+                                    try await self.unregister()
                                 })
     }
 
@@ -1401,10 +1409,28 @@ private final class FollowFixture {
         for request in requests { request.resume() }
     }
 
+    func unregister() async throws {
+        requests.append(Write(method: "DELETE", input: nil))
+        if holdUnregistration {
+            try await withCheckedThrowingContinuation { pendingUnregistrations.append($0) }
+        }
+        completedUnregistrations += 1
+    }
+
+    func releaseUnregistration() {
+        holdUnregistration = false
+        let requests = pendingUnregistrations
+        pendingUnregistrations = []
+        for request in requests { request.resume() }
+    }
+
     func close() {
         controller.shutdown()
         for request in pending { request.resume(throwing: CancellationError()) }
         pending = []
+        #expect(pendingUnregistrations.isEmpty)
+        for request in pendingUnregistrations { request.resume(throwing: CancellationError()) }
+        pendingUnregistrations = []
         defaults.removePersistentDomain(forName: suite)
     }
 }
