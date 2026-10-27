@@ -1,9 +1,18 @@
 #!/usr/bin/env bun
 import { resolve } from "node:path";
+import { parseArgs } from "node:util";
 import { root } from "../lib.ts";
 import { referenceFactory, remapChannel, type Demo, type Snapshot } from "./types.ts";
 import { createDemoPushRoutes } from "./push-routes.ts";
 import { writeHistoryPage } from "./history-fixture.ts";
+
+export function demoOptions(args: string[]): { reference: string | undefined; completed: boolean } {
+    const { values, positionals } = parseArgs({
+        args, allowPositionals: true, options: { completed: { type: "boolean" } },
+    });
+    if (positionals.length > 1) throw new Error("Usage: bun run demo [--completed] [path to toy-box-Minecraft]");
+    return { reference: positionals[0], completed: values.completed ?? false };
+}
 
 export function createCompletedDemoFixture(source: Snapshot, now = Date.now()): Snapshot {
     if (source.channel.id !== "studio-demo") throw new Error("The completion fixture needs the canonical Studio demo.");
@@ -98,7 +107,8 @@ export function installDemoCatalogRoutes(demo: Pick<Demo, "server" | "snapshot">
 }
 
 if (import.meta.main) {
-    const reference = resolve(process.argv[2] ?? resolve(root, "../toy-box-Minecraft"));
+    const options = demoOptions(process.argv.slice(2));
+    const reference = resolve(options.reference ?? resolve(root, "../toy-box-Minecraft"));
     const createDemoServer = await referenceFactory(reference);
     const port = Number(process.env.TOY_BOX_DEMO_PORT ?? 3210);
     if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("Invalid TOY_BOX_DEMO_PORT.");
@@ -108,8 +118,7 @@ if (import.meta.main) {
     const demo = createDemoServer(initial);
     // The reference factory makes dates recent. Restore an exported snapshot without that adjustment.
     if (initial) demo.replace(initial);
-    const additional = demo.snapshot().channel.id === "studio-demo"
-        ? [createDemoServer(createCompletedDemoFixture(demo.snapshot()))] : [];
+    const additional = options.completed ? [createDemoServer(createCompletedDemoFixture(demo.snapshot()))] : [];
     installDemoCatalogRoutes(demo, additional);
     demo.server.on("error", error => { console.error(error); process.exitCode = 1; });
     demo.server.listen(port, "127.0.0.1", () => {

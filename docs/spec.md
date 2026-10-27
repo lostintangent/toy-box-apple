@@ -261,8 +261,8 @@ sandbox. Request and completion preferences are independent booleans. A token be
 registration. Activities do not require an alerts registration, have their own environment, and are
 unique per registration/channel. Token rotation preserves the original `startedAt`, in Unix seconds.
 The demo stores this state only in memory and never contacts APNs.
-The normal demo also serves a separate `completed-demo` channel for completion-alert proof,
-with every task done and an unread completion. Studio's request and unfinished tasks stay intact.
+`bun run demo --completed` opts into a separate `completed-demo` channel for completion-alert proof,
+with every task done and an unread completion. The normal screenshot baseline stays unchanged.
 Both channels expose canonical read-only history pages, allowing the notification enricher to
 resolve the exact original question without reading or answering it.
 
