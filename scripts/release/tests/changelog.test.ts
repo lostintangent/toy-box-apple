@@ -27,7 +27,7 @@ test("the CLI enforces MOBILE_VERSION and writes only the selected entry for rel
         expect(result.code).toBe(0);
         expect(result.stdout.trim()).toBe("0.1.0");
         expect(await Bun.file(path).text()).toContain("First iPhone companion");
-        expect(await Bun.file(path).text()).not.toContain("conversation accessibility crash");
+        expect(await Bun.file(path).text()).not.toContain("## ");
         expect((await fake.script("release/changelog.ts", ["mobile-v0.1.0"],
             { MOBILE_VERSION: "0.2.0" })).code).toBe(1);
         expect((await fake.script("release/changelog.ts", ["v9.9.9", join(fake.directory, "missing.md")])).code).toBe(1);
