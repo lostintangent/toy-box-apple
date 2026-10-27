@@ -295,7 +295,9 @@ struct OverviewTaskNode: View {
     }
 
     private func toggle() {
-        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) {
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
             session.taskDisclosure[task.id] = .init(status: task.status, expanded: !expanded)
         }
     }
