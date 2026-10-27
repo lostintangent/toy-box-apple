@@ -1,22 +1,43 @@
-import AppKit
 import ChannelKit
 import SwiftUI
 import WidgetKit
+#if os(macOS)
+import AppKit
+#else
+import UIKit
+#endif
 
-struct NeedsYouEntry: TimelineEntry {
-    var date: Date
-    var snapshot: NeedsYouSnapshot?
+package struct NeedsYouEntry: TimelineEntry {
+    package var date: Date
+    package var snapshot: NeedsYouSnapshot?
+
+    package init(date: Date, snapshot: NeedsYouSnapshot? = nil) {
+        self.date = date
+        self.snapshot = snapshot
+    }
 }
 
-struct NeedsYouWidgetContent: View {
+package struct NeedsYouWidgetContent: View {
     let entry: NeedsYouEntry
     let family: WidgetFamily
+    let replyTargetSize: CGFloat
+    let maximumRequests: Int?
     @Environment(\.widgetRenderingMode) private var renderingMode
 
-    private var limit: Int { family == .systemSmall ? 1 : family == .systemMedium ? 2 : 5 }
+    package init(entry: NeedsYouEntry, family: WidgetFamily,
+                 replyTargetSize: CGFloat = 28, maximumRequests: Int? = nil) {
+        self.entry = entry
+        self.family = family
+        self.replyTargetSize = replyTargetSize
+        self.maximumRequests = maximumRequests
+    }
+
+    private var limit: Int {
+        min(maximumRequests ?? 5, family == .systemSmall ? 1 : family == .systemMedium ? 2 : 5)
+    }
     private var snapshot: NeedsYouSnapshot? { entry.snapshot.flatMap { $0.isAvailable ? $0 : nil } }
 
-    var body: some View {
+    package var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Link(destination: NeedsYouSnapshot.mainURL) {
@@ -47,7 +68,7 @@ struct NeedsYouWidgetContent: View {
                                         Link(destination: replyURL) {
                                             Image(systemName: "arrowshape.turn.up.left")
                                                 .font(.system(size: 13, weight: .medium))
-                                                .frame(width: 28, height: 28)
+                                                .frame(width: replyTargetSize, height: replyTargetSize)
                                                 .contentShape(Rectangle())
                                         }
                                         .widgetAccentable()
@@ -92,8 +113,8 @@ struct NeedsYouWidgetContent: View {
 
     private func requestRow(_ request: NeedsYouSnapshot.Request) -> some View {
         HStack(alignment: .top, spacing: 8) {
-            if let data = request.avatarPNG, let image = NSImage(data: data) {
-                Image(nsImage: image).resizable()
+            if let image = avatar(request.avatarPNG) {
+                image.resizable()
                     .widgetAccentedRenderingMode(renderingMode == .fullColor ? .fullColor
                         : renderingMode == .accented ? .accentedDesaturated : .desaturated)
                     .frame(width: 24, height: 24).accessibilityHidden(true)
@@ -119,6 +140,15 @@ struct NeedsYouWidgetContent: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    private func avatar(_ data: Data?) -> Image? {
+        guard let data else { return nil }
+        #if os(macOS)
+        return NSImage(data: data).map { Image(nsImage: $0) }
+        #else
+        return UIImage(data: data).map { Image(uiImage: $0) }
+        #endif
+    }
+
     private func footer(_ snapshot: NeedsYouSnapshot) -> some View {
         let isStale = snapshot.isStale(at: entry.date)
         let displayedCount = min(limit, snapshot.requests.count)
@@ -129,8 +159,14 @@ struct NeedsYouWidgetContent: View {
             Spacer(minLength: 2)
             if isStale {
                 Text("May be out of date")
-            } else if family != .systemSmall {
-                Text("Updated \(snapshot.updatedAt, format: .relative(presentation: .numeric, unitsStyle: .narrow))")
+            } else {
+                #if os(iOS)
+                Text("Updated \(snapshot.updatedAt, format: .dateTime.hour().minute())")
+                #else
+                if family != .systemSmall {
+                    Text("Updated \(snapshot.updatedAt, format: .relative(presentation: .numeric, unitsStyle: .narrow))")
+                }
+                #endif
             }
         }
         .font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
