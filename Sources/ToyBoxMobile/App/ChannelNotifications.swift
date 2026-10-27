@@ -235,6 +235,62 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
 
     func clearError() { error = nil }
 
+    #if DEBUG && targetEnvironment(simulator)
+    func scheduleProofNotification(_ kind: ChannelPushPayload.Kind) async throws {
+        guard let api = configuredAPI, let registration = currentRegistration else {
+            throw ProofFailure.notConfigured
+        }
+        guard ["localhost", "127.0.0.1", "::1"].contains(api.baseURL.host ?? ""),
+              api.baseURL.port == 3210 else { throw ProofFailure.notDemoServer }
+        let payload = try Self.proofPayload(kind: kind, catalog: await api.catalog(), registration: registration)
+        guard currentRegistration == registration else { throw ProofFailure.registrationChanged }
+        let operation = try MobileNotificationEnricher()
+        defer { operation.expire() }
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
+            operation.start(payload) { content in
+                guard self.currentRegistration == registration else {
+                    continuation.resume(throwing: ProofFailure.registrationChanged)
+                    return
+                }
+                self.center.add(UNNotificationRequest(
+                    identifier: "proof-\(UUID().uuidString)", content: content,
+                    trigger: UNTimeIntervalNotificationTrigger(timeInterval: 5, repeats: false)
+                )) { error in
+                    if let error { continuation.resume(throwing: error) }
+                    else { continuation.resume() }
+                }
+            }
+        }
+    }
+
+    static func proofPayload(kind: ChannelPushPayload.Kind, catalog: ChannelCatalog,
+                             registration: MobilePushRegistration) throws -> ChannelPushPayload {
+        for channel in catalog.channels {
+            let sequence = kind == .request ? channel.requestSequence : channel.completedSequence
+            if let sequence, sequence > 0 {
+                return ChannelPushPayload(kind: kind, channelID: channel.id, sequence: sequence,
+                                          registrationID: registration.registrationID)
+            }
+        }
+        throw ProofFailure.noChannel(kind)
+    }
+
+    private enum ProofFailure: LocalizedError {
+        case notConfigured, notDemoServer, registrationChanged
+        case noChannel(ChannelPushPayload.Kind)
+
+        var errorDescription: String? {
+            switch self {
+            case .notConfigured: "Connect to the demo server before preparing an alert."
+            case .notDemoServer: "Use the local demo server on port 3210 for proof alerts."
+            case .registrationChanged: "The selected server changed while preparing the alert."
+            case .noChannel(.request): "The demo has no waiting request."
+            case .noChannel(.completion): "The demo has no completed channel."
+            }
+        }
+    }
+    #endif
+
     private func preferencesDidChange() {
         updateRegistration()
         onPreferencesChange?()
