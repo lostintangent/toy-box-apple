@@ -232,6 +232,22 @@ export function checkMobileBuildVersion(output: string, device: boolean, minimum
     }
 }
 
+export function checkMobileExtensionEntryPoint(commands: string, symbols: string) {
+    const loads = commands.split(/(?=Load command \d+)/);
+    const text = loads.filter(load => /^\s*segname __TEXT$/m.test(load) && /^\s*cmd LC_SEGMENT_64$/m.test(load));
+    const main = loads.filter(load => /^\s*cmd LC_MAIN$/m.test(load));
+    const address = text.length === 1 ? text[0]?.match(/^\s*vmaddr (0x[\da-f]+)$/mi)?.[1] : undefined;
+    const offset = main.length === 1 ? main[0]?.match(/^\s*entryoff (\d+)$/m)?.[1] : undefined;
+    const fileOffset = text[0]?.match(/^\s*fileoff (\d+)$/m)?.[1];
+    const stubs = symbols.split(/(?=Indirect symbols for )/)
+        .find(table => table.startsWith("Indirect symbols for (__TEXT,__stubs)"));
+    const bootstrap = [...(stubs ?? "").matchAll(/^\s*(0x[\da-f]+)\s+\d+\s+_NSExtensionMain$/gmi)];
+    if (address === undefined || offset === undefined || fileOffset === undefined
+        || !bootstrap.some(match => BigInt(match[1]!) === BigInt(address) + BigInt(offset) - BigInt(fileOffset))) {
+        throw new Error("Mobile extensions must enter through _NSExtensionMain before their Swift entry point.");
+    }
+}
+
 export async function bundleMobile(device = false) {
     const { bin, scratch, version } = await buildMobile(device);
     const app = join(scratch, "Toy Box.app");
@@ -257,6 +273,9 @@ export async function bundleMobile(device = false) {
         const executable = join(bundle, extension.executable);
         const info = join(bundle, "Info.plist");
         await copyFile(join(bin, extension.executable), executable);
+        checkMobileExtensionEntryPoint(
+            await text(["xcrun", "otool", "-l", executable], { env: mobileEnvironment }),
+            await text(["xcrun", "otool", "-Iv", executable], { env: mobileEnvironment }));
         await copyFile(join(root, "Resources/Mobile", extension.info), info);
         for (const key of ["CFBundleVersion", "CFBundleShortVersionString", "MinimumOSVersion"]) {
             await plist(info, [`Set :${key} ${await plist(join(app, "Info.plist"), [`Print :${key}`])}`]);

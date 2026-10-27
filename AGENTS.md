@@ -193,8 +193,9 @@ view.
   There is no separate phone icon artwork or committed iOS asset catalog.
   The phone also embeds `PlugIns/ToyBoxMobileWidget.appex` (`dev.toybox.mobile.widget`) and
   `PlugIns/ToyBoxMobileNotification.appex` (`dev.toybox.mobile.notification`). SwiftPM builds both
-  with application-extension safety. The notification executable uses `_NSExtensionMain`;
-  WidgetKit supplies the widget entry point. Every executable is SDK-stamped and verified.
+  with application-extension safety. Both executables enter through `_NSExtensionMain`, which
+  establishes the extension context before calling WidgetKit's generated Swift main or the service.
+  Bundling verifies that native entry point as well as each executable's real SDK stamp.
   Simulator builds link capabilities into `__TEXT,__entitlements` and `__TEXT,__ents_der`, including
   all three bundles' `group.dev.toybox.mobile`. Their ad-hoc code signatures contain no restricted
   device entitlements. Extensions are signed before the host, without device profiles or credentials.
@@ -241,10 +242,12 @@ view.
 - `bun run mobile --foundation-proof --hold` is DEBUG/Simulator-only scaffolding for t405.
   It substitutes Core's proof view only on that explicit launch, retaining the normal scene otherwise.
   It prepares an App Group marker/avatar, requests notification authorization, and starts, updates
-  and ends a local placeholder activity. The widget and simulated mutable-content notification
-  extension write matching receipts into that container. Send the simulated alert with
+  and ends a local placeholder activity. The widget writes a matching receipt when the system
+  requests its snapshot or timeline. Send the simulated alert with
   `xcrun simctl push <UDID> dev.toybox.mobile <fixture.apns>`, with `mutable-content: 1`,
-  an alert and `toyBoxFoundationProof: true`. This is not the release payload or activity schema.
+  an alert and `toyBoxFoundationProof: true`. On the current runtime that injection bypasses the
+  service extension, so successful submission proves delivery only, not enrichment or its receipt.
+  Real APNs delivery must prove the extension itself. This is not the release payload or activity schema.
   Remove the proof hook, harness and placeholder activity when t408/t409 ship real flows.
 - CI always builds the mobile app, both embedded extensions and shared modules for Simulator,
   and verifies the extension signatures. It runs the shared tests

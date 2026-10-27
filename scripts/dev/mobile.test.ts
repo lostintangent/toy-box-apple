@@ -3,7 +3,8 @@ import { mkdir, mkdtemp, readFile, readlink, rm, writeFile } from "node:fs/promi
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-    checkMobileBuildVersion, linkMobileWorkspace, mobileBuildConfiguration, mobileExtensions, mobileLaunchOptions,
+    checkMobileBuildVersion, checkMobileExtensionEntryPoint, linkMobileWorkspace, mobileBuildConfiguration,
+    mobileExtensions, mobileLaunchOptions,
     mobileSimulatorEntitlements,
     withMobileAppearance,
 } from "./mobile.ts";
@@ -40,6 +41,34 @@ test("iOS extensions have exact identities, extension points and executable entr
     expect(host).toMatch(/<key>NSSupportsLiveActivities<\/key>\s*<true\/>/);
     const package_ = await readFile(join(import.meta.dir, "../../Package.swift"), "utf8");
     for (const extension of mobileExtensions) expect(package_).toContain(`name: "${extension.executable}"`);
+});
+
+test("extension binaries bootstrap their context before calling generated Swift main", () => {
+    const commands = `Load command 0
+          cmd LC_SEGMENT_64
+      segname __TEXT
+       vmaddr 0x0000000100000000
+      fileoff 0
+Load command 1
+          cmd LC_MAIN
+     entryoff 4096`;
+    const symbols = `Indirect symbols for (__TEXT,__stubs) 2 entries
+address            index name
+0x0000000100001000  42 _NSExtensionMain
+0x000000010000100C  43 _other`;
+    expect(() => checkMobileExtensionEntryPoint(commands, symbols)).not.toThrow();
+    for (const output of [
+        commands.replace("entryoff 4096", "entryoff 8192"),
+        commands.replace("LC_MAIN", "LC_UNIXTHREAD"),
+        `${commands}\nLoad command 2\ncmd LC_MAIN\nentryoff 4096`,
+        commands.replace("vmaddr 0x0000000100000000", "vmaddr invalid"),
+        "",
+    ]) expect(() => checkMobileExtensionEntryPoint(output, symbols)).toThrow("_NSExtensionMain");
+    for (const output of [
+        symbols.replace("_NSExtensionMain", "_main"),
+        symbols.replace("(__TEXT,__stubs)", "(__DATA,__got)"),
+        "",
+    ]) expect(() => checkMobileExtensionEntryPoint(commands, output)).toThrow("_NSExtensionMain");
 });
 
 test("simulated capabilities include each bundle identity without a device team or signing profile", () => {

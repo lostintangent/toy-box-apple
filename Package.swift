@@ -47,7 +47,8 @@ let package = Package(
         .executableTarget(
             name: "ToyBoxMobileWidget", dependencies: ["ToyBoxMobileIntegrations"],
             swiftSettings: [.unsafeFlags(["-application-extension"])],
-            linkerSettings: simulatedEntitlements("dev.toybox.mobile.widget")
+            linkerSettings: [.unsafeFlags(["-Xlinker", "-e", "-Xlinker", "_NSExtensionMain"])]
+                + simulatedEntitlements("dev.toybox.mobile.widget")
         ),
         .executableTarget(
             name: "ToyBoxMobileNotification", dependencies: ["ToyBoxMobileIntegrations"],
