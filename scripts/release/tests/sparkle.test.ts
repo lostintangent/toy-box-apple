@@ -1,12 +1,11 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { chmod, lstat, mkdir, rm, symlink } from "node:fs/promises";
 import { join } from "node:path";
-import { bundleIdentity, command, root, temporary, text } from "../../lib.ts";
+import { bundleIdentity, root } from "../../lib.ts";
 import { checkVersion } from "../check-update-version.ts";
 import { FakeHarness, workflowBody } from "./helpers.ts";
 import { checkTestCompletion } from "../../dev/test.ts";
 import { configureShareExtension } from "../share-extension.ts";
-import { releaseNotes } from "../generate-appcast.ts";
 import { legacyTestBundles } from "../../dev/validate.ts";
 import { configureWidgetExtension, widgetAppGroup, widgetExtension } from "../widget-extension.ts";
 
@@ -178,10 +177,14 @@ describe("signed appcast generation", () => {
         await mkdir(output);
         await Bun.write(join(output, "ToyBox-0.2.0-arm64.zip"), "fake archive");
         env = { OUTPUT_DIR: output, BUILD_NUMBER: "200.1", SPARKLE_ED_PRIVATE_KEY: "fake-sparkle-private-key" };
+        await Bun.write(join(fake.directory, "CHANGELOG.md"), "## Mac 0.2.0\n\nQuick Send and the menu bar inbox.\n");
     });
     afterEach(async () => { await fake.dispose(); });
+    const generate = (extra: NodeJS.ProcessEnv = {}) => fake.run([process.execPath, "-e",
+        `const { generateAppcast } = await import(${JSON.stringify(new URL("../generate-appcast.ts", import.meta.url).href)}); await generateAppcast("v0.2.0", ${JSON.stringify(fake.directory)});`],
+    { ...env, ...extra });
     test("generates and verifies both signatures without default-Keychain access", async () => {
-        const result = await fake.script("release/generate-appcast.ts", ["v0.2.0"], env);
+        const result = await generate();
         expect(result.code).toBe(0);
         const generated = (await fake.calls("generate_appcast"))[0].args;
         expect(generated.slice(0, 2)).toEqual(["--ed-key-file", "-"]);
@@ -191,19 +194,20 @@ describe("signed appcast generation", () => {
         expect(verified).toHaveLength(2);
         expect(verified.every(call => JSON.stringify(call.args.slice(0, 3)) === JSON.stringify(["--ed-key-file", "-", "--verify"]))).toBe(true);
         expect(result.stdout + result.stderr).not.toContain("fake-sparkle-private-key");
+        expect(await Bun.file(join(env.OUTPUT_DIR!, "ToyBox-0.2.0-arm64.txt")).text())
+            .toBe("Quick Send and the menu bar inbox.\n");
     });
     test.each([
         { SPARKLE_ED_PRIVATE_KEY: "" }, { UNSIGNED_FEED: "1" }, { FAIL_VERIFY: "1" }, { BUILD_NUMBER: "199.1" },
     ])("missing keys, invalid metadata and verification errors never succeed: %j", async extra => {
-        const result = await fake.script("release/generate-appcast.ts", ["v0.2.0"], { ...env, ...extra });
+        const result = await generate(extra);
         expect(result.code).not.toBe(0);
         expect(result.stdout).not.toContain("Signed update feed:");
     });
     test("an explicit file key never falls back to the Keychain", async () => {
         const key = join(fake.directory, "throwaway-key.txt");
         await Bun.write(key, "fake-key");
-        const result = await fake.script("release/generate-appcast.ts", ["v0.2.0"],
-            { ...env, SPARKLE_ED_PRIVATE_KEY: "", SPARKLE_ED_KEY_FILE: key });
+        const result = await generate({ SPARKLE_ED_PRIVATE_KEY: "", SPARKLE_ED_KEY_FILE: key });
         expect(result.code).toBe(0);
         const calls = [...await fake.calls("generate_appcast"), ...await fake.calls("sign_update")];
         expect(calls.every(call => JSON.stringify(call.args.slice(0, 2)) === JSON.stringify(["--ed-key-file", key]))).toBe(true);
@@ -220,50 +224,6 @@ describe("signed appcast generation", () => {
             FAKE_PREVIOUS_FEED: previous, ...extra,
         });
         expect(result.code === 0).toBe(success);
-    });
-});
-
-describe("release notes from real Git tag objects", () => {
-    const tag = "v0.2.0";
-    const annotation = "Toy Box 0.2.0\n\nQuick Send and the menu bar inbox.";
-    const commitMessage = "Internal implementation detail\n\nCo-authored-by: Copilot <copilot@example.invalid>";
-    async function repository(directory: string) {
-        await command(["git", "init", "--quiet", directory], { quiet: true });
-        await command(["git", "-C", directory, "-c", "user.name=Release test",
-            "-c", "user.email=release@example.invalid", "-c", "commit.gpgSign=false",
-            "commit", "--quiet", "--allow-empty", "-m", commitMessage], { quiet: true });
-    }
-    test.each(["annotated", "lightweight", "missing"] as const)("%s tags never substitute the commit message", async kind => {
-        await temporary("toy-box-release-notes.", async directory => {
-            await repository(directory);
-            if (kind !== "missing") {
-                await command(["git", "-C", directory, "-c", "user.name=Release test",
-                    "-c", "user.email=release@example.invalid", "-c", "tag.gpgSign=false", "tag",
-                    ...(kind === "annotated" ? ["-a", tag, "-m", annotation] : [tag])], { quiet: true });
-            }
-            const notes = await releaseNotes(tag, directory);
-            expect(notes).toBe(kind === "annotated" ? annotation + "\n" : "Toy Box 0.2.0\n");
-            expect(notes).not.toContain("Internal implementation detail");
-            expect(notes).not.toContain("Co-authored-by");
-        });
-    });
-    test("workflow fetch replaces checkout's lightweight ref with the annotated tag object", async () => {
-        await temporary("toy-box-release-tag-fetch.", async directory => {
-            const origin = join(directory, "origin"), checkout = join(directory, "checkout");
-            await repository(origin);
-            await command(["git", "-C", origin, "-c", "user.name=Release test",
-                "-c", "user.email=release@example.invalid", "tag", "--no-sign", "-a", tag, "-m", annotation], { quiet: true });
-            await command(["git", "init", "--quiet", checkout], { quiet: true });
-            await command(["git", "-C", checkout, "remote", "add", "origin", origin], { quiet: true });
-            const commit = await text(["git", "-C", origin, "rev-parse", "HEAD"]);
-            await command(["git", "-C", checkout, "fetch", "--quiet", "--no-tags", "--depth=1", "origin", commit], { quiet: true });
-            await command(["git", "-C", checkout, "update-ref", `refs/tags/${tag}`, commit], { quiet: true });
-            expect(await releaseNotes(tag, checkout)).toBe("Toy Box 0.2.0\n");
-            await command(["/bin/bash", "-c", await workflowBody("Fetch annotated release tag")], {
-                cwd: checkout, env: { RELEASE_TAG: tag }, quiet: true,
-            });
-            expect(await releaseNotes(tag, checkout)).toBe(annotation + "\n");
-        });
     });
 });
 

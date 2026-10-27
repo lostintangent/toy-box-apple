@@ -179,9 +179,9 @@ After notarization and stapling, `bun run generate-appcast` uses Sparkle's check
 sign the finished archive and the whole feed with Ed25519. The archive signature, length, URL,
 machine and human-readable versions, and minimum macOS version are checked before publishing.
 The feed signature is independently verified with `sign_update`. Archive verification is required
-before extraction, and signed feeds are required. The workflow fetches the actual release tag
-object after checkout. Only annotated tags supply release notes; lightweight or missing tags
-use a version-title fallback, never the underlying commit message. Deltas are intentionally omitted
+before extraction, and signed feeds are required. The matching `## Mac X.Y.Z` changelog entry supplies
+both Sparkle and GitHub Release notes. There is no tag-annotation or commit-message fallback.
+Deltas are intentionally omitted
 for these small apps.
 Both the feed and zip are attached to every release and retained by dry runs.
 
@@ -248,6 +248,32 @@ The IPA contains `Payload/Toy Box.app`. `altool --validate-app` must pass before
 unsigned App Store-form bundle without profiles or credentials. Upload waits for processing and
 requires Apple's reported processing state `VALID`, which is not yet a claim that a tester group
 has access. The first real build remains incomplete until App Store Connect shows Ready to Test.
+
+After local qualification, `.github/workflows/mobile-release.yml` handles only `mobile-vX.Y.Z` tags,
+independently of the Mac's unchanged `vX.Y.Z` release line. Both require one nonempty matching
+`## Mac X.Y.Z` / `## iPhone X.Y.Z` entry in root `CHANGELOG.md` before release building or credential
+access. `MOBILE_VERSION` must match the phone tag. The mobile workflow serializes its own publishes,
+uses Xcode 27's device SDK without a Simulator and calls the same `mobile --testflight` command.
+Manual dispatch on `main` adds `--validate-only`, so it never uploads. CI uses
+`github.run_number.github.run_attempt`; use build `1` for the first local upload so it precedes the
+first CI build `1.1`.
+
+The user runs `bun run setup-testflight-secrets SHA1 APP_STORE_CONNECT_APP_ID [OWNER/REPO]`.
+The shared signing selector validates the three App Store profiles and chosen Apple Distribution
+identity before export. A silent prompt or piped stdin supplies the export's encryption password,
+not the Apple Account password. Five secrets hold the encrypted certificate, its password and the
+three profiles. Public variables hold the certificate fingerprint and numeric app ID. The existing
+`NOTARY_APP_PASSWORD` is reused for uploads without reading or replacing it during setup.
+Temporary export files are removed even on a failed secret upload.
+
+The mobile job imports its identity and checksum-pinned public WWDR G3 intermediate into an isolated
+temporary keychain and uses profile files only under the runner's temporary directory. Cleanup
+restores the original keychain search list and removes signing material, including failures.
+No iPhone GitHub Release is created, so the Mac's latest-release feed remains untouched.
+The iPhone changelog entry is retained as a workflow summary/artifact. Apple's documented per-build
+notes endpoint uses API-key authentication; the installed `altool --beta-app-store-text` exposes
+marketing-version metadata but no verified per-build password path. “What to Test” remains manual
+until that path is proven. No API key is required or read by the release tools.
 
 ## Protocol (v1)
 

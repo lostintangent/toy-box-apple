@@ -354,6 +354,23 @@ analysis errors/completion/text detection and load.
 - Push a `vX.Y.Z` tag, only with the user's approval. Actions tests the tag, then signs,
   notarizes, staples and publishes the zip, its checksum and a signed `appcast.xml`. Running the
   workflow by hand on `main` is a dry run that keeps all three as artifacts.
+- iPhone releases are independent `mobile-vX.Y.Z` tags in `mobile-release.yml`. They upload to
+  TestFlight, never GitHub Releases. Manual `main` runs use `--validate-only`, never upload.
+  The phone workflow's `github.run_number.github.run_attempt` is its build. Use `1` for the first
+  local upload, below the first CI build `1.1`. No Simulator runtime is needed.
+- `CHANGELOG.md` is the release-note source: `## Mac X.Y.Z` / `## iPhone X.Y.Z`. Missing, duplicate
+  or empty entries fail before release builds. `bun run release-notes TAG [OUTPUT.md]` extracts one.
+  Mac GitHub/Sparkle notes use the Mac entry. Phone notes are retained in the job summary/artifact;
+  per-build “What to Test” stays manual until a password-authenticated Apple tool path is proven.
+- User only: `bun run setup-testflight-secrets SHA1 APP_STORE_CONNECT_APP_ID [OWNER/REPO]`.
+  It selects the same three App Store profiles as `mobile --testflight`, reads an export password
+  silently or from piped stdin, exports only that Apple Distribution identity and deletes its
+  temporary encrypted export. It sets `MOBILE_SIGNING_CERTIFICATE`, `MOBILE_SIGNING_PASSWORD`,
+  the three `MOBILE_*_PROVISIONING_PROFILE` secrets, and public `MOBILE_SIGNING_IDENTITY` /
+  `APP_STORE_CONNECT_APP_ID` variables. It never reads or replaces `NOTARY_APP_PASSWORD`.
+  Actions imports the identity, profiles and checksum-pinned public WWDR G3 intermediate only
+  into job-temporary storage, then restores the keychain search list and removes the material.
+  Agents never run real setup or read the exported identity/password.
 - Certificate-owner-only setup:
   `bun run setup-release-secrets SHA1 APPLE_ID TEAM_ID`, using an Apple ID app-specific password
   entered silently or piped on stdin, never as an argument. It configures `toy-box-channels-notary`

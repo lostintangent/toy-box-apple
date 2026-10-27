@@ -6,6 +6,7 @@ import { checkVersion } from "./check-update-version.ts";
 import { signApp } from "./sign-app.ts";
 import { validateShareExtension } from "./share-extension.ts";
 import { validateWidgetExtension } from "./widget-extension.ts";
+import { releaseChangelog } from "./changelog.ts";
 
 export function parseNotaryResponse(response: string, status: number) {
     let parsed: unknown;
@@ -20,6 +21,7 @@ export function parseNotaryResponse(response: string, status: number) {
 
 if (import.meta.main) await main(async () => {
     const tag = releaseTag(process.argv[2]);
+    await releaseChangelog(tag);
     const version = tag.slice(1);
     const identity = required("SIGNING_IDENTITY");
     if (!/^[a-fA-F0-9]{40}$/.test(identity)) throw new Error("Signing identity must be a 40-digit SHA-1.");

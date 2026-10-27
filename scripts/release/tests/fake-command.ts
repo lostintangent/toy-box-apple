@@ -1,4 +1,4 @@
-import { appendFileSync, cpSync, copyFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, cpSync, copyFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 export async function fake(command: string) {
@@ -35,6 +35,8 @@ export async function fake(command: string) {
         else writeFileSync(destination, "fake intermediate certificate");
     } else if (command === "security") {
         if (args[0] === "list-keychains" && !args.includes("-s")) console.log('    "/fake/login.keychain-db"');
+        else if (args[0] === "create-keychain") writeFileSync(args.at(-1)!, "fake keychain");
+        else if (args[0] === "delete-keychain") rmSync(args.at(-1)!, { force: true });
     } else if (command === "generate_keys") {
         if (process.env.FAIL_KEY === "1") process.exit(25);
         if (args.includes("-x")) writeFileSync(args[args.indexOf("-x") + 1], "fake-sparkle-private-key");
@@ -55,5 +57,7 @@ export async function fake(command: string) {
         } }));
     } else if (command === "sign_update") {
         if (process.env.FAIL_VERIFY === "1") process.exit(26);
+    } else if (command === "bun") {
+        process.exit(Number(process.env.FAKE_BUN_EXIT || 0));
     } else if (command !== "shasum") throw new Error(`Unexpected fake command: ${command}`);
 }

@@ -23,6 +23,8 @@
     "check-update-version": "bun scripts/release/check-update-version.ts",
     "setup-release-secrets": "bun scripts/release/setup-release-secrets.ts",
     "setup-update-secrets": "bun scripts/release/setup-update-secrets.ts",
+    "release-notes": "bun scripts/release/changelog.ts",
+    "setup-testflight-secrets": "bun scripts/release/setup-testflight-secrets.ts",
     "test:release": "bun test scripts/release",
     "lint:workflows": "go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12"
   },

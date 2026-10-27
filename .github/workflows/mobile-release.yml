@@ -1,0 +1,143 @@
+name: iPhone TestFlight release
+
+on:
+  push:
+    tags: ['mobile-v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: iPhone version to validate without uploading (mobile-vX.Y.Z)
+        required: true
+        default: mobile-v0.1.0
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobile-testflight-publication
+  cancel-in-progress: false
+
+jobs:
+  testflight:
+    if: github.event_name == 'push' || github.ref == 'refs/heads/main'
+    runs-on: xcode-27
+    timeout-minutes: 45
+    env:
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+      BUILD_NUMBER: ${{ github.run_number }}.${{ github.run_attempt }}
+      APP_STORE_CONNECT_USERNAME: joncart@outlook.com
+      APP_STORE_CONNECT_APP_ID: ${{ vars.APP_STORE_CONNECT_APP_ID }}
+      MOBILE_SIGNING_IDENTITY: ${{ vars.MOBILE_SIGNING_IDENTITY }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.4
+      - run: bun install --frozen-lockfile --ignore-scripts
+      - name: Require the iPhone changelog entry
+        run: |
+          case "$RELEASE_TAG" in
+            mobile-v*) ;;
+            *) echo "Use a mobile-vX.Y.Z tag." >&2; exit 1 ;;
+          esac
+          version="$(bun run release-notes "$RELEASE_TAG" "$RUNNER_TEMP/iphone-release-notes.md")"
+          printf 'MOBILE_VERSION=%s\n' "$version" >> "$GITHUB_ENV"
+          cat "$RUNNER_TEMP/iphone-release-notes.md" >> "$GITHUB_STEP_SUMMARY"
+      - name: Select and check the iPhoneOS toolchain
+        run: |
+          DEVELOPER_DIR="$(xcode-select -p)"
+          export DEVELOPER_DIR
+          printf 'DEVELOPER_DIR=%s\n' "$DEVELOPER_DIR" >> "$GITHUB_ENV"
+          xcrun swift --version
+          sdk="$(xcrun --sdk iphoneos --show-sdk-version)"
+          test "${sdk%%.*}" -ge 27
+      - name: Install temporary TestFlight signing material
+        env:
+          CERTIFICATE: ${{ secrets.MOBILE_SIGNING_CERTIFICATE }}
+          CERTIFICATE_PASSWORD: ${{ secrets.MOBILE_SIGNING_PASSWORD }}
+          HOST_PROFILE: ${{ secrets.MOBILE_PROVISIONING_PROFILE }}
+          WIDGET_PROFILE: ${{ secrets.MOBILE_WIDGET_PROVISIONING_PROFILE }}
+          NOTIFICATION_PROFILE: ${{ secrets.MOBILE_NOTIFICATION_PROVISIONING_PROFILE }}
+          NOTARY_APP_PASSWORD: ${{ secrets.NOTARY_APP_PASSWORD }}
+        run: |
+          set +x
+          set -euo pipefail
+          umask 077
+          : "${CERTIFICATE:?Missing MOBILE_SIGNING_CERTIFICATE}"
+          : "${CERTIFICATE_PASSWORD:?Missing MOBILE_SIGNING_PASSWORD}"
+          : "${HOST_PROFILE:?Missing MOBILE_PROVISIONING_PROFILE}"
+          : "${WIDGET_PROFILE:?Missing MOBILE_WIDGET_PROVISIONING_PROFILE}"
+          : "${NOTIFICATION_PROFILE:?Missing MOBILE_NOTIFICATION_PROVISIONING_PROFILE}"
+          : "${NOTARY_APP_PASSWORD:?Missing NOTARY_APP_PASSWORD}"
+          : "${MOBILE_SIGNING_IDENTITY:?Missing MOBILE_SIGNING_IDENTITY repository variable}"
+          : "${APP_STORE_CONNECT_APP_ID:?Missing APP_STORE_CONNECT_APP_ID repository variable}"
+          directory="$RUNNER_TEMP/toy-box-testflight-signing"
+          mkdir -p "$directory"
+          security list-keychains -d user > "$directory/search-list.txt"
+          keychain="$directory/signing.keychain-db"
+          password="$(openssl rand -base64 48)"
+          echo "::add-mask::$password"
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          keychains=("$keychain")
+          while IFS= read -r line; do
+            item="$(sed -E 's/^[[:space:]]*"//; s/"[[:space:]]*$//' <<< "$line")"
+            if [[ -n "$item" ]]; then keychains+=("$item"); fi
+          done < "$directory/search-list.txt"
+          security list-keychains -d user -s "${keychains[@]}"
+          curl --fail --silent --show-error https://www.apple.com/certificateauthority/AppleWWDRCAG3.cer \
+            -o "$directory/AppleWWDRCAG3.cer"
+          printf 'dcf21878c77f4198e4b4614f03d696d89c66c66008d4244e1b99161aac91601f  %s\n' \
+            "$directory/AppleWWDRCAG3.cer" | shasum -a 256 -c -
+          security import "$directory/AppleWWDRCAG3.cer" -k "$keychain" -t cert
+          printf '%s' "$CERTIFICATE" | base64 --decode > "$directory/identity.p12"
+          security import "$directory/identity.p12" -k "$keychain" -P "$CERTIFICATE_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$password" "$keychain" >/dev/null
+          printf '%s' "$HOST_PROFILE" | base64 --decode > "$directory/app.mobileprovision"
+          printf '%s' "$WIDGET_PROFILE" | base64 --decode > "$directory/widget.mobileprovision"
+          printf '%s' "$NOTIFICATION_PROFILE" | base64 --decode > "$directory/notification.mobileprovision"
+          printf 'MOBILE_PROVISIONING_PROFILE=%s\n' "$directory/app.mobileprovision" >> "$GITHUB_ENV"
+          printf 'MOBILE_WIDGET_PROVISIONING_PROFILE=%s\n' "$directory/widget.mobileprovision" >> "$GITHUB_ENV"
+          printf 'MOBILE_NOTIFICATION_PROVISIONING_PROFILE=%s\n' "$directory/notification.mobileprovision" >> "$GITHUB_ENV"
+      - name: Build and validate or upload to TestFlight
+        env:
+          NOTARY_APP_PASSWORD: ${{ secrets.NOTARY_APP_PASSWORD }}
+          SCRATCH_PATH: ${{ runner.temp }}/toy-box-testflight
+        run: |
+          args=(--testflight)
+          if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then args+=(--validate-only); fi
+          bun run mobile "${args[@]}"
+      - name: Remove temporary TestFlight signing material
+        if: always()
+        run: |
+          status=0
+          directory="$RUNNER_TEMP/toy-box-testflight-signing"
+          if [[ -f "$directory/search-list.txt" ]]; then
+            keychains=()
+            while IFS= read -r line; do
+              item="$(sed -E 's/^[[:space:]]*"//; s/"[[:space:]]*$//' <<< "$line")"
+              if [[ -n "$item" ]]; then keychains+=("$item"); fi
+            done < "$directory/search-list.txt"
+            security list-keychains -d user -s "${keychains[@]}" || status=$?
+          fi
+          if [[ -e "$directory/signing.keychain-db" ]]; then
+            security delete-keychain "$directory/signing.keychain-db" || status=$?
+          fi
+          rm -f "$directory/identity.p12" "$directory/app.mobileprovision" \
+            "$directory/widget.mobileprovision" "$directory/notification.mobileprovision" \
+            "$directory/search-list.txt" "$directory/AppleWWDRCAG3.cer" || status=$?
+          if [[ -d "$directory" ]]; then rmdir "$directory" || status=$?; fi
+          exit "$status"
+      - name: Retain the signed IPA and release notes
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: testflight-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/toy-box-testflight/*.ipa
+            ${{ runner.temp }}/iphone-release-notes.md
+          if-no-files-found: error
+          retention-days: 14
