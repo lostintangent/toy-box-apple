@@ -7,7 +7,9 @@ extension View {
 
 private struct MobileFoundationProof: ViewModifier {
     func body(content: Content) -> some View {
-        if ProcessInfo.processInfo.arguments.contains("--foundation-proof") {
+        if ProcessInfo.processInfo.arguments.contains("--activity-fixture-proof") {
+            ActivityFixtureProofView()
+        } else if ProcessInfo.processInfo.arguments.contains("--foundation-proof") {
             FoundationProofView()
         } else {
             content

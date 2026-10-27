@@ -250,7 +250,7 @@ response body.
 | Request | Body or effect |
 | --- | --- |
 | `PUT /api/v1/push/devices/:registrationID` | `{registrationID, token, environment, requests, completions}` |
-| `DELETE /api/v1/push/devices/:registrationID` | Remove alerts for this registration, not its followed Activities |
+| `DELETE /api/v1/push/devices/:registrationID` | Remove alerts for this registration, not its followed Activities. Idempotent: return 204 even for an unknown registration |
 | `PUT /api/v1/channels/:channelID/activities/:registrationID` | `{registrationID, token, environment, startedAt}` |
 | `DELETE /api/v1/channels/:channelID/activities/:registrationID` | Remove the followed Activity |
 
@@ -302,6 +302,10 @@ native proof, preserving the stale fixture's 16-minute age rather than making it
 Debug simulator bundles copy those exact files into `ActivityFixtures`. Optimized bundles
 exclude them and remove any left by a previous debug bundle. Simulator fixture application
 proves decoding and foreground ActivityKit updates, not remote Activity delivery.
+`bun run mobile --activity-fixture-proof --hold` opens the debug proof screen, which starts a token-free local Activity for the 3210
+demo, then applies each decoded fixture through `ChannelActivityClient.system`. Updates are
+restricted to that Activity ID and the selected registration. End fixtures preserve their
+15-minute dismissal date. This screen never registers Follow and is absent from optimized builds.
 
 `ChannelActivityLink` carries channel ID, registration ID and an optional positive request sequence
 in `toybox-desktop://activity` URLs. The receiving app checks the selected registration before

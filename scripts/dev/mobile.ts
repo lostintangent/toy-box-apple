@@ -344,14 +344,19 @@ if (import.meta.main) await main(async () => {
         screenshot: { type: "string" }, hold: { type: "boolean" }, display: { type: "string" },
         displays: { type: "boolean" }, server: { type: "string" },
         drive: { type: "string" }, "content-size": { type: "string" }, appearance: { type: "string" },
-        "foundation-proof": { type: "boolean" },
+        "foundation-proof": { type: "boolean" }, "activity-fixture-proof": { type: "boolean" },
     } });
     const launch = mobileLaunchOptions(values["content-size"], values.appearance);
-    if (values["foundation-proof"] && (values.device || values["build-only"] || !(values.hold || values.drive))) {
-        throw new Error("--foundation-proof requires a debug Simulator --hold or --drive.");
+    if (values["foundation-proof"] && values["activity-fixture-proof"]) {
+        throw new Error("Choose one simulator proof screen.");
     }
-    if (values["foundation-proof"] && mobileBuildConfiguration(false, false) !== "debug") {
-        throw new Error("--foundation-proof is available only in debug Simulator builds.");
+    const proof = values["activity-fixture-proof"] ? "activity-fixture-proof"
+        : values["foundation-proof"] ? "foundation-proof" : undefined;
+    if (proof && (values.device || values["build-only"] || values.shutdown || !(values.hold || values.drive))) {
+        throw new Error(`--${proof} requires a debug Simulator --hold or --drive.`);
+    }
+    if (proof && mobileBuildConfiguration(false, false) !== "debug") {
+        throw new Error(`--${proof} is available only in debug Simulator builds.`);
     }
     if (values["device-id"] && !values.device) throw new Error("--device-id requires --device.");
     if (values["device-id"] && values["build-only"]) throw new Error("--device-id cannot be used with --build-only.");
@@ -433,7 +438,7 @@ if (import.meta.main) await main(async () => {
             (args, signal) => runMobileSimulatorCommand(args, mobileEnvironment, signal), interruption.signal, async () => {
             const result = await runMobileSimulatorCommand([
                 "launch", "--terminate-running-process", simulator.udid, mobileBundleID,
-                "--server", server, ...launch.arguments, ...(values["foundation-proof"] ? ["--foundation-proof"] : []),
+                "--server", server, ...launch.arguments, ...(proof ? [`--${proof}`] : []),
             ], { ...mobileEnvironment, ...(drive ? { SIMCTL_CHILD_TOY_BOX_AUTOMATION_SCRIPT: drive.script } : {}) },
             AbortSignal.any([interruption.signal, AbortSignal.timeout(30_000)]));
             if (result.exitCode) throw new Error(`Mobile launch failed: ${result.stderr.trim()}`);
