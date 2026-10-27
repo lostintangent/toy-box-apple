@@ -1,6 +1,7 @@
 import AVFoundation
 @testable import ChannelClient
 import ChannelKit
+import CoreFoundation
 import SwiftUI
 import Testing
 import ToyBoxUI
@@ -512,71 +513,9 @@ struct ComposerTests {
     }
 
     @Test(arguments: [false, true])
-    func dictationDoesNotMergeWithAdjacentNativeTyping(typedBefore: Bool) throws {
-        var text = ""
-        let editor = ComposerEditorState()
-        let input = NativeComposerInput(
-            text: Binding(get: { text }, set: { text = $0 }), editor: editor,
-            onSend: {}, onCompletionKey: { _ in false }, onPasteImages: { _ in }
-        )
-        let coordinator = NativeComposerInput.Coordinator(parent: input)
-        let view = ComposerTextView()
-        view.delegate = coordinator
-        view.coordinator = coordinator
-        coordinator.input = view
-        if typedBefore { view.insertText("Typed") }
-        coordinator.anchorDictation()
-        var transcript = DictationTranscript()
-        transcript.receive("Spoken", isFinal: false)
-        coordinator.showDictation(transcript)
-        coordinator.endDictation(transcript.visible)
-        let dictated = typedBefore ? "Typed Spoken" : "Spoken"
-        view.insertText("!")
-        #expect(text == dictated + "!")
-        let undo = try #require(view.undoManager)
-        let groupingIssue: Comment = "t329: UIKit keeps dictation and adjacent typing in one automatic event group."
-        undo.undo()
-        withKnownIssue(groupingIssue) {
-            #expect(text == dictated, "Typing after dictation is its own undo step")
-        }
-        #expect(view.text == text)
-        undo.undo()
-        withKnownIssue(groupingIssue) {
-            #expect(text == (typedBefore ? "Typed" : ""), "Dictation is its own undo step")
-        } when: { typedBefore }
-        #expect(view.text == text)
-        if typedBefore {
-            withKnownIssue(groupingIssue) {
-                #expect(undo.canUndo)
-            }
-            undo.undo()
-            #expect(text.isEmpty, "Typing before dictation remains a separate undo step")
-            #expect(view.text.isEmpty)
-        }
-        undo.redo()
-        if typedBefore { undo.redo() }
-        withKnownIssue(groupingIssue) {
-            #expect(text == dictated)
-        }
-        undo.redo()
-        #expect(text == dictated + "!")
-        #expect(view.text == text)
-    }
-
-    @Test(arguments: [false, true])
-    func aFocusedNativeEditorKeepsDictationSeparateFromAdjacentTyping(typedBefore: Bool) throws {
-        var text = ""
-        let editor = ComposerEditorState()
-        let input = NativeComposerInput(
-            text: Binding(get: { text }, set: { text = $0 }), editor: editor,
-            onSend: {}, onCompletionKey: { _ in false }, onPasteImages: { _ in }
-        )
-        let coordinator = NativeComposerInput.Coordinator(parent: input)
-        let view = ComposerTextView()
-        view.delegate = coordinator
-        view.coordinator = coordinator
-        coordinator.input = view
-        editor.textView = view
+    func dictationKeepsSeparateUndoAcrossNativeRunLoopEvents(typedBefore: Bool) throws {
+        let (session, target) = try dictatingSession(MobileTestRecognizer())
+        let view = target.input
         let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 440, height: 956))
         let root = UIViewController()
         window.rootViewController = root
@@ -589,42 +528,65 @@ struct ComposerTests {
         }
         try #require(view.becomeFirstResponder())
         let undo = try #require(view.undoManager)
-        if typedBefore { view.insertText("Typed") }
-        try #require(coordinator.beginDictation())
+        if typedBefore {
+            view.insertText("Typed")
+            #expect(session.draft.text == "Typed")
+            #expect(view.text == session.draft.text)
+            try finishNativeUndoEvent(undo)
+        }
+        try #require(target.coordinator.beginDictation())
         var transcript = DictationTranscript()
         transcript.receive("Spoken", isFinal: false)
-        coordinator.showDictation(transcript)
-        coordinator.endDictation(transcript.visible)
+        target.coordinator.showDictation(transcript)
+        target.coordinator.endDictation(transcript.visible)
+        try finishNativeUndoEvent(undo)
         let dictated = typedBefore ? "Typed Spoken" : "Spoken"
+        #expect(session.draft.text == dictated)
+        #expect(view.text == session.draft.text)
         view.insertText("!")
-        #expect(text == dictated + "!")
-        let groupingIssue: Comment = "t329: UIKit keeps dictation and adjacent typing in one automatic event group."
+        view.insertText("?")
+        try finishNativeUndoEvent(undo)
+        #expect(session.draft.text == dictated + "!?")
+        #expect(view.text == session.draft.text)
+
         undo.undo()
-        withKnownIssue(groupingIssue) {
-            #expect(text == dictated, "Typing after dictation is its own undo step in the focused native editor")
-        }
-        #expect(view.text == text)
+        #expect(view.text == dictated, "Adjacent ordinary typing keeps its own native undo step")
+        #expect(session.draft.text == view.text)
         undo.undo()
-        withKnownIssue(groupingIssue) {
-            #expect(text == (typedBefore ? "Typed" : ""), "Dictation is its own undo step in the focused native editor")
-        } when: { typedBefore }
-        #expect(view.text == text)
+        #expect(view.text == (typedBefore ? "Typed" : ""))
+        #expect(session.draft.text == view.text)
         if typedBefore {
-            withKnownIssue(groupingIssue) {
-                #expect(undo.canUndo)
-            }
+            try #require(undo.canUndo)
             undo.undo()
-            #expect(text.isEmpty)
             #expect(view.text.isEmpty)
+            #expect(session.draft.text.isEmpty)
         }
         undo.redo()
-        if typedBefore { undo.redo() }
-        withKnownIssue(groupingIssue) {
-            #expect(text == dictated)
+        if typedBefore {
+            #expect(view.text == "Typed")
+            #expect(session.draft.text == view.text)
+            undo.redo()
         }
+        #expect(view.text == dictated)
+        #expect(session.draft.text == view.text)
         undo.redo()
-        #expect(text == dictated + "!")
-        #expect(view.text == text)
+        #expect(view.text == dictated + "!?")
+        #expect(session.draft.text == view.text)
+    }
+
+    private func finishNativeUndoEvent(_ undo: UndoManager) throws {
+        let loop = CFRunLoopGetMain()
+        // App input arrives on separate events. Let UIKit close its group instead of closing it ourselves.
+        let stop = try #require(CFRunLoopObserverCreateWithHandler(
+            nil, CFRunLoopActivity.beforeWaiting.rawValue, false, CFIndex.max
+        ) { _, _ in
+            CFRunLoopStop(CFRunLoopGetMain())
+        })
+        CFRunLoopAddObserver(loop, stop, .defaultMode)
+        defer { CFRunLoopRemoveObserver(loop, stop, .defaultMode) }
+        let result = CFRunLoopRunInMode(.defaultMode, 1, false)
+        try #require(result == .stopped, "The fixture must finish one native run-loop event")
+        try #require(undo.groupingLevel == 0, "UIKit must close its own automatic group")
     }
 
     @Test(arguments: [false, true])
