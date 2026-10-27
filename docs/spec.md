@@ -1584,6 +1584,12 @@ positions are what make the list scannable. Rows are at least 38 high with 4 poi
 padding: a 24-point avatar, a 10-point gap, then the name in 13 regular primary over a one-line
 11-point status, 1 point apart. Status truncates at the tail with the full text in help.
 
+Phone keeps its 38-point content minimum, 12-point avatar/text gap, 2-point name/status gap
+and existing scaled avatar capped at 36. Ordinary text sizes use explicit 14-point native
+vertical row insets, 1 point less at each edge than the measured 15-point system defaults,
+making each row exactly 2 points shorter. Accessibility sizes retain the system's native
+insets and wrapping. Every navigation target remains at least 44 points high. Mac is unchanged.
+
 | Presence | Status line | Trailing |
 | --- | --- | --- |
 | Working | Presence text, or "Working", in primary at 85%, after a 9-point heavy `ellipsis` in the agent's color, 4 points before the text. This is Messages' typing cue | Nothing |

@@ -217,6 +217,49 @@ struct OverviewTests {
         #expect(try #require(textRows.max()) > lastFirstLineRow)
     }
 
+    @Test(arguments: DynamicTypeSize.allCases)
+    func teamRowsAreTwoPointsShorterOnlyAtOrdinaryTextSizes(
+        size: DynamicTypeSize
+    ) async throws {
+        let store = ChannelStore(id: "channel", api: try ChannelAPI(serverURL: "https://fixture.example"),
+                                 sendJournal: nil)
+        let state = ChannelState(
+            revision: 1,
+            channel: .init(id: "channel", name: "Team", model: .init(provider: "test", name: "test"),
+                           updatedAt: "2026-10-26T00:00:00Z"),
+            lead: .lead(id: "channel", profile: .init(name: "Agent", role: "Engineer",
+                                                    avatar: .init(mark: "M4 12H20", color: "#123456"))))
+        _ = try store.apply(.init(type: "snapshot", state: state))
+        let session = OverviewSession(store: store)
+        let host = UIHostingController(rootView:
+            NavigationStack {
+                OverviewList {
+                    OverviewTeamSection(store: store, session: session)
+                    OverviewTeamRow(agent: state.lead, store: store, session: session, isLead: true)
+                }
+                .navigationDestination(for: OverviewRoute.self) { _ in EmptyView() }
+            }
+            .environment(ChannelInteraction()).environment(ManagementPresenter())
+            .environment(try artifactSession(artifacts: []))
+            .environment(\.horizontalSizeClass, .compact)
+            .dynamicTypeSize(size))
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 1400))
+        window.rootViewController = host
+        window.isHidden = false
+        defer { window.isHidden = true }
+        host.view.layoutIfNeeded()
+        await Task.yield()
+        host.view.layoutIfNeeded()
+        let list = try #require(nativeList(in: host.view))
+        list.layoutIfNeeded()
+        let tightened = try #require(list.layoutAttributesForItem(at: IndexPath(item: 1, section: 0))).frame
+        let native = try #require(list.layoutAttributesForItem(at: IndexPath(item: 0, section: 1))).frame
+        let reduction: CGFloat = size.isAccessibilitySize ? 0 : 2
+        #expect(tightened.width == native.width && tightened.height >= 44)
+        #expect(abs(native.height - tightened.height - reduction) < 0.01,
+                "Tightened row \(tightened), native row \(native)")
+    }
+
     @Test(arguments: [DynamicTypeSize.large, .accessibility5])
     func teamCountdownKeepsTheDefaultRowHeightAndOneCurrentAccessibleAnnouncement(
         size: DynamicTypeSize

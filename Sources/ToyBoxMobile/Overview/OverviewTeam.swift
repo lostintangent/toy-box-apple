@@ -8,6 +8,7 @@ struct OverviewTeamSection: View {
     let store: ChannelStore
     let session: OverviewSession
     @Environment(ManagementPresenter.self) private var management
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     private var ordered: [ChannelAgent] {
         guard let lead = store.roster.first else { return [] }
@@ -23,6 +24,7 @@ struct OverviewTeamSection: View {
             ForEach(ordered) { agent in
                 OverviewTeamRow(agent: agent, store: store, session: session,
                                 isLead: agent.id == store.roster.first?.id)
+                    .listRowInsets(.vertical, typeSize.isAccessibilitySize ? nil : 14)
             }
             Button("Add Agent", systemImage: "person.badge.plus") {
                 management.present(.addMember(channelId: store.id, name: ""))
