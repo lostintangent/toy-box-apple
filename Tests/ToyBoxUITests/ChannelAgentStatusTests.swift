@@ -98,4 +98,19 @@ struct ChannelAgentStatusTests {
         }
         #expect(ChannelAgentWakePresentation.wake(for: .init(state: "waiting", wakeAt: raw), isLive: false) == nil)
     }
+
+    @Test(arguments: [11.0, 13, 36], [1.0, 2, 3])
+    func wakeCountdownLeavesFourPointsBetweenItsBellAndDuration(fontSize: Double, scale: Double) throws {
+        func width<Content: View>(_ content: Content) throws -> Int {
+            let renderer = ImageRenderer(content: content.font(.system(size: fontSize)).fixedSize())
+            renderer.scale = scale
+            return try #require(renderer.cgImage).width
+        }
+        let countdown = try width(ChannelAgentWakeCountdown(wake: .distantPast, isActive: false))
+        let withoutGap = try width(HStack(spacing: 0) {
+            Image(systemName: "bell")
+            Text("Due").monospacedDigit()
+        })
+        #expect(countdown - withoutGap == Int(4 * scale))
+    }
 }

@@ -39,7 +39,7 @@ package struct ChannelAgentWakeCountdown: View {
     package var body: some View {
         TimelineView(ChannelTaskMinuteSchedule(isVisible: isActive)) { context in
             let presentation = ChannelAgentWakePresentation(wake: wake, now: context.date, locale: locale)
-            HStack(spacing: 3) {
+            HStack(spacing: 4) {
                 Image(systemName: "bell")
                     .accessibilityHidden(true)
                 Text(presentation.text).monospacedDigit()
