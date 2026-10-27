@@ -2697,6 +2697,19 @@ long quotes, empty and stale states.
 If Developer ID app-group access or widget registration cannot be established within the release
 timebox, defer this feature rather than shipping a widget that cannot receive data.
 
+The phone offers Home Screen Small, Medium and Large, plus Lock Screen Rectangular.
+Its Home content reuses `ToyBoxWidgetViews`, retaining the Mac's text and avatar metrics
+while passing a 44-point sibling Reply target. Reduce complete request rows to fit the
+system-provided height, with overflow based on the rows actually shown. The phone's
+Rectangular widget shows only the waiting-channel count, not a private question.
+Both surfaces render waiting, empty, out-of-date and not-connected states from the phone's
+App Group `NeedsYouSnapshot`. Out-of-date phone content says "May be out of date" and
+shows its last update, never a current all-clear. A timeline entry at the shared 30-minute
+freshness boundary makes this change without requiring the foreground app to run.
+Widget rendering never connects, sends, marks read or changes a draft. Open and Reply
+use the existing `NeedsYouRequestLink` routes. Native widget backgrounds, tint and
+margins remain system-owned, with no custom largest-text layout.
+
 ### Control Center and menu bar controls
 
 The existing widget extension offers two `ControlWidget` buttons, letting macOS host them in
