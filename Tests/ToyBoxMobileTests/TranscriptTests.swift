@@ -315,9 +315,11 @@ struct TranscriptTests {
         }
         let states: [TranscriptFindStatus] = [.blank, .progress, .result("7 of 13"), .result("No matches"),
                                               .incomplete(error: "The connection was lost.")]
+        // Every status, including Incomplete's 44-point target, keeps the slot one footnote line tall.
+        let line = size(Text(verbatim: " ").font(.footnote), width: 300).height
         for status in states {
             let slot = TranscriptFindStatusView(status: status, found: "", showsError: .constant(false)) {}
-            #expect(size(slot, width: 300).width == 84, "\(status)")
+            #expect(size(slot, width: 300) == CGSize(width: 84, height: line), "\(status)")
         }
         let find = TranscriptFind()
         find.present()
