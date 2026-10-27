@@ -148,7 +148,7 @@ private struct ChannelSidebarRowContent: View {
         var parts: [String] = []
         if let updatedAt { parts.append(ChannelActivityTime.accessibilityLabel(for: updatedAt, now: now)) }
         if let directory = channel.directory, !directory.isEmpty {
-            let name = ChannelFolderToken.name(of: directory)
+            let name = ChannelFolderName.name(of: directory)
             switch folder {
             case .remote: parts.append("Folder \(name), not on this Mac")
             case .missing: parts.append("Folder \(name), missing")
@@ -179,17 +179,12 @@ struct ChannelFolderToken: View {
     let open: () -> Void
     @Environment(\.channelTextScale) private var scale
 
-    static func name(of path: String) -> String {
-        let name = (path as NSString).lastPathComponent
-        return name.isEmpty ? path : name
-    }
-
     var body: some View {
         switch availability {
         case .openable:
             Button(action: open) { label(symbol: "folder").foregroundStyle(.secondary) }
                 .buttonStyle(TokenCapsuleButtonStyle(emphasized: emphasized))
-                .help("Open \(Self.name(of: path)) in Finder\n\((path as NSString).abbreviatingWithTildeInPath)")
+                .help("Open \(ChannelFolderName.name(of: path)) in Finder\n\((path as NSString).abbreviatingWithTildeInPath)")
         case .remote(let host):
             label(symbol: "folder").foregroundStyle(.secondary)
                 .help("On \(host): \(path). Folders open only when the server runs on this Mac.")
@@ -202,7 +197,7 @@ struct ChannelFolderToken: View {
     private func label(symbol: String) -> some View {
         HStack(spacing: 4) {
             Image(systemName: symbol).font(.system(size: 10 * scale, weight: .medium))
-            Text(Self.name(of: path)).font(.system(size: 11 * scale))
+            Text(ChannelFolderName.name(of: path)).font(.system(size: 11 * scale))
                 .lineLimit(1).truncationMode(.middle)
         }
         .padding(.horizontal, 6)

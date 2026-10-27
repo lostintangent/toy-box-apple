@@ -113,7 +113,7 @@ struct OverviewPresentationTests {
 
     @Test(arguments: [1.0, 2.0, 3.0], [false, true])
     @MainActor
-    func sharedAncestryGuideKeepsOnePixelAndFourPointEndsInBothDirections(
+    func sharedAncestryGuideKeepsHostRuleWeightAndFourPointEndsInBothDirections(
         scale: CGFloat, rightToLeft: Bool
     ) throws {
         for scheme in [ColorScheme.light, .dark] {
@@ -136,12 +136,34 @@ struct OverviewPresentationTests {
                     }
                 }
             }
-            let column = Int((8 * scale - 0.5).rounded())
-            #expect(columns == [rightToLeft ? image.width - 1 - column : column])
+            let width = scale
+            let firstColumn = Int((8 * scale - width / 2).rounded())
+            let expected = Set((firstColumn..<(firstColumn + Int(width))).map {
+                rightToLeft ? image.width - 1 - $0 : $0
+            })
+            #expect(columns == expected)
             #expect(rows.min() == Int(4 * scale))
             #expect(rows.max() == Int(76 * scale) - 1)
         }
     }
+
+    #if os(macOS)
+    @Test(arguments: [1.0, 2.0, 3.0])
+    @MainActor
+    func macDividerKeepsTheSameWeightAsTheAncestryGuide(scale: CGFloat) throws {
+        let image = try rendered(
+            VStack(spacing: 0) { Divider() }
+                .frame(width: 60, height: 80)
+                .background(Color.white)
+                .environment(\.displayScale, scale)
+                .environment(\.colorScheme, .light),
+            scale: scale)
+        let rows = Set((0..<image.height).filter { y in
+            image.pixels[(y * image.width + image.width / 2) * 4] != 255
+        })
+        #expect(rows.count == Int(scale))
+    }
+    #endif
 
     @Test(arguments: ["done", "blocked", "in_progress", "pending", "unknown"], [16.0, 24.0])
     @MainActor

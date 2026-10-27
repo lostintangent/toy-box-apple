@@ -375,17 +375,9 @@ struct OverviewFolderRow: View {
         nonmutating set { errors[visit] = newValue }
     }
 
-    /// A remote server's home isn't this Mac's, so only a local path is abbreviated with `~`.
-    static func shownPath(_ directory: String, availability: ChannelFolderAvailability) -> String {
-        if case .remote = availability { return directory }
-        return (directory as NSString).abbreviatingWithTildeInPath
-    }
-
-    private var shownPath: String { Self.shownPath(directory, availability: availability) }
-
     private var help: String {
         switch availability {
-        case .openable: shownPath
+        case .openable: directory
         case .remote(let host): "On \(host): \(directory). Folders open only when the server runs on this Mac."
         case .missing: "This folder no longer exists: \(directory)"
         }
@@ -396,7 +388,7 @@ struct OverviewFolderRow: View {
         VStack(alignment: .leading, spacing: 4) {
             OverviewPropertyRow(symbol: availability == .missing ? "questionmark.folder" : "folder") {
                 HStack(spacing: 4) {
-                    Text(shownPath)
+                    Text(ChannelFolderName.name(of: directory))
                         .lineLimit(1)
                         .truncationMode(.middle)
                         .textSelection(.enabled)

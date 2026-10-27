@@ -149,6 +149,41 @@ struct ManagementTests {
         #expect(presenter.flow == .addMember(channelId: "another", name: "Finch"))
     }
 
+    @Test(arguments: [ColorScheme.light, .dark])
+    func aMissingSheetSubtitleCentersTheTitleWithoutAnEmptyLine(_ scheme: ColorScheme) throws {
+        let layout = ManagementSheetLayout(title: "Edit Channel", subtitle: nil) {
+            ManagementChannelMark()
+        } fields: {
+            EmptyView()
+        } notices: {
+            EmptyView()
+        } buttons: {
+            EmptyView()
+        }
+        let reference = HStack(spacing: 12) {
+            ManagementChannelMark().frame(width: 40, height: 40)
+            Text("Edit Channel").font(.system(size: 15, weight: .semibold))
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 20)
+        .padding(.bottom, 2)
+        func render(_ content: some View) throws -> CGImage {
+            let renderer = ImageRenderer(content: content
+                .frame(width: 480)
+                .background(scheme == .dark ? Color.black : Color.white)
+                .environment(\.colorScheme, scheme))
+            renderer.scale = 2
+            return try #require(renderer.cgImage)
+        }
+        let image = try render(layout.header)
+        let expected = try render(reference)
+        #expect(image.width == expected.width && image.height == expected.height)
+        let pixels = try #require(image.dataProvider?.data) as Data
+        let expectedPixels = try #require(expected.dataProvider?.data) as Data
+        #expect(pixels == expectedPixels)
+    }
+
     @Test func inlineCreationReturnsTheMemberWithoutDismissingAnUnrelatedSheet() async throws {
         let fixture = try ManagementRecoveryFixture(memberStatus: 201)
         defer { fixture.close() }
@@ -422,11 +457,21 @@ struct ManagementTests {
         #expect(try inkRightEdge(.openable) > remote + 24)
     }
 
-    @Test func folderRowAbbreviatesOnlyAPathOnThisMac() {
-        let home = NSHomeDirectory() + "/Desktop/toy-box"
-        #expect(OverviewFolderRow.shownPath(home, availability: .openable) == "~/Desktop/toy-box")
-        #expect(OverviewFolderRow.shownPath(home, availability: .missing) == "~/Desktop/toy-box")
-        #expect(OverviewFolderRow.shownPath(home, availability: .remote(host: "build.example.com")) == home)
+    @Test func folderRowShowsTheSameNameForLocalRemoteAndMissingFolders() throws {
+        func pixels(_ directory: String, availability: ChannelFolderAvailability) throws -> Data {
+            let renderer = ImageRenderer(content:
+                OverviewFolderRow(directory: directory, availability: availability, channelURL: { nil })
+                    .frame(width: 280, alignment: .leading)
+                    .background(Color.white)
+                    .environment(\.colorScheme, .light))
+            renderer.scale = 2
+            return try #require(renderer.cgImage?.dataProvider?.data) as Data
+        }
+        for availability in [ChannelFolderAvailability.openable, .missing, .remote(host: "build.example.com")] {
+            let directory = "/srv/a/long/server/path/to/toy-box/"
+            #expect(try pixels(directory, availability: availability)
+                    == pixels(ChannelFolderName.name(of: directory), availability: availability))
+        }
     }
 
     @Test func routineSchedulesUseReadableSummariesAndKeepUnknownSyntax() throws {

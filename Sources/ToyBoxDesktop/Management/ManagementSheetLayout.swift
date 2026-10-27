@@ -7,7 +7,7 @@ struct ManagementSheetLayout<Mark: View, Fields: View, Notices: View, Buttons: V
     static var width: CGFloat { 480 }
 
     let title: String
-    let subtitle: String
+    let subtitle: String?
     @ViewBuilder let mark: Mark
     @ViewBuilder let fields: Fields
     @ViewBuilder let notices: Notices
@@ -15,24 +15,7 @@ struct ManagementSheetLayout<Mark: View, Fields: View, Notices: View, Buttons: V
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 12) {
-                mark
-                    .frame(width: 40, height: 40)
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title)
-                        .font(.system(size: 15, weight: .semibold))
-                        .accessibilityAddTraits(.isHeader)
-                    Text(subtitle)
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, 20)
-            .padding(.top, 20)
-            .padding(.bottom, 2)
+            header
             ManagementFittedForm { fields }
             VStack(alignment: .leading, spacing: 10) {
                 notices
@@ -43,6 +26,29 @@ struct ManagementSheetLayout<Mark: View, Fields: View, Notices: View, Buttons: V
             .padding(.bottom, 20)
         }
         .frame(width: Self.width)
+    }
+
+    var header: some View {
+        HStack(spacing: 12) {
+            mark
+                .frame(width: 40, height: 40)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 15, weight: .semibold))
+                    .accessibilityAddTraits(.isHeader)
+                if let subtitle {
+                    Text(subtitle)
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 20)
+        .padding(.bottom, 2)
     }
 }
 

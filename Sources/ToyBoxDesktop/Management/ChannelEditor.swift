@@ -60,7 +60,7 @@ struct ChannelEditor: View {
             title: channel == nil ? "New Channel" : "Edit Channel",
             subtitle: channel == nil
                 ? "The lead starts right away and adds specialists as needed."
-                : "Name and purpose changes appear in the conversation."
+                : nil
         ) {
             ManagementChannelMark()
         } fields: {

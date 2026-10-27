@@ -1509,10 +1509,20 @@ Apply the compact 16-point / regular 20-point outer rail once, without the old c
 44-point list margin. Treat purpose, folder and Preview as the headerless first section.
 Use one 24-point section-gap constant from that block's last row to Team and between every
 pair of sections, whether collapsed or expanded. This replaces the earlier 16-point opening
-gap and 12-point collapsed gap. At Large, keep 16 points from purpose to details, 4 from folder
-label to wrapping path, 8 from folder block to Preview, and 4 from heading to content.
+gap and 12-point collapsed gap. At Large, keep 16 points from purpose to details, 8 from the
+folder button to Preview, and 4 from heading to content.
 More/Less stays minimum 44 with no extra spacer above it. Omit absent content and its gaps.
 Headings and rows grow with Dynamic Type. Mac container geometry stays unchanged.
+
+On the phone, Folder is one minimum-44-point button showing the folder icon and name. A tap
+copies the original full server path, briefly changes the label to a checkmark and "Copied",
+and gives success sensory feedback. VoiceOver reads "Folder, {name}" with the hint "Copies the
+full path". A long-press context menu is titled with the full path and offers Copy Path. Do
+not show "Folder on Mac", a path row or a separate copy button. Screen Preview has only its
+icon and title, with no window/display identity line. URL previews keep their address line.
+Folder and Preview symbols share monochrome rendering rather than a mixed outline/filled palette.
+Both sidebars and Overviews use one shared folder-name rule: `NSString.lastPathComponent`,
+falling back to the original path if the component is empty, without expanding or resolving it.
 
 Phone Team avatars are 28 points at default text size, scaling natively up to a 36-point cap.
 Keep the accepted name/single-status hierarchy, text sizing, row growth and agent actions.
@@ -1563,11 +1573,11 @@ an inline "More" link that expands in place ("Less" collapses it). A missing pur
 a purpose…" in secondary and opens Edit Channel. Below it, 10 points down, come compact property
 rows, each 22 high: an 18-point secondary SF Symbol column, a 6-point gap and a 12-point value.
 
-- Folder: `folder` and the path, middle-truncated and selectable. Abbreviate it with `~` only when
-  the server runs on this Mac, because a remote home isn't this Mac's home. When the folder is
+- Folder: `folder` and the shared folder name, middle-truncated and selectable. Keep the original
+  full server path in help, the accessibility value and Copy Path. When the folder is
   openable (the same rule and cached check as the sidebar's folder token), help shows the full
   path and a trailing tertiary
-  `arrow.forward.circle.fill` (Xcode's reveal arrow, 4 points after the path) shows it in
+  `arrow.forward.circle.fill` (Xcode's reveal arrow, 4 points after the name) shows it in
   Finder. Remote and missing folders use `folder` or `questionmark.folder` in the same ink, with
   no arrow, and reuse the sidebar token's help strings as both help and VoiceOver hint, so the
   missing arrow is always explained. The context menu offers Show in Finder (when openable), Copy
@@ -1581,6 +1591,16 @@ rows, each 22 high: an 18-point secondary SF Symbol column, a 6-point gap and a 
 positions are what make the list scannable. Rows are at least 38 high with 4 points of vertical
 padding: a 24-point avatar, a 10-point gap, then the name in 13 regular primary over a one-line
 11-point status, 1 point apart. Status truncates at the tail with the full text in help.
+
+Phone keeps its 38-point content minimum, 12-point avatar/text gap, 2-point name/status gap
+and existing scaled avatar capped at 36. Ordinary text sizes use explicit 14-point native
+vertical row insets, 1 point less at each edge than the measured 15-point system defaults,
+making each row exactly 2 points shorter. Accessibility sizes retain the system's native
+insets and wrapping. Every navigation target remains at least 44 points high. Mac is unchanged.
+Phone Add Agent uses the same 38-point content minimum and vertical spacing, matching a member
+row's height exactly at default text size. Its 14-point ordinary / measured 15-point accessibility
+padding belongs inside the button, with zero native vertical row insets, so the whole row is
+tappable and its accessible target spans that height. Its label grows and wraps without clipping.
 
 | Presence | Status line | Trailing |
 | --- | --- | --- |
@@ -1644,8 +1664,10 @@ status icons sit on the 16-point content rail, aligned with the section heading,
 child's status icon sits directly under its parent's title, as in Reminders.
 
 Expanded inline child groups on both Mac and phone have a native separator-colored ancestry
-hairline, one physical pixel wide, in the existing indent gutter at the parent's status-column
-center. It spans that child group's bounds with 4-point clearance at each end. Nested expanded
+guide in the existing indent gutter at the parent's status-column center. Phone uses the native
+list rule's 1-point weight. Mac also uses 1 point, matching its native `Divider()`. Keep both edges
+pixel-aligned at the nearest centered position. It spans that child group's bounds with 4-point
+clearance at each end. Nested expanded
 groups add their own guide. No horizontal elbows, root-level rule, extra indent or title-width
 loss. Collapsing removes it with the children. Do not draw a dangling guide to a phone
 "View N subtasks" link; its scoped list starts a fresh local tree. Guides never hit-test or
@@ -1876,15 +1898,17 @@ creates a discussion-only channel. Editing must preserve any existing server dir
 without exposing or writing it. New Channel removes the recruiting-agent introduction.
 Its Name row has a visible "Name" label aligned like Lead model, with "Required" as the field
 prompt. Leave Purpose, model/options, validation, focus, cancellation and write recovery
-unchanged. Edit Channel retains its own explanatory note. These changes do not alter the
-Mac forms or the read-only folder information in phone Overview.
+unchanged. Neither channel form shows an explanatory introduction. Edit Channel also omits its
+subtitle on the Mac.
 
 New Channel, Edit Channel, Add Agent and Edit Member share one sheet language:
 
 - **Size.** 480 wide. The sheet fits its content, with no empty band above the buttons and no
   inner scroll view until it reaches the window's height. Initial focus is Name.
 - **Header.** 20-point insets. A 40-point identity mark, 12 points, then a 15-point semibold title
-  over one 12-point secondary line. No divider follows the header. Channel sheets use the
+  over one 12-point secondary line when the sheet has a subtitle. Edit Channel has only its
+  title, vertically centered beside the mark with no empty subtitle line. No divider follows
+  the header. Channel sheets use the
   sidebar's cyan `#` mark at 40 points (19-point semibold glyph). Edit Member uses the member's
   own avatar at 40 points. Add Agent uses a 40-point dashed circle with a plus, matching Team's Add
   Agent row.
@@ -1921,7 +1945,7 @@ Copy:
 | Sheet | Subtitle | Section footers | Buttons |
 | --- | --- | --- | --- |
 | New Channel | The lead starts right away and adds specialists as needed. | Purpose prompt: "What should this team work toward? The lead reads this first." Directory prompt "Optional", footer: "A folder on the server. Leave it empty for a discussion-only channel." | Cancel, Create Channel |
-| Edit Channel | Name and purpose changes appear in the conversation. | Directory is a read-only row, middle-truncated and selectable. Footer: "Only the lead can change the directory. Model changes apply the next time the lead works." | Cancel, Save |
+| Edit Channel | None | Directory is a read-only row, middle-truncated and selectable. Footer: "Only the lead can change the directory. Model changes apply the next time the lead works." | Cancel, Save |
 | Add Agent | Joins {channel} and starts onboarding right away. | Identity: "Mentioned as @handle. Names are unique in this channel." (live). Role prompt: "What this agent owns and how it works, including any persona." | Cancel, Add Agent |
 | Edit Member | Member of {channel} | Identity as Add Agent. Model: "Model changes apply the next time {name} works. Its history is kept." | Remove from Channel… (leading, destructive), Cancel, Save |
 
