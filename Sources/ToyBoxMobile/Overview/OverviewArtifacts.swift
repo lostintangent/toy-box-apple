@@ -64,7 +64,7 @@ struct OverviewArtifactLabel: View {
         HStack(spacing: 12) {
             OverviewArtifactSymbol(artifact: artifact, size: iconSize)
                 .frame(width: iconLane)
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 4) {
                 Text(artifact.title).font(.body).lineLimit(typeSize.isAccessibilitySize ? nil : 2)
                 if let date = (share?.sharedAt ?? artifact.sharedAt).flatMap(ChannelDates.date) {
                     Text(date, format: .dateTime.month(.abbreviated).day().hour().minute())

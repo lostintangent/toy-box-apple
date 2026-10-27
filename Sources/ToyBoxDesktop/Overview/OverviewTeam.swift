@@ -1,3 +1,4 @@
+import AppKit
 import ChannelClient
 import ChannelKit
 import SwiftUI
@@ -54,10 +55,18 @@ struct OverviewAgentRow: View {
     let isLive: Bool
     @ViewState private var about = OverviewItemState(false)
     @ViewState private var isHovering = false
+    @ViewState private var isVisible = false
+    @ViewState private var wakeAnnouncement: String?
     @FocusState private var focus: Focus?
 
     private var status: ChannelAgentPresence? { presence }
+    private var wake: Date? { ChannelAgentWakePresentation.wake(for: presence, isLive: isLive) }
     private var showsMenu: Bool { isHovering || focus != nil || voiceOver }
+    private var spokenStatus: String {
+        let status = OverviewAgentStatusLine.spoken(status, isLive: isLive)
+        guard wake != nil, isVisible, let wakeAnnouncement else { return status }
+        return "\(status), \(wakeAnnouncement)"
+    }
     private var showingAbout: Binding<Bool> {
         Binding(get: { about[key] }, set: { about[key] = $0 })
     }
@@ -86,20 +95,24 @@ struct OverviewAgentRow: View {
             .focused($focus, equals: .row)
             .help("About \(agent.name)")
             .accessibilityLabel(agent.name)
-            .accessibilityValue(OverviewAgentStatusLine.spoken(status, isLive: isLive))
+            .accessibilityValue(spokenStatus)
             .accessibilityHint("Shows details about \(agent.name)")
             .accessibilityActions { actions }
 
             ZStack(alignment: .trailing) {
-                if isLive, status?.state == "waiting", let raw = status?.wakeAt, let wake = ChannelDates.date(raw) {
-                    OverviewWakeCountdown(wake: wake)
+                if let wake {
+                    ChannelAgentWakeCountdown(wake: wake, isActive: isVisible) { wakeAnnouncement = $0 }
+                        .font(.system(size: 11 * textScale))
                         .opacity(showsMenu ? 0 : 1)
+                        .accessibilityHidden(true)
                 }
                 OverviewRowMenu(title: "Actions for \(agent.name)", isVisible: showsMenu) { actions }
                     .focused($focus, equals: .menu)
             }
             .frame(minWidth: 28, alignment: .trailing)
         }
+        .onScrollVisibilityChange(threshold: 0.01) { isVisible = $0 }
+        .onDisappear { isVisible = false }
         .onHover { isHovering = $0 }
         .contextMenu { actions }
     }
@@ -141,53 +154,27 @@ struct OverviewAgentStatusLine: View {
 
     var body: some View {
         let presentation = ChannelAgentStatusPresentation(presence: status, isLive: isLive)
-        HStack(spacing: 4) {
+        HStack(alignment: presentation.cue == .waiting ? .firstTextBaseline : .center, spacing: 4) {
             if presentation.cue == .working {
                 OverviewWorkingEllipsis(color: agent.avatar.flatMap { Color(hex: $0.color) } ?? Color.accentColor)
-                Text(presentation.text).foregroundStyle(Color.primary.opacity(0.85))
             } else {
                 if presentation.cue == .waiting {
                     Image(systemName: "pause.fill")
                         .font(.system(size: 9 * textScale, weight: .heavy))
                         .foregroundStyle(ChannelAgentStatusPresentation.waitingCue(in: colorScheme))
                         .frame(width: 12 * textScale)
+                        .alignmentGuide(.firstTextBaseline) {
+                            $0[VerticalAlignment.center] + NSFont.systemFont(ofSize: 11 * textScale).capHeight / 2
+                        }
                         .accessibilityHidden(true)
                 }
-                Text(presentation.text).foregroundStyle(.secondary)
             }
+            Text(presentation.text).foregroundStyle(presentation.textColor)
         }
         .font(.system(size: 11 * textScale))
         .lineLimit(1)
         .truncationMode(.tail)
         .help(presentation.text)
-    }
-}
-
-/// "8 min" until a waiting agent checks again, updated at minute boundaries, then "Due".
-private struct OverviewWakeCountdown: View {
-    @Environment(\.channelTextScale) private var textScale
-    let wake: Date
-
-    var body: some View {
-        TimelineView(.everyMinute) { context in
-            Text(Self.remaining(until: wake, now: context.date))
-                .font(.system(size: 11 * textScale).monospacedDigit())
-                .foregroundStyle(.secondary)
-                .fixedSize()
-        }
-        .help("Checks again at \(wakeTime)")
-        .accessibilityHidden(true)
-    }
-
-    private var wakeTime: String {
-        wake.formatted(date: Calendar.current.isDateInToday(wake) ? .omitted : .abbreviated, time: .shortened)
-    }
-
-    static func remaining(until wake: Date, now: Date) -> String {
-        let minutes = Int(ceil(wake.timeIntervalSince(now) / 60))
-        guard minutes > 0 else { return "Due" }
-        let allowed: Set<Duration.UnitsFormatStyle.Unit> = minutes >= 60 ? [.hours, .minutes] : [.minutes]
-        return Duration.seconds(minutes * 60).formatted(.units(allowed: allowed, width: .abbreviated))
     }
 }
 

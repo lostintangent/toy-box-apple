@@ -56,4 +56,46 @@ struct ChannelAgentStatusTests {
         #expect(abs(dark.green - 190.0 / 255) < 0.00001)
         #expect(abs(dark.blue - 102.0 / 255) < 0.00001 && dark.opacity == 1)
     }
+
+    @Test func onlyLiveWorkingStatusUsesTheStrongerForegroundInk() {
+        let working = ChannelAgentStatusPresentation(presence: .init(state: "working"), isLive: true)
+        #expect(working.textColor == Color.primary.opacity(0.85))
+        for presence: ChannelAgentPresence? in [nil, .init(state: "waiting"), .init(state: "idle")] {
+            #expect(ChannelAgentStatusPresentation(presence: presence, isLive: true).textColor == ChannelInk.secondary)
+        }
+        #expect(ChannelAgentStatusPresentation(presence: .init(state: "working"), isLive: false).textColor == ChannelInk.secondary)
+    }
+
+    @Test func wakeCountdownRoundsUpAndKeepsHoursMinutesAndDueSemantics() {
+        let now = Date(timeIntervalSince1970: 0)
+        for (seconds, text, spoken) in [
+            (-60.0, "Due", "check-in due"), (0, "Due", "check-in due"),
+            (0.001, "1 min", "checks again in 1 minute"), (60, "1 min", "checks again in 1 minute"),
+            (60.001, "2 min", "checks again in 2 minutes"),
+            (480, "8 min", "checks again in 8 minutes"),
+            (3540, "59 min", "checks again in 59 minutes"),
+            (3540.001, "1 hr", "checks again in 1 hour"),
+            (3600, "1 hr", "checks again in 1 hour"),
+            (3600.001, "1 hr, 1 min", "checks again in 1 hour, 1 minute"),
+            (90060, "25 hr, 1 min", "checks again in 25 hours, 1 minute")
+        ] {
+            let presentation = ChannelAgentWakePresentation(wake: now.addingTimeInterval(seconds), now: now,
+                                                            locale: Locale(identifier: "en_US"))
+            #expect(presentation.text == text, "\(seconds)")
+            #expect(presentation.spoken == spoken, "\(seconds)")
+        }
+    }
+
+    @Test func wakeCountdownRequiresLiveWaitingPresenceAndAValidWakeTime() throws {
+        let raw = "2026-10-26T23:00:00Z"
+        let date = try #require(ChannelDates.date(raw))
+        #expect(ChannelAgentWakePresentation.wake(for: .init(state: "waiting", wakeAt: raw), isLive: true) == date)
+        for presence: ChannelAgentPresence? in [
+            nil, .init(state: "waiting"), .init(state: "waiting", wakeAt: "invalid"),
+            .init(state: "working", wakeAt: raw), .init(state: "idle", wakeAt: raw)
+        ] {
+            #expect(ChannelAgentWakePresentation.wake(for: presence, isLive: true) == nil)
+        }
+        #expect(ChannelAgentWakePresentation.wake(for: .init(state: "waiting", wakeAt: raw), isLive: false) == nil)
+    }
 }

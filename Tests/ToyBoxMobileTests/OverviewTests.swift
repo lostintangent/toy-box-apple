@@ -217,6 +217,88 @@ struct OverviewTests {
         #expect(try #require(textRows.max()) > lastFirstLineRow)
     }
 
+    @Test(arguments: [DynamicTypeSize.large, .accessibility5])
+    func teamCountdownKeepsTheDefaultRowHeightAndOneCurrentAccessibleAnnouncement(
+        size: DynamicTypeSize
+    ) async throws {
+        let store = ChannelStore(id: "channel", api: try ChannelAPI(serverURL: "https://fixture.example"),
+                                 sendJournal: nil)
+        let wake = Date.now.addingTimeInterval(480).ISO8601Format()
+        var state = ChannelState(
+            revision: 1,
+            channel: .init(id: "channel", name: "Team", model: .init(provider: "test", name: "test"),
+                           updatedAt: "2026-10-26T00:00:00Z"),
+            lead: .lead(id: "channel", profile: .init(name: "Agent", role: "Engineer",
+                                                    avatar: .init(mark: "M4 12H20", color: "#123456"))),
+            members: [.init(id: "member", name: "Agent", role: "Engineer")])
+        let agentID = state.lead.id
+        let reason = "WAITING MMMM MMMM MMMM MMMM MMMM"
+        state.presence = [agentID: .init(state: "waiting", text: reason, wakeAt: wake),
+                          "member": .init(state: "waiting", text: reason)]
+        _ = try store.apply(.init(type: "snapshot", state: state))
+        let session = OverviewSession(store: store)
+        let interaction = ChannelInteraction()
+        interaction.isInspectorPresented = true
+        let host = UIHostingController(rootView:
+            NavigationStack {
+                OverviewList {
+                    ForEach(store.roster) { agent in
+                        OverviewTeamRow(agent: agent, store: store, session: session,
+                                        isLead: agent.id == agentID)
+                    }
+                }
+                .navigationDestination(for: OverviewRoute.self) { _ in EmptyView() }
+            }
+            .environment(interaction).environment(ManagementPresenter())
+            .environment(try artifactSession(artifacts: []))
+            .environment(\.horizontalSizeClass, .compact)
+            .environment(\.locale, Locale(identifier: "en_US"))
+            .dynamicTypeSize(size))
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 1400))
+        window.rootViewController = host
+        window.isHidden = false
+        defer { window.isHidden = true }
+        func settle(announcement: Bool) async throws {
+            let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+            repeat {
+                host.view.layoutIfNeeded()
+                let value = MobileAutomationTree(windows: [window]).elements.first {
+                    $0.identifier == "overview-agent-\(agentID)"
+                }?.value ?? ""
+                if value.hasPrefix("checks again in ") == announcement { return }
+                try await Task.sleep(for: .milliseconds(5))
+            } while ContinuousClock.now < deadline
+            Issue.record("Team row did not settle with countdown announcement \(announcement)")
+        }
+        try await settle(announcement: true)
+        let list = try #require(nativeList(in: host.view))
+        let withCountdown = try #require(list.layoutAttributesForItem(at: IndexPath(item: 0, section: 0))).frame
+        let withoutCountdown = try #require(list.layoutAttributesForItem(at: IndexPath(item: 1, section: 0))).frame
+        if size.isAccessibilitySize {
+            #expect(withCountdown.height > withoutCountdown.height && withoutCountdown.height > 44)
+        } else {
+            #expect(abs(withCountdown.height - withoutCountdown.height) < 0.5)
+        }
+        let tree = MobileAutomationTree(windows: [window])
+        let row = try #require(tree.elements.first { $0.identifier == "overview-agent-\(agentID)" })
+        #expect(row.label == "Agent, \(reason)")
+        #expect(tree.elements.filter {
+            $0.label.contains("checks again in ") || $0.value.contains("checks again in ")
+        }.count == 1)
+
+        interaction.isInspectorPresented = false
+        try await settle(announcement: false)
+        interaction.isInspectorPresented = true
+        try await settle(announcement: true)
+        state.revision += 1
+        state.presence[agentID] = .init(state: "working", text: "Compiling", wakeAt: wake)
+        _ = try store.apply(.init(type: "snapshot", state: state))
+        try await settle(announcement: false)
+        #expect(MobileAutomationTree(windows: [window]).elements.first {
+            $0.identifier == "overview-agent-\(agentID)"
+        }?.label == "Agent, Working, Compiling")
+    }
+
     @Test(arguments: [false, true])
     func plainOverviewSeparatesSectionsWithStrongerHeadingsAndDeliberateGaps(expanded: Bool) async throws {
         let store = ChannelStore(id: "channel", api: try ChannelAPI(serverURL: "https://fixture.example"))
@@ -480,6 +562,25 @@ struct OverviewTests {
         } else if size.isAccessibilitySize {
             #expect(team.height > 64 && artifact.height > 64)
         }
+    }
+
+    @Test(arguments: [DynamicTypeSize.large, .accessibility5])
+    func artifactTitleKeepsFourPointsBeforeItsModifiedTime(size: DynamicTypeSize) async throws {
+        let host = UIHostingController(rootView:
+            OverviewArtifactLabel(artifact: artifact("plan.md"), share: nil)
+                .frame(width: 350).dynamicTypeSize(size))
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 900))
+        window.rootViewController = host
+        window.isHidden = false
+        defer { window.isHidden = true }
+        host.view.layoutIfNeeded()
+        await Task.yield()
+        host.view.layoutIfNeeded()
+        let tree = MobileAutomationTree(windows: [window])
+        let title = try #require(tree.elements.first { $0.label == "plan.md" })
+        let modified = try #require(tree.elements.first { $0.label == "Share date unavailable" })
+        #expect(abs(modified.frame.minY - title.frame.maxY - 4) < 0.5,
+                "Title \(title.frame), modified \(modified.frame)")
     }
 
     @Test func taskRevealScrollsToTheNativeSectionInsteadOfOnlyExpandingIt() async throws {

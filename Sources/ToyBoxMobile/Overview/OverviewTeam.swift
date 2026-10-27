@@ -47,7 +47,11 @@ struct OverviewTeamRow: View {
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
     @ScaledMetric(relativeTo: .body) private var avatarSize = 28
     @ViewState private var isVisible = false
+    @ViewState private var wakeAnnouncement: String?
 
+    private var wake: Date? {
+        ChannelAgentWakePresentation.wake(for: store.presence[agent.id], isLive: store.phase.isLive)
+    }
     private var status: ChannelAgentStatusPresentation {
         .init(presence: store.presence[agent.id], isLive: store.phase.isLive)
     }
@@ -68,12 +72,18 @@ struct OverviewTeamRow: View {
                 }
                 .lineLimit(typeSize.isAccessibilitySize ? nil : 1)
                 .frame(maxWidth: .infinity, alignment: .leading)
+                if let wake {
+                    ChannelAgentWakeCountdown(wake: wake, isActive: active) { wakeAnnouncement = $0 }
+                        .font(.footnote)
+                        .accessibilityHidden(true)
+                }
             }
             .frame(minHeight: 38, alignment: .leading)
             .contentShape(Rectangle())
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(agent.name), \(status.spoken)")
+        .accessibilityValue(wake != nil && active ? wakeAnnouncement ?? "" : "")
         .accessibilityHint("Shows agent details")
         .accessibilityIdentifier("overview-agent-\(agent.id)")
         .onScrollVisibilityChange(threshold: 0.01) { isVisible = $0 }
@@ -134,8 +144,8 @@ struct OverviewAgentDetails: View {
             }
             Section {
                 OverviewAgentStatus(presence: store.presence[agentID], live: store.phase.isLive)
-                if store.phase.isLive, let presence = store.presence[agentID], presence.state == "waiting",
-                   let wake = presence.wakeAt.flatMap(ChannelDates.date) {
+                if let wake = ChannelAgentWakePresentation.wake(for: store.presence[agentID],
+                                                                isLive: store.phase.isLive) {
                     LabeledContent("Checks again") {
                         Text(wake.formatted(date: .abbreviated, time: .shortened))
                             .foregroundStyle(ChannelInk.secondary)
@@ -204,7 +214,7 @@ struct OverviewAgentStatus: View {
                     .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + capHeight / 2 }
                     .accessibilityHidden(true)
             }
-            Text(status.text).foregroundStyle(ChannelInk.secondary)
+            Text(status.text).foregroundStyle(status.textColor)
         }
         .font(.footnote)
         .fixedSize(horizontal: false, vertical: true)
