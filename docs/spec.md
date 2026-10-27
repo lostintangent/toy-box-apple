@@ -1237,7 +1237,8 @@ done, agree, celebrate, love and laugh. Also show the projected looking/working 
 the agent's live presence and matching status target permit them. Group by reaction, then show up
 to three 14-point reactor avatars and `+N`. Chips are 24 high with a subtle border. The phone
 draws the same shared pill at caption size, with its avatars and height scaling with Dynamic Type,
-inside a 44-point target, and stacks chips one per line when a row doesn't fit. Hover, keyboard
+inside a 44-point target. Chips wrap onto as few lines as fit, with lines as far apart as the
+chips, so their targets overlap where pills are shorter than 44 points. Hover, keyboard
 focus or activation reveals every reactor name. Do not make a reaction chip look like an enabled
 "add reaction" button. The working summary floats as a glass capsule above the composer, outside
 the scrollable history. It has 20-point avatars, "Name is working" or "N agents are working", and status details on

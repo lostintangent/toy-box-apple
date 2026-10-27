@@ -442,6 +442,8 @@ struct TranscriptReactions: View {
     let message: ChannelMessage
     let agents: [ChannelAgent]
     var statusReactions: [ChannelReaction] = []
+    @ScaledMetric(relativeTo: .caption) private var avatarSize: CGFloat = 14
+    @ScaledMetric(relativeTo: .caption) private var height: CGFloat = 24
 
     private var groups: [ChannelReactionGroup] {
         ChannelReactionGroup.groups(for: message, agents: agents, statusReactions: statusReactions)
@@ -450,17 +452,14 @@ struct TranscriptReactions: View {
     var body: some View {
         let groups = groups
         if !groups.isEmpty {
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 6) { chips(groups) }
-                VStack(alignment: .leading, spacing: 0) { chips(groups) }
+            // Rows sit as far apart as pills, so their 44-point targets overlap where pills are shorter.
+            TranscriptReactionFlow(spacing: 6, lineSpacing: 6 - max(0, 44 - height)) {
+                ForEach(groups, id: \.reaction) { group in
+                    let presentation = group.presentation
+                    TranscriptReactionChip(emoji: presentation.emoji, label: presentation.label, reactors: group.agents,
+                                           avatarSize: avatarSize, height: height)
+                }
             }
-        }
-    }
-
-    private func chips(_ groups: [ChannelReactionGroup]) -> some View {
-        ForEach(groups, id: \.reaction) { group in
-            let presentation = group.presentation
-            TranscriptReactionChip(emoji: presentation.emoji, label: presentation.label, reactors: group.agents)
         }
     }
 }
@@ -470,9 +469,9 @@ struct TranscriptReactionChip: View {
     let emoji: String
     let label: String
     let reactors: [ChannelAgent]
+    let avatarSize: CGFloat
+    let height: CGFloat
     @ViewState private var showsReactors = false
-    @ScaledMetric(relativeTo: .caption) private var avatarSize: CGFloat = 14
-    @ScaledMetric(relativeTo: .caption) private var height: CGFloat = 24
 
     var body: some View {
         Button { showsReactors = true } label: {
