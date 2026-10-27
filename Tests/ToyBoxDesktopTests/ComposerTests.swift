@@ -779,30 +779,56 @@ struct ComposerTests {
         #expect(ComposerTray.isVisible(artifacts: [], tasks: [], preview: .init(kind: "screen", screenId: "main")))
     }
 
-    /// Mouse users get legacy scrollers, which `.hidden` still shows. Run with `-AppleShowScrollBars Always`
-    /// to exercise that locally. GitHub's runners use legacy scrollers already.
+    @Test(arguments: [NSScroller.Style.legacy, .overlay])
+    func imageStripKeepsOneHeightWhenItsImagesOverflowAndStillScrolls(scrollerStyle: NSScroller.Style) throws {
+        let draft = ComposerDraft()
+        for _ in 0..<6 { draft.append(try sampleImage()) }
+        var heights: [CGFloat] = []
+        for width: CGFloat in [160, 640] {
+            let fixture = hostImageStrip(draft: draft, width: width)
+            defer { fixture.window.close() }
+            try #require(fixture.scrollViews.count == 1)
+            let scrollView = try #require(fixture.scrollViews.first)
+            scrollView.scrollerStyle = scrollerStyle
+            fixture.view.layoutSubtreeIfNeeded()
+            #expect(scrollView.scrollerStyle == scrollerStyle)
+            heights.append(fixture.view.fittingSize.height)
+            #expect(fixture.view.fittingSize.height > 0)
+            #expect(!scrollView.hasHorizontalScroller)
+            let document = try #require(scrollView.documentView)
+            let clip = scrollView.contentView
+            let overflow = max(0, document.frame.width - clip.bounds.width)
+            #expect(width == 160 ? overflow > 0 : overflow == 0)
+
+            var target = clip.bounds
+            target.origin.x = document.frame.maxX
+            let constrained = clip.constrainBoundsRect(target)
+            #expect(constrained.minX == overflow)
+            clip.scroll(to: constrained.origin)
+            scrollView.reflectScrolledClipView(clip)
+            fixture.view.layoutSubtreeIfNeeded()
+            #expect(clip.bounds.minX == overflow)
+            #expect(scrollView.documentVisibleRect.maxX >= document.bounds.maxX)
+            target.origin.x = 0
+            clip.scroll(to: clip.constrainBoundsRect(target).origin)
+            scrollView.reflectScrolledClipView(clip)
+            #expect(clip.bounds.minX == 0)
+        }
+        #expect(heights[0] == heights[1], "\(scrollerStyle) scrollers: \(heights)")
+    }
+
     @Test(.enabled(if: ProcessInfo.processInfo.environment["TOY_BOX_TEST_IMAGE_STRIP_SCROLLING"] == "1",
-                   "t412: opt in to diagnose the native image-strip scrolling readiness failure"))
-    func imageStripKeepsOneHeightWhenItsImagesOverflowAndStillScrolls() async throws {
+                   "Native wheel input requires an awake, unlocked Mac. Opt in with TOY_BOX_TEST_IMAGE_STRIP_SCROLLING=1."))
+    func imageStripOverflowRespondsToWheelInput() async throws {
         let draft = ComposerDraft()
         for _ in 0..<6 { draft.append(try sampleImage()) }
         var heights: [CGFloat] = []
         var geometry: [String] = []
         // Six 68pt tiles need 482pt, so they overflow at 160 and fit at 640.
         for width: CGFloat in [160, 640] {
-            let view = NSHostingView(rootView: ComposerImageStrip(draft: draft)
-                .frame(width: width)
-                .fixedSize(horizontal: false, vertical: true))
-            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: width, height: 200),
-                                  styleMask: [.borderless], backing: .buffered, defer: false)
-            window.isReleasedWhenClosed = false
-            window.contentView = view
+            let (view, window, scrollViews) = hostImageStrip(draft: draft, width: width)
             defer { window.close() }
-            view.layoutSubtreeIfNeeded()
-            window.displayIfNeeded()
             heights.append(view.fittingSize.height)
-            func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(descendants) }
-            let scrollViews = descendants(view).compactMap { $0 as? NSScrollView }
             geometry.append("\(view.fittingSize) at \(width): " + scrollViews.map {
                 "\($0.frame.size) horizontal scroller \($0.hasHorizontalScroller ? "\($0.horizontalScroller?.frame.size ?? .zero)" : "none")"
             }.joined(separator: ", "))
@@ -819,6 +845,7 @@ struct ComposerTests {
                     return scrollView.contentView.bounds.minX > 0
                 }
             } catch {
+                let session = CGSessionCopyCurrentDictionary() as? [String: Any]
                 print("""
                     Image-strip scroll readiness failed: \(error)
                     Initial geometry: \(geometry.joined(separator: "; "))
@@ -826,6 +853,7 @@ struct ComposerTests {
                     Scroll frame: \(scrollView.frame), clip frame: \(scrollView.contentView.frame), clip bounds: \(scrollView.contentView.bounds)
                     Document frame: \(String(describing: scrollView.documentView?.frame)), document bounds: \(String(describing: scrollView.documentView?.bounds))
                     Visible document: \(scrollView.documentVisibleRect), scroller style: \(scrollView.scrollerStyle.rawValue)
+                    Display asleep: \(CGDisplayIsAsleep(CGMainDisplayID())), screen locked: \(String(describing: session?["CGSSessionScreenIsLocked"] as? Bool))
                     """)
                 throw error
             }
@@ -1458,6 +1486,21 @@ struct ComposerTests {
         var body: some View { ComposerInputTestHost(draft: shown.draft, dictation: dictation) }
     }
 
+
+    private func hostImageStrip(draft: ComposerDraft, width: CGFloat)
+        -> (view: NSView, window: NSWindow, scrollViews: [NSScrollView]) {
+        let view = NSHostingView(rootView: ComposerImageStrip(draft: draft)
+            .frame(width: width)
+            .fixedSize(horizontal: false, vertical: true))
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: width, height: 200),
+                              styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = view
+        view.layoutSubtreeIfNeeded()
+        window.displayIfNeeded()
+        func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(descendants) }
+        return (view, window, descendants(view).compactMap { $0 as? NSScrollView })
+    }
 
     private func hostComposer(draft: ComposerDraft, dictation: ComposerDictation) async throws
         -> (window: NSWindow, input: ComposerTextView) {

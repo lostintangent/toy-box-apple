@@ -53,6 +53,10 @@ view.
 - `TOY_BOX_TEST_TRANSCRIPT_TIMING=1 SCRATCH_PATH=/tmp/tbm-you bun run test --filter 'Transcript|ImageViewer'`
   opts into native Transcript frame-timing and VisionKit selection-layer checks. Run these locally
   before changes to landing, paging, following arrivals or native image text selection.
+- `TOY_BOX_TEST_IMAGE_STRIP_SCROLLING=1 SCRATCH_PATH=/tmp/tbm-<you> bun run test --filter ComposerTests/imageStripOverflowRespondsToWheelInput`
+  opts into native image-strip wheel input. Keep the Mac awake and unlocked because AppKit's
+  wheel animation does not advance while the display sleeps. Equal height, hidden scrollers,
+  overflow and synchronous native clip scrolling remain in the default suite.
 - `TOY_BOX_TEST_LIVE_TEXT_INTERACTION=1 SCRATCH_PATH=/tmp/tbm-<you> bun run test --filter pressesOnTextReachLiveTextAndEverythingElseReachesTheViewer`
   opts into native Live Text press/drag routing in an ordered off-screen window. WindowServer
   events can stop the test runner's outer run loop. Deterministic geometry and routing-policy
@@ -291,16 +295,21 @@ Agents never create these accounts, accept agreements, read private keys or set 
   and WindowServer-event checks remain opt-in and must run locally before changes to their behavior.
 - Restore a quarantined test to CI only after identifying the cause and adding deterministic
   regression coverage. Do not loosen assertions or add retries to turn an unexplained failure green.
-- `ComposerTests.imageStripKeepsOneHeightWhenItsImagesOverflowAndStillScrolls` is quarantined behind
-  `TOY_BOX_TEST_IMAGE_STRIP_SCROLLING=1`. Core's 2026-10-26 foundation Mac gate, based on `9bada33`
+- Composer's t412 image-strip failure was synthetic wheel input during display sleep.
+  Core's 2026-10-26 foundation Mac gate, based on `9bada33`
   with no Mac/view changes, failed at `ComposerTests.swift:1468` after 31.199 seconds:
   "Timed out waiting until the overflowing strip scrolls sideways" (373 desktop tests, one issue).
   The failed run is `r2-foundation-mac-gate.log` in Core's session files, preserved in Composer's
-  session as `image-strip-scroll-readiness-failed-9bada33.log`. No cause is established. The saved
-  log lacks clip/document geometry; opt-in failures now print that geometry and window visibility.
-  Composer owns t412: identify the native scrolling failure and add deterministic regression
-  coverage before restoring the case. Its assertions and 30-second deadline remain unchanged.
-  Do not restore it based on passing reruns.
+  session as `image-strip-scroll-readiness-failed-9bada33.log`. The original log's birth and
+  modification times bound the run to 23:32:36-23:36:11 PDT. System power logs record the display
+  off from 22:37:54 until 23:43:59, covering the whole run. Transcript already guards against
+  this AppKit limitation. `t412-incident-display-timing.log` in Composer's session preserves
+  those timestamps. `imageStripKeepsOneHeightWhenItsImagesOverflowAndStillScrolls` now covers
+  both scroller styles, equal height, real overflow, constrained native clip scrolling to the
+  trailing edge and back, and trailing-edge visibility synchronously in CI. The unchanged
+  wheel-input assertions and 30-second deadline remain in `imageStripOverflowRespondsToWheelInput`,
+  behind `TOY_BOX_TEST_IMAGE_STRIP_SCROLLING=1`. Failure diagnostics include geometry, window
+  visibility, display sleep and session lock state. Composer owns both cases.
 - The three `MainActorTurnTests` occupancy probes remain quarantined behind
   `TOY_BOX_TEST_MAIN_ACTOR_TIMING=1 bun run test --filter MainActorTurnTests`.
   The 2026-10-26 Mac run of `c4c761d` recorded nine Client readiness failures in
