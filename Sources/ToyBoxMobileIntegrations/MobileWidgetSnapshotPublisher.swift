@@ -126,9 +126,14 @@ public final class MobileWidgetSnapshotPublisher {
         var snapshot = proposed
         if let previous {
             snapshot.updatedAt = previous.updatedAt
-            if snapshot == previous, now.timeIntervalSince(previous.updatedAt) < 15 * 60 { return }
+            if snapshot == previous,
+               snapshot.isOffline || now.timeIntervalSince(previous.updatedAt) < 15 * 60 { return }
         }
-        snapshot.updatedAt = now
+        if !snapshot.isOffline {
+            snapshot.updatedAt = now
+        } else if previous?.serverURL != snapshot.serverURL {
+            snapshot.updatedAt = proposed.updatedAt
+        }
         try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
         try JSONEncoder().encode(snapshot).write(to: file, options: .atomic)
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)

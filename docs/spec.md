@@ -280,6 +280,12 @@ Request identity uses the real shared `AgentAvatarView` rendering and an incomin
 `INSendMessageIntent`. The enriched local metadata adds the resolved requester's `handle` for Reply;
 that handle is not part of the APNs routing contract. Completion uses the Mac task-count text and
 the app icon, with no Reply category.
+The intent names the channel as its group, identifies the local user as the recipient, and
+counts the local user and channel agents other than the incoming sender as recipients.
+Its conversation identifier remains server-qualified. Native
+presentation must retain both the sender's identity and the channel's name.
+Named group banners use the requester's same real avatar as the intent's group image, rather
+than falling back to the app icon.
 
 The three-second enrichment budget includes cache preparation. Expiry delivers once without
 waiting for canceled work, and late work cannot create a duplicate. The snapshot publisher also
@@ -289,6 +295,22 @@ fresh text. Missing or mismatched registration gets plain Toy Box content, no ac
 Delivery rechecks the registration to prevent an in-flight lookup crossing a server switch.
 `simctl push` does not invoke the notification service on this runtime. A local proof can exercise
 the exact same enricher, but actual service invocation remains a real-APNs check.
+
+For an offline local proof, the DEBUG simulator Foundation Proof screen separates
+**Prepare Offline Request** from **Deliver Prepared Offline Request**. Prepare resolves real
+routing while online and runs the production enricher to warm its identity cache. Deliver reuses
+that routing without a catalog preflight, so the server can actually be unreachable. It rechecks
+the selected registration before and after enrichment and retains the thirty-second notification
+delay. The existing one-step request and completion controls are unchanged.
+`bun run mobile --notification-proof request --hold` schedules N01 without taps.
+Use `--notification-proof prepare-offline --hold` while online, then a separate
+`--notification-proof deliver-offline --hold` launch after stopping the demo for N05.
+Preparation persists only routing and its registration. Each launch writes
+`notification-proof-result.json` in the shared group with completion, failure and action elapsed
+time. Delivery receipts separately measure production enrichment through its callback and OS
+scheduling, and include the resolved demo content and scheduling timestamp for capture alignment.
+The real service logs entry and content-handler elapsed time, excluding OS launch latency.
+These options require a DEBUG simulator lease and never request notification permission.
 
 `ChannelActivityAttributes` has `channelID`, `channelName` and `registrationID`. Its `ContentState`
 has working agent identities, top-level tasks done/total, optional waiting request sequence,
@@ -331,6 +353,8 @@ URL spelling preserves the UUID. `MobileWidgetSnapshotPublisher.update(catalog:s
 the same `NeedsYouSnapshot` schema and filename as Mac, resolves questions through history without
 starting SSE, and reloads `ToyBoxNeedsYou`. It preserves a same-server offline cache, discards that
 cache on a server change, and keeps the Mac's 30-minute freshness and 15-minute unchanged refresh.
+Offline-only writes preserve the cached observation time and never heartbeat. They write and
+reload only when visible snapshot content changes. Live writes retain the unchanged refresh.
 
 ## Parity checklist
 

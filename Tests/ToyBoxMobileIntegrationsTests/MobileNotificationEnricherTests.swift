@@ -1,11 +1,39 @@
 import ChannelClient
 import ChannelKit
 import Foundation
+import Intents
 import Testing
+import UIKit
 import UserNotifications
 @testable import ToyBoxMobileIntegrations
 
 struct MobileNotificationEnricherTests {
+    @Test(arguments: [0, 3])
+    @MainActor func requestIntentsIdentifyTheLocalRecipientAndTheRealChannelGroup(memberCount: Int) async throws {
+        let directory = Self.directory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let registration = try MobilePushRegistrationStore(directory: directory).select(serverURL: "https://server.test")
+        var catalog = Self.catalog()
+        catalog.members = (0..<memberCount).map { .init(id: "member-\($0)", name: "Member \($0)", channelId: "studio") }
+        catalog.members.append(.init(id: "other", name: "Other", channelId: "other-channel"))
+        let fetched = catalog
+        let png = try #require(UIImage(systemName: "star.fill")?.pngData())
+        let enricher = MobileNotificationEnricher(
+            directory: directory, avatarPNG: { _ in png }, fetch: { _, _ in .init(catalog: fetched) })
+        enricher.start(Self.payload(registration: registration)) { _ in }
+        let work = try #require(enricher.work)
+        await work.value
+        let intent = try #require(enricher.pendingIntent)
+        #expect(intent.speakableGroupName?.spokenPhrase == "Studio")
+        #expect(intent.conversationIdentifier == "\(registration.serverURL):studio")
+        #expect(intent.recipients?.count == 1)
+        #expect(intent.recipients?.first?.isMe == true)
+        let metadata = try #require(intent.donationMetadata as? INSendMessageIntentDonationMetadata)
+        #expect(metadata.recipientCount == memberCount + 1)
+        #expect(intent.sender?.displayName == catalog.lead.name)
+        #expect(intent.image(forParameterNamed: \.speakableGroupName) != nil)
+    }
+
     @Test(arguments: [ChannelPushPayload.Kind.request, .completion])
     @MainActor func resolvedAlertsUseTheSharedTextAndRealCatalogIdentity(kind: ChannelPushPayload.Kind) async throws {
         let directory = Self.directory()

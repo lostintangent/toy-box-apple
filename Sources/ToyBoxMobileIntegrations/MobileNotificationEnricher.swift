@@ -58,7 +58,7 @@ public final class MobileNotificationEnricher {
     private var deadline: Task<Void, Never>?
     private var registration: MobilePushRegistration?
     private var fallback: UNNotificationContent = UNMutableNotificationContent()
-    private var pendingIntent: INSendMessageIntent?
+    private(set) var pendingIntent: INSendMessageIntent?
 
     public convenience init(directory: URL? = nil,
                             avatarPNG: @escaping @MainActor (ChannelAgent) -> Data? = MobileNotificationAvatar.png) throws {
@@ -238,14 +238,24 @@ public final class MobileNotificationEnricher {
             content.subtitle = NotificationText.subtitle(requester: sender.name)
             let png = avatarPNG(sender)
             if png == nil { logger.error("Could not render a notification avatar.") }
+            let image = png.map(INImage.init(imageData:))
             let person = INPerson(personHandle: .init(value: sender.id, type: .unknown), nameComponents: nil,
-                                  displayName: sender.name, image: png.map(INImage.init(imageData:)),
+                                  displayName: sender.name, image: image,
                                   contactIdentifier: nil, customIdentifier: sender.id)
+            let recipient = INPerson(
+                personHandle: .init(value: "user", type: .unknown), nameComponents: nil,
+                displayName: nil, image: nil, contactIdentifier: nil, customIdentifier: "user",
+                isMe: true, suggestionType: .none)
             let intent = INSendMessageIntent(
-                recipients: nil, outgoingMessageType: .outgoingMessageText, content: content.body,
+                recipients: [recipient], outgoingMessageType: .outgoingMessageText, content: content.body,
                 speakableGroupName: .init(spokenPhrase: channel.name),
                 conversationIdentifier: content.threadIdentifier, serviceName: nil, sender: person, attachments: nil
             )
+            let metadata = INSendMessageIntentDonationMetadata()
+            metadata.recipientCount = agents.count
+            intent.donationMetadata = metadata
+            // Named group banners use the group's image rather than the INPerson image.
+            if let image { intent.setImage(image, forParameterNamed: \.speakableGroupName) }
             pendingIntent = intent
             return content
         }

@@ -11,6 +11,8 @@ final class NotificationService: UNNotificationServiceExtension, @unchecked Send
 
     override func didReceive(_ request: UNNotificationRequest,
                              withContentHandler contentHandler: @escaping (UNNotificationContent) -> Void) {
+        Logger(subsystem: "dev.toybox.mobile.notification", category: "Enrichment")
+            .notice("Notification service received a request.")
         let delivery = NotificationDelivery(contentHandler)
         let payload: ChannelPushPayload
         do { payload = try ChannelPushPayload(userInfo: request.content.userInfo) }
@@ -42,6 +44,7 @@ final class NotificationService: UNNotificationServiceExtension, @unchecked Send
 // Bridges the Objective-C callback into the task without allowing a second delivery.
 private final class NotificationDelivery: @unchecked Sendable {
     private let lock = NSLock()
+    private let started = ContinuousClock.now
     private var callback: ((UNNotificationContent) -> Void)?
 
     init(_ callback: @escaping (UNNotificationContent) -> Void) { self.callback = callback }
@@ -52,6 +55,11 @@ private final class NotificationDelivery: @unchecked Sendable {
             self.callback = nil
             return result
         }
-        callback?(content)
+        guard let callback else { return }
+        let elapsed = started.duration(to: .now).components
+        let seconds = Double(elapsed.seconds) + Double(elapsed.attoseconds) / 1e18
+        Logger(subsystem: "dev.toybox.mobile.notification", category: "Enrichment")
+            .notice("Notification service returned content after \(seconds, privacy: .public) seconds.")
+        callback(content)
     }
 }
