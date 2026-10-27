@@ -2512,8 +2512,12 @@ The entity isn't `Transferable`, so Siri learns what a channel says only from Ca
 
 Debug builds can launch with `TOY_BOX_HANDOFF_CHANNEL=<channel ID>` to invoke the same continuation
 handler as native Handoff. For the phone simulator, pass it through
-`SIMCTL_CHILD_TOY_BOX_HANDOFF_CHANNEL`. This is a receiver-state proof hook, not proof of native
-cross-device discovery or delivery, which requires the signed phone and Mac on real devices.
+`SIMCTL_CHILD_TOY_BOX_HANDOFF_CHANNEL`. Mac debug builds also accept
+`TOY_BOX_HANDOFF_CAPTURE=<PNG path>` to capture the resulting real window through ScreenCaptureKit,
+without substituting a view-tree render or delaying the lookup. The capturing app requires Screen
+Recording authorization. Capture failures are logged without a fallback image. These are
+receiver-state proof hooks, not proof of native cross-device discovery or delivery, which requires
+the signed phone and Mac on real devices.
 
 Catch Me Up without a channel says "You're all caught up." when nothing needs you, catches up on
 the one channel that does, or gives an overview: "You have updates in 4 channels." and then one

@@ -199,6 +199,9 @@ struct RootView: View {
             await handoff.continueActivity(activity, currentCatalog: { model.catalog }) { id in
                 selectedId = id
             }
+            #if DEBUG
+            await HandoffProof.captureIfRequested(window: placement.window)
+            #endif
         }
     }
 

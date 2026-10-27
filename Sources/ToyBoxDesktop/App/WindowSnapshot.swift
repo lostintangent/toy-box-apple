@@ -143,7 +143,7 @@ final class WindowSnapshot {
     /// Captures the window as the window server composites it, attached sheets included. Drawing
     /// the view tree with `cacheDisplay` or `CALayer.render(in:)` leaves Liquid Glass, list rows and
     /// content scrolled beneath a `safeAreaBar` blank on macOS 26 and later.
-    private static func compositedCapture(of window: NSWindow) async throws -> NSBitmapImageRep {
+    static func compositedCapture(of window: NSWindow) async throws -> NSBitmapImageRep {
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
         guard let shareable = content.windows.first(where: { $0.windowID == CGWindowID(window.windowNumber) }) else {
             throw LaunchArgumentError("ScreenCaptureKit could not find the app window")
