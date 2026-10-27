@@ -2,6 +2,8 @@ name: Build and release
 
 on:
   push:
+    branches: [main]
+    tags: ['v*']
   pull_request:
   workflow_dispatch:
     inputs:
@@ -15,8 +17,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch') && 'release-publication' || format('build-{0}', github.run_id) }}
-  cancel-in-progress: false
+  group: ${{ (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch') && 'release-publication' || format('build-{0}', github.event.pull_request.number || github.ref) }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/v') && github.event_name != 'workflow_dispatch' }}
 
 jobs:
   test:
@@ -39,10 +41,27 @@ jobs:
         with:
           bun-version: 1.4.4
       - run: bun install --frozen-lockfile --ignore-scripts
+      - name: Test native icon tooling
+        run: bun test scripts/dev/mobile-icon.test.ts
+      - name: Test ChannelClient with a single cooperative worker
+        env:
+          SCRATCH_PATH: ${{ runner.temp }}/toy-box-tests
+          NSUnbufferedIO: 'YES'
+          LIBDISPATCH_COOPERATIVE_POOL_STRICT: '1'
+        run: bun scripts/dev/test-watchdog.ts --filter ChannelClientTests
       - name: Test
         env:
           SCRATCH_PATH: ${{ runner.temp }}/toy-box-tests
-        run: bun run test
+          NSUnbufferedIO: 'YES'
+        run: bun scripts/dev/test-watchdog.ts
+      - name: Upload blocked test diagnostics
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: mac-test-watchdog-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/toy-box-tests/mac-test-watchdog/*.txt
+          if-no-files-found: ignore
+          retention-days: 7
       - name: Bundle with Siri and Shortcuts metadata
         env:
           SCRATCH_PATH: ${{ runner.temp }}/toy-box-tests

@@ -295,6 +295,8 @@ Agents never create these accounts, accept agreements, read private keys or set 
   and WindowServer-event checks remain opt-in and must run locally before changes to their behavior.
 - Restore a quarantined test to CI only after identifying the cause and adding deterministic
   regression coverage. Do not loosen assertions or add retries to turn an unexplained failure green.
+- Test gates and hooks suspend, never block a cooperative worker. CI runs ChannelClient with
+  `LIBDISPATCH_COOPERATIVE_POOL_STRICT=1` to enforce this.
 - Composer's t412 image-strip failure was synthetic wheel input during display sleep.
   Core's 2026-10-26 foundation Mac gate, based on `9bada33`
   with no Mac/view changes, failed at `ComposerTests.swift:1468` after 31.199 seconds:

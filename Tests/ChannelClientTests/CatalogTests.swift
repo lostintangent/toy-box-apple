@@ -84,8 +84,8 @@ struct CatalogTests {
         #expect(catalog.channel(id: "test") === catalog.channel(id: "test"))
     }
 
-    @Test(arguments: [true, false])
-    @MainActor func changingActivityDoesNotCancelAnInFlightPoll(initiallyActive: Bool) async throws {
+    @Test(arguments: [true, false], [true, false])
+    @MainActor func changingActivityDoesNotCancelAnInFlightPoll(initiallyActive: Bool, beforeAdoption: Bool) async throws {
         let expected = ChannelCatalog(lead: testLeadProfile, channels: [testState().channel], working: ["test"])
         let mock = MockTransport { _, _ in
             var response = try MockResponse.json(expected)
@@ -96,11 +96,16 @@ struct CatalogTests {
         catalog.setActive(initiallyActive)
         catalog.startPolling(interval: 60)
         defer { catalog.stopPolling() }
-        try await eventually(observing: mock) { mock.pendingResponseCount == 1 }
+        if beforeAdoption {
+            #expect(!catalog.isLoading)
+        } else {
+            try await eventually(observing: mock) { catalog.isLoading && mock.pendingResponseCount == 1 }
+        }
         catalog.setActive(!initiallyActive)
         #expect(catalog.pollingInterval == (initiallyActive ? 15 : 60))
+        try await eventually(observing: mock) { mock.pendingResponseCount == 1 }
         #expect(mock.finishPendingResponses() == 1)
-        try await eventually { !catalog.isLoading }
+        try await eventually { catalog.lastRefreshedAt != nil && !catalog.isLoading }
         #expect(catalog.state == expected)
         #expect(catalog.working == ["test"])
         #expect(catalog.error == nil)

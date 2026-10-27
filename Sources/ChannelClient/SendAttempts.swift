@@ -52,10 +52,20 @@ public actor ChannelSendJournal {
     )
 
     private let directory: URL
+    private let beforeLoad: (@Sendable () async -> Void)?
 
-    public init(directory: URL) { self.directory = directory }
+    public init(directory: URL) {
+        self.directory = directory
+        beforeLoad = nil
+    }
 
-    public func load(server: URL, channelId: String) throws -> [ChannelSendAttempt] {
+    init(directory: URL, beforeLoad: @escaping @Sendable () async -> Void) {
+        self.directory = directory
+        self.beforeLoad = beforeLoad
+    }
+
+    public func load(server: URL, channelId: String) async throws -> [ChannelSendAttempt] {
+        if let beforeLoad { await beforeLoad() }
         let url = file(server: server, channelId: channelId)
         do {
             return try JSONDecoder().decode([ChannelSendAttempt].self, from: Data(contentsOf: url))
