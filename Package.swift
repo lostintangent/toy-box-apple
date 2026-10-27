@@ -22,6 +22,7 @@ let package = Package(
         .library(name: "ChannelClient", targets: ["ChannelClient"]),
         .library(name: "ChannelIntelligence", targets: ["ChannelIntelligence"]),
         .library(name: "ToyBoxUI", targets: ["ToyBoxUI"]),
+        .library(name: "ToyBoxWidgetViews", targets: ["ToyBoxWidgetViews"]),
     ] + (mobile ? [
         .executable(name: "ToyBoxMobile", targets: ["ToyBoxMobile"]),
         .executable(name: "ToyBoxMobileWidget", targets: ["ToyBoxMobileWidget"]),
@@ -39,13 +40,16 @@ let package = Package(
         .target(name: "ChannelClient", dependencies: ["ChannelKit"]),
         .target(name: "ChannelIntelligence", dependencies: ["ChannelKit"]),
         .target(name: "ToyBoxUI", dependencies: ["ChannelKit", "ChannelClient"]),
+        .target(name: "ToyBoxWidgetViews", dependencies: ["ChannelKit"],
+                swiftSettings: [.unsafeFlags(["-application-extension"])]),
     ] + (mobile ? [
-        .target(name: "ToyBoxMobileIntegrations", swiftSettings: [.unsafeFlags(["-application-extension"])]),
+        .target(name: "ToyBoxMobileIntegrations", dependencies: ["ChannelKit", "ChannelClient"],
+                swiftSettings: [.unsafeFlags(["-application-extension"])]),
         .executableTarget(name: "ToyBoxMobile", dependencies: [
             "ChannelClient", "ChannelIntelligence", "ToyBoxUI", "ToyBoxMobileIntegrations"
         ], linkerSettings: simulatedEntitlements("dev.toybox.mobile")),
         .executableTarget(
-            name: "ToyBoxMobileWidget", dependencies: ["ToyBoxMobileIntegrations"],
+            name: "ToyBoxMobileWidget", dependencies: ["ChannelKit", "ToyBoxMobileIntegrations", "ToyBoxWidgetViews"],
             swiftSettings: [.unsafeFlags(["-application-extension"])],
             linkerSettings: [.unsafeFlags(["-Xlinker", "-e", "-Xlinker", "_NSExtensionMain"])]
                 + simulatedEntitlements("dev.toybox.mobile.widget")
@@ -58,6 +62,7 @@ let package = Package(
         ),
         .testTarget(name: "ToyBoxMobileTests", dependencies: ["ToyBoxMobile"]),
         .testTarget(name: "ToyBoxMobileIntegrationsTests", dependencies: ["ToyBoxMobileIntegrations"]),
+        .testTarget(name: "ToyBoxMobileWidgetTests", dependencies: ["ToyBoxMobileWidget"]),
     ] : [
         .target(name: "ToyBoxControlIntents", swiftSettings: [.unsafeFlags(["-application-extension"])]),
         .executableTarget(
@@ -67,7 +72,7 @@ let package = Package(
         ),
         .executableTarget(
             name: "ToyBoxWidget",
-            dependencies: ["ChannelKit", "ToyBoxControlIntents"],
+            dependencies: ["ChannelKit", "ToyBoxControlIntents", "ToyBoxWidgetViews"],
             swiftSettings: [.unsafeFlags(["-application-extension"])]
         ),
         .executableTarget(

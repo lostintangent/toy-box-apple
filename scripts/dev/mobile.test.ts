@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
     checkMobileBuildVersion, checkMobileExtensionEntryPoint, linkMobileWorkspace, mobileBuildConfiguration,
-    mobileExtensions, mobileLaunchOptions,
+    mobileExtensions, mobileLaunchOptions, mobilePushEnvironment,
     mobileSimulatorEntitlements,
     withMobileAppearance,
 } from "./mobile.ts";
@@ -39,6 +39,7 @@ test("iOS extensions have exact identities, extension points and executable entr
     }
     const host = await readFile(join(import.meta.dir, "../../Resources/Mobile/Info.plist"), "utf8");
     expect(host).toMatch(/<key>NSSupportsLiveActivities<\/key>\s*<true\/>/);
+    expect(host).toMatch(/<key>CFBundleURLSchemes<\/key>\s*<array><string>toybox-desktop<\/string><\/array>/);
     const package_ = await readFile(join(import.meta.dir, "../../Package.swift"), "utf8");
     for (const extension of mobileExtensions) expect(package_).toContain(`name: "${extension.executable}"`);
 });
@@ -81,6 +82,13 @@ test("simulated capabilities include each bundle identity without a device team 
         expect(entitlements).not.toHaveProperty("get-task-allow");
     }
     expect(() => mobileSimulatorEntitlements("another.app")).toThrow("Unknown mobile bundle");
+});
+
+test("the bundled push environment comes from signing rather than optimization", () => {
+    expect(mobilePushEnvironment({ "aps-environment": "development" })).toBe("sandbox");
+    expect(mobilePushEnvironment({ "aps-environment": "production" })).toBe("production");
+    expect(() => mobilePushEnvironment({})).toThrow("validated APNs");
+    expect(() => mobilePushEnvironment({ "aps-environment": "sandbox" })).toThrow("validated APNs");
 });
 
 for (const [platform, path] of [["phone", "Mobile/Info.plist"], ["Mac", "Info.plist"]] as const) {

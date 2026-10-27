@@ -68,6 +68,11 @@ Reference sources (read-only):
   status updates don't re-render identity. A catalog poll that changes nothing announces only
   `lastRefreshedAt` and `isLoading`, and a failure that repeats the current one isn't announced
   again. Views that only ask whether the catalog has loaded read `hasLoaded`.
+- **Background sends:** `ChannelStore.postInBackground(id:content:)` accepts a caller-owned UUID
+  without opening or waiting for SSE. It restores the same outbox, durably records the attempt
+  before its one HTTP request, and retains rejection or uncertain-delivery classification before
+  returning a failure. Explicit retries reuse that UUID. Normal `post` and `retrySend` still
+  require a live channel. A duplicate acceptance never starts a stream for a background send.
 - **Wire rules:**
   - Decode leniently, so unknown system message kinds and fields degrade to a generic row instead
     of failing the stream.
@@ -235,6 +240,52 @@ Attachments are `{name, url}` or inline `{mimeType, base64}`. Avatars are SVG pa
 24×24 viewBox plus a hex color, and may carry an optional `ink` for the mark that only Toy Box's
 own profiles set. The server serves the lead's profile in snapshots and the catalog, and the app
 keeps no copy of it.
+
+### Mobile push and Activity registration (Release 2)
+
+The shared client and the 3210 demo implement these additions. The shipping server uses the same
+contract before device push proof. Registration writes make one attempt and return 204 without a
+response body.
+
+| Request | Body or effect |
+| --- | --- |
+| `PUT /api/v1/push/devices/:registrationID` | `{registrationID, token, environment, requests, completions}` |
+| `DELETE /api/v1/push/devices/:registrationID` | Remove alerts for this registration, not its followed Activities |
+| `PUT /api/v1/channels/:channelID/activities/:registrationID` | `{registrationID, token, environment, startedAt}` |
+| `DELETE /api/v1/channels/:channelID/activities/:registrationID` | Remove the followed Activity |
+
+`registrationID` is a caller-owned UUID and must match the path. Tokens are hexadecimal, and
+`environment` is `sandbox` or `production`. The signed host's `ToyBoxPushEnvironment` is derived
+from its validated APNs entitlement, never from `DEBUG`: optimized development builds still use
+sandbox. Request and completion preferences are independent booleans. A token belongs to one device
+registration. Activities do not require an alerts registration, have their own environment, and are
+unique per registration/channel. Token rotation preserves the original `startedAt`, in Unix seconds.
+The demo stores this state only in memory and never contacts APNs.
+
+`ChannelPushPayload` carries exactly `kind`, `channelID`, positive `sequence` and `registrationID`
+beside the system `aps` envelope. Its kinds and categories are `request` and `completion`; request
+uses the `reply` text action. Neither the routing payload nor the generic alert contains a private
+question. The service must match the current registration before resolving identity or content.
+The fixtures are `Tests/ChannelKitTests/Fixtures/push-request.apns`, `push-completion.apns` and
+`push-activity.apns`. Use the selected simulator's actual registration ID for routed alert proof.
+
+`ChannelActivityAttributes` has `channelID`, `channelName` and `registrationID`. Its `ContentState`
+has working agent identities, top-level tasks done/total, optional waiting request sequence,
+`updatedAt` and optional ending. Its custom Codable implementation uses Unix seconds for
+`updatedAt` with an ordinary JSONDecoder, as ActivityKit requires. Active state is stale after
+15 minutes. Confirmed endings have no stale date, and distinguish completion from Stop, expiry,
+deletion, server change and removal of the task list.
+
+`ChannelActivityLink` carries channel ID, registration ID and an optional positive request sequence
+in `toybox-desktop://activity` URLs. The receiving app checks the selected registration before
+opening anything. Stale Activity taps omit the sequence and open only the channel.
+
+The phone stores the selected server's registration in `group.dev.toybox.mobile`. Selecting a
+different server generates a new UUID, including when returning to an earlier server. Equivalent
+URL spelling preserves the UUID. `MobileWidgetSnapshotPublisher.update(catalog:serverURL:)` writes
+the same `NeedsYouSnapshot` schema and filename as Mac, resolves questions through history without
+starting SSE, and reloads `ToyBoxNeedsYou`. It preserves a same-server offline cache, discards that
+cache on a server change, and keeps the Mac's 30-minute freshness and 15-minute unchanged refresh.
 
 ## Parity checklist
 
@@ -2696,6 +2747,19 @@ Small, Medium and Large in Light, Dark and the system's accented appearance, plu
 long quotes, empty and stale states.
 If Developer ID app-group access or widget registration cannot be established within the release
 timebox, defer this feature rather than shipping a widget that cannot receive data.
+
+The phone offers Home Screen Small, Medium and Large, plus Lock Screen Rectangular.
+Its Home content reuses `ToyBoxWidgetViews`, retaining the Mac's text and avatar metrics
+while passing a 44-point sibling Reply target. Reduce complete request rows to fit the
+system-provided height, with overflow based on the rows actually shown. The phone's
+Rectangular widget shows only the waiting-channel count, not a private question.
+Both surfaces render waiting, empty, out-of-date and not-connected states from the phone's
+App Group `NeedsYouSnapshot`. Out-of-date phone content says "May be out of date" and
+shows its last update, never a current all-clear. A timeline entry at the shared 30-minute
+freshness boundary makes this change without requiring the foreground app to run.
+Widget rendering never connects, sends, marks read or changes a draft. Open and Reply
+use the existing `NeedsYouRequestLink` routes. Native widget backgrounds, tint and
+margins remain system-owned, with no custom largest-text layout.
 
 ### Control Center and menu bar controls
 

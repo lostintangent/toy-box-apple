@@ -12,6 +12,149 @@ struct SendAttemptTests {
         try JSONDecoder().decode(Posted.self, from: requestBody(request))
     }
 
+    @Test @MainActor func backgroundPostPersistsBeforeItsOnlyRequestWithoutOpeningAStream() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("tbm-background-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let journal = ChannelSendJournal(directory: directory)
+        let id = UUID().uuidString
+        let mock = MockTransport { request, _ in
+            #expect(request.httpMethod == "POST")
+            let body = try Self.posted(request)
+            let file = try #require(FileManager.default.contentsOfDirectory(
+                at: directory, includingPropertiesForKeys: nil
+            ).first)
+            let attempts = try JSONDecoder().decode([ChannelSendAttempt].self, from: Data(contentsOf: file))
+            #expect(attempts.map(\.id) == [id])
+            #expect(attempts.first?.content == "@lead Yes, ship it.")
+            #expect(attempts.first?.phase == .sending)
+            let message = ChannelMessage(id: body.id, sequence: 17, timestamp: "2026-10-01T00:00:00Z",
+                                         sender: .user, content: .text(body.content))
+            return try .json(MessageEnvelope(message: message), status: 201)
+        }
+        let api = try mock.api()
+        let store = ChannelStore(id: "test", api: api, sendJournal: journal)
+        let result = try await store.postInBackground(id: id, content: "  @lead Yes, ship it.  ")
+        guard case .committed(let message) = result else { Issue.record("Expected a committed reply"); return }
+        #expect(message.id == id)
+        #expect(message.sequence == 17)
+        #expect(store.state == nil)
+        #expect(store.phase == .idle)
+        #expect(store.sendAttempts.isEmpty)
+        #expect(try await journal.load(server: api.baseURL, channelId: "test").isEmpty)
+        #expect(mock.requests.count == 1)
+    }
+
+    @Test(arguments: [422, 503])
+    @MainActor func backgroundFailureKeepsItsClassificationAndUUIDForAnExplicitRetry(status: Int) async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("tbm-background-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let journal = ChannelSendJournal(directory: directory)
+        let id = UUID().uuidString
+        let mock = MockTransport { request, count in
+            #expect(request.httpMethod == "POST")
+            let body = try Self.posted(request)
+            #expect(body.id == id)
+            return count == 1
+                ? MockResponse(status: status, body: Data(#"{"error":"Reply failed"}"#.utf8))
+                : MockResponse(status: 409, body: Data(#"{"error":"Message ID already exists."}"#.utf8))
+        }
+        let api = try mock.api()
+        let store = ChannelStore(id: "test", api: api, sendJournal: journal)
+        await #expect(throws: ChannelAPIError.http(status: status, message: "Reply failed")) {
+            try await store.postInBackground(id: id, content: "Keep my reply")
+        }
+        let phase: ChannelSendPhase = status == 422 ? .notSent : .deliveryNotConfirmed
+        #expect(store.sendAttempts.first?.phase == phase)
+        #expect(store.lastSendFailure?.phase == phase)
+        #expect(try await journal.load(server: api.baseURL, channelId: "test") == store.sendAttempts)
+        #expect(mock.requests.count == 1)
+
+        let restored = ChannelStore(id: "test", api: api, sendJournal: journal)
+        let retry = try await restored.postInBackground(id: id, content: "Keep my reply")
+        #expect(retry == .alreadyAccepted(id: id))
+        #expect(restored.sendAttempts.first?.phase == .confirmed)
+        #expect(restored.phase == .idle)
+        #expect(try await journal.load(server: api.baseURL, channelId: "test") == restored.sendAttempts)
+        #expect(try await restored.postInBackground(id: id, content: "Keep my reply") == retry)
+        await #expect(throws: ChannelAPIError.invalidMessage(
+            "The attempted message changed. Send it as a new message."
+        )) {
+            try await restored.postInBackground(id: id, content: "Different reply")
+        }
+        #expect(mock.requests.count == 2)
+    }
+
+    @Test @MainActor func backgroundTransportFailureIsNotAutomaticallyRetried() async throws {
+        let mock = MockTransport { _, _ in throw URLError(.networkConnectionLost) }
+        let store = ChannelStore(id: "test", api: try mock.api(), sendJournal: nil)
+        let id = UUID().uuidString
+        await #expect(throws: URLError.self) {
+            try await store.postInBackground(id: id, content: "One attempt")
+        }
+        #expect(store.sendAttempts.first?.id == id)
+        #expect(store.sendAttempts.first?.phase == .deliveryNotConfirmed)
+        #expect(mock.requests.count == 1)
+        #expect(store.phase == .idle)
+    }
+
+    @Test @MainActor func backgroundReplyDuringAnotherSendIsDurablyRetainedWithoutPosting() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("tbm-background-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let journal = ChannelSendJournal(directory: directory)
+        let release = DispatchSemaphore(value: 0)
+        defer { release.signal() }
+        let mock = MockTransport { request, _ in
+            release.wait()
+            let body = try Self.posted(request)
+            return try .json(MessageEnvelope(message: ChannelMessage(
+                id: body.id, sequence: 17, timestamp: "2026-10-01T00:00:00Z",
+                sender: .user, content: .text(body.content)
+            )), status: 201)
+        }
+        let api = try mock.api()
+        let store = ChannelStore(id: "test", api: api, sendJournal: journal)
+        let firstID = UUID().uuidString
+        let first = Task { try await store.postInBackground(id: firstID, content: "First") }
+        try await eventually(observing: mock) { mock.requests.count == 1 }
+        let replyID = UUID().uuidString
+        await #expect(throws: ChannelAPIError.invalidMessage("A message is already being sent.")) {
+            try await store.postInBackground(id: replyID, content: "@lead Keep this reply")
+        }
+        let reply = try #require(store.sendAttempts.first { $0.id == replyID })
+        #expect(reply.phase == .notSent)
+        #expect(reply.content == "@lead Keep this reply")
+        #expect(store.sendAttempts.first { $0.id == firstID }?.phase == .sending)
+        #expect(try await journal.load(server: api.baseURL, channelId: "test").first { $0.id == replyID } == reply)
+        #expect(mock.requests.count == 1)
+        release.signal()
+        _ = try await first.value
+        #expect(store.sendAttempts == [reply])
+        #expect(try await journal.load(server: api.baseURL, channelId: "test") == [reply])
+    }
+
+    @Test @MainActor func backgroundPostNeverSendsWhenTheJournalCannotBeWritten() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("tbm-background-\(UUID())")
+        let journal = ChannelSendJournal(directory: directory)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let mock = MockTransport { _, _ in
+            Issue.record("A failed outbox write must prevent the HTTP request")
+            throw URLError(.unknown)
+        }
+        let store = ChannelStore(id: "test", api: try mock.api(), sendJournal: journal)
+        await #expect(throws: ChannelAPIError.invalidMessage("A message or attachment is required.")) {
+            try await store.postInBackground(id: UUID().uuidString, content: " ")
+        }
+        try Data("Not a directory".utf8).write(to: directory)
+        let id = UUID().uuidString
+        await #expect(throws: (any Error).self) {
+            try await store.postInBackground(id: id, content: "Do not send")
+        }
+        #expect(store.sendAttempts.first?.id == id)
+        #expect(store.sendAttempts.first?.phase == .notSent)
+        #expect(store.attemptPersistenceError != nil)
+        #expect(mock.requests.isEmpty)
+    }
+
     @Test @MainActor func explicitRetryUsesOriginalUUIDAndReplacesAttemptOnCommit() async throws {
         let initial = testState()
         let mock = MockTransport { request, count in

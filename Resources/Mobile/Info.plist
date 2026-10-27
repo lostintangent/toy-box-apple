@@ -16,10 +16,21 @@
     <string>0.1.0</string>
     <key>CFBundleVersion</key>
     <string>1</string>
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLName</key>
+            <string>dev.toybox.mobile</string>
+            <key>CFBundleURLSchemes</key>
+            <array><string>toybox-desktop</string></array>
+        </dict>
+    </array>
     <key>MinimumOSVersion</key>
     <string>27.0</string>
     <key>NSSupportsLiveActivities</key>
     <true/>
+    <key>ToyBoxPushEnvironment</key>
+    <string>sandbox</string>
     <key>NSUserActivityTypes</key>
     <array><string>INSendMessageIntent</string></array>
     <key>LSRequiresIPhoneOS</key>
