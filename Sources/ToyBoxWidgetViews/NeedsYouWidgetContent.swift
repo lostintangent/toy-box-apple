@@ -39,21 +39,11 @@ package struct NeedsYouWidgetContent: View {
 
     package var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Link(destination: NeedsYouSnapshot.mainURL) {
-                    Text("Needs you").font(.system(size: 13, weight: .semibold)).widgetAccentable()
-                }
-                Spacer()
-                if let snapshot {
-                    Text(snapshot.waitingCount, format: .number)
-                        .monospacedDigit().foregroundStyle(.secondary)
-                }
-            }
             if let snapshot {
-                if snapshot.waitingCount == 0 {
-                    Spacer(minLength: 0)
-                    emptyState
-                    Spacer(minLength: 0)
+                if snapshot.isStale(at: entry.date) {
+                    status(title: "May be out of date", symbol: "clock", lastUpdate: snapshot.updatedAt)
+                } else if snapshot.waitingCount == 0 {
+                    NeedsYouEmptyState()
                 } else {
                     VStack(alignment: .leading, spacing: family == .systemLarge ? 12 : 8) {
                         ForEach(Array(snapshot.requests.prefix(limit))) { request in
@@ -80,15 +70,13 @@ package struct NeedsYouWidgetContent: View {
                         }
                     }
                     Spacer(minLength: 0)
+                    footer(snapshot)
                 }
-                footer(snapshot)
             } else {
-                Spacer(minLength: 0)
-                Image(systemName: "bubble.left.and.bubble.right").font(.title2).foregroundStyle(.secondary)
-                Text("Open Toy Box to connect").font(.headline)
-                Spacer(minLength: 0)
+                status(title: "Open Toy Box to connect", symbol: "bubble.left.and.bubble.right")
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .font(.system(size: 11))
         .foregroundStyle(.primary)
         .buttonStyle(.plain)
@@ -96,19 +84,25 @@ package struct NeedsYouWidgetContent: View {
     }
 
     private var firstURL: URL? {
-        guard let snapshot, let request = snapshot.requests.first else { return NeedsYouSnapshot.mainURL }
+        guard let snapshot, !snapshot.isStale(at: entry.date),
+              let request = snapshot.requests.first else { return NeedsYouSnapshot.mainURL }
         return NeedsYouRequestLink(serverURL: snapshot.serverURL,
                                   channelID: request.channelID, sequence: request.sequence).url
     }
 
-    private var emptyState: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Image(systemName: "checkmark.bubble").font(.title2).foregroundStyle(.secondary)
-            Text("Nothing needs you").font(.headline)
-            if family != .systemSmall {
-                Text("Your teams will appear here when they need a reply.").foregroundStyle(.secondary)
+    private func status(title: String, symbol: String, lastUpdate: Date? = nil) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Spacer(minLength: 0)
+            Image(systemName: symbol).font(.title2).foregroundStyle(.secondary).accessibilityHidden(true)
+            Text(title).font(.headline)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+            if let lastUpdate {
+                Text("Last update \(lastUpdate, format: .dateTime.hour().minute())")
+                    .font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func requestRow(_ request: NeedsYouSnapshot.Request) -> some View {
@@ -149,26 +143,26 @@ package struct NeedsYouWidgetContent: View {
         #endif
     }
 
-    private func footer(_ snapshot: NeedsYouSnapshot) -> some View {
-        let isStale = snapshot.isStale(at: entry.date)
+    @ViewBuilder private func footer(_ snapshot: NeedsYouSnapshot) -> some View {
         let displayedCount = min(limit, snapshot.requests.count)
-        return HStack {
-            if snapshot.waitingCount > displayedCount && (family != .systemSmall || !isStale) {
-                Text("+\(snapshot.waitingCount - displayedCount) more")
-            }
-            Spacer(minLength: 2)
-            if isStale {
-                Text("May be out of date")
-            } else {
-                #if os(iOS)
-                Text("Updated \(snapshot.updatedAt, format: .dateTime.hour().minute())")
-                #else
-                if family != .systemSmall {
-                    Text("Updated \(snapshot.updatedAt, format: .relative(presentation: .numeric, unitsStyle: .narrow))")
-                }
-                #endif
-            }
+        if snapshot.waitingCount > displayedCount {
+            Text("\(snapshot.waitingCount - displayedCount) more waiting")
+                .font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
         }
-        .font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
+    }
+}
+
+package struct NeedsYouEmptyState: View {
+    package init() {}
+
+    package var body: some View {
+        VStack(spacing: 6) {
+            Image(systemName: "checkmark.circle")
+                .font(.system(size: 16, weight: .regular)).accessibilityHidden(true)
+            Text("You're all caught up").font(.system(size: 13, weight: .regular)).lineLimit(1)
+        }
+        .foregroundStyle(.secondary)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityElement(children: .combine)
     }
 }
