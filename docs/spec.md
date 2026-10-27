@@ -1900,7 +1900,13 @@ New Channel, Edit Channel, Add Agent and Edit Member share one sheet language:
   explains that models aren't available on this server; a member catalog keeps the server's
   missing-resource details visible. Existing current-model and inheritance choices stay usable.
   Don't stack a warning, a message and a Reload button under the picker. A member's first choice
-  reads "Workspace Default (Model Name)" when the default is known.
+  reads "Workspace Default (Model Name)" when the default is known. Reasoning and Context contain
+  only the server's real choices, with no synthetic Default row. Reasoning names match the pane,
+  including "Extra High"; Context shows compact token windows such as "200K", "1M" and "936K",
+  or the tier name when its window is unavailable. An absent reasoning value displays the model's
+  declared default, then its first supported value. An absent context value displays the first
+  tier. Unsupported stored values remain selected in a "(current)" row. Resolving these display
+  values never changes the stored configuration or enables Save. Only changing an option writes it.
 - **Progress.** Busy titles use the ellipsis character: "Creating…" and "Saving…".
 
 Copy:

@@ -6,6 +6,7 @@ public struct ProviderModel: Codable, Identifiable, Sendable {
     public var provider: String
     public var providerName: String?
     public var supportedReasoningEfforts: [String]?
+    public var defaultReasoningEffort: String?
     public var supportedContextTiers: [ContextTier]?
 
     public struct ContextTier: Codable, Sendable {
@@ -14,6 +15,17 @@ public struct ProviderModel: Codable, Identifiable, Sendable {
     }
 
     public var configuration: ModelConfiguration { .init(provider: provider, name: id) }
+
+    public func resolvedReasoningEffort(requested: String?) -> String? {
+        let supported = supportedReasoningEfforts ?? []
+        if let requested, !requested.isEmpty, supported.contains(requested) { return requested }
+        return defaultReasoningEffort ?? supported.first
+    }
+
+    public func resolvedContextTier(requested: String?) -> String? {
+        let supported = supportedContextTiers ?? []
+        return supported.first { $0.name == requested }?.name ?? supported.first?.name
+    }
 }
 
 public struct ModelCatalog: Codable, Sendable {

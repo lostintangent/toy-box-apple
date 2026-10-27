@@ -117,9 +117,17 @@ public struct ModelSelectionFields<ExtraRows: View>: View {
                 picker.disabled(!selectionPolicy.isEnabled)
                 if let selected = selectionPolicy.selected {
                     optionPicker("Reasoning", key: "reasoningEffort",
-                                 values: selected.supportedReasoningEfforts ?? [])
+                                 choices: ModelOptionChoice.reasoning(
+                                    selected.supportedReasoningEfforts ?? [],
+                                    current: model?.options["reasoningEffort"]?.string),
+                                 resolvedValue: selected.resolvedReasoningEffort(
+                                    requested: model?.options["reasoningEffort"]?.string))
                     optionPicker("Context", key: "contextTier",
-                                 values: selected.supportedContextTiers?.map(\.name) ?? [])
+                                 choices: ModelOptionChoice.context(
+                                    selected.supportedContextTiers ?? [],
+                                    current: model?.options["contextTier"]?.string),
+                                 resolvedValue: selected.resolvedContextTier(
+                                    requested: model?.options["contextTier"]?.string))
                 }
             }
             extraRows
@@ -154,22 +162,24 @@ public struct ModelSelectionFields<ExtraRows: View>: View {
         }
     }
 
+    func optionSelection(key: String, resolvedValue: String?) -> Binding<String> {
+        func displayedValue() -> String {
+            // An unsupported stored value stays selected in its retained current row.
+            if let stored = model?.options[key]?.string, !stored.isEmpty { return stored }
+            return resolvedValue ?? ""
+        }
+        return Binding(get: displayedValue, set: { value in
+            if value != displayedValue() { model?.options[key] = .string(value) }
+        })
+    }
+
     @ViewBuilder
-    private func optionPicker(_ label: String, key: String, values: [String]) -> some View {
-        if !values.isEmpty {
-            let current = model?.options[key]?.string ?? ""
-            Picker(label, selection: Binding(
-                get: { model?.options[key]?.string ?? "" },
-                set: { value in
-                    if value.isEmpty { model?.options.removeValue(forKey: key) }
-                    else { model?.options[key] = .string(value) }
-                })) {
-                    Text("Default").tag("")
-                    if !current.isEmpty, !values.contains(current) {
-                        Text("\(current) (current)").tag(current)
-                    }
-                    ForEach(values, id: \.self) { Text($0.replacingOccurrences(of: "_", with: " ").capitalized).tag($0) }
-                }
+    private func optionPicker(_ label: String, key: String, choices: [ModelOptionChoice],
+                              resolvedValue: String?) -> some View {
+        if !choices.isEmpty {
+            Picker(label, selection: optionSelection(key: key, resolvedValue: resolvedValue)) {
+                ForEach(choices) { Text($0.label).tag($0.id) }
+            }
         }
     }
 
@@ -226,6 +236,38 @@ extension ModelSelectionFields where ExtraRows == EmptyView {
 
 private extension ProviderModel {
     var selfKey: String { "\(provider)/\(id)" }
+}
+
+struct ModelOptionChoice: Equatable, Identifiable {
+    let id: String
+    let label: String
+
+    static func reasoning(_ values: [String], current: String?) -> [Self] {
+        retaining(current, in: values.map { .init(id: $0, label: reasoningLabel($0)) })
+    }
+
+    static func context(_ tiers: [ProviderModel.ContextTier], current: String?) -> [Self] {
+        retaining(current, in: tiers.map { tier in
+            let label = tier.tokenWindow.map {
+                $0.formatted(.number.notation(.compactName).precision(.fractionLength(0...2))
+                    .locale(Locale(identifier: "en_US")))
+            } ?? reasoningLabel(tier.name)
+            return .init(id: tier.name, label: label)
+        })
+    }
+
+    private static func retaining(_ current: String?, in choices: [Self]) -> [Self] {
+        guard !choices.isEmpty, let current, !current.isEmpty,
+              !choices.contains(where: { $0.id == current }) else { return choices }
+        return [.init(id: current, label: "\(current) (current)")] + choices
+    }
+
+    private static func reasoningLabel(_ value: String) -> String {
+        let value = value.lowercased() == "xhigh" ? "Extra High" : value
+        return value.split { $0.isWhitespace || $0 == "_" || $0 == "-" }
+            .map { $0.prefix(1).uppercased() + $0.dropFirst() }
+            .joined(separator: " ")
+    }
 }
 
 public struct ManagementFooter: View {
