@@ -165,6 +165,11 @@ struct RootView: View {
             }
         }
         .onChange(of: model.snapshot?.requestedState) { _, state in prepareSnapshotState(state) }
+        .onChange(of: handoff.phase) { _, _ in
+            if model.snapshot?.requestedState == "handoff-unavailable" {
+                prepareSnapshotState("handoff-unavailable")
+            }
+        }
         .onContinueUserActivity(ChannelHandoff.activityType, perform: continueHandoff)
     }
 
@@ -198,6 +203,7 @@ struct RootView: View {
         Task {
             await handoff.continueActivity(activity, currentCatalog: { model.catalog }) { id in
                 selectedId = id
+                model.snapshot?.markStateReady("handoff-match")
             }
         }
     }
@@ -211,6 +217,8 @@ struct RootView: View {
         case "conversation", "title-hover":
             setOverviewVisible(false)
             snapshot.markStateReady(state)
+        case "handoff-unavailable":
+            if handoff.phase == .unavailable { snapshot.markStateReady(state) }
         case "new-channel":
             management.present(.newChannel)
             snapshot.markStateReady(state)

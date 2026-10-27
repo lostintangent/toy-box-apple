@@ -378,6 +378,21 @@ struct ShellTests {
         #expect(options.isSnapshot)
     }
 
+    @MainActor @Test(arguments: ["handoff-match", "handoff-unavailable"])
+    func snapshotRetainsAnEarlyReadySignalOnlyForItsExpectedSurface(_ state: String) throws {
+        let options = try LaunchOptions.parse([
+            "--server", "https://example.test/toy-box", "--channel", "studio-demo",
+            "--snapshot", "/tmp/shell-test.png", "--state", state
+        ])
+        let snapshot = WindowSnapshot(options: options)
+        #expect(snapshot.requestedState == nil)
+        snapshot.markStateReady("another-state")
+        #expect(!snapshot.isStateReady)
+        snapshot.markStateReady(state)
+        #expect(snapshot.isStateReady)
+        #expect(snapshot.isPreparing)
+    }
+
     @Test(arguments: [
         ["--snapshot", "/tmp/test.png"],
         ["--channel", ""],

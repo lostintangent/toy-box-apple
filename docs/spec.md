@@ -2512,8 +2512,13 @@ The entity isn't `Transferable`, so Siri learns what a channel says only from Ca
 
 Debug builds can launch with `TOY_BOX_HANDOFF_CHANNEL=<channel ID>` to invoke the same continuation
 handler as native Handoff. For the phone simulator, pass it through
-`SIMCTL_CHILD_TOY_BOX_HANDOFF_CHANNEL`. This is a receiver-state proof hook, not proof of native
-cross-device discovery or delivery, which requires the signed phone and Mac on real devices.
+`SIMCTL_CHILD_TOY_BOX_HANDOFF_CHANNEL`. For Mac receiver checks, combine that hook with
+`bun run snapshot --state handoff-match` or `--state handoff-unavailable` and the normal snapshot
+arguments. Match becomes ready after the continuation selects the channel. Unavailable waits for
+the receiver's unavailable presentation rather than a live conversation it intentionally never
+opens. Both use the existing snapshot renderer without delaying Handoff lookup. These are
+receiver-state proof hooks, not proof of native cross-device discovery or delivery, which requires
+the signed phone and Mac on real devices.
 
 Catch Me Up without a channel says "You're all caught up." when nothing needs you, catches up on
 the one channel that does, or gives an overview: "You have updates in 4 channels." and then one
