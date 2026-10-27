@@ -78,9 +78,14 @@ final class TranscriptScroll {
             event = .layoutChanged
         }
         if capturesPosition(event), !hasViewportGeometry { return nil }
-        if case .land = event { hasLanded = true }
         let placement = Model.reduce(intent, event, layout: layout)
         intent = placement.intent
+        switch event {
+        case .land: hasLanded = true
+        // A request alert's reveal replaces the first landing.
+        case .reveal where placement.unavailableTarget == nil: hasLanded = true
+        default: break
+        }
         return placement
     }
 
@@ -161,6 +166,11 @@ struct ConversationView: View {
     @ViewState private var showsWorkingNow = false
     @ViewState private var highlightedSequence: Int?
     @ViewState private var revealError: String?
+    /// A reveal requested before landing, such as a request alert's, opens on its message. The
+    /// rows stay hidden while it pages, so the reader never sees New first.
+    @ViewState private var landsOnReveal = false
+    /// Whether the scroll view has reported its geometry, which a reveal needs before it can place a row.
+    @ViewState private var hasGeometry = false
     @ViewState private var requestedRead = 0
     @ViewState private var expanded: Set<String> = []
     @ViewState private var catchUp: TranscriptCatchUpSession?
@@ -225,6 +235,7 @@ struct ConversationView: View {
             }
             .padding(.top, 12)
             .padding(.bottom, TranscriptScrollModel.endClearance)
+            .opacity(landsOnReveal ? 0 : 1)
             // The whole column, like the Mac. Each message caps its own line length instead.
             .padding(.horizontal, transcriptEdgeInset(sizeClass))
             // Rows, links and controls sit above this, so only a tap on empty space reaches it.
@@ -251,6 +262,7 @@ struct ConversationView: View {
                 origin: geometry.contentOffset.y, documentEnd: geometry.contentSize.height)
         } action: { _, metrics in
             scroll.metrics = metrics
+            if !hasGeometry, scroll.layout != nil { hasGeometry = true }
             place(scroll.update())
         }
         .onScrollPhaseChange { _, phase in
@@ -270,6 +282,10 @@ struct ConversationView: View {
                 TranscriptReconnecting(message: message) { store.reconnect() }
             } else if let revealError {
                 TranscriptRevealNotice(message: revealError) { self.revealError = nil }
+            } else if landsOnReveal {
+                // The paging row is hidden with the rows, so its progress shows here instead, without
+                // the accessory's delay, since it follows Connecting's spinner.
+                ProgressView().frame(maxWidth: .infinity, minHeight: 44)
             }
         }
         .overlay {
@@ -307,9 +323,11 @@ struct ConversationView: View {
         }
         .onDisappear { find.close() }
         .onChange(of: interaction.jumpToLatestRequest) { jumpToLatest() }
-        .onChange(of: interaction.revealRequestToken) {
-            guard let request = interaction.revealRequest else { return }
-            Task { await reveal(sequence: request.sequence, token: request.token) }
+        // A request routed before the conversation appears waits here for the channel to load and
+        // for its first layout. A store that's already loaded would otherwise reveal before either.
+        .task(id: store.isLoaded && hasGeometry ? interaction.revealRequestToken : nil) {
+            guard store.isLoaded, hasGeometry, let request = interaction.revealRequest else { return }
+            await reveal(sequence: request.sequence, token: request.token)
         }
         .onChange(of: scenePhase) { markRead() }
         .onChange(of: isUncovered) { markRead() }
@@ -363,6 +381,10 @@ struct ConversationView: View {
                 boundaryIsLoaded: true, availability: intelligence.availability,
                 isOn: TranscriptIntelligenceSettings.isOn(TranscriptIntelligenceSettings.summarizesNewMessages))
         }
+        guard interaction.revealRequest == nil else {
+            landsOnReveal = true
+            return
+        }
         let target = divider.map { TranscriptScrollModel.Target.row($0.id, order: $0.order) } ?? .end
         place(scroll.update(.land(target)))
     }
@@ -390,6 +412,7 @@ struct ConversationView: View {
         if !isMoving {
             markRead()
             if let reveal = scroll.finishedReveal() {
+                landsOnReveal = false
                 interaction.finishReveal(reveal.token, reveal.isRevealed ? .revealed : .failed(Self.revealInterrupted))
             }
             if !store.isLoadingOlder, store.hasOlderMessages, store.historyError == nil,
@@ -430,7 +453,18 @@ struct ConversationView: View {
     }
 
     private func reveal(sequence: Int, token: UUID) async {
-        defer { interaction.consumeRevealRequest(token) }
+        defer {
+            // Opening the conversation can cancel and restart this task, so a cancelled first
+            // landing leaves the request to the next one.
+            if scroll.hasLanded || !Task.isCancelled {
+                interaction.consumeRevealRequest(token)
+                // A reveal that couldn't open the conversation falls back to the usual landing.
+                if !scroll.hasLanded {
+                    landsOnReveal = false
+                    land(items)
+                }
+            }
+        }
         func target() -> TranscriptItem? { items.first { $0.messages.contains { $0.sequence == sequence } } }
         func fail(_ message: String) {
             revealError = message
