@@ -28,7 +28,8 @@ final class WindowSnapshot {
     }
 
     func markStateReady(_ name: String) {
-        guard name == requestedState else { return }
+        // A Handoff may resolve before the snapshot window attaches.
+        guard name == options.snapshotState else { return }
         isStateReady = true
     }
 
@@ -82,7 +83,8 @@ final class WindowSnapshot {
             if let catalog = model.catalog, let error = catalog.error, catalog.lastRefreshedAt == nil {
                 throw LaunchArgumentError(error)
             }
-            if let store = model.catalog?.channel(id: id), store.phase.isLive {
+            if let store = model.catalog?.channel(id: id),
+               store.phase.isLive || options.snapshotState == "handoff-unavailable" {
                 // At launch SwiftUI briefly restores the split view's saved height as the window's
                 // minimum, which can clamp the first resize, so the size is applied again here.
                 applyRequestedSize()
