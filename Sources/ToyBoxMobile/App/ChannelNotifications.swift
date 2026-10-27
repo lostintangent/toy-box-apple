@@ -254,7 +254,7 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
                 }
                 self.center.add(UNNotificationRequest(
                     identifier: "proof-\(UUID().uuidString)", content: content,
-                    trigger: UNTimeIntervalNotificationTrigger(timeInterval: 5, repeats: false)
+                    trigger: UNTimeIntervalNotificationTrigger(timeInterval: 30, repeats: false)
                 )) { error in
                     if let error { continuation.resume(throwing: error) }
                     else { continuation.resume() }
@@ -393,25 +393,44 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
     }
 
     nonisolated func userNotificationCenter(
-        _ center: UNUserNotificationCenter, willPresent notification: UNNotification
-    ) async -> UNNotificationPresentationOptions {
+        _ center: UNUserNotificationCenter, willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping @Sendable (UNNotificationPresentationOptions) -> Void
+    ) {
         let content = notification.request.content
         let payload = try? ChannelPushPayload(userInfo: content.userInfo)
-        return await presentation(for: payload, category: content.categoryIdentifier)
+        let category = content.categoryIdentifier
+        Self.completeOnMainActor({
+            self.presentation(for: payload, category: category)
+        }, completionHandler: completionHandler)
     }
 
     nonisolated func userNotificationCenter(
-        _ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse
-    ) async {
+        _ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping @Sendable () -> Void
+    ) {
         let content = response.notification.request.content
-        do {
-            let payload = try ChannelPushPayload(userInfo: content.userInfo)
-            await receive(payload, action: response.actionIdentifier,
-                          text: (response as? UNTextInputNotificationResponse)?.userText,
-                          handle: content.userInfo["handle"] as? String,
-                          identifier: response.notification.request.identifier)
-        } catch {
-            Self.logger.info("Ignored an alert without current channel routing: \(error.localizedDescription)")
+        let payload = Result { try ChannelPushPayload(userInfo: content.userInfo) }
+        let action = response.actionIdentifier
+        let text = (response as? UNTextInputNotificationResponse)?.userText
+        let handle = content.userInfo["handle"] as? String
+        let identifier = response.notification.request.identifier
+        Self.completeOnMainActor({
+            do {
+                await self.receive(try payload.get(), action: action, text: text,
+                                   handle: handle, identifier: identifier)
+            } catch {
+                Self.logger.info("Ignored an alert without current channel routing: \(error.localizedDescription)")
+            }
+        }, completionHandler: { completionHandler() })
+    }
+
+    nonisolated static func completeOnMainActor<Value: Sendable>(
+        _ operation: @escaping @MainActor @Sendable () async -> Value,
+        completionHandler: @escaping @Sendable (Value) -> Void
+    ) {
+        Task { @MainActor in
+            let value = await operation()
+            completionHandler(value)
         }
     }
 
