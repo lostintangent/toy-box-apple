@@ -5,7 +5,7 @@ import { join } from "node:path";
 import {
     checkMobileBuildVersion, checkMobileExtensionEntryPoint, linkMobileWorkspace, mobileBuildConfiguration,
     embedMobileActivityFixtures, mobileActivityFixtures, mobileExtensions, mobileLaunchOptions, mobilePushEnvironment,
-    mobileSimulatorEntitlements,
+    mobileSimulatorEntitlements, mobileActivityAutoplayArguments,
     withMobileAppearance,
 } from "./mobile.ts";
 
@@ -52,6 +52,27 @@ test("Activity fixture proof rejects non-debug, device and unleased commands bef
         [["--activity-fixture-proof", "--hold", "--shutdown"], "debug", "requires a debug Simulator"],
         [["--activity-fixture-proof", "--hold"], "release", "available only in debug Simulator"],
         [["--activity-fixture-proof", "--foundation-proof", "--hold"], "debug", "Choose one simulator proof"],
+    ] as const) {
+        const process = Bun.spawn([globalThis.process.execPath, join(import.meta.dir, "mobile.ts"), ...args], {
+            cwd: import.meta.dir, stdin: "ignore", stdout: "pipe", stderr: "pipe",
+            env: { ...globalThis.process.env, CONFIGURATION: configuration },
+        });
+        const output = await new Response(process.stderr).text();
+        expect(await process.exited).toBe(1);
+        expect(output).toContain(message);
+    }
+});
+
+test("autoplay forwards only inside the debug Activity fixture proof", async () => {
+    expect(mobileActivityAutoplayArguments()).toEqual([]);
+    expect(mobileActivityAutoplayArguments(true, false, true)).toEqual(["--autoplay"]);
+    expect(mobileActivityAutoplayArguments(true, true, true)).toEqual(["--autoplay", "--autoplay-ended"]);
+    for (const [args, configuration, message] of [
+        [["--autoplay"], "debug", "--autoplay requires --activity-fixture-proof"],
+        [["--activity-fixture-proof", "--autoplay-ended", "--hold"], "debug", "--autoplay-ended requires --autoplay"],
+        [["--activity-fixture-proof", "--autoplay", "--hold"], "release", "available only in debug Simulator"],
+        [["--activity-fixture-proof", "--autoplay", "--hold", "--device"], "debug", "requires a debug Simulator"],
+        [["--activity-fixture-proof", "--autoplay"], "debug", "requires a debug Simulator"],
     ] as const) {
         const process = Bun.spawn([globalThis.process.execPath, join(import.meta.dir, "mobile.ts"), ...args], {
             cwd: import.meta.dir, stdin: "ignore", stdout: "pipe", stderr: "pipe",
