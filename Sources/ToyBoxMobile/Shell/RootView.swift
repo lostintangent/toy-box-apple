@@ -14,6 +14,14 @@ struct RootView: View {
     @ViewState private var columnVisibility = NavigationSplitViewVisibility.automatic
     @ViewState private var preferredCompactColumn = NavigationSplitViewColumn.sidebar
     @ViewState private var searchFocusRequest = UUID()
+    @ViewState private var handoff: ChannelHandoffNavigation
+    #if DEBUG
+    @ViewState private var didRunHandoffProof = false
+    #endif
+
+    init(handoff: ChannelHandoffNavigation = ChannelHandoffNavigation()) {
+        _handoff = ViewState(wrappedValue: handoff)
+    }
 
     @ViewBuilder
     private var navigationWithOverview: some View {
@@ -57,7 +65,9 @@ struct RootView: View {
     var body: some View {
         @Bindable var model = model
         Group {
-            if model.catalog == nil {
+            if handoff.phase != .idle {
+                NavigationStack { handoffContent.navigationTitle("Toy Box") }
+            } else if model.catalog == nil {
                 NavigationStack { ConnectionSetupView() }
             } else {
                 navigationWithOverview
@@ -66,6 +76,7 @@ struct RootView: View {
         .environment(management)
         .focusedSceneValue(\.channelCommands, commandActions)
         .onChange(of: model.serverURL) { _, _ in
+            handoff.cancel()
             management.flow = nil
             managementSessions.reset()
             overview.reset()
@@ -84,6 +95,7 @@ struct RootView: View {
             }
         }
         .onChange(of: model.selectedChannelID) { _, id in
+            if id != nil { handoff.cancel() }
             preferredCompactColumn = id == nil ? .sidebar : .detail
             if id == nil { columnVisibility = .all }
         }
@@ -94,7 +106,25 @@ struct RootView: View {
         .onChange(of: model.catalog?.hasLoaded, initial: true) { _, _ in
             model.reconcileSelection()
         }
-        .onOpenURL { url in Task { await model.openExternalURL(url) } }
+        .onChange(of: model.isResolvingNavigation) { _, resolving in
+            if resolving { handoff.cancel() }
+        }
+        .onOpenURL { url in
+            handoff.cancel()
+            Task { await model.openExternalURL(url) }
+        }
+        .onContinueUserActivity(ChannelHandoff.activityType, perform: continueHandoff)
+        .onDisappear { handoff.cancel() }
+        #if DEBUG
+        .onAppear {
+            if !didRunHandoffProof, let id = ProcessInfo.processInfo.environment["TOY_BOX_HANDOFF_CHANNEL"] {
+                didRunHandoffProof = true
+                let activity = NSUserActivity(activityType: ChannelHandoff.activityType)
+                activity.userInfo = ChannelHandoff(channelID: id).userInfo
+                continueHandoff(activity)
+            }
+        }
+        #endif
         .sheet(isPresented: $model.isSettingsPresented) {
             NavigationStack { SettingsView() }
         }
@@ -155,9 +185,46 @@ struct RootView: View {
                     .environment(model.interaction(for: store.id))
                     .environment(model.artifactSession(for: store))
                     .environment(model.galleryPresenter(for: store))
+                    .userActivity(ChannelHandoff.activityType, element: store.id) { id, activity in
+                        activity.userInfo = ChannelHandoff(channelID: id).userInfo
+                        activity.requiredUserInfoKeys = [ChannelHandoff.channelIDKey]
+                        activity.isEligibleForHandoff = true
+                    }
             } else {
                 ContentUnavailableView("Choose a channel", systemImage: "bubble.left.and.bubble.right",
                                        description: Text("Open a channel from the list to join the conversation."))
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var handoffContent: some View {
+        if handoff.phase == .opening {
+            ProgressView("Opening channel…")
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            ContentUnavailableView {
+                Label("Channel unavailable", systemImage: "bubble.left.and.bubble.right")
+            } description: {
+                Text("This channel isn't available.")
+            } actions: {
+                Button("Show Channels") {
+                    handoff.cancel()
+                    preferredCompactColumn = .sidebar
+                    columnVisibility = .all
+                }
+            }
+        }
+    }
+
+    private func continueHandoff(_ activity: NSUserActivity) {
+        management.flow = nil
+        managementSessions.reset()
+        overview.reset()
+        let generation = model.beginHandoffNavigation()
+        Task {
+            await handoff.continueActivity(activity, currentCatalog: { model.catalog }) { id in
+                model.openHandoffChannel(id: id, generation: generation)
             }
         }
     }
@@ -180,7 +247,7 @@ struct RootView: View {
     }
 
     private var commandActions: WindowCommandActions? {
-        guard model.isActive, model.catalog != nil, !model.isSettingsPresented, management.flow == nil,
+        guard handoff.phase == .idle, model.isActive, model.catalog != nil, !model.isSettingsPresented, management.flow == nil,
               model.navigationNotice == nil, model.browserFailure == nil else { return nil }
         let store = model.selectedStore.flatMap {
             $0.id == model.visibleChannelID && $0.phase != .deleted ? $0 : nil

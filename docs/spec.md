@@ -2500,9 +2500,20 @@ A window that shows a channel makes it the window's user activity (`dev.toybox.d
 with `appEntityIdentifier` set to its Channel entity, through `userActivity(_:element:_:)` so the
 activity follows a switch. AppKit makes the main window's activity current, so Siri and Apple
 Intelligence take "this channel" to mean the one in front, and with no channel shown there's no
-activity. Handoff stays off, since no other device can open the channel. The activity carries only
-the identifier. The entity isn't `Transferable`, so Siri learns what a channel says only from
-Catch Me Up's answer.
+activity. Phone and Mac declare the same activity type and carry only the exact channel identifier
+in `userInfo.channelID`. Handoff is eligible while a channel is shown, except isolated Mac
+snapshot, benchmark and explicit-server launches. Each receiving window resolves the identifier
+in its own current server's catalog, joining a catalog refresh when necessary. It never matches
+by name, switches servers, or imports drafts or credentials. A native `Opening channel…` progress
+state resolves to the channel or one native `Channel unavailable` state with
+`This channel isn't available.` and `Show Channels`. New navigation or a server change discards
+obsolete results. Local drafts survive Handoff and ordinary Back/sidebar navigation.
+The entity isn't `Transferable`, so Siri learns what a channel says only from Catch Me Up's answer.
+
+Debug builds can launch with `TOY_BOX_HANDOFF_CHANNEL=<channel ID>` to invoke the same continuation
+handler as native Handoff. For the phone simulator, pass it through
+`SIMCTL_CHILD_TOY_BOX_HANDOFF_CHANNEL`. This is a receiver-state proof hook, not proof of native
+cross-device discovery or delivery, which requires the signed phone and Mac on real devices.
 
 Catch Me Up without a channel says "You're all caught up." when nothing needs you, catches up on
 the one channel that does, or gives an overview: "You have updates in 4 channels." and then one

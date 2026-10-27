@@ -280,6 +280,23 @@ final class AppModel {
         return renderer.uiImage?.pngData()
     }
 
+    func beginHandoffNavigation() -> UUID {
+        cancelNavigation()
+        restoredSelection = true
+        isSettingsPresented = false
+        navigationNotice = nil
+        browserFailure = nil
+        selectedChannelID = nil
+        return navigationGeneration
+    }
+
+    func openHandoffChannel(id: String, generation: UUID) {
+        guard navigationGeneration == generation else { return }
+        closeReaders(for: id)
+        interaction(for: id).isInspectorPresented = false
+        selectedChannelID = id
+    }
+
     func openChannel(id: String, sequence: Int? = nil, focusComposer: Bool = false,
                      expectedServer: String) async {
         cancelNavigation()
