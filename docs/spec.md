@@ -1578,11 +1578,28 @@ padding: a 24-point avatar, a 10-point gap, then the name in 13 regular primary 
 | Presence | Status line | Trailing |
 | --- | --- | --- |
 | Working | Presence text, or "Working", in primary at 85%, after a 9-point heavy `ellipsis` in the agent's color, 4 points before the text. This is Messages' typing cue | Nothing |
-| Waiting | A static 9-point heavy `pause.fill` in a 12-point cue lane, then a 4-point gap and the reason in secondary, such as "Waiting for Moss's review". Tint only the glyph `#9A6700` in Light and `#F4BE66` in Dark, shared with iPhone | With a wake time, "8 min" in 11 secondary tabular digits, updated at minute boundaries, help "Checks again at 9:32 AM". "Due" once it passes |
+| Waiting | A static 9-point heavy `pause.fill` in a 12-point cue lane, then a 4-point gap and the reason in secondary, such as "Waiting for Moss's review". Center the glyph on the status font's cap height, not its line box, within 0.5 points on Mac. Tint only the glyph `#9A6700` in Light and `#F4BE66` in Dark, shared with iPhone | With a valid wake time, a leading `bell`, 4-point gap and "8 min" in 11 secondary tabular digits, updated at minute boundaries, help "Checks again at 9:32 AM". "Due" once it passes |
 | Idle | "Idle" in secondary | Nothing |
 
 Both apps share status copy and spoken state. Missing live presence reads "Status unavailable";
 disconnected presence reads "Status unavailable while disconnected". Neither keeps an activity cue.
+Both also read the status-text ink rule from `ChannelAgentStatusPresentation`: working uses
+primary foreground ink at 85%, while waiting, idle and unavailable remain muted. The phone
+must not render working text in the same secondary ink as waiting. Keep cue colors separate
+from this text rule. Muted status and countdown use `ChannelInk.secondary`, preserving the
+phone's opaque secondary ink and the Mac's existing semantic secondary.
+
+Both apps show the waiting check-in in the existing row, never a new metadata line. Mac keeps
+its trailing position and hover-menu replacement. Phone places the bell and duration just
+before the native chevron, in muted footnote text. Show this only for live waiting presence
+with a valid `wakeAt`; omit it for working, idle, unavailable, disconnected or absent/invalid
+wake times. A single ToyBoxUI view owns both the countdown and its localized text, preserving
+the Mac's rounded-up remaining duration and Due behavior. Phone updates only at minute
+boundaries while its row is visible. Keep the bell/value group together and trailing even
+when phone name/status wrap at accessibility sizes. Add no row height at default text.
+Both rows speak "checks again in 8 minutes" or "check-in due". Retain the exact date in agent
+details and Mac help. The bell is decorative, not a second button. It means time until the
+next check-in, unlike the task clock's elapsed time. No activity or progress is inferred.
 
 The working ellipsis pulses only while the window is key. Under Reduce Motion, and in every other
 window, it is static at full color. The pulse matches the system's iterative variable color on that
@@ -1627,6 +1644,12 @@ loss. Collapsing removes it with the children. Do not draw a dangling guide to a
 "View N subtasks" link; its scoped list starts a fresh local tree. Guides never hit-test or
 enter accessibility. Include the shared Mac Tasks popover, and preserve all disclosure,
 hierarchy and row-action semantics.
+
+**Phone disclosure, interim fallback.** Until t380's native-row animation is verified, task
+disclosure changes instantly without an animated transaction, using the existing Reduce
+Motion behavior. No child fade or competing native cell-height animation. Keep the saved
+disclosure state, defaults, scoped subtasks, guide geometry, artifact actions, accessibility
+and timers unchanged. This temporary phone-only fallback does not alter Mac disclosure.
 
 A parent's disclosure trails its title inline, as macOS sidebar section headers and the pane do.
 Build the first line as one wrapping `Text`: the title, then two spaces and the progress count
@@ -1725,7 +1748,8 @@ Keep every phone symbol within the same 24-point icon lane and the current docum
 visual size. Bound wider HTML and SVG artwork to that footprint without stretching its aspect
 ratio, enlarging the column or adopting the Mac's 28-point size.
 Phone artifact rows match Team's compact two-line rhythm: body title and footnote date,
-2-point interline gap, 24-point icon lane and the existing 12-point icon/text gap. Remove the
+4-point title/date gap, 24-point icon lane and the existing 12-point icon/text gap. Team's
+name/status gap stays 2 points. Remove the
 64-point content minimum. Add exactly 6 points of native vertical row inset above and below
 the minimum-44 label, for both short and two-line titles. This replaces the earlier total-height
 target: preserve readable content and the full target rather than squeezing the row to 60.
