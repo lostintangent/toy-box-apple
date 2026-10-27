@@ -90,3 +90,13 @@ test("workflow actions remain pinned to full commit hashes with readable version
         expect(comment).toMatch(/# v\d/);
     }
 });
+
+test("Mac builds require changelog notes and publish the same file instead of generated notes", () => {
+    const steps = source.split("\n").filter(line => line.startsWith("      - name: "));
+    expect(steps).toContain("      - name: Require the Mac changelog entry");
+    expect(steps.indexOf("      - name: Require the Mac changelog entry"))
+        .toBeLessThan(steps.indexOf("      - name: Bundle with Siri and Shortcuts metadata"));
+    expect(source).toContain('--notes-file dist/release-notes.md');
+    expect(source).not.toContain("--generate-notes");
+    expect(source).not.toContain("Fetch annotated release tag");
+});

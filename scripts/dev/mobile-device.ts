@@ -205,9 +205,15 @@ export function mobileProfilePaths() {
     };
 }
 
-export async function mobileSigning(distribution: boolean, udid?: string) {
+export async function mobileSigning(distribution: boolean, udid?: string,
+    fingerprint = distribution ? process.env.MOBILE_SIGNING_IDENTITY : undefined) {
+    if (fingerprint !== undefined && !/^[a-f\d]{40}$/i.test(fingerprint)) {
+        throw new Error("MOBILE_SIGNING_IDENTITY must be a 40-digit certificate SHA-1.");
+    }
+    const identities = mobileSigningIdentities(
+        await text(["security", "find-identity", "-v", "-p", "codesigning"]), distribution);
     return selectMobileSigning(await installedProfiles(distribution),
-        mobileSigningIdentities(await text(["security", "find-identity", "-v", "-p", "codesigning"]), distribution),
+        identities.filter(identity => fingerprint === undefined || identity.fingerprint === fingerprint.toUpperCase()),
         distribution, udid, Date.now(), mobileProfilePaths());
 }
 

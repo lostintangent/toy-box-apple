@@ -82,7 +82,9 @@ test.skipIf(!hasTools)("native appcast: ephemeral file key signs archive/feed an
             HOME: directory, CFFIXED_USER_HOME: directory, SPARKLE_ED_KEY_FILE: key, SPARKLE_ED_PRIVATE_KEY: "",
             OUTPUT_DIR: output, BUILD_NUMBER: "200.1", DOWNLOAD_URL_PREFIX: "http://127.0.0.1:3298/",
         };
-        await command([process.execPath, join(root, "scripts/release/generate-appcast.ts"), "v0.2.0"], { env });
+        await Bun.write(join(directory, "CHANGELOG.md"), "## Mac 0.2.0\n\nNative appcast signing fixture.\n");
+        await command([process.execPath, "-e",
+            `const { generateAppcast } = await import(${JSON.stringify(new URL("../generate-appcast.ts", import.meta.url).href)}); await generateAppcast("v0.2.0", ${JSON.stringify(directory)});`], { env });
         const feed = join(output, "appcast.xml");
         const signature = appcastItems(await Bun.file(feed).text())[0].child("enclosure")?.sparkleAttribute("edSignature");
         expect(signature).toBeDefined();

@@ -1,20 +1,17 @@
 import { basename, join, resolve } from "node:path";
-import { command, main, releaseTag, repositoryURL, required, root, text } from "../lib.ts";
+import { command, main, releaseTag, repositoryURL, required, root } from "../lib.ts";
 import { sparkleTools } from "./sparkle-tools.ts";
 import { appcastItems } from "./xml.ts";
+import { releaseChangelog } from "./changelog.ts";
 
 export async function releaseNotes(tag: string, repository = root) {
     releaseTag(tag);
-    const ref = `refs/tags/${tag}`;
-    const contents = await text(["git", "-C", repository, "for-each-ref",
-        "--format=%(refname)%00%(objecttype)%00%(contents)", ref]);
-    const annotationPrefix = `${ref}\0tag\0`;
-    const notes = contents.startsWith(annotationPrefix) ? contents.slice(annotationPrefix.length).trim() : "";
-    return notes ? notes + "\n" : `Toy Box ${tag.slice(1)}\n`;
+    return (await releaseChangelog(tag, join(repository, "CHANGELOG.md"))).notes;
 }
 
-export async function generateAppcast(tag: string) {
+export async function generateAppcast(tag: string, repository = root) {
     releaseTag(tag);
+    const noteContents = await releaseNotes(tag, repository);
     const output = resolve(process.env.OUTPUT_DIR || join(root, "dist"));
     const archive = join(output, `ToyBox-${tag.slice(1)}-arm64.zip`);
     if (!Bun.file(archive).size) throw new Error(`A notarized release archive is required: ${archive}`);
@@ -28,7 +25,7 @@ export async function generateAppcast(tag: string) {
         await command([join(tools, "bin", name), "--ed-key-file", keyFile, ...args], { input });
     }
     const notes = archive.replace(/\.zip$/, ".txt");
-    await Bun.write(notes, await releaseNotes(tag));
+    await Bun.write(notes, noteContents);
     await signingTool("generate_appcast", ["--download-url-prefix", prefix, "--embed-release-notes",
         "--maximum-deltas", "0", "--link", repositoryURL, "-o", join(output, "appcast.xml"), output]);
     const items = appcastItems(await Bun.file(join(output, "appcast.xml")).text());

@@ -45,8 +45,8 @@ export class FakeHarness {
     }
 }
 
-export async function workflowBody(name: string) {
-    const lines = (await Bun.file(join(root, ".github/workflows/build-and-release.yml")).text()).split("\n");
+export async function workflowBody(name: string, file = "build-and-release.yml") {
+    const lines = (await Bun.file(join(root, ".github/workflows", file)).text()).split("\n");
     const start = lines.indexOf(`      - name: ${name}`);
     if (start < 0) throw new Error(`Workflow step not found: ${name}`);
     const run = lines.indexOf("        run: |", start);

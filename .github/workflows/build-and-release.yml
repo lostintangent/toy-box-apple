@@ -164,6 +164,8 @@ jobs:
         with:
           bun-version: 1.4.4
       - run: bun install --frozen-lockfile --ignore-scripts
+      - name: Require the Mac changelog entry
+        run: bun run release-notes "$RELEASE_TAG" dist/release-notes.md
       - name: Bundle with Siri and Shortcuts metadata
         env:
           CONFIGURATION: release
@@ -251,10 +253,6 @@ jobs:
         env:
           SCRATCH_PATH: ${{ runner.temp }}/toy-box-release
         run: bun run release "$RELEASE_TAG"
-      - name: Fetch annotated release tag
-        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
-        run: |
-          git fetch --force --no-tags --depth=1 origin "refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG"
       - name: Generate and verify the signed update feed
         env:
           SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
@@ -286,6 +284,7 @@ jobs:
             dist/*.zip
             dist/*.sha256
             dist/appcast.xml
+            dist/release-notes.md
           if-no-files-found: error
           retention-days: 14
 
@@ -307,4 +306,4 @@ jobs:
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
           gh release create "$RELEASE_TAG" dist/*.zip dist/*.sha256 dist/appcast.xml \
-            --repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes --title "$RELEASE_TAG"
+            --repo "$GITHUB_REPOSITORY" --verify-tag --notes-file dist/release-notes.md --title "$RELEASE_TAG"
