@@ -1,7 +1,56 @@
+import Foundation
 import Testing
 @testable import ChannelKit
 
 struct ModelSelectionTests {
+    @Test func catalogDecodesDefaultReasoningAndContextWindows() throws {
+        let model = try JSONDecoder().decode(ProviderModel.self, from: Data(#"""
+            {"id":"model","name":"Model","provider":"copilot",
+             "supportedReasoningEfforts":["low","medium","xhigh"],"defaultReasoningEffort":"medium",
+             "supportedContextTiers":[{"name":"default","tokenWindow":200000},
+                                      {"name":"long_context","tokenWindow":1000000}]}
+            """#.utf8))
+        #expect(model.defaultReasoningEffort == "medium")
+        #expect(model.supportedContextTiers?.map(\.tokenWindow) == [200_000, 1_000_000])
+        let encoded = try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(model))
+        #expect(encoded["defaultReasoningEffort"] == .string("medium"))
+    }
+
+    @Test func reasoningResolvesTheSupportedRequestThenDeclaredDefaultThenFirstValue() {
+        var model = ProviderModel(id: "model", name: "Model", provider: "copilot",
+                                  supportedReasoningEfforts: ["low", "medium", "xhigh"],
+                                  defaultReasoningEffort: "medium")
+        #expect(model.resolvedReasoningEffort(requested: "xhigh") == "xhigh")
+        #expect(model.resolvedReasoningEffort(requested: "unsupported") == "medium")
+        #expect(model.resolvedReasoningEffort(requested: nil) == "medium")
+        #expect(model.resolvedReasoningEffort(requested: "") == "medium")
+        model.defaultReasoningEffort = nil
+        #expect(model.resolvedReasoningEffort(requested: "unsupported") == "low")
+        #expect(model.resolvedReasoningEffort(requested: nil) == "low")
+        model.defaultReasoningEffort = "declared-default"
+        #expect(model.resolvedReasoningEffort(requested: nil) == "declared-default")
+        model.supportedReasoningEfforts = []
+        #expect(model.resolvedReasoningEffort(requested: nil) == "declared-default")
+        model.defaultReasoningEffort = nil
+        #expect(model.resolvedReasoningEffort(requested: nil) == nil)
+    }
+
+    @Test func contextResolvesOnlyASupportedRequestOrTheFirstTier() {
+        var model = ProviderModel(id: "model", name: "Model", provider: "copilot",
+                                  supportedContextTiers: [
+                                    .init(name: "default", tokenWindow: 200_000),
+                                    .init(name: "long_context", tokenWindow: 1_000_000)
+                                  ])
+        #expect(model.resolvedContextTier(requested: "long_context") == "long_context")
+        #expect(model.resolvedContextTier(requested: "unsupported") == "default")
+        #expect(model.resolvedContextTier(requested: nil) == "default")
+        #expect(model.resolvedContextTier(requested: "") == "default")
+        model.supportedContextTiers?.reverse()
+        #expect(model.resolvedContextTier(requested: nil) == "long_context")
+        model.supportedContextTiers = nil
+        #expect(model.resolvedContextTier(requested: "default") == nil)
+    }
+
     @Test func clearingMemberModelDoesNotRequireCatalogChoicesOrACompatibleDefault() {
         let model = ModelConfiguration(provider: "copilot", name: "existing-model",
                                        options: ["reasoningEffort": .string("high")])
