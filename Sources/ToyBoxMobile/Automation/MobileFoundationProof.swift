@@ -6,11 +6,13 @@ extension View {
 }
 
 private struct MobileFoundationProof: ViewModifier {
+    @ViewState private var showsChannels = false
+
     func body(content: Content) -> some View {
         if ProcessInfo.processInfo.arguments.contains("--activity-fixture-proof") {
             ActivityFixtureProofView()
-        } else if ProcessInfo.processInfo.arguments.contains("--foundation-proof") {
-            FoundationProofView()
+        } else if ProcessInfo.processInfo.arguments.contains("--foundation-proof"), !showsChannels {
+            FoundationProofView(showChannels: { showsChannels = true })
         } else {
             content
         }
@@ -25,6 +27,7 @@ import WidgetKit
 
 @MainActor
 private struct FoundationProofView: View {
+    let showChannels: () -> Void
     @Environment(AppModel.self) private var model
     @ViewState private var marker = ""
     @ViewState private var result = "Not prepared"
@@ -37,6 +40,7 @@ private struct FoundationProofView: View {
                 Section("Simulator foundation only") {
                     Text(result).accessibilityIdentifier("foundation-result")
                     Text("Shared marker: \(marker)")
+                    Button("Show Channels", action: showChannels)
                     Button("Prepare Shared Container") { prepare() }
                     Button("Allow Proof Notifications") {
                         Task {
@@ -101,7 +105,7 @@ private struct FoundationProofView: View {
             defer { isSchedulingNotification = false }
             do {
                 try await model.notifications.scheduleProofNotification(kind)
-                result = "Enriched \(kind.rawValue) scheduled. Lock the simulator within five seconds."
+                result = "Enriched \(kind.rawValue) scheduled. Return Home or lock the simulator within 30 seconds."
             } catch {
                 result = "Notification failed: \(error.localizedDescription)"
             }

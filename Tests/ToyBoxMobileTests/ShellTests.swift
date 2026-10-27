@@ -375,6 +375,31 @@ struct ShellTests {
         }
     }
 
+    @Test func notificationDelegateUsesExplicitSystemCompletionHandlers() async {
+        await withDefaults { defaults in
+            let notifications = ChannelNotifications(defaults: defaults)
+            #expect(notifications.responds(to: #selector(
+                ChannelNotifications.userNotificationCenter(_:willPresent:withCompletionHandler:))))
+            #expect(notifications.responds(to: #selector(
+                ChannelNotifications.userNotificationCenter(_:didReceive:withCompletionHandler:))))
+        }
+    }
+
+    @Test func notificationCompletionsReturnToTheMainThreadAfterSuspendingWork() async {
+        let result = await Task.detached {
+            await withCheckedContinuation { continuation in
+                ChannelNotifications.completeOnMainActor({
+                    await Task.yield()
+                    return UNNotificationPresentationOptions.list
+                }, completionHandler: { options in
+                    continuation.resume(returning: (options, Thread.isMainThread))
+                })
+            }
+        }.value
+        #expect(result.0 == [.list])
+        #expect(result.1)
+    }
+
     @Test func withdrawalRemovesAnsweredRequestsSeenCompletionsAndTheOpenChannelsAlerts() {
         let channels = [
             Channel(id: "first", name: "First", model: .init(provider: "test", name: "test"),
