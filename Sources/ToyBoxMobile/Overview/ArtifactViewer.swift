@@ -231,63 +231,14 @@ struct ArtifactViewer: View {
     }
 
     private var navigation: some View {
-        HStack(spacing: 6) {
-            Button { move(by: -1) } label: {
-                Label("Previous Artifact", systemImage: "chevron.backward")
-                    .labelStyle(.iconOnly)
-                    .frame(width: 44, height: 44)
-                    .contentShape(.rect)
-            }
-            .disabled(session.pages?.canShowPrevious != true)
-            ScrollViewReader { proxy in
-                ScrollView(.horizontal) {
-                    HStack(spacing: 6) {
-                        if let pages = session.pages {
-                            ForEach(Array(pages.artifacts.enumerated()), id: \.element.id) { index, artifact in
-                                thumbnailButton(artifact, index: index, count: pages.artifacts.count)
-                            }
-                        }
-                    }
-                }
-                .scrollIndicators(.hidden)
-                .onChange(of: session.artifact?.id, initial: true) { _, id in
-                    if let id { proxy.scrollTo(id, anchor: .center) }
-                }
-            }
-            .frame(maxWidth: CGFloat(min(9, session.pages?.artifacts.count ?? 0)) * 50 - 6)
-            Button { move(by: 1) } label: {
-                Label("Next Artifact", systemImage: "chevron.forward")
-                    .labelStyle(.iconOnly)
-                    .frame(width: 44, height: 44)
-                    .contentShape(.rect)
-            }
-            .disabled(session.pages?.canShowNext != true)
+        let artifacts = session.pages?.artifacts ?? []
+        return PagerCapsule(noun: "Artifact", label: "Artifacts", ids: artifacts.map(\.id),
+                            selection: session.artifact?.id, canShowPrevious: session.pages?.canShowPrevious == true,
+                            canShowNext: session.pages?.canShowNext == true, move: { move(by: $0) }, select: select) {
+            artifacts[$0].title
+        } thumbnail: {
+            thumbnail(artifacts[$0])
         }
-        .buttonStyle(.plain)
-        .padding(8)
-        .fixedSize(horizontal: false, vertical: true)
-        .glassEffect(.regular.interactive(), in: .capsule)
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Artifacts")
-    }
-
-    private func thumbnailButton(_ artifact: ChannelArtifact, index: Int, count: Int) -> some View {
-        Button { select(artifact.id) } label: {
-            thumbnail(artifact)
-                .frame(width: 40, height: 40)
-                .clipShape(.rect(cornerRadius: 6))
-                .overlay {
-                    if artifact.id == session.artifact?.id {
-                        RoundedRectangle(cornerRadius: 6).strokeBorder(.tint, lineWidth: 2)
-                    }
-                }
-                .padding(2)
-                .contentShape(.rect)
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("\(artifact.title), \(index + 1) of \(count)")
-        .accessibilityAddTraits(artifact.id == session.artifact?.id ? .isSelected : [])
-        .id(artifact.id)
     }
 
     @ViewBuilder
