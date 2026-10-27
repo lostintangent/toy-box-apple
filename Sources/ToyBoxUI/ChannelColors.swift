@@ -55,15 +55,17 @@ public enum ChannelAttentionStyle {
 public enum TranscriptSurface: Hashable, Sendable {
     case canvas, agent, pendingAgent, user
 
-    /// Fills layered over the transcript canvas, bottom first.
-    public func fills(isDark: Bool) -> [Color] {
+    /// Fills layered over the transcript canvas, bottom first. `canvasIsBlack` is the phone's pure
+    /// black Dark canvas, where the user's accent wash alone barely leaves black.
+    public func fills(isDark: Bool, canvasIsBlack: Bool = false) -> [Color] {
         let neutral = Color.primary.opacity(isDark ? 0.07 : 0.045)
         switch self {
         case .canvas: return []
         case .agent: return [neutral]
         // In dark, the wash sits over the neutral fill so it reads warm gray rather than brown.
         case .pendingAgent: return isDark ? [neutral, ChannelColors.requestWash] : [ChannelColors.requestWash]
-        case .user: return [ChannelColors.userWash]
+        // Over black, the wash sits on the agent bubble's neutral lift so it stands off the canvas as clearly.
+        case .user: return isDark && canvasIsBlack ? [neutral, ChannelColors.userWash] : [ChannelColors.userWash]
         }
     }
 

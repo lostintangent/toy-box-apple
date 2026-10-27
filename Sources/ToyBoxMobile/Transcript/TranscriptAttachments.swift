@@ -113,6 +113,7 @@ struct TranscriptImage: View {
         }
         .frame(width: size.width, height: size.height)
         .clipShape(.rect(cornerRadius: 10, style: .continuous))
+        .transcriptAttachmentEdge(.rect(cornerRadius: 10, style: .continuous))
     }
 
     private func load() async {
@@ -201,6 +202,7 @@ private struct TranscriptVideo: View {
                     Image(uiImage: poster).resizable().scaledToFit()
                         .frame(maxWidth: 240, maxHeight: 160)
                         .clipShape(.rect(cornerRadius: 10, style: .continuous))
+                        .transcriptAttachmentEdge(.rect(cornerRadius: 10, style: .continuous))
                 }
                 Label("Play \(name)", systemImage: "play.circle.fill")
                     .font(.subheadline)

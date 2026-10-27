@@ -726,7 +726,7 @@ drop shadows. Use an 8-point spacing rhythm, with 4-point adjustments inside com
 | --- | --- |
 | Conversation background | `textBackgroundColor`, opaque in both appearances |
 | Agent message surface | Neutral tonal fill over the conversation, approximately 4.5% primary ink in light and 7% in dark. A pending request swaps it for a warm orange wash. Borders only under Increase Contrast |
-| Your message surface | Accent at 9% over the conversation, with normal label text. Under Increase Contrast, the same 1-point `primary` edge at 50% as agent bubbles |
+| Your message surface | Accent at 9% over the conversation, with normal label text. On the phone's pure black Dark canvas, the wash sits over the agent bubble's 7% neutral lift so the bubble stands off black as clearly. Under Increase Contrast, the same 1-point `primary` edge at 50% as agent bubbles |
 | Navigation and inspector | System sidebar and inspector materials, no manual blur stacking |
 | Floating controls and popovers | Native toolbar, popover and control materials |
 | Text | `labelColor`, `secondaryLabelColor`, `tertiaryLabelColor` by hierarchy |
@@ -1173,7 +1173,8 @@ message's leading or trailing edge, retaining attachment order when it scrolls. 
 focused. Their context menu keeps Quick Look and Open in Browser. Each image tile draws a 1-point inner hairline over its clipped 8-point corners, primary
 at 10% in light and 14% in dark, so screenshots with white or black margins keep an edge. Light
 appearance adds a soft shadow (black 10%, radius 3, y 1). Dark adds none. Increase Contrast
-raises the hairline to 40%. While an image loads, show a neutral tile at its final size
+raises the hairline to 40%. The phone draws the same hairline on its 10-point continuous thumbnails
+and video posters. While an image loads, show a neutral tile at its final size
 (quaternary fill at 30%, the same corners and hairline). Add a small spinner after 300 ms and
 never show the filename. Read inline images' pixel size from the image header before decoding,
 so the first layout is final. A remote image an earlier load cached reads its size from the cached
@@ -1234,7 +1235,9 @@ native `TranscriptSVGImage` decoder, while keeping their viewer state and naviga
 Reactions are display-only in this client, matching the user pane. Use the existing emoji for
 done, agree, celebrate, love and laugh. Also show the projected looking/working reactions while
 the agent's live presence and matching status target permit them. Group by reaction, then show up
-to three 14-point reactor avatars and `+N`. Chips are 24 high with a subtle border. Hover, keyboard
+to three 14-point reactor avatars and `+N`. Chips are 24 high with a subtle border. The phone
+draws the same shared pill at caption size, with its avatars and height scaling with Dynamic Type,
+inside a 44-point target, and stacks chips one per line when a row doesn't fit. Hover, keyboard
 focus or activation reveals every reactor name. Do not make a reaction chip look like an enabled
 "add reaction" button. The working summary floats as a glass capsule above the composer, outside
 the scrollable history. It has 20-point avatars, "Name is working" or "N agents are working", and status details on

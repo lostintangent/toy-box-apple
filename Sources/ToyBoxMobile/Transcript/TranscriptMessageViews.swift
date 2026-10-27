@@ -364,7 +364,7 @@ struct TranscriptMentionInk: Equatable {
             return TranscriptRGB(red: red, green: green, blue: blue, alpha: alpha)
         }
         guard let base = rgb(identity), let canvas = rgb(Color(uiColor: .systemBackground)) else { return .primary }
-        let background = surface.fills(isDark: isDark).reduce(canvas) { below, fill in
+        let background = surface.fills(isDark: isDark, canvasIsBlack: true).reduce(canvas) { below, fill in
             rgb(fill).map { below.under($0) } ?? below
         }
         let ink = TranscriptMentionContrast.adjusted(base, backgrounds: [background], isDark: isDark,
@@ -450,13 +450,17 @@ struct TranscriptReactions: View {
     var body: some View {
         let groups = groups
         if !groups.isEmpty {
-            HStack(spacing: 6) {
-                ForEach(groups, id: \.reaction) { group in
-                    let presentation = group.presentation
-                    TranscriptReactionChip(emoji: presentation.emoji, label: presentation.label,
-                                           reactors: group.agents)
-                }
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 6) { chips(groups) }
+                VStack(alignment: .leading, spacing: 0) { chips(groups) }
             }
+        }
+    }
+
+    private func chips(_ groups: [ChannelReactionGroup]) -> some View {
+        ForEach(groups, id: \.reaction) { group in
+            let presentation = group.presentation
+            TranscriptReactionChip(emoji: presentation.emoji, label: presentation.label, reactors: group.agents)
         }
     }
 }
@@ -467,21 +471,15 @@ struct TranscriptReactionChip: View {
     let label: String
     let reactors: [ChannelAgent]
     @ViewState private var showsReactors = false
+    @ScaledMetric(relativeTo: .caption) private var avatarSize: CGFloat = 14
+    @ScaledMetric(relativeTo: .caption) private var height: CGFloat = 24
 
     var body: some View {
         Button { showsReactors = true } label: {
-            HStack(spacing: 4) {
-                Text(emoji)
-                if reactors.count > 1 { Text("\(reactors.count)").monospacedDigit() }
-            }
-            .font(.caption)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 4)
-            // The visible pill is the 44-point-wide target, so neighbors sit only the stack's gap apart.
-            .frame(minWidth: 44)
-            .background(.quaternary.opacity(0.5), in: .capsule)
-            .frame(minHeight: 44)
-            .contentShape(.rect)
+            TranscriptReactionPill(emoji: emoji, reactors: reactors, font: .caption, avatarSize: avatarSize,
+                                   height: height)
+                .frame(minWidth: 44, minHeight: 44)
+                .contentShape(.rect)
         }
         .buttonStyle(.plain)
         .accessibilityLabel("\(label): \(reactors.map(\.name).joined(separator: ", "))")
@@ -528,7 +526,8 @@ private struct TranscriptBubble: ViewModifier {
         content
             .background {
                 ZStack {
-                    ForEach(Array(surface.fills(isDark: colorScheme == .dark).enumerated()), id: \.offset) {
+                    let fills = surface.fills(isDark: colorScheme == .dark, canvasIsBlack: true)
+                    ForEach(Array(fills.enumerated()), id: \.offset) {
                         shape.fill($0.element)
                     }
                 }

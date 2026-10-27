@@ -380,7 +380,7 @@ struct TranscriptTests {
                 for surface in [TranscriptSurface.agent, .pendingAgent, .user] {
                     let ink = rgb(TranscriptMentionInk(surface: surface, isDark: dark, isContrastIncreased: increased)
                         .color(for: pale))
-                    let background = surface.fills(isDark: dark)
+                    let background = surface.fills(isDark: dark, canvasIsBlack: true)
                         .reduce(rgb(Color(uiColor: .systemBackground))) { $0.under(rgb($1)) }
                     #expect(ink.contrast(with: background) >= (increased ? 7 : 4.5))
                 }
