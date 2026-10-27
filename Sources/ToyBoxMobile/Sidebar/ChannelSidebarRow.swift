@@ -124,17 +124,14 @@ struct ChannelSidebarRow: View {
 
     @ViewBuilder private var attentionLabel: some View {
         if let attention {
-            HStack(spacing: 4) {
-                if attention == .unread {
-                    Circle().fill(attentionColor)
-                        .frame(width: 7, height: 7)
-                } else {
-                    Image(systemName: ChannelAttentionStyle.symbol(for: attention))
-                        .font(.footnote.weight(.semibold))
-                        .foregroundStyle(attentionColor)
-                }
+            if attention == .unread {
+                Circle().fill(attentionColor)
+                    .frame(width: 7, height: 7)
+            } else {
+                Image(systemName: ChannelAttentionStyle.symbol(for: attention))
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(attentionColor)
             }
-            .font(.footnote)
         }
     }
 

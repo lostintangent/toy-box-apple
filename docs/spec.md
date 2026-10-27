@@ -876,6 +876,13 @@ attention. The name and time line never moves:
 | Ordinary unread | Blue 7-point dot | "Unread messages". Suppressed for an open channel |
 | Working, without attention | Working-agent avatar stack, no extra spinner | Names of agents working. Not an unread badge |
 
+**Phone.** Attention shows icons only, retaining the Mac's spoken phrases from this table.
+At standard text sizes, keep the time on the name line for quiet and working rows alike, never
+vertically centered in a quiet row. Accessibility sizes retain the stacked heading. Folded rows
+hide the system navigation indicator and draw a small tertiary `chevron.forward` immediately
+after the time, aligned on the first baseline. The chevron becomes white when selected.
+Unfolded rows show no chevron.
+
 The working-avatar stack exists independently of attention, so a working team and pending question
 can coexist. Keep the full-team names in row help/accessibility even though idle members are no
 longer pictured in the activity stack. Closed channels use catalog activity only if the protocol actually supplies it. Never
