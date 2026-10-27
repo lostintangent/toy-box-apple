@@ -49,6 +49,20 @@ public struct ChannelActivityAttributes: Codable, Hashable, Sendable {
             self.ending = ending
         }
 
+        public init(state: ChannelState, updatedAt: Date) {
+            let progress = channelTasksProgress(state.channel.tasks)
+            let ending: Ending?
+            if progress.total == 0 { ending = .tasksRemoved }
+            else if progress.done == progress.total { ending = .completed }
+            else { ending = nil }
+            self.init(
+                workingAgents: state.agents.filter { state.presence[$0.id]?.state == "working" }.map(WorkingAgent.init),
+                tasksDone: progress.done, tasksTotal: progress.total,
+                waitingRequestSequence: state.channel.requestSequence,
+                updatedAt: updatedAt, ending: ending
+            )
+        }
+
         public var staleDate: Date? {
             ending == nil ? updatedAt.addingTimeInterval(Self.freshnessInterval) : nil
         }
