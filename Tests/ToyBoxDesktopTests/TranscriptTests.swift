@@ -651,13 +651,11 @@ struct TranscriptTests {
         try await harness.waitUntil { find.isPresented && harness.findField != nil }
     }
 
-    // Quarantined from the default gate: it failed in Shell's composed run at e83ae76 (2799) with
-    // .failed, the outcome of the reveal's 2-second wall-clock budget, while sibling suites ran
-    // slowly. The scheduling cause isn't proven yet. Transcript owns restoring it with
-    // deterministic coverage. Runs with TOY_BOX_TEST_TRANSCRIPT_TIMING=1.
+    // Shell's composed run at e83ae76 (2799) failed this because sibling suites held the main
+    // thread past the app's 2-second reveal budget. The harness gives reveals 30 seconds, so this
+    // checks what a reveal reports, and the test below checks the budget.
     @MainActor
-    @Test(.enabled(if: transcriptTimingTestsEnabled))
-    func aRevealReportsRevealedOnlyOnceItsMessageIsInView() async throws {
+    @Test func aRevealReportsRevealedOnlyOnceItsMessageIsInView() async throws {
         let harness = try await TranscriptHarness(messages: (1...90).map(transcriptTestMessage))
         defer { harness.close() }
         try await harness.settled()
@@ -2556,7 +2554,7 @@ private final class TranscriptHarness {
          seenThrough: Int? = nil, height: CGFloat = 480, resizable: Bool = false, warm: Bool = false,
          legacyScrollers: Bool = false,
          intelligence: any ChannelIntelligenceService = LiveChannelIntelligence.shared,
-         find: TranscriptFind = TranscriptFind(), revealTimeout: Duration = .seconds(2),
+         find: TranscriptFind = TranscriptFind(), revealTimeout: Duration = .seconds(30),
          onTurn: (@MainActor (TranscriptHarness) -> Void)? = nil) async throws {
         let host = "transcript-\(UUID().uuidString.lowercased()).invalid"
         let latest = messages.last?.sequence ?? 0
