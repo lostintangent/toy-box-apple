@@ -269,6 +269,23 @@ question. The service must match the current registration before resolving ident
 The fixtures are `Tests/ChannelKitTests/Fixtures/push-request.apns`, `push-completion.apns` and
 `push-activity.apns`. Use the selected simulator's actual registration ID for routed alert proof.
 
+`MobileNotificationEnricher.start(_:completion:)` is the shared production service and local
+simulator-proof path. It reads the selected registration, fetches the catalog and original request
+through `ChannelAPI`, and applies the unchanged Mac text policy, including the 400-character limit.
+Request identity uses the real shared `AgentAvatarView` rendering and an incoming donated
+`INSendMessageIntent`. The enriched local metadata adds the resolved requester's `handle` for Reply;
+that handle is not part of the APNs routing contract. Completion uses the Mac task-count text and
+the app icon, with no Reply category.
+
+The three-second enrichment budget includes cache preparation. Expiry delivers once without
+waiting for canceled work, and late work cannot create a duplicate. The snapshot publisher also
+caches the selected registration's catalog in `notification-catalog.json` for generic offline
+alerts with valid cached identity. Failed lookups never use cached questions or task details as
+fresh text. Missing or mismatched registration gets plain Toy Box content, no action and no routing.
+Delivery rechecks the registration to prevent an in-flight lookup crossing a server switch.
+`simctl push` does not invoke the notification service on this runtime. A local proof can exercise
+the exact same enricher, but actual service invocation remains a real-APNs check.
+
 `ChannelActivityAttributes` has `channelID`, `channelName` and `registrationID`. Its `ContentState`
 has working agent identities, top-level tasks done/total, optional waiting request sequence,
 `updatedAt` and optional ending. Its custom Codable implementation uses Unix seconds for

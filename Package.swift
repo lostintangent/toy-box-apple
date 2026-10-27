@@ -43,7 +43,7 @@ let package = Package(
         .target(name: "ToyBoxWidgetViews", dependencies: ["ChannelKit"],
                 swiftSettings: [.unsafeFlags(["-application-extension"])]),
     ] + (mobile ? [
-        .target(name: "ToyBoxMobileIntegrations", dependencies: ["ChannelKit", "ChannelClient"],
+        .target(name: "ToyBoxMobileIntegrations", dependencies: ["ChannelKit", "ChannelClient", "ToyBoxUI"],
                 swiftSettings: [.unsafeFlags(["-application-extension"])]),
         .executableTarget(name: "ToyBoxMobile", dependencies: [
             "ChannelClient", "ChannelIntelligence", "ToyBoxUI", "ToyBoxMobileIntegrations"
@@ -55,7 +55,7 @@ let package = Package(
                 + simulatedEntitlements("dev.toybox.mobile.widget")
         ),
         .executableTarget(
-            name: "ToyBoxMobileNotification", dependencies: ["ToyBoxMobileIntegrations"],
+            name: "ToyBoxMobileNotification", dependencies: ["ChannelKit", "ToyBoxMobileIntegrations"],
             swiftSettings: [.unsafeFlags(["-application-extension"])],
             linkerSettings: [.unsafeFlags(["-Xlinker", "-e", "-Xlinker", "_NSExtensionMain"])]
                 + simulatedEntitlements("dev.toybox.mobile.notification")
