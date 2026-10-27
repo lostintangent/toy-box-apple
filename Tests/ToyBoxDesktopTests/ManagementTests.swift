@@ -149,6 +149,41 @@ struct ManagementTests {
         #expect(presenter.flow == .addMember(channelId: "another", name: "Finch"))
     }
 
+    @Test(arguments: [ColorScheme.light, .dark])
+    func aMissingSheetSubtitleCentersTheTitleWithoutAnEmptyLine(_ scheme: ColorScheme) throws {
+        let layout = ManagementSheetLayout(title: "Edit Channel", subtitle: nil) {
+            ManagementChannelMark()
+        } fields: {
+            EmptyView()
+        } notices: {
+            EmptyView()
+        } buttons: {
+            EmptyView()
+        }
+        let reference = HStack(spacing: 12) {
+            ManagementChannelMark().frame(width: 40, height: 40)
+            Text("Edit Channel").font(.system(size: 15, weight: .semibold))
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 20)
+        .padding(.bottom, 2)
+        func render(_ content: some View) throws -> CGImage {
+            let renderer = ImageRenderer(content: content
+                .frame(width: 480)
+                .background(scheme == .dark ? Color.black : Color.white)
+                .environment(\.colorScheme, scheme))
+            renderer.scale = 2
+            return try #require(renderer.cgImage)
+        }
+        let image = try render(layout.header)
+        let expected = try render(reference)
+        #expect(image.width == expected.width && image.height == expected.height)
+        let pixels = try #require(image.dataProvider?.data) as Data
+        let expectedPixels = try #require(expected.dataProvider?.data) as Data
+        #expect(pixels == expectedPixels)
+    }
+
     @Test func inlineCreationReturnsTheMemberWithoutDismissingAnUnrelatedSheet() async throws {
         let fixture = try ManagementRecoveryFixture(memberStatus: 201)
         defer { fixture.close() }

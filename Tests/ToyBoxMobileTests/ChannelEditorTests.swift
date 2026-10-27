@@ -71,7 +71,7 @@ struct ChannelEditorTests {
                             "The lead starts right away and adds specialists as needed."] {
                 #expect(!labels.contains { $0.contains(removed) })
             }
-            #expect(labels.contains("Name and purpose changes appear in the conversation.") == editing)
+            #expect(!labels.contains("Name and purpose changes appear in the conversation."))
             #expect(session.channel?.directory == originalDirectory)
         }
     }

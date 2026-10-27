@@ -1869,15 +1869,17 @@ creates a discussion-only channel. Editing must preserve any existing server dir
 without exposing or writing it. New Channel removes the recruiting-agent introduction.
 Its Name row has a visible "Name" label aligned like Lead model, with "Required" as the field
 prompt. Leave Purpose, model/options, validation, focus, cancellation and write recovery
-unchanged. Edit Channel retains its own explanatory note. These changes do not alter the
-Mac forms or the read-only folder information in phone Overview.
+unchanged. Neither channel form shows an explanatory introduction. Edit Channel also omits its
+subtitle on the Mac.
 
 New Channel, Edit Channel, Add Agent and Edit Member share one sheet language:
 
 - **Size.** 480 wide. The sheet fits its content, with no empty band above the buttons and no
   inner scroll view until it reaches the window's height. Initial focus is Name.
 - **Header.** 20-point insets. A 40-point identity mark, 12 points, then a 15-point semibold title
-  over one 12-point secondary line. No divider follows the header. Channel sheets use the
+  over one 12-point secondary line when the sheet has a subtitle. Edit Channel has only its
+  title, vertically centered beside the mark with no empty subtitle line. No divider follows
+  the header. Channel sheets use the
   sidebar's cyan `#` mark at 40 points (19-point semibold glyph). Edit Member uses the member's
   own avatar at 40 points. Add Agent uses a 40-point dashed circle with a plus, matching Team's Add
   Agent row.
@@ -1908,7 +1910,7 @@ Copy:
 | Sheet | Subtitle | Section footers | Buttons |
 | --- | --- | --- | --- |
 | New Channel | The lead starts right away and adds specialists as needed. | Purpose prompt: "What should this team work toward? The lead reads this first." Directory prompt "Optional", footer: "A folder on the server. Leave it empty for a discussion-only channel." | Cancel, Create Channel |
-| Edit Channel | Name and purpose changes appear in the conversation. | Directory is a read-only row, middle-truncated and selectable. Footer: "Only the lead can change the directory. Model changes apply the next time the lead works." | Cancel, Save |
+| Edit Channel | None | Directory is a read-only row, middle-truncated and selectable. Footer: "Only the lead can change the directory. Model changes apply the next time the lead works." | Cancel, Save |
 | Add Agent | Joins {channel} and starts onboarding right away. | Identity: "Mentioned as @handle. Names are unique in this channel." (live). Role prompt: "What this agent owns and how it works, including any persona." | Cancel, Add Agent |
 | Edit Member | Member of {channel} | Identity as Add Agent. Model: "Model changes apply the next time {name} works. Its history is kept." | Remove from Channel… (leading, destructive), Cancel, Save |
 

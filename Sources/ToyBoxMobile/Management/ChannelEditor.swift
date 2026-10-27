@@ -56,12 +56,6 @@ struct ChannelEditor: View {
                     }
                 }
             }
-            if channel != nil {
-                Section {
-                    Text("Name and purpose changes appear in the conversation.")
-                        .font(.footnote).foregroundStyle(ChannelInk.secondary)
-                }
-            }
             Section {
                 LabeledContent {
                     TextField("Name", text: $session.name,
