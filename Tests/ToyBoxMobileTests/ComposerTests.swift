@@ -3,6 +3,7 @@ import AVFoundation
 import ChannelKit
 import CoreFoundation
 import SwiftUI
+import Synchronization
 import Testing
 import ToyBoxUI
 import UIKit
@@ -11,6 +12,203 @@ import UniformTypeIdentifiers
 
 @MainActor @Suite(.timeLimit(.minutes(1)))
 struct ComposerTests {
+    @Test(arguments: [
+        ("  Please proceed.\n", "@lead Please proceed."),
+        ("@ada Please proceed.", "@ada Please proceed.")
+    ])
+    func notificationReplyPostsOnceFromAColdStoreWithoutChangingItsDraft(text: String, expected: String) async throws {
+        let fixture = try replyFixture(.sent)
+        defer { fixture.close() }
+        let draft = ComposerDraft(imageIsReadable: { _ in false })
+        draft.text = "My newer draft"
+        let revision = draft.revision
+        let id = UUID().uuidString
+
+        #expect(fixture.store.state == nil)
+        #expect(!fixture.store.phase.isLive)
+        let result = await ComposerNotificationReply.send(
+            text, to: "lead", store: fixture.store, id: id, isCurrentRegistration: { true })
+
+        #expect(result == .sent)
+        #expect(fixture.posts == [.init(id: id, content: expected)])
+        #expect(draft.text == "My newer draft")
+        #expect(draft.revision == revision)
+        #expect(draft.sendAttemptID == nil)
+        #expect(fixture.store.sendAttempts.allSatisfy { $0.phase == .confirmed })
+    }
+
+    @Test(arguments: [ReplyResponse.rejected, .unconfirmed])
+    func notificationReplyFailuresUseTheExistingOutboxAndEditConfirmation(response: ReplyResponse) async throws {
+        let fixture = try replyFixture(response)
+        defer { fixture.close() }
+        let id = UUID().uuidString
+        let draft = ComposerDraft(imageIsReadable: { _ in false })
+        draft.text = "Keep my newer draft"
+        let composer = ChannelComposerSession(store: fixture.store, draft: draft)
+
+        let result = await ComposerNotificationReply.send(
+            "Please proceed.", to: "lead", store: fixture.store, id: id, isCurrentRegistration: { true })
+
+        #expect(result == .failed(id: id))
+        #expect(fixture.posts == [.init(id: id, content: "@lead Please proceed.")])
+        let attempt = try #require(fixture.store.sendAttempts.first)
+        #expect(attempt.id == id)
+        #expect(attempt.content == "@lead Please proceed.")
+        #expect(attempt.phase == (response == .rejected ? .notSent : .deliveryNotConfirmed))
+        #expect(attempt.canRetry)
+        #expect(attempt.error != nil)
+        #expect(draft.text == "Keep my newer draft")
+        #expect(draft.sendAttemptID == nil)
+        #expect(!composer.edit(attempt))
+        #expect(composer.pendingEdit == attempt)
+        #expect(draft.text == "Keep my newer draft")
+        #expect(composer.appendPendingEdit())
+        #expect(draft.text == "Keep my newer draft\n\n@lead Please proceed.")
+        #expect(draft.sendAttemptID == nil)
+    }
+
+    @Test func anUnchangedNotificationReplyKeepsItsUUIDWhenEditedInTheExistingComposer() async throws {
+        let fixture = try replyFixture(.unconfirmed)
+        defer { fixture.close() }
+        let id = UUID().uuidString
+        let draft = ComposerDraft(imageIsReadable: { _ in false })
+        let composer = ChannelComposerSession(store: fixture.store, draft: draft)
+        let result = await ComposerNotificationReply.send(
+            "Proceed.", to: "lead", store: fixture.store, id: id, isCurrentRegistration: { true })
+        #expect(result == .failed(id: id))
+
+        #expect(composer.edit(try #require(fixture.store.sendAttempts.first)))
+        #expect(draft.text == "@lead Proceed.")
+        #expect(draft.sendAttemptID == id)
+        #expect(composer.attempt?.id == id)
+        draft.text += " With the second option."
+        #expect(draft.sendAttemptID == nil)
+    }
+
+    @Test func aNotificationReplyRemainsInTheDurableOutboxAfterAColdFailure() async throws {
+        let directory = FileManager.default.temporaryDirectory.appending(
+            path: "toybox-notification-reply-\(UUID().uuidString)", directoryHint: .isDirectory)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let journal = ChannelSendJournal(directory: directory)
+        let fixture = try replyFixture(.unconfirmed, journal: journal)
+        defer { fixture.close() }
+        let id = UUID().uuidString
+        let result = await ComposerNotificationReply.send(
+            "Proceed.", to: "lead", store: fixture.store, id: id, isCurrentRegistration: { true })
+        #expect(result == .failed(id: id))
+
+        let restored = ChannelStore(id: fixture.store.id, api: fixture.store.api, sendJournal: journal)
+        await #expect(throws: ChannelAPIError.disconnected) {
+            try await restored.post(id: id, content: "@lead Proceed.")
+        }
+        let attempt = try #require(restored.sendAttempts.first)
+        #expect(attempt.id == id)
+        #expect(attempt.content == "@lead Proceed.")
+        #expect(attempt.canRetry)
+        #expect(fixture.posts.count == 1)
+    }
+
+    @Test(arguments: [false, true])
+    func oldRegistrationsAndKnownDeletedChannelsDoNotPostOrTouchDrafts(deleted: Bool) async throws {
+        let fixture = try replyFixture(.sent)
+        defer { fixture.close() }
+        if deleted { _ = try fixture.store.apply(.init(type: "deleted")) }
+        let draft = ComposerDraft(imageIsReadable: { _ in false })
+        draft.text = "Keep this"
+        let revision = draft.revision
+
+        let result = await ComposerNotificationReply.send(
+            "Proceed.", to: "lead", store: fixture.store, isCurrentRegistration: { deleted })
+
+        #expect(result == .notSent)
+        #expect(fixture.posts.isEmpty)
+        #expect(fixture.store.sendAttempts.isEmpty)
+        #expect(draft.text == "Keep this")
+        #expect(draft.revision == revision)
+    }
+
+    @Test func aDeletedChannelResponseUsesThePlainNotSentOutcome() async throws {
+        let fixture = try replyFixture(.deleted)
+        defer { fixture.close() }
+        let result = await ComposerNotificationReply.send(
+            "Proceed.", to: "lead", store: fixture.store, isCurrentRegistration: { true })
+        #expect(result == .notSent)
+        #expect(fixture.posts.count == 1)
+    }
+
+    @Test func anAlreadyAcceptedNotificationReplyDoesNotMakeASecondPost() async throws {
+        let fixture = try replyFixture(.duplicate)
+        defer { fixture.close() }
+        let result = await ComposerNotificationReply.send(
+            "Proceed.", to: "lead", store: fixture.store, isCurrentRegistration: { true })
+        #expect(result == .sent)
+        #expect(fixture.posts.count == 1)
+    }
+
+    @Test func aPendingComposerFocusSurvivesPresentationAndOnlyItsCurrentTokenCanBeConsumed() throws {
+        let interaction = ChannelInteraction()
+        #expect(interaction.pendingComposerFocusRequest == nil)
+        interaction.focusComposer()
+        let first = try #require(interaction.pendingComposerFocusRequest)
+        #expect(interaction.composerFocusRequest == first)
+        interaction.focusComposer()
+        let replacement = try #require(interaction.pendingComposerFocusRequest)
+        #expect(replacement != first)
+        interaction.consumeComposerFocusRequest(first)
+        #expect(interaction.pendingComposerFocusRequest == replacement)
+        interaction.consumeComposerFocusRequest(replacement)
+        #expect(interaction.pendingComposerFocusRequest == nil)
+    }
+
+    @Test func aNativeFocusRequestWaitsUntilItsEditorIsAttached() throws {
+        let (session, target) = try dictatingSession(MobileTestRecognizer())
+        let view = target.input
+        session.editor.focus()
+        #expect(view.window == nil)
+        #expect(!view.isFirstResponder)
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 440, height: 956))
+        let root = UIViewController()
+        window.rootViewController = root
+        window.makeKeyAndVisible()
+        defer {
+            view.resignFirstResponder()
+            window.isHidden = true
+        }
+        root.view.addSubview(view)
+        #expect(view.isFirstResponder)
+        withExtendedLifetime(target) {}
+    }
+
+    @Test(arguments: [false, true])
+    func aColdComposerConsumesOnlyAnExplicitFocusRequest(requested: Bool) throws {
+        let suite = "composer-cold-focus-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let app = AppModel(arguments: [], environment: [:], bundleDefaultServerURL: nil, defaults: defaults)
+        let interaction = ChannelInteraction(isInspectorPresented: false)
+        if requested { interaction.focusComposer() }
+        let (session, target) = try dictatingSession(MobileTestRecognizer())
+        defer { session.dictation.deactivate() }
+        let host = UIHostingController(rootView: ComposerSurface(session: session, showsTray: false)
+            .environment(app)
+            .environment(interaction)
+            .environment(ManagementPresenter())
+            .environment(OverviewPresentation())
+            .environment(\.horizontalSizeClass, .compact))
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 440, height: 956))
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer {
+            session.editor.textView?.resignFirstResponder()
+            window.isHidden = true
+        }
+        host.view.layoutIfNeeded()
+        let input = try #require(session.editor.textView)
+        #expect(interaction.pendingComposerFocusRequest == nil)
+        #expect(input.isFirstResponder == requested)
+        withExtendedLifetime(target) {}
+    }
+
     @Test func softwareReturnInsertsANewlineWhileHardwareReturnSendsUnlessCompletionConsumesIt() {
         let view = ComposerTextView()
         var sends = 0
@@ -781,6 +979,117 @@ struct ComposerTests {
         #expect(session.draft.text == "Stay in this draft")
         #expect(target.input.text == session.draft.text)
         #expect(session.store.sendAttempts.isEmpty)
+    }
+
+    enum ReplyResponse: String, Sendable {
+        case sent, rejected, unconfirmed, deleted, duplicate
+    }
+
+    private struct ReplyPost: Codable, Equatable, Sendable {
+        let id: String
+        let content: String
+    }
+
+    private struct ReplyFixture {
+        let store: ChannelStore
+        let host: String
+        let session: URLSession
+
+        var posts: [ReplyPost] { MobileReplyProtocol.posts.withLock { $0[host] ?? [] } }
+
+        func close() {
+            session.invalidateAndCancel()
+            MobileReplyProtocol.posts.withLock { $0[host] = nil }
+        }
+    }
+
+    private func replyFixture(
+        _ response: ReplyResponse, journal: ChannelSendJournal? = nil
+    ) throws -> ReplyFixture {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [MobileReplyProtocol.self]
+        let host = "\(response.rawValue)-\(UUID().uuidString.lowercased()).test"
+        let session = URLSession(configuration: configuration)
+        let api = try ChannelAPI(serverURL: "https://\(host)", session: session)
+        return ReplyFixture(store: ChannelStore(id: "test", api: api, sendJournal: journal),
+                            host: host, session: session)
+    }
+
+    private final class MobileReplyProtocol: URLProtocol, @unchecked Sendable {
+        static let posts = Mutex<[String: [ReplyPost]]>([:])
+
+        override class func canInit(with request: URLRequest) -> Bool { true }
+        override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+        override func startLoading() {
+            do {
+                let url = try #require(request.url)
+                let host = try #require(url.host)
+                #expect(request.httpMethod == "POST")
+                #expect(url.path == "/api/v1/channels/test/messages",
+                        "A native Reply posts without opening a stream or requiring a snapshot")
+                let payload = try JSONDecoder().decode(ReplyPost.self, from: body())
+                #expect(UUID(uuidString: payload.id) != nil)
+                Self.posts.withLock { $0[host, default: []].append(payload) }
+                let outcome = try #require(ReplyResponse(rawValue: String(host.prefix(while: { $0 != "-" }))))
+                if outcome == .unconfirmed {
+                    client?.urlProtocol(self, didFailWithError: URLError(.timedOut))
+                    return
+                }
+                let status: Int
+                let data: Data
+                switch outcome {
+                case .sent:
+                    status = 200
+                    let message = ChannelMessage(
+                        id: payload.id, sequence: 42, timestamp: "2026-10-27T00:00:00Z",
+                        sender: .user, content: .text(payload.content))
+                    data = try JSONEncoder().encode(Response(version: 1, message: message))
+                case .rejected:
+                    status = 422
+                    data = Data(#"{"error":"Reply rejected"}"#.utf8)
+                case .deleted:
+                    status = 404
+                    data = Data(#"{"error":"Channel deleted"}"#.utf8)
+                case .duplicate:
+                    status = 409
+                    data = Data(#"{"error":"Message already accepted"}"#.utf8)
+                case .unconfirmed:
+                    throw ChannelAPIError.invalidResponse
+                }
+                let response = try #require(HTTPURLResponse(
+                    url: url, statusCode: status, httpVersion: nil,
+                    headerFields: ["Content-Type": "application/json"]))
+                client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+                client?.urlProtocol(self, didLoad: data)
+                client?.urlProtocolDidFinishLoading(self)
+            } catch {
+                Issue.record(error)
+                client?.urlProtocol(self, didFailWithError: error)
+            }
+        }
+
+        override func stopLoading() {}
+
+        private func body() throws -> Data {
+            if let data = request.httpBody { return data }
+            let stream = try #require(request.httpBodyStream)
+            stream.open()
+            defer { stream.close() }
+            var data = Data()
+            var buffer = [UInt8](repeating: 0, count: 4096)
+            while true {
+                let count = stream.read(&buffer, maxLength: buffer.count)
+                guard count >= 0 else { throw stream.streamError ?? ChannelAPIError.invalidResponse }
+                if count == 0 { return data }
+                data.append(contentsOf: buffer.prefix(count))
+            }
+        }
+
+        private struct Response: Encodable {
+            let version: Int
+            let message: ChannelMessage
+        }
     }
 
     private func dictatingSession(
