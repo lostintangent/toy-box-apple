@@ -22,7 +22,9 @@ struct TranscriptCatchUpCard: View {
             // Overlapping, so an update's crossfade never stacks old and new lines.
             ZStack(alignment: .topLeading) {
                 if let summary = catchUp.summary {
+                    // At its ideal height, or the lazy row lays out shorter than it measured.
                     content(summary)
+                        .fixedSize(horizontal: false, vertical: true)
                         .id(summary)
                         .transition(.opacity.animation(.easeOut(duration: 0.2)))
                 }
