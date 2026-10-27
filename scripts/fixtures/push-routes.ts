@@ -2,8 +2,8 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 
 type Environment = "sandbox" | "production";
 type Device = { registrationID: string; token: string; environment: Environment; requests: boolean; completions: boolean };
-type Activity = { registrationID: string; subject: string; token: string; environment: Environment; startedAt: number };
-type Route = { kind: "device"; id: string } | { kind: "activity"; id: string; subject: string };
+type Subscription = { registrationID: string; topic: string; token: string; environment: Environment; startedAt: number };
+type Route = { kind: "device"; id: string } | { kind: "subscription"; id: string; topic: string };
 
 function reply(response: ServerResponse, status: number, error?: string) {
     response.writeHead(status, { "Content-Type": "application/json", "Cache-Control": "no-store" });
@@ -24,19 +24,19 @@ async function body(request: IncomingMessage): Promise<unknown> {
 
 export function createDemoPushRoutes() {
     const devices = new Map<string, Device>();
-    const activities = new Map<string, Activity>();
+    const subscriptions = new Map<string, Subscription>();
     function match(path: string): Route | undefined {
         const device = /^\/api\/v1\/push\/devices\/([^/]+)$/.exec(path);
         if (device) return { kind: "device", id: device[1]! };
-        const activity = /^\/api\/v1\/push\/activities\/([^/]+)\/([^/]+)$/.exec(path);
-        if (activity) return { kind: "activity", id: activity[1]!, subject: activity[2]! };
+        const subscription = /^\/api\/v1\/push\/devices\/([^/]+)\/topics\/([^/]+)$/.exec(path);
+        if (subscription) return { kind: "subscription", id: subscription[1]!, topic: subscription[2]! };
     }
     async function handle(request: IncomingMessage, response: ServerResponse, route: Route) {
         let id: string;
-        let subject: string | undefined;
+        let topic: string | undefined;
         try {
             id = decodeURIComponent(route.id);
-            if (route.kind === "activity") subject = decodeURIComponent(route.subject);
+            if (route.kind === "subscription") topic = decodeURIComponent(route.topic);
         } catch (error) {
             if (!(error instanceof URIError)) throw error;
             reply(response, 400, "Invalid registration route.");
@@ -46,10 +46,10 @@ export function createDemoPushRoutes() {
             reply(response, 422, "A registration ID must be a UUID.");
             return;
         }
-        const key = `${subject}\n${id}`;
+        const key = `${topic}\n${id}`;
         if (request.method === "DELETE") {
             if (route.kind === "device") devices.delete(id);
-            else activities.delete(key);
+            else subscriptions.delete(key);
             reply(response, 204);
             return;
         }
@@ -88,18 +88,18 @@ export function createDemoPushRoutes() {
             devices.set(id, { ...common, environment: input.environment,
                               requests: input.requests, completions: input.completions });
         } else {
-            if (subject === undefined) {
-                reply(response, 400, "Invalid activity subject.");
+            if (topic === undefined) {
+                reply(response, 400, "Invalid topic.");
                 return;
             }
             if (typeof input.startedAt !== "number" || !Number.isFinite(input.startedAt) || input.startedAt < 0) {
-                reply(response, 422, "Activity start time must be Unix seconds.");
+                reply(response, 422, "Subscription start time must be Unix seconds.");
                 return;
             }
-            activities.set(key, { ...common, subject, environment: input.environment,
-                                  startedAt: activities.get(key)?.startedAt ?? input.startedAt });
+            subscriptions.set(key, { ...common, topic, environment: input.environment,
+                                  startedAt: subscriptions.get(key)?.startedAt ?? input.startedAt });
         }
         reply(response, 204);
     }
-    return { devices, activities, match, handle };
+    return { devices, subscriptions, match, handle };
 }

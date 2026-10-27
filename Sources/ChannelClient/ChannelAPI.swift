@@ -177,12 +177,12 @@ public struct ChannelAPI: Sendable {
         try await noContent("DELETE", ["api", "v1", "push", "devices", registrationID])
     }
 
-    public func registerPushActivity(channelId: String, _ input: PushActivityRegistration) async throws {
-        try await noContent("PUT", ["api", "v1", "push", "activities", input.registrationID, channelId], body: input)
+    public func subscribe(topic: String, _ input: PushSubscription) async throws {
+        try await noContent("PUT", ["api", "v1", "push", "devices", input.registrationID, "topics", topic], body: input)
     }
 
-    public func deletePushActivity(channelId: String, registrationID: String) async throws {
-        try await noContent("DELETE", ["api", "v1", "push", "activities", registrationID, channelId])
+    public func unsubscribe(topic: String, registrationID: String) async throws {
+        try await noContent("DELETE", ["api", "v1", "push", "devices", registrationID, "topics", topic])
     }
 
     public func memberModels(channelId: String, agentId: String) async throws -> ModelCatalog {

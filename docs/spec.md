@@ -250,7 +250,7 @@ Attachments are `{name, url}` or inline `{mimeType, base64}`. Avatars are SVG pa
 own profiles set. The server serves the lead's profile in snapshots and the catalog, and the app
 keeps no copy of it.
 
-### Mobile push and Activity registration (Release 2)
+### Mobile push and topic subscriptions (Release 2)
 
 The shared client and the 3210 demo implement these additions. The shipping server uses the same
 contract before device push proof. Registration writes make one attempt and return 204 without a
@@ -260,18 +260,19 @@ response body.
 | --- | --- |
 | `PUT /api/v1/push/devices/:registrationID` | `{registrationID, token, environment, requests, completions}` |
 | `DELETE /api/v1/push/devices/:registrationID` | Remove alerts for this registration, not its followed Activities. Idempotent: return 204 even for an unknown registration |
-| `PUT /api/v1/push/activities/:registrationID/:subject` | `{registrationID, token, environment, startedAt}` |
-| `DELETE /api/v1/push/activities/:registrationID/:subject` | Unsubscribe the Activity |
+| `PUT /api/v1/push/devices/:registrationID/topics/:topic` | `{registrationID, token, environment, startedAt}` |
+| `DELETE /api/v1/push/devices/:registrationID/topics/:topic` | Unsubscribe from the topic |
 
 `registrationID` is a caller-owned UUID and must match the path. Tokens are hexadecimal, and
 `environment` is `sandbox` or `production`. The signed host's `ToyBoxPushEnvironment` is derived
 from its validated APNs entitlement, never from `DEBUG`: optimized development builds still use
 sandbox. Request and completion preferences are independent booleans. A token belongs to one device
-registration. Activities do not require an alerts registration, have their own environment, and are
-unique per registration/subject. A subject is opaque to Push; Channels uses its channel ID.
+registration. Topic subscriptions do not require a device row, have their own token/environment, and
+are unique per registration/topic. A topic is opaque to Push; Channels uses its channel ID and the
+iPhone presents that subscription as a Live Activity.
 Subscription does not require the source to exist. An absent channel receives the channel-deleted
 ending on the next delivery pass. Token rotation preserves the original `startedAt`, in Unix seconds.
-Push owns both stored registrations, transport and dead-token pruning. Channels owns attention,
+Push owns devices and topic subscriptions, transport and dead-token pruning. Channels owns attention,
 read suppression, Activity content and endings, without adding storage. Alert baselines, pending
 alerts, retries and last-announced requests are process-local. A server restart can discard an
 alert not yet accepted by Apple. Only the iPhone app registers devices and subscribes Activities.
