@@ -70,7 +70,7 @@ struct TranscriptFindAccessory: View {
 
     private var field: some View {
         TranscriptFindFieldLayout {
-            HStack(spacing: 6) {
+            HStack(spacing: 4) {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(TranscriptInk.secondary)
                     .accessibilityHidden(true)
@@ -84,7 +84,7 @@ struct TranscriptFindAccessory: View {
                 }
             }
         }
-        .padding(.horizontal, 8)
+        .padding(.horizontal, 6)
         .padding(.vertical, 4)
         .frame(minHeight: surfaceHeight)
         .glassEffect(.regular, in: .rect(cornerRadius: surfaceHeight / 2))

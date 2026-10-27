@@ -1273,7 +1273,9 @@ not an overlay or another screen. Remove the opaque plate and divider. Use nativ
 Liquid Glass on three surfaces: a flexible capsule field, one joined Previous/Next capsule and
 Done. Each is 36 points visibly high inside a minimum-44-point touch area. Keep 16-point outer
 insets, 8-point gaps and 4-point top/bottom padding, for a 52-point bar at default text size.
-At 386 points wide, the field is 196, navigation is 88 (44 per button) and Done is 54.
+The folded Duo gives the bar 382 points, measured in the native frame. At that width the field is
+192, navigation is 88 (44 per button) and Done is 54. Inside the field, keep a 6-point horizontal
+inset and a 4-point gap between the magnifier and the query, so all three surfaces share one row.
 Use native body text for the query, the compact prompt "Find" and footnote tabular result digits.
 The field retains the accessible scope "Find in [channel]". Reserve its trailing 84-point status
 slot for every nonempty-query state; a spinner/count/error swap must not resize the field.
