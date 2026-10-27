@@ -14,7 +14,7 @@ package struct ChannelAgentWakePresentation: Equatable, Sendable {
         }
         let units: Set<Duration.UnitsFormatStyle.Unit> = minutes >= 60 ? [.hours, .minutes] : [.minutes]
         let duration = Duration.seconds(minutes * 60)
-        text = duration.formatted(.units(allowed: units, width: .abbreviated).locale(locale))
+        text = duration.formatted(.units(allowed: units, width: .narrow).locale(locale))
         spoken = "checks again in " + duration.formatted(.units(allowed: units, width: .wide).locale(locale))
     }
 
