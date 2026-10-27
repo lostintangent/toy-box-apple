@@ -48,7 +48,7 @@ export function createCompletedDemoFixture(source: Snapshot, now = Date.now()): 
 export function installDemoCatalogRoutes(demo: Pick<Demo, "server" | "snapshot">,
     additional: Pick<Demo, "server" | "snapshot">[] = []) {
     const snapshots = () => [demo, ...additional].map(fixture => fixture.snapshot());
-    const push = createDemoPushRoutes(snapshots);
+    const push = createDemoPushRoutes();
     const peers = additional.map(fixture => {
         const listeners = fixture.server.listeners("request");
         if (listeners.length !== 1) throw new Error("Expected the reference demo server's single HTTP handler.");

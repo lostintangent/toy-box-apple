@@ -21,8 +21,8 @@ struct PushRegistrationTests {
         #expect(requests.map(\.httpMethod) == ["PUT", "DELETE", "PUT", "DELETE"])
         #expect(requests.map { $0.url?.path } == [
             "/prefix/api/v1/push/devices/\(id)", "/prefix/api/v1/push/devices/\(id)",
-            "/prefix/api/v1/channels/studio-demo/activities/\(id)",
-            "/prefix/api/v1/channels/studio-demo/activities/\(id)",
+            "/prefix/api/v1/push/activities/\(id)/studio-demo",
+            "/prefix/api/v1/push/activities/\(id)/studio-demo",
         ])
         #expect(try JSONDecoder().decode(PushDeviceRegistration.self, from: requestBody(requests[0])) == device)
         let activityData = try requestBody(requests[2])

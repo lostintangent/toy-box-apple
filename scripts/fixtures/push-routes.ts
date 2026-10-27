@@ -1,10 +1,9 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import type { Snapshot } from "./types.ts";
 
 type Environment = "sandbox" | "production";
 type Device = { registrationID: string; token: string; environment: Environment; requests: boolean; completions: boolean };
-type Activity = { registrationID: string; channelID: string; token: string; environment: Environment; startedAt: number };
-type Route = { kind: "device"; id: string } | { kind: "activity"; id: string; channel: string };
+type Activity = { registrationID: string; subject: string; token: string; environment: Environment; startedAt: number };
+type Route = { kind: "device"; id: string } | { kind: "activity"; id: string; subject: string };
 
 function reply(response: ServerResponse, status: number, error?: string) {
     response.writeHead(status, { "Content-Type": "application/json", "Cache-Control": "no-store" });
@@ -23,21 +22,21 @@ async function body(request: IncomingMessage): Promise<unknown> {
     return JSON.parse(Buffer.concat(chunks).toString("utf8"));
 }
 
-export function createDemoPushRoutes(snapshots: () => Snapshot[]) {
+export function createDemoPushRoutes() {
     const devices = new Map<string, Device>();
     const activities = new Map<string, Activity>();
     function match(path: string): Route | undefined {
         const device = /^\/api\/v1\/push\/devices\/([^/]+)$/.exec(path);
         if (device) return { kind: "device", id: device[1]! };
-        const activity = /^\/api\/v1\/channels\/([^/]+)\/activities\/([^/]+)$/.exec(path);
-        if (activity) return { kind: "activity", channel: activity[1]!, id: activity[2]! };
+        const activity = /^\/api\/v1\/push\/activities\/([^/]+)\/([^/]+)$/.exec(path);
+        if (activity) return { kind: "activity", id: activity[1]!, subject: activity[2]! };
     }
     async function handle(request: IncomingMessage, response: ServerResponse, route: Route) {
         let id: string;
-        let channel: string | undefined;
+        let subject: string | undefined;
         try {
             id = decodeURIComponent(route.id);
-            if (route.kind === "activity") channel = decodeURIComponent(route.channel);
+            if (route.kind === "activity") subject = decodeURIComponent(route.subject);
         } catch (error) {
             if (!(error instanceof URIError)) throw error;
             reply(response, 400, "Invalid registration route.");
@@ -47,7 +46,7 @@ export function createDemoPushRoutes(snapshots: () => Snapshot[]) {
             reply(response, 422, "A registration ID must be a UUID.");
             return;
         }
-        const key = `${channel}\n${id}`;
+        const key = `${subject}\n${id}`;
         if (request.method === "DELETE") {
             if (route.kind === "device") devices.delete(id);
             else activities.delete(key);
@@ -84,24 +83,20 @@ export function createDemoPushRoutes(snapshots: () => Snapshot[]) {
                 return;
             }
             for (const [otherID, device] of devices) {
-                if (device.token === common.token && otherID !== id) devices.delete(otherID);
+                if (device.token === common.token && device.environment === common.environment && otherID !== id) devices.delete(otherID);
             }
             devices.set(id, { ...common, environment: input.environment,
                               requests: input.requests, completions: input.completions });
         } else {
-            if (channel === undefined || !snapshots().some(snapshot => snapshot.channel.id === channel)) {
-                reply(response, 404, "Channel not found.");
+            if (subject === undefined) {
+                reply(response, 400, "Invalid activity subject.");
                 return;
             }
             if (typeof input.startedAt !== "number" || !Number.isFinite(input.startedAt) || input.startedAt < 0) {
                 reply(response, 422, "Activity start time must be Unix seconds.");
                 return;
             }
-            if ([...activities].some(([otherKey, activity]) => otherKey !== key && activity.token === common.token)) {
-                reply(response, 409, "Activity token is already registered.");
-                return;
-            }
-            activities.set(key, { ...common, channelID: channel, environment: input.environment,
+            activities.set(key, { ...common, subject, environment: input.environment,
                                   startedAt: activities.get(key)?.startedAt ?? input.startedAt });
         }
         reply(response, 204);
