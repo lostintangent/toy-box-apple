@@ -15,12 +15,8 @@ struct OverviewTasksSection: View {
             if store.tasks.isEmpty {
                 Text("No tasks yet").foregroundStyle(ChannelInk.secondary)
             } else {
-                ForEach(store.tasks) { task in
-                    OverviewTaskTree(task: task, store: store, session: session)
-                        .listRowSeparator(.hidden)
-                        .listRowInsets(.vertical, 0)
-                        .padding(.bottom, 8)
-                }
+                OverviewTaskRows(tasks: store.tasks, store: store, session: session)
+                    .listRowInsets(.vertical, 0)
             }
         }
     }
@@ -49,12 +45,8 @@ struct OverviewSubtasksScreen: View {
                         }
                     }
                     Section {
-                        ForEach(parent.children ?? []) { task in
-                            OverviewTaskTree(task: task, store: store, session: session)
-                                .listRowSeparator(.hidden)
-                                .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
-                                .padding(.bottom, 8)
-                        }
+                        OverviewTaskRows(tasks: parent.children ?? [], store: store, session: session)
+                            .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
                     }
                 }
                 .accessibilityIdentifier("overview-subtasks-form-\(parentID)")
@@ -103,28 +95,6 @@ struct OverviewTaskReadingLayout {
     }
 }
 
-private struct OverviewTaskTree: View {
-    let task: ChannelTask
-    let store: ChannelStore
-    let session: OverviewSession
-    @Environment(\.dynamicTypeSize) private var typeSize
-    @ScaledMetric(relativeTo: .body) private var statusWidth = 16
-    @ScaledMetric(relativeTo: .body) private var titleGap = 6
-    @ScaledMetric(relativeTo: .body) private var ownerWidth = 20
-    @ScaledMetric(relativeTo: .body) private var readingWidth = 192
-    @ViewState private var width: CGFloat = 0
-
-    var body: some View {
-        let layout = OverviewTaskReadingLayout(
-            contentWidth: width, statusWidth: min(24, statusWidth), titleGap: min(8, titleGap),
-            ownerWidth: min(28, ownerWidth), scaledReadingWidth: readingWidth,
-            accessibility: typeSize.isAccessibilitySize, rootHasOwner: task.ownerId != nil)
-        OverviewTaskNode(task: task, store: store, session: session, depth: 0, layout: layout)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { width = $0 }
-    }
-}
-
 struct OverviewTaskNode: View {
     let task: ChannelTask
     let store: ChannelStore
@@ -137,10 +107,7 @@ struct OverviewTaskNode: View {
 
     private var children: [ChannelTask] { task.children ?? [] }
     private var expanded: Bool {
-        guard let saved = session.taskDisclosure[task.id], saved.status == task.status else {
-            return task.isExpandedByDefault
-        }
-        return saved.expanded
+        OverviewTaskListRow.isExpanded(task, disclosure: session.taskDisclosure)
     }
     private var owner: ChannelAgent? { task.ownerId.map { channelAgentIdentity(store.roster, id: $0) } }
     private var diff: DiffStats? { task.status == "pending" ? nil : channelTasksDiff([task]) }
@@ -162,34 +129,6 @@ struct OverviewTaskNode: View {
                 .padding(.leading, layout.accessibility ? 0 : layout.statusWidth + layout.titleGap)
                 .accessibilityLabel(artifact.map { "Open \($0.title)" } ?? "Artifact unavailable")
                 .accessibilityIdentifier("overview-task-artifact-\(task.id)")
-            }
-            if expanded, !children.isEmpty {
-                if layout.canInlineChildren(ofDepth: depth, haveOwner: children.contains { $0.ownerId != nil }) {
-                    VStack(alignment: .leading, spacing: 0) {
-                        ForEach(children) {
-                            OverviewTaskNode(task: $0, store: store, session: session, depth: depth + 1, layout: layout)
-                        }
-                    }
-                    .padding(.leading, layout.indent)
-                    .overlay {
-                        ChannelTaskAncestryGuide(statusWidth: layout.statusWidth)
-                    }
-                } else {
-                    NavigationLink(value: OverviewRoute.subtasks(task.id)) {
-                        HStack {
-                            Text("View \(children.count) subtasks")
-                            Spacer(minLength: 8)
-                            Image(systemName: "chevron.right").font(.footnote.weight(.semibold))
-                        }
-                        .font(.body)
-                        .frame(minHeight: 44)
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .padding(.leading, layout.accessibility ? 0 : layout.statusWidth + layout.titleGap)
-                    .accessibilityLabel("View \(children.count) subtasks of \(task.title)")
-                    .accessibilityIdentifier("overview-subtasks-\(task.id)")
-                }
             }
         }
         .accessibilityElement(children: .contain)
@@ -248,7 +187,7 @@ struct OverviewTaskNode: View {
             HStack(alignment: .top, spacing: 8) {
                 HStack(alignment: .top, spacing: layout.titleGap) {
                     if !layout.accessibility { status.padding(.top, 2) }
-                    firstLine.fixedSize(horizontal: false, vertical: true)
+                    firstLine.contentTransition(.identity).fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 if !layout.accessibility { ownerAvatar }
@@ -295,9 +234,7 @@ struct OverviewTaskNode: View {
     }
 
     private func toggle() {
-        var transaction = Transaction()
-        transaction.disablesAnimations = true
-        withTransaction(transaction) {
+        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) {
             session.taskDisclosure[task.id] = .init(status: task.status, expanded: !expanded)
         }
     }
