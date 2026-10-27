@@ -103,16 +103,11 @@ struct OverviewTaskRows: View {
     private func rowContent(_ row: OverviewTaskListRow) -> some View {
         if row.isSubtasks {
             NavigationLink(value: OverviewRoute.subtasks(row.task.id)) {
-                HStack {
-                    Text("View \((row.task.children ?? []).count) subtasks")
-                    Spacer(minLength: 8)
-                    Image(systemName: "chevron.right").font(.footnote.weight(.semibold))
-                }
-                .font(.body)
-                .frame(minHeight: 44)
-                .contentShape(Rectangle())
+                Text("View \((row.task.children ?? []).count) subtasks")
+                    .font(.body)
+                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                    .contentShape(Rectangle())
             }
-            .navigationLinkIndicatorVisibility(.hidden)
             .buttonStyle(.plain)
             .padding(.leading, row.layout.accessibility ? 0 : row.layout.statusWidth + row.layout.titleGap)
             .accessibilityLabel("View \((row.task.children ?? []).count) subtasks of \(row.task.title)")

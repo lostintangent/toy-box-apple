@@ -1658,6 +1658,14 @@ retaining 4-point clearance only at the whole child group's ends. Preserve saved
 defaults, measured reading width, scoped subtasks, artifact actions and visible-only timers.
 Mac disclosure is unchanged.
 
+At ordinary phone text sizes, task headings use 11-point top and bottom padding. When the task
+has its own artifact action, keep the heading's bottom padding at zero, preserve the artifact
+line's existing top gap and use 11 points below that line. At accessibility sizes retain
+12-point outer padding. Preserve the 8-point root-group gap and every 44-point minimum target.
+"View N subtasks" adds no vertical padding beyond its 44-point minimum and uses only the native
+navigation indicator, like Team. It has no handmade chevron; the title-inline task disclosure
+remains separate. These changes do not affect Mac task rows.
+
 A parent's disclosure trails its title inline, as macOS sidebar section headers and the pane do.
 Build the first line as one wrapping `Text`: the title, then two spaces and the progress count
 for an open parent (11 regular, monospaced digits, secondary, "3/4"), then one space and the

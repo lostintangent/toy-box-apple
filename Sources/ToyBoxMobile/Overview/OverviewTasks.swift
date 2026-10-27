@@ -10,6 +10,10 @@ enum OverviewTaskMotion {
     }
 }
 
+enum OverviewTaskMetrics {
+    static func verticalPadding(accessibility: Bool) -> CGFloat { accessibility ? 12 : 11 }
+}
+
 struct OverviewTasksSection: View {
     let store: ChannelStore
     let session: OverviewSession
@@ -206,8 +210,9 @@ struct OverviewTaskNode: View {
                     .padding(.leading, layout.accessibility ? 0 : layout.statusWidth + layout.titleGap)
             }
         }
-        .padding(.top, 12)
-        .padding(.bottom, task.artifactId == nil ? 12 : 0)
+        .padding(.top, OverviewTaskMetrics.verticalPadding(accessibility: layout.accessibility))
+        .padding(.bottom, task.artifactId == nil
+                 ? OverviewTaskMetrics.verticalPadding(accessibility: layout.accessibility) : 0)
         .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
         .contentShape(Rectangle())
     }
@@ -266,6 +271,7 @@ struct OverviewTaskNode: View {
 struct OverviewTaskArtifactLabel: View {
     let title: String
     @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.dynamicTypeSize) private var typeSize
     @ScaledMetric(relativeTo: .footnote) private var iconWidth = 16
 
     var body: some View {
@@ -282,7 +288,7 @@ struct OverviewTaskArtifactLabel: View {
         .foregroundStyle(Color(uiColor: isEnabled ? .label : .tertiaryLabel))
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.top, ChannelOverviewFactsLayout.titleGap)
-        .padding(.bottom, 12)
+        .padding(.bottom, OverviewTaskMetrics.verticalPadding(accessibility: typeSize.isAccessibilitySize))
         .contentShape(Rectangle())
     }
 }

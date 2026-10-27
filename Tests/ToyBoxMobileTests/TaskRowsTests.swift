@@ -136,6 +136,24 @@ struct TaskRowsTests {
                 == (reduceMotion || accessibility ? nil : .easeInOut(duration: 0.18)))
     }
 
+    @Test(arguments: [false, true])
+    func taskPaddingTightensOnlyAtOrdinaryTextSizes(accessibility: Bool) {
+        #expect(OverviewTaskMetrics.verticalPadding(accessibility: accessibility) == (accessibility ? 12 : 11))
+    }
+
+    @Test(arguments: [DynamicTypeSize.large, .accessibility1, .accessibility5])
+    func theArtifactLineKeepsItsInternalGapAndUsesTheTaskOuterPadding(size: DynamicTypeSize) throws {
+        let label = ImageRenderer(content: OverviewTaskArtifactLabel(title: "Plan").dynamicTypeSize(size))
+        label.proposedSize = ProposedViewSize(width: 466, height: nil)
+        label.scale = 3
+        let text = ImageRenderer(content: Text("Plan").font(.footnote).dynamicTypeSize(size))
+        text.scale = 3
+        let labelHeight = try #require(label.uiImage).size.height
+        let textHeight = try #require(text.uiImage).size.height
+        let outerPadding: CGFloat = size.isAccessibilitySize ? 12 : 11
+        #expect(abs(labelHeight - textHeight - ChannelOverviewFactsLayout.titleGap - outerPadding) < 0.5)
+    }
+
     @Test(arguments: DisclosureChange.allCases)
     func disclosureHonorsAccessibilityTextAndTheSystemMotionPreference(change: DisclosureChange) async throws {
         let store = ChannelStore(id: "channel", api: try ChannelAPI(serverURL: "https://fixture.example"))
@@ -226,6 +244,8 @@ struct TaskRowsTests {
         let scopedIDs = Set(elements.filter { $0.identifier.hasPrefix("overview-subtasks-") }.map(\.identifier))
         let visibleCount = taskIDs.count + scopedIDs.count
         #expect(list.numberOfItems(inSection: 0) == visibleCount)
+        #expect(elements.filter { taskIDs.contains($0.identifier) || scopedIDs.contains($0.identifier) }
+            .allSatisfy { $0.frame.height >= 44 })
         if scopedIDs.isEmpty {
             #expect(taskIDs == ["overview-task-root", "overview-task-child", "overview-task-grandchild",
                                 "overview-task-sibling", "overview-task-other"])
