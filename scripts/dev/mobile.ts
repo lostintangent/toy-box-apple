@@ -60,6 +60,14 @@ type Appearance = "light" | "dark";
 type SimulatorCommand = (args: string[], signal: AbortSignal) =>
     Promise<{ exitCode: number; stdout: string; stderr: string }>;
 
+export function mobileNotificationProofArguments(action?: string): string[] {
+    if (action === undefined) return [];
+    if (!["request", "prepare-offline", "deliver-offline"].includes(action)) {
+        throw new Error("--notification-proof must be request, prepare-offline or deliver-offline.");
+    }
+    return ["--notification-proof", action];
+}
+
 export function mobileLaunchOptions(contentSize?: string, appearance?: string): {
     contentSize: string | undefined; appearance: Appearance | undefined; arguments: string[];
 } {
@@ -352,16 +360,18 @@ if (import.meta.main) await main(async () => {
         drive: { type: "string" }, "content-size": { type: "string" }, appearance: { type: "string" },
         "foundation-proof": { type: "boolean" }, "activity-fixture-proof": { type: "boolean" },
         autoplay: { type: "boolean" }, "autoplay-ended": { type: "boolean" },
+        "notification-proof": { type: "string" },
     } });
     const launch = mobileLaunchOptions(values["content-size"], values.appearance);
     const autoplay = mobileActivityAutoplayArguments(
         values.autoplay, values["autoplay-ended"], values["activity-fixture-proof"]
     );
-    if (values["foundation-proof"] && values["activity-fixture-proof"]) {
+    const notificationProof = mobileNotificationProofArguments(values["notification-proof"]);
+    if ((values["foundation-proof"] || notificationProof.length) && values["activity-fixture-proof"]) {
         throw new Error("Choose one simulator proof screen.");
     }
     const proof = values["activity-fixture-proof"] ? "activity-fixture-proof"
-        : values["foundation-proof"] ? "foundation-proof" : undefined;
+        : values["foundation-proof"] || notificationProof.length ? "foundation-proof" : undefined;
     if (proof && (values.device || values["build-only"] || values.shutdown || !(values.hold || values.drive))) {
         throw new Error(`--${proof} requires a debug Simulator --hold or --drive.`);
     }
@@ -448,7 +458,7 @@ if (import.meta.main) await main(async () => {
             (args, signal) => runMobileSimulatorCommand(args, mobileEnvironment, signal), interruption.signal, async () => {
             const result = await runMobileSimulatorCommand([
                 "launch", "--terminate-running-process", simulator.udid, mobileBundleID,
-                "--server", server, ...launch.arguments, ...(proof ? [`--${proof}`] : []), ...autoplay,
+                "--server", server, ...launch.arguments, ...(proof ? [`--${proof}`] : []), ...autoplay, ...notificationProof,
             ], { ...mobileEnvironment, ...(drive ? { SIMCTL_CHILD_TOY_BOX_AUTOMATION_SCRIPT: drive.script } : {}) },
             AbortSignal.any([interruption.signal, AbortSignal.timeout(30_000)]));
             if (result.exitCode) throw new Error(`Mobile launch failed: ${result.stderr.trim()}`);

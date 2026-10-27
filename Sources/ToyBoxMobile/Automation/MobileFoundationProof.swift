@@ -11,7 +11,8 @@ private struct MobileFoundationProof: ViewModifier {
     func body(content: Content) -> some View {
         if ProcessInfo.processInfo.arguments.contains("--activity-fixture-proof") {
             ActivityFixtureProofView()
-        } else if ProcessInfo.processInfo.arguments.contains("--foundation-proof"), !showsChannels {
+        } else if (ProcessInfo.processInfo.arguments.contains("--foundation-proof")
+                   || ProcessInfo.processInfo.arguments.contains("--notification-proof")), !showsChannels {
             FoundationProofView(showChannels: { showsChannels = true })
         } else {
             content
@@ -33,6 +34,8 @@ private struct FoundationProofView: View {
     @ViewState private var result = "Not prepared"
     @ViewState private var activityID: String?
     @ViewState private var isSchedulingNotification = false
+    @ViewState private var preparedNotification: ChannelNotifications.PreparedProofNotification?
+    @ViewState private var didRunNotificationProof = false
 
     var body: some View {
         NavigationStack {
@@ -54,8 +57,17 @@ private struct FoundationProofView: View {
                     Group {
                         Button("Deliver Enriched Request") { scheduleNotification(.request) }
                         Button("Deliver Enriched Completion") { scheduleNotification(.completion) }
+                        Button("Prepare Offline Request") { prepareOfflineNotification() }
                     }
                     .disabled(isSchedulingNotification)
+                    Button("Deliver Prepared Offline Request") {
+                        guard let preparedNotification else {
+                            result = "Prepare a request online first."
+                            return
+                        }
+                        scheduleNotification(.request, prepared: preparedNotification)
+                    }
+                    .disabled(isSchedulingNotification || preparedNotification == nil)
                     Button("Start Local Activity") {
                         do {
                             let activity = try Activity.request(
@@ -85,6 +97,7 @@ private struct FoundationProofView: View {
             }
             .navigationTitle("Foundation Proof")
             .task {
+                await runNotificationProofIfRequested()
                 let category = UITraitCollection(preferredContentSizeCategory: .accessibilityExtraExtraExtraLarge)
                 let sizes = [UIFont.TextStyle.body, .headline, .footnote, .caption1].map {
                     "\($0.rawValue)=\(UIFont.preferredFont(forTextStyle: $0, compatibleWith: category).pointSize)"
@@ -98,14 +111,83 @@ private struct FoundationProofView: View {
         }
     }
 
-    private func scheduleNotification(_ kind: ChannelPushPayload.Kind) {
+    private struct NotificationProofReceipt: Codable {
+        var action: String
+        var state: String
+        var elapsedSeconds: Double
+        var message: String
+
+        func write(to file: URL) throws {
+            try JSONEncoder().encode(self).write(to: file, options: .atomic)
+            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
+        }
+    }
+
+    private func runNotificationProofIfRequested() async {
+        let arguments = ProcessInfo.processInfo.arguments
+        guard !didRunNotificationProof, let index = arguments.firstIndex(of: "--notification-proof") else { return }
+        didRunNotificationProof = true
+        do {
+            guard arguments.indices.contains(index + 1),
+                  let action = ChannelNotifications.ProofAction(rawValue: arguments[index + 1]) else {
+                throw ProofFailure.invalidNotificationAction
+            }
+            await model.notifications.start()
+            let directory = try MobileSharedContainer.url()
+            let file = directory.appendingPathComponent("notification-proof-result.json")
+            var receipt = NotificationProofReceipt(
+                action: action.rawValue, state: "running", elapsedSeconds: 0, message: "Preparing notification proof")
+            try receipt.write(to: file)
+            result = receipt.message
+            let started = ContinuousClock.now
+            do {
+                try await model.notifications.runProofNotificationAction(action, directory: directory)
+                receipt.state = "completed"
+                receipt.message = action == .prepareOffline
+                    ? "Routing prepared online. Stop the demo before the deliver-offline launch."
+                    : "Notification scheduled for thirty seconds from now."
+            } catch {
+                receipt.state = "failed"
+                receipt.message = "Notification proof failed: \(error.localizedDescription)"
+            }
+            let elapsed = started.duration(to: .now).components
+            receipt.elapsedSeconds = Double(elapsed.seconds) + Double(elapsed.attoseconds) / 1e18
+            result = receipt.message
+            try receipt.write(to: file)
+        } catch {
+            result = "Notification proof failed: \(error.localizedDescription)"
+        }
+    }
+
+    private func prepareOfflineNotification() {
         isSchedulingNotification = true
-        result = "Preparing \(kind.rawValue) alert"
+        preparedNotification = nil
+        result = "Preparing request routing online"
         Task {
             defer { isSchedulingNotification = false }
             do {
-                try await model.notifications.scheduleProofNotification(kind)
-                result = "Enriched \(kind.rawValue) scheduled. Return Home or lock the simulator within 30 seconds."
+                preparedNotification = try await model.notifications.prepareProofNotification(.request)
+                result = "Request prepared. Stop the demo server, then deliver the prepared offline request."
+            } catch {
+                result = "Preparation failed: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    private func scheduleNotification(_ kind: ChannelPushPayload.Kind,
+                                      prepared: ChannelNotifications.PreparedProofNotification? = nil) {
+        isSchedulingNotification = true
+        result = prepared == nil ? "Preparing \(kind.rawValue) alert" : "Enriching the prepared request while offline"
+        Task {
+            defer { isSchedulingNotification = false }
+            do {
+                if let prepared {
+                    try await model.notifications.schedulePreparedProofNotification(prepared)
+                    preparedNotification = nil
+                } else {
+                    try await model.notifications.scheduleProofNotification(kind)
+                }
+                result = "\(prepared == nil ? "Enriched" : "Prepared") \(kind.rawValue) scheduled. Return Home or lock the simulator within 30 seconds."
             } catch {
                 result = "Notification failed: \(error.localizedDescription)"
             }
@@ -136,11 +218,13 @@ private struct FoundationProofView: View {
     private enum ProofFailure: LocalizedError {
         case avatarUnavailable
         case pngEncodingFailed
+        case invalidNotificationAction
 
         var errorDescription: String? {
             switch self {
             case .avatarUnavailable: "The proof avatar symbol is unavailable."
             case .pngEncodingFailed: "The proof avatar could not be encoded as PNG."
+            case .invalidNotificationAction: "Use request, prepare-offline or deliver-offline for notification proof."
             }
         }
     }
