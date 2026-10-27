@@ -11,17 +11,26 @@ final class WidgetSnapshotPublisher {
     private var previous: NeedsYouSnapshot?
     private var loadedPrevious = false
     private var avatars: [String: (ChannelAgent, Data)] = [:]
+    private let directory: URL?
+    private let reload: @MainActor () -> Void
     private let logger = Logger(subsystem: "dev.toybox.desktop", category: "Widget")
 
-    init(enabled: Bool) {
-        isEnabled = enabled && Bundle.main.object(forInfoDictionaryKey: NeedsYouSnapshot.groupInfoKey) as? String
-            == NeedsYouSnapshot.appGroup
+    init(enabled: Bool, directory: URL? = nil,
+         reload: @escaping @MainActor () -> Void = {
+             WidgetCenter.shared.reloadTimelines(ofKind: NeedsYouSnapshot.kind)
+             ControlCenter.shared.reloadControls(ofKind: NeedsYouSnapshot.controlKind)
+         }) {
+        isEnabled = enabled && (directory != nil
+            || Bundle.main.object(forInfoDictionaryKey: NeedsYouSnapshot.groupInfoKey) as? String
+                == NeedsYouSnapshot.appGroup)
+        self.directory = directory
+        self.reload = reload
     }
 
     func update(status: MenuBarStatus, serverURL: String, hasCatalog: Bool, now: Date = .now) {
         guard isEnabled else { return }
         do {
-            guard let directory = FileManager.default.containerURL(
+            guard let directory = directory ?? FileManager.default.containerURL(
                 forSecurityApplicationGroupIdentifier: NeedsYouSnapshot.appGroup
             ) else { throw WidgetSnapshotError.unavailableGroup }
             let file = directory.appendingPathComponent(NeedsYouSnapshot.fileName)
@@ -42,16 +51,16 @@ final class WidgetSnapshotPublisher {
                 snapshot = previous
                 snapshot.isOffline = true
             }
-            if let previous {
+            if let previous, previous.serverURL == serverURL {
                 snapshot.updatedAt = previous.updatedAt
-                if snapshot == previous, now.timeIntervalSince(previous.updatedAt) < 15 * 60 { return }
-                snapshot.updatedAt = now
+                if snapshot == previous,
+                   snapshot.isOffline || now.timeIntervalSince(previous.updatedAt) < 15 * 60 { return }
+                if !snapshot.isOffline { snapshot.updatedAt = now }
             }
             let data = try JSONEncoder().encode(snapshot)
             try data.write(to: file, options: .atomic)
             previous = snapshot
-            WidgetCenter.shared.reloadTimelines(ofKind: NeedsYouSnapshot.kind)
-            ControlCenter.shared.reloadControls(ofKind: NeedsYouSnapshot.controlKind)
+            reload()
         } catch {
             logger.error("Could not publish the widget snapshot: \(error.localizedDescription, privacy: .public)")
         }

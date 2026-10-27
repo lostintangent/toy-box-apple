@@ -8,6 +8,23 @@ import UserNotifications
 @testable import ToyBoxMobileIntegrations
 
 struct MobileNotificationEnricherTests {
+    @Test(arguments: [ChannelPushPayload.Kind.request, .completion])
+    @MainActor func routedAlertsRequestOneReloadBeforeHandingContentBackToTheSystem(kind: ChannelPushPayload.Kind) async throws {
+        let directory = Self.directory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let registration = try MobilePushRegistrationStore(directory: directory).select(serverURL: "https://server.test")
+        var events: [String] = []
+        let enricher = MobileNotificationEnricher(
+            directory: directory, avatarPNG: { _ in nil },
+            fetch: { _, _ in .init(catalog: Self.catalog(), messages: [Self.question()]) },
+            reloadWidgets: { events.append("reload") })
+        enricher.start(Self.payload(kind: kind, registration: registration)) { _ in events.append("delivered") }
+        let work = try #require(enricher.work)
+        await work.value
+        enricher.expire()
+        #expect(events == ["reload", "delivered"])
+    }
+
     @Test(arguments: [0, 3])
     @MainActor func requestIntentsIdentifyTheLocalRecipientAndTheRealChannelGroup(memberCount: Int) async throws {
         let directory = Self.directory()
@@ -154,6 +171,8 @@ struct MobileNotificationEnricherTests {
         }, fetch: { _, _ in
             Issue.record("A mismatched notification must not fetch.")
             throw CancellationError()
+        }, reloadWidgets: {
+            Issue.record("A mismatched notification must not request a widget reload.")
         })
         var delivered: UNNotificationContent?
         enricher.start(.init(kind: .request, channelID: "studio", sequence: 15, registrationID: UUID().uuidString)) {

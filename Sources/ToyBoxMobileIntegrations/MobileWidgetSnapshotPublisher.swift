@@ -45,7 +45,7 @@ public final class MobileWidgetSnapshotPublisher {
             avatars = [:]
         }
         guard let catalog, catalog.api.baseURL.absoluteString == serverURL,
-              catalog.hasLoaded, catalog.error == nil, let state = catalog.state else {
+              catalog.hasLoaded, catalog.error == nil, catalog.state != nil else {
             var snapshot = previous?.serverURL == serverURL ? previous : nil
             if snapshot != nil { snapshot?.isOffline = true }
             try publish(snapshot ?? NeedsYouSnapshot(
@@ -54,6 +54,66 @@ public final class MobileWidgetSnapshotPublisher {
             ))
             return
         }
+        let snapshot = try await resolvedSnapshot(catalog: catalog, serverURL: serverURL, token: token,
+                                                  allowsPartialHistory: true)
+        try publish(snapshot)
+    }
+
+    public func refresh(session: URLSession = .shared, now: Date = .now) async throws -> NeedsYouSnapshot? {
+        let directory = file.deletingLastPathComponent()
+        let selected = try MobilePushRegistrationStore(directory: directory).current
+        guard let serverURL = selected?.serverURL ?? previous?.serverURL else { return nil }
+        let token = UUID()
+        generation = token
+        if previous?.serverURL != serverURL {
+            requests = [:]
+            avatars = [:]
+        }
+        let snapshot: NeedsYouSnapshot
+        do {
+            snapshot = try await withThrowingTaskGroup(of: NeedsYouSnapshot.self) { group in
+                group.addTask {
+                    try await self.fetchedSnapshot(serverURL: serverURL, session: session, token: token)
+                }
+                group.addTask {
+                    try await Task.sleep(for: .seconds(10))
+                    throw URLError(.timedOut)
+                }
+                defer { group.cancelAll() }
+                guard let result = try await group.next() else { throw CancellationError() }
+                return result
+            }
+        } catch {
+            if Task.isCancelled || error is CancellationError
+                || (error as? URLError)?.code == .cancelled { throw error }
+            logger.error("Could not refresh the widget: \(error.localizedDescription)")
+            var cached = previous?.serverURL == serverURL ? previous : nil
+            if cached != nil { cached?.isOffline = true }
+            snapshot = cached ?? NeedsYouSnapshot(
+                serverURL: serverURL, updatedAt: now, isOffline: true, isAvailable: false,
+                waitingCount: 0, requests: [])
+        }
+        try Task.checkCancellation()
+        guard generation == token,
+              try MobilePushRegistrationStore(directory: directory).current == selected else {
+            throw CancellationError()
+        }
+        try publish(snapshot, now: now)
+        return previous
+    }
+
+    private func fetchedSnapshot(serverURL: String, session: URLSession, token: UUID) async throws -> NeedsYouSnapshot {
+        let catalog = ChannelCatalogStore(api: try ChannelAPI(serverURL: serverURL, session: session))
+        await catalog.refresh()
+        try Task.checkCancellation()
+        if let failure = catalog.failure { throw failure }
+        return try await resolvedSnapshot(
+            catalog: catalog, serverURL: serverURL, token: token, allowsPartialHistory: false)
+    }
+
+    private func resolvedSnapshot(catalog: ChannelCatalogStore, serverURL: String, token: UUID,
+                                  allowsPartialHistory: Bool) async throws -> NeedsYouSnapshot {
+        guard let state = catalog.state else { throw ChannelAPIError.invalidResponse }
         if let registration = try MobilePushRegistrationStore(directory: file.deletingLastPathComponent()).current,
            ChannelWaitingRequest.normalizedServer(registration.serverURL)
             == ChannelWaitingRequest.normalizedServer(serverURL) {
@@ -87,6 +147,7 @@ public final class MobileWidgetSnapshotPublisher {
                 } catch {
                     if Task.isCancelled || error is CancellationError
                         || (error as? URLError)?.code == .cancelled { throw error }
+                    if !allowsPartialHistory { throw error }
                     offline = true
                     logger.error("Could not load a widget request: \(error.localizedDescription)")
                 }
@@ -116,10 +177,10 @@ public final class MobileWidgetSnapshotPublisher {
                 avatarPNG: requester.flatMap(avatar)
             )
         }
-        try publish(NeedsYouSnapshot(
+        return NeedsYouSnapshot(
             serverURL: serverURL, updatedAt: .now, isOffline: offline, isAvailable: true,
             waitingCount: waiting.count, requests: rows
-        ))
+        )
     }
 
     func publish(_ proposed: NeedsYouSnapshot, now: Date = .now) throws {

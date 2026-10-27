@@ -1,9 +1,78 @@
+import ChannelClient
 import ChannelKit
 import Foundation
+import Observation
+import Synchronization
 import Testing
 @testable import ToyBoxDesktop
 
 @Suite struct WidgetTests {
+    @Test @MainActor func identicalCatalogPollsSignalTheUnchangedWidgetHeartbeatAfterThirtyMinutes() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("tbm-widget-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [WidgetPollingProtocol.self]
+        let session = URLSession(configuration: configuration)
+        defer { session.invalidateAndCancel() }
+        let start = Date(timeIntervalSince1970: 1793086200)
+        var now = start
+        let publisher = WidgetSnapshotPublisher(enabled: true, directory: directory, reload: {})
+        let server = "http://widget-poll.test"
+        let catalog = ChannelCatalogStore(api: try ChannelAPI(serverURL: server, session: session))
+        let file = directory.appendingPathComponent(NeedsYouSnapshot.fileName)
+        func read() throws -> NeedsYouSnapshot {
+            try JSONDecoder().decode(NeedsYouSnapshot.self, from: Data(contentsOf: file))
+        }
+        await catalog.refresh()
+        #expect(catalog.error == nil)
+        publisher.update(status: .init(), serverURL: server, hasCatalog: catalog.state != nil, now: now)
+        let first = try read()
+        let state = catalog.state
+        let didRefresh = Mutex(false)
+        withObservationTracking {
+            _ = catalog.lastRefreshedAt
+        } onChange: {
+            didRefresh.withLock { $0 = true }
+        }
+        now = start.addingTimeInterval(31 * 60)
+        await catalog.refresh()
+        #expect(catalog.error == nil)
+        #expect(didRefresh.withLock { $0 })
+        publisher.update(status: .init(), serverURL: server, hasCatalog: catalog.state != nil, now: now)
+        let refreshed = try read()
+        #expect(catalog.state == state)
+        #expect(refreshed.requests == first.requests)
+        #expect(refreshed.updatedAt == now)
+        #expect(!refreshed.isStale(at: now))
+    }
+
+    @Test @MainActor func unchangedWritesCoalesceButOfflinePollsNeverAdvanceTheLastSuccess() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("tbm-widget-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        var reloads = 0
+        let publisher = WidgetSnapshotPublisher(enabled: true, directory: directory, reload: { reloads += 1 })
+        let now = Date(timeIntervalSince1970: 1793086200)
+        publisher.update(status: .init(), serverURL: "http://widget.test", hasCatalog: true, now: now)
+        publisher.update(status: .init(), serverURL: "http://widget.test", hasCatalog: true,
+                         now: now.addingTimeInterval(15 * 60 - 1))
+        #expect(reloads == 1)
+        let heartbeat = now.addingTimeInterval(15 * 60)
+        publisher.update(status: .init(), serverURL: "http://widget.test", hasCatalog: true, now: heartbeat)
+        #expect(reloads == 2)
+        publisher.update(status: .init(unreachableHost: "widget.test"), serverURL: "http://widget.test",
+                         hasCatalog: false, now: now.addingTimeInterval(40 * 60))
+        #expect(reloads == 3)
+        let file = directory.appendingPathComponent(NeedsYouSnapshot.fileName)
+        let cached = try JSONDecoder().decode(NeedsYouSnapshot.self, from: Data(contentsOf: file))
+        #expect(cached.updatedAt == heartbeat)
+        #expect(cached.isOffline)
+        publisher.update(status: .init(unreachableHost: "widget.test"), serverURL: "http://widget.test",
+                         hasCatalog: false, now: now.addingTimeInterval(60 * 60))
+        #expect(reloads == 3)
+    }
+
     @Test func requestLinksDispatchToTheirScopedOpenAndReplyActions() throws {
         let link = NeedsYouRequestLink(serverURL: "http://127.0.0.1:3210/",
                                       channelID: "studio", sequence: 123)
@@ -11,6 +80,25 @@ import Testing
         let reply = try #require(link.replyURL)
         #expect(WidgetActionLink(url: reply) == .reply(link))
         #expect(WidgetActionLink(url: url) == .open(link))
+    }
+
+    private final class WidgetPollingProtocol: URLProtocol, @unchecked Sendable {
+        override class func canInit(with request: URLRequest) -> Bool { true }
+        override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+        override func startLoading() {
+            do {
+                let url = try #require(request.url)
+                #expect(url.path == "/api/v1/channels")
+                let catalog = ChannelCatalog(lead: .init(
+                    name: "Lead", role: "Coordinates", avatar: .init(mark: "M4 12L12 4L20 12", color: "#327785")))
+                let response = try #require(HTTPURLResponse(
+                    url: url, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": "application/json"]))
+                client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+                client?.urlProtocol(self, didLoad: try JSONEncoder().encode(catalog))
+                client?.urlProtocolDidFinishLoading(self)
+            } catch { client?.urlProtocol(self, didFailWithError: error) }
+        }
+        override func stopLoading() {}
     }
 
     @Test func onlyExactUnparameterizedControlRoutesAreAccepted() throws {
