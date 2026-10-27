@@ -1,7 +1,6 @@
-import { copyFile, mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
+import { copyFile, mkdir, readdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { command, isMissing, machineLock, plist, root, scratchPath, temporary, text } from "../lib.ts";
+import { command, plist, root, scratchPath, temporary, text } from "../lib.ts";
 import { version as buildVersion } from "../release/check-update-version.ts";
 import { bundleMobile, mobileBundleID, mobileEnvironment, mobileExtensions } from "./mobile.ts";
 import { mobileSigning, signMobileBundles } from "./mobile-device.ts";
@@ -19,46 +18,6 @@ export function testFlightAuthentication(env: NodeJS.ProcessEnv = process.env): 
     return { username, appID, passwordReference: env.CI === "true"
         ? "@env:NOTARY_APP_PASSWORD"
         : `@keychain:${env.APP_STORE_CONNECT_PASSWORD_KEYCHAIN_ITEM || "toy-box-testflight"}` };
-}
-
-export function nextTestFlightBuild(previous: string | undefined, requested?: string): string {
-    if (previous === undefined) {
-        const first = requested ?? "1";
-        buildVersion(first);
-        return first;
-    }
-    const before = buildVersion(previous);
-    if (requested !== undefined) {
-        const after = buildVersion(requested);
-        const difference = after.map((part, index) => part - before[index]!).find(part => part !== 0) ?? 0;
-        if (difference <= 0) throw new Error(`TestFlight build ${requested} must be newer than reserved build ${previous}.`);
-        return requested;
-    }
-    const next = [...before];
-    next[2] = next[2]! + 1;
-    if (next[2]! > 99) { next[2] = 0; next[1] = next[1]! + 1; }
-    if (next[1]! > 99) { next[1] = 0; next[0] = next[0]! + 1; }
-    const result = next.join(".");
-    buildVersion(result);
-    return result;
-}
-
-async function reserveBuild(requested?: string): Promise<string> {
-    const file = join(homedir(), ".toy-box/testflight-build.json");
-    let previous: string | undefined;
-    try {
-        const value: unknown = JSON.parse(await readFile(file, "utf8"));
-        if (!value || typeof value !== "object" || !("build" in value) || typeof value.build !== "string") {
-            throw new Error("Invalid saved TestFlight build counter.");
-        }
-        previous = value.build;
-    } catch (error) { if (!isMissing(error)) throw error; }
-    const build = nextTestFlightBuild(previous, requested);
-    await mkdir(dirname(file), { recursive: true });
-    const pending = `${file}.next`;
-    await writeFile(pending, JSON.stringify({ build }) + "\n", { mode: 0o600 });
-    await rename(pending, file);
-    return build;
 }
 
 export async function testFlightMetadata() {
@@ -157,26 +116,28 @@ export async function deliverTestFlightIPA(ipa: string, release: TestFlightVersi
 }
 
 export async function runTestFlight(options: { buildOnly?: boolean; validateOnly?: boolean; version?: string; build?: string }) {
+    const requestedBuild = options.build ?? process.env.BUILD_NUMBER;
+    if (!options.buildOnly && !requestedBuild) {
+        throw new Error("TestFlight validation and upload require --build-number N or BUILD_NUMBER. Choose an unused build number in App Store Connect.");
+    }
+    const info = join(root, "Resources/Mobile/Info.plist");
+    const release = {
+        version: options.version ?? process.env.MOBILE_VERSION
+            ?? await plist(info, ["Print :CFBundleShortVersionString"]),
+        build: requestedBuild ?? await plist(info, ["Print :CFBundleVersion"]),
+    };
+    if (!/^\d+\.\d+\.\d+$/.test(release.version)) throw new Error("The iPhone version must be X.Y.Z.");
+    buildVersion(release.build);
     const auth = options.buildOnly ? undefined : testFlightAuthentication();
-    const unlock = await machineLock("mobile-testflight");
-    try {
-        const signing = options.buildOnly ? undefined : await mobileSigning(true);
-        const version = options.version ?? process.env.MOBILE_VERSION
-            ?? await plist(join(root, "Resources/Mobile/Info.plist"), ["Print :CFBundleShortVersionString"]);
-        if (!/^\d+\.\d+\.\d+$/.test(version)) throw new Error("The iPhone version must be X.Y.Z.");
-        const release = {
-            version,
-            build: await reserveBuild(options.build ?? process.env.BUILD_NUMBER),
-        };
-        const app = await bundleMobile(true, true);
-        await prepareTestFlightBundle(app, release, await testFlightMetadata());
-        console.log(`TestFlight ${release.version} (${release.build}), release arm64, no bundled server.`);
-        if (!signing) { console.log(`Unsigned build only: ${app}`); return; }
-        await signMobileBundles(app, signing, true);
-        const ipa = join(scratchPath(), `ToyBox-iPhone-${release.version}-${release.build}.ipa`);
-        await packageTestFlightIPA(app, ipa);
-        console.log(`Signed IPA: ${ipa}`);
-        if (!auth) throw new Error("TestFlight upload authentication is missing.");
-        await deliverTestFlightIPA(ipa, release, auth, options.validateOnly ?? false);
-    } finally { unlock(); }
+    const signing = options.buildOnly ? undefined : await mobileSigning(true);
+    const app = await bundleMobile(true, true);
+    await prepareTestFlightBundle(app, release, await testFlightMetadata());
+    console.log(`TestFlight ${release.version} (${release.build}), release arm64, no bundled server.`);
+    if (!signing) { console.log(`Unsigned build only: ${app}`); return; }
+    await signMobileBundles(app, signing, true);
+    const ipa = join(scratchPath(), `ToyBox-iPhone-${release.version}-${release.build}.ipa`);
+    await packageTestFlightIPA(app, ipa);
+    console.log(`Signed IPA: ${ipa}`);
+    if (!auth) throw new Error("TestFlight upload authentication is missing.");
+    await deliverTestFlightIPA(ipa, release, auth, options.validateOnly ?? false);
 }

@@ -209,9 +209,9 @@ AppKit icon rendering. Local builds remain Command Line Tools only.
 `bun run mobile --testflight` is independent of the Mac release. It builds optimized arm64 with
 the selected Xcode 27+ iPhoneOS SDK through SwiftPM, without an Xcode project or Simulator.
 `--version X.Y.Z` / `MOBILE_VERSION` sets the marketing version. `--build-number N` / `BUILD_NUMBER`
-sets the build; otherwise the local counter in `~/.toy-box/testflight-build.json` increases under
-a machine-wide lease. Explicit numbers must advance that counter. App Store Connect also rejects
-numbers already uploaded elsewhere.
+sets the build and is required for validate/upload. Choose an unused number; App Store Connect
+rejects reused numbers, including uploads from other machines. Build-only may use the source
+plist's build. There is no local counter or TestFlight lease; use your own scratch path.
 
 The user supplies an Apple Distribution identity and three explicit, unexpired App Store Connect
 profiles through the existing `MOBILE_PROVISIONING_PROFILE`, `MOBILE_WIDGET_PROVISIONING_PROFILE`
@@ -230,8 +230,14 @@ App Group state uses files, not shared UserDefaults. No disk-space API is used. 
 [required-reason policy](https://developer.apple.com/documentation/bundleresources/describing-use-of-required-reason-api).
 
 `APP_STORE_CONNECT_USERNAME` and numeric `APP_STORE_CONNECT_APP_ID` identify the account/app.
-The user stores the app-specific password in the login keychain as `toy-box-testflight`, using
-Apple's `altool --store-password-in-keychain-item` with the existing silent stdin helper.
+The user stores the app-specific password in the login keychain as `toy-box-testflight`. From the
+repo root, use the verified Xcode 27 command, which prompts silently and passes only an environment
+reference to Apple's tool:
+
+```sh
+TB_PW="$(scripts/release/read-password.sh 'App-specific password: ')" DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcrun altool --store-password-in-keychain-item --item toy-box-testflight -u joncart@outlook.com -p @env:TB_PW
+```
+
 `APP_STORE_CONNECT_PASSWORD_KEYCHAIN_ITEM` can select another item. CI passes only
 `@env:NOTARY_APP_PASSWORD`; local commands pass only the keychain reference, never a password.
 Apple's tool performs authentication. Agents never create accounts, profiles or credentials,

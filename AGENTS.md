@@ -199,11 +199,12 @@ use demo servers only for write scripts. Never skip or retry actions.
   `APP_STORE_CONNECT_USERNAME` and numeric `APP_STORE_CONNECT_APP_ID`. Apple tools read the password
   through `@keychain:toy-box-testflight` (override `APP_STORE_CONNECT_PASSWORD_KEYCHAIN_ITEM`), or
   `@env:NOTARY_APP_PASSWORD` in CI. Never pass a password as a shell argument or read the keychain item.
-  Only the user stores it, using Apple's `--store-password-in-keychain-item` with silent stdin.
+  Only the user stores it, from the repo root, with the verified Xcode 27 syntax:
+  `TB_PW="$(scripts/release/read-password.sh 'App-specific password: ')" DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcrun altool --store-password-in-keychain-item --item toy-box-testflight -u joncart@outlook.com -p @env:TB_PW`
 - **TestFlight bundle:** actual Xcode/SDK `DT*` metadata, matching version/build on every component,
-  `ITSAppUsesNonExemptEncryption=false`, production push and no `get-task-allow`. Local builds reserve
-  increasing numbers in `~/.toy-box/testflight-build.json`; `BUILD_NUMBER` and `MOBILE_VERSION` are
-  explicit CI inputs. Apple still verifies uniqueness against uploads from other machines. Each
+  `ITSAppUsesNonExemptEncryption=false`, production push and no `get-task-allow`. Validate/upload require
+  `--build-number` / `BUILD_NUMBER`; choose an unused App Store build. Build-only may use the plist's
+  build. `MOBILE_VERSION` sets the version. There is no local counter or TestFlight lease. Each
   executable carries its audited `PrivacyInfo.xcprivacy`. Processing `VALID` is not tester availability.
 - `SCRATCH_PATH=/tmp/tbm-<you> bun run test:mobile` builds the iOS tests and runs
   ChannelClient, ToyBoxUI, ToyBoxMobileIntegrations, ToyBoxMobileWidget and ToyBoxMobile

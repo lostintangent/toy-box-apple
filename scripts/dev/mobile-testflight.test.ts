@@ -3,7 +3,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import * as tools from "../lib.ts";
 import {
-    deliverTestFlightIPA, nextTestFlightBuild, prepareTestFlightBundle, testFlightAuthentication,
+    deliverTestFlightIPA, prepareTestFlightBundle, testFlightAuthentication,
     testFlightProcessingIsValid,
 } from "./mobile-testflight.ts";
 import { mobileBundleID, mobileEntitlements, mobileExtensions } from "./mobile.ts";
@@ -45,18 +45,6 @@ test("App Store signing reuses exact profile-set matching without accepting deve
         : { ...profile, entitlements: mobileEntitlements(mobileBundleID) }), [identity], true)).toThrow("No compatible");
     const output = `  1) ${fingerprint} "${identity.name}"\n  2) ${fingerprint} "Apple Development: Test"`;
     expect(mobileSigningIdentities(output, true)).toEqual([identity]);
-});
-
-test("local build reservations increase using Apple's build-number shape and reject repeated or regressing overrides", () => {
-    expect(nextTestFlightBuild(undefined)).toBe("1");
-    expect(nextTestFlightBuild(undefined, "42.1")).toBe("42.1");
-    expect(nextTestFlightBuild("1")).toBe("1.0.1");
-    expect(nextTestFlightBuild("1.2.99")).toBe("1.3.0");
-    expect(nextTestFlightBuild("1.99.99")).toBe("2.0.0");
-    expect(nextTestFlightBuild("42.1", "43.1")).toBe("43.1");
-    for (const value of ["", "42.1", "42", "0", "10000", "1.100", "v43"]) {
-        expect(() => nextTestFlightBuild("42.1", value)).toThrow();
-    }
 });
 
 test("upload authentication passes only a keychain or environment reference, never a password", () => {
@@ -187,8 +175,20 @@ test("TestFlight rejects all local-launch/proof flags before reading signing or 
         const child = Bun.spawn([process.execPath, join(import.meta.dir, "mobile.ts"), "--testflight", ...args], {
             stdout: "pipe", stderr: "pipe", env: { ...process.env },
         });
+
         const stderr = await new Response(child.stderr).text();
         expect(await child.exited).toBe(1);
         expect(stderr).toContain("--testflight accepts only");
+    }
+});
+
+test("validation and upload require an explicit build before accessing signing assets", async () => {
+    for (const args of [[], ["--validate-only"]]) {
+        const child = Bun.spawn([process.execPath, join(import.meta.dir, "mobile.ts"), "--testflight", ...args], {
+            stdout: "pipe", stderr: "pipe", env: { ...process.env, BUILD_NUMBER: undefined },
+        });
+        const stderr = await new Response(child.stderr).text();
+        expect(await child.exited).toBe(1);
+        expect(stderr).toContain("require --build-number N or BUILD_NUMBER");
     }
 });
