@@ -37,6 +37,7 @@ test("demo push routes preserve the install, independent topics and supplied Act
     expect(routes.subscriptions.get(`studio-demo\n${id}`)).toMatchObject({ token: "cc", startedAt: subscription.startedAt });
     expect((await put(`/api/v1/push/${id}/topics/requests`, {})).status).toBe(204);
     expect((await fetch(`${base}/api/v1/push/${id}/topics/requests`, { method: "DELETE" })).status).toBe(204);
+    expect((await fetch(`${base}/api/v1/push/${id}/topics/requests`, { method: "DELETE" })).status).toBe(204);
     expect(routes.subscriptions.size).toBe(1);
     expect((await put(`/api/v1/push/${other}`, { ...registration, token: "BB" })).status).toBe(201);
     expect([...routes.registrations.keys()]).toEqual([other]);

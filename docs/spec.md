@@ -367,9 +367,10 @@ iPhone presents that subscription as a Live Activity.
 Subscription does not require the source to exist. An absent channel receives the channel-deleted
 ending on the next delivery pass. The phone resends the original `startedAt`, in Unix seconds,
 on every Activity token rotation. Server scheduling and delivery live in Toy Box's Push guide.
-Normal registration updates do not rewrite subscriptions. A 201 restores current choices and active Follows; unacknowledged preference writes
-also recover on launch. New Follow remains unavailable until the selected server acknowledges its
-registration. Restored Activities survive that wait and replay deferred tokens after either 201 or
+After every successful registration, the phone PUTs or DELETEs both notification topics from its
+current choices, so failed preference writes recover on the next launch without a saved receipt.
+A 201 also restores active Follows. New Follow remains unavailable until the selected server
+acknowledges its registration. Restored Activities survive that wait and replay deferred tokens after either 201 or
 204, independently of alert preferences.
 Allow notifications off unsubscribes only the two notification topics, retaining Follow and the address.
 The demo stores all state in memory and never contacts APNs.

@@ -149,14 +149,48 @@ struct ShellTests {
             #expect(inputs.count == 4)
             #expect(registeredIDs == Array(repeating: id, count: 4))
             #expect(tokenRequests == 1)
-            let acknowledgedTopics = topics
+            let previousTopics = topics
             registration.receivedToken(Data([2]))
             #expect(!registration.isReady)
             await registration.waitUntilIdle()
             #expect(registration.isReady)
             #expect(inputs.last == PushRegistration(token: "02", environment: .production))
             #expect(registeredIDs.last == id)
-            #expect(topics == acknowledgedTopics)
+            #expect(topics == previousTopics + ["on:requests", "off:completions"])
+        }
+    }
+
+    @Test(arguments: [false, true])
+    func eachLaunchReconcilesBothTopicsAfterSuccessOrAPreferenceFailure(failedWrite: Bool) async throws {
+        try await withRegistrationStore { store in
+            var registrations = 0
+            var topics: [String] = []
+            var fails = failedWrite
+            @MainActor func launch() throws -> MobileNotificationRegistration {
+                let registration = MobileNotificationRegistration(
+                    store: store, environment: .sandbox, requestToken: {},
+                    register: { _, _, _ in registrations += 1; return registrations == 1 },
+                    remove: { _, _ in }, subscribe: { _, _, topic in topics.append("on:\(topic)") },
+                    unsubscribe: { _, _, topic in
+                        topics.append("off:\(topic)")
+                        if fails { throw URLError(.cannotConnectToHost) }
+                    })
+                try registration.select(api: ChannelAPI(serverURL: "https://fixture.example"))
+                registration.update(enabled: true, requests: true, completions: false)
+                registration.receivedToken(Data([1]))
+                return registration
+            }
+            let first = try launch()
+            await first.waitUntilIdle()
+            #expect((first.error != nil) == failedWrite)
+            topics = []
+            fails = false
+            let relaunched = try launch()
+            await relaunched.waitUntilIdle()
+            #expect(registrations == 2)
+            #expect(relaunched.current == first.current)
+            #expect(relaunched.isReady && relaunched.error == nil)
+            #expect(topics == ["on:requests", "off:completions"])
         }
     }
 
