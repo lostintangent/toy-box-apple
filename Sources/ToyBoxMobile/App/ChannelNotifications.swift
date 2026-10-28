@@ -99,6 +99,7 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
     }
 
     var isEnabled: Bool { enabled && isAuthorized }
+    var isRegistrationReady: Bool { currentRegistration != nil && registration?.isReady == true }
     var registrationError: String? { registrationSetupError ?? registration?.error }
     var currentRegistration: MobilePushRegistration? {
         guard let current = registration?.current,

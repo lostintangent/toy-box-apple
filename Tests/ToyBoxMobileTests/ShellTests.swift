@@ -106,11 +106,16 @@ struct ShellTests {
         try await withRegistrationStore { store in
             var tokenRequests = 0
             var inputs: [PushRegistration] = []
+            var registeredIDs: [String] = []
             var deleted: [String] = []
             var topics: [String] = []
             let registration = MobileNotificationRegistration(
                 store: store, environment: .production, requestToken: { tokenRequests += 1 },
-                register: { _, input in inputs.append(input); return inputs.count == 1 }, remove: { _, id in deleted.append(id) },
+                register: { _, id, input in
+                    registeredIDs.append(id)
+                    inputs.append(input)
+                    return inputs.count == 1
+                }, remove: { _, id in deleted.append(id) },
                 subscribe: { _, _, topic in topics.append("on:\(topic)") },
                 unsubscribe: { _, _, topic in topics.append("off:\(topic)") })
             try registration.select(api: ChannelAPI(serverURL: "https://first.example"))
@@ -118,10 +123,11 @@ struct ShellTests {
             registration.update(enabled: true, requests: false, completions: true)
             #expect(tokenRequests == 1)
             #expect(inputs.isEmpty)
+            #expect(!registration.isReady)
             registration.receivedToken(Data([0x00, 0x12, 0xab, 0xff]))
             await registration.waitUntilIdle()
-            #expect(inputs == [PushRegistration(registrationID: id, token: "0012abff",
-                                                     environment: .production)])
+            #expect(inputs == [PushRegistration(token: "0012abff", environment: .production)])
+            #expect(registration.isReady)
             #expect(topics == ["off:requests", "on:completions"])
             registration.update(enabled: true, requests: false, completions: true)
             await registration.waitUntilIdle()
@@ -134,25 +140,35 @@ struct ShellTests {
             #expect(deleted.isEmpty)
             #expect(Array(topics.suffix(2)) == ["off:requests", "off:completions"])
             #expect(registration.current?.registrationID == id)
+            #expect(registration.isReady)
             registration.update(enabled: true, requests: true, completions: false)
             await registration.waitUntilIdle()
             #expect(inputs.count == 4)
-            #expect(inputs.last?.registrationID == id)
+            #expect(registeredIDs == Array(repeating: id, count: 4))
             #expect(tokenRequests == 1)
+            let acknowledgedTopics = topics
+            registration.receivedToken(Data([2]))
+            #expect(!registration.isReady)
+            await registration.waitUntilIdle()
+            #expect(registration.isReady)
+            #expect(inputs.last == PushRegistration(token: "02", environment: .production))
+            #expect(registeredIDs.last == id)
+            #expect(topics == acknowledgedTopics)
         }
     }
 
-    @Test func aServerSwitchAndOptOutWaitForTheOldInFlightRegistrationBeforeDeletingIt() async throws {
+    @Test(.timeLimit(.minutes(1)))
+    func aServerSwitchWaitsForTheOldWriteWithoutAcceptingItsAcknowledgement() async throws {
         try await withRegistrationStore { store in
             var events: [String] = []
-            var release: CheckedContinuation<Void, Never>?
+            var responses: [CheckedContinuation<Void, Never>] = []
             var began: (() -> Void)?
             let registration = MobileNotificationRegistration(
                 store: store, environment: .sandbox, requestToken: {},
-                register: { api, _ in
+                register: { api, _, _ in
                     events.append("register:\(api.baseURL.host ?? "")")
-                    if events.count == 1 { await withCheckedContinuation { continuation in
-                        release = continuation
+                    if responses.count < 2 { await withCheckedContinuation { continuation in
+                        responses.append(continuation)
                         began?()
                     } }
                     return true
@@ -170,11 +186,20 @@ struct ShellTests {
             let secondID = try #require(registration.current?.registrationID)
             registration.update(enabled: false, requests: true, completions: true)
             #expect(firstID != secondID)
+            #expect(!registration.isReady)
             #expect(events == ["register:first.example"])
-            release?.resume()
-            await registration.waitUntilIdle()
+            let firstResponse = try #require(responses.first)
+            await withCheckedContinuation { continuation in
+                began = { continuation.resume() }
+                firstResponse.resume()
+            }
             #expect(events == ["register:first.example", "delete:first.example", "register:second.example"])
+            #expect(!registration.isReady)
+            try #require(responses.last).resume()
+            await registration.waitUntilIdle()
+            #expect(registration.isReady)
             try registration.select(api: ChannelAPI(serverURL: "https://first.example"))
+            #expect(!registration.isReady)
             #expect(registration.current?.registrationID != firstID)
             #expect(registration.current?.registrationID != secondID)
             await registration.waitUntilIdle()
@@ -188,7 +213,7 @@ struct ShellTests {
                                   userInfo: [NSLocalizedDescriptionKey: "Registration unavailable"])
             let registration = MobileNotificationRegistration(
                 store: store, environment: .sandbox, requestToken: {},
-                register: { _, input in
+                register: { _, _, input in
                     inputs.append(input)
                     if inputs.count == 1 { throw failure }
                     return true
@@ -198,6 +223,7 @@ struct ShellTests {
             registration.receivedToken(Data([1]))
             await registration.waitUntilIdle()
             #expect(registration.error == "Registration unavailable")
+            #expect(!registration.isReady)
             registration.update(enabled: true, requests: true, completions: true)
             registration.receivedToken(Data([1]))
             await registration.waitUntilIdle()
@@ -208,6 +234,7 @@ struct ShellTests {
             #expect(inputs.count == 2)
             #expect(inputs[0] == inputs[1])
             #expect(registration.error == nil)
+            #expect(registration.isReady)
         }
     }
 
@@ -216,7 +243,7 @@ struct ShellTests {
             var requests = 0
             let registration = MobileNotificationRegistration(
                 store: store, environment: .sandbox, requestToken: { requests += 1 },
-                register: { _, _ in false }, remove: { _, _ in }, subscribe: { _, _, _ in }, unsubscribe: { _, _, _ in })
+                register: { _, _, _ in false }, remove: { _, _ in }, subscribe: { _, _, _ in }, unsubscribe: { _, _, _ in })
             try registration.select(api: ChannelAPI(serverURL: "https://first.example"))
             registration.update(enabled: true, requests: true, completions: true)
             registration.failedToReceiveToken("Token unavailable")
@@ -234,7 +261,7 @@ struct ShellTests {
             try await withRegistrationStore { store in
                 let registration = MobileNotificationRegistration(
                     store: store, environment: .sandbox, requestToken: {},
-                    register: { _, _ in false }, remove: { _, _ in }, subscribe: { _, _, _ in }, unsubscribe: { _, _, _ in })
+                    register: { _, _, _ in false }, remove: { _, _ in }, subscribe: { _, _, _ in }, unsubscribe: { _, _, _ in })
                 try registration.select(api: ChannelAPI(serverURL: "https://fixture.example"))
                 let id = try #require(registration.current?.registrationID)
                 let notifications = ChannelNotifications(defaults: defaults, registration: registration)
@@ -265,7 +292,7 @@ struct ShellTests {
                 let api = try ChannelAPI(serverURL: "https://fixture.example")
                 let registration = MobileNotificationRegistration(
                     store: store, environment: .sandbox, requestToken: {},
-                    register: { _, _ in false }, remove: { _, _ in })
+                    register: { _, _, _ in false }, remove: { _, _ in })
                 try registration.select(api: api)
                 let id = try #require(registration.current?.registrationID)
                 var notices: [UNNotificationRequest] = []
@@ -301,15 +328,25 @@ struct ShellTests {
         try await withDefaults { defaults in
             try await withRegistrationStore { store in
                 let firstAPI = try ChannelAPI(serverURL: "https://first.example")
+                var response: CheckedContinuation<Bool, Never>?
+                var began: (() -> Void)?
                 let registration = MobileNotificationRegistration(
                     store: store, environment: .sandbox, requestToken: {},
-                    register: { _, _ in false }, remove: { _, _ in })
+                    register: { _, _, _ in
+                        if response == nil {
+                            return await withCheckedContinuation { continuation in
+                                response = continuation
+                                began?()
+                            }
+                        }
+                        return false
+                    }, remove: { _, _ in }, subscribe: { _, _, _ in }, unsubscribe: { _, _, _ in })
                 try registration.select(api: firstAPI)
                 let notifications = ChannelNotifications(defaults: defaults, registration: registration)
                 let following = ChannelFollowController(
                     client: .init(activities: { [] },
                                   request: { _, _ in throw CocoaError(.featureUnsupported) }),
-                    defaults: defaults, environment: .sandbox)
+                    defaults: defaults)
                 defer { following.shutdown() }
                 let model = AppModel(arguments: ["--server", firstAPI.baseURL.absoluteString], environment: [:],
                                      defaults: defaults, session: fixtureSession(),
@@ -333,8 +370,18 @@ struct ShellTests {
                 try prepare(first)
                 #expect(following.state(for: first) == .unavailable)
                 model.observeFollowing()
-                #expect(following.state(for: first) == .available)
+                await withCheckedContinuation { continuation in
+                    began = { continuation.resume() }
+                    registration.receivedToken(Data([1]))
+                }
+                #expect(notifications.currentRegistration == registration.current)
+                #expect(!notifications.isRegistrationReady)
+                #expect(following.state(for: first) == .unavailable)
                 #expect(!notifications.isEnabled)
+                try #require(response).resume(returning: false)
+                await registration.waitUntilIdle()
+                await waitFor(.available, for: first)
+                #expect(notifications.isRegistrationReady)
 
                 try model.configure(serverURL: "https://second.example")
                 let secondAPI = try #require(model.api)
@@ -358,7 +405,7 @@ struct ShellTests {
             try await withRegistrationStore { store in
                 let registration = MobileNotificationRegistration(
                     store: store, environment: .sandbox, requestToken: {},
-                    register: { _, _ in false }, remove: { _, _ in })
+                    register: { _, _, _ in false }, remove: { _, _ in })
                 try registration.select(api: ChannelAPI(serverURL: "https://fixture.example"))
                 let id = try #require(registration.current?.registrationID)
                 let notifications = ChannelNotifications(defaults: defaults, registration: registration)
@@ -388,7 +435,7 @@ struct ShellTests {
                 let api = try ChannelAPI(serverURL: "https://fixture.example")
                 let registration = MobileNotificationRegistration(
                     store: store, environment: .sandbox, requestToken: {},
-                    register: { _, _ in false }, remove: { _, _ in })
+                    register: { _, _, _ in false }, remove: { _, _ in })
                 try registration.select(api: api)
                 let id = try #require(registration.current?.registrationID)
                 let notifications = ChannelNotifications(defaults: defaults, registration: registration,

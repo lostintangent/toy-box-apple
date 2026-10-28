@@ -227,6 +227,7 @@ final class AppModel {
     func observeFollowing() {
         withObservationTracking {
             _ = notifications.currentRegistration
+            _ = notifications.isRegistrationReady
             _ = catalog
             _ = isActive
         } onChange: { [weak self] in
@@ -237,7 +238,8 @@ final class AppModel {
 
     private func configureFollowing() {
         following.configure(
-            registration: notifications.currentRegistration, catalog: catalog, isActive: isActive,
+            registration: notifications.currentRegistration, isRegistrationReady: notifications.isRegistrationReady,
+            catalog: catalog, isActive: isActive,
             acquire: { [weak self] in self?.acquire($0) },
             release: { [weak self] in self?.release($0) }
         )
