@@ -46,6 +46,12 @@ test.each(["push", "workflow_dispatch"])("%s calls only the shared mobile comman
     ]);
 });
 
+test("upload or processing failures still retain the signed IPA and release notes", () => {
+    expect(workflow).toHaveProperty("jobs.testflight.steps", expect.arrayContaining([
+        expect.objectContaining({ name: "Retain the signed IPA and release notes", if: "always()" }),
+    ]));
+});
+
 const signing = {
     CERTIFICATE: Buffer.from("fake distribution identity").toString("base64"),
     CERTIFICATE_PASSWORD: password,

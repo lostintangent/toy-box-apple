@@ -102,14 +102,11 @@ export async function deliverTestFlightIPA(ipa: string, release: TestFlightVersi
     await command(["xcrun", "altool", "--validate-app", ipa, ...options], { env, quiet: true });
     console.log("App Store validation passed.");
     if (validateOnly) { console.log(`Validated only, not uploaded: ${ipa}`); return; }
-    await command(["xcrun", "altool", "--upload-package", ipa, "--wait", ...options], { env, quiet: true });
-    const status = await text(["xcrun", "altool", "--build-status", "--apple-id", auth.appID,
-        "--bundle-version", release.build, "--bundle-short-version-string", release.version,
-        "--platform", "ios", "--wait", ...options], { env });
+    const status = await text(["xcrun", "altool", "--upload-package", ipa, "--wait", ...options], { env });
+    console.log(status);
     const result: unknown = JSON.parse(status);
     if (!testFlightProcessingIsValid(result)) {
-        console.log(status);
-        throw new Error("Upload finished, but Apple has not reported processing VALID. Check this build in App Store Connect.");
+        throw new Error("Upload finished, but Apple has not reported processing VALID. Check this build in App Store Connect before retrying.");
     }
     console.log(`Apple processing VALID: Toy Box ${release.version} (${release.build}). Check the TestFlight group for tester availability.`);
 }
