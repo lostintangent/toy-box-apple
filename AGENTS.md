@@ -200,7 +200,7 @@ use demo servers only for write scripts. Never skip or retry actions.
   through `@keychain:toy-box-testflight` (override `APP_STORE_CONNECT_PASSWORD_KEYCHAIN_ITEM`), or
   `@env:NOTARY_APP_PASSWORD` in CI. Never pass a password as a shell argument or read the keychain item.
   Only the user stores it, from the repo root, with the verified Xcode 27 syntax:
-  `TB_PW="$(scripts/release/read-password.sh 'App-specific password: ')" DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcrun altool --store-password-in-keychain-item --item toy-box-testflight -u joncart@outlook.com -p @env:TB_PW`
+  `TB_PW="$(bash scripts/release/read-password.sh 'App-specific password: ')" DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcrun altool --store-password-in-keychain-item --item toy-box-testflight -u joncart@outlook.com -p @env:TB_PW`
 - **TestFlight bundle:** actual Xcode/SDK `DT*` metadata, matching version/build on every component,
   `ITSAppUsesNonExemptEncryption=false`, production push and no `get-task-allow`. Validate/upload require
   `--build-number` / `BUILD_NUMBER`; choose an unused App Store build. Build-only may use the plist's
