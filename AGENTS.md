@@ -216,7 +216,12 @@ use demo servers only for write scripts. Never skip or retry actions.
 - The phone widget fetches its saved server through the app's snapshot publisher on every
   timeline refresh, with a ten-second total network deadline. Failed refreshes preserve cached
   requests/last-success time. The notification service requests reload before returning each routed
-  alert to iOS. WidgetKit schedules it. Simulator injection never invokes the service: prove real
+  alert to iOS, preserving the server's title, body, Reply handle, thread and badge without any
+  notification-time network request. Alerts carry display-ready text through the stateless relay.
+  The relay does not log it. Icon badges count channels with an open request, even when read,
+  not unread/completed channels. Both notification topics off suppress server badge pushes,
+  including when a Live Activity remains subscribed. WidgetKit schedules the reload.
+  Simulator injection never invokes the service: prove real
   APNs-to-service wake on device. Successful Mac catalog polls feed the existing fifteen-minute
   heartbeat even when unchanged. Offline polls never advance last-success time.
 - Mobile views use SwiftUI's safe areas, layout margins, size classes and adaptive navigation.

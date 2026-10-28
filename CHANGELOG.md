@@ -3,6 +3,8 @@
 ## iPhone 0.1.2
 
 - Find the widget as Toy Box in the gallery. Its rows show the channel name, request text and time, without a repeated requester name or avatar.
+- Receive the channel name and question directly in each push, without waiting for the phone to reach your server.
+- Keep the app badge in sync with channels waiting for your reply, including replies sent from another device.
 
 ## Mac 0.1.9
 

@@ -403,38 +403,53 @@ acknowledges its registration. Restored Activities survive that wait and replay 
 204, independently of alert preferences.
 Allow notifications off unsubscribes only the two notification topics, retaining Follow and the address.
 The demo stores all state in memory and never contacts APNs.
-The demo exposes canonical read-only history pages, allowing the notification enricher to
-resolve the exact original question without reading or answering it.
+The demo exposes canonical read-only history pages for the app and widget.
 
-`ChannelPushPayload` carries exactly `kind`, `channelID`, positive `sequence` and `registrationID`
-beside the system `aps` envelope. Its kinds and categories are `request` and `completion`; request
-uses the `reply` text action. Neither the routing payload nor the generic alert contains a private
-question. The service must match the current registration before resolving identity or content.
+`ChannelPushPayload` carries `kind`, `channelID`, positive `sequence`, `registrationID` and an
+optional requester's `handle` beside the system `aps` envelope. Its kinds and categories are
+`request` and `completion`; request uses the `reply` text action. The service must match the
+current registration before allowing actions or requesting a widget reload.
 The fixtures are `Tests/ChannelKitTests/Fixtures/push-request.apns`, `push-completion.apns` and
-`push-activity.apns`. Use the selected simulator's actual registration ID for routed alert proof.
+`push-activity.apns`. The original generic alert fixtures remain accepted for compatibility.
+Use the selected simulator's actual registration ID for routed alert proof.
 
-`MobileNotificationEnricher.start(_:completion:)` receives the original `UNNotificationRequest`
-in both the production service and local simulator-proof path. The server's title, generic body,
-category, sound and routing are the complete fallback. The enricher checks the selected
-registration once at start. A mismatch clears only the category, preventing Reply without
-discarding the original alert. Matched request and completion alerts request a widget reload.
-It fetches the catalog and original request through `ChannelAPI`. Only a successful lookup
-within three seconds enriches a copy of the original, using the unchanged Mac text policy and
-400-character limit. Unreachable servers, missing channels, malformed routing and expiry
-deliver the original unchanged. There is no notification catalog cache.
-Request alerts show the channel name as the title and the question as the body, without a
-requester subtitle. They use the Toy Box app icon, with no communication intent or donation.
-The enriched local metadata retains the resolved requester's `handle` for Reply, which is not
-part of the APNs routing contract. Completion uses the Mac task-count text and the app icon,
-with no Reply category. Both keep their server-qualified channel thread.
+The server supplies the channel name as the alert title and the flattened question as its body,
+using the Mac's `NotificationText` policy: remove known leading mentions, preserve attachment-only
+fallbacks and truncate at 400 extended graphemes on a word boundary. Completion uses the Mac's
+task-count text. The actual encoded JSON must also fit APNs' 4,096-byte limit without splitting
+a grapheme. Requests retain the requester's `handle` for Lock Screen Reply. Both alerts group
+by a registration-qualified channel `thread-id`, with no requester subtitle.
+They use the Toy Box app icon, with no communication intent or donation.
+This display-ready text passes through the stateless push relay and Apple without application-level
+encryption. The relay streams the body without parsing or logging it, and its observability is
+disabled. The user has approved sending channel names and request text this way.
+
+`MobileNotificationHandler.process(_:)` checks the saved registration and immediately returns
+the received content, preserving its title, body, sound, thread, Reply handle, badge and routing.
+It makes no catalog, history or other network request and has no enrichment deadline or cache.
+Valid request and completion alerts request a WidgetKit reload before delivery.
+A missing or mismatched registration, malformed payload or registration-read failure clears the
+category and omits the badge, preventing Reply and a stale alert's badge change without discarding
+the received text. Omitting the badge preserves the current icon count, rather than clearing it.
+Each callback is called once.
+The channel name and question therefore remain available when the phone cannot reach the server.
 Neither the app nor the notification extension requires the Communication Notifications
-capability. Widget avatars still use the real shared `AgentAvatarView` rendering.
-
-The three-second budget includes preparation and enrichment. Expiry delivers once without
-waiting for canceled work, and late work cannot create a duplicate or replace a newer request.
-When the server is unreachable, the unchanged alert says "Toy Box" rather than a cached channel name.
+capability.
 `simctl push` does not invoke the notification service on this runtime. Actual service invocation
 remains a real-APNs device check.
+
+The icon badge counts channels whose `channelStatus` is `waiting`, exactly like the widget.
+Reading does not close an open request. Unread messages and completed channels do not count.
+The server sends the current `aps.badge` with alerts and badge-only pushes after catalog changes,
+including a zero when the last request closes or its channel is deleted. Those pushes contain no
+alert, sound or `content-available`, so iOS applies them without launching the app.
+One install receives one badge update even when both alert topics are subscribed.
+Only request or completion subscriptions qualify, never a Live Activity alone. When Allow
+notifications is off, the app clears the badge and suppresses future catalog badge writes,
+and unsubscribes both alert topics to prevent server pushes from restoring it.
+Fresh successful app catalog refreshes reconcile the same count. Offline or cached-only state
+does not manufacture a fresh count. Subscription reloads and the server's existing five-minute
+tick catch up failed badge delivery.
 
 `ChannelActivityAttributes` has `channelID`, `channelName`, `registrationID` and the original
 `startedAt`, persisted by ActivityKit rather than a separate app dictionary. Attributes are not
