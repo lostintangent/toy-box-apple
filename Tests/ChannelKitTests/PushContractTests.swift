@@ -139,20 +139,20 @@ struct PushContractTests {
             #expect(push.state.updatedAt.timeIntervalSince1970 == push.timestamp - 16 * 60)
         default: Issue.record("Unexpected fixture.")
         }
+    }
 
-        private struct ActivityEnvelope: Decodable {
-            struct APS: Decodable {
-                var event: String
-                var timestamp: Double
-                var staleDate: Double?
-                var dismissalDate: Double?
-                var state: ChannelActivityAttributes.ContentState
-                enum CodingKeys: String, CodingKey {
-                    case event, timestamp
-                    case staleDate = "stale-date", dismissalDate = "dismissal-date", state = "content-state"
-                }
+    private struct ActivityEnvelope: Decodable {
+        struct APS: Decodable {
+            var event: String
+            var timestamp: Double
+            var staleDate: Double?
+            var dismissalDate: Double?
+            var state: ChannelActivityAttributes.ContentState
+            enum CodingKeys: String, CodingKey {
+                case event, timestamp
+                case staleDate = "stale-date", dismissalDate = "dismissal-date", state = "content-state"
             }
-            var aps: APS
         }
+        var aps: APS
     }
 }
