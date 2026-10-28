@@ -61,6 +61,17 @@ test("the Mac gate constrains ChannelClient to one cooperative worker", () => {
     ]));
 });
 
+test("release checks run shared, desktop and mobile tooling once", () => {
+    expect(workflow()).toHaveProperty("jobs.release-checks.steps", expect.arrayContaining([
+        {
+            name: "Test tooling with fake commands",
+            run: "bun test scripts/shared scripts/desktop scripts/mobile",
+        },
+    ]));
+    expect(source).not.toContain("name: Test development tooling");
+    expect(source).not.toContain("run: bun run test:release");
+});
+
 test("iOS runs for main and pull requests, not release tags or manual dry runs", () => {
     expect(workflow()).toHaveProperty("jobs.mobile.if",
         "github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')");

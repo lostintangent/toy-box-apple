@@ -10,10 +10,5 @@
     "types": ["bun"],
     "skipLibCheck": true
   },
-  "include": [
-    "scripts/shared/**/*.ts",
-    "scripts/fixtures/**/*.ts",
-    "scripts/desktop/**/*.ts",
-    "scripts/mobile/**/*.ts"
-  ]
+  "include": ["scripts/**/*.ts"]
 }

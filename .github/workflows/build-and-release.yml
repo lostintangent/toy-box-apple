@@ -129,10 +129,8 @@ jobs:
         run: bun check
       - name: Lint workflows
         run: bun run lint:workflows
-      - name: Test development tooling
-        run: bun test scripts/shared scripts/desktop/*.test.ts scripts/mobile/*.test.ts
-      - name: Test release tooling with fake commands
-        run: bun run test:release
+      - name: Test tooling with fake commands
+        run: bun test scripts/shared scripts/desktop scripts/mobile
 
   release:
     needs: [test, release-checks]
