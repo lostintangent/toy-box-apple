@@ -269,6 +269,7 @@ comparisons and retained regression contracts are in [docs/test-history.md](docs
 | Test | Opt-in | Owner / condition for restoring merge-gate coverage |
 | --- | --- | --- |
 | Simulator fake-compiler icon case, `scripts/shared/mobile-icon.test.ts` | `TOY_BOX_TEST_MOBILE_ICON_TIMING=1` | Core, `mobile-icon-tooling-readiness`: identify stalled command and add deterministic completion coverage |
+| `ToyBoxMobileTests/ComposerTests.audienceCapsuleIsSeparateFromIts44PointRowAndGrowsWithText` | `TOY_BOX_TEST_MOBILE_AUDIENCE_RENDERING=1` | Core, t465 `mobile-audience-capsule-rendering`: identify the transparent center-column render cause and add deterministic regression coverage before restoring |
 | `ImageViewerLiveTextTests.onlyTheSettledCurrentImageIsAnalyzedAndTheWindowRemembersIt` | `TOY_BOX_TEST_LIVE_TEXT_ANALYSIS=1` | Transcript: identify cause and add deterministic analysis-gating coverage |
 | `imageStripOverflowRespondsToWheelInput` | `TOY_BOX_TEST_IMAGE_STRIP_SCROLLING=1` | Composer: native wheel animation requires awake/unlocked Mac, so keep per-frame/WindowServer checks opt-in |
 | Three `MainActorTurnTests` occupancy probes | `TOY_BOX_TEST_MAIN_ACTOR_TIMING=1 bun run test --filter MainActorTurnTests` | Core, t340 (`client-test-actor-isolation`): isolate probes and replace timing-dependent readiness with controlled events. Run locally before changing launch network work |
