@@ -1,4 +1,3 @@
-import ChannelKit
 import Foundation
 import OSLog
 import ToyBoxMobileIntegrations
@@ -13,23 +12,16 @@ final class NotificationService: UNNotificationServiceExtension, @unchecked Send
     override func didReceive(_ request: UNNotificationRequest,
                              withContentHandler contentHandler: @escaping (UNNotificationContent) -> Void) {
         logger.notice("Notification service received a request.")
-        let delivery = NotificationDelivery(contentHandler)
-        let payload: ChannelPushPayload
-        do { payload = try ChannelPushPayload(userInfo: request.content.userInfo) }
-        catch {
-            logger.error("Could not read notification routing: \(error.localizedDescription)")
-            Task { @MainActor in delivery.call(MobileNotificationEnricher.generic()) }
-            return
-        }
+        let delivery = NotificationDelivery(request, contentHandler)
         Task { @MainActor in
             do {
                 enrichment?.expire()
                 let operation = try MobileNotificationEnricher()
                 enrichment = operation
-                operation.start(payload, completion: delivery.call)
+                operation.start(delivery.request, completion: delivery.call)
             } catch {
                 logger.error("Could not prepare notification enrichment: \(error.localizedDescription)")
-                delivery.call(MobileNotificationEnricher.generic())
+                delivery.call(delivery.request.content)
             }
         }
     }
@@ -39,11 +31,15 @@ final class NotificationService: UNNotificationServiceExtension, @unchecked Send
     }
 }
 
-// The enricher owns delivery-once. This immutable bridge only transfers the Objective-C callback.
+// The enricher owns delivery-once. This bridge transfers the immutable request and Objective-C callback.
 private struct NotificationDelivery: @unchecked Sendable {
+    let request: UNNotificationRequest
     let callback: (UNNotificationContent) -> Void
 
-    init(_ callback: @escaping (UNNotificationContent) -> Void) { self.callback = callback }
+    init(_ request: UNNotificationRequest, _ callback: @escaping (UNNotificationContent) -> Void) {
+        self.request = request
+        self.callback = callback
+    }
 
     func call(_ content: UNNotificationContent) {
         callback(content)

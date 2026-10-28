@@ -10,7 +10,6 @@ public final class MobileWidgetSnapshotPublisher {
     private let avatarPNG: @MainActor (ChannelAgent) -> Data?
     private let reload: @MainActor () -> Void
     private var previous: NeedsYouSnapshot?
-    private var notificationCatalog: MobileNotificationCatalogCache?
     private var requests: [ChannelWaitingRequest.Identity: ChannelRequestMessage] = [:]
     private var avatars: [String: (ChannelAgent, Data)] = [:]
     private var generation = UUID()
@@ -114,15 +113,6 @@ public final class MobileWidgetSnapshotPublisher {
     private func resolvedSnapshot(catalog: ChannelCatalogStore, serverURL: String, token: UUID,
                                   allowsPartialHistory: Bool) async throws -> NeedsYouSnapshot {
         guard let state = catalog.state else { throw ChannelAPIError.invalidResponse }
-        if let registration = try MobilePushRegistrationStore(directory: file.deletingLastPathComponent()).current,
-           ChannelWaitingRequest.normalizedServer(registration.serverURL)
-            == ChannelWaitingRequest.normalizedServer(serverURL) {
-            let cache = MobileNotificationCatalogCache(registration: registration, catalog: state)
-            if cache != notificationCatalog {
-                try cache.write(directory: file.deletingLastPathComponent())
-                notificationCatalog = cache
-            }
-        }
         let waiting = state.channels.filter { channelStatus($0) == .waiting }
         var resolved: [(channel: Channel, sequence: Int, request: ChannelRequestMessage?, date: Date)] = []
         var offline = false

@@ -8,15 +8,12 @@ struct PushContractTests {
         let file = try #require(Bundle.module.url(forResource: "push-\(kind.rawValue)", withExtension: "apns",
                                                   subdirectory: "Fixtures"))
         let data = try Data(contentsOf: file)
-        let payload = try JSONDecoder().decode(ChannelPushPayload.self, from: data)
         let info = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
-        #expect(try ChannelPushPayload(userInfo: info) == payload)
+        let payload = try ChannelPushPayload(userInfo: info)
         #expect(payload.kind == kind)
         #expect(payload.channelID == "studio-demo")
         #expect(payload.registrationID == "00000000-0000-4000-8000-000000000001")
         #expect(Set(info.keys) == ["aps", "kind", "channelID", "sequence", "registrationID"])
-        #expect(Set(payload.userInfo.keys) == ["kind", "channelID", "sequence", "registrationID"])
-        #expect(try ChannelPushPayload(userInfo: payload.userInfo) == payload)
         let aps = try #require(info["aps"] as? [String: Any])
         #expect(aps["category"] as? String == kind.rawValue)
         #expect(aps["mutable-content"] as? Int == 1)
@@ -27,19 +24,28 @@ struct PushContractTests {
         #expect(ChannelNotificationCategory.completion == "completion")
         #expect(ChannelNotificationCategory.reply == "reply")
         #expect(ChannelNotificationCategory.replyFailed == "replyFailed")
-        let payload = ChannelPushPayload(kind: .request, channelID: "channel", sequence: 15, registrationID: "device")
+        let fields: [String: Any] = ["kind": "request", "channelID": "channel", "sequence": 15, "registrationID": "device"]
+        let payload = try ChannelPushPayload(userInfo: fields)
         let invalid: [(String, Any)] = [
             ("kind", "unknown"), ("channelID", ""), ("sequence", 0), ("sequence", -1),
-            ("sequence", true), ("registrationID", ""),
+            ("sequence", true), ("sequence", false), ("sequence", 1.5), ("sequence", "15"),
+            ("sequence", Int.max), ("registrationID", ""),
         ]
         for (key, value) in invalid {
-            var info = payload.userInfo
+            var info = fields
             info[key] = value
             #expect(throws: (any Error).self) { try ChannelPushPayload(userInfo: info) }
         }
-        var info = payload.userInfo
+        for key in fields.keys {
+            var info = fields
+            info[key] = nil
+            #expect(throws: (any Error).self) { try ChannelPushPayload(userInfo: info) }
+        }
+        var info = fields
         info["aps"] = NSObject()
         #expect(try ChannelPushPayload(userInfo: info) == payload)
+        info["sequence"] = Int.max - 1
+        #expect(try ChannelPushPayload(userInfo: info).sequence == Int.max - 1)
     }
 
     @Test func activityLinksCarryOnlyTheRegistrationScopedDestination() throws {
