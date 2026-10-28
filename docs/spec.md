@@ -367,8 +367,12 @@ iPhone presents that subscription as a Live Activity.
 Subscription does not require the source to exist. An absent channel receives the channel-deleted
 ending on the next delivery pass. The phone resends the original `startedAt`, in Unix seconds,
 on every Activity token rotation. Server scheduling and delivery live in Toy Box's Push guide.
-After every successful registration, the phone PUTs or DELETEs both notification topics from its
-current choices, so failed preference writes recover on the next launch without a saved receipt.
+After every successful registration with known alert choices, the phone PUTs or DELETEs both
+notification topics, so failed preference writes recover on the next launch without a saved receipt.
+Until the actual authorization state is loaded, registration and Follow can become ready but
+topic writes wait, preserving the server's existing choices. A stalled read therefore delays
+preference changes without clearing the previous subscriptions. Real-device acceptance must
+verify Settings resolves the authorization state promptly after launch.
 A 201 also restores active Follows. New Follow remains unavailable until the selected server
 acknowledges its registration. Restored Activities survive that wait and replay deferred tokens after either 201 or
 204, independently of alert preferences.
@@ -2964,7 +2968,7 @@ observes no catalog or foreground content, and never marks read. Channel deletio
 the server with immediate dismissal. iOS ends the Activity at eight hours, and the server expires
 its subscription using the original `startedAt`; the app has no separate lifetime timer.
 Alert preferences do not start or stop an Activity.
-The app wires the current catalog and registration into Follow before awaiting notification authorization settings.
+The app wires Follow, widget publishing and notification withdrawal before awaiting notification authorization settings.
 Activity content updates are non-alerting. A request's ordinary notification supplies its alert,
 so updating the Activity never adds a second alert to force the Dynamic Island onscreen.
 
