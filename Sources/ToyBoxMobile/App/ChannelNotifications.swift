@@ -54,6 +54,9 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
     @ObservationIgnored private let requestAuthorization: () async throws -> Bool
     @ObservationIgnored private let openSettings: () async -> Bool
     @ObservationIgnored private let addNotice: (UNNotificationRequest) async throws -> Void
+    @ObservationIgnored private let setBadgeCount: (Int) async throws -> Void
+    @ObservationIgnored private var pendingBadgeCount: Int?
+    @ObservationIgnored private var badgeUpdate: Task<Void, Never>?
     @ObservationIgnored private var authorizationGeneration = UUID()
     @ObservationIgnored private var didStart = false
     @ObservationIgnored private var installedDelegate = false
@@ -76,6 +79,9 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
          },
          addNotice: @escaping (UNNotificationRequest) async throws -> Void = {
              try await UNUserNotificationCenter.current().add($0)
+         },
+         setBadgeCount: @escaping (Int) async throws -> Void = {
+             try await UNUserNotificationCenter.current().setBadgeCount($0)
          }) {
         self.defaults = defaults
         self.registration = registration
@@ -83,6 +89,7 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
         self.requestAuthorization = requestAuthorization
         self.openSettings = openSettings
         self.addNotice = addNotice
+        self.setBadgeCount = setBadgeCount
         enabled = defaults.bool(forKey: "notificationsEnabled")
         requests = defaults.object(forKey: "requestNotifications") as? Bool ?? true
         completions = defaults.bool(forKey: "completionNotifications")
@@ -141,6 +148,7 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
     }
 
     func configure(api: ChannelAPI) {
+        pendingBadgeCount = nil
         configuredAPI = api
         if installedDelegate { prepareRegistration() }
     }
@@ -237,6 +245,23 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
     }
 
     func clearError() { error = nil }
+
+    func updateBadge(_ count: Int) {
+        pendingBadgeCount = count
+        guard badgeUpdate == nil else { return }
+        badgeUpdate = Task { [weak self] in
+            guard let self else { return }
+            defer { badgeUpdate = nil }
+            while let count = pendingBadgeCount {
+                pendingBadgeCount = nil
+                do {
+                    try await setBadgeCount(count)
+                } catch {
+                    Self.logger.error("Could not update the icon badge: \(error.localizedDescription)")
+                }
+            }
+        }
+    }
 
     private func updateRegistration() {
         guard hasLoadedAuthorization, currentRegistration != nil else { return }

@@ -55,6 +55,7 @@ final class AppModel {
     @ObservationIgnored private var widgetPublisher: MobileWidgetSnapshotPublisher?
     @ObservationIgnored private var widgetUpdate: Task<Void, Never>?
     @ObservationIgnored private var widgetUpdateRequested = false
+    @ObservationIgnored private var badgeRefresh: Date?
     @ObservationIgnored private let integrationLogger = Logger(subsystem: "dev.toybox.mobile", category: "Integrations")
 
     init(arguments: [String] = ProcessInfo.processInfo.arguments,
@@ -138,6 +139,7 @@ final class AppModel {
             throw ChannelAPIError.invalidServerURL
         }
         integrationsGeneration = UUID()
+        badgeRefresh = nil
         widgetUpdate?.cancel()
         widgetUpdate = nil
         cancelNavigation()
@@ -261,6 +263,11 @@ final class AppModel {
             guard let self, generation == integrationsGeneration else { return }
             await notifications.update(channels: context.channels, activeChannelID: context.active,
                                        withdraw: context.withdraw)
+        }
+        if let catalog, catalog.error == nil, let refreshed = catalog.lastRefreshedAt,
+           refreshed != badgeRefresh {
+            badgeRefresh = refreshed
+            notifications.updateBadge(catalog.channels.filter { channelStatus($0) == .waiting }.count)
         }
         updateWidget(generation: generation)
     }
