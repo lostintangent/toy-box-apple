@@ -355,7 +355,8 @@ final class ChannelFollowController {
         }
     }
 
-    private func rotate(_ token: Data, for entry: Follow, force: Bool = false) async {
+    private func rotate(_ observedToken: Data, for entry: Follow, force: Bool = false) async {
+        let token = entry.activity.pushToken ?? observedToken
         guard isCurrent(entry), force || token != entry.token else { return }
         guard !token.isEmpty else {
             logger.error("ActivityKit supplied an empty rotated push token.")
@@ -374,18 +375,20 @@ final class ChannelFollowController {
     }
 
     private func register(_ token: Data, for entry: Follow, force: Bool = false) async throws {
-        let input = PushSubscription(
-            token: token.map { String(format: "%02x", $0) }.joined(),
-            startedAt: entry.startedAt
-        )
         let write = enqueueWrite(channelID: entry.store.id) {
             try self.requireCurrent(entry)
             guard self.isRegistrationReady else { throw Failure.registrationPending }
-            guard force || token != entry.token else { return }
+            let currentToken = entry.activity.pushToken ?? entry.pendingToken ?? token
+            guard !currentToken.isEmpty else { throw Failure.missingToken }
+            guard force || currentToken != entry.token else { return }
+            let input = PushSubscription(
+                token: currentToken.map { String(format: "%02x", $0) }.joined(),
+                startedAt: entry.startedAt
+            )
             try await self.registerActivity(entry.store, entry.registration.registrationID, input)
             try self.requireCurrent(entry)
-            entry.token = token
-            if entry.pendingToken == token { entry.pendingToken = nil }
+            entry.token = currentToken
+            if entry.pendingToken == currentToken { entry.pendingToken = nil }
         }
         try await write.value
     }

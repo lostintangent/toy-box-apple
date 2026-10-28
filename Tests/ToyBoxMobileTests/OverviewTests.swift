@@ -1181,7 +1181,8 @@ struct ChannelFollowTests {
         #expect(!fixture.controller.startFailed)
     }
 
-    @Test func restoredTokensWaitForTheExistingRegistrationsAcknowledgment() async throws {
+    @Test(arguments: [false, true])
+    func restoredTokensWaitForTheExistingRegistrationsAcknowledgment(rotatesWhilePending: Bool) async throws {
         let fixture = try FollowFixture()
         defer { fixture.close() }
         await fixture.controller.follow(fixture.store)
@@ -1196,15 +1197,38 @@ struct ChannelFollowTests {
         #expect(activity.endings.isEmpty)
 
         fixture.date.addTimeInterval(60)
-        activity.rotate(Data([2]))
+        if rotatesWhilePending { activity.rotate(Data([2])) }
         await fixture.controller.registrationCreated(fixture.registration)
         #expect(fixture.requests.count == 1)
         fixture.configure(ready: true)
         await fixture.wait { fixture.requests.count == 2 }
-        #expect(fixture.requests.last?.input?.token == "02")
+        #expect(fixture.requests.last?.input?.token == (rotatesWhilePending ? "02" : "01"))
         #expect(fixture.requests.last?.input?.startedAt == fixture.originalDate)
         #expect(fixture.pool.activities.count == 1)
         #expect(activity.isActive)
+        #expect(activity.endings.isEmpty)
+        #expect(fixture.controller.state(for: fixture.store) == .following)
+        #expect(!fixture.controller.startFailed)
+    }
+
+    @Test func bufferedTokensCannotReplaceTheLatestTokenAfterAHeldAcknowledgment() async throws {
+        let fixture = try FollowFixture()
+        defer { fixture.close() }
+        await fixture.controller.follow(fixture.store)
+        let activity = try #require(fixture.pool.activities.first)
+        await fixture.wait { activity.tokenStreamsStarted == 1 }
+        fixture.holdRegistration = true
+        activity.rotate(Data([2]))
+        await fixture.wait { fixture.pending.count == 1 }
+        #expect(fixture.requests.last?.input?.token == "02")
+
+        activity.rotate(Data([3]))
+        activity.rotate(Data([4]))
+        fixture.releaseRegistration()
+        await fixture.wait { fixture.requests.count == 3 }
+        #expect(fixture.requests.compactMap { $0.input?.token } == ["01", "02", "04"])
+        #expect(fixture.requests.allSatisfy { $0.input?.startedAt == fixture.originalDate })
+        #expect(fixture.pool.activities.count == 1)
         #expect(activity.endings.isEmpty)
         #expect(fixture.controller.state(for: fixture.store) == .following)
         #expect(!fixture.controller.startFailed)
