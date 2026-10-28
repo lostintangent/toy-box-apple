@@ -92,6 +92,10 @@ test("each mobile bundle needs its own exact profile, capabilities and shared co
         "dev.toybox.mobile", "dev.toybox.mobile.widget", "dev.toybox.mobile.notification",
     ]);
     expect(new Set(selected.map(value => value.profile.uuid)).size).toBe(3);
+    const previousProfiles = profiles.map(value => ({
+        ...value, entitlements: { ...value.entitlements, "com.apple.developer.usernotifications.communication": true },
+    }));
+    expect(selectMobileDevelopmentSigning(previousProfiles, [identity], "phone", now)).toHaveLength(3);
     for (const index of [0, 1, 2]) {
         expect(() => selectMobileDevelopmentSigning(profiles.filter((_, n) => n !== index), [identity], "phone", now))
             .toThrow("Your Apple steps");
@@ -101,16 +105,17 @@ test("each mobile bundle needs its own exact profile, capabilities and shared co
     }
     for (const [index, key, wrong] of [
         [0, "aps-environment", undefined], [0, "aps-environment", "production"],
-        [0, "com.apple.developer.usernotifications.communication", false],
-        [2, "com.apple.developer.usernotifications.communication", undefined],
     ] as const) {
         const invalid = profiles.map((value, n) => n === index
             ? { ...value, entitlements: { ...value.entitlements, [key]: wrong } } : value);
         expect(() => selectMobileDevelopmentSigning(invalid, [identity], "phone", now)).toThrow("No compatible");
     }
-    expect(mobileEntitlements("dev.toybox.mobile.widget")).toEqual({
-        "com.apple.security.application-groups": [mobileAppGroup],
-    });
+    for (const suffix of ["", ".widget", ".notification"]) {
+        expect(mobileEntitlements(`${mobileBundleID}${suffix}`)).toEqual({
+            "com.apple.security.application-groups": [mobileAppGroup],
+            ...(suffix === "" ? { "aps-environment": "development" } : {}),
+        });
+    }
     expect(() => mobileEntitlements("dev.toybox.other")).toThrow("Unknown mobile bundle");
 });
 

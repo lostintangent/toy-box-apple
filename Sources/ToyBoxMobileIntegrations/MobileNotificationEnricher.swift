@@ -1,7 +1,6 @@
 import ChannelClient
 import ChannelKit
 import Foundation
-import Intents
 import OSLog
 import SwiftUI
 import ToyBoxUI
@@ -30,34 +29,27 @@ public final class MobileNotificationEnricher {
 
     typealias Fetch = @Sendable (ChannelAPI, ChannelPushPayload) async throws -> Fetched
     private let directory: URL
-    private let avatarPNG: @MainActor (ChannelAgent) -> Data?
     private let fetch: Fetch
     private let pause: @Sendable (Duration) async throws -> Void
     private let now: @MainActor () -> ContinuousClock.Instant
-    private let donate: @MainActor (INSendMessageIntent) -> Void
     private let reloadWidgets: @MainActor () -> Void
     private let logger = Logger(subsystem: "dev.toybox.mobile", category: "Notification")
     private var completion: (@MainActor (UNNotificationContent?) -> Void)?
     private(set) var work: Task<Void, Never>?
     private var deadline: Task<Void, Never>?
 
-    public convenience init(directory: URL? = nil,
-                            avatarPNG: @escaping @MainActor (ChannelAgent) -> Data? = MobileNotificationAvatar.png) throws {
-        try self.init(directory: directory ?? MobileSharedContainer.url(), avatarPNG: avatarPNG, fetch: Self.fetch,
+    public convenience init(directory: URL? = nil) throws {
+        try self.init(directory: directory ?? MobileSharedContainer.url(), fetch: Self.fetch,
                       reloadWidgets: { WidgetCenter.shared.reloadTimelines(ofKind: NeedsYouSnapshot.kind) })
     }
 
-    init(directory: URL, avatarPNG: @escaping @MainActor (ChannelAgent) -> Data?,
-         fetch: @escaping Fetch, reloadWidgets: @escaping @MainActor () -> Void = {},
+    init(directory: URL, fetch: @escaping Fetch, reloadWidgets: @escaping @MainActor () -> Void = {},
          pause: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
-         now: @escaping @MainActor () -> ContinuousClock.Instant = { .now },
-         donate: @escaping @MainActor (INSendMessageIntent) -> Void = MobileNotificationEnricher.donate) {
+         now: @escaping @MainActor () -> ContinuousClock.Instant = { .now }) {
         self.directory = directory
-        self.avatarPNG = avatarPNG
         self.fetch = fetch
         self.pause = pause
         self.now = now
-        self.donate = donate
         self.reloadWidgets = reloadWidgets
     }
 
@@ -138,6 +130,7 @@ public final class MobileNotificationEnricher {
     private func content(_ content: UNMutableNotificationContent, payload: ChannelPushPayload,
                          registration: MobilePushRegistration, channel: Channel, fetched: Fetched) -> UNNotificationContent {
         content.title = channel.name
+        content.subtitle = ""
         content.threadIdentifier = "\(registration.serverURL):\(payload.channelID)"
         switch payload.kind {
         case .completion:
@@ -149,46 +142,10 @@ public final class MobileNotificationEnricher {
             let request = fetched.messages.first { $0.sequence == payload.sequence }
                 .map { ChannelRequestMessage(message: $0, agents: agents) }
             if let request { content.body = NotificationText.requestBody(request.message, agents: request.agents) }
-            let sender = request?.requester ?? lead
             if let requester = request?.requester {
                 content.userInfo["handle"] = agentHandleFromName(requester.name)
             }
-            content.subtitle = NotificationText.subtitle(requester: sender.name)
-            let png = avatarPNG(sender)
-            if png == nil { logger.error("Could not render a notification avatar.") }
-            let image = png.map(INImage.init(imageData:))
-            let person = INPerson(personHandle: .init(value: sender.id, type: .unknown), nameComponents: nil,
-                                  displayName: sender.name, image: image,
-                                  contactIdentifier: nil, customIdentifier: sender.id)
-            let recipient = INPerson(
-                personHandle: .init(value: "user", type: .unknown), nameComponents: nil,
-                displayName: nil, image: nil, contactIdentifier: nil, customIdentifier: "user",
-                isMe: true, suggestionType: .none)
-            let intent = INSendMessageIntent(
-                recipients: [recipient], outgoingMessageType: .outgoingMessageText, content: content.body,
-                speakableGroupName: .init(spokenPhrase: channel.name),
-                conversationIdentifier: content.threadIdentifier, serviceName: nil, sender: person, attachments: nil
-            )
-            let metadata = INSendMessageIntentDonationMetadata()
-            metadata.recipientCount = agents.count
-            intent.donationMetadata = metadata
-            // Named group banners use the group's image rather than the INPerson image.
-            if let image { intent.setImage(image, forParameterNamed: \.speakableGroupName) }
-            donate(intent)
-            do { return try content.updating(from: intent) }
-            catch { logger.error("Could not apply notification identity: \(error.localizedDescription)") }
             return content
-        }
-    }
-
-    private static func donate(_ intent: INSendMessageIntent) {
-        let interaction = INInteraction(intent: intent, response: nil)
-        interaction.direction = .incoming
-        interaction.donate { error in
-            if let error {
-                Logger(subsystem: "dev.toybox.mobile", category: "Notification")
-                    .error("Could not donate notification identity: \(error.localizedDescription)")
-            }
         }
     }
 

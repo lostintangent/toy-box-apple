@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
     checkMobileBuildVersion, checkMobileExtensionEntryPoint, linkMobileWorkspace, mobileBuildConfiguration,
-    mobileExtensions, mobileLaunchOptions, mobilePushEnvironment, mobileSimulatorEntitlements,
+    mobileEntitlements, mobileExtensions, mobileLaunchOptions, mobilePushEnvironment, mobileSimulatorEntitlements,
     withMobileAppearance,
 } from "./mobile.ts";
 
@@ -39,6 +39,7 @@ test("iOS extensions have exact identities, extension points and executable entr
     const host = await readFile(join(import.meta.dir, "../../Resources/Mobile/Info.plist"), "utf8");
     expect(host).toMatch(/<key>NSSupportsLiveActivities<\/key>\s*<true\/>/);
     expect(host).toMatch(/<key>CFBundleURLSchemes<\/key>\s*<array><string>toybox-desktop<\/string><\/array>/);
+    expect(host).toContain("<string>dev.toybox.desktop.channel</string>");
     const package_ = await readFile(join(import.meta.dir, "../../Package.swift"), "utf8");
     for (const extension of mobileExtensions) expect(package_).toContain(`name: "${extension.executable}"`);
 });
@@ -81,6 +82,24 @@ test("simulated capabilities include each bundle identity without a device team 
         expect(entitlements).not.toHaveProperty("get-task-allow");
     }
     expect(() => mobileSimulatorEntitlements("another.app")).toThrow("Unknown mobile bundle");
+});
+
+test("phone alerts use the app icon without communication intents or their capability", async () => {
+    for (const info of ["Info.plist", ...mobileExtensions.map(extension => extension.info)]) {
+        const content = await readFile(join(import.meta.dir, "../../Resources/Mobile", info), "utf8");
+        expect(content).not.toContain("INSendMessageIntent");
+    }
+    for (const suffix of ["", ".widget", ".notification"]) {
+        const bundleID = `dev.toybox.mobile${suffix}`;
+        for (const entitlements of [
+            mobileEntitlements(bundleID), mobileEntitlements(bundleID, true), mobileSimulatorEntitlements(bundleID),
+        ]) expect(entitlements).not.toHaveProperty("com.apple.developer.usernotifications.communication");
+    }
+    const source = await readFile(join(import.meta.dir,
+        "../../Sources/ToyBoxMobileIntegrations/MobileNotificationEnricher.swift"), "utf8");
+    for (const removed of ["import Intents", "INSendMessageIntent", "INInteraction", ".updating(from:"]) {
+        expect(source).not.toContain(removed);
+    }
 });
 
 test("the bundled push environment comes from signing rather than optimization", () => {

@@ -121,6 +121,7 @@ test.skipIf(process.platform !== "darwin")("all three bundles preserve HTTP acce
                     CFBundleShortVersionString: release.version, ITSAppUsesNonExemptEncryption: false,
                     UIDeviceFamily: [1], LSRequiresIPhoneOS: true, UIRequiredDeviceCapabilities: ["arm64"] });
                 expect(parsed).not.toHaveProperty("ToyBoxDefaultServerURL");
+                expect(parsed.NSUserActivityTypes ?? []).not.toContain("INSendMessageIntent");
                 expect(parsed.NSAppTransportSecurity).toEqual({ NSAllowsArbitraryLoads: true });
                 expect(await Bun.file(join(bundle, "PrivacyInfo.xcprivacy")).exists()).toBe(true);
             }
@@ -199,6 +200,7 @@ test.skipIf(process.platform !== "darwin")("distribution signs extensions before
                 calls.push(args.at(-1)!);
                 entitlements = await readFile(args[args.indexOf("--entitlements") + 1]!, "utf8");
                 expect(entitlements).not.toContain("get-task-allow");
+                expect(entitlements).not.toContain("com.apple.developer.usernotifications.communication");
                 expect(entitlements).toContain("beta-reports-active");
             }
             return args.includes("--display") ? entitlements : "";

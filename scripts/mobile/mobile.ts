@@ -24,7 +24,6 @@ export function mobileEntitlements(bundleID: string, distribution = false) {
     }
     return {
         "com.apple.security.application-groups": [mobileAppGroup],
-        ...(bundleID !== `${mobileBundleID}.widget` ? { "com.apple.developer.usernotifications.communication": true } : {}),
         ...(bundleID === mobileBundleID ? { "aps-environment": distribution ? "production" : "development" } : {}),
         ...(distribution ? { "beta-reports-active": true } : {}),
     };
