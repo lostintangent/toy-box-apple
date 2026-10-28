@@ -26,7 +26,7 @@
     "release-notes": "bun scripts/shared/changelog.ts",
     "setup-testflight-secrets": "bun scripts/mobile/release/setup-testflight-secrets.ts",
     "test:release": "bun test scripts/shared scripts/desktop scripts/mobile/release",
-    "lint:workflows": "go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12"
+    "lint:workflows": "SHELLCHECK_OPTS=--severity=warning go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12"
   },
   "devDependencies": {
     "@types/bun": "1.4.4"

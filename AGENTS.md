@@ -23,6 +23,7 @@ view.
   in each platform's `release/`, with Mac packaging in `bundle/` and updates in `sparkle/`.
   Platform folders never import each other. Use native `bun check`, without installing TypeScript.
   `bun run test:release` and `bun run lint:workflows` cover releases and workflows.
+  Workflow shell checks gate warnings and errors, not style hints.
 - Use `bun run test` for Swift tests. Bare `bun test` only runs the TypeScript tooling tests.
 - Mac builds use only Command Line Tools. iOS uses Xcode's toolchain/SDK through SwiftPM,
   not `xcodebuild`. `bun run app` invokes Xcode's `appintentsmetadataprocessor` for Siri/Shortcuts,
