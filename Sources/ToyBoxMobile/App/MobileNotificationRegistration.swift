@@ -16,7 +16,7 @@ final class MobileNotificationRegistration {
         let api: ChannelAPI
         let registrationID: String
         let input: PushRegistration
-        let topics: [String]
+        let topics: [String]?
 
         static func == (lhs: Self, rhs: Self) -> Bool {
             lhs.api.baseURL == rhs.api.baseURL && lhs.registrationID == rhs.registrationID
@@ -34,7 +34,7 @@ final class MobileNotificationRegistration {
     @ObservationIgnored private let logger = Logger(subsystem: "dev.toybox.mobile", category: "PushRegistration")
     @ObservationIgnored private var api: ChannelAPI?
     @ObservationIgnored private var enabled: Bool?
-    @ObservationIgnored private var topics: [String] = []
+    @ObservationIgnored private var topics: [String]?
     @ObservationIgnored private var token: String?
     @ObservationIgnored private var requestedToken = false
     @ObservationIgnored private var desired: Operation?
@@ -166,11 +166,13 @@ final class MobileNotificationRegistration {
                     await onCreated?(current)
                     if desired != operation { continue }
                 }
-                for topic in ["requests", "completions"] {
-                    if operation.topics.contains(topic) {
-                        try await subscribe(operation.api, operation.registrationID, topic)
-                    } else {
-                        try await unsubscribe(operation.api, operation.registrationID, topic)
+                if let topics = operation.topics {
+                    for topic in ["requests", "completions"] {
+                        if topics.contains(topic) {
+                            try await subscribe(operation.api, operation.registrationID, topic)
+                        } else {
+                            try await unsubscribe(operation.api, operation.registrationID, topic)
+                        }
                     }
                 }
                 if desired == operation { error = nil }

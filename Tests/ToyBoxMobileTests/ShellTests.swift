@@ -163,6 +163,41 @@ struct ShellTests {
     }
 
     @Test(arguments: [false, true])
+    func aTokenBeforeAuthorizationPreservesServerTopicsUntilChoicesAreKnown(enabled: Bool) async throws {
+        try await withRegistrationStore { store in
+            var registrations = 0
+            var topics: [String] = []
+            var created: [MobilePushRegistration] = []
+            let registration = MobileNotificationRegistration(
+                store: store, environment: .sandbox, requestToken: {},
+                register: { _, _, _ in registrations += 1; return registrations == 1 },
+                remove: { _, _ in }, subscribe: { _, _, topic in topics.append("on:\(topic)") },
+                unsubscribe: { _, _, topic in topics.append("off:\(topic)") })
+            registration.onCreated = { created.append($0) }
+            try registration.select(api: ChannelAPI(serverURL: "https://fixture.example"))
+            let selected = try #require(registration.current)
+            registration.receivedToken(Data([1]))
+            await registration.waitUntilIdle()
+            #expect(registration.isReady)
+            #expect(created == [selected])
+            #expect(topics.isEmpty)
+
+            registration.receivedToken(Data([2]))
+            await registration.waitUntilIdle()
+            #expect(registrations == 2)
+            #expect(registration.isReady)
+            #expect(topics.isEmpty)
+
+            registration.update(enabled: enabled, requests: true, completions: false)
+            await registration.waitUntilIdle()
+            #expect(registrations == 3)
+            #expect(registration.current == selected)
+            #expect(registration.isReady && registration.error == nil)
+            #expect(topics == [enabled ? "on:requests" : "off:requests", "off:completions"])
+        }
+    }
+
+    @Test(arguments: [false, true])
     func eachLaunchReconcilesBothTopicsAfterSuccessOrAPreferenceFailure(failedWrite: Bool) async throws {
         try await withRegistrationStore { store in
             var registrations = 0

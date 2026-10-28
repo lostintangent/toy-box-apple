@@ -220,8 +220,8 @@ final class AppModel {
         } catch {
             integrationLogger.error("Could not prepare the Needs You widget: \(error.localizedDescription)")
         }
-        await notifications.start()
         observeIntegrations(generation: integrationsGeneration)
+        await notifications.start()
     }
 
     private func observeFollowing() {
