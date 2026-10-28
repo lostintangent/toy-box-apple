@@ -5,6 +5,11 @@ import { root } from "./lib.ts";
 const source = await Bun.file(join(root, ".github/workflows/build-and-release.yml")).text();
 const workflow = () => Bun.YAML.parse(source);
 
+test("workflow shell checks gate warnings and errors rather than style", async () => {
+    const { scripts } = await Bun.file(join(root, "package.json")).json();
+    expect(scripts["lint:workflows"]).toContain("SHELLCHECK_OPTS=--severity=warning ");
+});
+
 test("CI checks pull requests and main without losing release tags or manual dry runs", () => {
     expect(workflow()).toHaveProperty("on.push", { branches: ["main"], tags: ["v*"] });
     expect(workflow()).toHaveProperty("on.pull_request");

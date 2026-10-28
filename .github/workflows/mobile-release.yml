@@ -99,9 +99,11 @@ jobs:
           printf '%s' "$HOST_PROFILE" | base64 --decode > "$directory/app.mobileprovision"
           printf '%s' "$WIDGET_PROFILE" | base64 --decode > "$directory/widget.mobileprovision"
           printf '%s' "$NOTIFICATION_PROFILE" | base64 --decode > "$directory/notification.mobileprovision"
-          printf 'MOBILE_PROVISIONING_PROFILE=%s\n' "$directory/app.mobileprovision" >> "$GITHUB_ENV"
-          printf 'MOBILE_WIDGET_PROVISIONING_PROFILE=%s\n' "$directory/widget.mobileprovision" >> "$GITHUB_ENV"
-          printf 'MOBILE_NOTIFICATION_PROVISIONING_PROFILE=%s\n' "$directory/notification.mobileprovision" >> "$GITHUB_ENV"
+          {
+            printf 'MOBILE_PROVISIONING_PROFILE=%s\n' "$directory/app.mobileprovision"
+            printf 'MOBILE_WIDGET_PROVISIONING_PROFILE=%s\n' "$directory/widget.mobileprovision"
+            printf 'MOBILE_NOTIFICATION_PROVISIONING_PROFILE=%s\n' "$directory/notification.mobileprovision"
+          } >> "$GITHUB_ENV"
       - name: Build and validate or upload to TestFlight
         env:
           NOTARY_APP_PASSWORD: ${{ secrets.NOTARY_APP_PASSWORD }}

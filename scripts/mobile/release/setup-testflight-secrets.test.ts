@@ -72,7 +72,12 @@ test("CI imports only temporary signing material and restores the original keych
     expect(await Bun.file(join(directory, "widget.mobileprovision")).text()).toBe("widget profile");
     expect(await Bun.file(join(directory, "notification.mobileprovision")).text()).toBe("notification profile");
     expect(await Bun.file(join(directory, "issuer-chain.pem")).text()).toBe("fake public issuer chain");
-    expect(await Bun.file(join(fake.directory, "github-env")).text()).toContain(`MOBILE_PROVISIONING_PROFILE=${directory}/app.mobileprovision`);
+    expect(await Bun.file(join(fake.directory, "github-env")).text()).toBe([
+        `MOBILE_PROVISIONING_PROFILE=${directory}/app.mobileprovision`,
+        `MOBILE_WIDGET_PROVISIONING_PROFILE=${directory}/widget.mobileprovision`,
+        `MOBILE_NOTIFICATION_PROVISIONING_PROFILE=${directory}/notification.mobileprovision`,
+        "",
+    ].join("\n"));
     const cleanup = await fake.run(["/bin/bash", "-c",
         await workflowBody("Remove temporary TestFlight signing material", "mobile-release.yml")]);
     expect(cleanup.code).toBe(0);
