@@ -3,10 +3,11 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import * as tools from "../lib.ts";
 import {
-    deliverTestFlightIPA, prepareTestFlightBundle, testFlightAuthentication,
+    deliverTestFlightIPA, prepareTestFlightBundle, runTestFlight, testFlightAuthentication,
     testFlightProcessingIsValid,
 } from "./mobile-testflight.ts";
 import { mobileBundleID, mobileEntitlements, mobileExtensions } from "./mobile.ts";
+import * as mobile from "./mobile.ts";
 import { mobileSigningIdentities, selectMobileSigning, signMobileBundles, type MobileProvisioningProfile } from "./mobile-device.ts";
 
 const fingerprint = "1234567890ABCDEF1234567890ABCDEF12345678";
@@ -47,16 +48,39 @@ test("App Store signing reuses exact profile-set matching without accepting deve
     expect(mobileSigningIdentities(output, true)).toEqual([identity]);
 });
 
-test("upload authentication passes only a keychain or environment reference, never a password", () => {
-    const auth = testFlightAuthentication({
+test.each([undefined, "true"])("upload authentication always passes only an environment reference (CI=%s)", CI => {
+    const env = {
+        CI,
         APP_STORE_CONNECT_USERNAME: "test@example.test",
         APP_STORE_CONNECT_APP_ID: "123456789",
-    });
-    expect(auth.passwordReference).toBe("@keychain:toy-box-testflight");
+        NOTARY_APP_PASSWORD: "fake-upload-password",
+    };
+    const auth = testFlightAuthentication(env);
+    expect(auth.passwordReference).toBe("@env:NOTARY_APP_PASSWORD");
     expect(auth).not.toHaveProperty("password");
-    expect(testFlightAuthentication({ CI: "true", APP_STORE_CONNECT_APP_ID: "123",
-        NOTARY_APPLE_ID: "test@example.test" }).passwordReference).toBe("@env:NOTARY_APP_PASSWORD");
-    expect(() => testFlightAuthentication({})).toThrow("login keychain");
+    expect(JSON.stringify(auth)).not.toContain(env.NOTARY_APP_PASSWORD);
+    expect(testFlightAuthentication({ CI, APP_STORE_CONNECT_APP_ID: "123",
+        NOTARY_APPLE_ID: "test@example.test", NOTARY_APP_PASSWORD: env.NOTARY_APP_PASSWORD }).passwordReference)
+        .toBe("@env:NOTARY_APP_PASSWORD");
+    for (const NOTARY_APP_PASSWORD of [undefined, "", " "]) {
+        expect(() => testFlightAuthentication({ ...env, NOTARY_APP_PASSWORD })).toThrow("Export NOTARY_APP_PASSWORD");
+    }
+    expect(() => testFlightAuthentication({})).toThrow("APP_STORE_CONNECT_USERNAME");
+});
+
+test("build-only reaches bundling without upload credentials", async () => {
+    const previous = process.env.NOTARY_APP_PASSWORD;
+    delete process.env.NOTARY_APP_PASSWORD;
+    const bundle = spyOn(mobile, "bundleMobile").mockRejectedValue(new Error("credential-free build reached"));
+    try {
+        await expect(runTestFlight({ buildOnly: true, version: release.version, build: release.build }))
+            .rejects.toThrow("credential-free build reached");
+        expect(bundle).toHaveBeenCalledWith(true, true);
+    } finally {
+        bundle.mockRestore();
+        if (previous === undefined) delete process.env.NOTARY_APP_PASSWORD;
+        else process.env.NOTARY_APP_PASSWORD = previous;
+    }
 });
 
 test("Apple processing is distinct from upload acceptance", () => {
@@ -111,7 +135,7 @@ test("validation must succeed before upload, and validate-only never uploads", a
         calls.push(args);
         return JSON.stringify({ data: { processingState: "VALID" } });
     });
-    const auth = { username: "test@example.test", appID: "123", passwordReference: "@keychain:fake" };
+    const auth = { username: "test@example.test", appID: "123", passwordReference: "@env:NOTARY_APP_PASSWORD" };
     try {
         await deliverTestFlightIPA("/fake.ipa", release, auth, true);
         expect(calls).toHaveLength(1);
@@ -119,6 +143,7 @@ test("validation must succeed before upload, and validate-only never uploads", a
         calls.length = 0;
         await deliverTestFlightIPA("/fake.ipa", release, auth, false);
         expect(calls.map(args => args[2])).toEqual(["--validate-app", "--upload-package", "--build-status"]);
+        expect(calls.every(args => args[args.indexOf("--password") + 1] === "@env:NOTARY_APP_PASSWORD")).toBe(true);
         expect(calls.flat()).not.toContain("--auth-string");
         execute.mockRejectedValue(new Error("Apple rejected the bundle"));
         calls.length = 0;

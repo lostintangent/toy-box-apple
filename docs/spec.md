@@ -236,17 +236,16 @@ App Group state uses files, not shared UserDefaults. No disk-space API is used. 
 [required-reason policy](https://developer.apple.com/documentation/bundleresources/describing-use-of-required-reason-api).
 
 `APP_STORE_CONNECT_USERNAME` and numeric `APP_STORE_CONNECT_APP_ID` identify the account/app.
-The user stores the app-specific password in the login keychain as `toy-box-testflight`. From the
-repo root, use the verified Xcode 27 command, which prompts silently and passes only an environment
-reference to Apple's tool:
+Apple tools use only `@env:NOTARY_APP_PASSWORD`, locally and in CI. The user supplies the
+app-specific password. After setting the account/app identifiers, a local validation from the
+repo root prompts silently and passes only an environment reference to Apple's tool:
 
 ```sh
-TB_PW="$(bash scripts/release/read-password.sh 'App-specific password: ')" DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcrun altool --store-password-in-keychain-item --item toy-box-testflight -u joncart@outlook.com -p @env:TB_PW
+NOTARY_APP_PASSWORD="$(bash scripts/release/read-password.sh 'App-specific password: ')" bun run mobile --testflight --validate-only --build-number N
 ```
 
-`APP_STORE_CONNECT_PASSWORD_KEYCHAIN_ITEM` can select another item. CI passes only
-`@env:NOTARY_APP_PASSWORD`; local commands pass only the keychain reference, never a password.
-Apple's tool performs authentication. Agents never create accounts, profiles or credentials,
+Omit `--validate-only` to upload. No password is passed as a shell argument or stored by the
+release tools. Apple's tool performs authentication. Agents never create accounts, profiles or credentials,
 accept agreements, read keys/passwords or run real credential setup.
 
 The IPA contains `Payload/Toy Box.app`. `altool --validate-app` must pass before upload.
