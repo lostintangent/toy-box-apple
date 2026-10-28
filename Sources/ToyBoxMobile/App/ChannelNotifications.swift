@@ -118,6 +118,7 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
     func start() async {
         guard !didStart else { return }
         didStart = true
+        if !enabled { updateBadge(0) }
         do {
             try Tips.configure()
             tipsAvailable = true
@@ -148,7 +149,7 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
     }
 
     func configure(api: ChannelAPI) {
-        pendingBadgeCount = nil
+        if enabled { pendingBadgeCount = nil }
         configuredAPI = api
         if installedDelegate { prepareRegistration() }
     }
@@ -247,7 +248,7 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
     func clearError() { error = nil }
 
     func updateBadge(_ count: Int) {
-        pendingBadgeCount = count
+        pendingBadgeCount = enabled ? count : 0
         guard badgeUpdate == nil else { return }
         badgeUpdate = Task { [weak self] in
             guard let self else { return }
@@ -271,6 +272,7 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
     private func setEnabled(_ value: Bool) {
         guard enabled != value else { return }
         enabled = value
+        if !value { updateBadge(0) }
         defaults.set(value, forKey: "notificationsEnabled")
         updateRegistration()
     }

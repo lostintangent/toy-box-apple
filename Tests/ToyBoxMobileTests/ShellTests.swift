@@ -30,6 +30,7 @@ struct ShellTests {
     }
 
     private func withNotifications(
+        enabled: Bool = false,
         register: @escaping (ChannelAPI, String, PushRegistration) async throws -> Bool = { _, _, _ in false },
         subscribe: @escaping (ChannelAPI, String, String) async throws -> Void = { _, _, _ in },
         unsubscribe: @escaping (ChannelAPI, String, String) async throws -> Void = { _, _, _ in },
@@ -39,6 +40,7 @@ struct ShellTests {
         _ work: @MainActor (UserDefaults, MobileNotificationRegistration, ChannelNotifications) async throws -> Void
     ) async throws {
         try await withDefaults { defaults in
+            defaults.set(enabled, forKey: "notificationsEnabled")
             try await withRegistrationStore { store in
                 let api = try ChannelAPI(serverURL: "https://fixture.example")
                 let registration = MobileNotificationRegistration(
@@ -406,7 +408,7 @@ struct ShellTests {
         let badges = BadgeRecorder()
         var authorization: CheckedContinuation<UNAuthorizationStatus, Never>?
         var beganAuthorization: (() -> Void)?
-        try await withNotifications(readAuthorization: {
+        try await withNotifications(enabled: true, readAuthorization: {
             await withCheckedContinuation { continuation in
                 authorization = continuation
                 beganAuthorization?()
@@ -462,14 +464,14 @@ struct ShellTests {
         }
     }
 
-    @Test(.timeLimit(.minutes(1)))
-    func badgeWritesStayOrderedAndANewServersFreshCountWinsEvenAfterAFailure() async throws {
+    @Test(.timeLimit(.minutes(1)), arguments: [false, true])
+    func badgeWritesStayOrderedAndANewServersFreshCountOrOptOutWinsEvenAfterAFailure(optOut: Bool) async throws {
         let badges = BadgeRecorder()
         var held: CheckedContinuation<Void, Never>?
         var began: (() -> Void)?
         var inFlight = 0
         var maximumInFlight = 0
-        try await withNotifications(setBadgeCount: { count in
+        try await withNotifications(enabled: true, setBadgeCount: { count in
             inFlight += 1
             maximumInFlight = max(maximumInFlight, inFlight)
             defer { inFlight -= 1 }
@@ -487,13 +489,38 @@ struct ShellTests {
                 notifications.updateBadge(4)
             }
             notifications.updateBadge(3)
+            if optOut { notifications.disable() }
             notifications.configure(api: try ChannelAPI(serverURL: "https://other.example"))
-            notifications.updateBadge(0)
+            if !optOut { notifications.updateBadge(0) }
             #expect(badges.counts.isEmpty)
             try #require(held).resume()
             await badges.waitForCalls(1)
             #expect(badges.counts == [0])
             #expect(maximumInFlight == 1)
+        }
+    }
+
+    @Test(.timeLimit(.minutes(1)), arguments: [false, true])
+    func notificationOptOutKeepsTheBadgeClearBeforeAuthorizationLoads(initiallyEnabled: Bool) async throws {
+        let badges = BadgeRecorder()
+        try await withNotifications(enabled: initiallyEnabled, setBadgeCount: { badges.counts.append($0) }) {
+            defaults, _, notifications in
+            notifications.updateBadge(2)
+            await badges.waitForCalls(1)
+            if initiallyEnabled {
+                #expect(badges.counts == [2])
+                notifications.disable()
+                await badges.waitForCalls(2)
+            }
+            let cleared = initiallyEnabled ? [2, 0] : [0]
+            #expect(badges.counts == cleared)
+            #expect(!defaults.bool(forKey: "notificationsEnabled"))
+            #expect(!notifications.hasLoadedAuthorization)
+
+            notifications.updateBadge(7)
+            await badges.waitForCalls(cleared.count + 1)
+            #expect(badges.counts == cleared + [0])
+            #expect(!notifications.hasLoadedAuthorization)
         }
     }
 

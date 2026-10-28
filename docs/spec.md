@@ -364,7 +364,9 @@ The phone icon badge counts channels with an open request, using the same
 `channelStatus(channel) == .waiting` predicate as the widget. Each successful app catalog refresh
 reconciles the badge, including unchanged polls and zero waiting channels. Cached-only state,
 failed refreshes and unrelated navigation changes do not overwrite it. Badge updates do not wait
-for notification authorization reads or request-history loading.
+for notification authorization reads or request-history loading. The in-app Allow notifications
+choice gates the badge independently of authorization: turning it off immediately clears the
+badge, and catalog refreshes keep it at zero while off.
 
 The shared client and the 3210 demo implement these additions. The shipping server uses the same
 contract before device push proof. Writes make one attempt and return no response body. Registration
