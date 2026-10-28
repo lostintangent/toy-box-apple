@@ -116,7 +116,7 @@ test.skipIf(process.platform !== "darwin")("all three bundles get real metadata,
                 const parsed = JSON.parse(await original(["plutil", "-convert", "json", "-o", "-", join(bundle, "Info.plist")]));
                 expect(parsed).toMatchObject({ ...metadata, CFBundleVersion: release.build,
                     CFBundleShortVersionString: release.version, ITSAppUsesNonExemptEncryption: false,
-                    UIDeviceFamily: [1], LSRequiresIPhoneOS: true });
+                    UIDeviceFamily: [1], LSRequiresIPhoneOS: true, UIRequiredDeviceCapabilities: ["arm64"] });
                 expect(parsed).not.toHaveProperty("ToyBoxDefaultServerURL");
                 expect(await Bun.file(join(bundle, "PrivacyInfo.xcprivacy")).exists()).toBe(true);
             }

@@ -56,7 +56,7 @@ export async function prepareTestFlightBundle(app: string, release: TestFlightVe
             ...value, ...metadata, CFBundleVersion: release.build,
             CFBundleShortVersionString: release.version, CFBundleInfoDictionaryVersion: "6.0",
             ITSAppUsesNonExemptEncryption: false,
-            UIDeviceFamily: [1], LSRequiresIPhoneOS: true,
+            UIDeviceFamily: [1], LSRequiresIPhoneOS: true, UIRequiredDeviceCapabilities: ["arm64"],
             ...(component.bundle === app ? { ToyBoxPushEnvironment: "production" } : {}),
         };
         if ("ToyBoxDefaultServerURL" in prepared) delete prepared.ToyBoxDefaultServerURL;
