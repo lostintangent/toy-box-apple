@@ -197,10 +197,9 @@ use demo servers only for write scripts. Never skip or retry actions.
   profiles, with the same App Group/Communication Notifications capabilities and production Push.
   Select them with the same `MOBILE_*_PROVISIONING_PROFILE` variables. Set
   `APP_STORE_CONNECT_USERNAME` and numeric `APP_STORE_CONNECT_APP_ID`. Apple tools read the password
-  through `@keychain:toy-box-testflight` (override `APP_STORE_CONNECT_PASSWORD_KEYCHAIN_ITEM`), or
-  `@env:NOTARY_APP_PASSWORD` in CI. Never pass a password as a shell argument or read the keychain item.
-  Only the user stores it, from the repo root, with the verified Xcode 27 syntax:
-  `TB_PW="$(bash scripts/release/read-password.sh 'App-specific password: ')" DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcrun altool --store-password-in-keychain-item --item toy-box-testflight -u joncart@outlook.com -p @env:TB_PW`
+  only through `@env:NOTARY_APP_PASSWORD`, locally and in CI. Never pass a password as a shell argument.
+  Only the user supplies it. For a local validation from the repo root:
+  `NOTARY_APP_PASSWORD="$(bash scripts/release/read-password.sh 'App-specific password: ')" bun run mobile --testflight --validate-only --build-number N`
 - **TestFlight bundle:** actual Xcode/SDK `DT*` metadata, matching version/build on every component,
   `ITSAppUsesNonExemptEncryption=false`, production push and no `get-task-allow`. Validate/upload require
   `--build-number` / `BUILD_NUMBER`; choose an unused App Store build. Build-only may use the plist's

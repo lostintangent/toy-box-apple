@@ -13,11 +13,10 @@ export function testFlightAuthentication(env: NodeJS.ProcessEnv = process.env): 
     const appID = env.APP_STORE_CONNECT_APP_ID;
     if (!username?.trim() || !appID || !/^[1-9]\d*$/.test(appID)) {
         throw new Error("Set APP_STORE_CONNECT_USERNAME and the numeric APP_STORE_CONNECT_APP_ID. "
-            + "The user creates the App Store Connect app and stores its app-specific password in the login keychain.");
+            + "The user creates the App Store Connect app.");
     }
-    return { username, appID, passwordReference: env.CI === "true"
-        ? "@env:NOTARY_APP_PASSWORD"
-        : `@keychain:${env.APP_STORE_CONNECT_PASSWORD_KEYCHAIN_ITEM || "toy-box-testflight"}` };
+    if (!env.NOTARY_APP_PASSWORD?.trim()) throw new Error("Export NOTARY_APP_PASSWORD for TestFlight validation or upload.");
+    return { username, appID, passwordReference: "@env:NOTARY_APP_PASSWORD" };
 }
 
 export async function testFlightMetadata() {
