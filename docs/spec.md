@@ -251,9 +251,12 @@ accept agreements, read keys/passwords or run real credential setup.
 
 The IPA contains `Payload/Toy Box.app`. `altool --validate-app` must pass before upload.
 `--validate-only` signs/packages and validates without uploading; `--build-only` creates an
-unsigned App Store-form bundle without profiles or credentials. Upload waits for processing and
-requires Apple's reported processing state `VALID`, which is not yet a claim that a tester group
-has access. The first real build remains incomplete until App Store Connect shows Ready to Test.
+unsigned App Store-form bundle without profiles or credentials. `altool --upload-package --wait`
+waits for processing. Preserve its JSON result in the log and require Apple's reported processing
+state `VALID`, without a second app/version lookup. An unknown or failed result must not trigger
+another upload before checking App Store Connect. Keep the signed IPA and notes even if delivery
+or processing fails. Processing `VALID` is not yet a claim that a tester group has access. The first
+real build remains incomplete until App Store Connect shows Ready to Test.
 
 After local qualification, `.github/workflows/mobile-release.yml` handles only `mobile-vX.Y.Z` tags,
 independently of the Mac's unchanged `vX.Y.Z` release line. Both require one nonempty matching

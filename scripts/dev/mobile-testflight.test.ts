@@ -142,13 +142,33 @@ test("validation must succeed before upload, and validate-only never uploads", a
         expect(calls[0]).toContain("--validate-app");
         calls.length = 0;
         await deliverTestFlightIPA("/fake.ipa", release, auth, false);
-        expect(calls.map(args => args[2])).toEqual(["--validate-app", "--upload-package", "--build-status"]);
+        expect(calls.map(args => args[2])).toEqual(["--validate-app", "--upload-package"]);
+        expect(calls[1]).toContain("--wait");
+        expect(calls[1]).toContain("--output-format");
         expect(calls.every(args => args[args.indexOf("--password") + 1] === "@env:NOTARY_APP_PASSWORD")).toBe(true);
         expect(calls.flat()).not.toContain("--auth-string");
         execute.mockRejectedValue(new Error("Apple rejected the bundle"));
         calls.length = 0;
         await expect(deliverTestFlightIPA("/fake.ipa", release, auth, false)).rejects.toThrow("Apple rejected");
         expect(calls).toEqual([]);
+    } finally { execute.mockRestore(); result.mockRestore(); }
+});
+
+test.each(["PROCESSING", "FAILED", "INVALID"])("upload returning %s never claims processing success or retries", async state => {
+    const calls: string[][] = [];
+    const success = await tools.command(["true"], { quiet: true });
+    const execute = spyOn(tools, "command").mockImplementation(async args => {
+        calls.push(args);
+        return success;
+    });
+    const result = spyOn(tools, "text").mockImplementation(async args => {
+        calls.push(args);
+        return JSON.stringify({ data: { processingState: state } });
+    });
+    const auth = { username: "test@example.test", appID: "123", passwordReference: "@env:NOTARY_APP_PASSWORD" };
+    try {
+        await expect(deliverTestFlightIPA("/fake.ipa", release, auth, false)).rejects.toThrow("before retrying");
+        expect(calls.map(args => args[2])).toEqual(["--validate-app", "--upload-package"]);
     } finally { execute.mockRestore(); result.mockRestore(); }
 });
 
