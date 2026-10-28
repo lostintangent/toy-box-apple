@@ -228,7 +228,8 @@ their own profiles and sign before the host, whose actual signed entitlements ar
 There is no `get-task-allow`, bundled server address, DEBUG driver or proof fixture. First launch
 asks the tester for a server.
 
-Every component has the same version/build, `ITSAppUsesNonExemptEncryption=false` and real Xcode,
+Every component declares the `arm64` required device capability and has the same version/build,
+`ITSAppUsesNonExemptEncryption=false` and real Xcode,
 SDK, platform and build-machine metadata. The privacy manifests declare host-local UserDefaults
 (`CA92.1`), cache file timestamps (`C617.1`) and elapsed animation timing (`35F9.1`); the two
 extensions declare only the timing API present in their linked shared presentation code.
