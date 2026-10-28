@@ -222,7 +222,9 @@ use demo servers only for write scripts. Never skip or retry actions.
   alert to iOS, preserving the server's title, body, Reply handle, thread and badge without any
   notification-time network request. Alerts carry display-ready text through the stateless relay.
   The relay does not log it. Icon badges count channels with an open request, even when read,
-  not unread/completed channels. Both notification topics off suppress server badge pushes,
+  not unread/completed channels. Counts travel in badge-only pushes, not alert payloads. The phone delegate
+  permits badge-only foreground presentation, while fresh catalog polls still reconcile the count.
+  Both notification topics off suppress server badge pushes,
   including when a Live Activity remains subscribed. WidgetKit schedules the reload.
   Simulator injection never invokes the service: prove real
   APNs-to-service wake on device. Successful Mac catalog polls feed the existing fifteen-minute

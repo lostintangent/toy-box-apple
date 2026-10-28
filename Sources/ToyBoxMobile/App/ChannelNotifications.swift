@@ -310,9 +310,11 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
         }.map(\.identifier)
     }
 
-    func presentation(for payload: ChannelPushPayload?, category: String) -> UNNotificationPresentationOptions {
+    func presentation(for payload: ChannelPushPayload?, category: String,
+                      badge: NSNumber? = nil) -> UNNotificationPresentationOptions {
         if category == ChannelNotificationCategory.replyFailed { return [.banner, .list, .sound] }
         guard isEnabled else { return [] }
+        if payload == nil, category.isEmpty, badge != nil { return [.badge] }
         if let payload, isCurrent(payload), payload.channelID == activeChannelID { return [] }
         return category == ChannelNotificationCategory.completion ? [.list] : [.banner, .list, .sound]
     }
@@ -368,8 +370,9 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
         let content = notification.request.content
         let payload = try? ChannelPushPayload(userInfo: content.userInfo)
         let category = content.categoryIdentifier
+        let badge = content.badge
         Self.completeOnMainActor({
-            self.presentation(for: payload, category: category)
+            self.presentation(for: payload, category: category, badge: badge)
         }, completionHandler: completionHandler)
     }
 

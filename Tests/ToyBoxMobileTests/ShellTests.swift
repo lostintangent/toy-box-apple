@@ -705,6 +705,18 @@ struct ShellTests {
         }
     }
 
+    @Test(arguments: [0, 1, 2])
+    func foregroundCountPushesApplyOnlyTheBadgeAndRespectOptOut(count: Int) async throws {
+        try await withNotifications { _, _, notifications in
+            await notifications.enable()
+            await notifications.update(channels: [], activeChannelID: "first", withdraw: false)
+            #expect(notifications.presentation(for: nil, category: "", badge: NSNumber(value: count)) == [.badge])
+            #expect(!notifications.presentation(for: nil, category: "").contains(.badge))
+            notifications.disable()
+            #expect(notifications.presentation(for: nil, category: "", badge: NSNumber(value: count)).isEmpty)
+        }
+    }
+
     @Test func notificationDelegateUsesSystemSelectorsAndCompletesOnMainThreadAfterSuspending() async {
         await withDefaults { defaults in
             let notifications = ChannelNotifications(defaults: defaults)
