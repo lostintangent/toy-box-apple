@@ -30,6 +30,8 @@ struct ShellTests {
 
     private func withNotifications(
         register: @escaping (ChannelAPI, String, PushRegistration) async throws -> Bool = { _, _, _ in false },
+        subscribe: @escaping (ChannelAPI, String, String) async throws -> Void = { _, _, _ in },
+        unsubscribe: @escaping (ChannelAPI, String, String) async throws -> Void = { _, _, _ in },
         readAuthorization: @escaping () async -> UNAuthorizationStatus = { .authorized },
         addNotice: @escaping (UNNotificationRequest) async throws -> Void = { _ in },
         _ work: @MainActor (UserDefaults, MobileNotificationRegistration, ChannelNotifications) async throws -> Void
@@ -39,7 +41,7 @@ struct ShellTests {
                 let api = try ChannelAPI(serverURL: "https://fixture.example")
                 let registration = MobileNotificationRegistration(
                     store: store, environment: .sandbox, requestToken: {}, register: register,
-                    remove: { _, _ in }, subscribe: { _, _, _ in }, unsubscribe: { _, _, _ in })
+                    remove: { _, _ in }, subscribe: subscribe, unsubscribe: unsubscribe)
                 try registration.select(api: api)
                 let notifications = ChannelNotifications(
                     defaults: defaults, registration: registration,
@@ -100,6 +102,8 @@ struct ShellTests {
             host.view.frame = window.bounds
             host.view.layoutIfNeeded()
             let labels = MobileAutomationTree(windows: [window]).elements.map(\.label)
+            #expect(labels.contains("Requests for your response") == enabled, "\(labels)")
+            #expect(labels.contains("Completed tasks") == enabled, "\(labels)")
             #expect(labels.contains("Couldn't connect notifications to this server.") == enabled, "\(labels)")
             #expect(labels.contains("Try Again") == enabled, "\(labels)")
         }
@@ -331,6 +335,47 @@ struct ShellTests {
             registration.retry()
             #expect(requests == 2)
             #expect(registration.error == nil)
+        }
+    }
+
+    @Test(arguments: ["registration", "subscribe", "unsubscribe"])
+    func activationRetriesAFailedPushApplyButLeavesSuccessfulSubscriptionsAlone(failedStep: String) async throws {
+        var fails = true
+        var registrations = 0
+        var topics: [String] = []
+        try await withNotifications(register: { _, _, _ in
+            registrations += 1
+            if fails, failedStep == "registration" { throw URLError(.cannotConnectToHost) }
+            return false
+        }, subscribe: { _, _, topic in
+            topics.append("on:\(topic)")
+            if fails, failedStep == "subscribe" { throw URLError(.cannotConnectToHost) }
+        }, unsubscribe: { _, _, topic in
+            topics.append("off:\(topic)")
+            if fails, failedStep == "unsubscribe" { throw URLError(.cannotConnectToHost) }
+        }) { defaults, registration, notifications in
+            let model = AppModel(arguments: ["--server", "https://fixture.example"], environment: [:],
+                                 defaults: defaults, session: fixtureSession(), notifications: notifications)
+            defer { model.setActive(false) }
+            await notifications.enable()
+            registration.receivedToken(Data([1]))
+            await registration.waitUntilIdle()
+            #expect(registrations == 1)
+            #expect(notifications.registrationError != nil)
+            topics = []
+            fails = false
+            model.setActive(true)
+            await registration.waitUntilIdle()
+            #expect(registrations == 2)
+            #expect(topics == ["on:requests", "off:completions"])
+            #expect(notifications.registrationError == nil)
+            #expect(notifications.isRegistrationReady)
+            model.setActive(true)
+            model.setActive(false)
+            model.setActive(true)
+            await registration.waitUntilIdle()
+            #expect(registrations == 2)
+            #expect(topics == ["on:requests", "off:completions"])
         }
     }
 
@@ -568,7 +613,7 @@ struct ShellTests {
             })
             #expect(!notifications.isEnabled)
             #expect(notifications.requests)
-            #expect(notifications.completions)
+            #expect(!notifications.completions)
             #expect(!notifications.hasLoadedAuthorization)
             await notifications.enable()
             #expect(prompts == 1)
@@ -576,6 +621,7 @@ struct ShellTests {
             #expect(notifications.isEnabled)
             #expect(defaults.bool(forKey: "notificationsEnabled"))
             notifications.requests = false
+            notifications.completions = true
             notifications.disable()
             #expect(!notifications.isEnabled)
             #expect(!notifications.requests)
@@ -589,6 +635,17 @@ struct ShellTests {
             #expect(restored.isEnabled)
             #expect(!restored.requests)
             #expect(restored.completions)
+        }
+    }
+
+    @Test(arguments: [false, true])
+    func savedNotificationChoicesOverrideTheRequestOnlyDefaults(completions: Bool) async {
+        await withDefaults { defaults in
+            defaults.set(!completions, forKey: "requestNotifications")
+            defaults.set(completions, forKey: "completionNotifications")
+            let notifications = ChannelNotifications(defaults: defaults)
+            #expect(notifications.requests == !completions)
+            #expect(notifications.completions == completions)
         }
     }
 

@@ -564,21 +564,34 @@ struct ShellTests {
     @MainActor @Test func completionNotificationsRequireANewUnseenMilestone() {
         var policy = ChannelNotifications.Policy()
         var channel = testChannel()
-        _ = policy.events(channels: [channel], activeChannelID: nil, enabled: true)
+        _ = policy.events(channels: [channel], activeChannelID: nil, enabled: true, completions: true)
         channel.seenThrough = 10
         channel.completedSequence = 10
-        #expect(policy.events(channels: [channel], activeChannelID: nil, enabled: true).isEmpty)
+        #expect(policy.events(channels: [channel], activeChannelID: nil, enabled: true, completions: true).isEmpty)
         channel.completedSequence = 11
         channel.latestSequence = 11
-        #expect(policy.events(channels: [channel], activeChannelID: nil, enabled: true)
+        #expect(policy.events(channels: [channel], activeChannelID: nil, enabled: true, completions: true)
             == [.init(channel: channel, sequence: 11, kind: .completion)])
-        #expect(policy.events(channels: [channel], activeChannelID: nil, enabled: true).isEmpty)
+        #expect(policy.events(channels: [channel], activeChannelID: nil, enabled: true, completions: true).isEmpty)
         channel.completedSequence = 12
         channel.latestSequence = 12
         #expect(policy.events(channels: [channel], activeChannelID: nil, enabled: true, completions: false).isEmpty)
-        #expect(policy.events(channels: [channel], activeChannelID: nil, enabled: true).isEmpty)
+        #expect(policy.events(channels: [channel], activeChannelID: nil, enabled: true, completions: true).isEmpty)
         policy = ChannelNotifications.Policy()
-        #expect(policy.events(channels: [channel], activeChannelID: nil, enabled: true).isEmpty)
+        #expect(policy.events(channels: [channel], activeChannelID: nil, enabled: true, completions: true).isEmpty)
+    }
+
+    @MainActor @Test func notificationDefaultsDeliverRequestsButNotCompletions() {
+        var policy = ChannelNotifications.Policy()
+        var request = testChannel(id: "request")
+        var completion = testChannel(id: "completion")
+        _ = policy.events(channels: [request, completion], activeChannelID: nil, enabled: true)
+        request.requestSequence = 11
+        request.latestSequence = 11
+        completion.completedSequence = 11
+        completion.latestSequence = 11
+        #expect(policy.events(channels: [request, completion], activeChannelID: nil, enabled: true)
+            == [.init(channel: request, sequence: 11, kind: .request)])
     }
 
     @MainActor @Test func dockCountsChannelsAndKeepsOpenRequestsVisible() {

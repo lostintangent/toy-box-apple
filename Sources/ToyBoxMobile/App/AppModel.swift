@@ -172,6 +172,7 @@ final class AppModel {
         if active { resumeCatalogBaseline = catalog?.lastRefreshedAt }
         catalog?.setActive(active)
         if active {
+            if notifications.registrationError != nil { notifications.retryRegistration() }
             catalog?.startPolling()
             for store in connections.stores { store.connect() }
             connectSelection()
