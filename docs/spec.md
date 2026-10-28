@@ -241,7 +241,7 @@ repo root, use the verified Xcode 27 command, which prompts silently and passes 
 reference to Apple's tool:
 
 ```sh
-TB_PW="$(scripts/release/read-password.sh 'App-specific password: ')" DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcrun altool --store-password-in-keychain-item --item toy-box-testflight -u joncart@outlook.com -p @env:TB_PW
+TB_PW="$(bash scripts/release/read-password.sh 'App-specific password: ')" DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcrun altool --store-password-in-keychain-item --item toy-box-testflight -u joncart@outlook.com -p @env:TB_PW
 ```
 
 `APP_STORE_CONNECT_PASSWORD_KEYCHAIN_ITEM` can select another item. CI passes only
