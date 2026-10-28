@@ -9,26 +9,6 @@ import UIKit
 import UserNotifications
 import WidgetKit
 
-struct MobileNotificationCatalogCache: Codable, Equatable {
-    static let fileName = "notification-catalog.json"
-    var registration: MobilePushRegistration
-    var catalog: ChannelCatalog
-
-    func write(directory: URL) throws {
-        let file = directory.appendingPathComponent(Self.fileName)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        try JSONEncoder().encode(self).write(to: file, options: .atomic)
-        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
-    }
-
-    static func read(directory: URL) throws -> Self {
-        let file = directory.appendingPathComponent(fileName)
-        let cache = try JSONDecoder().decode(Self.self, from: Data(contentsOf: file))
-        guard cache.catalog.version == 1 else { throw ChannelAPIError.unsupportedVersion(cache.catalog.version) }
-        return cache
-    }
-}
-
 @MainActor
 public enum MobileNotificationAvatar {
     public static func png(_ agent: ChannelAgent) -> Data? {
@@ -53,14 +33,13 @@ public final class MobileNotificationEnricher {
     private let avatarPNG: @MainActor (ChannelAgent) -> Data?
     private let fetch: Fetch
     private let pause: @Sendable (Duration) async throws -> Void
+    private let now: @MainActor () -> ContinuousClock.Instant
+    private let donate: @MainActor (INSendMessageIntent) -> Void
     private let reloadWidgets: @MainActor () -> Void
     private let logger = Logger(subsystem: "dev.toybox.mobile", category: "Notification")
-    private var completion: (@MainActor (UNNotificationContent) -> Void)?
+    private var completion: (@MainActor (UNNotificationContent?) -> Void)?
     private(set) var work: Task<Void, Never>?
     private var deadline: Task<Void, Never>?
-    private var registration: MobilePushRegistration?
-    private var fallback: UNNotificationContent = UNMutableNotificationContent()
-    private(set) var pendingIntent: INSendMessageIntent?
 
     public convenience init(directory: URL? = nil,
                             avatarPNG: @escaping @MainActor (ChannelAgent) -> Data? = MobileNotificationAvatar.png) throws {
@@ -69,180 +48,110 @@ public final class MobileNotificationEnricher {
     }
 
     init(directory: URL, avatarPNG: @escaping @MainActor (ChannelAgent) -> Data?,
-         fetch: @escaping Fetch,
-         reloadWidgets: @escaping @MainActor () -> Void = {},
-         pause: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }) {
+         fetch: @escaping Fetch, reloadWidgets: @escaping @MainActor () -> Void = {},
+         pause: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
+         now: @escaping @MainActor () -> ContinuousClock.Instant = { .now },
+         donate: @escaping @MainActor (INSendMessageIntent) -> Void = MobileNotificationEnricher.donate) {
         self.directory = directory
         self.avatarPNG = avatarPNG
         self.fetch = fetch
         self.pause = pause
+        self.now = now
+        self.donate = donate
         self.reloadWidgets = reloadWidgets
     }
 
-    public func start(_ payload: ChannelPushPayload,
+    public func start(_ request: UNNotificationRequest,
                       completion: @escaping @MainActor (UNNotificationContent) -> Void) {
         expire()
-        let started = ContinuousClock.now
-        self.completion = completion
-        fallback = Self.generic()
-        pendingIntent = nil
-        registration = nil
+        let started = now()
+        self.completion = { completion($0 ?? request.content) }
+        let payload: ChannelPushPayload
+        let registration: MobilePushRegistration
+        guard let content = request.content.mutableCopy() as? UNMutableNotificationContent else {
+            logger.error("Could not copy notification content for enrichment.")
+            finish()
+            return
+        }
         do {
+            payload = try ChannelPushPayload(userInfo: request.content.userInfo)
             guard let selected = try MobilePushRegistrationStore(directory: directory).current,
                   selected.registrationID == payload.registrationID else {
                 logger.notice("Ignoring notification routing for a different registration.")
-                finish(fallback)
+                content.categoryIdentifier = ""
+                finish(content)
                 return
             }
             registration = selected
         } catch {
             logger.error("Could not read notification routing: \(error.localizedDescription)")
-            finish(fallback)
+            finish()
             return
         }
-        guard let registration else { finish(fallback); return }
-        var cached: ChannelCatalog?
-        do {
-            let cache = try MobileNotificationCatalogCache.read(directory: directory)
-            if Self.matches(cache.registration, registration) { cached = cache.catalog }
-        } catch let error as CocoaError where error.code == .fileReadNoSuchFile {
-        } catch {
-            logger.error("Could not read cached notification identity: \(error.localizedDescription)")
-        }
-        fallback = content(payload: payload, registration: registration, catalog: cached)
-        guard started.duration(to: .now) < Self.contentDeadline else { finish(fallback); return }
+        reloadWidgets()
         let fetch = fetch
         work = Task {
             do {
                 let result = try await fetch(ChannelAPI(serverURL: registration.serverURL), payload)
                 try Task.checkCancellation()
-                guard started.duration(to: .now) < Self.contentDeadline else {
-                    self.finish(self.fallback)
-                    return
-                }
-                guard self.isCurrent() else { self.finish(Self.generic()); return }
-                do {
-                    try MobileNotificationCatalogCache(registration: registration, catalog: result.catalog)
-                        .write(directory: self.directory)
-                } catch {
-                    self.logger.error("Could not cache notification identity: \(error.localizedDescription)")
-                }
-                guard result.catalog.channels.contains(where: { $0.id == payload.channelID }) else {
-                    self.logger.notice("The notification channel is no longer available.")
-                    self.finish(Self.generic())
-                    return
-                }
-                let resolved = self.content(payload: payload, registration: registration,
-                                            catalog: result.catalog, messages: result.messages, enriched: true)
-                self.finish(resolved)
+                let resolved = started.duration(to: self.now()) < Self.contentDeadline
+                    ? result.catalog.channels.first(where: { $0.id == payload.channelID }).map {
+                        self.content(content, payload: payload, registration: registration,
+                                     channel: $0, fetched: result)
+                    } : nil
+                self.finish(started.duration(to: self.now()) < Self.contentDeadline ? resolved : nil)
             } catch {
                 if !Task.isCancelled {
                     self.logger.error("Could not enrich a notification: \(error.localizedDescription)")
-                    self.finish(self.fallback)
+                    self.finish()
                 }
             }
         }
         let pause = pause
         deadline = Task {
             do {
-                try await pause(max(.zero, Self.contentDeadline - started.duration(to: .now)))
+                try await pause(max(.zero, Self.contentDeadline - started.duration(to: self.now())))
                 try Task.checkCancellation()
                 self.logger.notice("Notification enrichment reached its three-second deadline.")
-                self.finish(self.fallback)
+                self.finish()
             } catch {
                 if !Task.isCancelled {
                     self.logger.error("Notification deadline failed: \(error.localizedDescription)")
-                    self.finish(self.fallback)
+                    self.finish()
                 }
             }
         }
     }
 
-    public func expire() {
-        if completion != nil { finish(fallback) }
-    }
+    public func expire() { finish() }
 
-    public static func generic() -> UNNotificationContent {
-        let content = UNMutableNotificationContent()
-        content.title = "Toy Box"
-        content.body = "Open Toy Box to see your team."
-        content.sound = .default
-        return content
-    }
-
-    private func finish(_ content: UNNotificationContent) {
+    private func finish(_ content: UNNotificationContent? = nil) {
         guard let completion else { return }
         self.completion = nil
         work?.cancel()
         deadline?.cancel()
         work = nil
         deadline = nil
-        var result = registration == nil || isCurrent() ? content : Self.generic()
-        if result.categoryIdentifier == ChannelNotificationCategory.request, let pendingIntent {
-            let interaction = INInteraction(intent: pendingIntent, response: nil)
-            interaction.direction = .incoming
-            interaction.donate { error in
-                if let error {
-                    Logger(subsystem: "dev.toybox.mobile", category: "Notification")
-                        .error("Could not donate notification identity: \(error.localizedDescription)")
-                }
-            }
-            do { result = try result.updating(from: pendingIntent) }
-            catch { logger.error("Could not apply notification identity: \(error.localizedDescription)") }
-        }
-        if result.categoryIdentifier == ChannelNotificationCategory.request
-            || result.categoryIdentifier == ChannelNotificationCategory.completion {
-            reloadWidgets()
-        }
-        completion(result)
+        completion(content)
     }
 
-    private func isCurrent() -> Bool {
-        do {
-            guard let registration, let current = try MobilePushRegistrationStore(directory: directory).current else {
-                return false
-            }
-            return Self.matches(registration, current)
-        } catch {
-            logger.error("Could not recheck notification registration: \(error.localizedDescription)")
-            return false
-        }
-    }
-
-    private static func matches(_ first: MobilePushRegistration, _ second: MobilePushRegistration) -> Bool {
-        first.registrationID == second.registrationID
-            && ChannelWaitingRequest.normalizedServer(first.serverURL)
-                == ChannelWaitingRequest.normalizedServer(second.serverURL)
-    }
-
-    private func content(payload: ChannelPushPayload, registration: MobilePushRegistration,
-                         catalog: ChannelCatalog?, messages: [ChannelMessage] = [],
-                         enriched: Bool = false) -> UNNotificationContent {
-        pendingIntent = nil
-        let content = UNMutableNotificationContent()
-        let channel = catalog?.channels.first { $0.id == payload.channelID }
-        content.title = channel?.name ?? "Toy Box"
-        content.categoryIdentifier = payload.kind.rawValue
+    private func content(_ content: UNMutableNotificationContent, payload: ChannelPushPayload,
+                         registration: MobilePushRegistration, channel: Channel, fetched: Fetched) -> UNNotificationContent {
+        content.title = channel.name
         content.threadIdentifier = "\(registration.serverURL):\(payload.channelID)"
-        content.userInfo = payload.userInfo
-        content.sound = .default
         switch payload.kind {
         case .completion:
-            content.body = NotificationText.completionBody(tasks: enriched ? channel?.tasks ?? [] : [])
+            content.body = NotificationText.completionBody(tasks: channel.tasks)
             return content
         case .request:
-            content.body = NotificationText.waitingBody
-            guard let catalog, let channel else { return content }
-            let lead = ChannelAgent.lead(id: channel.id, profile: catalog.lead)
-            let agents = [lead] + catalog.members.filter { $0.channelId == channel.id }
-            let request = messages.first { $0.sequence == payload.sequence }
+            let lead = ChannelAgent.lead(id: channel.id, profile: fetched.catalog.lead)
+            let agents = [lead] + fetched.catalog.members.filter { $0.channelId == channel.id }
+            let request = fetched.messages.first { $0.sequence == payload.sequence }
                 .map { ChannelRequestMessage(message: $0, agents: agents) }
             if let request { content.body = NotificationText.requestBody(request.message, agents: request.agents) }
             let sender = request?.requester ?? lead
             if let requester = request?.requester {
-                var info = payload.userInfo
-                info["handle"] = agentHandleFromName(requester.name)
-                content.userInfo = info
+                content.userInfo["handle"] = agentHandleFromName(requester.name)
             }
             content.subtitle = NotificationText.subtitle(requester: sender.name)
             let png = avatarPNG(sender)
@@ -265,15 +174,27 @@ public final class MobileNotificationEnricher {
             intent.donationMetadata = metadata
             // Named group banners use the group's image rather than the INPerson image.
             if let image { intent.setImage(image, forParameterNamed: \.speakableGroupName) }
-            pendingIntent = intent
+            donate(intent)
+            do { return try content.updating(from: intent) }
+            catch { logger.error("Could not apply notification identity: \(error.localizedDescription)") }
             return content
+        }
+    }
+
+    private static func donate(_ intent: INSendMessageIntent) {
+        let interaction = INInteraction(intent: intent, response: nil)
+        interaction.direction = .incoming
+        interaction.donate { error in
+            if let error {
+                Logger(subsystem: "dev.toybox.mobile", category: "Notification")
+                    .error("Could not donate notification identity: \(error.localizedDescription)")
+            }
         }
     }
 
     nonisolated private static func fetch(api: ChannelAPI, payload: ChannelPushPayload) async throws -> Fetched {
         async let catalog = api.catalog()
         if payload.kind == .request {
-            guard payload.sequence < Int.max else { throw ChannelAPIError.invalidMessage("Invalid request sequence.") }
             async let history = api.history(channelId: payload.channelID, before: payload.sequence + 1)
             return try await Fetched(catalog: catalog, messages: history.messages)
         }

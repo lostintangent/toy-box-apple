@@ -1,3 +1,4 @@
+import CoreFoundation
 import Foundation
 
 public enum ChannelNotificationCategory {
@@ -7,8 +8,8 @@ public enum ChannelNotificationCategory {
     public static let replyFailed = "replyFailed"
 }
 
-public struct ChannelPushPayload: Codable, Equatable, Sendable {
-    public enum Kind: String, Codable, Sendable {
+public struct ChannelPushPayload: Equatable, Sendable {
+    public enum Kind: String, Sendable {
         case request, completion
     }
 
@@ -24,33 +25,17 @@ public struct ChannelPushPayload: Codable, Equatable, Sendable {
         self.registrationID = registrationID
     }
 
-    private enum CodingKeys: String, CodingKey, CaseIterable {
-        case kind, channelID, sequence, registrationID
-    }
-
-    public init(from decoder: any Decoder) throws {
-        let values = try decoder.container(keyedBy: CodingKeys.self)
-        let sequence = try values.decode(Int.self, forKey: .sequence)
-        let channelID = try values.decode(String.self, forKey: .channelID)
-        let registrationID = try values.decode(String.self, forKey: .registrationID)
-        guard sequence > 0, !channelID.isEmpty, !registrationID.isEmpty else {
+    public init(userInfo: [AnyHashable: Any]) throws {
+        guard let kind = (userInfo["kind"] as? String).flatMap(Kind.init(rawValue:)),
+              let channelID = userInfo["channelID"] as? String, !channelID.isEmpty,
+              let registrationID = userInfo["registrationID"] as? String, !registrationID.isEmpty,
+              let number = userInfo["sequence"] as? NSNumber,
+              CFGetTypeID(number) != CFBooleanGetTypeID(),
+              let sequence = number as? Int, sequence > 0, sequence < Int.max else {
             throw DecodingError.dataCorrupted(.init(
-                codingPath: decoder.codingPath,
+                codingPath: [],
                 debugDescription: "A push requires channel and registration IDs and a positive sequence."))
         }
-        self.init(kind: try values.decode(Kind.self, forKey: .kind), channelID: channelID,
-                  sequence: sequence, registrationID: registrationID)
-    }
-
-    public init(userInfo: [AnyHashable: Any]) throws {
-        var fields: [String: Any] = [:]
-        for key in CodingKeys.allCases {
-            fields[key.rawValue] = userInfo[key.rawValue]
-        }
-        self = try JSONDecoder().decode(Self.self, from: JSONSerialization.data(withJSONObject: fields))
-    }
-
-    public var userInfo: [String: Any] {
-        ["kind": kind.rawValue, "channelID": channelID, "sequence": sequence, "registrationID": registrationID]
+        self.init(kind: kind, channelID: channelID, sequence: sequence, registrationID: registrationID)
     }
 }

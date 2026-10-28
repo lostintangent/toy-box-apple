@@ -388,9 +388,15 @@ question. The service must match the current registration before resolving ident
 The fixtures are `Tests/ChannelKitTests/Fixtures/push-request.apns`, `push-completion.apns` and
 `push-activity.apns`. Use the selected simulator's actual registration ID for routed alert proof.
 
-`MobileNotificationEnricher.start(_:completion:)` is the shared production service and local
-simulator-proof path. It reads the selected registration, fetches the catalog and original request
-through `ChannelAPI`, and applies the unchanged Mac text policy, including the 400-character limit.
+`MobileNotificationEnricher.start(_:completion:)` receives the original `UNNotificationRequest`
+in both the production service and local simulator-proof path. The server's title, generic body,
+category, sound and routing are the complete fallback. The enricher checks the selected
+registration once at start. A mismatch clears only the category, preventing Reply without
+discarding the original alert. Matched request and completion alerts request a widget reload.
+It fetches the catalog and original request through `ChannelAPI`. Only a successful lookup
+within three seconds enriches a copy of the original, using the unchanged Mac text policy and
+400-character limit. Unreachable servers, missing channels, malformed routing and expiry
+deliver the original unchanged. There is no notification catalog cache.
 Request identity uses the real shared `AgentAvatarView` rendering and an incoming donated
 `INSendMessageIntent`. The enriched local metadata adds the resolved requester's `handle` for Reply;
 that handle is not part of the APNs routing contract. Completion uses the Mac task-count text and
@@ -402,12 +408,9 @@ presentation must retain both the sender's identity and the channel's name.
 Named group banners use the requester's same real avatar as the intent's group image, rather
 than falling back to the app icon.
 
-The three-second enrichment budget includes cache preparation. Expiry delivers once without
-waiting for canceled work, and late work cannot create a duplicate. The snapshot publisher also
-caches the selected registration's catalog in `notification-catalog.json` for generic offline
-alerts with valid cached identity. Failed lookups never use cached questions or task details as
-fresh text. Missing or mismatched registration gets plain Toy Box content, no action and no routing.
-Delivery rechecks the registration to prevent an in-flight lookup crossing a server switch.
+The three-second budget includes preparation and enrichment. Expiry delivers once without
+waiting for canceled work, and late work cannot create a duplicate or replace a newer request.
+When the server is unreachable, the unchanged alert says "Toy Box" rather than a cached channel name.
 `simctl push` does not invoke the notification service on this runtime. Actual service invocation
 remains a real-APNs device check.
 

@@ -23,6 +23,8 @@ struct MobileWidgetSnapshotPublisherTests {
         #expect(!waiting.isOffline)
         #expect(waiting.updatedAt == now)
         #expect(fixture.paths == ["/api/v1/channels", "/api/v1/channels/studio/messages"])
+        #expect(Set(try FileManager.default.contentsOfDirectory(atPath: directory.path))
+            == [MobilePushRegistrationStore.fileName, NeedsYouSnapshot.fileName])
 
         try fixture.replaceCatalog(Self.catalog(waiting: false))
         let relaunched = try MobileWidgetSnapshotPublisher(directory: directory, avatarPNG: { _ in nil }, reload: {})

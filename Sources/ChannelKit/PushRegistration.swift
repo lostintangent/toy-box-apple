@@ -14,7 +14,7 @@ public struct PushRegistration: Codable, Equatable, Sendable {
     }
 }
 
-public struct PushSubscription: Codable, Equatable, Sendable {
+public struct PushSubscription: Encodable, Equatable, Sendable {
     public var token: String?
     public var startedAt: Date?
 
@@ -24,12 +24,6 @@ public struct PushSubscription: Codable, Equatable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey { case token, startedAt }
-
-    public init(from decoder: any Decoder) throws {
-        let values = try decoder.container(keyedBy: CodingKeys.self)
-        self.init(token: try values.decodeIfPresent(String.self, forKey: .token),
-                  startedAt: try values.decodeIfPresent(Double.self, forKey: .startedAt).map(Date.init(timeIntervalSince1970:)))
-    }
 
     public func encode(to encoder: any Encoder) throws {
         var values = encoder.container(keyedBy: CodingKeys.self)

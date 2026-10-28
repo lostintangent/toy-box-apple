@@ -18,12 +18,14 @@ struct MobileNotificationEnricherTests {
         catalog.members.append(.init(id: "other", name: "Other", channelId: "other-channel"))
         let fetched = catalog
         let png = try #require(UIImage(systemName: "star.fill")?.pngData())
+        var donated: INSendMessageIntent?
         let enricher = MobileNotificationEnricher(
-            directory: directory, avatarPNG: { _ in png }, fetch: { _, _ in .init(catalog: fetched) })
-        enricher.start(Self.payload(registration: registration)) { _ in }
+            directory: directory, avatarPNG: { _ in png }, fetch: { _, _ in .init(catalog: fetched) },
+            donate: { donated = $0 })
+        enricher.start(Self.request(registration: registration)) { _ in }
         let work = try #require(enricher.work)
         await work.value
-        let intent = try #require(enricher.pendingIntent)
+        let intent = try #require(donated)
         #expect(intent.speakableGroupName?.spokenPhrase == "Studio")
         #expect(intent.conversationIdentifier == "\(registration.serverURL):studio")
         #expect(intent.recipients?.count == 1)
@@ -35,12 +37,13 @@ struct MobileNotificationEnricherTests {
     }
 
     @Test(arguments: [ChannelPushPayload.Kind.request, .completion])
-    @MainActor func resolvedAlertsUseTheSharedTextAndRealCatalogIdentity(kind: ChannelPushPayload.Kind) async throws {
+    @MainActor func resolvedAlertsEnrichTheOriginalWithSharedTextAndRealIdentity(kind: ChannelPushPayload.Kind) async throws {
         let directory = Self.directory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let registration = try MobilePushRegistrationStore(directory: directory).select(serverURL: "https://server.test")
         let catalog = Self.catalog()
         let question = Self.question()
+        let original = Self.request(kind: kind, registration: registration)
         var rendered: [ChannelAgent] = []
         var events: [String] = []
         let enricher = MobileNotificationEnricher(directory: directory, avatarPNG: { agent in
@@ -50,12 +53,9 @@ struct MobileNotificationEnricherTests {
             #expect(api.baseURL.absoluteString == registration.serverURL)
             #expect(payload.kind == kind)
             return .init(catalog: catalog, messages: [question])
-        }, reloadWidgets: { events.append("reload") })
+        }, reloadWidgets: { events.append("reload") }, donate: { _ in })
         var delivered: UNNotificationContent?
-        enricher.start(Self.payload(kind: kind, registration: registration)) {
-            delivered = $0
-            events.append("delivered")
-        }
+        enricher.start(original) { delivered = $0; events.append("delivered") }
         let work = try #require(enricher.work)
         await work.value
         enricher.expire()
@@ -65,7 +65,9 @@ struct MobileNotificationEnricherTests {
         #expect(content.categoryIdentifier == kind.rawValue)
         #expect(content.threadIdentifier == "\(registration.serverURL):studio")
         #expect(content.userInfo["registrationID"] as? String == registration.registrationID)
-        #expect(content.interruptionLevel == .active)
+        #expect(content.userInfo["extra"] as? String == "untouched")
+        #expect(content.badge == original.content.badge)
+        #expect(original.content.title == "Toy Box")
         switch kind {
         case .request:
             let lead = ChannelAgent.lead(id: "studio", profile: catalog.lead)
@@ -81,40 +83,28 @@ struct MobileNotificationEnricherTests {
             #expect(content.body == NotificationText.completionBody(tasks: catalog.channels[0].tasks))
             #expect(content.userInfo["handle"] == nil)
         }
-        let cached = try MobileNotificationCatalogCache.read(directory: directory)
-        #expect(cached.registration == registration)
-        #expect(cached.catalog == catalog)
     }
 
-    @Test @MainActor func theDeadlineDeliversCachedIdentityOnceWithoutWaitingForCancelledWork() async throws {
+    @Test @MainActor func theDeadlineDeliversTheOriginalOnceWithoutWaitingForCancelledWork() async throws {
         let directory = Self.directory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let registration = try MobilePushRegistrationStore(directory: directory).select(serverURL: "https://server.test")
-        let catalog = Self.catalog()
-        try MobileNotificationCatalogCache(registration: registration, catalog: catalog).write(directory: directory)
-        let network = EnrichmentGate()
-        let timer = EnrichmentGate()
-        let timerStarted = EnrichmentGate()
-        let didDeliver = EnrichmentGate()
-        var rendered: [ChannelAgent] = []
-        let enricher = MobileNotificationEnricher(directory: directory, avatarPNG: { agent in
-            rendered.append(agent)
+        let original = Self.request(registration: registration)
+        let network = EnrichmentGate(), timer = EnrichmentGate(), timerStarted = EnrichmentGate(), didDeliver = EnrichmentGate()
+        let enricher = MobileNotificationEnricher(directory: directory, avatarPNG: { _ in
+            Issue.record("Expired work must not render an avatar.")
             return nil
         }, fetch: { _, _ in
             await network.wait()
             #expect(Task.isCancelled)
-            return .init(catalog: catalog, messages: [Self.question()])
+            return .init(catalog: Self.catalog(), messages: [Self.question()])
         }, pause: { duration in
-            #expect(duration <= .seconds(3))
-            #expect(duration >= .zero)
+            #expect(duration <= .seconds(3) && duration >= .zero)
             await timerStarted.open()
             await timer.wait()
         })
         var delivered: [UNNotificationContent] = []
-        enricher.start(Self.payload(registration: registration)) {
-            delivered.append($0)
-            Task { await didDeliver.open() }
-        }
+        enricher.start(original) { delivered.append($0); Task { await didDeliver.open() } }
         let work = try #require(enricher.work)
         await timerStarted.wait()
         #expect(delivered.isEmpty)
@@ -122,87 +112,115 @@ struct MobileNotificationEnricherTests {
         await didDeliver.wait()
         #expect(MobileNotificationEnricher.contentDeadline == .seconds(3))
         #expect(delivered.count == 1)
-        #expect(delivered.first?.title == "Studio")
-        #expect(delivered.first?.body == NotificationText.waitingBody)
-        #expect(delivered.first?.subtitle == NotificationText.subtitle(requester: catalog.lead.name))
-        #expect(rendered.map(\.name) == [catalog.lead.name])
+        #expect(delivered.first === original.content)
         await network.open()
         await work.value
         enricher.expire()
         #expect(delivered.count == 1)
     }
 
-    @Test @MainActor func anUnreachableServerUsesGenericCompletionTextRatherThanCachedTaskDetails() async throws {
+    @Test(arguments: [Duration.milliseconds(2999), .seconds(3)])
+    @MainActor func lookupMustFinishBeforeTheThreeSecondBoundary(elapsed: Duration) async throws {
         let directory = Self.directory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let registration = try MobilePushRegistrationStore(directory: directory).select(serverURL: "https://server.test")
-        try MobileNotificationCatalogCache(registration: registration, catalog: Self.catalog()).write(directory: directory)
+        let original = Self.request(registration: registration)
+        let clock = EnrichmentClock(), timer = EnrichmentGate()
         let enricher = MobileNotificationEnricher(directory: directory, avatarPNG: { _ in nil }, fetch: { _, _ in
-            throw URLError(.cannotConnectToHost)
-        })
+            await clock.advance(by: elapsed)
+            return .init(catalog: Self.catalog(), messages: [Self.question()])
+        }, pause: { _ in await timer.wait() }, now: { clock.instant }, donate: { _ in })
         var delivered: UNNotificationContent?
-        enricher.start(Self.payload(kind: .completion, registration: registration)) { delivered = $0 }
+        enricher.start(original) { delivered = $0 }
         let work = try #require(enricher.work)
         await work.value
-        #expect(delivered?.title == "Studio")
-        #expect(delivered?.body == NotificationText.completionBody(tasks: []))
-        #expect(delivered?.categoryIdentifier == ChannelNotificationCategory.completion)
+        await timer.open()
+        #expect((delivered === original.content) == (elapsed >= .seconds(3)))
+        #expect(delivered?.title == (elapsed < .seconds(3) ? "Studio" : "Toy Box"))
     }
 
-    @Test @MainActor func aDifferentRegistrationGetsNoIdentityActionRoutingOrNetworkLookup() throws {
+    @Test(arguments: [false, true])
+    @MainActor func unreachableOrMissingChannelsDeliverTheOriginal(missing: Bool) async throws {
         let directory = Self.directory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let registration = try MobilePushRegistrationStore(directory: directory).select(serverURL: "https://server.test")
-        try MobileNotificationCatalogCache(registration: registration, catalog: Self.catalog()).write(directory: directory)
+        let original = Self.request(kind: .completion, registration: registration)
+        var reloads = 0
+        let enricher = MobileNotificationEnricher(directory: directory, avatarPNG: { _ in nil }, fetch: { _, _ in
+            if !missing { throw URLError(.cannotConnectToHost) }
+            return .init(catalog: .init(lead: Self.catalog().lead, channels: []))
+        }, reloadWidgets: { reloads += 1 })
+        var delivered: UNNotificationContent?
+        enricher.start(original) { delivered = $0 }
+        let work = try #require(enricher.work)
+        await work.value
+        #expect(delivered === original.content)
+        #expect(reloads == 1)
+    }
+
+    @Test @MainActor func aDifferentRegistrationClearsOnlyTheCategoryWithoutLookupOrWidgetReload() throws {
+        let directory = Self.directory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try MobilePushRegistrationStore(directory: directory).select(serverURL: "https://server.test")
+        let other = MobilePushRegistration(serverURL: "https://other.test", registrationID: UUID().uuidString)
+        let original = Self.request(registration: other)
         let enricher = MobileNotificationEnricher(directory: directory, avatarPNG: { _ in
             Issue.record("A mismatched notification must not resolve identity.")
             return nil
         }, fetch: { _, _ in
             Issue.record("A mismatched notification must not fetch.")
             throw CancellationError()
-        }, reloadWidgets: {
-            Issue.record("A mismatched notification must not request a widget reload.")
-        })
+        }, reloadWidgets: { Issue.record("A mismatched notification must not reload widgets.") })
         var delivered: UNNotificationContent?
-        enricher.start(.init(kind: .request, channelID: "studio", sequence: 15, registrationID: UUID().uuidString)) {
-            delivered = $0
-        }
+        enricher.start(original) { delivered = $0 }
+        let expected = try #require(original.content.mutableCopy() as? UNMutableNotificationContent)
+        expected.categoryIdentifier = ""
         #expect(enricher.work == nil)
-        #expect(delivered?.title == "Toy Box")
-        #expect(delivered?.userInfo.isEmpty == true)
-        #expect(delivered?.categoryIdentifier.isEmpty == true)
-        #expect(delivered?.threadIdentifier.isEmpty == true)
+        #expect(delivered?.isEqual(expected) == true)
+        #expect(original.content.categoryIdentifier == "request")
     }
 
-    @Test @MainActor func aServerChangeDuringLookupCannotDeliverOrCacheTheOldServersQuestion() async throws {
+    @Test @MainActor func replacingARequestExpiresTheOriginalAndIgnoresItsLateLookup() async throws {
         let directory = Self.directory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let registration = try MobilePushRegistrationStore(directory: directory).select(serverURL: "https://server.test")
+        let first = Self.request(registration: registration)
+        let second = Self.request(registration: registration, sequence: 16)
         let network = EnrichmentGate()
-        let enricher = MobileNotificationEnricher(directory: directory, avatarPNG: { _ in nil }, fetch: { _, _ in
-            await network.wait()
-            return .init(catalog: Self.catalog(), messages: [Self.question()])
-        })
-        var delivered: UNNotificationContent?
-        enricher.start(Self.payload(registration: registration)) { delivered = $0 }
-        let work = try #require(enricher.work)
-        try MobilePushRegistrationStore(directory: directory).select(serverURL: "https://other.test")
+        let enricher = MobileNotificationEnricher(directory: directory, avatarPNG: { _ in nil }, fetch: { _, payload in
+            if payload.sequence == 15 { await network.wait() }
+            return .init(catalog: Self.catalog())
+        }, donate: { _ in })
+        var delivered: [UNNotificationContent] = []
+        enricher.start(first) { delivered.append($0) }
+        let firstWork = try #require(enricher.work)
+        enricher.start(second) { delivered.append($0) }
+        let secondWork = try #require(enricher.work)
+        await secondWork.value
         await network.open()
-        await work.value
-        #expect(delivered?.title == "Toy Box")
-        #expect(delivered?.userInfo.isEmpty == true)
-        #expect(delivered?.categoryIdentifier.isEmpty == true)
-        #expect(!FileManager.default.fileExists(
-            atPath: directory.appendingPathComponent(MobileNotificationCatalogCache.fileName).path))
+        await firstWork.value
+        enricher.expire()
+        #expect(delivered.count == 2)
+        #expect(delivered.first === first.content)
+        #expect(delivered.last?.userInfo["sequence"] as? Int == 16)
     }
 
     private static func directory() -> URL {
         FileManager.default.temporaryDirectory.appendingPathComponent("tbm-enrichment-\(UUID())")
     }
 
-    private static func payload(kind: ChannelPushPayload.Kind = .request,
-                                registration: MobilePushRegistration) -> ChannelPushPayload {
-        .init(kind: kind, channelID: "studio", sequence: 15, registrationID: registration.registrationID)
+    private static func request(kind: ChannelPushPayload.Kind = .request,
+                                registration: MobilePushRegistration, sequence: Int = 15) -> UNNotificationRequest {
+        let content = UNMutableNotificationContent()
+        content.title = "Toy Box"
+        content.body = kind == .request ? NotificationText.waitingBody : NotificationText.completionBody(tasks: [])
+        content.sound = .default
+        content.categoryIdentifier = kind.rawValue
+        content.threadIdentifier = "original-thread"
+        content.badge = 4
+        content.userInfo = ["kind": kind.rawValue, "channelID": "studio", "sequence": sequence,
+                            "registrationID": registration.registrationID, "extra": "untouched"]
+        return UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
     }
 
     private static func catalog() -> ChannelCatalog {
@@ -219,15 +237,18 @@ struct MobileNotificationEnricherTests {
     }
 }
 
+@MainActor private final class EnrichmentClock {
+    var instant = ContinuousClock.now
+    func advance(by duration: Duration) { instant += duration }
+}
+
 private actor EnrichmentGate {
     private var isOpen = false
     private var waiters: [CheckedContinuation<Void, Never>] = []
-
     func wait() async {
         if isOpen { return }
         await withCheckedContinuation { waiters.append($0) }
     }
-
     func open() {
         isOpen = true
         let pending = waiters
