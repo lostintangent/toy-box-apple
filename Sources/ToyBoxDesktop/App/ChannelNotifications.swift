@@ -98,15 +98,17 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
 
     private func deliver(_ event: Event, serverURL: String) {
         Task {
+            let request = event.kind == .request ? await resolve(event) : nil
             await add(UNNotificationRequest(
                 identifier: "\(serverURL):\(event.channel.id):\(event.kind.rawValue):\(event.sequence)",
-                content: await content(for: event, serverURL: serverURL), trigger: nil))
+                content: Self.content(for: event, serverURL: serverURL, request: request), trigger: nil))
             // A request answered while its text was on the way is withdrawn as soon as it lands.
             withdrawStale(force: true)
         }
     }
 
-    func content(for event: Event, serverURL: String) async -> UNNotificationContent {
+    static func content(for event: Event, serverURL: String,
+                        request: ChannelRequestMessage? = nil) -> UNNotificationContent {
         let content = UNMutableNotificationContent()
         content.title = event.channel.name
         content.sound = .default
@@ -116,10 +118,9 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
                                    "sequence": event.sequence, "kind": event.kind.rawValue, "serverURL": serverURL]
         switch event.kind {
         case .request:
-            if let request = await resolve(event) {
+            if let request {
                 content.body = NotificationText.requestBody(request.message, agents: request.agents)
                 if let requester = request.requester {
-                    content.subtitle = NotificationText.subtitle(requester: requester.name)
                     info["handle"] = agentHandleFromName(requester.name)
                 }
             } else {

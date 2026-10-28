@@ -2344,7 +2344,7 @@ opening the window.
 | Part | Request | Completion |
 | --- | --- | --- |
 | Title | Channel name | Channel name |
-| Subtitle | "[Agent] needs your reply", using the requester's current name | None |
+| Subtitle | None | None |
 | Body | The request's plain text (see below) | One top-level task: "Completed “[title]”". Otherwise "All [n] tasks completed" |
 | Hidden previews placeholder | "Waiting for your reply" | "Tasks completed" |
 | Category and actions | `request`, with Reply | `completion`, with no actions |

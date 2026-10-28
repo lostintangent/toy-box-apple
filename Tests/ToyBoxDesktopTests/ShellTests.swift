@@ -1050,6 +1050,21 @@ struct NotificationTests {
                 seenThrough: seen, requestSequence: request, updatedAt: "2026-10-22T08:00:00Z")
     }
 
+    @MainActor @Test func requestAlertsLeadWithTheChannelWithoutLosingTheirReplyHandle() {
+        let content = ChannelNotifications.content(
+            for: .init(channel: channel("Workshop"), sequence: 12, kind: .request),
+            serverURL: "https://example.test",
+            request: ChannelRequestMessage(message: message("Which entrance should we ship?"), agents: agents)
+        )
+        #expect(content.title == "Workshop")
+        #expect(content.subtitle.isEmpty)
+        #expect(content.body == "Which entrance should we ship?")
+        #expect(content.userInfo["handle"] as? String == "ada-lovelace")
+        #expect(content.userInfo["channelID"] as? String == "Workshop")
+        #expect(content.userInfo["sequence"] as? Int == 12)
+        #expect(content.categoryIdentifier == "request")
+    }
+
     @Test func requestBodyReadsLikeTheTranscript() {
         let text = """
             @lead @ada-lovelace, which [entrance](https://example.test/a) should we ship?
