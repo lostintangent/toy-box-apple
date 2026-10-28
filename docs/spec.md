@@ -380,8 +380,8 @@ registration. Restored Activities survive that wait and replay deferred tokens a
 Allow notifications off unsubscribes only the two notification topics, retaining Follow and the address.
 One serial queue owns reload and delivery, using one five-minute tick and one 100ms debounce.
 The tick enforces the eight-hour lifetime and refreshes unchanged Activities within ten minutes.
-Only successful topic delivery advances its dedupe/request identity. Endings and new waiting requests
-use high priority. Only dead-token APNs responses prune; provider/authentication failures retain
+Any successful Activity delivery advances its topic's dedupe/request identity. Endings and new
+waiting requests use high priority. Only dead-token APNs responses prune; provider/authentication failures retain
 subscriptions for a later tick.
 The demo stores all state in memory and never contacts APNs.
 `bun run demo --completed` opts into a separate `completed-demo` channel for completion-alert proof,
