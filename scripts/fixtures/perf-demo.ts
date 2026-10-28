@@ -21,7 +21,7 @@ import http from "node:http";
 import { resolve } from "node:path";
 import { createHistoryFixture, historyChannelID, writeHistoryPage } from "./history-fixture.ts";
 import { createScrollFixture, scrollChannelID, writeScrollImage } from "./scroll-fixture.ts";
-import { root } from "../lib.ts";
+import { root } from "../shared/lib.ts";
 import { referenceFactory, type Agent, type Message, type Response, type Snapshot, type Status } from "./types.ts";
 
 const reference = resolve(process.argv[2] ?? resolve(root, "../toy-box-Minecraft"));

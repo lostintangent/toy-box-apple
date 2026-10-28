@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
-import { root } from "../lib.ts";
+import { root } from "../shared/lib.ts";
 import { referenceFactory, type Demo, type Snapshot } from "./types.ts";
 import { createDemoPushRoutes } from "./push-routes.ts";
 import { writeHistoryPage } from "./history-fixture.ts";

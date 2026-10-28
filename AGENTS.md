@@ -18,8 +18,10 @@ view.
 ## Build and run
 
 - Use Bun 1.4.4 and root `package.json` commands after `bun install --frozen-lockfile`.
-  `scripts/dev/` owns development, `scripts/release/` packaging/release checks, and
-  `scripts/fixtures/` demo servers/fixtures. Use native `bun check`, without installing TypeScript.
+  `scripts/desktop/` and `scripts/mobile/` own their platform tooling, `scripts/shared/` their
+  common helpers, and `scripts/fixtures/` demo servers/fixtures. Platform release tooling lives
+  in each platform's `release/`, with Mac packaging in `bundle/` and updates in `sparkle/`.
+  Platform folders never import each other. Use native `bun check`, without installing TypeScript.
   `bun run test:release` and `bun run lint:workflows` cover releases and workflows.
 - Use `bun run test` for Swift tests. Bare `bun test` only runs the TypeScript tooling tests.
 - Mac builds use only Command Line Tools. iOS uses Xcode's toolchain/SDK through SwiftPM,
@@ -199,7 +201,7 @@ use demo servers only for write scripts. Never skip or retry actions.
   `APP_STORE_CONNECT_USERNAME` and numeric `APP_STORE_CONNECT_APP_ID`. Apple tools read the password
   only through `@env:NOTARY_APP_PASSWORD`, locally and in CI. Never pass a password as a shell argument.
   Only the user supplies it. For a local validation from the repo root:
-  `NOTARY_APP_PASSWORD="$(bash scripts/release/read-password.sh 'App-specific password: ')" bun run mobile --testflight --validate-only --build-number N`
+  `NOTARY_APP_PASSWORD="$(bash scripts/shared/read-password.sh 'App-specific password: ')" bun run mobile --testflight --validate-only --build-number N`
 - **TestFlight bundle:** actual Xcode/SDK `DT*` metadata, matching version/build on every component,
   `ITSAppUsesNonExemptEncryption=false`, production push and no `get-task-allow`. Validate/upload require
   `--build-number` / `BUILD_NUMBER`; choose an unused App Store build. Build-only may use the plist's
@@ -266,7 +268,7 @@ comparisons and retained regression contracts are in [docs/test-history.md](docs
 
 | Test | Opt-in | Owner / condition for restoring merge-gate coverage |
 | --- | --- | --- |
-| Simulator fake-compiler icon case, `scripts/dev/mobile-icon.test.ts` | `TOY_BOX_TEST_MOBILE_ICON_TIMING=1` | Core, `mobile-icon-tooling-readiness`: identify stalled command and add deterministic completion coverage |
+| Simulator fake-compiler icon case, `scripts/shared/mobile-icon.test.ts` | `TOY_BOX_TEST_MOBILE_ICON_TIMING=1` | Core, `mobile-icon-tooling-readiness`: identify stalled command and add deterministic completion coverage |
 | `ImageViewerLiveTextTests.onlyTheSettledCurrentImageIsAnalyzedAndTheWindowRemembersIt` | `TOY_BOX_TEST_LIVE_TEXT_ANALYSIS=1` | Transcript: identify cause and add deterministic analysis-gating coverage |
 | `imageStripOverflowRespondsToWheelInput` | `TOY_BOX_TEST_IMAGE_STRIP_SCROLLING=1` | Composer: native wheel animation requires awake/unlocked Mac, so keep per-frame/WindowServer checks opt-in |
 | Three `MainActorTurnTests` occupancy probes | `TOY_BOX_TEST_MAIN_ACTOR_TIMING=1 bun run test --filter MainActorTurnTests` | Core, t340 (`client-test-actor-isolation`): isolate probes and replace timing-dependent readiness with controlled events. Run locally before changing launch network work |
@@ -378,8 +380,8 @@ analysis errors/completion/text detection and load.
   export. No key backup is required: on a new Mac it creates a replacement, authorized by the same
   app's Developer ID signing requirement. Keep the bundle ID and Apple team unchanged.
   Agents never run setup or read the key.
-  Opt-in `scripts/release/tests/native.test.ts` uses a throwaway CryptoKit file, never Keychain.
-  Run it with `TOY_BOX_BUNDLE=<app> SPARKLE_TOOLS_DIR=<tools> bun test scripts/release/tests/native.test.ts`.
+  Opt-in `scripts/desktop/bundle/native.test.ts` uses a throwaway CryptoKit file, never Keychain.
+  Run it with `TOY_BOX_BUNDLE=<app> SPARKLE_TOOLS_DIR=<tools> bun test scripts/desktop/bundle/native.test.ts`.
 - Locally: `SPARKLE_ED_PUBLIC_KEY=... SIGNING_IDENTITY=SHA1 BUILD_NUMBER=N NOTARY_PROFILE=toy-box-channels-notary
   bun run release vX.Y.Z`. Without `NOTARY_PROFILE` the zip is named `SIGNED-UNNOTARIZED` and
   is never published. `PREVIOUS_APPCAST=path` enforces increasing local build numbers. CI compares the
