@@ -12,9 +12,6 @@ struct ToyBoxMobileApp: App {
     var body: some Scene {
         WindowGroup {
             RootView()
-                #if DEBUG && targetEnvironment(simulator)
-                .mobileFoundationProofIfRequested()
-                #endif
                 .environment(appDelegate.model)
                 .environment(appDelegate.model.following)
                 .preferredColorScheme(appearance.colorScheme)

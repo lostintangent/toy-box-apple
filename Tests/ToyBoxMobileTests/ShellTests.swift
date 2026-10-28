@@ -103,26 +103,6 @@ struct ShellTests {
         }
     }
 
-    @Test(arguments: [ChannelPushPayload.Kind.request, .completion])
-    func proofAlertsUseActualCatalogSequencesAndTheCurrentRegistration(kind: ChannelPushPayload.Kind) throws {
-        let catalog = ChannelCatalog(
-            lead: .init(name: "Lead", role: "Coordinator", avatar: .init(mark: "M4 12H20", color: "#123456")),
-            channels: [
-                Channel(id: "empty", name: "Empty", model: .init(provider: "test", name: "test"),
-                        updatedAt: "2026-10-27T00:00:00Z"),
-                Channel(id: "waiting", name: "Waiting", model: .init(provider: "test", name: "test"),
-                        requestSequence: 42, updatedAt: "2026-10-27T00:00:00Z"),
-                Channel(id: "finished", name: "Finished", model: .init(provider: "test", name: "test"),
-                        completedSequence: 51, updatedAt: "2026-10-27T00:00:00Z"),
-            ])
-        let registration = MobilePushRegistration(serverURL: "http://localhost:3210", registrationID: "current")
-        let payload = try ChannelNotifications.proofPayload(kind: kind, catalog: catalog, registration: registration)
-        #expect(payload.kind == kind)
-        #expect(payload.channelID == (kind == .request ? "waiting" : "finished"))
-        #expect(payload.sequence == (kind == .request ? 42 : 51))
-        #expect(payload.registrationID == registration.registrationID)
-        #expect(try ChannelPushPayload(userInfo: payload.userInfo) == payload)
-    }
     #endif
 
     @Test func registrationKeepsItsAddressAndChangesOnlyNotificationTopicsWhenDisabled() async throws {
