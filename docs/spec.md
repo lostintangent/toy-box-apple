@@ -225,7 +225,7 @@ plist's build. There is no local counter or TestFlight lease; use your own scrat
 The user supplies an Apple Distribution identity and three explicit, unexpired App Store Connect
 profiles through the existing `MOBILE_PROVISIONING_PROFILE`, `MOBILE_WIDGET_PROVISIONING_PROFILE`
 and `MOBILE_NOTIFICATION_PROVISIONING_PROFILE` selectors. They must share a team/certificate, grant
-the App Group and required Communication Notifications capabilities, and grant production Push on
+the App Group capability, and grant production Push on
 the host. Development, ad-hoc, enterprise and wildcard profiles are rejected. Extensions embed
 their own profiles and sign before the host, whose actual signed entitlements are verified.
 There is no `get-task-allow`, bundled server address, DEBUG driver or proof fixture. First launch
@@ -405,16 +405,13 @@ It fetches the catalog and original request through `ChannelAPI`. Only a success
 within three seconds enriches a copy of the original, using the unchanged Mac text policy and
 400-character limit. Unreachable servers, missing channels, malformed routing and expiry
 deliver the original unchanged. There is no notification catalog cache.
-Request identity uses the real shared `AgentAvatarView` rendering and an incoming donated
-`INSendMessageIntent`. The enriched local metadata adds the resolved requester's `handle` for Reply;
-that handle is not part of the APNs routing contract. Completion uses the Mac task-count text and
-the app icon, with no Reply category.
-The intent names the channel as its group, identifies the local user as the recipient, and
-counts the local user and channel agents other than the incoming sender as recipients.
-Its conversation identifier remains server-qualified. Native
-presentation must retain both the sender's identity and the channel's name.
-Named group banners use the requester's same real avatar as the intent's group image, rather
-than falling back to the app icon.
+Request alerts show the channel name as the title and the question as the body, without a
+requester subtitle. They use the Toy Box app icon, with no communication intent or donation.
+The enriched local metadata retains the resolved requester's `handle` for Reply, which is not
+part of the APNs routing contract. Completion uses the Mac task-count text and the app icon,
+with no Reply category. Both keep their server-qualified channel thread.
+Neither the app nor the notification extension requires the Communication Notifications
+capability. Widget avatars still use the real shared `AgentAvatarView` rendering.
 
 The three-second budget includes preparation and enrichment. Expiry delivers once without
 waiting for canceled work, and late work cannot create a duplicate or replace a newer request.

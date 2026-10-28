@@ -106,7 +106,7 @@ export function selectDevelopmentSigning(profiles: MobileProvisioningProfile[], 
 
 export const mobileProfileSetupHelp = "Follow “Your Apple steps” in the shared Next milestone proposal: "
     + `create ${mobileAppGroup}, the app and two extension App IDs, then download three iOS development profiles. `
-    + "The app needs sandbox Push and Communication Notifications; the notification extension needs Communication Notifications; "
+    + "The app needs sandbox Push; "
     + "all three need the App Group. Wildcard profiles are not accepted. No signing assets were created.";
 
 export function selectMobileDevelopmentSigning(profiles: MobileProvisioningProfile[], identities: MobileSigningIdentity[],
@@ -127,7 +127,7 @@ export function selectMobileSigning(profiles: MobileProvisioningProfile[], ident
         return selected.every(value => value !== undefined) ? [selected] : [];
     }));
     if (!sets.length) throw new Error(`No compatible app/widget/notification ${distribution ? "App Store" : "development"} profile set shares one ${distribution ? "Apple Distribution" : "development"} identity and team. `
-        + (distribution ? "Select three explicit iOS App Store Connect profiles with the App Group, production Push on the host, and Communication Notifications on the host and service. No profiles or certificates were created."
+        + (distribution ? "Select three explicit iOS App Store Connect profiles with the App Group and production Push on the host. No profiles or certificates were created."
             : mobileProfileSetupHelp));
     if (new Set(sets.map(set => set[0]!.profile.team)).size !== 1) {
         throw new Error("Multiple signing teams match all three bundles. Select the intended profiles with "

@@ -175,8 +175,7 @@ use demo servers only for write scripts. Never skip or retry actions.
   unlock your own iOS 27+ iPhone. Multiple eligible phones require `--device-id`.
 - **Profiles:** three explicit, unexpired development profiles, one per bundle, sharing a team and
   available certificate and covering the phone's UDID. All require `group.dev.toybox.mobile`.
-  The app also needs development `aps-environment` and Communication Notifications, and the notification
-  extension needs Communication Notifications. Never accept wildcard profiles. Select with
+  The app also needs development `aps-environment`. Never accept wildcard profiles. Select with
   `MOBILE_PROVISIONING_PROFILE`, `MOBILE_WIDGET_PROVISIONING_PROFILE`,
   `MOBILE_NOTIFICATION_PROVISIONING_PROFILE`. Missing profiles fail before build/install and point to
   "Your Apple steps" in the Release 2 proposal. The user creates the App Group, three explicit App IDs
@@ -196,7 +195,7 @@ use demo servers only for write scripts. Never skip or retry actions.
   `--build-only` is unsigned and needs no profiles or credentials. All modes omit a bundled server,
   DEBUG proof code and fixtures. Use `mobile-testflight` under your own `SCRATCH_PATH`.
 - **TestFlight setup:** the user creates the App Store Connect app and three explicit App Store
-  profiles, with the same App Group/Communication Notifications capabilities and production Push.
+  profiles, with the same App Group capability and production Push on the app.
   Select them with the same `MOBILE_*_PROVISIONING_PROFILE` variables. Set
   `APP_STORE_CONNECT_USERNAME` and numeric `APP_STORE_CONNECT_APP_ID`. Apple tools read the password
   only through `@env:NOTARY_APP_PASSWORD`, locally and in CI. Never pass a password as a shell argument.

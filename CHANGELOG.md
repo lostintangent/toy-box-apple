@@ -3,6 +3,7 @@
 ## iPhone 0.1.1
 
 - Show channel and message details in notifications from HTTP servers, including Tailscale hosts.
+- Lead with the channel name and question in alerts, without a repeated requester name or avatar.
 - Retry a failed notification setup when the app becomes active again.
 - Hide notification options while notifications are off. Requests default on and completions default off, without changing saved preferences.
 
