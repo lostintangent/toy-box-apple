@@ -31,7 +31,7 @@ struct ShellTests {
     private func withNotifications(
         register: @escaping (ChannelAPI, String, PushRegistration) async throws -> Bool = { _, _, _ in false },
         addNotice: @escaping (UNNotificationRequest) async throws -> Void = { _ in },
-        _ work: (UserDefaults, MobileNotificationRegistration, ChannelNotifications) async throws -> Void
+        _ work: @MainActor (UserDefaults, MobileNotificationRegistration, ChannelNotifications) async throws -> Void
     ) async throws {
         try await withDefaults { defaults in
             try await withRegistrationStore { store in
