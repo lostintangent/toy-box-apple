@@ -4,34 +4,20 @@ import ToyBoxMobileIntegrations
 import UserNotifications
 
 @objc(ToyBoxMobileNotificationService)
-// System entry points only enqueue work. Mutable extension state stays on the main actor.
 final class NotificationService: UNNotificationServiceExtension, @unchecked Sendable {
-    @MainActor private var enrichment: MobileNotificationEnricher?
-    private let logger = Logger(subsystem: "dev.toybox.mobile.notification", category: "Enrichment")
+    private let logger = Logger(subsystem: "dev.toybox.mobile.notification", category: "Notification")
 
     override func didReceive(_ request: UNNotificationRequest,
                              withContentHandler contentHandler: @escaping (UNNotificationContent) -> Void) {
         logger.notice("Notification service received a request.")
         let delivery = NotificationDelivery(request, contentHandler)
         Task { @MainActor in
-            do {
-                enrichment?.expire()
-                let operation = try MobileNotificationEnricher()
-                enrichment = operation
-                operation.start(delivery.request, completion: delivery.call)
-            } catch {
-                logger.error("Could not prepare notification enrichment: \(error.localizedDescription)")
-                delivery.call(delivery.request.content)
-            }
+            delivery.call(MobileNotificationHandler().process(delivery.request.content))
         }
-    }
-
-    override func serviceExtensionTimeWillExpire() {
-        Task { @MainActor in enrichment?.expire() }
     }
 }
 
-// The enricher owns delivery-once. This bridge transfers the immutable request and Objective-C callback.
+// Transfer the immutable request and Objective-C callback onto the main actor.
 private struct NotificationDelivery: @unchecked Sendable {
     let request: UNNotificationRequest
     let callback: (UNNotificationContent) -> Void
