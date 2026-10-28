@@ -442,9 +442,12 @@ remains a real-APNs device check.
 
 The icon badge counts channels whose `channelStatus` is `waiting`, exactly like the widget.
 Reading does not close an open request. Unread messages and completed channels do not count.
-The server sends the current `aps.badge` with alerts and badge-only pushes after catalog changes,
-including a zero when the last request closes or its channel is deleted. Those pushes contain no
-alert, sound or `content-available`, so iOS applies them without launching the app.
+The server sends the current `aps.badge` only in badge-only pushes after catalog changes, including
+a zero when the last request closes or its channel is deleted. Alerts carry no count and do not
+acknowledge badge delivery, so an alert delayed by its service extension cannot overwrite a newer
+count. Badge-only pushes contain no alert, sound or `content-available`, so iOS applies them without
+launching the app. In the foreground, the notification delegate permits `.badge` for these pushes,
+without a banner, list entry or sound, and suppresses them when notifications are disabled.
 One install receives one badge update even when both alert topics are subscribed.
 Only request or completion subscriptions qualify, never a Live Activity alone. When Allow
 notifications is off, the app clears the badge and suppresses future catalog badge writes,
