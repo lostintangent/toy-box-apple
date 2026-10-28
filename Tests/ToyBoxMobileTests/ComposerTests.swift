@@ -428,7 +428,8 @@ struct ComposerTests {
         }
     }
 
-    @Test(arguments: [ColorScheme.light, .dark], [DynamicTypeSize.large, .accessibility5])
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["TOY_BOX_TEST_MOBILE_AUDIENCE_RENDERING"] == "1"),
+          arguments: [ColorScheme.light, .dark], [DynamicTypeSize.large, .accessibility5])
     func audienceCapsuleIsSeparateFromIts44PointRowAndGrowsWithText(
         scheme: ColorScheme, size: DynamicTypeSize
     ) throws {
@@ -446,7 +447,9 @@ struct ComposerTests {
         let pixels = try renderedPixels(image)
         let center = image.width / 2
         let filledRows = (0..<image.height).filter { pixels[($0 * image.width + center) * 4 + 3] > 0 }
-        let first = try #require(filledRows.first)
+        let nontransparentPixels = stride(from: 3, to: pixels.count, by: 4).filter { pixels[$0] > 0 }.count
+        let first = try #require(filledRows.first,
+            "Audience render: \(scheme), \(size), \(image.width)x\(image.height), center \(center), nontransparent pixels \(nontransparentPixels)")
         let last = try #require(filledRows.last)
         #expect(last - first + 1 >= 24, "Audience has a visible badge, not only bare text")
         if size == .large {

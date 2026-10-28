@@ -2,6 +2,34 @@
 
 Incident records moved from AGENTS.md on 2026-10-27, with their evidence and restoration boundaries preserved. Current gates and instructions are in [AGENTS.md](../AGENTS.md#test-reliability). A passing rerun does not close an incident or restore a quarantined test.
 
+## Phone audience-capsule rendering
+
+- `ToyBoxMobileTests/ComposerTests.audienceCapsuleIsSeparateFromIts44PointRowAndGrowsWithText`
+  is quarantined behind `TOY_BOX_TEST_MOBILE_AUDIENCE_RENDERING=1`. On 2026-10-28, main
+  `8316411` failed the iOS job in [run 40760049648, attempt 1](https://github.com/lostintangent/toy-box-apple/actions/runs/40760049648/attempts/1).
+  The light / `.large` case reached `ComposerTests.swift:449` with `filledRows == []`, so the
+  center column had no nontransparent pixels. The image existed and passed its minimum-height
+  check. Neither the full image's alpha coverage nor its dimensions were logged. The other
+  three argument cases passed. The Mobile suite finished with 233 tests and one issue.
+- The retained log is `ci-40760049648-ios-failed.log` in Lead's session files. It records
+  `IOSurfaceClientSetSurfaceNotify failed e00002c7` during the preceding placeholder-render
+  test, which passed, before the capsule failure at 20:16:29 UTC. That message does not
+  establish why the capsule's center was transparent. The test dates to `236f404`, and the
+  failing merge changed the Live Activity logo, not the composer or this test. No production
+  cause or first-render race has been identified. The requested CI rerun is evidence only,
+  not a restoration condition.
+- Core owns t465, `mobile-audience-capsule-rendering`: distinguish an incomplete or blank
+  `ImageRenderer` result from misplaced badge geometry, identify the cause and add deterministic
+  regression coverage before restoring the merge gate. Future failures record appearance,
+  Dynamic Type, image dimensions, sampled center and total nontransparent pixel count.
+  The four original cases and all visual/geometry thresholds remain unchanged behind the
+  opt-in. No sleeps, retries or production changes were added. The other composer tests remain
+  in the default suite, but do not replace this visual capsule contract.
+- After quarantine, `SCRATCH_PATH=/tmp/tbm-core-t465 bun run test:mobile` passed all five
+  suites. The 233-test Mobile suite reported the capsule probe as its single opt-in skip.
+  Core retained the output as `t465-mobile-gate.log`. This verifies the default gate and
+  compilation of the quarantined body, not the cause of the original failure.
+
 ## Mobile icon tooling
 
 - The Simulator fake-compiler icon case in `scripts/shared/mobile-icon.test.ts` is quarantined behind
