@@ -2,7 +2,7 @@
 import { resolve } from "node:path";
 import { createHistoryFixture, historyChannelID, historyMessageCount, historyPageSize, writeHistoryPage }
     from "./history-fixture.ts";
-import { root } from "../lib.ts";
+import { root } from "../shared/lib.ts";
 import { referenceFactory, type Snapshot } from "./types.ts";
 
 const reference = resolve(process.argv[2] ?? resolve(root, "../toy-box-Minecraft"));

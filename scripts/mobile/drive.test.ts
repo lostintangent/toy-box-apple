@@ -1,0 +1,252 @@
+import { expect, test } from "bun:test";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { MobileDriveSession, parseMobileDrive, parseMobileDriveStatus, runMobileDriveCommand } from "./drive.ts";
+
+test("drive actions are strict and native display identifiers are normalized", () => {
+    expect(parseMobileDrive([{ tap: "Studio demo" }, { type: "Hello" }, { wait: "Needs you", timeout: 20 },
+        { screenshot: "reply", display: 3 }, { back: true }, { fold: false }])).toEqual([
+        { tap: "Studio demo" }, { type: "Hello" }, { wait: "Needs you", timeout: 20 },
+        { screenshot: "reply", display: "3" }, { back: true }, { fold: false },
+    ]);
+    expect(parseMobileDrive([{ screenshot: "default" }])).toEqual([{ screenshot: "default", display: "1" }]);
+    expect(parseMobileDrive([{ back: true, ifPresent: true }])).toEqual([{ back: true, ifPresent: true }]);
+    expect(parseMobileDrive([{ action: "Reply", on: "message-12" }]))
+        .toEqual([{ action: "Reply", on: "message-12" }]);
+    expect(parseMobileDrive([{ wait: "Replying to Lead", absent: true }]))
+        .toEqual([{ wait: "Replying to Lead", absent: true }]);
+    for (const direction of ["up", "down", "left", "right"] as const) {
+        expect(parseMobileDrive([{ scroll: direction, on: "overview-form", timeout: 20 }]))
+            .toEqual([{ scroll: direction, on: "overview-form", timeout: 20 }]);
+        expect(parseMobileDrive([{ drag: direction, on: "conversation-transcript" }]))
+            .toEqual([{ drag: direction, on: "conversation-transcript" }]);
+    }
+    expect(parseMobileDrive([{ posture: "folded" }, { posture: "unfolded", timeout: 60 }]))
+        .toEqual([{ posture: "folded" }, { posture: "unfolded", timeout: 60 }]);
+    expect(parseMobileDrive([{ menuAction: "Edit Channel" }])).toEqual([{ menuAction: "Edit Channel" }]);
+    for (const value of [[], {}, [{}], [{ tap: "x", wait: "x" }], [{ type: "" }], [{ back: false }],
+        [{ fold: 1 }], [{ tap: "x", display: 1 }], [{ screenshot: "x", display: 0 }],
+        [{ screenshot: "x", display: "primary" }], [{ wait: "x", timeout: 0 }],
+        [{ wait: "x", timeout: 61 }], [{ tap: "x", typo: true }], [{ tap: "x", ifPresent: true }],
+        [{ back: true, ifPresent: "yes" }], [{ action: "Reply" }], [{ action: "Reply", on: "" }],
+        [{ tap: "Reply", on: "message-12" }], [{ wait: "x", absent: "yes" }], [{ tap: "x", absent: true }],
+        [{ scroll: "down" }], [{ scroll: "down", on: "" }], [{ scroll: "forward", on: "form" }],
+        [{ scroll: "up", on: "form", display: 1 }],
+        [{ posture: "open" }], [{ posture: 0 }], [{ posture: "folded", fold: true }],
+        [{ posture: "folded", display: 1 }], [{ posture: "folded", scroll: "down", on: "form" }],
+        [{ posture: "folded", on: "form" }], [{ drag: "up" }], [{ drag: "forward", on: "list" }],
+        [{ drag: "up", on: "list", scroll: "up" }], [{ menuAction: "" }], [{ menuAction: "Edit", on: "menu" }],
+        [{ menuAction: "Edit", tap: "Edit" }]]) {
+        expect(() => parseMobileDrive(value)).toThrow();
+    }
+});
+
+test("posture is observed by the app and never invokes a host fold command", async () => {
+    const session = new MobileDriveSession(drive([{ posture: "unfolded" }]), { capture: unexpected, fold: unexpected });
+    expect(await session.accept({ ...frame, state: "running" })).toBeUndefined();
+    expect(session.completed).toBe(false);
+    await session.accept({ ...frame, state: "completed", viewport: [871, 669] });
+    expect(session.completed).toBe(true);
+    expect(session.screenshots).toEqual([]);
+});
+
+test("malformed app statuses never look like completion", () => {
+    expect(() => parseMobileDriveStatus({ state: "completed" })).toThrow("invalid drive status");
+    expect(() => parseMobileDriveStatus({ state: "completed", step: -1, labels: [], viewport: [] })).toThrow();
+    expect(() => parseMobileDriveStatus({ state: "ready", step: 0, labels: [7], viewport: [] })).toThrow();
+    expect(() => parseMobileDriveStatus({ state: "ready", ...frame, traits: { interfaceStyle: "dark" } })).toThrow();
+    expect(() => parseMobileDriveStatus({ state: "ready", ...frame, traitsError: 3 })).toThrow();
+    const traits = { contentSizeCategory: "UICTContentSizeCategoryL", interfaceStyle: "dark" };
+    expect(parseMobileDriveStatus({ state: "ready", ...frame, traits }).traits).toEqual(traits);
+    expect(() => parseMobileDriveStatus({ state: "ready", ...frame, traits, traitsError: "Ambiguous" })).toThrow();
+});
+
+test("status preserves observed native traits or an explicit selection failure without inventing defaults", () => {
+    const status: ReturnType<typeof parseMobileDriveStatus> = {
+        state: "completed", step: 0, labels: [], viewport: [386, 678],
+    };
+    expect(parseMobileDriveStatus(status)).toEqual(status);
+    const traits = { contentSizeCategory: "UICTContentSizeCategoryAccessibilityXXXL", interfaceStyle: "dark" };
+    expect(parseMobileDriveStatus({ ...status, traits })).toEqual({ ...status, traits });
+    expect(parseMobileDriveStatus({ ...status, traitsError: "ambiguousContent" }))
+        .toEqual({ ...status, traitsError: "ambiguousContent" });
+    for (const invalid of [{ traits: null }, { traits: [] }, { traits: {} },
+        { traits: { ...traits, contentSizeCategory: "" } }, { traits: { ...traits, interfaceStyle: 0 } },
+        { traitsError: "" }, { traitsError: false }, { traits, traitsError: "missingContent" }]) {
+        expect(() => parseMobileDriveStatus({ ...status, ...invalid })).toThrow();
+    }
+});
+
+const frame = { step: 0, labels: ["Message"], viewport: [440, 956] };
+const unexpected = async () => { throw new Error("Unexpected host action"); };
+function drive(steps: unknown, output = "/captures") {
+    return { steps: parseMobileDrive(steps), directory: "", script: "", output };
+}
+
+test("settled captures preserve each frame before acknowledgement and never repeat", async () => {
+    const output = await mkdtemp(join(tmpdir(), "tbm-mobile-drive-state-"));
+    try {
+        const captures: string[] = [];
+        let finish!: () => void;
+        const captured = new Promise<void>(resolve => { finish = resolve; });
+        const session = new MobileDriveSession(drive([
+            { screenshot: "reply" }, { screenshot: "keyboard.png", display: 3 },
+        ], output), {
+            async capture(path, display) {
+                captures.push(`${display}:${path}`);
+                await captured;
+            },
+            fold: unexpected,
+        });
+        const first = { ...frame, state: "ready" as const };
+        const acknowledgement = session.accept(first);
+        expect(session.screenshots).toEqual([]);
+        expect(session.completed).toBe(false);
+        expect(await Bun.file(join(output, "reply.json")).exists()).toBe(false);
+        finish();
+        expect(await acknowledgement).toEqual({ step: 0 });
+        expect(await session.accept(first)).toBeUndefined();
+        const second = { ...frame, state: "ready" as const, step: 1, labels: ["Message", "Keyboard shown"] };
+        expect(await session.accept(second)).toEqual({ step: 1 });
+        await session.accept({ ...second, state: "completed", labels: ["Later state"], viewport: [956, 440] });
+        expect(session.completed).toBe(true);
+        expect(session.screenshots).toEqual([join(output, "reply.png"), join(output, "keyboard.png")]);
+        expect(captures).toEqual([`1:${join(output, "reply.png")}`, `3:${join(output, "keyboard.png")}`]);
+        expect(JSON.parse(await readFile(join(output, "reply.json"), "utf8"))).toEqual(first);
+        expect(JSON.parse(await readFile(join(output, "keyboard.json"), "utf8"))).toEqual(second);
+    } finally {
+        await rm(output, { recursive: true, force: true });
+    }
+});
+
+test("a screenshot companion write failure cannot acknowledge success or repeat the capture", async () => {
+    const output = await mkdtemp(join(tmpdir(), "tbm-mobile-drive-state-failure-"));
+    try {
+        let captures = 0;
+        const session = new MobileDriveSession(drive([{ screenshot: "reply" }], join(output, "missing")), {
+            async capture() { captures++; }, fold: unexpected,
+        });
+        const acknowledgement = await session.accept({ ...frame, state: "ready" });
+        expect(acknowledgement?.error).toContain("ENOENT");
+        expect(session.screenshots).toEqual([]);
+        expect(await session.accept({ ...frame, state: "ready" })).toBeUndefined();
+        expect(captures).toBe(1);
+        await expect(session.accept({ ...frame, state: "completed" })).rejects.toThrow("ENOENT");
+        expect(session.completed).toBe(false);
+    } finally {
+        await rm(output, { recursive: true, force: true });
+    }
+});
+
+test("requested native content traits are verified before capture and on completion", async () => {
+    const output = await mkdtemp(join(tmpdir(), "tbm-mobile-drive-traits-"));
+    try {
+        let captures = 0;
+        const traits = { contentSizeCategory: "UICTContentSizeCategoryAccessibilityXXXL", interfaceStyle: "dark" };
+        const session = new MobileDriveSession(drive([{ screenshot: "large-dark" }], output), {
+            async capture() { captures += 1; }, fold: unexpected,
+        }, traits);
+        await expect(session.accept({ ...frame, state: "ready" })).rejects.toThrow("did not report effective");
+        await expect(session.accept({ ...frame, state: "ready", traitsError: "Ambiguous native windows" }))
+            .rejects.toThrow("Ambiguous native windows");
+        for (const mismatched of [
+            { ...traits, contentSizeCategory: "UICTContentSizeCategoryL" }, { ...traits, interfaceStyle: "light" },
+        ]) {
+            await expect(session.accept({ ...frame, state: "ready", traits: mismatched })).rejects.toThrow("expected");
+        }
+        expect(captures).toBe(0);
+        expect(await session.accept({ ...frame, state: "ready", traits })).toEqual({ step: 0 });
+        expect(captures).toBe(1);
+        expect(JSON.parse(await readFile(join(output, "large-dark.json"), "utf8")).traits).toEqual(traits);
+        await expect(session.accept({ ...frame, state: "completed" })).rejects.toThrow("did not report effective");
+        expect(session.completed).toBe(false);
+        await session.accept({ ...frame, state: "completed", traits });
+        expect(session.completed).toBe(true);
+    } finally {
+        await rm(output, { recursive: true, force: true });
+    }
+});
+
+test("trait verification also protects scripts without host captures", async () => {
+    const session = new MobileDriveSession(drive([{ wait: "Channels" }]),
+        { capture: unexpected, fold: unexpected }, { interfaceStyle: "dark" });
+    await session.accept({ ...frame, state: "running" });
+    await expect(session.accept({ ...frame, state: "completed",
+        traits: { contentSizeCategory: "UICTContentSizeCategoryL", interfaceStyle: "light" } }))
+        .rejects.toThrow("saved app override");
+    expect(session.completed).toBe(false);
+});
+
+test("an app failure reports its exact step and accessible labels", async () => {
+    const session = new MobileDriveSession(drive([{ tap: "Send" }]), { capture: unexpected, fold: unexpected });
+    await expect(session.accept({ ...frame, state: "failed", labels: ["Studio demo", "Message"],
+        error: "Timed out waiting for Send." })).rejects.toThrow(
+        "Drive step 1 failed: Timed out waiting for Send.\nVisible accessibility labels:\n  Studio demo\n  Message");
+});
+
+test("host errors are acknowledged once and cannot become successful completion", async () => {
+    let captures = 0;
+    const session = new MobileDriveSession(drive([{ screenshot: "reply" }]), {
+        async capture() { captures++; throw new Error("Display unavailable"); }, fold: unexpected,
+    });
+    expect(await session.accept({ ...frame, state: "ready" })).toEqual({ step: 0, error: "Display unavailable" });
+    expect(await session.accept({ ...frame, state: "ready" })).toBeUndefined();
+    expect(captures).toBe(1);
+    expect(session.screenshots).toEqual([]);
+    await expect(session.accept({ ...frame, state: "completed" })).rejects.toThrow("Display unavailable");
+    expect(session.completed).toBe(false);
+});
+
+test("completion cannot skip actions or host acknowledgements", async () => {
+    const host = { capture: unexpected, fold: unexpected };
+    const session = new MobileDriveSession(drive([{ screenshot: "folded" }, { tap: "Back" }]), host);
+    await expect(session.accept({ ...frame, state: "completed" })).rejects.toThrow("before every scripted action");
+    await expect(session.accept({ ...frame, state: "completed", step: 1 })).rejects.toThrow("skipped host acknowledgement");
+    await expect(session.accept({ ...frame, state: "running", step: 2 })).rejects.toThrow("unknown step");
+});
+
+test("fold uses the same single acknowledgement handshake", async () => {
+    const folds: boolean[] = [];
+    const session = new MobileDriveSession(drive([{ fold: false }]), {
+        capture: unexpected, async fold(closed) { folds.push(closed); },
+    });
+    expect(await session.accept({ ...frame, state: "ready" })).toEqual({ step: 0 });
+    expect(await session.accept({ ...frame, state: "ready" })).toBeUndefined();
+    await session.accept({ ...frame, state: "completed", viewport: [810, 1080] });
+    expect(folds).toEqual([false]);
+    expect(session.completed).toBe(true);
+});
+
+for (const reason of ["timeout", "cancellation"]) {
+    test(`a stalled host ${reason} waits for child termination and cannot acknowledge success`, async () => {
+        const deadline = new AbortController();
+        const cancellation = new AbortController();
+        let finish!: (exit: number) => void;
+        const exited = new Promise<number>(resolve => { finish = resolve; });
+        let stopped = false;
+        let settled = false;
+        const session = new MobileDriveSession(drive([{ screenshot: "reply" }]), {
+            async capture(_path, _display, signal) {
+                await runMobileDriveCommand(["controlled-child"], {}, signal, (_args, childSignal) => {
+                    childSignal.addEventListener("abort", () => { stopped = true; }, { once: true });
+                    const empty = () => new ReadableStream<Uint8Array>({ start(controller) { controller.close(); } });
+                    return { exited, stdout: empty(), stderr: empty(), kill() { stopped = true; } };
+                });
+            },
+            fold: unexpected,
+        });
+        const pending = session.accept({ ...frame, state: "ready" }, cancellation.signal, deadline.signal);
+        void pending.then(() => { settled = true; });
+        const controller = reason === "timeout" ? deadline : cancellation;
+        controller.abort(new Error(`Host ${reason}`));
+        expect(stopped).toBe(true);
+        expect(settled).toBe(false);
+        finish(137);
+        expect(await pending).toEqual({ step: 0, error: `Host ${reason}` });
+        expect(session.screenshots).toEqual([]);
+        expect(await session.accept({ ...frame, state: "ready" })).toBeUndefined();
+        await expect(session.accept({ ...frame, state: "completed" })).rejects.toThrow(`Host ${reason}`);
+        expect(session.completed).toBe(false);
+    });
+}

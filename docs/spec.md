@@ -203,8 +203,11 @@ architectures and signatures. A real `generate_appcast`/`sign_update` round trip
 throwaway CryptoKit key file and verifies rejection of a modified archive, never accessing the
 default Sparkle Keychain entry.
 
-Tooling is grouped under `scripts/dev/`, `scripts/release/` and `scripts/fixtures/`, with every
-entry point exposed by the root `package.json`. Bun 1.4.4 is pinned in the package metadata and CI,
+Tooling is grouped by platform under `scripts/desktop/` and `scripts/mobile/`, with common helpers
+under `scripts/shared/` and demo servers under `scripts/fixtures/`. Each platform owns its
+`release/` tooling. Mac packaging and Sparkle updates live in `desktop/bundle/` and
+`desktop/sparkle/`. Platform folders never import each other. Tests sit beside the code they cover,
+and every command keeps its root `package.json` entry point. Bun 1.4.4 is pinned in the package metadata and CI,
 and setup-bun is commit-pinned on both runner platforms. Scripts use TypeScript, Bun Shell, native
 file and XML APIs, and `bun test`. The sole `.sh` helper uses Bash's silent `read -rs` for the
 user-only credential prompt. Native Swift helpers retain Security-framework identity export and
@@ -242,7 +245,7 @@ app-specific password. After setting the account/app identifiers, a local valida
 repo root prompts silently and passes only an environment reference to Apple's tool:
 
 ```sh
-NOTARY_APP_PASSWORD="$(bash scripts/release/read-password.sh 'App-specific password: ')" bun run mobile --testflight --validate-only --build-number N
+NOTARY_APP_PASSWORD="$(bash scripts/shared/read-password.sh 'App-specific password: ')" bun run mobile --testflight --validate-only --build-number N
 ```
 
 Omit `--validate-only` to upload. No password is passed as a shell argument or stored by the

@@ -42,18 +42,18 @@ jobs:
           bun-version: 1.4.4
       - run: bun install --frozen-lockfile --ignore-scripts
       - name: Test native icon tooling
-        run: bun test scripts/dev/mobile-icon.test.ts
+        run: bun test scripts/shared/mobile-icon.test.ts
       - name: Test ChannelClient with a single cooperative worker
         env:
           SCRATCH_PATH: ${{ runner.temp }}/toy-box-tests
           NSUnbufferedIO: 'YES'
           LIBDISPATCH_COOPERATIVE_POOL_STRICT: '1'
-        run: bun scripts/dev/test-watchdog.ts --filter ChannelClientTests
+        run: bun scripts/shared/test-watchdog.ts --filter ChannelClientTests
       - name: Test
         env:
           SCRATCH_PATH: ${{ runner.temp }}/toy-box-tests
           NSUnbufferedIO: 'YES'
-        run: bun scripts/dev/test-watchdog.ts --skip ChannelClientTests
+        run: bun scripts/shared/test-watchdog.ts --skip ChannelClientTests
       - name: Upload blocked test diagnostics
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -129,10 +129,8 @@ jobs:
         run: bun check
       - name: Lint workflows
         run: bun run lint:workflows
-      - name: Test development tooling
-        run: bun test scripts/dev
-      - name: Test release tooling with fake commands
-        run: bun run test:release
+      - name: Test tooling with fake commands
+        run: bun test scripts/shared scripts/desktop scripts/mobile
 
   release:
     needs: [test, release-checks]
@@ -180,7 +178,7 @@ jobs:
           grep -q '"WaitingRequestEntity"' "$actions"
           grep -q '"com.apple.appintents.entity.Indexed"' "$actions"
           tools="$(bun run sparkle-tools)"
-          TOY_BOX_BUNDLE="$app" SPARKLE_TOOLS_DIR="$tools" bun test scripts/release/tests/native.test.ts
+          TOY_BOX_BUNDLE="$app" SPARKLE_TOOLS_DIR="$tools" bun test scripts/desktop/bundle/native.test.ts
       - name: Check update signing configuration and build number
         env:
           SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
