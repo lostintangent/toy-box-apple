@@ -184,7 +184,7 @@ struct ComposerTests {
         let suite = "composer-cold-focus-\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
-        let app = AppModel(arguments: [], environment: [:], bundleDefaultServerURL: nil, defaults: defaults)
+        let app = AppModel(arguments: [], environment: [:], defaults: defaults)
         let interaction = ChannelInteraction(isInspectorPresented: false)
         if requested { interaction.focusComposer() }
         let (session, target) = try dictatingSession(MobileTestRecognizer())

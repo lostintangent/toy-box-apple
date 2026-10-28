@@ -231,6 +231,10 @@ their own profiles and sign before the host, whose actual signed entitlements ar
 There is no `get-task-allow`, bundled server address, DEBUG driver or proof fixture. First launch
 asks the tester for a server.
 
+The phone selects its server from `--server`, then `TOY_BOX_SERVER_URL`, then saved Settings,
+in that order. Launch overrides are session-only and never overwrite saved Settings. With none
+configured, it shows Connect to Toy Box. There is no bundle fallback.
+
 Every component declares the `arm64` required device capability and has the same version/build,
 `ITSAppUsesNonExemptEncryption=false` and real Xcode,
 SDK, platform and build-machine metadata. The privacy manifests declare host-local UserDefaults
