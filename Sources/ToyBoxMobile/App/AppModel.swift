@@ -63,7 +63,7 @@ final class AppModel {
          defaults: UserDefaults = .standard, session: URLSession = .shared,
          notifications: ChannelNotifications? = nil, following: ChannelFollowController? = nil) {
         self.notifications = notifications ?? ChannelNotifications(defaults: defaults)
-        self.following = following ?? ChannelFollowController(defaults: defaults)
+        self.following = following ?? ChannelFollowController()
         self.defaults = defaults
         self.session = session
         self.notifications.onRegistrationCreated = { [weak self] registration in
@@ -229,7 +229,6 @@ final class AppModel {
             _ = notifications.currentRegistration
             _ = notifications.isRegistrationReady
             _ = catalog
-            _ = isActive
         } onChange: { [weak self] in
             Task { @MainActor in self?.observeFollowing() }
         }
@@ -239,9 +238,7 @@ final class AppModel {
     private func configureFollowing() {
         following.configure(
             registration: notifications.currentRegistration, isRegistrationReady: notifications.isRegistrationReady,
-            catalog: catalog, isActive: isActive,
-            acquire: { [weak self] in self?.acquire($0) },
-            release: { [weak self] in self?.release($0) }
+            catalog: catalog
         )
     }
 

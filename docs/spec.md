@@ -406,7 +406,9 @@ Delivery rechecks the registration to prevent an in-flight lookup crossing a ser
 `simctl push` does not invoke the notification service on this runtime. Actual service invocation
 remains a real-APNs device check.
 
-`ChannelActivityAttributes` has `channelID`, `channelName` and `registrationID`. Its `ContentState`
+`ChannelActivityAttributes` has `channelID`, `channelName`, `registrationID` and the original
+`startedAt`, persisted by ActivityKit rather than a separate app dictionary. Attributes are not
+part of the APNs payload. Its `ContentState`
 has working agent identities, top-level tasks done/total, optional waiting request sequence,
 `updatedAt` and optional ending. Its custom Codable implementation uses Unix seconds for
 `updatedAt` with an ordinary JSONDecoder, as ActivityKit requires. Active state is stale after
@@ -418,7 +420,8 @@ ActivityKit receives the APNs `aps` envelope, including `update`/`end`,
 throughout. The Activity fixtures cover working, quiet, request, completed, other ending and
 stale states. `push-activity.apns` is the request state; its five named sibling fixtures cover
 the others. Every payload fits APNs' 4 KB limit. Contract tests decode the fixture content with the
-native codec. Simulator checks use real Follow against the demo; remote delivery is proven on device.
+native codec. Simulator checks prove real Follow start against the demo. Subsequent content updates
+and automatic endings require server APNs delivery and are proven on device.
 
 `ChannelActivityLink` carries channel ID, registration ID and an optional positive request sequence
 in `toybox-desktop://activity` URLs. The receiving app checks the selected registration before
@@ -2950,11 +2953,14 @@ changing the team's work. A failed start tears down its partial Activity and sho
 native "Couldn't follow this channel" alert, "Try again." and OK.
 
 The controller requests an ActivityKit push token and registers it with the current server's
-registration ID and signing-derived push environment. It persists each Activity's original
-start time across relaunch and token rotation. Registration writes are serialized per channel,
-so cleanup from an old follow cannot delete its successor's registration. Foreground content
-comes from the canonical `ContentState(state:updatedAt:)` projection, with a five-minute refresh
-only while its store is live. Following holds a counted channel connection and never marks read.
+acknowledged registration, inheriting its signing-derived push environment. The Activity's
+immutable attributes preserve its original start time across relaunch and token rotation.
+Registration writes are serialized per channel, so cleanup from an old follow cannot delete its
+successor's registration. Initial content uses `ContentState(state:updatedAt:)`. Only server push
+updates it afterward, including completion and task-list removal. Follow holds no channel connection,
+observes no catalog or foreground content, and never marks read. Channel deletion ends through
+the server with immediate dismissal. iOS ends the Activity at eight hours, and the server expires
+its subscription using the original `startedAt`; the app has no separate lifetime timer.
 Alert preferences do not start or stop an Activity.
 Activity content updates are non-alerting. A request's ordinary notification supplies its alert,
 so updating the Activity never adds a second alert to force the Dynamic Island onscreen.
