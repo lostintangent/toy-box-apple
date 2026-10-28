@@ -29,7 +29,7 @@ public struct ChannelActivityAttributes: Codable, Hashable, Sendable {
     }
 
     public enum Ending: String, Codable, Sendable {
-        case completed, stopped, expired, channelDeleted, serverChanged, tasksRemoved
+        case completed, channelDeleted, tasksRemoved
     }
 
     public struct ContentState: Codable, Hashable, Sendable {

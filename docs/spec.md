@@ -412,8 +412,9 @@ part of the APNs payload. Its `ContentState`
 has working agent identities, top-level tasks done/total, optional waiting request sequence,
 `updatedAt` and optional ending. Its custom Codable implementation uses Unix seconds for
 `updatedAt` with an ordinary JSONDecoder, as ActivityKit requires. Active state is stale after
-15 minutes. Confirmed endings have no stale date, and distinguish completion from Stop, expiry,
-deletion, server change and removal of the task list.
+15 minutes. Confirmed server endings have no stale date and use `completed`, `channelDeleted` or
+`tasksRemoved`. Local Stop and server changes dismiss the current content immediately without
+inventing an ending state.
 
 ActivityKit receives the APNs `aps` envelope, including `update`/`end`,
 `timestamp`, `content-state`, `stale-date` and optional `dismissal-date`, with Unix seconds

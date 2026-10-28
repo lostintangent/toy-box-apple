@@ -67,7 +67,7 @@ final class ChannelFollowController {
             let serverChanged = self.catalog != nil && self.catalog?.api.baseURL != catalog?.api.baseURL
             if registrationChanged || serverChanged {
                 let tracked = Set(entries.values.map { $0.activity.id })
-                for entry in Array(entries.values) { finish(entry, ending: .serverChanged) }
+                for entry in Array(entries.values) { finish(entry) }
                 for activity in client.activities() where !tracked.contains(activity.id) {
                     Task { await activity.end(activity.content) }
                 }
@@ -123,7 +123,7 @@ final class ChannelFollowController {
             monitorTokens(follow)
         } catch {
             let current = entry.map(isCurrent) ?? (self.registration == registration && starting.contains(store.id))
-            if let entry, isCurrent(entry) { finish(entry, ending: .stopped) }
+            if let entry, isCurrent(entry) { finish(entry) }
             if current {
                 starting.remove(store.id)
                 startFailed = true
@@ -138,7 +138,7 @@ final class ChannelFollowController {
 
     func stop(channelID: String) {
         guard let entry = entries[channelID] else { return }
-        finish(entry, ending: .stopped)
+        finish(entry)
     }
 
     func shutdown() {
@@ -245,15 +245,11 @@ final class ChannelFollowController {
         try await write.value
     }
 
-    private func finish(_ entry: Follow, ending: ChannelActivityAttributes.Ending) {
+    private func finish(_ entry: Follow) {
         guard isCurrent(entry) else { return }
-        var content = entry.activity.content
-        content.ending = ending
-        content.updatedAt = now()
-        content.waitingRequestSequence = nil
         forget(entry)
         deleteRegistration(entry)
-        Task { await entry.activity.end(content) }
+        Task { await entry.activity.end(entry.activity.content) }
     }
 
     private func forget(_ entry: Follow) {

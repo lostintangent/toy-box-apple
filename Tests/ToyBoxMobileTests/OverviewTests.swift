@@ -1150,10 +1150,12 @@ struct ChannelFollowTests {
         #expect(fixture.activities.first?.attributes.startedAt == fixture.originalDate)
         fixture.store.disconnect()
         #expect(fixture.controller.state(for: fixture.store) == .following)
-        fixture.controller.stop(channelID: fixture.store.id)
         let activity = try #require(fixture.activities.first)
+        let content = activity.content
+        fixture.date.addTimeInterval(60)
+        fixture.controller.stop(channelID: fixture.store.id)
         await fixture.wait { !activity.endings.isEmpty && fixture.completedUnregistrations == 1 }
-        #expect(activity.endings.first?.ending == .stopped)
+        #expect(activity.endings == [content])
         #expect(fixture.controller.state(for: fixture.store) == .unavailable)
         #expect(fixture.requests.map(\.method) == ["PUT", "DELETE"])
         #expect(!fixture.controller.startFailed)
@@ -1312,11 +1314,12 @@ struct ChannelFollowTests {
         defer { fixture.close() }
         await fixture.controller.follow(fixture.store)
         let activity = try #require(fixture.activities.first)
+        let content = activity.content
         fixture.heldMethod = "DELETE"
         fixture.controller.configure(registration: nil, isRegistrationReady: false, catalog: nil)
         await fixture.wait { !activity.endings.isEmpty && !fixture.pending.isEmpty }
         #expect(fixture.completedUnregistrations == 0)
-        #expect(activity.endings.last?.ending == .serverChanged)
+        #expect(activity.endings == [content])
         fixture.releaseWrites()
         await fixture.wait { fixture.completedUnregistrations == 1 }
         #expect(fixture.requests.map(\.method) == ["PUT", "DELETE"])

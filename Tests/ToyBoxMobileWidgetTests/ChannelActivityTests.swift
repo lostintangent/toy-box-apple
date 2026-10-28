@@ -55,9 +55,7 @@ struct ChannelActivityTests {
     }
 
     @Test func everyOtherEndingUsesTheOneApprovedEndedPresentation() {
-        let endings: [ChannelActivityAttributes.Ending] = [
-            .stopped, .expired, .channelDeleted, .serverChanged, .tasksRemoved,
-        ]
+        let endings: [ChannelActivityAttributes.Ending] = [.channelDeleted, .tasksRemoved]
         for ending in endings {
             let value = ChannelActivityPresentation(state: state(ending: ending), isStale: true)
             #expect(value.phase == .ended)

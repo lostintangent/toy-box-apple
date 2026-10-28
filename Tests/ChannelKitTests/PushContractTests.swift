@@ -131,7 +131,7 @@ struct PushContractTests {
         #expect(try JSONDecoder().decode(ChannelActivityAttributes.ContentState.self, from: encoded) == push.state)
         let json = try #require(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
         #expect(json["updatedAt"] as? Double == push.state.updatedAt.timeIntervalSince1970)
-        #expect(push.state.tasksTotal == 3)
+        #expect(push.state.tasksTotal == (name == "push-activity-ended" ? 0 : 3))
         switch name {
         case "push-activity-working":
             #expect(!push.state.workingAgents.isEmpty)
@@ -149,7 +149,8 @@ struct PushContractTests {
             #expect(push.state.ending == .completed)
             #expect(push.state.tasksDone == push.state.tasksTotal)
         case "push-activity-ended":
-            #expect(push.state.ending == .expired)
+            #expect(push.state.ending == .tasksRemoved)
+            #expect(push.state.tasksDone == 0)
         case "push-activity-stale":
             #expect(try #require(push.staleDate) < push.timestamp)
             #expect(push.state.updatedAt.timeIntervalSince1970 == push.timestamp - 16 * 60)
