@@ -32,9 +32,7 @@ struct SettingsView: View {
                     ForEach(AppAppearance.allCases) { value in Text(value.title).tag(value) }
                 }
             }
-            NotificationSettingsSection(notifications: model.notifications,
-                                        registrationError: model.notifications.registrationError,
-                                        retryRegistration: model.notifications.retryRegistration)
+            NotificationSettingsSection(notifications: model.notifications)
             intelligenceSection
             Section("About") {
                 LabeledContent("App", value: Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String

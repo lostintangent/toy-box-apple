@@ -74,7 +74,7 @@ final class AppModel {
         }
         self.notifications.onActivate = { [weak self] activation in
             await self?.openChannel(id: activation.channelID, sequence: activation.sequence,
-                                    focusComposer: activation.focusComposer, expectedServer: activation.serverURL)
+                                    expectedServer: activation.serverURL)
         }
         self.notifications.onReply = { [weak self] payload, text, handle in
             guard let self, self.notifications.isCurrent(payload), let catalog else { return .notSent }

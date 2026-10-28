@@ -3,8 +3,6 @@ import UserNotifications
 
 struct NotificationSettingsSection: View {
     @Bindable var notifications: ChannelNotifications
-    var registrationError: String?
-    var retryRegistration: () -> Void
 
     var body: some View {
         Section {
@@ -28,10 +26,10 @@ struct NotificationSettingsSection: View {
             if let error = notifications.error {
                 Text(error).foregroundStyle(.red)
             }
-            if notifications.isEnabled, registrationError != nil {
+            if notifications.isEnabled, notifications.registrationError != nil {
                 Text("Couldn't connect notifications to this server.")
                     .foregroundStyle(.red)
-                Button("Try Again", action: retryRegistration)
+                Button("Try Again", action: notifications.retryRegistration)
             }
         } header: {
             Text("Notifications")

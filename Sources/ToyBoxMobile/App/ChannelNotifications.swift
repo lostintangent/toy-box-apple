@@ -14,7 +14,6 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
         var channelID: String
         var sequence: Int?
         var serverURL: String
-        var focusComposer: Bool
     }
 
     struct Delivered: Equatable {
@@ -34,18 +33,17 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
         didSet {
             guard requests != oldValue else { return }
             defaults.set(requests, forKey: "requestNotifications")
-            preferencesDidChange()
+            updateRegistration()
         }
     }
     var completions: Bool {
         didSet {
             guard completions != oldValue else { return }
             defaults.set(completions, forKey: "completionNotifications")
-            preferencesDidChange()
+            updateRegistration()
         }
     }
 
-    @ObservationIgnored var onPreferencesChange: (() -> Void)?
     @ObservationIgnored var onRegistrationCreated: ((MobilePushRegistration) async -> Void)?
     @ObservationIgnored var onActivate: ((Activation) async -> Void)?
     @ObservationIgnored var onReply: ((ChannelPushPayload, String, String?) async -> ComposerNotificationReply.Outcome)?
@@ -145,7 +143,7 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
 
     func configure(api: ChannelAPI) {
         configuredAPI = api
-        if installedDelegate || didStart { prepareRegistration() }
+        if installedDelegate { prepareRegistration() }
     }
 
     private func prepareRegistration() {
@@ -201,7 +199,7 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
             enableAfterSettings = false
             setEnabled(true)
         }
-        preferencesDidChange()
+        updateRegistration()
     }
 
     func enable() async {
@@ -354,15 +352,9 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
     private static func proofContent(_ payload: ChannelPushPayload) async throws -> UNNotificationContent {
         let operation = try MobileNotificationEnricher()
         defer { operation.expire() }
-        var result: UNNotificationContent?
-        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-            operation.start(payload) {
-                result = $0
-                continuation.resume()
-            }
+        return await withCheckedContinuation { continuation in
+            operation.start(payload) { continuation.resume(returning: $0) }
         }
-        guard let result else { throw ProofFailure.noContent }
-        return result
     }
 
     static func proofPayload(kind: ChannelPushPayload.Kind, catalog: ChannelCatalog,
@@ -378,7 +370,7 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
     }
 
     private enum ProofFailure: LocalizedError {
-        case notConfigured, notDemoServer, registrationChanged, noContent
+        case notConfigured, notDemoServer, registrationChanged
         case noChannel(ChannelPushPayload.Kind)
 
         var errorDescription: String? {
@@ -386,18 +378,12 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
             case .notConfigured: "Connect to the demo server before preparing an alert."
             case .notDemoServer: "Use the local demo server on port 3210 for proof alerts."
             case .registrationChanged: "The selected server changed while preparing the alert."
-            case .noContent: "Notification enrichment produced no content."
             case .noChannel(.request): "The demo has no waiting request."
             case .noChannel(.completion): "The demo has no completed channel."
             }
         }
     }
     #endif
-
-    private func preferencesDidChange() {
-        updateRegistration()
-        onPreferencesChange?()
-    }
 
     private func updateRegistration() {
         guard hasLoadedAuthorization, currentRegistration != nil else { return }
@@ -408,7 +394,7 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
         guard enabled != value else { return }
         enabled = value
         defaults.set(value, forKey: "notificationsEnabled")
-        preferencesDidChange()
+        updateRegistration()
     }
 
     func isCurrent(_ payload: ChannelPushPayload) -> Bool {
@@ -475,7 +461,7 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
             }
             await onActivate?(Activation(
                 channelID: payload.channelID, sequence: payload.kind == .request ? payload.sequence : nil,
-                serverURL: currentRegistration.serverURL, focusComposer: false))
+                serverURL: currentRegistration.serverURL))
         default:
             break
         }
