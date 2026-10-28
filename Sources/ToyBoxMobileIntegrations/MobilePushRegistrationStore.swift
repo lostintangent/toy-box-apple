@@ -11,22 +11,6 @@ public final class MobilePushRegistrationStore {
     public static let fileName = "push-registration.json"
     public private(set) var current: MobilePushRegistration?
     private let file: URL
-    private struct TopicReceipt: Codable { var registrationID: String; var topics: [String] }
-
-    public func acknowledgedTopics(registrationID: String) throws -> [String]? {
-        do {
-            let receipt = try JSONDecoder().decode(TopicReceipt.self, from: Data(contentsOf: topicsFile))
-            return receipt.registrationID == registrationID ? receipt.topics : nil
-        } catch let error as CocoaError where error.code == .fileReadNoSuchFile { return nil }
-    }
-
-    public func acknowledge(topics: [String], registrationID: String) throws {
-        try JSONEncoder().encode(TopicReceipt(registrationID: registrationID, topics: topics))
-            .write(to: topicsFile, options: .atomic)
-        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: topicsFile.path)
-    }
-
-    private var topicsFile: URL { file.deletingLastPathComponent().appendingPathComponent("push-notification-topics.json") }
 
     public enum Failure: LocalizedError {
         case invalidServer, invalidRegistration

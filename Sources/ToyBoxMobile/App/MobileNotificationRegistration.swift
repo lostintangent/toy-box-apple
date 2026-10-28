@@ -166,15 +166,12 @@ final class MobileNotificationRegistration {
                     await onCreated?(current)
                     if desired != operation { continue }
                 }
-                if try created || store.acknowledgedTopics(registrationID: operation.registrationID) != operation.topics {
-                    for topic in ["requests", "completions"] {
-                        if operation.topics.contains(topic) {
-                            try await subscribe(operation.api, operation.registrationID, topic)
-                        } else {
-                            try await unsubscribe(operation.api, operation.registrationID, topic)
-                        }
+                for topic in ["requests", "completions"] {
+                    if operation.topics.contains(topic) {
+                        try await subscribe(operation.api, operation.registrationID, topic)
+                    } else {
+                        try await unsubscribe(operation.api, operation.registrationID, topic)
                     }
-                    try store.acknowledge(topics: operation.topics, registrationID: operation.registrationID)
                 }
                 if desired == operation { error = nil }
             } catch {
