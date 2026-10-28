@@ -170,8 +170,8 @@ public struct ChannelAPI: Sendable {
     }
 
     @discardableResult
-    public func register(_ input: PushRegistration) async throws -> Bool {
-        let (_, response) = try await response(for: commandRequest("PUT", ["api", "v1", "push", input.registrationID], body: input))
+    public func register(registrationID: String, _ input: PushRegistration) async throws -> Bool {
+        let (_, response) = try await response(for: commandRequest("PUT", ["api", "v1", "push", registrationID], body: input))
         guard response.statusCode == 201 || response.statusCode == 204 else { throw ChannelAPIError.invalidResponse }
         return response.statusCode == 201
     }
@@ -180,8 +180,8 @@ public struct ChannelAPI: Sendable {
         try await noContent("DELETE", ["api", "v1", "push", registrationID])
     }
 
-    public func subscribe(topic: String, _ input: PushSubscription) async throws {
-        try await noContent("PUT", ["api", "v1", "push", input.registrationID, "topics", topic], body: input)
+    public func subscribe(topic: String, registrationID: String, _ input: PushSubscription) async throws {
+        try await noContent("PUT", ["api", "v1", "push", registrationID, "topics", topic], body: input)
     }
 
     public func unsubscribe(topic: String, registrationID: String) async throws {

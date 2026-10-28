@@ -31,30 +31,32 @@ test("demo push routes keep alerts and follows independent and preserve the orig
         const put = (path: string, value: unknown) => fetch(base + path, {
             method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(value),
         });
-        const subscription = { registrationID: id, token: "aa", environment: "sandbox", startedAt: 1793086200 };
-        expect((await put(subscriptionPath, subscription)).status).toBe(204);
+        const subscription = { token: "aa", startedAt: 1793086200 };
+        expect((await put(subscriptionPath, subscription)).status).toBe(404);
         expect(routes.registrations.size).toBe(0);
-        expect(routes.subscriptions.size).toBe(1);
-        const registration = { registrationID: id, token: "bb", environment: "sandbox" as const };
+        expect(routes.subscriptions.size).toBe(0);
+        const registration = { token: "bb", environment: "sandbox" as const };
         expect((await put(registrationPath, registration)).status).toBe(201);
-        expect(routes.registrations.get(id)).toEqual(registration);
-        expect((await put(subscriptionPath, { ...subscription, token: "cc", startedAt: subscription.startedAt + 600 })).status).toBe(204);
+        expect(routes.registrations.get(id)).toEqual({ registrationID: id, ...registration });
+        expect((await put(subscriptionPath, { ...subscription, token: "cc" })).status).toBe(204);
         expect(routes.subscriptions.get(`studio-demo\n${id}`)?.startedAt).toBe(subscription.startedAt);
         expect(routes.subscriptions.get(`studio-demo\n${id}`)?.token).toBe("cc");
         expect((await fetch(base + registrationPath, { method: "DELETE" })).status).toBe(204);
         expect((await fetch(base + registrationPath, { method: "DELETE" })).status).toBe(204);
         expect(routes.registrations.size).toBe(0);
         expect(routes.subscriptions.size).toBe(0);
-        expect((await put(subscriptionPath, subscription)).status).toBe(204);
+        expect((await put(subscriptionPath, subscription)).status).toBe(404);
         expect((await put(registrationPath, registration)).status).toBe(201);
+        expect((await put(subscriptionPath, subscription)).status).toBe(204);
         expect((await put(`/api/v1/push/${other}`, {
-            ...registration, registrationID: other, token: "BB",
+            ...registration, token: "BB",
         })).status).toBe(201);
         expect([...routes.registrations.keys()]).toEqual([other]);
         expect(routes.registrations.get(other)?.token).toBe("bb");
-        const unknown = `/api/v1/push/${id}/topics/missing`;
+        expect(routes.subscriptions.size).toBe(0);
+        const unknown = `/api/v1/push/${other}/topics/missing`;
         expect((await put(unknown, subscription)).status).toBe(204);
-        expect(routes.subscriptions.get(`missing\n${id}`)?.topic).toBe("missing");
+        expect(routes.subscriptions.get(`missing\n${other}`)?.topic).toBe("missing");
         expect((await fetch(base + unknown, { method: "DELETE" })).status).toBe(204);
         expect((await put(registrationPath, { ...registration, token: "not-hex" })).status).toBe(422);
         expect((await put(registrationPath, { ...registration, environment: "unknown" })).status).toBe(422);
@@ -129,9 +131,13 @@ test("multiple demo channels keep their own history, routes and Activity registr
         expect(await (await fetch(`${base}/api/v1/channels/completed-demo/messages`, { method: "POST" })).text())
             .toBe("Completed: /api/v1/channels/completed-demo/messages");
         const id = "00000000-0000-4000-8000-000000000003";
+        expect((await fetch(`${base}/api/v1/push/${id}`, {
+            method: "PUT", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ token: "bb", environment: "sandbox" }),
+        })).status).toBe(201);
         const response = await fetch(`${base}/api/v1/push/${id}/topics/completed-demo`, {
             method: "PUT", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ registrationID: id, token: "aa", environment: "sandbox", startedAt: 1793086200 }),
+            body: JSON.stringify({ token: "aa", startedAt: 1793086200 }),
         });
         expect(response.status).toBe(204);
         expect(routes.subscriptions.get(`completed-demo\n${id}`)?.topic).toBe("completed-demo");

@@ -351,27 +351,38 @@ PUT returns 201 when created and 204 when updated. Subscription writes and delet
 
 | Request | Body or effect |
 | --- | --- |
-| `PUT /api/v1/push/:registrationID` | `{registrationID, token, environment}` |
+| `PUT /api/v1/push/:registrationID` | `{token, environment}` |
 | `DELETE /api/v1/push/:registrationID` | Remove the registration and its subscriptions. Idempotent even when unknown |
-| `PUT /api/v1/push/:registrationID/topics/:topic` | `{registrationID}` uses the registration address. Optional `{token, environment, startedAt}` together supply an independent activity address |
+| `PUT /api/v1/push/:registrationID/topics/:topic` | `{}` uses the registration address. `{token, startedAt}` supplies an Activity token in the registration's environment |
 | `DELETE /api/v1/push/:registrationID/topics/:topic` | Unsubscribe from the topic |
 
-`registrationID` is a caller-owned UUID and must match the path. Tokens are hexadecimal, and
+`registrationID` is a caller-owned UUID carried only by the path. Tokens are hexadecimal, and
 `environment` is `sandbox` or `production`. The signed host's `ToyBoxPushEnvironment` is derived
 from its validated APNs entitlement, never from `DEBUG`: optimized development builds still use
 sandbox. Request and completion preferences independently subscribe `requests` and `completions`.
-A token belongs to one
-registration. Topic subscriptions can inherit the registration address or supply their own, and
-are unique per registration/topic. A topic is opaque to Push; Channels uses `channel:<id>` and the
+A token belongs to one registration. Subscription requires an acknowledged registration and returns
+404 for an unknown install. Topic subscriptions inherit its environment and either use its device
+token or supply an Activity token, and are unique per registration/topic. A topic is opaque to Push; Channels uses `channel:<id>` and the
 iPhone presents that subscription as a Live Activity.
 Subscription does not require the source to exist. An absent channel receives the channel-deleted
-ending on the next delivery pass. Token rotation preserves the original `startedAt`, in Unix seconds.
+ending on the next delivery pass. The phone resends the original `startedAt`, in Unix seconds,
+on every Activity token rotation. Subscribe clears that topic's delivery history and arms the
+100ms debounce, preserving immediate catch-up for new or replaced tokens.
 Push owns registrations, subscriptions, cached routing, Apple delivery, refresh/expiry and pruning.
 Channels publishes committed notification milestones lazily, with a three-second unread check only
-when subscribed, and holds a metadata-only channel stream only while its topic is followed. It has
-no startup catalog or delivery scheduler. Normal registration updates do not rewrite subscriptions. A 201
-restores current choices and active Follows; unacknowledged preference writes also recover on launch.
+when subscribed, and opens a channel stream only while its topic is followed. The stream bootstraps
+with a full snapshot including recent messages, then retains only metadata, roster and presence.
+Channels has no startup catalog or delivery scheduler. Normal registration updates do not rewrite
+subscriptions. A 201 restores current choices and active Follows; unacknowledged preference writes
+also recover on launch. New Follow remains unavailable until the selected server acknowledges its
+registration. Restored Activities survive that wait and replay deferred tokens after either 201 or
+204, independently of alert preferences.
 Allow notifications off unsubscribes only the two notification topics, retaining Follow and the address.
+One serial queue owns reload and delivery, using one five-minute tick and one 100ms debounce.
+The tick enforces the eight-hour lifetime and refreshes unchanged Activities within ten minutes.
+Any successful Activity delivery advances its topic's dedupe/request identity. Endings and new
+waiting requests use high priority. Only dead-token APNs responses prune; provider/authentication failures retain
+subscriptions for a later tick.
 The demo stores all state in memory and never contacts APNs.
 `bun run demo --completed` opts into a separate `completed-demo` channel for completion-alert proof,
 with every task done and an unread completion. The normal screenshot baseline stays unchanged.

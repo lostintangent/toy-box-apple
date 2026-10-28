@@ -177,7 +177,7 @@ private final class ProofFixture {
         session = URLSession(configuration: configuration)
         registration = MobileNotificationRegistration(
             store: try MobilePushRegistrationStore(directory: directory),
-            environment: .sandbox, requestToken: {}, register: { _, _ in false }, remove: { _, _ in })
+            environment: .sandbox, requestToken: {}, register: { _, _, _ in false }, remove: { _, _ in })
         api = try ChannelAPI(serverURL: "http://127.0.0.1:3210", session: session)
         try registration.select(api: api)
         let capture = Capture()

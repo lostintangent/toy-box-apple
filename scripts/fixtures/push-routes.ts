@@ -2,7 +2,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 
 type Environment = "sandbox" | "production";
 type Registration = { registrationID: string; token: string; environment: Environment };
-type Subscription = { registrationID: string; topic: string; token: string | null; environment: Environment | null; startedAt: number | null };
+type Subscription = { registrationID: string; topic: string; token: string | null; startedAt: number | null };
 type Route = { kind: "registration"; id: string } | { kind: "subscription"; id: string; topic: string };
 
 function reply(response: ServerResponse, status: number, error?: string) {
@@ -25,6 +25,11 @@ async function body(request: IncomingMessage): Promise<unknown> {
 export function createDemoPushRoutes() {
     const registrations = new Map<string, Registration>();
     const subscriptions = new Map<string, Subscription>();
+    function removeRegistration(id: string) {
+        registrations.delete(id);
+        for (const [key, subscription] of subscriptions)
+            if (subscription.registrationID === id) subscriptions.delete(key);
+    }
     function match(path: string): Route | undefined {
         const registration = /^\/api\/v1\/push\/([^/]+)$/.exec(path);
         if (registration) return { kind: "registration", id: registration[1]! };
@@ -48,11 +53,7 @@ export function createDemoPushRoutes() {
         }
         const key = `${topic}\n${id}`;
         if (request.method === "DELETE") {
-            if (route.kind === "registration") {
-                registrations.delete(id);
-                for (const [key, subscription] of subscriptions)
-                    if (subscription.registrationID === id) subscriptions.delete(key);
-            }
+            if (route.kind === "registration") removeRegistration(id);
             else subscriptions.delete(key);
             reply(response, 204);
             return;
@@ -74,12 +75,12 @@ export function createDemoPushRoutes() {
             return;
         }
         const input = value as Record<string, unknown>;
-        if (input.registrationID !== id) {
-            reply(response, 422, "Invalid registration ID.");
+        const keys = route.kind === "registration" ? ["token", "environment"] : ["token", "startedAt"];
+        if (Object.keys(input).some(key => !keys.includes(key))) {
+            reply(response, 422, "Unexpected registration field.");
             return;
         }
-        const addressed = typeof input.token === "string" && /^(?:[0-9a-f]{2}){1,512}$/i.test(input.token)
-            && (input.environment === "sandbox" || input.environment === "production");
+        const addressed = typeof input.token === "string" && /^(?:[0-9a-f]{2}){1,512}$/i.test(input.token);
         let created = false;
         if (route.kind === "registration") {
             if (!addressed || typeof input.token !== "string" ||
@@ -90,7 +91,7 @@ export function createDemoPushRoutes() {
             const common = { registrationID: id, token: input.token.toLowerCase(), environment: input.environment };
             created = !registrations.has(id);
             for (const [otherID, registration] of registrations) {
-                if (registration.token === common.token && registration.environment === common.environment && otherID !== id) registrations.delete(otherID);
+                if (registration.token === common.token && registration.environment === common.environment && otherID !== id) removeRegistration(otherID);
             }
             registrations.set(id, { ...common, environment: input.environment });
         } else {
@@ -98,7 +99,11 @@ export function createDemoPushRoutes() {
                 reply(response, 400, "Invalid topic.");
                 return;
             }
-            const standard = input.token == null && input.environment == null && input.startedAt == null;
+            if (!registrations.has(id)) {
+                reply(response, 404, "Push registration not found.");
+                return;
+            }
+            const standard = input.token == null && input.startedAt == null;
             if (!standard && (!addressed || typeof input.startedAt !== "number" ||
                 !Number.isFinite(input.startedAt) || input.startedAt < 0)) {
                 reply(response, 422, "Subscription start time must be Unix seconds.");
@@ -107,9 +112,7 @@ export function createDemoPushRoutes() {
             subscriptions.set(key, {
                 registrationID: id, topic,
                 token: typeof input.token === "string" ? input.token.toLowerCase() : null,
-                environment: input.environment === "sandbox" || input.environment === "production" ? input.environment : null,
-                startedAt: standard ? null : subscriptions.get(key)?.startedAt ??
-                    (typeof input.startedAt === "number" ? input.startedAt : null),
+                startedAt: standard ? null : (typeof input.startedAt === "number" ? input.startedAt : null),
             });
         }
         reply(response, created ? 201 : 204);

@@ -1146,7 +1146,7 @@ struct ChannelFollowTests {
         #expect(fixture.controller.state(for: fixture.store) == .following)
         #expect(fixture.requests.map(\.method) == ["PUT"])
         #expect(fixture.requests.first?.input?.startedAt == fixture.date)
-        #expect(fixture.requests.first?.input?.environment == .sandbox)
+        #expect(fixture.requests.first?.registrationID == fixture.registration.registrationID)
         #expect(fixture.acquired == 1)
         fixture.store.disconnect()
         #expect(fixture.controller.state(for: fixture.store) == .following)
@@ -1158,6 +1158,79 @@ struct ChannelFollowTests {
         #expect(fixture.controller.state(for: fixture.store) == .unavailable)
         #expect(fixture.requests.map(\.method) == ["PUT", "DELETE"])
         #expect(fixture.released == 1)
+        #expect(!fixture.controller.startFailed)
+    }
+
+    @Test func acknowledgmentEnablesFollowEvenWhenNotificationAlertsAreOff() async throws {
+        let fixture = try FollowFixture()
+        defer { fixture.close() }
+        fixture.defaults.set(false, forKey: "notificationsEnabled")
+        fixture.configure(ready: false)
+        #expect(fixture.controller.state(for: fixture.store) == .unavailable)
+        await fixture.controller.follow(fixture.store)
+        #expect(fixture.pool.activities.isEmpty)
+        #expect(fixture.requests.isEmpty)
+        #expect(fixture.acquired == 0)
+
+        fixture.configure(ready: true)
+        #expect(fixture.controller.state(for: fixture.store) == .available)
+        await fixture.controller.follow(fixture.store)
+        #expect(fixture.pool.activities.count == 1)
+        #expect(fixture.requests.map(\.method) == ["PUT"])
+        #expect(fixture.controller.state(for: fixture.store) == .following)
+        #expect(!fixture.controller.startFailed)
+    }
+
+    @Test(arguments: [false, true])
+    func restoredTokensWaitForTheExistingRegistrationsAcknowledgment(rotatesWhilePending: Bool) async throws {
+        let fixture = try FollowFixture()
+        defer { fixture.close() }
+        await fixture.controller.follow(fixture.store)
+        let activity = try #require(fixture.pool.activities.first)
+        await fixture.wait { activity.tokenStreamsStarted == 1 }
+        fixture.controller.shutdown()
+        fixture.controller = fixture.makeController()
+        fixture.configure(ready: false)
+        await fixture.wait { activity.tokenStreamsStarted == 2 }
+        #expect(fixture.requests.count == 1)
+        #expect(fixture.controller.state(for: fixture.store) == .following)
+        #expect(activity.endings.isEmpty)
+
+        fixture.date.addTimeInterval(60)
+        if rotatesWhilePending { activity.rotate(Data([2])) }
+        await fixture.controller.registrationCreated(fixture.registration)
+        #expect(fixture.requests.count == 1)
+        fixture.configure(ready: true)
+        await fixture.wait { fixture.requests.count == 2 }
+        #expect(fixture.requests.last?.input?.token == (rotatesWhilePending ? "02" : "01"))
+        #expect(fixture.requests.last?.input?.startedAt == fixture.originalDate)
+        #expect(fixture.pool.activities.count == 1)
+        #expect(activity.isActive)
+        #expect(activity.endings.isEmpty)
+        #expect(fixture.controller.state(for: fixture.store) == .following)
+        #expect(!fixture.controller.startFailed)
+    }
+
+    @Test func bufferedTokensCannotReplaceTheLatestTokenAfterAHeldAcknowledgment() async throws {
+        let fixture = try FollowFixture()
+        defer { fixture.close() }
+        await fixture.controller.follow(fixture.store)
+        let activity = try #require(fixture.pool.activities.first)
+        await fixture.wait { activity.tokenStreamsStarted == 1 }
+        fixture.holdRegistration = true
+        activity.rotate(Data([2]))
+        await fixture.wait { fixture.pending.count == 1 }
+        #expect(fixture.requests.last?.input?.token == "02")
+
+        activity.rotate(Data([3]))
+        activity.rotate(Data([4]))
+        fixture.releaseRegistration()
+        await fixture.wait { fixture.requests.count == 3 }
+        #expect(fixture.requests.compactMap { $0.input?.token } == ["01", "02", "04"])
+        #expect(fixture.requests.allSatisfy { $0.input?.startedAt == fixture.originalDate })
+        #expect(fixture.pool.activities.count == 1)
+        #expect(activity.endings.isEmpty)
+        #expect(fixture.controller.state(for: fixture.store) == .following)
         #expect(!fixture.controller.startFailed)
     }
 
@@ -1192,8 +1265,8 @@ struct ChannelFollowTests {
         #expect(fixture.requests.map(\.method) == Array(repeating: "PUT", count: 5))
         #expect(Set(restored.compactMap { $0.input?.token }) == ["01", "02"])
         #expect(restored.allSatisfy {
-            $0.input?.registrationID == fixture.registration.registrationID
-                && $0.input?.startedAt == fixture.originalDate && $0.input?.environment == .sandbox
+            $0.registrationID == fixture.registration.registrationID
+                && $0.input?.startedAt == fixture.originalDate
         })
         #expect(fixture.pool.activities.count == 2)
         #expect(fixture.pool.activities.allSatisfy { $0.isActive && $0.endings.isEmpty })
@@ -1284,7 +1357,7 @@ struct ChannelFollowTests {
         let activity = try #require(fixture.pool.activities.first)
         fixture.holdUnregistration = true
         if changingServer {
-            fixture.controller.configure(registration: nil, catalog: nil, isActive: false,
+            fixture.controller.configure(registration: nil, isRegistrationReady: false, catalog: nil, isActive: false,
                                          acquire: { _ in }, release: { _ in })
         } else {
             fixture.configure(active: true)
@@ -1324,7 +1397,7 @@ struct ChannelFollowTests {
         let activity = try #require(fixture.pool.activities.first)
         let replacement = ChannelCatalogStore(api: fixture.catalog.api)
         fixture.controller.configure(
-            registration: fixture.registration, catalog: replacement, isActive: false,
+            registration: fixture.registration, isRegistrationReady: true, catalog: replacement, isActive: false,
             acquire: { _ in }, release: { _ in }
         )
         #expect(fixture.controller.state(for: replacement.channel(id: fixture.store.id)) == .following)
@@ -1341,7 +1414,7 @@ struct ChannelFollowTests {
         fixture.configure(active: true)
         try fixture.apply(tasks: [.init(id: "root", title: "Done", status: "done")])
         await fixture.wait { activity.endings.count == 1 && fixture.completedUnregistrations == 1 }
-        fixture.controller.configure(registration: nil, catalog: nil, isActive: false,
+        fixture.controller.configure(registration: nil, isRegistrationReady: false, catalog: nil, isActive: false,
                                      acquire: { _ in }, release: { _ in })
         await fixture.wait { activity.endings.count == 2 }
         #expect(activity.endings.last?.dismissAt == nil)
@@ -1354,7 +1427,7 @@ struct ChannelFollowTests {
         let activity = try #require(fixture.pool.activities.first)
         fixture.controller.shutdown()
         fixture.controller = fixture.makeController()
-        fixture.controller.configure(registration: nil, catalog: fixture.catalog, isActive: false,
+        fixture.controller.configure(registration: nil, isRegistrationReady: false, catalog: fixture.catalog, isActive: false,
                                      acquire: { _ in }, release: { _ in })
         #expect(activity.endings.isEmpty)
         fixture.configure()
@@ -1367,6 +1440,7 @@ struct ChannelFollowTests {
 private final class FollowFixture {
     struct Write {
         let method: String
+        let registrationID: String
         let input: PushSubscription?
     }
 
@@ -1403,19 +1477,19 @@ private final class FollowFixture {
     }
 
     func makeController() -> ChannelFollowController {
-        ChannelFollowController(client: pool.client, defaults: defaults, environment: .sandbox,
+        ChannelFollowController(client: pool.client, defaults: defaults,
                                 now: { [unowned self] in self.date },
-                                registerActivity: { [unowned self] _, input in
-                                    try await self.register(input)
+                                registerActivity: { [unowned self] _, registrationID, input in
+                                    try await self.register(input, registrationID: registrationID)
                                 },
-                                unregisterActivity: { [unowned self] _, _ in
-                                    try await self.unregister()
+                                unregisterActivity: { [unowned self] _, registrationID in
+                                    try await self.unregister(registrationID: registrationID)
                                 })
     }
 
-    func configure(active: Bool = false) {
+    func configure(active: Bool = false, ready: Bool = true) {
         controller.configure(
-            registration: registration, catalog: catalog, isActive: active,
+            registration: registration, isRegistrationReady: ready, catalog: catalog, isActive: active,
             acquire: { [weak self] _ in self?.acquired += 1 },
             release: { [weak self] _ in self?.released += 1 }
         )
@@ -1436,8 +1510,8 @@ private final class FollowFixture {
         }
     }
 
-    func register(_ input: PushSubscription) async throws {
-        requests.append(Write(method: "PUT", input: input))
+    func register(_ input: PushSubscription, registrationID: String) async throws {
+        requests.append(Write(method: "PUT", registrationID: registrationID, input: input))
         if holdRegistration {
             try await withCheckedThrowingContinuation { pending.append($0) }
         }
@@ -1453,8 +1527,8 @@ private final class FollowFixture {
         for request in requests { request.resume() }
     }
 
-    func unregister() async throws {
-        requests.append(Write(method: "DELETE", input: nil))
+    func unregister(registrationID: String) async throws {
+        requests.append(Write(method: "DELETE", registrationID: registrationID, input: nil))
         if holdUnregistration {
             try await withCheckedThrowingContinuation { pendingUnregistrations.append($0) }
         }
@@ -1507,6 +1581,7 @@ private final class FollowActivity: ChannelActivitySession {
     var isActive = true
     var pushToken: Data?
     var endings: [Ending] = []
+    private(set) var tokenStreamsStarted = 0
     @ObservationIgnored private var tokens: [AsyncStream<Data>.Continuation] = []
     @ObservationIgnored private var states: [AsyncStream<Bool>.Continuation] = []
 
@@ -1517,7 +1592,8 @@ private final class FollowActivity: ChannelActivitySession {
     }
 
     var pushTokenUpdates: AsyncStream<Data> {
-        AsyncStream { continuation in
+        tokenStreamsStarted += 1
+        return AsyncStream { continuation in
             if let pushToken {
                 tokens.append(continuation)
                 continuation.yield(pushToken)

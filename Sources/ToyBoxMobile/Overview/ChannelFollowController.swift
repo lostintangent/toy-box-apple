@@ -17,10 +17,10 @@ final class ChannelFollowController {
     @ObservationIgnored private let client: ChannelActivityClient
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let now: () -> Date
-    @ObservationIgnored private let environment: PushEnvironment?
-    @ObservationIgnored private let registerActivity: @MainActor (ChannelStore, PushSubscription) async throws -> Void
+    @ObservationIgnored private let registerActivity: @MainActor (ChannelStore, String, PushSubscription) async throws -> Void
     @ObservationIgnored private let unregisterActivity: @MainActor (ChannelStore, String) async throws -> Void
     private var registration: MobilePushRegistration?
+    private var isRegistrationReady = false
     private var catalog: ChannelCatalogStore?
     @ObservationIgnored private var isActive = false
     @ObservationIgnored private var acquire: (ChannelStore) -> Void = { _ in }
@@ -37,6 +37,7 @@ final class ChannelFollowController {
         let startedAt: Date
         let release: (ChannelStore) -> Void
         var token: Data?
+        var pendingToken: Data?
         var jobs: [Task<Void, Never>] = []
         var observation: Task<Void, Never>?
         var update: Task<Void, Never>?
@@ -59,30 +60,29 @@ final class ChannelFollowController {
     }
 
     private enum Failure: Error {
-        case missingToken, invalidEnvironment, obsolete
+        case missingToken, registrationPending, obsolete
     }
 
     init(client: ChannelActivityClient = .system, defaults: UserDefaults = .standard,
-         environment: PushEnvironment? = (Bundle.main.object(forInfoDictionaryKey: "ToyBoxPushEnvironment")
-                                          as? String).flatMap(PushEnvironment.init(rawValue:)),
          now: @escaping () -> Date = { .now },
-         registerActivity: @escaping @MainActor (ChannelStore, PushSubscription) async throws -> Void = {
-             try await $0.api.subscribe(topic: "channel:\($0.id)", $1)
+         registerActivity: @escaping @MainActor (ChannelStore, String, PushSubscription) async throws -> Void = {
+             try await $0.api.subscribe(topic: "channel:\($0.id)", registrationID: $1, $2)
          },
          unregisterActivity: @escaping @MainActor (ChannelStore, String) async throws -> Void = {
              try await $0.api.unsubscribe(topic: "channel:\($0.id)", registrationID: $1)
          }) {
         self.client = client
         self.defaults = defaults
-        self.environment = environment
         self.now = now
         self.registerActivity = registerActivity
         self.unregisterActivity = unregisterActivity
     }
 
-    func configure(registration: MobilePushRegistration?, catalog: ChannelCatalogStore?, isActive: Bool,
+    func configure(registration: MobilePushRegistration?, isRegistrationReady: Bool,
+                   catalog: ChannelCatalogStore?, isActive: Bool,
                    acquire: @escaping (ChannelStore) -> Void, release: @escaping (ChannelStore) -> Void) {
         let changed = self.registration != registration || self.catalog !== catalog
+        let becameReady = isRegistrationReady && (!self.isRegistrationReady || changed)
         if changed {
             let registrationChanged = self.registration.map {
                 $0.registrationID != registration?.registrationID
@@ -104,6 +104,7 @@ final class ChannelFollowController {
             self.acquire = acquire
             self.release = release
         }
+        self.isRegistrationReady = isRegistrationReady
         self.isActive = isActive
         catalogTask?.cancel()
         refreshTask?.cancel()
@@ -112,6 +113,9 @@ final class ChannelFollowController {
             entry.observation = nil
         }
         if changed { restore() }
+        if becameReady, let registration = currentRegistration {
+            Task { [weak self] in await self?.registerCurrentTokens(for: registration) }
+        }
         guard isActive else { return }
         for entry in Array(entries.values) {
             if !entry.activity.isActive { forget(entry) }
@@ -137,7 +141,7 @@ final class ChannelFollowController {
     func state(for store: ChannelStore) -> ChannelFollowAction.State {
         if starting.contains(store.id) { return .starting }
         if entries[store.id] != nil { return .following }
-        guard currentRegistration != nil, catalog?.api.baseURL == store.api.baseURL,
+        guard isRegistrationReady, currentRegistration != nil, catalog?.api.baseURL == store.api.baseURL,
               store.phase.isLive, let state = store.state else { return .unavailable }
         let progress = channelTasksProgress(state.channel.tasks)
         return progress.total > progress.done ? .available : .unavailable
@@ -148,11 +152,10 @@ final class ChannelFollowController {
         starting.insert(store.id)
         var entry: Follow?
         do {
-            guard environment != nil else { throw Failure.invalidEnvironment }
             for activity in client.activities() where activity.attributes.channelID == store.id {
                 await activity.end(activity.content, dismissAt: nil)
             }
-            guard self.registration == registration, self.catalog?.api.baseURL == store.api.baseURL,
+            guard isRegistrationReady, self.registration == registration, self.catalog?.api.baseURL == store.api.baseURL,
                   starting.contains(store.id), store.phase.isLive, let state = store.state,
                   channelTasksProgress(state.channel.tasks).done < state.channel.tasks.count
             else { throw Failure.obsolete }
@@ -188,17 +191,7 @@ final class ChannelFollowController {
     }
 
     func registrationCreated(_ registration: MobilePushRegistration) async {
-        guard registration == currentRegistration else { return }
-        for entry in Array(entries.values) where entry.registration == registration {
-            guard let token = entry.activity.pushToken ?? entry.token else { continue }
-            do {
-                try await register(token, for: entry)
-            } catch {
-                if isCurrent(entry) {
-                    logger.error("Could not restore a followed channel subscription: \(error.localizedDescription)")
-                }
-            }
-        }
+        await registerCurrentTokens(for: registration, force: true)
     }
 
     func stop(channelID: String) {
@@ -353,35 +346,51 @@ final class ChannelFollowController {
         })
     }
 
-    private func rotate(_ token: Data, for entry: Follow) async {
-        guard token != entry.token else { return }
+    private func registerCurrentTokens(for registration: MobilePushRegistration, force: Bool = false) async {
+        guard isRegistrationReady, registration == currentRegistration else { return }
+        for entry in Array(entries.values)
+            where entry.registration == registration && !starting.contains(entry.store.id) {
+            guard let token = entry.activity.pushToken ?? entry.pendingToken ?? entry.token else { continue }
+            await rotate(token, for: entry, force: force)
+        }
+    }
+
+    private func rotate(_ observedToken: Data, for entry: Follow, force: Bool = false) async {
+        let token = entry.activity.pushToken ?? observedToken
+        guard isCurrent(entry), force || token != entry.token else { return }
         guard !token.isEmpty else {
             logger.error("ActivityKit supplied an empty rotated push token.")
             return
         }
+        entry.pendingToken = token
+        guard isRegistrationReady else { return }
         do {
             try requireCurrent(entry)
-            try await register(token, for: entry)
+            try await register(token, for: entry, force: force)
         } catch {
             if isCurrent(entry) {
-                logger.error("Could not register a rotated Activity token: \(error.localizedDescription)")
+                logger.error("Could not register a followed channel subscription: \(error.localizedDescription)")
             }
         }
     }
 
-    private func register(_ token: Data, for entry: Follow) async throws {
-        guard let environment else { throw Failure.invalidEnvironment }
-        let input = PushSubscription(
-            registrationID: entry.registration.registrationID,
-            token: token.map { String(format: "%02x", $0) }.joined(),
-            environment: environment, startedAt: entry.startedAt
-        )
+    private func register(_ token: Data, for entry: Follow, force: Bool = false) async throws {
         let write = enqueueWrite(channelID: entry.store.id) {
             try self.requireCurrent(entry)
-            try await self.registerActivity(entry.store, input)
+            guard self.isRegistrationReady else { throw Failure.registrationPending }
+            let currentToken = entry.activity.pushToken ?? entry.pendingToken ?? token
+            guard !currentToken.isEmpty else { throw Failure.missingToken }
+            guard force || currentToken != entry.token else { return }
+            let input = PushSubscription(
+                token: currentToken.map { String(format: "%02x", $0) }.joined(),
+                startedAt: entry.startedAt
+            )
+            try await self.registerActivity(entry.store, entry.registration.registrationID, input)
+            try self.requireCurrent(entry)
+            entry.token = currentToken
+            if entry.pendingToken == currentToken { entry.pendingToken = nil }
         }
         try await write.value
-        entry.token = token
     }
 
     private func finish(_ entry: Follow, ending: ChannelActivityAttributes.Ending, immediately: Bool = false,
