@@ -30,6 +30,7 @@ struct ShellTests {
 
     private func withNotifications(
         register: @escaping (ChannelAPI, String, PushRegistration) async throws -> Bool = { _, _, _ in false },
+        readAuthorization: @escaping () async -> UNAuthorizationStatus = { .authorized },
         addNotice: @escaping (UNNotificationRequest) async throws -> Void = { _ in },
         _ work: @MainActor (UserDefaults, MobileNotificationRegistration, ChannelNotifications) async throws -> Void
     ) async throws {
@@ -41,7 +42,8 @@ struct ShellTests {
                     remove: { _, _ in }, subscribe: { _, _, _ in }, unsubscribe: { _, _, _ in })
                 try registration.select(api: api)
                 let notifications = ChannelNotifications(
-                    defaults: defaults, registration: registration, readAuthorization: { .authorized }, addNotice: addNotice)
+                    defaults: defaults, registration: registration,
+                    readAuthorization: readAuthorization, addNotice: addNotice)
                 notifications.configure(api: api)
                 try await work(defaults, registration, notifications)
                 await registration.waitUntilIdle()
@@ -356,6 +358,45 @@ struct ShellTests {
     }
 
     @Test(.timeLimit(.minutes(1)))
+    func followingReceivesItsReadyRegistrationWhileAuthorizationIsStillPending() async throws {
+        var authorization: CheckedContinuation<UNAuthorizationStatus, Never>?
+        var beganAuthorization: (() -> Void)?
+        try await withNotifications(readAuthorization: {
+            await withCheckedContinuation { continuation in
+                authorization = continuation
+                beganAuthorization?()
+            }
+        }) { defaults, registration, notifications in
+            let following = ChannelFollowController(
+                client: .init(activities: { [] }, request: { _, _ in throw CocoaError(.featureUnsupported) }))
+            defer { following.shutdown() }
+            let model = AppModel(arguments: ["--server", "https://fixture.example"], environment: [:],
+                                 defaults: defaults, session: fixtureSession(),
+                                 notifications: notifications, following: following)
+            let store = try #require(model.catalog?.channel(id: "first"))
+            _ = try store.apply(.init(type: "snapshot", state: .init(
+                revision: 1,
+                channel: .init(id: store.id, name: "Workshop", model: .init(provider: "test", name: "test"),
+                               tasks: [.init(id: "root", title: "Work")], updatedAt: "2026-10-28T00:00:00Z"),
+                lead: .init(id: store.id, name: "Lead")
+            )))
+            registration.receivedToken(Data([1]))
+            await registration.waitUntilIdle()
+            #expect(notifications.isRegistrationReady)
+            let startup = Task { await model.startIntegrations() }
+            await withCheckedContinuation { continuation in
+                if authorization != nil { continuation.resume() }
+                else { beganAuthorization = { continuation.resume() } }
+            }
+            #expect(!notifications.hasLoadedAuthorization)
+            #expect(!notifications.isEnabled)
+            #expect(following.state(for: store) == .available)
+            authorization?.resume(returning: .authorized)
+            await startup.value
+        }
+    }
+
+    @Test(.timeLimit(.minutes(1)))
     func followingObservesTheSelectedCatalogAndRegistrationIndependentlyOfAlertOptIn() async throws {
         var response: CheckedContinuation<Bool, Never>?
         var began: (() -> Void)?
@@ -391,7 +432,7 @@ struct ShellTests {
             let first = try #require(model.catalog?.channel(id: "first"))
             try prepare(first)
             #expect(following.state(for: first) == .unavailable)
-            model.observeFollowing()
+            await model.startIntegrations()
             await withCheckedContinuation { continuation in
                 began = { continuation.resume() }
                 registration.receivedToken(Data([1]))

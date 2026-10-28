@@ -214,17 +214,17 @@ final class AppModel {
     func startIntegrations() async {
         guard !integrationsStarted else { return }
         integrationsStarted = true
+        observeFollowing()
         do {
             widgetPublisher = try MobileWidgetSnapshotPublisher(avatarPNG: Self.widgetAvatar)
         } catch {
             integrationLogger.error("Could not prepare the Needs You widget: \(error.localizedDescription)")
         }
         await notifications.start()
-        observeFollowing()
         observeIntegrations(generation: integrationsGeneration)
     }
 
-    func observeFollowing() {
+    private func observeFollowing() {
         withObservationTracking {
             _ = notifications.currentRegistration
             _ = notifications.isRegistrationReady
