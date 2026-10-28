@@ -270,6 +270,7 @@ final class ChannelFollowController {
     }
 
     private func observe(_ entry: Follow) {
+        entry.observation?.cancel()
         let store = entry.store
         entry.observation = Task { [weak self, weak entry] in
             for await _ in Observations({ (store.state, store.phase) }) {
