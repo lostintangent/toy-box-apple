@@ -1,8 +1,6 @@
 # 🧸 Toy Box
 
-A native Mac and iPhone app for your [Toy Box](https://github.com/lostintangent/toy-box) agent teams. Know who needs you, answer without switching context, and keep up while your teams work.
-
-Connect to your own Toy Box server. The Mac app needs macOS 27 on Apple Silicon, and the iPhone companion needs iOS 27.
+A native Mac and iPhone app for your [Toy Box](https://github.com/lostintangent/toy-box) agent teams. Connect to your Toy Box server, and then know who needs you, answer without switching context, and keep up while your work progresses.
 
 > _Try it out:_ [Download for Mac](https://github.com/lostintangent/toy-box-apple/releases/latest)
 
@@ -10,15 +8,15 @@ Connect to your own Toy Box server. The Mac app needs macOS 27 on Apple Silicon,
 
 ## Features
 
-- **Know who needs you:** Find waiting requests in the menu bar inbox and Mac or iPhone widgets, with a Dock badge for channels needing a reply.
-- **Answer from anywhere:** Request and completion alerts reach Mac and iPhone, with native Reply from notifications, the Lock Screen or Apple Watch.
-- **Mac and iPhone:** Read, reply and manage channels on iPhone, then use Handoff to continue the same channel on your Mac.
-- **Send without switching:** Reply in the menu bar inbox or press ⌃⇧Space for Quick Send, with @mentions, images and on-device dictation.
-- **Catch up fast:** Apple Intelligence summarizes busy channels on your Mac with links to source messages, and a quiet morning digest starts your day.
-- **See the work:** Keep tasks, diffs, artifacts and routines beside the conversation, with built-in document readers and ⌘F search across channel history.
-- **Follow along:** Follow a channel in a Live Activity to see working agents, task progress and requests on your iPhone's Lock Screen and Dynamic Island.
+- **Get pinged the moment you're needed:** When an agent asks you something or a channel finishes its work, your iPhone gets the alert even when Toy Box is closed, and so do your Mac and Apple Watch. Reply right from the notification, Lock Screen or watch, and your team keeps moving while you're away from your desk.
+- **Pick up where you left off on any device:** Read, reply and manage channels on iPhone or Mac, and Handoff carries the exact channel you're in between them. Sit down at your desk and click the Handoff icon in your Dock to continue on your Mac, or pick it up on your iPhone as you head out.
+- **Follow the work from your Lock Screen:** Follow a channel to see a Live Activity on your iPhone's Lock Screen and Dynamic Island showing which agents are working, how many tasks are done and when someone needs your reply. It stays current while your phone is in your pocket.
+- **See what's waiting at a glance:** Needs You widgets on iPhone and Mac, the menu bar inbox and app icon badges count the channels waiting on you, so you know whether to step in without opening a window.
+- **Answer without switching apps:** Press ⌃⇧Space for Quick Send anywhere on your Mac, reply straight from the menu bar inbox, or share text and images into a channel from any Mac app. Write with @mentions, images and on-device dictation.
+- **Catch up in seconds:** Return to a busy channel and Apple Intelligence summarizes what you missed, privately on your iPhone or Mac, with links to the source messages. A morning digest on your Mac lists the channels that moved since yesterday.
+- **See the work, not just the chat:** Tasks, diffs, artifacts and routines sit beside the conversation, with built-in document readers and ⌘F search across the whole channel history.
+- **Siri, Spotlight and Shortcuts:** Ask Siri to catch you up, find waiting requests in Spotlight, or send messages from Shortcuts after you confirm on your Mac.
 - **Native by design:** Liquid Glass, keyboard navigation and multiple windows feel at home, with signed, notarized Mac releases that update in place.
-- **Siri and Shortcuts:** Find requests in Spotlight, ask Siri to catch you up, or use Shortcuts to send messages after confirmation on Mac.
 
 ## Developing
 
