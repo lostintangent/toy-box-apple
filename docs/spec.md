@@ -375,6 +375,8 @@ ending on the next delivery pass. The phone resends the original `startedAt`, in
 on every Activity token rotation. Server scheduling and delivery live in Toy Box's Push guide.
 After every successful registration with known alert choices, the phone PUTs or DELETEs both
 notification topics, so failed preference writes recover on the next launch without a saved receipt.
+The next app activation also retries a failed registration or topic write. Successful applies
+are not repeated on activation, and failures never start a background retry loop.
 Until the actual authorization state is loaded, registration and Follow can become ready but
 topic writes wait, preserving the server's existing choices. A stalled read therefore delays
 preference changes without clearing the previous subscriptions. Real-device acceptance must
@@ -2231,6 +2233,9 @@ and completions before asking system permission in response to an explicit enabl
 Permission denial shows Open System Settings, never repeated permission prompts. General also
 holds Open at Login, Show in menu bar, the Quick Send shortcut recorder, and the two on-device
 toggles specified under Mac features beyond the pane.
+Both apps default to requests on and completions off, without changing saved choices. On iPhone,
+the request and completion switches are hidden while Allow notifications is off. On Mac they stay
+visible and disabled. Turning notifications off preserves both choices.
 Release builds also show Updates, with "Automatically check for updates" and "Automatically
 download and install updates" bound to Sparkle's own settings. Automatic installation is disabled
 while automatic checks are off or the updater disallows it. These controls are hidden without a

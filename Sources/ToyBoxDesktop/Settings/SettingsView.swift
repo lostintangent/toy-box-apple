@@ -14,7 +14,7 @@ struct SettingsView: View {
     @AppStorage(TranscriptIntelligenceSettings.describesImages) private var describesImages = true
     @AppStorage("notificationsEnabled") private var notificationsEnabled = false
     @AppStorage("requestNotifications") private var requestNotifications = true
-    @AppStorage("completionNotifications") private var completionNotifications = true
+    @AppStorage("completionNotifications") private var completionNotifications = false
     @AppStorage(DockAttention.enabledKey) private var bounceDockForRequests = false
     @AppStorage(MorningDigest.enabledKey) private var morningDigestEnabled = true
     @AppStorage(MorningDigest.timeKey) private var morningDigestMinutes = 480

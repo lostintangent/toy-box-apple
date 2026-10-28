@@ -88,7 +88,7 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
             channels: channels, activeChannelID: activeChannelID,
             enabled: UserDefaults.standard.bool(forKey: "notificationsEnabled"),
             requests: UserDefaults.standard.object(forKey: "requestNotifications") as? Bool != false,
-            completions: UserDefaults.standard.object(forKey: "completionNotifications") as? Bool != false
+            completions: UserDefaults.standard.bool(forKey: "completionNotifications")
         )
         for event in events {
             deliver(event, serverURL: serverURL)
@@ -264,7 +264,7 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
         private var hasBaseline = false
 
         mutating func events(channels: [Channel], activeChannelID: String?, enabled: Bool,
-                             requests: Bool = true, completions: Bool = true) -> [Event] {
+                             requests: Bool = true, completions: Bool = false) -> [Event] {
             let shouldNotify = hasBaseline
             hasBaseline = true
             var result: [Event] = []

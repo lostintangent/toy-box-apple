@@ -14,10 +14,10 @@ struct NotificationSettingsSection: View {
                 }
             ))
             .disabled(notifications.isEnabling || notifications.authorization == .denied)
-            Toggle("Requests for your response", isOn: $notifications.requests)
-                .disabled(!notifications.isEnabled)
-            Toggle("Completed tasks", isOn: $notifications.completions)
-                .disabled(!notifications.isEnabled)
+            if notifications.isEnabled {
+                Toggle("Requests for your response", isOn: $notifications.requests)
+                Toggle("Completed tasks", isOn: $notifications.completions)
+            }
             if notifications.authorization == .denied {
                 Text("Notifications are turned off in Settings. Enable them there to receive requests and completions.")
                     .foregroundStyle(.secondary)

@@ -85,7 +85,7 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
         self.addNotice = addNotice
         enabled = defaults.bool(forKey: "notificationsEnabled")
         requests = defaults.object(forKey: "requestNotifications") as? Bool ?? true
-        completions = defaults.object(forKey: "completionNotifications") as? Bool ?? true
+        completions = defaults.bool(forKey: "completionNotifications")
         super.init()
     }
 
