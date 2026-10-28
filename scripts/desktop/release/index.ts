@@ -1,12 +1,12 @@
 import { mkdir } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
-import { command, main, plist, releaseTag, repositoryURL, required, root, temporary, text } from "../shared/support/lib.ts";
-import { buildApp } from "./build.ts";
-import { checkVersion } from "./release/appcast.ts";
-import { signApp } from "./bundle/sign-app.ts";
-import { validateShareExtension } from "./bundle/share-extension.ts";
-import { validateWidgetExtension } from "./bundle/widget-extension.ts";
-import { releaseChangelog } from "../shared/release-notes.ts";
+import { command, main, plist, releaseTag, repositoryURL, required, root, temporary, text } from "../../shared/lib/index.ts";
+import { buildApp } from "../bundle/index.ts";
+import { checkVersion } from "./appcast.ts";
+import { signApp } from "../bundle/sign.ts";
+import { validateShareExtension } from "../bundle/share-extension.ts";
+import { validateWidgetExtension } from "../bundle/widget-extension.ts";
+import { releaseChangelog } from "../../shared/release-notes.ts";
 
 export function parseNotaryResponse(response: string, status: number) {
     let parsed: unknown;

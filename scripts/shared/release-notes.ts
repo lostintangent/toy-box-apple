@@ -1,6 +1,6 @@
 import { mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { main, root } from "./support/lib.ts";
+import { main, root } from "./lib/index.ts";
 
 export function releaseContext(tag: string) {
     const match = /^(mobile-)?v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.exec(tag);

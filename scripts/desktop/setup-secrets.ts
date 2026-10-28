@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { join } from "node:path";
-import { bundleIdentity, CommandFailure, command, developerEnvironment, main, root, temporary, text } from "../shared/support/lib.ts";
+import { bundleIdentity, CommandFailure, command, developerEnvironment, main, root, temporary, text } from "../shared/lib/index.ts";
 import { sparkleTools } from "./release/sparkle-tools.ts";
 
 if (import.meta.main) await main(async () => {
@@ -15,7 +15,7 @@ if (import.meta.main) await main(async () => {
     const tools = await sparkleTools();
     await temporary("toy-box-release-secrets.", async directory => {
         // Bash's read -rs keeps the terminal's password handling small and auditable.
-        const reader = Bun.spawn(["/bin/bash", join(root, "scripts/shared/support/read-password.sh"),
+        const reader = Bun.spawn(["/bin/bash", join(root, "scripts/shared/lib/read-password.sh"),
             `App-specific password for ${appleID}: `], {
             env: developerEnvironment, stdin: "inherit", stdout: "pipe", stderr: "inherit",
         });
@@ -25,7 +25,7 @@ if (import.meta.main) await main(async () => {
         const exportPassword = randomBytes(48).toString("base64");
         const identityFile = join(directory, "identity.p12");
         const chainFile = join(directory, "issuer-chain.pem");
-        await command(["xcrun", "swift", join(root, "scripts/shared/support/export-signing-identity.swift"),
+        await command(["xcrun", "swift", join(root, "scripts/shared/lib/export-signing-identity.swift"),
             identity, identityFile, chainFile], { env: { P12_PASSWORD: exportPassword } });
         await command(["xcrun", "notarytool", "store-credentials", "toy-box-channels-notary",
             "--apple-id", appleID, "--team-id", teamID, "--password", password]);

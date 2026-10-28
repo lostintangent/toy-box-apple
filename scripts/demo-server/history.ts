@@ -1,8 +1,8 @@
 #!/usr/bin/env bun
 import { resolve } from "node:path";
 import { createHistoryFixture, historyChannelID, historyMessageCount, historyPageSize, writeHistoryPage }
-    from "./channels/history.ts";
-import { root } from "../shared/support/lib.ts";
+    from "./channels/history-channel.ts";
+import { root } from "../shared/lib/index.ts";
 import { referenceFactory, type Snapshot } from "./channels/types.ts";
 
 const reference = resolve(process.argv[2] ?? resolve(root, "../toy-box-Minecraft"));

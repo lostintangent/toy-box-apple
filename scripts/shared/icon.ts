@@ -1,7 +1,7 @@
 import { copyFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { command, executable, main, plist, root, temporary } from "./support/lib.ts";
-import { compileAppIcon } from "./support/app-icon.ts";
+import { command, executable, main, plist, root, temporary } from "./lib/index.ts";
+import { compileAppIcon } from "./lib/app-icon.ts";
 
 if (import.meta.main) await main(async () => {
     const source = join(root, "Resources/AppIcon.icon");
@@ -27,7 +27,7 @@ if (import.meta.main) await main(async () => {
             "--platform", "macOS", "--rendition", "Default", "--width", "1024", "--height", "1024", "--scale", "1"],
         { quiet: true });
         await mkdir(join(directory, "AppIcon.iconset"));
-        await command(["xcrun", "swiftc", "-O", join(root, "scripts/shared/support/icon-grid.swift"), "-o", join(directory, "grid")]);
+        await command(["xcrun", "swiftc", "-O", join(root, "scripts/shared/lib/icon-grid.swift"), "-o", join(directory, "grid")]);
         await command([join(directory, "grid"), join(directory, "master.png"), join(directory, "AppIcon.iconset")]);
         await command(["iconutil", "-c", "icns", "-o", output, join(directory, "AppIcon.iconset")]);
         await copyFile(join(directory, "Assets.car"), assets);

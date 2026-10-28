@@ -88,8 +88,8 @@ as artifacts, without publishing.
 Local builds use Command Line Tools. CI uses its selected Xcode 27 toolchain on the `xcode-27` runner.
 Checks run for pull requests and pushes to `main`, not standalone branch pushes. A newer revision
 cancels unfinished checks for the same pull request or ref. Release tags and manual dry runs retain
-their serialized, non-cancellable publication group. Portable tooling tests run on Linux, while the
-native bundle checks that use Apple's tools run on the Mac release job and skip on other hosts.
+their serialized, non-cancellable publication group. Tooling typechecking and workflow linting run
+on Linux. Native bundling, Siri metadata and signing checks run in the Mac release job.
 The Mac gate emits unbuffered test progress. Its twelve-minute watchdog samples only its own
 SwiftPM and XCTest descendants, prints their stacks and uploads diagnostics before failing.
 The job's twenty-minute limit remains unchanged. It runs ChannelClient with
@@ -140,14 +140,12 @@ to `MACOS_SIGNING_CERTIFICATE_CHAIN`, alongside the encrypted identity, allowing
 through setup without a workflow edit. CI stores the notarization login in a temporary keychain
 profile. Missing or rejected credentials fail the release explicitly.
 
-Agents never run setup with real credentials or read signing keys and passwords. The credential-free
-regression suite, `bun test scripts`, replaces every credential, signing and
-network command with a fake and runs in CI. For a local release, set `SIGNING_IDENTITY=SHA1`,
+Agents never run setup with real credentials or read signing keys and passwords.
+For a local release, set `SIGNING_IDENTITY=SHA1`,
 `BUILD_NUMBER=N` and `NOTARY_PROFILE=toy-box-channels-notary` when invoking `bun run release vX.Y.Z`.
 Without a notary profile, the archive is named `SIGNED-UNNOTARIZED` and is never published.
-Notarization response tests parse notarytool-shaped JSON, including accepted, rejected, malformed
-and missing-status responses. The release script uses Bun's native JSON parser and requires a
-string status before accepting a response.
+The release script uses Bun's native JSON parser for notarization responses and requires a
+string status before accepting one.
 
 ### In-place updates
 
@@ -198,22 +196,26 @@ malformed prior metadata fails the release instead of allowing a downgrade. The 
 release bootstraps from 0.1.0, which has no feed and must be upgraded manually. Local releases can
 set `PREVIOUS_APPCAST` to apply the same monotonicity guard.
 
-`bun test scripts` exercises packaging, inside-out signing, key setup, failure propagation
-and numeric build ordering without real credentials. Its macOS native checks verify the bundled
-architectures and signatures. A real `generate_appcast`/`sign_update` round trip uses an isolated
-throwaway CryptoKit key file and verifies rejection of a modified archive, never accessing the
-default Sparkle Keychain entry.
+Tooling is grouped by platform under `scripts/desktop/` and `scripts/mobile/`. Each contains
+one-time `setup-secrets.ts`, Swift `test.ts`, `bundle/` for building and signing, `dogfood/` for
+running and measuring development builds, and release tooling. Commands with helpers use their
+folder's `index.ts`. Mac distribution uses `desktop/release/index.ts`; the phone's standalone
+TestFlight command is `mobile/release.ts`. The phone's `dogfood/boot.ts` owns simulator preparation,
+`drive.ts` runs scripted taps and captures, and `drives/` contains those scripts.
+Mirrored filenames across platforms are intentional, with no ambiguous duplicates within a platform.
 
-Tooling is grouped by platform under `scripts/desktop/` and `scripts/mobile/`, with common commands
-under `scripts/shared/` and local servers under `scripts/demo/`. Their top levels contain only
-commands, named after what they do. [scripts/README.md](../scripts/README.md) lists the root package
-commands. Helpers live in `bundle/`, Mac `release/`, mobile `drive/`, demo `channels/` and shared
-`support/`. Platform folders never import each other. CI calls release-only helpers by path rather
-than exposing unused package commands. Script tests protect release, signing, profile matching,
-bundle metadata and credential boundaries. Development-tool tests and assertions that merely
-restate workflow text are omitted. Bun 1.4.4 is pinned in the package metadata and CI,
-and setup-bun is commit-pinned on both runner platforms. Scripts use TypeScript, Bun Shell, native
-file and XML APIs, and `bun test`. The sole `.sh` helper uses Bash's silent `read -rs` for the
+`scripts/demo-server/` serves sample channels for either app's development, screenshots and
+write tests without touching real channels. Its `channels/` helpers supply the sample content
+and push routes. Common commands live in `scripts/shared/`, with helpers in `lib/`.
+[scripts/README.md](../scripts/README.md) lists every package command, its file, purpose and operator.
+Platform folders never import each other. CI calls release-only helpers by path rather than exposing
+unused package commands.
+
+Script tests and their fake-command harness are omitted. CI keeps `bun check` and
+`bun run lint:workflows`. Any change to bundle or release tooling requires both real release
+dry runs to pass. Bun 1.4.4 is pinned in the package metadata and CI, and setup-bun is commit-pinned
+on both runner platforms. Scripts use TypeScript, Bun Shell and native file and XML APIs.
+The sole `.sh` helper uses Bash's silent `read -rs` for the
 user-only credential prompt. Native Swift helpers retain Security-framework identity export and
 AppKit icon rendering. Local builds remain Command Line Tools only.
 
@@ -253,7 +255,7 @@ app-specific password. After setting the account/app identifiers, a local valida
 repo root prompts silently and passes only an environment reference to Apple's tool:
 
 ```sh
-NOTARY_APP_PASSWORD="$(bash scripts/shared/support/read-password.sh 'App-specific password: ')" bun run testflight --validate-only --build-number N
+NOTARY_APP_PASSWORD="$(bash scripts/shared/lib/read-password.sh 'App-specific password: ')" bun run testflight --validate-only --build-number N
 ```
 
 Omit `--validate-only` to upload. No password is passed as a shell argument or stored by the

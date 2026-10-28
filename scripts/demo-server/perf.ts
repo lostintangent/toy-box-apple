@@ -19,9 +19,9 @@
 // Usage: bun run demo:perf [path to toy-box-Minecraft]. TOY_BOX_PERF_PORT sets the port (3292).
 import http from "node:http";
 import { resolve } from "node:path";
-import { createHistoryFixture, historyChannelID, writeHistoryPage } from "./channels/history.ts";
+import { createHistoryFixture, historyChannelID, writeHistoryPage } from "./channels/history-channel.ts";
 import { createScrollFixture, scrollChannelID, writeScrollImage } from "./channels/scroll.ts";
-import { root } from "../shared/support/lib.ts";
+import { root } from "../shared/lib/index.ts";
 import { referenceFactory, type Agent, type Message, type Response, type Snapshot, type Status } from "./channels/types.ts";
 
 const reference = resolve(process.argv[2] ?? resolve(root, "../toy-box-Minecraft"));

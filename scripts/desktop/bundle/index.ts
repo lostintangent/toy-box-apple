@@ -1,12 +1,12 @@
 import { copyFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { command, main, plist, root, scratchPath, text } from "../shared/support/lib.ts";
-import { embedSparkle } from "./bundle/embed-sparkle.ts";
-import { signApp } from "./bundle/sign-app.ts";
-import { embedAppIcon } from "../shared/support/app-icon.ts";
-import { embedShareExtension } from "./bundle/share-extension.ts";
-import { embedWidgetExtension } from "./bundle/widget-extension.ts";
-import { extractAppIntents } from "./bundle/app-intents.ts";
+import { command, main, plist, root, scratchPath, text } from "../../shared/lib/index.ts";
+import { embedSparkle } from "./sparkle.ts";
+import { signApp } from "./sign.ts";
+import { embedAppIcon } from "../../shared/lib/app-icon.ts";
+import { embedShareExtension } from "./share-extension.ts";
+import { embedWidgetExtension } from "./widget-extension.ts";
+import { extractAppIntents } from "./app-intents.ts";
 
 export async function buildApp(configuration = process.env.CONFIGURATION || "debug", scratch = scratchPath()) {
     const sdk = process.env.SDKROOT || await text(["xcrun", "--sdk", "macosx", "--show-sdk-path"]);

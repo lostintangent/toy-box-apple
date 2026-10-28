@@ -1,6 +1,6 @@
 import { copyFile, mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
-import { command, plist, root, text } from "../../shared/support/lib.ts";
+import { command, plist, root, text } from "../../shared/lib/index.ts";
 import { configureExtension } from "./share-extension.ts";
 
 export const widgetAppGroup = "RHFNBL7EG4.dev.toybox.desktop";

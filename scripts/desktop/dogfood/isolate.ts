@@ -1,8 +1,8 @@
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
-import { command } from "../../shared/support/lib.ts";
-import { shareExtension } from "./share-extension.ts";
-import { widgetExtension, widgetGroupKey } from "./widget-extension.ts";
+import { command } from "../../shared/lib/index.ts";
+import { shareExtension } from "../bundle/share-extension.ts";
+import { widgetExtension, widgetGroupKey } from "../bundle/widget-extension.ts";
 
 export async function isolateIntegrations(app: string) {
     const info = join(app, "Contents/Info.plist");
