@@ -32,12 +32,15 @@ Incident records moved from AGENTS.md on 2026-10-27, with their evidence and res
 
 ## Mobile icon tooling
 
-- The Simulator fake-compiler icon case in `scripts/shared/mobile-icon.test.ts` is quarantined behind
+- The Simulator fake-compiler icon case in `scripts/shared/mobile-icon.test.ts` was quarantined behind
   `TOY_BOX_TEST_MOBILE_ICON_TIMING=1`. On 2026-10-26, the device-release tooling check on `ec34039`
   plus the configuration-only change exceeded Bun's unchanged 5,000 ms test watchdog at 5,005.64 ms.
   The device counterpart and all other 29 tooling cases passed. No icon code changed and no cause
   is established. Core owns `mobile-icon-tooling-readiness`: identify the stalled command and add
   deterministic completion coverage before restoring it. Do not retry the same candidate to green.
+  The approved t464 cleanup later removed development-tool tests, including this probe and its
+  opt-in row, rather than restoring them. The real icon compiler and bundle-output checks still
+  fail explicitly. Removal does not identify the original hang's cause.
 
 ## Live Text analysis
 

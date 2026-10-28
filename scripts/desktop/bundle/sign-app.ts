@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { command, main, root } from "../../shared/lib.ts";
+import { command, main, root } from "../../shared/support/lib.ts";
 import { configureShareExtension, shareExtension } from "./share-extension.ts";
 import { configureWidgetExtension, widgetExtension } from "./widget-extension.ts";
 
@@ -36,6 +36,6 @@ export async function signApp(app: string, options = ["--force", "--timestamp=no
 
 if (import.meta.main) await main(async () => {
     const [app, ...options] = process.argv.slice(2);
-    if (!app) throw new Error("Usage: bun run sign-app APP [codesign options]");
+    if (!app) throw new Error("Usage: bun scripts/desktop/bundle/sign-app.ts APP [codesign options]");
     await signApp(app, options.length ? options : undefined);
 });

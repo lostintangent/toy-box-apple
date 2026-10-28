@@ -109,9 +109,9 @@ jobs:
           NOTARY_APP_PASSWORD: ${{ secrets.NOTARY_APP_PASSWORD }}
           SCRATCH_PATH: ${{ runner.temp }}/toy-box-testflight
         run: |
-          args=(--testflight)
+          args=()
           if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then args+=(--validate-only); fi
-          bun run mobile "${args[@]}"
+          bun run testflight "${args[@]}"
       - name: Remove temporary TestFlight signing material
         if: always()
         run: |

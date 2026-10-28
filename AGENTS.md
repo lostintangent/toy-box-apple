@@ -19,28 +19,30 @@ view.
 
 - Use Bun 1.4.4 and root `package.json` commands after `bun install --frozen-lockfile`.
   `scripts/desktop/` and `scripts/mobile/` own their platform tooling, `scripts/shared/` their
-  common helpers, and `scripts/fixtures/` demo servers/fixtures. Platform release tooling lives
-  in each platform's `release/`, with Mac packaging in `bundle/` and updates in `sparkle/`.
+  common commands, and `scripts/demo/` local servers. Each folder's top level contains only
+  commands named for what they do. See [scripts/README.md](scripts/README.md) for the command table.
+  Helpers live in `bundle/`, Mac `release/`, mobile `drive/` and shared `support/`.
   Platform folders never import each other. Use native `bun check`, without installing TypeScript.
-  `bun run test:release` and `bun run lint:workflows` cover releases and workflows.
+  `bun test scripts` keeps release/signing contracts, not development-tool or workflow-text tests.
+  `bun run lint:workflows` validates workflows.
   Workflow shell checks gate warnings and errors, not style hints.
 - Use `bun run test` for Swift tests. Bare `bun test` only runs the TypeScript tooling tests.
 - Mac builds use only Command Line Tools. iOS uses Xcode's toolchain/SDK through SwiftPM,
-  not `xcodebuild`. `bun run app` invokes Xcode's `appintentsmetadataprocessor` for Siri/Shortcuts,
+  not `xcodebuild`. `bun run build` invokes Xcode's `appintentsmetadataprocessor` for Siri/Shortcuts,
   requiring Xcode installed but not its license.
-- Target macOS 27+ on Apple Silicon with Swift tools 6.4+. `bun run app` stamps the real SDK
+- Target macOS 27+ on Apple Silicon with Swift tools 6.4+. `bun run build` stamps the real SDK
   before signing. Use that bundle for native visual checks, not SwiftPM's unstamped executable.
   `bun run validate` rejects recorded SDKs below macOS 27.
 - Use your own scratch path so parallel builds never share `.build`:
   - `DEVELOPER_DIR=/Library/Developer/CommandLineTools swift build --scratch-path /tmp/tbm-<you>`
   - `SCRATCH_PATH=/tmp/tbm-<you> bun run test` supplies the Command Line Tools Testing macro plugin
     path and rejects runs without a summary, unlike bare `swift test`.
-  - `SCRATCH_PATH=/tmp/tbm-<you> bun run app` builds, bundles and opens a new app instance.
+  - `SCRATCH_PATH=/tmp/tbm-<you> bun run build` builds, bundles and opens a new app instance.
 - Set the server with `TOY_BOX_SERVER_URL` or Settings. Write tests use `bun run demo` on 3210,
   the Minecraft wrapper serving the required catalog lead profile without modifying the reference.
   Read live 3100 freely, but never post or mutate there without the lead's approval of a specific
   scratch channel. Leave its current process running.
-- `bun run history-demo` imports the reference factory read-only: `history-demo` on 3211,
+- `bun run demo:history` imports the reference factory read-only: `history-demo` on 3211,
   480 messages, canonical 100-message older pages and isolated read receipts. Use it for paging
   and key-window read checks without disturbing the shared 3210 screenshot baseline.
 - Integration tests are opt-in: `TOY_BOX_DEMO_URL=http://127.0.0.1:3210 bun run test`, and
@@ -60,7 +62,7 @@ view.
   events can stop the runner's outer run loop. Deterministic geometry/routing-policy checks remain
   in the default suite. VisionKit analysis is quarantined under Test reliability.
 - `SCRATCH_PATH=/tmp/tbm-<you> bun run benchmark [--summaries] [launch|switch|messages|paging|key|idle ...]`
-  builds release `dev.toybox.desktop.benchmark`, runs each scenario on a fresh `bun run perf-demo`
+  builds release `dev.toybox.desktop.benchmark`, runs each scenario on a fresh `bun run demo:perf`
   at 3292 (`TOY_BOX_PERF_PORT`), prints result/budget and exits 1 if over. See the spec's Performance
   budgets for busy time, saturated spans and frame gaps. Leave the window uncovered.
   `key` runs only when named, takes focus for about 45 seconds, and measures key-window CPU with
@@ -69,7 +71,7 @@ view.
   Others wait for it, so never poll for one yourself. Under load, compare main-thread CPU:
   scroll's CPU ms per 1,000 native points and paging's CPU ms per older page are informational.
   Judge wall-clock hitches only on a quiet machine, since busy time includes scheduling delays.
-- `bun run generate-cron-fixtures ../toy-box` regenerates the cron fixtures from the
+- `bun run cron-fixtures ../toy-box` regenerates the cron fixtures from the
   reference without touching it.
 - Quit the instances you launch when you are done.
 - Attach channel images from your own session `files/` folder, never `/tmp`. Original paths stay
@@ -77,17 +79,17 @@ view.
 
 ### iPhone development
 
-- **Simulator:** `SCRATCH_PATH=/tmp/tbm-<you> bun run mobile` builds, bundles, installs and launches
+- **Simulator:** `SCRATCH_PATH=/tmp/tbm-<you> bun run simulator` builds, bundles, installs and launches
   `dev.toybox.mobile` on shared **Toy Box Mobile** iPhone Duo. It never opens/focuses Device Hub
   (`com.apple.dt.Devices`). Select that device there and use its native hinge-posture slider.
 - **Lease:** one agent at a time. Every simulator command takes a machine-wide `flock`, waits,
-  and prints the holder's PID, command and worktree. `bun run mobile --hold` retains it for manual
+  and prints the holder's PID, command and worktree. `bun run simulator --hold` retains it for manual
   checks. Ctrl-C or the 15-minute expiry shuts down and releases it. Never boot another simulator
   or run `simctl` by hand. `MOBILE_SIMULATOR=<UDID>` selects an agreed shared device, not one per agent.
 - **Server:** launches explicitly pass `--server`, defaulting to `TOY_BOX_SERVER_URL` or
-  `http://127.0.0.1:3210`. `bun run mobile --server <URL>` wins over stale launch environment
+  `http://127.0.0.1:3210`. `bun run simulator --server <URL>` wins over stale launch environment
   without saving Settings.
-- **Capture:** `bun run mobile --screenshot <file.png>` uses the same lock.
+- **Capture:** `bun run simulator --screenshot <file.png>` uses the same lock.
   `--hold --screenshot <file.png>` captures the current pose at lease end, before shutdown.
   `--displays` lists native IDs, and `--display <ID>` selects a screenshot display, including Duo's
   secondary display. Wait for visible drawing before ending the lease, not merely a launch PID.
@@ -95,12 +97,12 @@ view.
   `extraSmall`, `small`, `medium`, `large`, `extraLarge`, `extraExtraLarge`, `extraExtraExtraLarge`,
   `accessibilityMedium`, `accessibilityLarge`, `accessibilityExtraLarge`,
   `accessibilityExtraExtraLarge`, `accessibilityExtraExtraExtraLarge`.
-- **Appearance:** `--appearance light|dark` requires `--hold` or `--drive` and changes the simulator
-  preference for the lease. Capture, restore and read back the prior value before shutdown,
-  including failures/interruption. Unknown prior values fail before mutation. A drive verifies
-  effective native traits before captures/completion. Incompatible saved app overrides fail unchanged.
+- **Appearance:** `--appearance light|dark` passes `-appearance` in the app's process-only
+  argument domain, ahead of saved Settings. It changes neither saved appearance nor the simulator
+  preference, so nothing needs restoring. This is app-only, not Home/Lock Screen or widget-host
+  appearance. A drive still verifies effective native traits before captures/completion.
   Build-only, capture-only, display-list-only and shutdown-only commands reject launch options.
-- **Shutdown:** `bun run mobile --shutdown`.
+- **Shutdown:** `bun run simulator --shutdown`.
 
 **Driver.** `--drive <steps.json>` runs a DEBUG-only accessibility script under the lease,
 then shuts down on completion/failure. Release builds have neither startup hook nor driver.
@@ -142,7 +144,7 @@ use demo servers only for write scripts. Never skip or retry actions.
   and selected device identify the leased simulator before using native posture controls.
   The SDK 27.1 fixture waits for settled **466x678-point folded** / **669x951-point unfolded** proof
   scenes, not general device/hinge detection. Timeouts report expected and measured scenes and
-  stop without retrying. `scripts/fixtures/mobile-drive-posture.json` checks folded/unfolded/folded
+  stop without retrying. `scripts/mobile/drive/posture.json` checks folded/unfolded/folded
   without sending or editing a draft.
 - Observed: native Open then Rotate Right reached unfolded. Displays **1** = folded LCD
   (1398x2034), **3** = unfolded LCD (2007x2853), both 3x. **2** is TVOut, not unfolded.
@@ -150,12 +152,12 @@ use demo servers only for write scripts. Never skip or retry actions.
   Unfolded value remains unverified: Computer Use refused setting and advertised increment.
   A requested value is not a measured result. Legacy `{"fold":false}` fails with native diagnostics.
   Never use display-power: it did not change the scene and can crash SpringBoard.
-- `scripts/fixtures/mobile-drive-demo.json` performs a real reply/send and both display captures,
+- `scripts/mobile/drive/demo.json` performs a real reply/send and both display captures,
   requires message-row identifiers and baseline request sequence 15, and sends on every run.
   It requires the same live Device Hub posture actions.
-- **Build only:** `bun run mobile --build-only` makes the Simulator bundle without booting.
-  `bun run mobile --device --build-only` makes an **unsigned** arm64 bundle without reading signing
-  identities/profiles. Device builds are optimized release, Simulator tests always debug, Simulator
+- **Build only:** `bun run simulator --build-only` makes the Simulator bundle without booting.
+  `bun run testflight --build-only` makes an **unsigned** release arm64 bundle without reading signing
+  identities/profiles. Simulator tests always debug, Simulator
   apps default debug. Use `CONFIGURATION=release` for native performance comparisons.
   Output states configuration/optimization.
 - **Bundle contract:** before signing, stamp/verify the selected iOS SDK in `LC_BUILD_VERSION`,
@@ -169,30 +171,17 @@ use demo servers only for write scripts. Never skip or retry actions.
   Simulator capabilities link into `__TEXT,__entitlements` / `__TEXT,__ents_der`, including all three
   bundles' `group.dev.toybox.mobile`. Ad-hoc signatures have no restricted device entitlements.
   Sign Simulator extensions before host, without device profiles/credentials.
-- **Install on device:** `bun run mobile --device [--device-id <name-or-UDID>] [--server <URL>]`
-  builds arm64, signs with an existing matching Apple Development identity/profile, installs via
-  `xcrun devicectl`, launches and verifies the running process. Never xcodebuild, export private keys,
-  create signing assets or use the shared simulator. First connect, pair, enable Developer Mode and
-  unlock your own iOS 27+ iPhone. Multiple eligible phones require `--device-id`.
-- **Profiles:** three explicit, unexpired development profiles, one per bundle, sharing a team and
-  available certificate and covering the phone's UDID. All require `group.dev.toybox.mobile`.
-  The app also needs development `aps-environment`. Never accept wildcard profiles. Select with
-  `MOBILE_PROVISIONING_PROFILE`, `MOBILE_WIDGET_PROVISIONING_PROFILE`,
-  `MOBILE_NOTIFICATION_PROVISIONING_PROFILE`. Missing profiles fail before build/install and point to
-  "Your Apple steps" in the Release 2 proposal. The user creates the App Group, three explicit App IDs
-  and profiles. Agents never provision them or read the APNs key. Each extension embeds its own profile
-  and signs before the app. Do not uninstall existing app/data.
-- **Device server:** default `http://<LocalHostName>.local:3100` (this Mac's Bonjour host).
-  `--server` / `TOY_BOX_SERVER_URL` selects another phone-reachable LAN/HTTPS server.
-  Signed bundles store it as `ToyBoxDefaultServerURL`, a nonpersistent first-launch fallback after
-  explicit launch input, environment and saved Settings. Simulator/unsigned bundles have no bundled server default.
-  Never save launch overrides in Settings. Reject loopback and credential-bearing URLs.
+- **On-phone checks:** install through TestFlight. Direct local device installs are retired,
+  so development never replaces the user's TestFlight app or data.
+  There is no bundled server or Bonjour default. Never save launch overrides in Settings.
   Both apps accept user-selected HTTP/HTTPS, including fully qualified Tailscale names.
   ATS uses `NSAllowsArbitraryLoads` alone, not `NSAllowsLocalNetworking` (which defeats the opt-out).
   Local-network permission is separate. HTTPS retains normal certificate validation.
-- **TestFlight:** `bun run mobile --testflight [--version X.Y.Z] [--build-number N]` builds release
+- **TestFlight:** `bun run testflight [--version X.Y.Z] [--build-number N]` builds release
   arm64, signs the three bundles with matching Apple Distribution/App Store profiles, packages an
-  IPA, validates, uploads and waits for Apple processing. `--validate-only` never uploads.
+  IPA, validates and uploads. A zero altool exit means Apple accepted the upload, not that
+  processing or tester availability is complete. Print its output without parsing it as one
+  JSON document or polling. `--validate-only` never uploads.
   `--build-only` is unsigned and needs no profiles or credentials. All modes omit a bundled server,
   DEBUG proof code and fixtures. Use `mobile-testflight` under your own `SCRATCH_PATH`.
 - **TestFlight setup:** the user creates the App Store Connect app and three explicit App Store
@@ -201,12 +190,12 @@ use demo servers only for write scripts. Never skip or retry actions.
   `APP_STORE_CONNECT_USERNAME` and numeric `APP_STORE_CONNECT_APP_ID`. Apple tools read the password
   only through `@env:NOTARY_APP_PASSWORD`, locally and in CI. Never pass a password as a shell argument.
   Only the user supplies it. For a local validation from the repo root:
-  `NOTARY_APP_PASSWORD="$(bash scripts/shared/read-password.sh 'App-specific password: ')" bun run mobile --testflight --validate-only --build-number N`
+  `NOTARY_APP_PASSWORD="$(bash scripts/shared/support/read-password.sh 'App-specific password: ')" bun run testflight --validate-only --build-number N`
 - **TestFlight bundle:** actual Xcode/SDK `DT*` metadata, matching version/build on every component,
   `ITSAppUsesNonExemptEncryption=false`, production push and no `get-task-allow`. Validate/upload require
   `--build-number` / `BUILD_NUMBER`; choose an unused App Store build. Build-only may use the plist's
   build. `MOBILE_VERSION` sets the version. There is no local counter or TestFlight lease. Each
-  executable carries its audited `PrivacyInfo.xcprivacy`. Processing `VALID` is not tester availability.
+  executable carries its audited `PrivacyInfo.xcprivacy`. TestFlight shows the build after Apple processing.
 - `SCRATCH_PATH=/tmp/tbm-<you> bun run test:mobile` builds the iOS tests and runs
   ChannelClient, ToyBoxUI, ToyBoxMobileIntegrations, ToyBoxMobileWidget and ToyBoxMobile
   tests on iOS Simulator via Apple's `xctest` host. ChannelKit/mocked Intelligence execute on Mac
@@ -216,7 +205,7 @@ use demo servers only for write scripts. Never skip or retry actions.
   to another installed Xcode if needed. Require Swift 6.4 and an iOS 27+ SDK, a Duo runtime for
   the app, or another iPhone's installed 27+ runtime for tests. Never download runtimes.
 - These commands set `TOY_BOX_MOBILE=1` for the package's mobile graph and use
-  `mobile-simulator` / `mobile-device` under `SCRATCH_PATH`. Each links the same manifest,
+  `mobile-simulator` / `mobile-testflight` under `SCRATCH_PATH`. Each links the same manifest,
   sources/tests into a dependency-free workspace. Leave the default graph, Mac build/tests and
   Sparkle lockfile unchanged. Do not export the flag globally, run that graph in the repository
   root or share scratch paths across builds.
@@ -234,10 +223,9 @@ use demo servers only for write scripts. Never skip or retry actions.
   Never hard-code a safe-area inset, device size or Duo fold width. The layout adapts to the
   scene the system provides. Mockup canvas measurements are not implementation constants.
 
-Before signed device/TestFlight builds, the **user** must confirm an active Apple Developer team,
+Before signed TestFlight builds, the **user** must confirm an active Apple Developer team,
 accept pending agreements, register explicit App ID `dev.toybox.mobile` and create its App Store Connect
-app. Local installs need iPhone Developer Mode, an Apple Development certificate, registered device
-and matching development profile. TestFlight needs an Apple Distribution certificate, App Store Connect
+app. TestFlight needs an Apple Distribution certificate, App Store Connect
 profile, required metadata, privacy/export-compliance answers and tester access, plus beta review for
 external testers.
 Agents never create these accounts, accept agreements, read private keys or set up credentials.
@@ -268,7 +256,6 @@ comparisons and retained regression contracts are in [docs/test-history.md](docs
 
 | Test | Opt-in | Owner / condition for restoring merge-gate coverage |
 | --- | --- | --- |
-| Simulator fake-compiler icon case, `scripts/shared/mobile-icon.test.ts` | `TOY_BOX_TEST_MOBILE_ICON_TIMING=1` | Core, `mobile-icon-tooling-readiness`: identify stalled command and add deterministic completion coverage |
 | `ToyBoxMobileTests/ComposerTests.audienceCapsuleIsSeparateFromIts44PointRowAndGrowsWithText` | `TOY_BOX_TEST_MOBILE_AUDIENCE_RENDERING=1` | Core, t465 `mobile-audience-capsule-rendering`: identify the transparent center-column render cause and add deterministic regression coverage before restoring |
 | `ImageViewerLiveTextTests.onlyTheSettledCurrentImageIsAnalyzedAndTheWindowRemembersIt` | `TOY_BOX_TEST_LIVE_TEXT_ANALYSIS=1` | Transcript: identify cause and add deterministic analysis-gating coverage |
 | `imageStripOverflowRespondsToWheelInput` | `TOY_BOX_TEST_IMAGE_STRIP_SCROLLING=1` | Composer: native wheel animation requires awake/unlocked Mac, so keep per-frame/WindowServer checks opt-in |
@@ -295,9 +282,8 @@ analysis errors/completion/text detection and load.
   27+ Liquid Glass/sidebar selection. Verify materials, selection and scroll-edge effects in a real window.
 - Computer Use accepts bundle IDs, not paths. User: `dev.toybox.desktop`. Agents:
   `dev.toybox.desktop.test` ("Toy Box Test", `.build/agents`), built/launched by `bun run validate`.
-  Shared IDs permit reads, not clicks. Until user approval, validation announces fallback to the shared
-  bundle. It unregisters pre-rename `Toy Box Desktop Test.app` copies before registering
-  `Toy Box Test.app`, without deleting bundles or changing the user's app registration.
+  Shared IDs permit reads, not clicks. Validation builds and registers only the isolated test copy,
+  never a shared-bundle fallback. Computer Use approval is still required by the tool.
 - Launch your own build in the background against the demo:
   `open -n -g "/tmp/tbm-<you>/Toy Box.app" --args --server http://127.0.0.1:3210 -ApplePersistenceIgnoreState YES`.
   `-g` avoids focus. `--server` / `TOY_BOX_SERVER_URL` is session-only, never replacing saved Settings.
@@ -305,9 +291,9 @@ analysis errors/completion/text detection and load.
   test instances must neither restore nor overwrite shared saved window state.
 - Keep the first bundle path a Computer Use session inspects, or it rejects other paths
   ("no longer belongs to the approved app"). `SCRATCH_PATH=/tmp/tbm-<you> bun run validate` always uses
-  `CONFIGURATION=release`, swaps optimized builds into both bundles without disturbing running
+  `CONFIGURATION=release`, swaps an optimized build into the isolated bundle without disturbing running
   instances, and launches the test bundle against the demo in background. Judge feel there,
-  not quick `bun run app` debug builds.
+  not quick `bun run build` debug builds.
 - Only one instance may have the test ID for clicks. On "no perception baseline for this pid",
   wait for the other agent's instance to quit. Reads still work: `list_apps` with your own `window`.
   Confirm `studio-demo` before acting. Never act in a window listing live channels.
@@ -355,8 +341,8 @@ analysis errors/completion/text detection and load.
   or empty entries fail before release builds. `bun run release-notes TAG [OUTPUT.md]` extracts one.
   Mac GitHub/Sparkle notes use the Mac entry. Phone notes are retained in the job summary/artifact;
   per-build “What to Test” stays manual until a password-authenticated Apple tool path is proven.
-- User only: `bun run setup-testflight-secrets SHA1 APP_STORE_CONNECT_APP_ID [OWNER/REPO]`.
-  It selects the same three App Store profiles as `mobile --testflight`, reads an export password
+- User only: `bun run setup-secrets:mobile SHA1 APP_STORE_CONNECT_APP_ID [OWNER/REPO]`.
+  It selects the same three App Store profiles as `testflight`, reads an export password
   silently or from piped stdin, exports only that Apple Distribution identity and deletes its
   temporary encrypted export. It sets `MOBILE_SIGNING_CERTIFICATE`, `MOBILE_SIGNING_PASSWORD`,
   the three `MOBILE_*_PROVISIONING_PROFILE` secrets, and public `MOBILE_SIGNING_IDENTITY` /
@@ -366,16 +352,16 @@ analysis errors/completion/text detection and load.
   into job-temporary storage, then restores the keychain search list and removes the material.
   Agents never run real setup or read the exported identity/password.
 - Certificate-owner-only setup:
-  `bun run setup-release-secrets SHA1 APPLE_ID TEAM_ID`, using an Apple ID app-specific password
+  `bun run setup-secrets SHA1 APPLE_ID TEAM_ID`, using an Apple ID app-specific password
   entered silently or piped on stdin, never as an argument. It configures `toy-box-channels-notary`
   and GitHub secrets `MACOS_SIGNING_CERTIFICATE`, `MACOS_SIGNING_PASSWORD`, `NOTARY_APP_PASSWORD`,
   plus public `MACOS_SIGNING_IDENTITY` / `MACOS_SIGNING_CERTIFICATE_CHAIN` variables.
   Setup exports its verified public chain alongside the encrypted identity,
   so certificate renewal needs setup again, not a workflow fingerprint/intermediate edit.
   Agents never run setup with real credentials, create secrets or read keys/passwords.
-  `bun run test:release` uses fake commands unless native checks are explicitly enabled.
+  `bun test scripts` uses fake commands unless native checks are explicitly enabled.
   The only shell helper is `read-password.sh`, using `read -rs` for echo/piped-input handling.
-- Update signing setup, by the user only: `bun run setup-update-secrets [OWNER/REPO]`. It reuses
+- The same Mac setup also reuses
   or creates the `dev.toybox.desktop` Sparkle Keychain account, uploads `SPARKLE_ED_PRIVATE_KEY`
   as a secret and `SPARKLE_ED_PUBLIC_KEY` as a public repository variable, then deletes the temporary
   export. No key backup is required: on a new Mac it creates a replacement, authorized by the same
@@ -397,7 +383,7 @@ analysis errors/completion/text detection and load.
   publishing. Isolated validation/snapshot/benchmark copies remove widget/group metadata.
   Register the containing app with LaunchServices before probing WidgetKit registration.
   Quick Send/Needs You controls share this extension. Both executables include foreground intents
-  from `ToyBoxControlIntents` through `AppIntentsPackage`. `bun run app` extracts package metadata,
+  from `ToyBoxControlIntents` through `AppIntentsPackage`. `bun run build` extracts package metadata,
   merges into host/extension, then signs. Controls open host routes, never send from the extension.
   Local builds use Command Line Tools, CI the runner's Xcode 27 on `xcode-27`.
 - Share builds via SwiftPM/`_NSExtensionMain`, without Xcode/storyboard. Load only explicitly shared
@@ -407,17 +393,17 @@ analysis errors/completion/text detection and load.
   Services, URL schemes and document handlers. Check `pluginkit -m -v -i dev.toybox.desktop.share`
   on a normal bundle, not an isolated clone.
 - Sparkle is pinned to 2.10.0 in SwiftPM. Every bundle embeds its arm64-only framework, installer
-  and updater, without sandbox XPC services or development headers. `bun run sign-app` signs those
+  and updater, without sandbox XPC services or development headers. `desktop/bundle/sign-app.ts` signs those
   components inside out before signing the app. Keep Sparkle's license in the bundle.
 - Only release bundles get `SUFeedURL` / `SUPublicEDKey`. Others have no updater regardless of saved
   preferences. Feed:
   `https://github.com/lostintangent/toy-box-apple/releases/latest/download/appcast.xml`.
   Automatic checks default on without prompting. Installation is opt-in. After notarization,
-  `bun run generate-appcast` verifies the archive signature, accepting key stdin from
+  `desktop/release/appcast.ts` verifies the archive signature, accepting key stdin from
   `SPARKLE_ED_PRIVATE_KEY` or explicit `SPARKLE_ED_KEY_FILE` for isolated tests. Never default Keychain.
 - Recovery from a lost Mac: sign in to the same Apple account/team, create replacement Developer ID
-  and Apple Distribution certificates/profiles, then rerun `setup-release-secrets`,
-  `setup-testflight-secrets` and `setup-update-secrets`. Neither workflow pins an issuing intermediate.
+  and Apple Distribution certificates/profiles, then rerun `setup-secrets`
+  and `setup-secrets:mobile`. Neither workflow pins an issuing intermediate.
   The current Developer ID expires February 1, 2027. Renew and rerun setup before then.
   Sparkle's archive key stays required, but the feed is unsigned and both strict flags stay absent.
   Existing v0.1.8 has the strict policy: install the first replacement manually once.
