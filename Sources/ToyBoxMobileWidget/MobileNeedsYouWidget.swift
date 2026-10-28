@@ -13,8 +13,8 @@ struct MobileNeedsYouWidget: Widget {
             MobileNeedsYouWidgetContent(entry: entry)
                 .containerBackground(.background, for: .widget)
         }
-        .configurationDisplayName("Needs you")
-        .description("See which teams are waiting for your reply.")
+        .configurationDisplayName("Toy Box")
+        .description("See which channels need your attention.")
         .supportedFamilies([.systemSmall, .systemMedium, .systemLarge, .accessoryRectangular])
     }
 }
@@ -32,8 +32,7 @@ struct MobileNeedsYouProvider: TimelineProvider {
         Task { @MainActor in
             let snapshot: NeedsYouSnapshot?
             do {
-                let publisher = try MobileWidgetSnapshotPublisher(
-                    avatarPNG: MobileNotificationAvatar.png, reload: {})
+                let publisher = try MobileWidgetSnapshotPublisher(reload: {})
                 snapshot = try await publisher.refresh()
             } catch {
                 Logger(subsystem: "dev.toybox.mobile.widget", category: "Snapshot")

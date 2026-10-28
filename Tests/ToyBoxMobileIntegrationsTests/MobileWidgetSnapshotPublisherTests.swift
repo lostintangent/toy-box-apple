@@ -12,14 +12,16 @@ struct MobileWidgetSnapshotPublisherTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         try MobilePushRegistrationStore(directory: directory).select(serverURL: fixture.serverURL)
         let now = Date(timeIntervalSince1970: 1793086200)
-        let first = try MobileWidgetSnapshotPublisher(
-            directory: directory, avatarPNG: { _ in Data([1, 2, 3]) }, reload: {})
+        let first = try MobileWidgetSnapshotPublisher(directory: directory, reload: {})
         let waiting = try #require(try await first.refresh(session: fixture.session, now: now))
         #expect(waiting.waitingCount == 1)
         #expect(waiting.requests.first?.quote == "Ready to ship?")
-        #expect(waiting.requests.first?.agentName == "Server Lead")
+        #expect(waiting.requests.first?.channelName == "Studio")
         #expect(waiting.requests.first?.sequence == 15)
-        #expect(waiting.requests.first?.avatarPNG == Data([1, 2, 3]))
+        #expect(waiting.requests.first?.requestedAt == ChannelDates.date("2026-10-27T07:30:00Z"))
+        let request = try #require(waiting.requests.first)
+        let row = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(request)) as? [String: Any])
+        #expect(Set(row.keys) == ["channelID", "channelName", "sequence", "quote", "requestedAt"])
         #expect(!waiting.isOffline)
         #expect(waiting.updatedAt == now)
         #expect(fixture.paths == ["/api/v1/channels", "/api/v1/channels/studio/messages"])
@@ -27,7 +29,7 @@ struct MobileWidgetSnapshotPublisherTests {
             == [MobilePushRegistrationStore.fileName, NeedsYouSnapshot.fileName])
 
         try fixture.replaceCatalog(Self.catalog(waiting: false))
-        let relaunched = try MobileWidgetSnapshotPublisher(directory: directory, avatarPNG: { _ in nil }, reload: {})
+        let relaunched = try MobileWidgetSnapshotPublisher(directory: directory, reload: {})
         let empty = try #require(try await relaunched.refresh(
             session: fixture.session, now: now.addingTimeInterval(60)))
         #expect(empty.waitingCount == 0)
@@ -45,10 +47,10 @@ struct MobileWidgetSnapshotPublisherTests {
         try MobilePushRegistrationStore(directory: directory).select(serverURL: fixture.serverURL)
         var saved = Self.snapshot(now: Date(timeIntervalSince1970: 1793086200))
         saved.serverURL = fixture.serverURL
-        let original = try MobileWidgetSnapshotPublisher(directory: directory, avatarPNG: { _ in nil }, reload: {})
+        let original = try MobileWidgetSnapshotPublisher(directory: directory, reload: {})
         try original.publish(saved, now: saved.updatedAt)
         fixture.fail(failingPath)
-        let relaunched = try MobileWidgetSnapshotPublisher(directory: directory, avatarPNG: { _ in nil }, reload: {})
+        let relaunched = try MobileWidgetSnapshotPublisher(directory: directory, reload: {})
         let offline = try #require(try await relaunched.refresh(
             session: fixture.session, now: saved.updatedAt.addingTimeInterval(60)))
         #expect(offline.requests == saved.requests)
@@ -75,7 +77,7 @@ struct MobileWidgetSnapshotPublisherTests {
             }
         })
         try MobilePushRegistrationStore(directory: directory).select(serverURL: fixture.serverURL)
-        let publisher = try MobileWidgetSnapshotPublisher(directory: directory, avatarPNG: { _ in nil }, reload: {})
+        let publisher = try MobileWidgetSnapshotPublisher(directory: directory, reload: {})
         await #expect(throws: CancellationError.self) {
             try await publisher.refresh(session: fixture.session)
         }
@@ -88,8 +90,7 @@ struct MobileWidgetSnapshotPublisherTests {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("tbm-widget-\(UUID())")
         defer { try? FileManager.default.removeItem(at: directory) }
         var reloads = 0
-        let publisher = try MobileWidgetSnapshotPublisher(directory: directory, avatarPNG: { _ in nil },
-                                                          reload: { reloads += 1 })
+        let publisher = try MobileWidgetSnapshotPublisher(directory: directory, reload: { reloads += 1 })
         let now = Date(timeIntervalSince1970: 1793086200)
         let snapshot = Self.snapshot(now: now)
         let file = directory.appendingPathComponent(NeedsYouSnapshot.fileName)
@@ -109,10 +110,10 @@ struct MobileWidgetSnapshotPublisherTests {
     @Test @MainActor func anOfflineRelaunchKeepsOnlyTheSelectedServersCachedRequest() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("tbm-widget-\(UUID())")
         defer { try? FileManager.default.removeItem(at: directory) }
-        let first = try MobileWidgetSnapshotPublisher(directory: directory, avatarPNG: { _ in nil }, reload: {})
+        let first = try MobileWidgetSnapshotPublisher(directory: directory, reload: {})
         let snapshot = Self.snapshot(now: .now)
         try first.publish(snapshot)
-        let restored = try MobileWidgetSnapshotPublisher(directory: directory, avatarPNG: { _ in nil }, reload: {})
+        let restored = try MobileWidgetSnapshotPublisher(directory: directory, reload: {})
         try await restored.update(catalog: nil, serverURL: snapshot.serverURL)
         let file = directory.appendingPathComponent(NeedsYouSnapshot.fileName)
         let cached = try JSONDecoder().decode(NeedsYouSnapshot.self, from: Data(contentsOf: file))
@@ -133,8 +134,7 @@ struct MobileWidgetSnapshotPublisherTests {
         var reloads = 0
         let now = Date(timeIntervalSince1970: 1793086200)
         let snapshot = Self.snapshot(now: now)
-        let publisher = try MobileWidgetSnapshotPublisher(
-            directory: directory, avatarPNG: { _ in nil }, reload: { reloads += 1 })
+        let publisher = try MobileWidgetSnapshotPublisher(directory: directory, reload: { reloads += 1 })
         try publisher.publish(snapshot, now: now)
         #expect(reloads == 1)
 
@@ -160,8 +160,7 @@ struct MobileWidgetSnapshotPublisherTests {
         NeedsYouSnapshot(
             serverURL: "https://server.test", updatedAt: now, isOffline: false, isAvailable: true,
             waitingCount: 1, requests: [.init(channelID: "studio", channelName: "Studio", sequence: 15,
-                                            quote: "Ready to ship?", agentName: "Lead", requestedAt: now,
-                                            avatarPNG: Data([1, 2, 3]))]
+                                            quote: "Ready to ship?", requestedAt: now)]
         )
     }
 

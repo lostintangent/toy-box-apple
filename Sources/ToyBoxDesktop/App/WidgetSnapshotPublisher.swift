@@ -1,8 +1,6 @@
-import AppKit
 import ChannelKit
+import Foundation
 import OSLog
-import SwiftUI
-import ToyBoxUI
 import WidgetKit
 
 @MainActor
@@ -10,7 +8,6 @@ final class WidgetSnapshotPublisher {
     let isEnabled: Bool
     private var previous: NeedsYouSnapshot?
     private var loadedPrevious = false
-    private var avatars: [String: (ChannelAgent, Data)] = [:]
     private let directory: URL?
     private let reload: @MainActor () -> Void
     private let logger = Logger(subsystem: "dev.toybox.desktop", category: "Widget")
@@ -45,8 +42,7 @@ final class WidgetSnapshotPublisher {
                     logger.error("Could not restore the widget snapshot: \(error.localizedDescription, privacy: .public)")
                 }
             }
-            var snapshot = Self.snapshot(status: status, serverURL: serverURL, hasCatalog: hasCatalog,
-                                         now: now, avatar: avatar)
+            var snapshot = Self.snapshot(status: status, serverURL: serverURL, hasCatalog: hasCatalog, now: now)
             if !hasCatalog, let previous, previous.serverURL == serverURL {
                 snapshot = previous
                 snapshot.isOffline = true
@@ -66,32 +62,16 @@ final class WidgetSnapshotPublisher {
         }
     }
 
-    static func snapshot(status: MenuBarStatus, serverURL: String, hasCatalog: Bool, now: Date,
-                         avatar: (ChannelAgent?) -> Data?) -> NeedsYouSnapshot {
+    static func snapshot(status: MenuBarStatus, serverURL: String, hasCatalog: Bool, now: Date) -> NeedsYouSnapshot {
         NeedsYouSnapshot(
             serverURL: serverURL, updatedAt: now, isOffline: status.unreachableHost != nil,
             isAvailable: hasCatalog, waitingCount: status.waiting.count,
             requests: status.waiting.prefix(5).compactMap { item in
                 guard let sequence = item.sequence, sequence > 0 else { return nil }
                 return .init(channelID: item.id, channelName: item.name, sequence: sequence,
-                             quote: item.quote ?? MenuBarStatus.needsReply, agentName: item.agent?.name,
-                             requestedAt: item.requestedAt, avatarPNG: avatar(item.agent))
+                             quote: item.quote ?? MenuBarStatus.needsReply, requestedAt: item.requestedAt)
             }
         )
-    }
-
-    private func avatar(_ agent: ChannelAgent?) -> Data? {
-        guard let agent else { return nil }
-        if let cached = avatars[agent.id], cached.0 == agent { return cached.1 }
-        let renderer = ImageRenderer(content: AgentAvatarView(agent: agent, size: 24))
-        renderer.scale = 2
-        guard let image = renderer.cgImage,
-              let data = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]) else {
-            logger.error("Could not render a widget avatar.")
-            return nil
-        }
-        avatars[agent.id] = (agent, data)
-        return data
     }
 }
 

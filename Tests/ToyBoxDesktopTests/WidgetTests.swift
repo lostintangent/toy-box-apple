@@ -163,11 +163,12 @@ import Testing
         let requested = now.addingTimeInterval(-600)
         let status = MenuBarStatus(waiting: (1...6).map { index in
             .init(id: "channel-\(index)", name: "Channel \(index)", subtitle: "Needs your reply",
-                  agent: nil, sequence: index, quote: index == 1 ? nil : "Question \(index)?",
+                  agent: .init(id: "lead", name: "Lead"), sequence: index,
+                  quote: index == 1 ? nil : "Question \(index)?",
                   requestedAt: requested)
         }, unreachableHost: "localhost")
         let snapshot = WidgetSnapshotPublisher.snapshot(status: status, serverURL: "http://localhost/",
-                                                        hasCatalog: true, now: now, avatar: { _ in nil })
+                                                        hasCatalog: true, now: now)
         #expect(snapshot.waitingCount == 6)
         #expect(snapshot.requests.map(\.sequence) == [1, 2, 3, 4, 5])
         #expect(snapshot.requests.first?.quote == "Needs your reply")
@@ -176,12 +177,19 @@ import Testing
         #expect(snapshot.isOffline)
         #expect(snapshot.isAvailable)
         #expect(try JSONDecoder().decode(NeedsYouSnapshot.self, from: JSONEncoder().encode(snapshot)) == snapshot)
+        var row = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(snapshot.requests[0]))
+            as? [String: Any])
+        #expect(Set(row.keys) == ["channelID", "channelName", "sequence", "quote", "requestedAt"])
+        row["agentName"] = "Lead"
+        row["avatarPNG"] = Data([1, 2, 3]).base64EncodedString()
+        let legacy = try JSONSerialization.data(withJSONObject: row)
+        #expect(try JSONDecoder().decode(NeedsYouSnapshot.Request.self, from: legacy) == snapshot.requests[0])
     }
 
     @Test @MainActor func missingCatalogDoesNotClaimAnEmptyInboxAndStalenessUsesAnInjectedTime() {
         let now = Date(timeIntervalSince1970: 1_000_000)
         let snapshot = WidgetSnapshotPublisher.snapshot(status: .init(), serverURL: "http://new-server/",
-                                                        hasCatalog: false, now: now, avatar: { _ in nil })
+                                                        hasCatalog: false, now: now)
         #expect(!snapshot.isAvailable)
         #expect(snapshot.requests.isEmpty)
         #expect(snapshot.waitingCount == 0)
