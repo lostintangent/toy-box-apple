@@ -5,10 +5,10 @@
     "dismissal-date": 1793087100,
     "content-state": {
       "workingAgents": [],
-      "tasksDone": 1,
-      "tasksTotal": 3,
+      "tasksDone": 0,
+      "tasksTotal": 0,
       "updatedAt": 1793086200,
-      "ending": "expired"
+      "ending": "tasksRemoved"
     }
   }
 }

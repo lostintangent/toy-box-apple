@@ -370,8 +370,7 @@ struct ShellTests {
         }) { defaults, registration, notifications in
             let firstAPI = try ChannelAPI(serverURL: "https://fixture.example")
             let following = ChannelFollowController(
-                client: .init(activities: { [] }, request: { _, _ in throw CocoaError(.featureUnsupported) }),
-                defaults: defaults)
+                client: .init(activities: { [] }, request: { _, _ in throw CocoaError(.featureUnsupported) }))
             defer { following.shutdown() }
             let model = AppModel(arguments: ["--server", firstAPI.baseURL.absoluteString], environment: [:],
                                  defaults: defaults, session: fixtureSession(),

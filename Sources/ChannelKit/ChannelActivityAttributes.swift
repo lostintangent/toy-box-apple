@@ -7,11 +7,13 @@ public struct ChannelActivityAttributes: Codable, Hashable, Sendable {
     public var channelID: String
     public var channelName: String
     public var registrationID: String
+    public var startedAt: Date
 
-    public init(channelID: String, channelName: String, registrationID: String) {
+    public init(channelID: String, channelName: String, registrationID: String, startedAt: Date) {
         self.channelID = channelID
         self.channelName = channelName
         self.registrationID = registrationID
+        self.startedAt = startedAt
     }
 
     public struct WorkingAgent: Codable, Hashable, Identifiable, Sendable {
@@ -27,7 +29,7 @@ public struct ChannelActivityAttributes: Codable, Hashable, Sendable {
     }
 
     public enum Ending: String, Codable, Sendable {
-        case completed, stopped, expired, channelDeleted, serverChanged, tasksRemoved
+        case completed, channelDeleted, tasksRemoved
     }
 
     public struct ContentState: Codable, Hashable, Sendable {

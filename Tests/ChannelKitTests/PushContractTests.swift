@@ -60,6 +60,22 @@ struct PushContractTests {
         #expect(ChannelActivityLink(channelID: "studio", registrationID: "device", sequence: 0).url == nil)
     }
 
+    @Test func activityAttributesPersistTheOriginalStartSeparatelyFromContentUpdates() throws {
+        let startedAt = Date(timeIntervalSince1970: 1793086200)
+        let attributes = ChannelActivityAttributes(
+            channelID: "studio", channelName: "Studio", registrationID: "registration", startedAt: startedAt
+        )
+        let data = try JSONEncoder().encode(attributes)
+        let restored = try JSONDecoder().decode(ChannelActivityAttributes.self, from: data)
+        #expect(restored == attributes)
+        #expect(restored.startedAt == startedAt)
+        let content = ChannelActivityAttributes.ContentState(
+            tasksDone: 1, tasksTotal: 3, updatedAt: startedAt.addingTimeInterval(60)
+        )
+        let state = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(content)) as? [String: Any])
+        #expect(state["startedAt"] == nil)
+    }
+
     @Test func activityProjectionUsesRootProgressAndLivePresenceRatherThanOldAgentStatus() throws {
         let file = try #require(Bundle.module.url(forResource: "channel-snapshot", withExtension: "json",
                                                   subdirectory: "Fixtures"))
@@ -115,7 +131,7 @@ struct PushContractTests {
         #expect(try JSONDecoder().decode(ChannelActivityAttributes.ContentState.self, from: encoded) == push.state)
         let json = try #require(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
         #expect(json["updatedAt"] as? Double == push.state.updatedAt.timeIntervalSince1970)
-        #expect(push.state.tasksTotal == 3)
+        #expect(push.state.tasksTotal == (name == "push-activity-ended" ? 0 : 3))
         switch name {
         case "push-activity-working":
             #expect(!push.state.workingAgents.isEmpty)
@@ -133,7 +149,8 @@ struct PushContractTests {
             #expect(push.state.ending == .completed)
             #expect(push.state.tasksDone == push.state.tasksTotal)
         case "push-activity-ended":
-            #expect(push.state.ending == .expired)
+            #expect(push.state.ending == .tasksRemoved)
+            #expect(push.state.tasksDone == 0)
         case "push-activity-stale":
             #expect(try #require(push.staleDate) < push.timestamp)
             #expect(push.state.updatedAt.timeIntervalSince1970 == push.timestamp - 16 * 60)

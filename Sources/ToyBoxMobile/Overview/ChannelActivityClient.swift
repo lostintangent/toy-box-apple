@@ -11,8 +11,7 @@ protocol ChannelActivitySession: AnyObject {
     var pushToken: Data? { get }
     var pushTokenUpdates: AsyncStream<Data> { get }
     var activeUpdates: AsyncStream<Bool> { get }
-    func update(_ state: ChannelActivityAttributes.ContentState) async
-    func end(_ state: ChannelActivityAttributes.ContentState, dismissAt: Date?) async
+    func end(_ state: ChannelActivityAttributes.ContentState) async
 }
 
 @MainActor
@@ -70,26 +69,16 @@ private final class SystemChannelActivity: ChannelActivitySession {
         }
     }
 
-    func update(_ state: ChannelActivityAttributes.ContentState) async {
-        await SystemActivityUpdates.update(id: id, state: state)
-    }
-
-    func end(_ state: ChannelActivityAttributes.ContentState, dismissAt: Date?) async {
-        await SystemActivityUpdates.end(id: id, state: state, dismissAt: dismissAt)
+    func end(_ state: ChannelActivityAttributes.ContentState) async {
+        await SystemActivityUpdates.end(id: id, state: state)
     }
 }
 
 private enum SystemActivityUpdates {
-    @concurrent static func update(id: String, state: ChannelActivityAttributes.ContentState) async {
-        guard let activity = Activity<ChannelActivityAttributes>.activities.first(where: { $0.id == id })
-        else { return }
-        await activity.update(ActivityContent(state: state, staleDate: state.staleDate))
-    }
-
-    @concurrent static func end(id: String, state: ChannelActivityAttributes.ContentState, dismissAt: Date?) async {
+    @concurrent static func end(id: String, state: ChannelActivityAttributes.ContentState) async {
         guard let activity = Activity<ChannelActivityAttributes>.activities.first(where: { $0.id == id })
         else { return }
         await activity.end(ActivityContent(state: state, staleDate: nil),
-                           dismissalPolicy: dismissAt.map(ActivityUIDismissalPolicy.after) ?? .immediate)
+                           dismissalPolicy: .immediate)
     }
 }
