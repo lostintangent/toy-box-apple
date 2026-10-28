@@ -166,10 +166,10 @@ test.skipIf(process.platform !== "darwin")("distribution signs extensions before
     });
 });
 
-test("TestFlight rejects all local-launch/proof flags before reading signing or upload assets", async () => {
+test("TestFlight rejects local-launch flags before reading signing or upload assets", async () => {
     for (const args of [
         ["--server", "http://private.local"], ["--device"], ["--hold"], ["--drive", "steps.json"],
-        ["--foundation-proof"], ["--activity-fixture-proof"], ["--appearance", "dark"],
+        ["--appearance", "dark"],
         ["--validate-only", "--build-only"],
     ]) {
         const child = Bun.spawn([process.execPath, join(import.meta.dir, "mobile.ts"), "--testflight", ...args], {

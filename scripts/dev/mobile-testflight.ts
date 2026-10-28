@@ -66,12 +66,12 @@ export async function prepareTestFlightBundle(app: string, release: TestFlightVe
         const privacy = join(component.bundle, "PrivacyInfo.xcprivacy");
         await copyFile(join(root, "Resources/Mobile", component.privacy), privacy);
         await command(["plutil", "-lint", privacy], { quiet: true });
-        if ((await readdir(component.bundle)).some(name => ["ActivityFixtures", "Frameworks"].includes(name))) {
-            throw new Error(`${component.executable} contains unexpected development fixtures or embedded frameworks.`);
+        if ((await readdir(component.bundle)).includes("Frameworks")) {
+            throw new Error(`${component.executable} contains unexpected embedded frameworks.`);
         }
         const symbols = await text(["xcrun", "nm", "-a", join(component.bundle, component.executable)], { env: mobileEnvironment });
-        if (/MobileFoundationPro(?:of|be)|MobileAutomation|MobileActivityFixtureProof|FoundationActivityAttributes/.test(symbols)) {
-            throw new Error("TestFlight must not include the DEBUG automation/proof code.");
+        if (symbols.includes("MobileAutomation")) {
+            throw new Error("TestFlight must not include the DEBUG automation code.");
         }
         if (await text(["lipo", "-archs", join(component.bundle, component.executable)]) !== "arm64") {
             throw new Error(`${component.executable} must be arm64 only.`);

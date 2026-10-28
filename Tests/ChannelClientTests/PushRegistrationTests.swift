@@ -50,21 +50,16 @@ struct PushRegistrationTests {
         #expect(json.isEmpty)
     }
 
-    @Test(arguments: [422, 500])
-    func registrationWritesNeverAutomaticallyRetry(status: Int) async throws {
+    @Test(arguments: [404, 422, 500], [false, true])
+    func rejectedPushWritesNeverAutomaticallyRetry(status: Int, subscription: Bool) async throws {
         let mock = MockTransport { _, _ in MockResponse(status: status, body: Data(#"{"error":"Rejected"}"#.utf8)) }
         let api = try mock.api()
         await #expect(throws: ChannelAPIError.http(status: status, message: "Rejected")) {
-            try await api.register(registrationID: UUID().uuidString, .init(token: "abcd", environment: .sandbox))
-        }
-        #expect(mock.requests.count == 1)
-    }
-
-    @Test(arguments: [404, 422, 500])
-    func subscriptionRejectionsNeverAutomaticallyRetry(status: Int) async throws {
-        let mock = MockTransport { _, _ in MockResponse(status: status, body: Data(#"{"error":"Rejected"}"#.utf8)) }
-        await #expect(throws: ChannelAPIError.http(status: status, message: "Rejected")) {
-            try await mock.api().subscribe(topic: "requests", registrationID: UUID().uuidString, .init())
+            if subscription {
+                try await api.subscribe(topic: "requests", registrationID: UUID().uuidString, .init())
+            } else {
+                try await api.register(registrationID: UUID().uuidString, .init(token: "abcd", environment: .sandbox))
+            }
         }
         #expect(mock.requests.count == 1)
     }

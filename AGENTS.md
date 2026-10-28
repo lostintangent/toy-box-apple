@@ -219,15 +219,6 @@ use demo servers only for write scripts. Never skip or retry actions.
   sources/tests into a dependency-free workspace. Leave the default graph, Mac build/tests and
   Sparkle lockfile unchanged. Do not export the flag globally, run that graph in the repository
   root or share scratch paths across builds.
-- `bun run mobile --foundation-proof --hold` is DEBUG/Simulator-only scaffolding for t405.
-  Only that launch substitutes Core's proof view. It prepares an App Group marker/avatar, requests
-  notification authorization, starts/updates/ends a local placeholder activity, and writes a matching
-  widget receipt on system snapshot/timeline request. Send the simulated alert with
-  `xcrun simctl push <UDID> dev.toybox.mobile <fixture.apns>`, with `mutable-content: 1`,
-  an alert and `toyBoxFoundationProof: true`. Injection bypasses the service extension on this runtime:
-  submission proves delivery only, not enrichment/receipt. Prove the extension with real APNs.
-  This is not the release payload/activity schema.
-  Remove the proof hook, harness and placeholder activity when t408/t409 ship real flows.
 - Main/PR CI builds mobile app, extensions and shared modules for Simulator, verifies extension
   signatures, and runs suites only with an installed iOS 27+ runtime, otherwise explicitly skipping.
   Tags/manual release dry runs skip iOS. Mac runs ChannelClient once under the strict cooperative pool,
@@ -453,7 +444,6 @@ analysis errors/completion/text detection and load.
 | `Sources/ToyBoxMobile/Overview`, `Management` | Overview |
 | `Sources/ToyBoxMobileIntegrations/`, `Sources/ToyBoxMobileNotification/`, `Resources/Mobile/` | Core |
 | `Sources/ToyBoxWidgetViews/`, `Sources/ToyBoxMobileWidget/`, `Tests/ToyBoxMobileWidgetTests/` | Overview |
-| `Sources/ToyBoxMobile/Automation/MobileFoundationProof.swift` (temporary t405 harness) | Core |
 
 UI engineers may add one `Tests/ToyBoxDesktopTests/<Surface>Tests.swift` file for their own surface.
 

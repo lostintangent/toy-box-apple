@@ -60,45 +60,6 @@ struct PushContractTests {
         #expect(ChannelActivityLink(channelID: "studio", registrationID: "device", sequence: 0).url == nil)
     }
 
-    @Test func activityStateUsesUnixSecondsWithAnUnconfiguredActivityKitDecoder() throws {
-        struct Envelope: Decodable {
-            struct APS: Decodable {
-                var timestamp: Double
-                var staleDate: Double
-                var state: ChannelActivityAttributes.ContentState
-                enum CodingKeys: String, CodingKey {
-                    case timestamp
-                    case staleDate = "stale-date"
-                    case state = "content-state"
-                }
-            }
-            var aps: APS
-        }
-        let file = try #require(Bundle.module.url(forResource: "push-activity", withExtension: "apns",
-                                                  subdirectory: "Fixtures"))
-        let fixture = try JSONDecoder().decode(Envelope.self, from: Data(contentsOf: file))
-        let state = fixture.aps.state
-        #expect(state.updatedAt.ISO8601Format() == "2026-10-27T07:30:00Z")
-        #expect(state.updatedAt.timeIntervalSince1970 == fixture.aps.timestamp)
-        #expect(state.staleDate?.timeIntervalSince1970 == fixture.aps.staleDate)
-        #expect(state.tasksDone == 1)
-        #expect(state.tasksTotal == 3)
-        #expect(state.workingAgents.map(\.name) == ["Lead"])
-        #expect(state.waitingRequestSequence == 15)
-        let data = try JSONEncoder().encode(state)
-        #expect(try JSONDecoder().decode(ChannelActivityAttributes.ContentState.self, from: data) == state)
-        let json = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
-        #expect(json["updatedAt"] as? Double == 1793086200)
-        for ending in [ChannelActivityAttributes.Ending.completed, .stopped, .expired,
-                       .channelDeleted, .serverChanged, .tasksRemoved] {
-            var ended = state
-            ended.ending = ending
-            #expect(ended.staleDate == nil)
-            #expect(try JSONDecoder().decode(ChannelActivityAttributes.ContentState.self,
-                                             from: JSONEncoder().encode(ended)) == ended)
-        }
-    }
-
     @Test func activityProjectionUsesRootProgressAndLivePresenceRatherThanOldAgentStatus() throws {
         let file = try #require(Bundle.module.url(forResource: "channel-snapshot", withExtension: "json",
                                                   subdirectory: "Fixtures"))
@@ -141,21 +102,20 @@ struct PushContractTests {
 
     @Test(arguments: ["push-activity-working", "push-activity-quiet", "push-activity",
                        "push-activity-completed", "push-activity-ended", "push-activity-stale"])
-    func activityPushFixturesCoverEveryPresentationWithoutChangingTheirRelativeDates(name: String) throws {
+    func activityFixturesMatchTheNativeContentCodecAndAPNsFreshness(name: String) throws {
         let file = try #require(Bundle.module.url(forResource: name, withExtension: "apns", subdirectory: "Fixtures"))
         let data = try Data(contentsOf: file)
         #expect(data.count <= 4096)
-        let push = try JSONDecoder().decode(ChannelActivityPush.self, from: data)
-        #expect(push.timestamp.timeIntervalSince1970 == 1793086200)
-        #expect(push.staleDate == push.state.staleDate)
-        #expect((push.event == .end) == (push.state.ending != nil))
-        #expect(try JSONDecoder().decode(ChannelActivityPush.self, from: JSONEncoder().encode(push)) == push)
-        let now = Date(timeIntervalSince1970: 1793093400)
-        let rebased = push.reanchored(at: now)
-        #expect(rebased.timestamp == now)
-        #expect(rebased.state.updatedAt.timeIntervalSince(now) == push.state.updatedAt.timeIntervalSince(push.timestamp))
-        #expect(rebased.staleDate == rebased.state.staleDate)
-        #expect(rebased.dismissalDate == (push.event == .end ? now.addingTimeInterval(15 * 60) : nil))
+        let push = try JSONDecoder().decode(ActivityEnvelope.self, from: data).aps
+        #expect(push.timestamp == 1793086200)
+        #expect(push.staleDate == push.state.staleDate?.timeIntervalSince1970)
+        #expect((push.event == "end") == (push.state.ending != nil))
+        #expect(push.dismissalDate == (push.state.ending == nil ? nil : push.timestamp + 900))
+        let encoded = try JSONEncoder().encode(push.state)
+        #expect(try JSONDecoder().decode(ChannelActivityAttributes.ContentState.self, from: encoded) == push.state)
+        let json = try #require(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        #expect(json["updatedAt"] as? Double == push.state.updatedAt.timeIntervalSince1970)
+        #expect(push.state.tasksTotal == 3)
         switch name {
         case "push-activity-working":
             #expect(!push.state.workingAgents.isEmpty)
@@ -166,15 +126,33 @@ struct PushContractTests {
             #expect(push.state.tasksDone < push.state.tasksTotal)
         case "push-activity":
             #expect(push.state.waitingRequestSequence == 15)
+            #expect(push.state.updatedAt.ISO8601Format() == "2026-10-27T07:30:00Z")
+            #expect(push.state.workingAgents.map(\.name) == ["Lead"])
+            #expect(push.state.tasksDone == 1)
         case "push-activity-completed":
             #expect(push.state.ending == .completed)
             #expect(push.state.tasksDone == push.state.tasksTotal)
         case "push-activity-ended":
             #expect(push.state.ending == .expired)
         case "push-activity-stale":
-            #expect(try #require(rebased.staleDate) < now)
-            #expect(rebased.state.updatedAt == now.addingTimeInterval(-16 * 60))
+            #expect(try #require(push.staleDate) < push.timestamp)
+            #expect(push.state.updatedAt.timeIntervalSince1970 == push.timestamp - 16 * 60)
         default: Issue.record("Unexpected fixture.")
+        }
+
+        private struct ActivityEnvelope: Decodable {
+            struct APS: Decodable {
+                var event: String
+                var timestamp: Double
+                var staleDate: Double?
+                var dismissalDate: Double?
+                var state: ChannelActivityAttributes.ContentState
+                enum CodingKeys: String, CodingKey {
+                    case event, timestamp
+                    case staleDate = "stale-date", dismissalDate = "dismissal-date", state = "content-state"
+                }
+            }
+            var aps: APS
         }
     }
 }
