@@ -3,6 +3,7 @@ import ChannelKit
 import Foundation
 import Observation
 import SwiftUI
+import Synchronization
 import Testing
 import ToyBoxUI
 import UIKit
@@ -29,14 +30,17 @@ struct ShellTests {
     }
 
     private func withNotifications(
+        enabled: Bool = false,
         register: @escaping (ChannelAPI, String, PushRegistration) async throws -> Bool = { _, _, _ in false },
         subscribe: @escaping (ChannelAPI, String, String) async throws -> Void = { _, _, _ in },
         unsubscribe: @escaping (ChannelAPI, String, String) async throws -> Void = { _, _, _ in },
         readAuthorization: @escaping () async -> UNAuthorizationStatus = { .authorized },
         addNotice: @escaping (UNNotificationRequest) async throws -> Void = { _ in },
+        setBadgeCount: @escaping (Int) async throws -> Void = { _ in },
         _ work: @MainActor (UserDefaults, MobileNotificationRegistration, ChannelNotifications) async throws -> Void
     ) async throws {
         try await withDefaults { defaults in
+            defaults.set(enabled, forKey: "notificationsEnabled")
             try await withRegistrationStore { store in
                 let api = try ChannelAPI(serverURL: "https://fixture.example")
                 let registration = MobileNotificationRegistration(
@@ -45,7 +49,7 @@ struct ShellTests {
                 try registration.select(api: api)
                 let notifications = ChannelNotifications(
                     defaults: defaults, registration: registration,
-                    readAuthorization: readAuthorization, addNotice: addNotice)
+                    readAuthorization: readAuthorization, addNotice: addNotice, setBadgeCount: setBadgeCount)
                 notifications.configure(api: api)
                 try await work(defaults, registration, notifications)
                 await registration.waitUntilIdle()
@@ -375,6 +379,148 @@ struct ShellTests {
             await registration.waitUntilIdle()
             #expect(registrations == 2)
             #expect(topics == ["on:requests", "off:completions"])
+        }
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func theIconBadgeUsesFreshWidgetWaitingCountsWithoutWaitingForAuthorization() async throws {
+        let host = "\(UUID().uuidString.lowercased()).badge.test"
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [BadgeFixtureProtocol.self]
+        let session = URLSession(configuration: configuration)
+        defer {
+            session.invalidateAndCancel()
+            BadgeFixtureProtocol.responses.withLock { $0[host] = nil }
+        }
+        let channels = (0..<4).map { index in
+            Channel(id: "\(index)", name: "Channel \(index)", model: .init(provider: "test", name: "test"),
+                    latestSequence: 20, seenThrough: index == 0 ? 20 : 0,
+                    completedSequence: index == 2 ? 20 : nil, requestSequence: index < 2 ? 12 : nil,
+                    updatedAt: "2026-10-28T12:00:00Z")
+        }
+        func serve(_ channels: [Channel], status: Int = 200) throws {
+            let catalog = ChannelCatalog(
+                lead: .init(name: "Lead", role: "Coordinator", avatar: .init(mark: "M4 12H20", color: "#123456")),
+                channels: channels)
+            let data = try JSONEncoder().encode(catalog)
+            BadgeFixtureProtocol.responses.withLock { $0[host] = .init(status: status, data: data) }
+        }
+        let badges = BadgeRecorder()
+        var authorization: CheckedContinuation<UNAuthorizationStatus, Never>?
+        var beganAuthorization: (() -> Void)?
+        try await withNotifications(enabled: true, readAuthorization: {
+            await withCheckedContinuation { continuation in
+                authorization = continuation
+                beganAuthorization?()
+            }
+        }, setBadgeCount: { badges.counts.append($0) }) { defaults, _, notifications in
+            let model = AppModel(arguments: ["--server", "https://\(host)"], environment: [:],
+                                 defaults: defaults, session: session, notifications: notifications)
+            let startup = Task { await model.startIntegrations() }
+            defer {
+                authorization?.resume(returning: .authorized)
+                startup.cancel()
+            }
+            await withCheckedContinuation { continuation in
+                if authorization != nil { continuation.resume() }
+                else { beganAuthorization = { continuation.resume() } }
+            }
+            #expect(badges.counts.isEmpty)
+            let catalog = try #require(model.catalog)
+            try serve(channels)
+            await catalog.refresh()
+            await badges.waitForCalls(1)
+            #expect(badges.counts == [2])
+            #expect(!notifications.hasLoadedAuthorization)
+
+            model.isSettingsPresented = true
+            try serve(channels, status: 503)
+            await catalog.refresh()
+            #expect(catalog.error != nil)
+            try serve(channels)
+            await catalog.refresh()
+            await badges.waitForCalls(2)
+            #expect(badges.counts == [2, 2])
+
+            try serve(channels.map { channel in
+                var answered = channel
+                answered.requestSequence = nil
+                return answered
+            })
+            await catalog.refresh()
+            await badges.waitForCalls(3)
+            #expect(badges.counts == [2, 2, 0])
+
+            try model.configure(serverURL: "https://other.example")
+            model.isSettingsPresented = false
+            try model.configure(serverURL: "https://\(host)")
+            try serve([channels[0]])
+            await model.catalog?.refresh()
+            await badges.waitForCalls(4)
+            #expect(badges.counts == [2, 2, 0, 1])
+            authorization?.resume(returning: .authorized)
+            authorization = nil
+            await startup.value
+        }
+    }
+
+    @Test(.timeLimit(.minutes(1)), arguments: [false, true])
+    func badgeWritesStayOrderedAndANewServersFreshCountOrOptOutWinsEvenAfterAFailure(optOut: Bool) async throws {
+        let badges = BadgeRecorder()
+        var held: CheckedContinuation<Void, Never>?
+        var began: (() -> Void)?
+        var inFlight = 0
+        var maximumInFlight = 0
+        try await withNotifications(enabled: true, setBadgeCount: { count in
+            inFlight += 1
+            maximumInFlight = max(maximumInFlight, inFlight)
+            defer { inFlight -= 1 }
+            if count == 4 {
+                await withCheckedContinuation {
+                    held = $0
+                    began?()
+                }
+                throw URLError(.cannotConnectToHost)
+            }
+            badges.counts.append(count)
+        }) { _, _, notifications in
+            await withCheckedContinuation { continuation in
+                began = { continuation.resume() }
+                notifications.updateBadge(4)
+            }
+            notifications.updateBadge(3)
+            if optOut { notifications.disable() }
+            notifications.configure(api: try ChannelAPI(serverURL: "https://other.example"))
+            if !optOut { notifications.updateBadge(0) }
+            #expect(badges.counts.isEmpty)
+            try #require(held).resume()
+            await badges.waitForCalls(1)
+            #expect(badges.counts == [0])
+            #expect(maximumInFlight == 1)
+        }
+    }
+
+    @Test(.timeLimit(.minutes(1)), arguments: [false, true])
+    func notificationOptOutKeepsTheBadgeClearBeforeAuthorizationLoads(initiallyEnabled: Bool) async throws {
+        let badges = BadgeRecorder()
+        try await withNotifications(enabled: initiallyEnabled, setBadgeCount: { badges.counts.append($0) }) {
+            defaults, _, notifications in
+            notifications.updateBadge(2)
+            await badges.waitForCalls(1)
+            if initiallyEnabled {
+                #expect(badges.counts == [2])
+                notifications.disable()
+                await badges.waitForCalls(2)
+            }
+            let cleared = initiallyEnabled ? [2, 0] : [0]
+            #expect(badges.counts == cleared)
+            #expect(!defaults.bool(forKey: "notificationsEnabled"))
+            #expect(!notifications.hasLoadedAuthorization)
+
+            notifications.updateBadge(7)
+            await badges.waitForCalls(cleared.count + 1)
+            #expect(badges.counts == cleared + [0])
+            #expect(!notifications.hasLoadedAuthorization)
         }
     }
 
@@ -1444,6 +1590,44 @@ private final class ShellFixtureProtocol: URLProtocol, @unchecked Sendable {
         } catch {
             client?.urlProtocol(self, didFailWithError: error)
         }
+    }
+
+    override func stopLoading() {}
+}
+
+@MainActor @Observable
+private final class BadgeRecorder {
+    var counts: [Int] = []
+
+    func waitForCalls(_ count: Int) async {
+        for await calls in Observations({ self.counts.count }) {
+            if calls >= count { return }
+        }
+    }
+}
+
+private final class BadgeFixtureProtocol: URLProtocol, @unchecked Sendable {
+    struct Response: Sendable { var status: Int; var data: Data }
+    static let responses = Mutex<[String: Response]>([:])
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        do {
+            let url = try #require(request.url)
+            let result = if url.path == "/api/v1/channels" {
+                try #require(Self.responses.withLock { $0[url.host ?? ""] })
+            } else {
+                Response(status: 503, data: Data(#"{"error":"Request history unavailable."}"#.utf8))
+            }
+            let response = try #require(HTTPURLResponse(
+                url: url, statusCode: result.status, httpVersion: nil,
+                headerFields: ["Content-Type": "application/json"]))
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: result.data)
+            client?.urlProtocolDidFinishLoading(self)
+        } catch { client?.urlProtocol(self, didFailWithError: error) }
     }
 
     override func stopLoading() {}
