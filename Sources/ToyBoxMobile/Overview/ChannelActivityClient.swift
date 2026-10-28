@@ -10,7 +10,7 @@ protocol ChannelActivitySession: AnyObject {
     var isActive: Bool { get }
     var pushToken: Data? { get }
     var pushTokenUpdates: AsyncStream<Data> { get }
-    var activeUpdates: AsyncStream<Bool> { get }
+    var activeUpdates: any AsyncSequence<Bool, Never> { get }
     func end(_ state: ChannelActivityAttributes.ContentState) async
 }
 
@@ -56,16 +56,9 @@ private final class SystemChannelActivity: ChannelActivitySession {
         }
     }
 
-    var activeUpdates: AsyncStream<Bool> {
-        AsyncStream { continuation in
-            let task = Task {
-                for await state in activity.activityStateUpdates {
-                    if Task.isCancelled { break }
-                    continuation.yield(state == .active || state == .stale)
-                }
-                continuation.finish()
-            }
-            continuation.onTermination = { _ in task.cancel() }
+    var activeUpdates: any AsyncSequence<Bool, Never> {
+        activity.activityStateUpdates.map {
+            $0 == .active || $0 == .stale
         }
     }
 

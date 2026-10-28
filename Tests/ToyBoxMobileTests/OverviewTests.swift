@@ -1499,8 +1499,8 @@ private final class FollowActivity: ChannelActivitySession {
         }
     }
 
-    var activeUpdates: AsyncStream<Bool> {
-        AsyncStream { continuation in
+    var activeUpdates: any AsyncSequence<Bool, Never> {
+        AsyncStream<Bool> { continuation in
             states.append(continuation)
             continuation.yield(isActive)
         }

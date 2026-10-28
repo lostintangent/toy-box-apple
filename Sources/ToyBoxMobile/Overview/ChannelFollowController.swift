@@ -18,7 +18,7 @@ final class ChannelFollowController {
     private var registration: MobilePushRegistration?
     private var isRegistrationReady = false
     private var catalog: ChannelCatalogStore?
-    @ObservationIgnored private var writes: [String: (id: UUID, task: Task<Void, Error>)] = [:]
+    @ObservationIgnored private var writes: [String: Task<Void, Error>] = [:]
     @ObservationIgnored private let logger = Logger(subsystem: "dev.toybox.mobile", category: "Follow")
 
     private final class Follow {
@@ -216,7 +216,7 @@ final class ChannelFollowController {
     private func registerExisting(_ entry: Follow, token: Data? = nil, force: Bool = false) async {
         guard isCurrent(entry) else { return }
         entry.token = entry.activity.pushToken ?? token ?? entry.token
-        guard isRegistrationReady, entry.token != nil, force || entry.token != entry.registeredToken else { return }
+        guard isRegistrationReady, entry.token != nil else { return }
         do {
             try await register(entry, force: force)
         } catch {
@@ -280,17 +280,12 @@ final class ChannelFollowController {
 
     private func enqueueWrite(channelID: String,
                               operation: @escaping @MainActor () async throws -> Void) -> Task<Void, Error> {
-        let previous = writes[channelID]?.task
-        let id = UUID()
+        let previous = writes[channelID]
         let task = Task {
             if let previous { _ = await previous.result }
             try await operation()
         }
-        writes[channelID] = (id, task)
-        Task { [weak self] in
-            _ = await task.result
-            if self?.writes[channelID]?.id == id { self?.writes[channelID] = nil }
-        }
+        writes[channelID] = task
         return task
     }
 
