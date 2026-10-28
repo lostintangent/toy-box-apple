@@ -1,5 +1,16 @@
 # Changelog
 
+## Mac 0.1.9
+
+- Keep waiting requests in view with a quieter Needs You widget.
+- Continue the same channel between your Mac and iPhone with Handoff.
+- Lead with the channel name and question in request alerts, and open the original message from the alert.
+- Choose request and completion notifications in Settings. Requests default on and completions default off, without changing saved preferences.
+- Keep a message's attachments together in one sideways-scrolling row.
+- Search a conversation in one compact Find bar, with progress and errors in the same row.
+- Read task timing, nested tasks and agent check-in countdowns more clearly in Overview.
+- Fit Markdown tables to their columns, with scrolling for wide tables and clean rounded borders.
+
 ## iPhone 0.1.1
 
 - Live Activities use the Toy Box logo on the Lock Screen and in the Dynamic Island.
