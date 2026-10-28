@@ -2,10 +2,6 @@ import ChannelKit
 import SwiftUI
 
 struct ChannelActivityContent: View {
-    enum Timestamp: Equatable {
-        case updated, lastUpdate, completed, ended
-    }
-
     let channelName: String
     let presentation: ChannelActivityPresentation
 
@@ -36,10 +32,10 @@ struct ChannelActivityContent: View {
 
     private var time: Text {
         let date = presentation.state.updatedAt
-        return switch presentation.timestamp {
-        case .updated:
+        return switch presentation.phase {
+        case .working, .quiet, .request:
             Text("Updated \(date, format: .dateTime.hour().minute())")
-        case .lastUpdate:
+        case .stale:
             Text("Last update \(date, format: .dateTime.hour().minute())")
         case .completed:
             Text("Completed \(date, format: .dateTime.hour().minute())")
@@ -82,15 +78,6 @@ struct ChannelActivityPresentation {
         case .working, .quiet, .request: "\(state.tasksDone) of \(state.tasksTotal) tasks done"
         case .completed: "Following ended"
         case .ended, .stale: nil
-        }
-    }
-
-    var timestamp: ChannelActivityContent.Timestamp {
-        switch phase {
-        case .completed: .completed
-        case .ended: .ended
-        case .stale: .lastUpdate
-        case .working, .quiet, .request: .updated
         }
     }
 

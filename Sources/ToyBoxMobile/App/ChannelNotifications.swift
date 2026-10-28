@@ -14,7 +14,6 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
         var channelID: String
         var sequence: Int?
         var serverURL: String
-        var focusComposer: Bool
     }
 
     struct Delivered: Equatable {
@@ -34,18 +33,17 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
         didSet {
             guard requests != oldValue else { return }
             defaults.set(requests, forKey: "requestNotifications")
-            preferencesDidChange()
+            updateRegistration()
         }
     }
     var completions: Bool {
         didSet {
             guard completions != oldValue else { return }
             defaults.set(completions, forKey: "completionNotifications")
-            preferencesDidChange()
+            updateRegistration()
         }
     }
 
-    @ObservationIgnored var onPreferencesChange: (() -> Void)?
     @ObservationIgnored var onRegistrationCreated: ((MobilePushRegistration) async -> Void)?
     @ObservationIgnored var onActivate: ((Activation) async -> Void)?
     @ObservationIgnored var onReply: ((ChannelPushPayload, String, String?) async -> ComposerNotificationReply.Outcome)?
@@ -145,7 +143,7 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
 
     func configure(api: ChannelAPI) {
         configuredAPI = api
-        if installedDelegate || didStart { prepareRegistration() }
+        if installedDelegate { prepareRegistration() }
     }
 
     private func prepareRegistration() {
@@ -201,7 +199,7 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
             enableAfterSettings = false
             setEnabled(true)
         }
-        preferencesDidChange()
+        updateRegistration()
     }
 
     func enable() async {
@@ -241,164 +239,6 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
 
     func clearError() { error = nil }
 
-    #if DEBUG && targetEnvironment(simulator)
-    enum ProofAction: String, CaseIterable {
-        case request
-        case prepareOffline = "prepare-offline"
-        case deliverOffline = "deliver-offline"
-    }
-
-    struct PreparedProofNotification: Codable {
-        static let fileName = "notification-proof-prepared.json"
-        let payload: ChannelPushPayload
-        let registration: MobilePushRegistration
-
-        func write(directory: URL) throws {
-            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-            let file = directory.appendingPathComponent(Self.fileName)
-            try JSONEncoder().encode(self).write(to: file, options: .atomic)
-            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
-        }
-
-        static func read(directory: URL) throws -> Self {
-            try JSONDecoder().decode(Self.self, from: Data(contentsOf: directory.appendingPathComponent(fileName)))
-        }
-    }
-
-    typealias ProofEnrichment = @MainActor (ChannelPushPayload) async throws -> UNNotificationContent
-
-    struct ProofDelivery: Codable {
-        var enrichmentSeconds: Double
-        var schedulingSeconds: Double
-        var scheduledAt: Double
-        var title: String
-        var subtitle: String
-        var body: String
-        var category: String
-    }
-
-    @discardableResult
-    func runProofNotificationAction(_ action: ProofAction, directory: URL? = nil,
-                                    enrich: ProofEnrichment? = nil) async throws -> ProofDelivery? {
-        switch action {
-        case .request:
-            return try await scheduleProofNotification(.request, enrich: enrich)
-        case .prepareOffline:
-            let prepared = try await prepareProofNotification(.request, enrich: enrich)
-            try prepared.write(directory: directory ?? MobileSharedContainer.url())
-            return nil
-        case .deliverOffline:
-            let prepared = try PreparedProofNotification.read(directory: directory ?? MobileSharedContainer.url())
-            return try await schedulePreparedProofNotification(prepared, enrich: enrich)
-        }
-    }
-
-    func prepareProofNotification(_ kind: ChannelPushPayload.Kind,
-                                  enrich: ProofEnrichment? = nil) async throws -> PreparedProofNotification {
-        let prepared = try await proofRouting(kind)
-        _ = try await (enrich ?? Self.proofContent)(prepared.payload)
-        try validateProofRegistration(prepared.registration)
-        return prepared
-    }
-
-    @discardableResult
-    func scheduleProofNotification(_ kind: ChannelPushPayload.Kind,
-                                   enrich: ProofEnrichment? = nil) async throws -> ProofDelivery {
-        let prepared = try await proofRouting(kind)
-        return try await schedulePreparedProofNotification(prepared, enrich: enrich)
-    }
-
-    @discardableResult
-    func schedulePreparedProofNotification(_ prepared: PreparedProofNotification,
-                                           enrich: ProofEnrichment? = nil) async throws -> ProofDelivery {
-        try validateProofRegistration(prepared.registration)
-        guard prepared.payload.registrationID == prepared.registration.registrationID else {
-            throw ProofFailure.registrationChanged
-        }
-        let started = ContinuousClock.now
-        let content = try await (enrich ?? Self.proofContent)(prepared.payload)
-        let enriched = ContinuousClock.now
-        try validateProofRegistration(prepared.registration)
-        try await addNotice(UNNotificationRequest(
-            identifier: "proof-\(UUID().uuidString)", content: content,
-            trigger: UNTimeIntervalNotificationTrigger(timeInterval: 30, repeats: false)))
-        return ProofDelivery(
-            enrichmentSeconds: Self.proofSeconds(started.duration(to: enriched)),
-            schedulingSeconds: Self.proofSeconds(enriched.duration(to: .now)),
-            scheduledAt: Date.now.timeIntervalSince1970, title: content.title,
-            subtitle: content.subtitle, body: content.body, category: content.categoryIdentifier)
-    }
-
-    private static func proofSeconds(_ duration: Duration) -> Double {
-        let components = duration.components
-        return Double(components.seconds) + Double(components.attoseconds) / 1e18
-    }
-
-    private func proofRouting(_ kind: ChannelPushPayload.Kind) async throws -> PreparedProofNotification {
-        guard let api = configuredAPI, let registration = currentRegistration else {
-            throw ProofFailure.notConfigured
-        }
-        try validateProofRegistration(registration)
-        let payload = try Self.proofPayload(kind: kind, catalog: await api.catalog(), registration: registration)
-        try validateProofRegistration(registration)
-        return PreparedProofNotification(payload: payload, registration: registration)
-    }
-
-    private func validateProofRegistration(_ registration: MobilePushRegistration) throws {
-        guard let api = configuredAPI else { throw ProofFailure.notConfigured }
-        guard ["localhost", "127.0.0.1", "::1"].contains(api.baseURL.host ?? ""),
-              api.baseURL.port == 3210 else { throw ProofFailure.notDemoServer }
-        guard currentRegistration == registration else { throw ProofFailure.registrationChanged }
-    }
-
-    private static func proofContent(_ payload: ChannelPushPayload) async throws -> UNNotificationContent {
-        let operation = try MobileNotificationEnricher()
-        defer { operation.expire() }
-        var result: UNNotificationContent?
-        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-            operation.start(payload) {
-                result = $0
-                continuation.resume()
-            }
-        }
-        guard let result else { throw ProofFailure.noContent }
-        return result
-    }
-
-    static func proofPayload(kind: ChannelPushPayload.Kind, catalog: ChannelCatalog,
-                             registration: MobilePushRegistration) throws -> ChannelPushPayload {
-        for channel in catalog.channels {
-            let sequence = kind == .request ? channel.requestSequence : channel.completedSequence
-            if let sequence, sequence > 0 {
-                return ChannelPushPayload(kind: kind, channelID: channel.id, sequence: sequence,
-                                          registrationID: registration.registrationID)
-            }
-        }
-        throw ProofFailure.noChannel(kind)
-    }
-
-    private enum ProofFailure: LocalizedError {
-        case notConfigured, notDemoServer, registrationChanged, noContent
-        case noChannel(ChannelPushPayload.Kind)
-
-        var errorDescription: String? {
-            switch self {
-            case .notConfigured: "Connect to the demo server before preparing an alert."
-            case .notDemoServer: "Use the local demo server on port 3210 for proof alerts."
-            case .registrationChanged: "The selected server changed while preparing the alert."
-            case .noContent: "Notification enrichment produced no content."
-            case .noChannel(.request): "The demo has no waiting request."
-            case .noChannel(.completion): "The demo has no completed channel."
-            }
-        }
-    }
-    #endif
-
-    private func preferencesDidChange() {
-        updateRegistration()
-        onPreferencesChange?()
-    }
-
     private func updateRegistration() {
         guard hasLoadedAuthorization, currentRegistration != nil else { return }
         registration?.update(enabled: isEnabled, requests: requests, completions: completions)
@@ -408,7 +248,7 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
         guard enabled != value else { return }
         enabled = value
         defaults.set(value, forKey: "notificationsEnabled")
-        preferencesDidChange()
+        updateRegistration()
     }
 
     func isCurrent(_ payload: ChannelPushPayload) -> Bool {
@@ -475,7 +315,7 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
             }
             await onActivate?(Activation(
                 channelID: payload.channelID, sequence: payload.kind == .request ? payload.sequence : nil,
-                serverURL: currentRegistration.serverURL, focusComposer: false))
+                serverURL: currentRegistration.serverURL))
         default:
             break
         }

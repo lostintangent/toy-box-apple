@@ -28,6 +28,27 @@ struct ShellTests {
         try await work(MobilePushRegistrationStore(directory: directory))
     }
 
+    private func withNotifications(
+        register: @escaping (ChannelAPI, String, PushRegistration) async throws -> Bool = { _, _, _ in false },
+        addNotice: @escaping (UNNotificationRequest) async throws -> Void = { _ in },
+        _ work: @MainActor (UserDefaults, MobileNotificationRegistration, ChannelNotifications) async throws -> Void
+    ) async throws {
+        try await withDefaults { defaults in
+            try await withRegistrationStore { store in
+                let api = try ChannelAPI(serverURL: "https://fixture.example")
+                let registration = MobileNotificationRegistration(
+                    store: store, environment: .sandbox, requestToken: {}, register: register,
+                    remove: { _, _ in }, subscribe: { _, _, _ in }, unsubscribe: { _, _, _ in })
+                try registration.select(api: api)
+                let notifications = ChannelNotifications(
+                    defaults: defaults, registration: registration, readAuthorization: { .authorized }, addNotice: addNotice)
+                notifications.configure(api: api)
+                try await work(defaults, registration, notifications)
+                await registration.waitUntilIdle()
+            }
+        }
+    }
+
     #if DEBUG && targetEnvironment(simulator)
     @Test func handoffUnavailableStaysVisibleWhenTheNormalPhoneRootIsReplaced() async {
         await withDefaults { defaults in
@@ -59,15 +80,17 @@ struct ShellTests {
     }
 
     @Test(arguments: [false, true])
-    func registrationErrorsAreShownOnlyWhileNotificationsAreEnabled(enabled: Bool) async {
-        await withDefaults { defaults in
-            let notifications = ChannelNotifications(defaults: defaults, readAuthorization: { .authorized })
+    func registrationErrorsAreShownOnlyWhileNotificationsAreEnabled(enabled: Bool) async throws {
+        try await withNotifications(register: { _, _, _ in throw URLError(.cannotConnectToHost) }) {
+            _, registration, notifications in
             if enabled { await notifications.enable() }
             else { await notifications.refreshAuthorization() }
+            registration.receivedToken(Data([1]))
+            await registration.waitUntilIdle()
+            #expect(notifications.registrationError != nil)
             let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 466, height: 678))
             let host = UIHostingController(rootView: Form {
-                NotificationSettingsSection(notifications: notifications, registrationError: "Unavailable",
-                                            retryRegistration: {})
+                NotificationSettingsSection(notifications: notifications)
             })
             window.rootViewController = host
             window.isHidden = false
@@ -80,26 +103,6 @@ struct ShellTests {
         }
     }
 
-    @Test(arguments: [ChannelPushPayload.Kind.request, .completion])
-    func proofAlertsUseActualCatalogSequencesAndTheCurrentRegistration(kind: ChannelPushPayload.Kind) throws {
-        let catalog = ChannelCatalog(
-            lead: .init(name: "Lead", role: "Coordinator", avatar: .init(mark: "M4 12H20", color: "#123456")),
-            channels: [
-                Channel(id: "empty", name: "Empty", model: .init(provider: "test", name: "test"),
-                        updatedAt: "2026-10-27T00:00:00Z"),
-                Channel(id: "waiting", name: "Waiting", model: .init(provider: "test", name: "test"),
-                        requestSequence: 42, updatedAt: "2026-10-27T00:00:00Z"),
-                Channel(id: "finished", name: "Finished", model: .init(provider: "test", name: "test"),
-                        completedSequence: 51, updatedAt: "2026-10-27T00:00:00Z"),
-            ])
-        let registration = MobilePushRegistration(serverURL: "http://localhost:3210", registrationID: "current")
-        let payload = try ChannelNotifications.proofPayload(kind: kind, catalog: catalog, registration: registration)
-        #expect(payload.kind == kind)
-        #expect(payload.channelID == (kind == .request ? "waiting" : "finished"))
-        #expect(payload.sequence == (kind == .request ? 42 : 51))
-        #expect(payload.registrationID == registration.registrationID)
-        #expect(try ChannelPushPayload(userInfo: payload.userInfo) == payload)
-    }
     #endif
 
     @Test func registrationKeepsItsAddressAndChangesOnlyNotificationTopicsWhenDisabled() async throws {
@@ -161,6 +164,7 @@ struct ShellTests {
     func aServerSwitchWaitsForTheOldWriteWithoutAcceptingItsAcknowledgement() async throws {
         try await withRegistrationStore { store in
             var events: [String] = []
+            var created: [MobilePushRegistration] = []
             var responses: [CheckedContinuation<Void, Never>] = []
             var began: (() -> Void)?
             let registration = MobileNotificationRegistration(
@@ -175,6 +179,7 @@ struct ShellTests {
                 },
                 remove: { api, _ in events.append("delete:\(api.baseURL.host ?? "")") },
                 subscribe: { _, _, _ in }, unsubscribe: { _, _, _ in })
+            registration.onCreated = { created.append($0) }
             try registration.select(api: ChannelAPI(serverURL: "https://first.example"))
             let firstID = try #require(registration.current?.registrationID)
             registration.update(enabled: true, requests: true, completions: true)
@@ -195,9 +200,11 @@ struct ShellTests {
             }
             #expect(events == ["register:first.example", "delete:first.example", "register:second.example"])
             #expect(!registration.isReady)
+            #expect(created.isEmpty)
             try #require(responses.last).resume()
             await registration.waitUntilIdle()
             #expect(registration.isReady)
+            #expect(created == [try #require(registration.current)])
             try registration.select(api: ChannelAPI(serverURL: "https://first.example"))
             #expect(!registration.isReady)
             #expect(registration.current?.registrationID != firstID)
@@ -256,231 +263,169 @@ struct ShellTests {
         }
     }
 
-    @Test func notificationTapsUseTheCurrentRegistrationAndPrepareOnlyRequestReveals() async throws {
-        try await withDefaults { defaults in
-            try await withRegistrationStore { store in
-                let registration = MobileNotificationRegistration(
-                    store: store, environment: .sandbox, requestToken: {},
-                    register: { _, _, _ in false }, remove: { _, _ in }, subscribe: { _, _, _ in }, unsubscribe: { _, _, _ in })
-                try registration.select(api: ChannelAPI(serverURL: "https://fixture.example"))
-                let id = try #require(registration.current?.registrationID)
-                let notifications = ChannelNotifications(defaults: defaults, registration: registration)
-                let model = AppModel(arguments: ["--server", "https://fixture.example"], environment: [:],
-                                     defaults: defaults, session: fixtureSession(), notifications: notifications)
-                await notifications.receive(
-                    ChannelPushPayload(kind: .request, channelID: "first", sequence: 42, registrationID: id),
-                    action: UNNotificationDefaultActionIdentifier, text: nil, handle: nil, identifier: "request")
-                #expect(model.selectedChannelID == "first")
-                #expect(model.interaction(for: "first").revealRequest?.sequence == 42)
-                await notifications.receive(
-                    ChannelPushPayload(kind: .completion, channelID: "second", sequence: 51, registrationID: id),
-                    action: UNNotificationDefaultActionIdentifier, text: nil, handle: nil, identifier: "completion")
-                #expect(model.selectedChannelID == "second")
-                #expect(model.interaction(for: "second").revealRequest == nil)
-                await notifications.receive(
-                    ChannelPushPayload(kind: .request, channelID: "first", sequence: 88, registrationID: "old"),
-                    action: UNNotificationDefaultActionIdentifier, text: nil, handle: nil, identifier: "old")
-                #expect(model.selectedChannelID == "second")
-                #expect(model.serverURL == "https://fixture.example")
+    @Test(arguments: [false, true])
+    func notificationAndActivityRoutesRevealOnlyRequestsFromTheSelectedRegistration(activityLink: Bool) async throws {
+        try await withNotifications { defaults, registration, notifications in
+            let id = try #require(registration.current?.registrationID)
+            let model = AppModel(arguments: ["--server", "https://fixture.example"], environment: [:],
+                                 defaults: defaults, session: fixtureSession(), notifications: notifications)
+            @MainActor func open(_ kind: ChannelPushPayload.Kind, _ channel: String, _ sequence: Int,
+                                 _ registrationID: String) async throws {
+                if activityLink {
+                    await model.openExternalURL(try #require(ChannelActivityLink(
+                        channelID: channel, registrationID: registrationID,
+                        sequence: kind == .request ? sequence : nil).url))
+                } else {
+                    await notifications.receive(
+                        ChannelPushPayload(kind: kind, channelID: channel, sequence: sequence, registrationID: registrationID),
+                        action: UNNotificationDefaultActionIdentifier, text: nil, handle: nil, identifier: kind.rawValue)
+                }
             }
+            try await open(.request, "first", 42, id)
+            #expect(model.selectedChannelID == "first")
+            #expect(model.interaction(for: "first").revealRequest?.sequence == 42)
+            try await open(.completion, "second", 51, id)
+            #expect(model.selectedChannelID == "second")
+            #expect(model.interaction(for: "second").revealRequest == nil)
+            try await open(.request, "first", 88, "old")
+            #expect(model.selectedChannelID == "second")
+            #expect(model.navigationNotice == (activityLink ? "This channel isn't available." : nil))
+            #expect(model.serverURL == "https://fixture.example")
         }
     }
 
     @Test func nativeReplyDispatchKeepsTheOriginalPayloadAndRejectsAnOldRegistrationWithOnePlainNotice() async throws {
-        try await withDefaults { defaults in
-            try await withRegistrationStore { store in
-                let api = try ChannelAPI(serverURL: "https://fixture.example")
-                let registration = MobileNotificationRegistration(
-                    store: store, environment: .sandbox, requestToken: {},
-                    register: { _, _, _ in false }, remove: { _, _ in })
-                try registration.select(api: api)
-                let id = try #require(registration.current?.registrationID)
-                var notices: [UNNotificationRequest] = []
-                let notifications = ChannelNotifications(
-                    defaults: defaults, registration: registration, addNotice: { notices.append($0) })
-                notifications.configure(api: api)
-                let payload = ChannelPushPayload(kind: .request, channelID: "first", sequence: 42, registrationID: id)
-                var replies = 0
-                notifications.onReply = { received, text, handle in
-                    #expect(received == payload)
-                    #expect(text == "Keep the library by the desks")
-                    #expect(handle == "lead")
-                    replies += 1
-                    return .failed(id: "durable-outbox-id")
-                }
-                await notifications.receive(payload, action: ChannelNotificationCategory.reply,
-                                            text: "Keep the library by the desks", handle: "lead", identifier: "request")
-                #expect(replies == 1)
-                #expect(notices.isEmpty)
-                await notifications.receive(
-                    ChannelPushPayload(kind: .request, channelID: "first", sequence: 42, registrationID: "old"),
-                    action: ChannelNotificationCategory.reply, text: "Don't send this", handle: "lead", identifier: "old")
-                #expect(replies == 1)
-                #expect(notices.count == 1)
-                #expect(notices.first?.content.body == "Your reply wasn't sent.")
-                #expect(notices.first?.content.userInfo.isEmpty == true)
+        var notices: [UNNotificationRequest] = []
+        try await withNotifications(addNotice: { notices.append($0) }) { _, registration, notifications in
+            let id = try #require(registration.current?.registrationID)
+            let payload = ChannelPushPayload(kind: .request, channelID: "first", sequence: 42, registrationID: id)
+            var replies = 0
+            notifications.onReply = { received, text, handle in
+                #expect(received == payload)
+                #expect(text == "Keep the library by the desks")
+                #expect(handle == "lead")
+                replies += 1
+                return .failed(id: "durable-outbox-id")
             }
+            await notifications.receive(payload, action: ChannelNotificationCategory.reply,
+                                        text: "Keep the library by the desks", handle: "lead", identifier: "request")
+            #expect(replies == 1)
+            #expect(notices.isEmpty)
+            await notifications.receive(
+                ChannelPushPayload(kind: .request, channelID: "first", sequence: 42, registrationID: "old"),
+                action: ChannelNotificationCategory.reply, text: "Don't send this", handle: "lead", identifier: "old")
+            #expect(replies == 1)
+            #expect(notices.count == 1)
+            #expect(notices.first?.content.body == "Your reply wasn't sent.")
+            #expect(notices.first?.content.userInfo.isEmpty == true)
         }
     }
 
     @Test(.timeLimit(.minutes(1)))
     func followingObservesTheSelectedCatalogAndRegistrationIndependentlyOfAlertOptIn() async throws {
-        try await withDefaults { defaults in
-            try await withRegistrationStore { store in
-                let firstAPI = try ChannelAPI(serverURL: "https://first.example")
-                var response: CheckedContinuation<Bool, Never>?
-                var began: (() -> Void)?
-                let registration = MobileNotificationRegistration(
-                    store: store, environment: .sandbox, requestToken: {},
-                    register: { _, _, _ in
-                        if response == nil {
-                            return await withCheckedContinuation { continuation in
-                                response = continuation
-                                began?()
-                            }
-                        }
-                        return false
-                    }, remove: { _, _ in }, subscribe: { _, _, _ in }, unsubscribe: { _, _, _ in })
-                try registration.select(api: firstAPI)
-                let notifications = ChannelNotifications(defaults: defaults, registration: registration)
-                let following = ChannelFollowController(
-                    client: .init(activities: { [] },
-                                  request: { _, _ in throw CocoaError(.featureUnsupported) }),
-                    defaults: defaults)
-                defer { following.shutdown() }
-                let model = AppModel(arguments: ["--server", firstAPI.baseURL.absoluteString], environment: [:],
-                                     defaults: defaults, session: fixtureSession(),
-                                     notifications: notifications, following: following)
-                @MainActor func prepare(_ store: ChannelStore) throws {
-                    _ = try store.apply(.init(type: "snapshot", state: .init(
-                        revision: 1,
-                        channel: .init(id: store.id, name: "Workshop",
-                                       model: .init(provider: "test", name: "test"),
-                                       tasks: [.init(id: "root", title: "Work")],
-                                       updatedAt: "2026-10-27T00:00:00Z"),
-                        lead: .init(id: store.id, name: "Lead")
-                    )))
+        var response: CheckedContinuation<Bool, Never>?
+        var began: (() -> Void)?
+        try await withNotifications(register: { _, _, _ in
+            if response == nil {
+                return await withCheckedContinuation { continuation in
+                    response = continuation
+                    began?()
                 }
-                @MainActor func waitFor(_ state: ChannelFollowAction.State, for store: ChannelStore) async {
-                    for await current in Observations({ following.state(for: store) }) {
-                        if current == state { return }
-                    }
-                }
-                let first = try #require(model.catalog?.channel(id: "first"))
-                try prepare(first)
-                #expect(following.state(for: first) == .unavailable)
-                model.observeFollowing()
-                await withCheckedContinuation { continuation in
-                    began = { continuation.resume() }
-                    registration.receivedToken(Data([1]))
-                }
-                #expect(notifications.currentRegistration == registration.current)
-                #expect(!notifications.isRegistrationReady)
-                #expect(following.state(for: first) == .unavailable)
-                #expect(!notifications.isEnabled)
-                try #require(response).resume(returning: false)
-                await registration.waitUntilIdle()
-                await waitFor(.available, for: first)
-                #expect(notifications.isRegistrationReady)
-
-                try model.configure(serverURL: "https://second.example")
-                let secondAPI = try #require(model.api)
-                try registration.select(api: secondAPI)
-                let second = try #require(model.catalog?.channel(id: "first"))
-                try prepare(second)
-                await waitFor(.available, for: second)
-                #expect(following.state(for: first) == .unavailable)
-
-                try registration.select(api: firstAPI)
-                await waitFor(.unavailable, for: second)
-                try registration.select(api: secondAPI)
-                await waitFor(.available, for: second)
-                #expect(!notifications.isEnabled)
             }
-        }
-    }
-
-    @Test func activityLinksUseOnlyTheSelectedRegistrationAndRevealTheirOptionalRequest() async throws {
-        try await withDefaults { defaults in
-            try await withRegistrationStore { store in
-                let registration = MobileNotificationRegistration(
-                    store: store, environment: .sandbox, requestToken: {},
-                    register: { _, _, _ in false }, remove: { _, _ in })
-                try registration.select(api: ChannelAPI(serverURL: "https://fixture.example"))
-                let id = try #require(registration.current?.registrationID)
-                let notifications = ChannelNotifications(defaults: defaults, registration: registration)
-                let model = AppModel(arguments: ["--server", "https://fixture.example"], environment: [:],
-                                     defaults: defaults, session: fixtureSession(), notifications: notifications)
-                await model.openExternalURL(try #require(
-                    ChannelActivityLink(channelID: "first", registrationID: id, sequence: 42).url))
-                #expect(model.selectedChannelID == "first")
-                #expect(model.interaction(for: "first").revealRequest?.sequence == 42)
-                await model.openExternalURL(try #require(
-                    ChannelActivityLink(channelID: "second", registrationID: id).url))
-                #expect(model.selectedChannelID == "second")
-                #expect(model.interaction(for: "second").revealRequest == nil)
-                await model.openExternalURL(try #require(
-                    ChannelActivityLink(channelID: "first", registrationID: "old", sequence: 88).url))
-                #expect(model.selectedChannelID == "second")
-                #expect(model.navigationNotice == "This channel isn't available.")
-                #expect(model.serverURL == "https://fixture.example")
+            return false
+        }) { defaults, registration, notifications in
+            let firstAPI = try ChannelAPI(serverURL: "https://fixture.example")
+            let following = ChannelFollowController(
+                client: .init(activities: { [] }, request: { _, _ in throw CocoaError(.featureUnsupported) }),
+                defaults: defaults)
+            defer { following.shutdown() }
+            let model = AppModel(arguments: ["--server", firstAPI.baseURL.absoluteString], environment: [:],
+                                 defaults: defaults, session: fixtureSession(),
+                                 notifications: notifications, following: following)
+            @MainActor func prepare(_ store: ChannelStore) throws {
+                _ = try store.apply(.init(type: "snapshot", state: .init(
+                    revision: 1,
+                    channel: .init(id: store.id, name: "Workshop", model: .init(provider: "test", name: "test"),
+                                   tasks: [.init(id: "root", title: "Work")], updatedAt: "2026-10-27T00:00:00Z"),
+                    lead: .init(id: store.id, name: "Lead")
+                )))
             }
+            @MainActor func waitFor(_ state: ChannelFollowAction.State, for store: ChannelStore) async {
+                for await current in Observations({ following.state(for: store) }) {
+                    if current == state { return }
+                }
+            }
+            let first = try #require(model.catalog?.channel(id: "first"))
+            try prepare(first)
+            #expect(following.state(for: first) == .unavailable)
+            model.observeFollowing()
+            await withCheckedContinuation { continuation in
+                began = { continuation.resume() }
+                registration.receivedToken(Data([1]))
+            }
+            #expect(notifications.currentRegistration == registration.current)
+            #expect(!notifications.isRegistrationReady)
+            #expect(following.state(for: first) == .unavailable)
+            #expect(!notifications.isEnabled)
+            try #require(response).resume(returning: false)
+            await registration.waitUntilIdle()
+            await waitFor(.available, for: first)
+            #expect(notifications.isRegistrationReady)
+
+            try model.configure(serverURL: "https://second.example")
+            let secondAPI = try #require(model.api)
+            try registration.select(api: secondAPI)
+            let second = try #require(model.catalog?.channel(id: "first"))
+            try prepare(second)
+            await waitFor(.available, for: second)
+            #expect(following.state(for: first) == .unavailable)
+
+            try registration.select(api: firstAPI)
+            await waitFor(.unavailable, for: second)
+            try registration.select(api: secondAPI)
+            await waitFor(.available, for: second)
+            #expect(!notifications.isEnabled)
         }
     }
 
     @Test func presentationKeepsTheVisibleChannelQuietAndCompletionsInNotificationCenter() async throws {
-        try await withDefaults { defaults in
-            try await withRegistrationStore { store in
-                defaults.set(true, forKey: "notificationsEnabled")
-                let api = try ChannelAPI(serverURL: "https://fixture.example")
-                let registration = MobileNotificationRegistration(
-                    store: store, environment: .sandbox, requestToken: {},
-                    register: { _, _, _ in false }, remove: { _, _ in })
-                try registration.select(api: api)
-                let id = try #require(registration.current?.registrationID)
-                let notifications = ChannelNotifications(defaults: defaults, registration: registration,
-                                                          readAuthorization: { .authorized })
-                notifications.configure(api: api)
-                await notifications.refreshAuthorization()
-                await notifications.update(channels: [], activeChannelID: "first", withdraw: false)
-                let visible = ChannelPushPayload(kind: .request, channelID: "first", sequence: 42, registrationID: id)
-                let other = ChannelPushPayload(kind: .request, channelID: "second", sequence: 45, registrationID: id)
-                #expect(notifications.presentation(for: visible, category: ChannelNotificationCategory.request).isEmpty)
-                #expect(notifications.presentation(for: other, category: ChannelNotificationCategory.request)
-                        == [.banner, .list, .sound])
-                #expect(notifications.presentation(for: other, category: ChannelNotificationCategory.completion) == [.list])
-                notifications.disable()
-                #expect(notifications.presentation(for: other, category: ChannelNotificationCategory.request).isEmpty)
-                #expect(notifications.presentation(for: nil, category: ChannelNotificationCategory.replyFailed)
-                        == [.banner, .list, .sound])
-                await registration.waitUntilIdle()
-            }
+        try await withNotifications { _, registration, notifications in
+            await notifications.enable()
+            await notifications.update(channels: [], activeChannelID: "first", withdraw: false)
+            let id = try #require(registration.current?.registrationID)
+            let visible = ChannelPushPayload(kind: .request, channelID: "first", sequence: 42, registrationID: id)
+            let other = ChannelPushPayload(kind: .request, channelID: "second", sequence: 45, registrationID: id)
+            #expect(notifications.presentation(for: visible, category: ChannelNotificationCategory.request).isEmpty)
+            #expect(notifications.presentation(for: other, category: ChannelNotificationCategory.request)
+                    == [.banner, .list, .sound])
+            #expect(notifications.presentation(for: other, category: ChannelNotificationCategory.completion) == [.list])
+            notifications.disable()
+            #expect(notifications.presentation(for: other, category: ChannelNotificationCategory.request).isEmpty)
+            #expect(notifications.presentation(for: nil, category: ChannelNotificationCategory.replyFailed)
+                    == [.banner, .list, .sound])
         }
     }
 
-    @Test func notificationDelegateUsesExplicitSystemCompletionHandlers() async {
+    @Test func notificationDelegateUsesSystemSelectorsAndCompletesOnMainThreadAfterSuspending() async {
         await withDefaults { defaults in
             let notifications = ChannelNotifications(defaults: defaults)
             #expect(notifications.responds(to: #selector(
                 ChannelNotifications.userNotificationCenter(_:willPresent:withCompletionHandler:))))
             #expect(notifications.responds(to: #selector(
                 ChannelNotifications.userNotificationCenter(_:didReceive:withCompletionHandler:))))
+            let result = await Task.detached {
+                await withCheckedContinuation { continuation in
+                    ChannelNotifications.completeOnMainActor({
+                        await Task.yield()
+                        return UNNotificationPresentationOptions.list
+                    }, completionHandler: { options in
+                        continuation.resume(returning: (options, Thread.isMainThread))
+                    })
+                }
+            }.value
+            #expect(result.0 == [.list])
+            #expect(result.1)
         }
-    }
-
-    @Test func notificationCompletionsReturnToTheMainThreadAfterSuspendingWork() async {
-        let result = await Task.detached {
-            await withCheckedContinuation { continuation in
-                ChannelNotifications.completeOnMainActor({
-                    await Task.yield()
-                    return UNNotificationPresentationOptions.list
-                }, completionHandler: { options in
-                    continuation.resume(returning: (options, Thread.isMainThread))
-                })
-            }
-        }.value
-        #expect(result.0 == [.list])
-        #expect(result.1)
     }
 
     @Test func withdrawalRemovesAnsweredRequestsSeenCompletionsAndTheOpenChannelsAlerts() {
@@ -538,16 +483,17 @@ struct ShellTests {
         }
     }
 
-    @Test func returningFromSettingsRechecksPermissionWithoutEnablingAnIntentionalOptOut() async {
+    @Test func permissionRechecksRequireExplicitEnableOrAnOpenSettingsRequest() async {
         await withDefaults { defaults in
             defaults.set(true, forKey: "notificationsEnabled")
             var status = UNAuthorizationStatus.authorized
             var prompts = 0
+            var opened = 0
             let notifications = ChannelNotifications(defaults: defaults, readAuthorization: { status },
                                                       requestAuthorization: {
                 prompts += 1
                 return false
-            })
+            }, openSettings: { opened += 1; return true })
             await notifications.refreshAuthorization()
             #expect(notifications.isEnabled)
             status = .denied
@@ -563,6 +509,17 @@ struct ShellTests {
             await notifications.enable()
             #expect(notifications.isEnabled)
             #expect(prompts == 0)
+            status = .denied
+            await notifications.refreshAuthorization()
+            await notifications.openSystemSettings()
+            #expect(opened == 1)
+            #expect(!notifications.isEnabled)
+            status = .authorized
+            await notifications.refreshAuthorization()
+            #expect(notifications.isEnabled)
+            notifications.disable()
+            await notifications.refreshAuthorization()
+            #expect(!notifications.isEnabled)
         }
     }
 
@@ -577,26 +534,6 @@ struct ShellTests {
             #expect(!notifications.isEnabled)
             #expect(notifications.error == failure.localizedDescription)
             #expect(notifications.authorization == .notDetermined)
-        }
-    }
-
-    @Test func grantingPermissionThroughOpenSettingsEnablesTheExplicitRequestOnReturn() async {
-        await withDefaults { defaults in
-            var status = UNAuthorizationStatus.denied
-            var opened = 0
-            let notifications = ChannelNotifications(
-                defaults: defaults, readAuthorization: { status }, requestAuthorization: { false },
-                openSettings: { opened += 1; return true })
-            await notifications.refreshAuthorization()
-            await notifications.openSystemSettings()
-            #expect(opened == 1)
-            #expect(!notifications.isEnabled)
-            status = .authorized
-            await notifications.refreshAuthorization()
-            #expect(notifications.isEnabled)
-            notifications.disable()
-            await notifications.refreshAuthorization()
-            #expect(!notifications.isEnabled)
         }
     }
 

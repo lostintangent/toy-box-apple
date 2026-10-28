@@ -33,17 +33,10 @@ public struct ChannelPushPayload: Codable, Equatable, Sendable {
         let sequence = try values.decode(Int.self, forKey: .sequence)
         let channelID = try values.decode(String.self, forKey: .channelID)
         let registrationID = try values.decode(String.self, forKey: .registrationID)
-        guard sequence > 0 else {
-            throw DecodingError.dataCorruptedError(forKey: .sequence, in: values,
-                                                   debugDescription: "A push requires a positive message sequence.")
-        }
-        guard !channelID.isEmpty else {
-            throw DecodingError.dataCorruptedError(forKey: .channelID, in: values,
-                                                   debugDescription: "A push requires a channel ID.")
-        }
-        guard !registrationID.isEmpty else {
-            throw DecodingError.dataCorruptedError(forKey: .registrationID, in: values,
-                                                   debugDescription: "A push requires a registration ID.")
+        guard sequence > 0, !channelID.isEmpty, !registrationID.isEmpty else {
+            throw DecodingError.dataCorrupted(.init(
+                codingPath: decoder.codingPath,
+                debugDescription: "A push requires channel and registration IDs and a positive sequence."))
         }
         self.init(kind: try values.decode(Kind.self, forKey: .kind), channelID: channelID,
                   sequence: sequence, registrationID: registrationID)

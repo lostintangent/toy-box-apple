@@ -366,27 +366,14 @@ token or supply an Activity token, and are unique per registration/topic. A topi
 iPhone presents that subscription as a Live Activity.
 Subscription does not require the source to exist. An absent channel receives the channel-deleted
 ending on the next delivery pass. The phone resends the original `startedAt`, in Unix seconds,
-on every Activity token rotation. Subscribe clears that topic's delivery history and arms the
-100ms debounce, preserving immediate catch-up for new or replaced tokens.
-Push owns registrations, subscriptions, cached routing, Apple delivery, refresh/expiry and pruning.
-Channels publishes committed notification milestones lazily, with a three-second unread check only
-when subscribed, and opens a channel stream only while its topic is followed. The stream bootstraps
-with a full snapshot including recent messages, then retains only metadata, roster and presence.
-Channels has no startup catalog or delivery scheduler. Normal registration updates do not rewrite
-subscriptions. A 201 restores current choices and active Follows; unacknowledged preference writes
+on every Activity token rotation. Server scheduling and delivery live in Toy Box's Push guide.
+Normal registration updates do not rewrite subscriptions. A 201 restores current choices and active Follows; unacknowledged preference writes
 also recover on launch. New Follow remains unavailable until the selected server acknowledges its
 registration. Restored Activities survive that wait and replay deferred tokens after either 201 or
 204, independently of alert preferences.
 Allow notifications off unsubscribes only the two notification topics, retaining Follow and the address.
-One serial queue owns reload and delivery, using one five-minute tick and one 100ms debounce.
-The tick enforces the eight-hour lifetime and refreshes unchanged Activities within ten minutes.
-Any successful Activity delivery advances its topic's dedupe/request identity. Endings and new
-waiting requests use high priority. Only dead-token APNs responses prune; provider/authentication failures retain
-subscriptions for a later tick.
 The demo stores all state in memory and never contacts APNs.
-`bun run demo --completed` opts into a separate `completed-demo` channel for completion-alert proof,
-with every task done and an unread completion. The normal screenshot baseline stays unchanged.
-Both channels expose canonical read-only history pages, allowing the notification enricher to
+The demo exposes canonical read-only history pages, allowing the notification enricher to
 resolve the exact original question without reading or answering it.
 
 `ChannelPushPayload` carries exactly `kind`, `channelID`, positive `sequence` and `registrationID`
@@ -416,24 +403,8 @@ caches the selected registration's catalog in `notification-catalog.json` for ge
 alerts with valid cached identity. Failed lookups never use cached questions or task details as
 fresh text. Missing or mismatched registration gets plain Toy Box content, no action and no routing.
 Delivery rechecks the registration to prevent an in-flight lookup crossing a server switch.
-`simctl push` does not invoke the notification service on this runtime. A local proof can exercise
-the exact same enricher, but actual service invocation remains a real-APNs check.
-
-For an offline local proof, the DEBUG simulator Foundation Proof screen separates
-**Prepare Offline Request** from **Deliver Prepared Offline Request**. Prepare resolves real
-routing while online and runs the production enricher to warm its identity cache. Deliver reuses
-that routing without a catalog preflight, so the server can actually be unreachable. It rechecks
-the selected registration before and after enrichment and retains the thirty-second notification
-delay. The existing one-step request and completion controls are unchanged.
-`bun run mobile --notification-proof request --hold` schedules N01 without taps.
-Use `--notification-proof prepare-offline --hold` while online, then a separate
-`--notification-proof deliver-offline --hold` launch after stopping the demo for N05.
-Preparation persists only routing and its registration. Each launch writes
-`notification-proof-result.json` in the shared group with completion, failure and action elapsed
-time. Delivery receipts separately measure production enrichment through its callback and OS
-scheduling, and include the resolved demo content and scheduling timestamp for capture alignment.
-The real service logs entry and content-handler elapsed time, excluding OS launch latency.
-These options require a DEBUG simulator lease and never request notification permission.
+`simctl push` does not invoke the notification service on this runtime. Actual service invocation
+remains a real-APNs device check.
 
 `ChannelActivityAttributes` has `channelID`, `channelName` and `registrationID`. Its `ContentState`
 has working agent identities, top-level tasks done/total, optional waiting request sequence,
@@ -442,29 +413,12 @@ has working agent identities, top-level tasks done/total, optional waiting reque
 15 minutes. Confirmed endings have no stale date, and distinguish completion from Stop, expiry,
 deletion, server change and removal of the task list.
 
-`ChannelActivityPush` decodes the complete APNs `aps` envelope, including `update`/`end`,
+ActivityKit receives the APNs `aps` envelope, including `update`/`end`,
 `timestamp`, `content-state`, `stale-date` and optional `dismissal-date`, with Unix seconds
 throughout. The Activity fixtures cover working, quiet, request, completed, other ending and
 stale states. `push-activity.apns` is the request state; its five named sibling fixtures cover
-the others. Every payload fits APNs' 4 KB limit. `reanchored(at:)` shifts all dates together for
-native proof, preserving the stale fixture's 16-minute age rather than making it fresh.
-Debug simulator bundles copy those exact files into `ActivityFixtures`. Optimized bundles
-exclude them and remove any left by a previous debug bundle. Simulator fixture application
-proves decoding and foreground ActivityKit updates, not remote Activity delivery.
-`bun run mobile --activity-fixture-proof --hold` opens the debug proof screen, which starts a token-free local Activity for the 3210
-demo, then applies each decoded fixture through `ChannelActivityClient.system`. Updates are
-restricted to that Activity ID and the selected registration. End fixtures preserve their
-15-minute dismissal date. This screen never registers Follow and is absent from optimized builds.
-Add `--autoplay` to create the token-free Activity in the foreground, then apply Working, Quiet,
-Request, Stale and Completed at two-second intervals after the app enters the background.
-Run again with `--autoplay --autoplay-ended` for a fresh foreground Activity going to Ended.
-Terminal fixtures stay last because ActivityKit cannot request a replacement in the background.
-Autoplay reserves bounded native background time only after the background transition, with no
-lead-in delay and eight seconds of total interval waits in the five-state pass. It never answers
-a permission prompt, and writes
-its current state, Activity ID, timestamp and any failure atomically to
-`Documents/Automation/activity-fixture-autoplay.json` for capture synchronization.
-Each run dismisses only the Activity identified by its previous autoplay status before starting.
+the others. Every payload fits APNs' 4 KB limit. Contract tests decode the fixture content with the
+native codec. Simulator checks use real Follow against the demo; remote delivery is proven on device.
 
 `ChannelActivityLink` carries channel ID, registration ID and an optional positive request sequence
 in `toybox-desktop://activity` URLs. The receiving app checks the selected registration before

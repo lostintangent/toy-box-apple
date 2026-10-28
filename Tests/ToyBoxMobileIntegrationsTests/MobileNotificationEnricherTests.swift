@@ -8,23 +8,6 @@ import UserNotifications
 @testable import ToyBoxMobileIntegrations
 
 struct MobileNotificationEnricherTests {
-    @Test(arguments: [ChannelPushPayload.Kind.request, .completion])
-    @MainActor func routedAlertsRequestOneReloadBeforeHandingContentBackToTheSystem(kind: ChannelPushPayload.Kind) async throws {
-        let directory = Self.directory()
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let registration = try MobilePushRegistrationStore(directory: directory).select(serverURL: "https://server.test")
-        var events: [String] = []
-        let enricher = MobileNotificationEnricher(
-            directory: directory, avatarPNG: { _ in nil },
-            fetch: { _, _ in .init(catalog: Self.catalog(), messages: [Self.question()]) },
-            reloadWidgets: { events.append("reload") })
-        enricher.start(Self.payload(kind: kind, registration: registration)) { _ in events.append("delivered") }
-        let work = try #require(enricher.work)
-        await work.value
-        enricher.expire()
-        #expect(events == ["reload", "delivered"])
-    }
-
     @Test(arguments: [0, 3])
     @MainActor func requestIntentsIdentifyTheLocalRecipientAndTheRealChannelGroup(memberCount: Int) async throws {
         let directory = Self.directory()
@@ -59,6 +42,7 @@ struct MobileNotificationEnricherTests {
         let catalog = Self.catalog()
         let question = Self.question()
         var rendered: [ChannelAgent] = []
+        var events: [String] = []
         let enricher = MobileNotificationEnricher(directory: directory, avatarPNG: { agent in
             rendered.append(agent)
             return nil
@@ -66,11 +50,16 @@ struct MobileNotificationEnricherTests {
             #expect(api.baseURL.absoluteString == registration.serverURL)
             #expect(payload.kind == kind)
             return .init(catalog: catalog, messages: [question])
-        })
+        }, reloadWidgets: { events.append("reload") })
         var delivered: UNNotificationContent?
-        enricher.start(Self.payload(kind: kind, registration: registration)) { delivered = $0 }
+        enricher.start(Self.payload(kind: kind, registration: registration)) {
+            delivered = $0
+            events.append("delivered")
+        }
         let work = try #require(enricher.work)
         await work.value
+        enricher.expire()
+        #expect(events == ["reload", "delivered"])
         let content = try #require(delivered)
         #expect(content.title == "Studio")
         #expect(content.categoryIdentifier == kind.rawValue)

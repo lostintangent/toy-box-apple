@@ -12,16 +12,10 @@ final class MobileNotificationRegistration {
     private(set) var error: String?
     @ObservationIgnored var onCreated: ((MobilePushRegistration) async -> Void)?
 
-    private struct Preferences: Equatable {
-        var enabled: Bool
-        var requests: Bool
-        var completions: Bool
-    }
-
     private struct Operation: Equatable {
         let api: ChannelAPI
         let registrationID: String
-        let input: PushRegistration?
+        let input: PushRegistration
         let topics: [String]
 
         static func == (lhs: Self, rhs: Self) -> Bool {
@@ -39,12 +33,13 @@ final class MobileNotificationRegistration {
     @ObservationIgnored private let requestToken: () -> Void
     @ObservationIgnored private let logger = Logger(subsystem: "dev.toybox.mobile", category: "PushRegistration")
     @ObservationIgnored private var api: ChannelAPI?
-    @ObservationIgnored private var preferences: Preferences?
+    @ObservationIgnored private var enabled: Bool?
+    @ObservationIgnored private var topics: [String] = []
     @ObservationIgnored private var token: String?
     @ObservationIgnored private var requestedToken = false
     @ObservationIgnored private var desired: Operation?
     @ObservationIgnored private var attempted: Operation?
-    @ObservationIgnored private var removals: [Operation] = []
+    @ObservationIgnored private var removals: [(api: ChannelAPI, registrationID: String)] = []
     @ObservationIgnored private var work: Task<Void, Never>?
 
     init(store: MobilePushRegistrationStore, environment: PushEnvironment,
@@ -79,7 +74,7 @@ final class MobileNotificationRegistration {
         if changed { isReady = false }
         if changed, let previous {
             let oldAPI = try self.api ?? ChannelAPI(serverURL: previous.serverURL)
-            removals.append(Operation(api: oldAPI, registrationID: previous.registrationID, input: nil, topics: []))
+            removals.append((oldAPI, previous.registrationID))
         }
         self.api = api
         current = selected
@@ -89,9 +84,9 @@ final class MobileNotificationRegistration {
     }
 
     func update(enabled: Bool, requests: Bool, completions: Bool) {
-        let next = Preferences(enabled: enabled, requests: requests, completions: completions)
-        if enabled, preferences?.enabled == false { requestedToken = false }
-        preferences = next
+        if enabled, self.enabled == false { requestedToken = false }
+        self.enabled = enabled
+        topics = enabled ? [requests ? "requests" : nil, completions ? "completions" : nil].compactMap { $0 } : []
         updateDesired()
         obtainTokenIfNeeded()
     }
@@ -134,9 +129,6 @@ final class MobileNotificationRegistration {
     private func updateDesired() {
         let next: Operation?
         if let api, let current, let token {
-            let topics = preferences?.enabled == true
-                ? [(preferences?.requests == true ? "requests" : nil),
-                   (preferences?.completions == true ? "completions" : nil)].compactMap { $0 } : []
             next = Operation(api: api, registrationID: current.registrationID,
                              input: PushRegistration(token: token, environment: environment), topics: topics)
         } else {
@@ -167,28 +159,23 @@ final class MobileNotificationRegistration {
             guard let operation = desired, operation != attempted else { return }
             attempted = operation
             do {
-                if let input = operation.input {
-                    let created = try await register(operation.api, operation.registrationID, input)
+                let created = try await register(operation.api, operation.registrationID, operation.input)
+                if desired != operation { continue }
+                isReady = true
+                if created, let current {
+                    await onCreated?(current)
                     if desired != operation { continue }
-                    isReady = true
-                    if created, let current, current.registrationID == operation.registrationID {
-                        await onCreated?(current)
-                        if desired != operation { continue }
-                    }
-                    var resend = created
-                    if !created { resend = try store.acknowledgedTopics(registrationID: operation.registrationID) != operation.topics }
-                    if resend {
-                        for topic in ["requests", "completions"] {
-                            if operation.topics.contains(topic) {
-                                try await subscribe(operation.api, operation.registrationID, topic)
-                            } else {
-                                try await unsubscribe(operation.api, operation.registrationID, topic)
-                            }
-                        }
-                        try store.acknowledge(topics: operation.topics, registrationID: operation.registrationID)
-                    }
                 }
-                else { try await remove(operation.api, operation.registrationID) }
+                if try created || store.acknowledgedTopics(registrationID: operation.registrationID) != operation.topics {
+                    for topic in ["requests", "completions"] {
+                        if operation.topics.contains(topic) {
+                            try await subscribe(operation.api, operation.registrationID, topic)
+                        } else {
+                            try await unsubscribe(operation.api, operation.registrationID, topic)
+                        }
+                    }
+                    try store.acknowledge(topics: operation.topics, registrationID: operation.registrationID)
+                }
                 if desired == operation { error = nil }
             } catch {
                 logger.error("Could not update notification registration: \(error.localizedDescription)")

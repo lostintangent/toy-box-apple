@@ -15,14 +15,3 @@ public enum MobileSharedContainer {
         return url
     }
 }
-
-#if DEBUG && targetEnvironment(simulator)
-public enum MobileFoundationProbe {
-    public static func record(_ component: String) throws -> String {
-        let container = try MobileSharedContainer.url()
-        let marker = try String(contentsOf: container.appending(path: "foundation-marker.txt"), encoding: .utf8)
-        try Data(marker.utf8).write(to: container.appending(path: "foundation-\(component).txt"), options: .atomic)
-        return marker
-    }
-}
-#endif
