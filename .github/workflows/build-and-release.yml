@@ -41,19 +41,17 @@ jobs:
         with:
           bun-version: 1.4.4
       - run: bun install --frozen-lockfile --ignore-scripts
-      - name: Test native icon tooling
-        run: bun test scripts/shared/mobile-icon.test.ts
       - name: Test ChannelClient with a single cooperative worker
         env:
           SCRATCH_PATH: ${{ runner.temp }}/toy-box-tests
           NSUnbufferedIO: 'YES'
           LIBDISPATCH_COOPERATIVE_POOL_STRICT: '1'
-        run: bun scripts/shared/test-watchdog.ts --filter ChannelClientTests
+        run: bun run test --filter ChannelClientTests
       - name: Test
         env:
           SCRATCH_PATH: ${{ runner.temp }}/toy-box-tests
           NSUnbufferedIO: 'YES'
-        run: bun scripts/shared/test-watchdog.ts --skip ChannelClientTests
+        run: bun run test --skip ChannelClientTests
       - name: Upload blocked test diagnostics
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -102,7 +100,7 @@ jobs:
         env:
           SCRATCH_PATH: ${{ runner.temp }}/toy-box-mobile
         run: |
-          bun run mobile --build-only
+          bun run simulator --build-only
           app="$SCRATCH_PATH/mobile-simulator/Toy Box.app"
           for executable in ToyBoxMobileWidget ToyBoxMobileNotification; do
             test -x "$app/PlugIns/$executable.appex/$executable"
@@ -169,7 +167,7 @@ jobs:
           CONFIGURATION: release
           SCRATCH_PATH: ${{ runner.temp }}/toy-box-release
         run: |
-          app="$(bun run app --no-open | tail -n 1)"
+          app="$(bun run build --no-open | tail -n 1)"
           actions="$app/Contents/Resources/Metadata.appintents/extract.actionsdata"
           for intent in CatchMeUpIntent OpenChannelIntent SendMessageIntent CatchUpSnippetIntent ReplyIntent \
             OpenToyBoxControlIntent OpenRequestIntent ReplyToRequestIntent; do
@@ -177,7 +175,7 @@ jobs:
           done
           grep -q '"WaitingRequestEntity"' "$actions"
           grep -q '"com.apple.appintents.entity.Indexed"' "$actions"
-          tools="$(bun run sparkle-tools)"
+          tools="$(bun scripts/desktop/release/sparkle-tools.ts)"
           TOY_BOX_BUNDLE="$app" SPARKLE_TOOLS_DIR="$tools" bun test scripts/desktop/bundle/native.test.ts
       - name: Check update signing configuration and build number
         env:
@@ -204,7 +202,7 @@ jobs:
             fi
             echo "Bootstrapping updates from v0.1.0, which shipped without Sparkle."
           fi
-          bun run check-update-version "${args[@]}"
+          bun scripts/desktop/release/appcast.ts --check-build "${args[@]}"
       - name: Import the signing identity and notarization credentials
         env:
           CERTIFICATE: ${{ secrets.MACOS_SIGNING_CERTIFICATE }}
@@ -253,7 +251,7 @@ jobs:
       - name: Generate the update feed and verify its archive signature
         env:
           SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
-        run: bun run generate-appcast "$RELEASE_TAG"
+        run: bun scripts/desktop/release/appcast.ts "$RELEASE_TAG"
       - name: Remove the temporary keychain and signing material
         if: always()
         run: |

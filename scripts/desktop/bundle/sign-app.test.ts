@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { chmod, lstat, mkdir, rm, symlink } from "node:fs/promises";
 import { join } from "node:path";
-import { bundleIdentity, root } from "../../shared/lib.ts";
-import { FakeHarness } from "../../shared/test-helpers.ts";
+import { bundleIdentity, root } from "../../shared/support/lib.ts";
+import { FakeHarness } from "../../shared/support/test-helpers.ts";
 import { configureShareExtension } from "./share-extension.ts";
 import { configureWidgetExtension, widgetAppGroup, widgetExtension } from "./widget-extension.ts";
 
@@ -42,7 +42,7 @@ describe("Sparkle packaging without credentials", () => {
 
     test("repeat embedding preserves links and replaces a read-only license", async () => {
         for (let attempt = 0; attempt < 2; attempt++) {
-            const result = await fake.script("desktop/sparkle/embed-sparkle.ts", [source, app, license]);
+            const result = await fake.script("desktop/bundle/embed-sparkle.ts", [source, app, license]);
             expect(result.code).toBe(0);
             await chmod(join(app, "Contents/Resources/Sparkle-LICENSE"), 0o444);
         }

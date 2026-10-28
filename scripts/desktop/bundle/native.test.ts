@@ -1,9 +1,9 @@
 import { expect, test } from "bun:test";
 import { lstat, mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { command, root, temporary, text } from "../../shared/lib.ts";
-import { configureReleaseMetadata } from "../release/release.ts";
-import { appcastItems } from "../sparkle/xml.ts";
+import { command, root, temporary, text } from "../../shared/support/lib.ts";
+import { configureReleaseMetadata } from "../release.ts";
+import { appcastItems } from "../release/xml.ts";
 import { shareExtension, validateShareExtension } from "./share-extension.ts";
 import { validateWidgetExtension, widgetExtension } from "./widget-extension.ts";
 
@@ -88,7 +88,7 @@ test.skipIf(!hasTools)("native appcast: ephemeral file key signs the archive and
         };
         await Bun.write(join(directory, "CHANGELOG.md"), "## Mac 0.2.0\n\nNative appcast signing fixture.\n");
         await command([process.execPath, "-e",
-            `const { generateAppcast } = await import(${JSON.stringify(new URL("../sparkle/generate-appcast.ts", import.meta.url).href)}); await generateAppcast("v0.2.0", ${JSON.stringify(directory)});`], { env });
+            `const { generateAppcast } = await import(${JSON.stringify(new URL("../release/appcast.ts", import.meta.url).href)}); await generateAppcast("v0.2.0", ${JSON.stringify(directory)});`], { env });
         const feed = join(output, "appcast.xml");
         const signature = appcastItems(await Bun.file(feed).text())[0].child("enclosure")?.sparkleAttribute("edSignature");
         expect(signature).toBeDefined();

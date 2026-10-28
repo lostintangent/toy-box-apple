@@ -89,7 +89,7 @@ Local builds use Command Line Tools. CI uses its selected Xcode 27 toolchain on 
 Checks run for pull requests and pushes to `main`, not standalone branch pushes. A newer revision
 cancels unfinished checks for the same pull request or ref. Release tags and manual dry runs retain
 their serialized, non-cancellable publication group. Portable tooling tests run on Linux, while the
-native iPhone icon tests that use PlistBuddy run explicitly in the Mac job and skip on other hosts.
+native bundle checks that use Apple's tools run on the Mac release job and skip on other hosts.
 The Mac gate emits unbuffered test progress. Its twelve-minute watchdog samples only its own
 SwiftPM and XCTest descendants, prints their stacks and uploads diagnostics before failing.
 The job's twenty-minute limit remains unchanged. It runs ChannelClient with
@@ -121,7 +121,7 @@ isolated from the user's app.
 Only the certificate owner runs the one-time setup:
 
 ```sh
-bun run setup-release-secrets SHA1 APPLE_ID TEAM_ID
+bun run setup-secrets SHA1 APPLE_ID TEAM_ID
 ```
 
 It uses an Apple ID and an app-specific password from account.apple.com. Its silent prompt reads
@@ -129,7 +129,8 @@ the password without echoing or logging it, and accepts piped stdin with or with
 newline. Never pass the password as a script argument. The command optionally accepts `OWNER/REPO`
 as the final argument and configures the local
 `toy-box-channels-notary` keychain profile plus GitHub's `MACOS_SIGNING_CERTIFICATE`,
-`MACOS_SIGNING_PASSWORD` and `NOTARY_APP_PASSWORD` secrets. Setup exports only the pinned
+`MACOS_SIGNING_PASSWORD` and `NOTARY_APP_PASSWORD` secrets, plus the Sparkle archive-signing key
+described below. Setup exports only the pinned
 certificate's identity into a temporary encrypted file, then removes it on exit.
 
 Setup writes the selected public certificate SHA-1 to `MACOS_SIGNING_IDENTITY`; the workflow reads
@@ -140,7 +141,7 @@ through setup without a workflow edit. CI stores the notarization login in a tem
 profile. Missing or rejected credentials fail the release explicitly.
 
 Agents never run setup with real credentials or read signing keys and passwords. The credential-free
-regression suite, `bun run test:release`, replaces every credential, signing and
+regression suite, `bun test scripts`, replaces every credential, signing and
 network command with a fake and runs in CI. For a local release, set `SIGNING_IDENTITY=SHA1`,
 `BUILD_NUMBER=N` and `NOTARY_PROFILE=toy-box-channels-notary` when invoking `bun run release vX.Y.Z`.
 Without a notary profile, the archive is named `SIGNED-UNNOTARIZED` and is never published.
@@ -165,7 +166,7 @@ snapshot and test bundles have no feed or verification key and never start an up
 bundles enable automatic checking without Sparkle's permission prompt, but leave automatic
 installation off by default. Both choices remain user-configurable through Sparkle.
 
-The user runs `bun run setup-update-secrets [OWNER/REPO]` once. Sparkle generates or reuses the
+The same `bun run setup-secrets` command makes Sparkle generate or reuse the
 app-specific `dev.toybox.desktop` Keychain account, without touching its global default key.
 Setup uploads the exported key as `SPARKLE_ED_PRIVATE_KEY`, configures `SPARKLE_ED_PUBLIC_KEY` as a
 public repository variable, and removes the temporary export. The archive key is independent of
@@ -179,7 +180,7 @@ The active Sparkle Keychain account is `dev.toybox.desktop`. The Developer ID ce
 Apple ID app-specific password are unchanged. The renamed app needs new macOS notification
 and microphone grants, and Computer Use needs approval for `dev.toybox.desktop.test`.
 
-After notarization and stapling, `bun run generate-appcast` uses Sparkle's checksum-pinned tools to
+After notarization and stapling, the workflow's `scripts/desktop/release/appcast.ts` helper uses Sparkle's checksum-pinned tools to
 sign the finished archive with Ed25519. The archive signature, length, URL,
 machine and human-readable versions, and minimum macOS version are checked before publishing.
 The archive signature is verified with `sign_update`. The feed and release notes are not separately
@@ -197,17 +198,20 @@ malformed prior metadata fails the release instead of allowing a downgrade. The 
 release bootstraps from 0.1.0, which has no feed and must be upgraded manually. Local releases can
 set `PREVIOUS_APPCAST` to apply the same monotonicity guard.
 
-`bun run test:release` exercises packaging, inside-out signing, key setup, failure propagation
+`bun test scripts` exercises packaging, inside-out signing, key setup, failure propagation
 and numeric build ordering without real credentials. Its macOS native checks verify the bundled
 architectures and signatures. A real `generate_appcast`/`sign_update` round trip uses an isolated
 throwaway CryptoKit key file and verifies rejection of a modified archive, never accessing the
 default Sparkle Keychain entry.
 
-Tooling is grouped by platform under `scripts/desktop/` and `scripts/mobile/`, with common helpers
-under `scripts/shared/` and demo servers under `scripts/fixtures/`. Each platform owns its
-`release/` tooling. Mac packaging and Sparkle updates live in `desktop/bundle/` and
-`desktop/sparkle/`. Platform folders never import each other. Tests sit beside the code they cover,
-and every command keeps its root `package.json` entry point. Bun 1.4.4 is pinned in the package metadata and CI,
+Tooling is grouped by platform under `scripts/desktop/` and `scripts/mobile/`, with common commands
+under `scripts/shared/` and local servers under `scripts/demo/`. Their top levels contain only
+commands, named after what they do. [scripts/README.md](../scripts/README.md) lists the root package
+commands. Helpers live in `bundle/`, Mac `release/`, mobile `drive/`, demo `channels/` and shared
+`support/`. Platform folders never import each other. CI calls release-only helpers by path rather
+than exposing unused package commands. Script tests protect release, signing, profile matching,
+bundle metadata and credential boundaries. Development-tool tests and assertions that merely
+restate workflow text are omitted. Bun 1.4.4 is pinned in the package metadata and CI,
 and setup-bun is commit-pinned on both runner platforms. Scripts use TypeScript, Bun Shell, native
 file and XML APIs, and `bun test`. The sole `.sh` helper uses Bash's silent `read -rs` for the
 user-only credential prompt. Native Swift helpers retain Security-framework identity export and
@@ -215,7 +219,7 @@ AppKit icon rendering. Local builds remain Command Line Tools only.
 
 ### iPhone TestFlight
 
-`bun run mobile --testflight` is independent of the Mac release. It builds optimized arm64 with
+`bun run testflight` is independent of the Mac release. It builds optimized arm64 with
 the selected Xcode 27+ iPhoneOS SDK through SwiftPM, without an Xcode project or Simulator.
 `--version X.Y.Z` / `MOBILE_VERSION` sets the marketing version. `--build-number N` / `BUILD_NUMBER`
 sets the build and is required for validate/upload. Choose an unused number; App Store Connect
@@ -249,7 +253,7 @@ app-specific password. After setting the account/app identifiers, a local valida
 repo root prompts silently and passes only an environment reference to Apple's tool:
 
 ```sh
-NOTARY_APP_PASSWORD="$(bash scripts/shared/read-password.sh 'App-specific password: ')" bun run mobile --testflight --validate-only --build-number N
+NOTARY_APP_PASSWORD="$(bash scripts/shared/support/read-password.sh 'App-specific password: ')" bun run testflight --validate-only --build-number N
 ```
 
 Omit `--validate-only` to upload. No password is passed as a shell argument or stored by the
@@ -258,23 +262,24 @@ accept agreements, read keys/passwords or run real credential setup.
 
 The IPA contains `Payload/Toy Box.app`. `altool --validate-app` must pass before upload.
 `--validate-only` signs/packages and validates without uploading; `--build-only` creates an
-unsigned App Store-form bundle without profiles or credentials. `altool --upload-package --wait`
-waits for processing. Preserve its JSON result in the log and require Apple's reported processing
-state `VALID`, without a second app/version lookup. An unknown or failed result must not trigger
-another upload before checking App Store Connect. Keep the signed IPA and notes even if delivery
-or processing fails. Processing `VALID` is not yet a claim that a tester group has access. The first
-real build remains incomplete until App Store Connect shows Ready to Test.
+unsigned App Store-form bundle without profiles or credentials. `altool --upload-package` succeeds
+when its command exits zero. Print its output unchanged, without assuming it is one JSON document.
+Do not pass `--wait` or poll for processing. Upload acceptance and Apple processing are separate:
+finish with "Uploaded. Apple is processing it, and TestFlight shows it when that's done."
+A failed or interrupted command must not trigger another upload before checking App Store Connect.
+Keep the signed IPA and notes even if delivery fails. Upload success does not claim that a tester
+group has access.
 
 After local qualification, `.github/workflows/mobile-release.yml` handles only `mobile-vX.Y.Z` tags,
 independently of the Mac's unchanged `vX.Y.Z` release line. Both require one nonempty matching
 `## Mac X.Y.Z` / `## iPhone X.Y.Z` entry in root `CHANGELOG.md` before release building or credential
 access. `MOBILE_VERSION` must match the phone tag. The mobile workflow serializes its own publishes,
-uses Xcode 27's device SDK without a Simulator and calls the same `mobile --testflight` command.
+uses Xcode 27's device SDK without a Simulator and calls the same `testflight` command.
 Manual dispatch on `main` adds `--validate-only`, so it never uploads. CI uses
 `github.run_number.github.run_attempt`; use build `1` for the first local upload so it precedes the
 first CI build `1.1`.
 
-The user runs `bun run setup-testflight-secrets SHA1 APP_STORE_CONNECT_APP_ID [OWNER/REPO]`.
+The user runs `bun run setup-secrets:mobile SHA1 APP_STORE_CONNECT_APP_ID [OWNER/REPO]`.
 The shared signing selector validates the three App Store profiles and chosen Apple Distribution
 identity before export. A silent prompt or piped stdin supplies the export's encryption password,
 not the Apple Account password. Five secrets hold the encrypted certificate, its password and the
@@ -297,11 +302,11 @@ until that path is proven. No API key is required or read by the release tools.
 Actions holds the working signing material, so publishing does not use this Mac. If the laptop or
 repository secrets are lost, sign in to the same Apple account/team on another Mac, make new
 Developer ID and Apple Distribution certificates and matching App Store profiles, then rerun
-`setup-release-secrets`, `setup-testflight-secrets` and `setup-update-secrets`. The first two update
+`setup-secrets` and `setup-secrets:mobile`. They update
 their public fingerprint/issuer-chain variables and encrypted identity exports. No workflow edit
 or private-key backup is required. Apple account access and the app/team identities must be retained.
 
-If only the Sparkle key is lost, the third setup creates a new key pair. Sparkle 2.10's normal update
+The Mac setup also recreates the Sparkle key when its Keychain account is unavailable. Sparkle 2.10's normal update
 validator allows that rotation through the installed app's Apple signing requirement, while still
 requiring the new archive signature to match its embedded public key. Current v0.1.8 installs have
 the stricter feed/pre-extraction policy and need a one-time manual installation of this replacement.
@@ -542,7 +547,7 @@ reload only when visible snapshot content changes. Live writes retain the unchan
 
 ## Performance budgets
 
-`bun run benchmark` checks these on a release build against `bun run perf-demo`, with 100
+`bun run benchmark` checks these on a release build against `bun run demo:perf`, with 100
 messages loaded and again with every older page loaded. It times the main run loop three ways:
 
 - **Busy**: every pass from waking until the loop is about to sleep, added up.
@@ -2728,7 +2733,7 @@ no extra window opens. Activation or a shown window, from a reopen, Open Channel
 extra or a notification, makes it an ordinary app. Every other launch, Dock click and reopen is
 unchanged.
 
-`bun run app` generates `Contents/Resources/Metadata.appintents` by running Xcode's
+`bun run build` generates `Contents/Resources/Metadata.appintents` by running Xcode's
 `appintentsmetadataprocessor` directly over the const values SwiftPM already emits, so it needs
 Xcode installed but never `xcodebuild`. Titles, phrases and parameter names must stay literals.
 The system only indexes a bundle outside `/tmp` that has launched once, and parameterized phrases

@@ -1,9 +1,9 @@
 import { mkdir, realpath, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
-import { bundleIdentity, command, machineLock, main, plist, required, root, temporary } from "../shared/lib.ts";
+import { bundleIdentity, command, machineLock, main, plist, required, root, temporary } from "../shared/support/lib.ts";
 import { pidsFor } from "./validate.ts";
-import { isolateIntegrations } from "./isolate-integrations.ts";
+import { isolateIntegrations } from "./bundle/isolate-integrations.ts";
 
 async function reachable(url: string, successful = false) {
     try {
@@ -74,7 +74,7 @@ if (import.meta.main) await main(async () => {
             process.once("SIGTERM", interrupt);
             try {
                 console.log(`Building a release bundle in ${build}`);
-                const result = await command([process.execPath, join(root, "scripts/desktop/app.ts"), "--no-open"],
+                const result = await command([process.execPath, join(root, "scripts/desktop/build.ts"), "--no-open"],
                     { env: { CONFIGURATION: "release", SCRATCH_PATH: build }, quiet: true, allowFailure: true });
                 await Bun.write(join(logs, "build.log"), Buffer.concat([result.stdout, result.stderr]));
                 if (result.exitCode) {
@@ -96,7 +96,7 @@ if (import.meta.main) await main(async () => {
                         throw new Error(deletion.stderr.toString() || "Could not reset benchmark preferences.");
                     }
                     await command(["defaults", "write", identity, "summarizeNewMessages", "-bool", values.summaries ? "YES" : "NO"]);
-                    fixture = Bun.spawn([process.execPath, join(root, "scripts/fixtures/perf-demo.ts"), reference], {
+                    fixture = Bun.spawn([process.execPath, join(root, "scripts/demo/perf.ts"), reference], {
                         env: { ...process.env, TOY_BOX_PERF_PORT: port },
                         stdout: Bun.file(join(logs, "fixture.log")), stderr: Bun.file(join(logs, "fixture.err")),
                     });

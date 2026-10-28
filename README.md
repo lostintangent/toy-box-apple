@@ -24,6 +24,6 @@ Connect to your own Toy Box server. The Mac app needs macOS 27 on Apple Silicon,
 
 1. Clone this repo and install [Bun](https://bun.sh) 1.4.4, Swift 6.4 Command Line Tools and Xcode.
 2. `bun install --frozen-lockfile`
-3. `bun run app`
+3. `bun run build`
 
-See [AGENTS.md](AGENTS.md) for tests, iPhone installation, demo servers and releases.
+See [scripts/README.md](scripts/README.md) for commands, and [AGENTS.md](AGENTS.md) for platform guidance.
