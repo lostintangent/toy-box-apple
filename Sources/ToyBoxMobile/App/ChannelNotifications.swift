@@ -111,7 +111,6 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
     func start() async {
         guard !didStart else { return }
         didStart = true
-        installDelegate()
         do {
             try Tips.configure()
             tipsAvailable = true

@@ -2964,6 +2964,7 @@ observes no catalog or foreground content, and never marks read. Channel deletio
 the server with immediate dismissal. iOS ends the Activity at eight hours, and the server expires
 its subscription using the original `startedAt`; the app has no separate lifetime timer.
 Alert preferences do not start or stop an Activity.
+The app wires the current catalog and registration into Follow before awaiting notification authorization settings.
 Activity content updates are non-alerting. A request's ordinary notification supplies its alert,
 so updating the Activity never adds a second alert to force the Dynamic Island onscreen.
 
