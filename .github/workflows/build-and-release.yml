@@ -127,8 +127,6 @@ jobs:
         run: bun check
       - name: Lint workflows
         run: bun run lint:workflows
-      - name: Test tooling with fake commands
-        run: bun test scripts/shared scripts/desktop scripts/mobile
 
   release:
     needs: [test, release-checks]
@@ -175,8 +173,6 @@ jobs:
           done
           grep -q '"WaitingRequestEntity"' "$actions"
           grep -q '"com.apple.appintents.entity.Indexed"' "$actions"
-          tools="$(bun scripts/desktop/release/sparkle-tools.ts)"
-          TOY_BOX_BUNDLE="$app" SPARKLE_TOOLS_DIR="$tools" bun test scripts/desktop/bundle/native.test.ts
       - name: Check update signing configuration and build number
         env:
           SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}

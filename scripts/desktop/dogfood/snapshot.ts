@@ -1,8 +1,8 @@
 import { parseArgs } from "node:util";
 import { join } from "node:path";
-import { CommandFailure, command, main, root, scratchPath } from "../shared/support/lib.ts";
-import { isolateIntegrations } from "./bundle/isolate-integrations.ts";
-import { signApp } from "./bundle/sign-app.ts";
+import { CommandFailure, command, main, root, scratchPath } from "../../shared/lib/lib.ts";
+import { isolateIntegrations } from "./isolate.ts";
+import { signApp } from "../bundle/sign.ts";
 
 if (import.meta.main) await main(async () => {
     const args = process.argv.slice(2);
@@ -15,7 +15,7 @@ if (import.meta.main) await main(async () => {
     if (!values.server || !values.snapshot) {
         throw new CommandFailure(64, `${usage}\nSnapshot rendering requires an explicit server and PNG destination.`);
     }
-    const result = await command([process.execPath, join(root, "scripts/desktop/build.ts"), "--no-open"], { quiet: true });
+    const result = await command([process.execPath, join(root, "scripts/desktop/bundle/index.ts"), "--no-open"], { quiet: true });
     process.stderr.write(result.stdout);
     process.stderr.write(result.stderr);
     const app = join(scratchPath(), "Toy Box.app");

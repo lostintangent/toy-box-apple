@@ -1,10 +1,10 @@
 #!/usr/bin/env bun
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
-import { root } from "../shared/support/lib.ts";
+import { root } from "../shared/lib/lib.ts";
 import { referenceFactory, type Demo, type Snapshot } from "./channels/types.ts";
 import { createDemoPushRoutes } from "./channels/push-routes.ts";
-import { writeHistoryPage } from "./channels/history.ts";
+import { writeHistoryPage } from "./channels/history-channel.ts";
 
 export function installDemoCatalogRoutes(demo: Pick<Demo, "server" | "snapshot">) {
     const push = createDemoPushRoutes();

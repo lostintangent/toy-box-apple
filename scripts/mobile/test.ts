@@ -1,7 +1,7 @@
 import { join } from "node:path";
-import { checkTestCompletion, command, machineLock, main } from "../shared/support/lib.ts";
-import { buildMobile, mobileEnvironment } from "./bundle/build.ts";
-import { prepareMobileSimulator } from "./drive/simulator.ts";
+import { checkTestCompletion, command, machineLock, main } from "../shared/lib/lib.ts";
+import { buildMobile, mobileEnvironment } from "./bundle/index.ts";
+import { prepareMobileSimulator } from "./dogfood/boot.ts";
 
 export const mobileTestProducts = [
     "ChannelClientTests", "ToyBoxUITests",

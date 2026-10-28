@@ -1,7 +1,7 @@
 import { join } from "node:path";
-import { CommandFailure, command, developerEnvironment, main, root, temporary, text } from "../shared/support/lib.ts";
-import { mobileBundleID } from "./bundle/build.ts";
-import { mobileSigning } from "./bundle/signing.ts";
+import { CommandFailure, command, developerEnvironment, main, root, temporary, text } from "../shared/lib/lib.ts";
+import { mobileBundleID } from "./bundle/index.ts";
+import { mobileSigning } from "./bundle/sign.ts";
 
 export async function uploadTestFlightSigning(signing: Awaited<ReturnType<typeof mobileSigning>>,
     appID: string, repository: string, password: string) {
@@ -10,7 +10,7 @@ export async function uploadTestFlightSigning(signing: Awaited<ReturnType<typeof
     await temporary("toy-box-testflight-secrets.", async directory => {
         const exported = join(directory, "identity.p12");
         const chainFile = join(directory, "issuer-chain.pem");
-        await command(["xcrun", "swift", join(root, "scripts/shared/support/export-signing-identity.swift"),
+        await command(["xcrun", "swift", join(root, "scripts/shared/lib/export-signing-identity.swift"),
             host.identity.fingerprint, exported, chainFile], { env: { P12_PASSWORD: password } });
         const secrets: [string, string][] = [
             ["MOBILE_SIGNING_CERTIFICATE", Buffer.from(await Bun.file(exported).arrayBuffer()).toString("base64")],
@@ -45,7 +45,7 @@ if (import.meta.main) await main(async () => {
     const signing = await mobileSigning(identity);
     const repo = repository || await text(["gh", "repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"]);
     await command(["gh", "auth", "status"], { quiet: true });
-    const reader = Bun.spawn(["/bin/bash", join(root, "scripts/shared/support/read-password.sh"),
+    const reader = Bun.spawn(["/bin/bash", join(root, "scripts/shared/lib/read-password.sh"),
         "Password to encrypt the Apple Distribution certificate export: "], {
         env: developerEnvironment, stdin: "inherit", stdout: "pipe", stderr: "inherit",
     });

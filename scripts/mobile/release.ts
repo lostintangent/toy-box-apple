@@ -1,10 +1,10 @@
 import { copyFile, mkdir, readdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { parseArgs } from "node:util";
-import { command, main, plist, root, scratchPath, temporary, text } from "../shared/support/lib.ts";
-import { version as buildVersion } from "../shared/support/build-version.ts";
-import { bundleMobile, mobileBundleID, mobileEnvironment, mobileExtensions } from "./bundle/build.ts";
-import { mobileSigning, signMobileBundles } from "./bundle/signing.ts";
+import { command, main, plist, root, scratchPath, temporary, text } from "../shared/lib/lib.ts";
+import { version as buildVersion } from "../shared/lib/build-version.ts";
+import { bundleMobile, mobileBundleID, mobileEnvironment, mobileExtensions } from "./bundle/index.ts";
+import { mobileSigning, signMobileBundles } from "./bundle/sign.ts";
 
 export type TestFlightVersion = { version: string; build: string };
 export type TestFlightAuthentication = { username: string; appID: string; passwordReference: string };

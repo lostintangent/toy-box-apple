@@ -1,5 +1,5 @@
-import { command, text } from "../../shared/support/lib.ts";
-import { mobileEnvironment } from "../bundle/build.ts";
+import { command, text } from "../../shared/lib/lib.ts";
+import { mobileEnvironment } from "../bundle/index.ts";
 
 type DeviceType = { identifier: string; productFamily: string };
 type Runtime = { identifier: string; version: string; isAvailable: boolean; supportedDeviceTypes: DeviceType[] };

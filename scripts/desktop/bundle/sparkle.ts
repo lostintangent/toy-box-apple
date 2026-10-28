@@ -1,6 +1,6 @@
 import { mkdir, rm, rename, chmod } from "node:fs/promises";
 import { join } from "node:path";
-import { command, main, text } from "../../shared/support/lib.ts";
+import { command, main, text } from "../../shared/lib/lib.ts";
 
 export async function embedSparkle(source: string, app: string, license: string) {
     const framework = join(app, "Contents/Frameworks/Sparkle.framework");
@@ -29,6 +29,6 @@ export async function embedSparkle(source: string, app: string, license: string)
 
 if (import.meta.main) await main(async () => {
     const [source, app, license] = process.argv.slice(2);
-    if (!source || !app || !license) throw new Error("Usage: bun scripts/desktop/bundle/embed-sparkle.ts FRAMEWORK APP LICENSE");
+    if (!source || !app || !license) throw new Error("Usage: bun scripts/desktop/bundle/sparkle.ts FRAMEWORK APP LICENSE");
     await embedSparkle(source, app, license);
 });

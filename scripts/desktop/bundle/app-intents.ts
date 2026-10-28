@@ -1,6 +1,6 @@
 import { mkdir, rm } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
-import { command, executable, plist, root, text } from "../../shared/support/lib.ts";
+import { command, executable, plist, root, text } from "../../shared/lib/lib.ts";
 import { validateControlMetadata, widgetExtension } from "./widget-extension.ts";
 
 export async function extractAppIntents(app: string, scratch: string, configuration: string,

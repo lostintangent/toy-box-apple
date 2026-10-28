@@ -1,9 +1,9 @@
 import { join } from "node:path";
 import { parseArgs } from "node:util";
-import { command, machineLock, main, scratchPath, text } from "../shared/support/lib.ts";
-import { bundleMobile, mobileBundleID, mobileEnvironment } from "./bundle/build.ts";
-import { prepareMobileSimulator } from "./drive/simulator.ts";
-import { prepareMobileDrive, runMobileDrive, runMobileSimulatorCommand, simulatorDriveHost } from "./drive/drive.ts";
+import { command, machineLock, main, scratchPath, text } from "../../shared/lib/lib.ts";
+import { bundleMobile, mobileBundleID, mobileEnvironment } from "../bundle/index.ts";
+import { prepareMobileSimulator } from "./boot.ts";
+import { prepareMobileDrive, runMobileDrive, runMobileSimulatorCommand, simulatorDriveHost } from "./drive.ts";
 
 const contentSizeCategories = {
     extraSmall: "UICTContentSizeCategoryXS", small: "UICTContentSizeCategoryS",

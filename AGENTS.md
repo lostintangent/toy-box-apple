@@ -18,15 +18,18 @@ view.
 ## Build and run
 
 - Use Bun 1.4.4 and root `package.json` commands after `bun install --frozen-lockfile`.
-  `scripts/desktop/` and `scripts/mobile/` own their platform tooling, `scripts/shared/` their
-  common commands, and `scripts/demo/` local servers. Each folder's top level contains only
-  commands named for what they do. See [scripts/README.md](scripts/README.md) for the command table.
-  Helpers live in `bundle/`, Mac `release/`, mobile `drive/` and shared `support/`.
+  `scripts/desktop/` and `scripts/mobile/` each own `setup-secrets.ts`, `test.ts`, `bundle/`,
+  `dogfood/` and release tooling. `bundle/` builds and signs, `dogfood/` runs and measures
+  development builds, and release tooling packages for distribution. A command with helpers
+  uses its folder's `index.ts`; the phone's release is one `mobile/release.ts` file.
+  `scripts/demo-server/` serves sample channels for safe development and write tests.
+  `scripts/shared/` holds common commands and `lib/` helpers.
+  See [scripts/README.md](scripts/README.md) for each command's file, purpose and operator.
   Platform folders never import each other. Use native `bun check`, without installing TypeScript.
-  `bun test scripts` keeps release/signing contracts, not development-tool or workflow-text tests.
+  There are no script tests. Changes to bundle or release tooling require both real release dry runs.
   `bun run lint:workflows` validates workflows.
   Workflow shell checks gate warnings and errors, not style hints.
-- Use `bun run test` for Swift tests. Bare `bun test` only runs the TypeScript tooling tests.
+- Use `bun run test` for Swift tests, not bare `bun test`.
 - Mac builds use only Command Line Tools. iOS uses Xcode's toolchain/SDK through SwiftPM,
   not `xcodebuild`. `bun run build` invokes Xcode's `appintentsmetadataprocessor` for Siri/Shortcuts,
   requiring Xcode installed but not its license.
@@ -144,7 +147,7 @@ use demo servers only for write scripts. Never skip or retry actions.
   and selected device identify the leased simulator before using native posture controls.
   The SDK 27.1 fixture waits for settled **466x678-point folded** / **669x951-point unfolded** proof
   scenes, not general device/hinge detection. Timeouts report expected and measured scenes and
-  stop without retrying. `scripts/mobile/drive/posture.json` checks folded/unfolded/folded
+  stop without retrying. `scripts/mobile/dogfood/drives/posture.json` checks folded/unfolded/folded
   without sending or editing a draft.
 - Observed: native Open then Rotate Right reached unfolded. Displays **1** = folded LCD
   (1398x2034), **3** = unfolded LCD (2007x2853), both 3x. **2** is TVOut, not unfolded.
@@ -152,7 +155,7 @@ use demo servers only for write scripts. Never skip or retry actions.
   Unfolded value remains unverified: Computer Use refused setting and advertised increment.
   A requested value is not a measured result. Legacy `{"fold":false}` fails with native diagnostics.
   Never use display-power: it did not change the scene and can crash SpringBoard.
-- `scripts/mobile/drive/demo.json` performs a real reply/send and both display captures,
+- `scripts/mobile/dogfood/drives/reply.json` performs a real reply/send and both display captures,
   requires message-row identifiers and baseline request sequence 15, and sends on every run.
   It requires the same live Device Hub posture actions.
 - **Build only:** `bun run simulator --build-only` makes the Simulator bundle without booting.
@@ -190,7 +193,7 @@ use demo servers only for write scripts. Never skip or retry actions.
   `APP_STORE_CONNECT_USERNAME` and numeric `APP_STORE_CONNECT_APP_ID`. Apple tools read the password
   only through `@env:NOTARY_APP_PASSWORD`, locally and in CI. Never pass a password as a shell argument.
   Only the user supplies it. For a local validation from the repo root:
-  `NOTARY_APP_PASSWORD="$(bash scripts/shared/support/read-password.sh 'App-specific password: ')" bun run testflight --validate-only --build-number N`
+  `NOTARY_APP_PASSWORD="$(bash scripts/shared/lib/read-password.sh 'App-specific password: ')" bun run testflight --validate-only --build-number N`
 - **TestFlight bundle:** actual Xcode/SDK `DT*` metadata, matching version/build on every component,
   `ITSAppUsesNonExemptEncryption=false`, production push and no `get-task-allow`. Validate/upload require
   `--build-number` / `BUILD_NUMBER`; choose an unused App Store build. Build-only may use the plist's
@@ -212,7 +215,7 @@ use demo servers only for write scripts. Never skip or retry actions.
 - Main/PR CI builds mobile app, extensions and shared modules for Simulator, verifies extension
   signatures, and runs suites only with an installed iOS 27+ runtime, otherwise explicitly skipping.
   Tags/manual release dry runs skip iOS. Mac runs ChannelClient once under the strict cooperative pool,
-  then remaining suites. Bundle, Siri and native Sparkle checks run only in the release job.
+  then remaining suites. Bundle, Siri and signing checks run only in the release job.
 - The phone widget fetches its saved server through the app's snapshot publisher on every
   timeline refresh, with a ten-second total network deadline. Failed refreshes preserve cached
   requests/last-success time. The notification service requests reload before returning each routed
@@ -329,7 +332,7 @@ analysis errors/completion/text detection and load.
 ## Releases
 
 - Workflow actions stay pinned to full commit hashes with readable version comments. Dependabot
-  checks them weekly. The Release checks job validates workflows and credential-free release tools.
+  checks them weekly. The Release checks job typechecks tooling and validates workflows.
 - Push a `vX.Y.Z` tag, only with the user's approval. Actions tests the tag, then signs,
   notarizes, staples and publishes the signed zip, its checksum and `appcast.xml`. Running the
   workflow by hand on `main` is a dry run that keeps all three as artifacts.
@@ -359,7 +362,6 @@ analysis errors/completion/text detection and load.
   Setup exports its verified public chain alongside the encrypted identity,
   so certificate renewal needs setup again, not a workflow fingerprint/intermediate edit.
   Agents never run setup with real credentials, create secrets or read keys/passwords.
-  `bun test scripts` uses fake commands unless native checks are explicitly enabled.
   The only shell helper is `read-password.sh`, using `read -rs` for echo/piped-input handling.
 - The same Mac setup also reuses
   or creates the `dev.toybox.desktop` Sparkle Keychain account, uploads `SPARKLE_ED_PRIVATE_KEY`
@@ -367,8 +369,6 @@ analysis errors/completion/text detection and load.
   export. No key backup is required: on a new Mac it creates a replacement, authorized by the same
   app's Developer ID signing requirement. Keep the bundle ID and Apple team unchanged.
   Agents never run setup or read the key.
-  Opt-in `scripts/desktop/bundle/native.test.ts` uses a throwaway CryptoKit file, never Keychain.
-  Run it with `TOY_BOX_BUNDLE=<app> SPARKLE_TOOLS_DIR=<tools> bun test scripts/desktop/bundle/native.test.ts`.
 - Locally: `SPARKLE_ED_PUBLIC_KEY=... SIGNING_IDENTITY=SHA1 BUILD_NUMBER=N NOTARY_PROFILE=toy-box-channels-notary
   bun run release vX.Y.Z`. Without `NOTARY_PROFILE` the zip is named `SIGNED-UNNOTARIZED` and
   is never published. `PREVIOUS_APPCAST=path` enforces increasing local build numbers. CI compares the
@@ -393,7 +393,7 @@ analysis errors/completion/text detection and load.
   Services, URL schemes and document handlers. Check `pluginkit -m -v -i dev.toybox.desktop.share`
   on a normal bundle, not an isolated clone.
 - Sparkle is pinned to 2.10.0 in SwiftPM. Every bundle embeds its arm64-only framework, installer
-  and updater, without sandbox XPC services or development headers. `desktop/bundle/sign-app.ts` signs those
+  and updater, without sandbox XPC services or development headers. `desktop/bundle/sign.ts` signs those
   components inside out before signing the app. Keep Sparkle's license in the bundle.
 - Only release bundles get `SUFeedURL` / `SUPublicEDKey`. Others have no updater regardless of saved
   preferences. Feed:

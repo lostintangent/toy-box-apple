@@ -1,6 +1,6 @@
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { command, executable, main, root } from "../../shared/support/lib.ts";
+import { command, executable, main, root } from "../../shared/lib/lib.ts";
 
 export async function sparkleTools() {
     const version = "2.10.0";

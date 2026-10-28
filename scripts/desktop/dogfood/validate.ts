@@ -1,10 +1,10 @@
 import { mkdir, mkdtemp, realpath, rename, rm } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
-import { bundleIdentity, command, isMissing, main, plist, required, root, text } from "../shared/support/lib.ts";
-import { signApp } from "./bundle/sign-app.ts";
-import { validateShareExtension } from "./bundle/share-extension.ts";
-import { isolateIntegrations } from "./bundle/isolate-integrations.ts";
-import { validateWidgetExtension } from "./bundle/widget-extension.ts";
+import { bundleIdentity, command, isMissing, main, plist, required, root, text } from "../../shared/lib/lib.ts";
+import { signApp } from "../bundle/sign.ts";
+import { validateShareExtension } from "../bundle/share-extension.ts";
+import { isolateIntegrations } from "./isolate.ts";
+import { validateWidgetExtension } from "../bundle/widget-extension.ts";
 
 const lsregister = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister";
 
@@ -36,7 +36,7 @@ if (import.meta.main) await main(async () => {
     const testName = "Toy Box Test";
     const testID = `${bundleIdentity}.test`;
     const testApp = join(root, ".build/agents", `${testName}.app`);
-    await command([process.execPath, join(root, "scripts/desktop/build.ts"), "--no-open"], {
+    await command([process.execPath, join(root, "scripts/desktop/bundle/index.ts"), "--no-open"], {
         env: { CONFIGURATION: "release", SCRATCH_PATH: scratch }, quiet: true,
     });
     const buildVersion = await text(["xcrun", "vtool", "-show-build",
