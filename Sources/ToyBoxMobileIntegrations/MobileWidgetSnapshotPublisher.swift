@@ -7,11 +7,9 @@ import WidgetKit
 @MainActor
 public final class MobileWidgetSnapshotPublisher {
     private let file: URL
-    private let avatarPNG: @MainActor (ChannelAgent) -> Data?
     private let reload: @MainActor () -> Void
     private var previous: NeedsYouSnapshot?
     private var requests: [ChannelWaitingRequest.Identity: ChannelRequestMessage] = [:]
-    private var avatars: [String: (ChannelAgent, Data)] = [:]
     private var generation = UUID()
     private let logger = Logger(subsystem: "dev.toybox.mobile", category: "Widget")
 
@@ -20,13 +18,12 @@ public final class MobileWidgetSnapshotPublisher {
         var errorDescription: String? { "Toy Box cannot read this version of its saved widget snapshot." }
     }
 
-    public init(directory: URL? = nil, avatarPNG: @escaping @MainActor (ChannelAgent) -> Data?,
+    public init(directory: URL? = nil,
                 reload: @escaping @MainActor () -> Void = {
                     WidgetCenter.shared.reloadTimelines(ofKind: NeedsYouSnapshot.kind)
                 }) throws {
         let directory = try directory ?? MobileSharedContainer.url()
         file = directory.appendingPathComponent(NeedsYouSnapshot.fileName)
-        self.avatarPNG = avatarPNG
         self.reload = reload
         do {
             previous = try JSONDecoder().decode(NeedsYouSnapshot.self, from: Data(contentsOf: file))
@@ -41,7 +38,6 @@ public final class MobileWidgetSnapshotPublisher {
         generation = token
         if previous?.serverURL != serverURL {
             requests = [:]
-            avatars = [:]
         }
         guard let catalog, catalog.api.baseURL.absoluteString == serverURL,
               catalog.hasLoaded, catalog.error == nil, catalog.state != nil else {
@@ -66,7 +62,6 @@ public final class MobileWidgetSnapshotPublisher {
         generation = token
         if previous?.serverURL != serverURL {
             requests = [:]
-            avatars = [:]
         }
         let snapshot: NeedsYouSnapshot
         do {
@@ -155,7 +150,6 @@ public final class MobileWidgetSnapshotPublisher {
         requests = requests.filter { identities.contains($0.key) }
         let rows = resolved.sorted { $0.date > $1.date }.prefix(5).map { item in
             let request = item.request
-            let requester = request?.requester
             let text = request.map { NotificationText.plainText($0.message.text) } ?? ""
             let quote = text.isEmpty ? request.map {
                 NotificationText.requestBody($0.message, agents: $0.agents)
@@ -163,8 +157,7 @@ public final class MobileWidgetSnapshotPublisher {
             return NeedsYouSnapshot.Request(
                 channelID: item.channel.id, channelName: item.channel.name,
                 sequence: item.sequence, quote: quote,
-                agentName: requester?.name, requestedAt: request.flatMap { ChannelDates.date($0.message.timestamp) },
-                avatarPNG: requester.flatMap(avatar)
+                requestedAt: request.flatMap { ChannelDates.date($0.message.timestamp) }
             )
         }
         return NeedsYouSnapshot(
@@ -190,16 +183,5 @@ public final class MobileWidgetSnapshotPublisher {
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
         previous = snapshot
         reload()
-    }
-
-    private func avatar(_ agent: ChannelAgent) -> Data? {
-        let identity = ChannelAgent(id: agent.id, name: agent.name, avatar: agent.avatar, deleted: agent.deleted)
-        if let cached = avatars[agent.id], cached.0 == identity { return cached.1 }
-        guard let data = avatarPNG(identity) else {
-            logger.error("Could not render a widget avatar.")
-            return nil
-        }
-        avatars[agent.id] = (identity, data)
-        return data
     }
 }

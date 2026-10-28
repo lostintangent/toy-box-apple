@@ -216,7 +216,7 @@ final class AppModel {
         integrationsStarted = true
         observeFollowing()
         do {
-            widgetPublisher = try MobileWidgetSnapshotPublisher(avatarPNG: Self.widgetAvatar)
+            widgetPublisher = try MobileWidgetSnapshotPublisher()
         } catch {
             integrationLogger.error("Could not prepare the Needs You widget: \(error.localizedDescription)")
         }
@@ -283,12 +283,6 @@ final class AppModel {
             } while widgetUpdateRequested && generation == integrationsGeneration && !Task.isCancelled
             if generation == integrationsGeneration { widgetUpdate = nil }
         }
-    }
-
-    private static func widgetAvatar(_ agent: ChannelAgent) -> Data? {
-        let renderer = ImageRenderer(content: AgentAvatarView(agent: agent, size: 24))
-        renderer.scale = 3
-        return renderer.uiImage?.pngData()
     }
 
     func beginHandoffNavigation() -> UUID {

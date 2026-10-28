@@ -2,21 +2,8 @@ import ChannelClient
 import ChannelKit
 import Foundation
 import OSLog
-import SwiftUI
-import ToyBoxUI
-import UIKit
 import UserNotifications
 import WidgetKit
-
-@MainActor
-public enum MobileNotificationAvatar {
-    public static func png(_ agent: ChannelAgent) -> Data? {
-        let renderer = ImageRenderer(content: AgentAvatarView(agent: agent, size: 128))
-        renderer.scale = 1
-        guard let image = renderer.cgImage else { return nil }
-        return UIImage(cgImage: image).pngData()
-    }
-}
 
 @MainActor
 public final class MobileNotificationEnricher {

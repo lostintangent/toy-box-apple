@@ -16,19 +16,15 @@ public struct NeedsYouSnapshot: Codable, Equatable, Sendable {
         public var channelName: String
         public var sequence: Int
         public var quote: String
-        public var agentName: String?
         public var requestedAt: Date?
-        public var avatarPNG: Data?
 
         public init(channelID: String, channelName: String, sequence: Int, quote: String,
-                    agentName: String?, requestedAt: Date?, avatarPNG: Data?) {
+                    requestedAt: Date?) {
             self.channelID = channelID
             self.channelName = channelName
             self.sequence = sequence
             self.quote = quote
-            self.agentName = agentName
             self.requestedAt = requestedAt
-            self.avatarPNG = avatarPNG
         }
     }
 

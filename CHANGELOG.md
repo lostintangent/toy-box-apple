@@ -1,8 +1,12 @@
 # Changelog
 
+## iPhone 0.1.2
+
+- Find the widget as Toy Box in the gallery. Its rows show the channel name, request text and time, without a repeated requester name or avatar.
+
 ## Mac 0.1.9
 
-- Keep waiting requests in view with a quieter Needs You widget.
+- Keep waiting requests in view with a quieter Toy Box widget, showing the channel name, request text and time without a repeated requester name or avatar.
 - Continue the same channel between your Mac and iPhone with Handoff.
 - Lead with the channel name and question in request alerts, and open the original message from the alert.
 - Choose request and completion notifications in Settings. Requests default on and completions default off, without changing saved preferences.

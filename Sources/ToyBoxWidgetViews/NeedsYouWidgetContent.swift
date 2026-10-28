@@ -1,11 +1,6 @@
 import ChannelKit
 import SwiftUI
 import WidgetKit
-#if os(macOS)
-import AppKit
-#else
-import UIKit
-#endif
 
 package struct NeedsYouEntry: TimelineEntry {
     package var date: Date
@@ -22,7 +17,6 @@ package struct NeedsYouWidgetContent: View {
     let family: WidgetFamily
     let replyTargetSize: CGFloat
     let maximumRequests: Int?
-    @Environment(\.widgetRenderingMode) private var renderingMode
 
     package init(entry: NeedsYouEntry, family: WidgetFamily,
                  replyTargetSize: CGFloat = 28, maximumRequests: Int? = nil) {
@@ -62,8 +56,8 @@ package struct NeedsYouWidgetContent: View {
                                                 .contentShape(Rectangle())
                                         }
                                         .widgetAccentable()
-                                        .accessibilityLabel("Reply to \(request.agentName ?? "request") in \(request.channelName)")
-                                        .help("Reply to \(request.agentName ?? "request") in \(request.channelName)")
+                                        .accessibilityLabel("Reply in \(request.channelName)")
+                                        .help("Reply in \(request.channelName)")
                                     }
                                 }
                             }
@@ -106,41 +100,16 @@ package struct NeedsYouWidgetContent: View {
     }
 
     private func requestRow(_ request: NeedsYouSnapshot.Request) -> some View {
-        HStack(alignment: .top, spacing: 8) {
-            if let image = avatar(request.avatarPNG) {
-                image.resizable()
-                    .widgetAccentedRenderingMode(renderingMode == .fullColor ? .fullColor
-                        : renderingMode == .accented ? .accentedDesaturated : .desaturated)
-                    .frame(width: 24, height: 24).accessibilityHidden(true)
-            } else {
-                Image(systemName: "questionmark.bubble")
-                    .frame(width: 24, height: 24).foregroundStyle(.secondary).accessibilityHidden(true)
+        VStack(alignment: .leading, spacing: 2) {
+            Text(request.channelName).font(.system(size: 13, weight: .semibold)).lineLimit(1)
+            Text(request.quote).font(.system(size: 12)).lineLimit(family == .systemSmall ? 2 : 1)
+                .multilineTextAlignment(.leading)
+            if let date = request.requestedAt {
+                Text(date, format: .relative(presentation: .numeric, unitsStyle: .narrow))
+                    .font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
             }
-            VStack(alignment: .leading, spacing: 2) {
-                Text(request.channelName).font(.system(size: 13, weight: .semibold)).lineLimit(1)
-                Text(request.quote).font(.system(size: 12)).lineLimit(family == .systemSmall ? 2 : 1)
-                    .multilineTextAlignment(.leading)
-                HStack(spacing: 3) {
-                    if let name = request.agentName { Text(name).lineLimit(1) }
-                    if let date = request.requestedAt {
-                        if request.agentName != nil { Text("·") }
-                        Text(date, format: .relative(presentation: .numeric, unitsStyle: .narrow)).lineLimit(1)
-                    }
-                }
-                .font(.system(size: 11)).foregroundStyle(.secondary)
-            }
-            Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private func avatar(_ data: Data?) -> Image? {
-        guard let data else { return nil }
-        #if os(macOS)
-        return NSImage(data: data).map { Image(nsImage: $0) }
-        #else
-        return UIImage(data: data).map { Image(uiImage: $0) }
-        #endif
     }
 
     @ViewBuilder private func footer(_ snapshot: NeedsYouSnapshot) -> some View {

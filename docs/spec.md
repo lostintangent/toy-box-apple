@@ -2880,12 +2880,13 @@ from isolated test, snapshot and benchmark bundles like the Share extension.
 
 Use system widget margins and `containerBackground`, never a custom glass surface, brand-colored
 plate, orange request card or continuous animation. Requests start at the top, with no
-app-owned "Needs you" heading, separate count or normal-state update time. The gallery name
-remains "Needs you". Requests follow the menu bar's newest-first ordering.
+app-owned "Needs you" heading, separate count or normal-state update time. On both platforms,
+the gallery name is "Toy Box", with the description "See which channels need your attention."
+Requests follow the menu bar's newest-first ordering.
 
 | Family | Content |
 | --- | --- |
-| Small | The first request. A 24-point agent avatar precedes the channel name, a two-line quote and secondary agent/age |
+| Small | The first request: channel name, a two-line quote and secondary request age |
 | Medium | Up to two compact request rows, with 8 points between rows and a single-line quote per row |
 | Large | Up to five request rows, with 12 points between rows and a single-line quote per row |
 
@@ -2895,18 +2896,17 @@ Reserve space for overflow and reduce complete rows to fit the native available 
 
 In Medium and Large, each request's content is one Open link, with a separate trailing Reply
 target. WidgetKit gives Small one target for the whole tile, which opens its top request, with
-no separate Reply. Use a 24-point avatar from the catalog profile, an 8-point gap to
-the text column, a 13-point semibold channel name, a 12-point plain-text quote (one line in Medium
-and Large, up to two in Small), then 11-point secondary "[Agent] · 12m ago". Age is based on the
-request timestamp, not the last widget refresh. Keep visible text free of Markdown syntax and preserve the full question in
-the link's accessibility label. A quote that is still resolving says "Needs your reply", rather
-than appearing blank. Agent identity uses the supplied mark and color with the shared contrast
-rules. System accented/tinted widget appearances may remap color, but never remove the mark or
-make the text depend on avatar color alone.
+no separate Reply. Each row starts at the leading margin with a 13-point semibold channel name,
+a 12-point plain-text quote (one line in Medium and Large, up to two in Small), then an 11-point
+secondary request age. Show no requester name, avatar or placeholder symbol. Age is based on the
+request timestamp, not the last widget refresh. Keep visible text free of Markdown syntax and
+preserve the full question in the link's accessibility label. A quote that is still resolving
+says "Needs your reply", rather than appearing blank. Snapshots contain only channel identity,
+request sequence, quote and request time, with no requester profile or rendered avatar data.
 
 Medium and Large add a quiet 28 x 28 `arrowshape.turn.up.left` Reply button beside each request.
 Use sibling Open and Reply targets, never a button nested in a link. Its help and accessibility
-label are "Reply to [Agent] in [Channel]". It opens Quick Send with the existing request-scoped
+label are "Reply in [Channel]". It opens Quick Send with the existing request-scoped
 inbox draft and canonical audience. Opening it never sends, marks read or borrows a main-window
 draft. An answered or replaced request preserves editable text and explains why sending is
 unavailable, rather than silently replying to its successor.
@@ -2916,8 +2916,7 @@ Existing `quick-send?pasteboard=...` intake and request-reveal routes retain the
 
 Full Color, Tinted and Clear use the same layout and semantic hierarchy. Let WidgetKit supply
 the background and style treatment, and apply `widgetAccentable` deliberately rather than
-painting every text line with the accent. Catalog avatar marks remain distinct from their
-surrounding fill in accented rendering. In Clear, let the system adapt or remove the material
+painting every text line with the accent. In Clear, let the system adapt or remove the material
 without losing labels, request context or readable ink. Do not bake a desktop wallpaper or simulated glass into the
 content. Check all three sizes in Light/Dark, full-color and accented content, including long
 names, empty and stale states. Off-screen Clear-equivalent or accented renders establish content
@@ -2945,7 +2944,7 @@ If Developer ID app-group access or widget registration cannot be established wi
 timebox, defer this feature rather than shipping a widget that cannot receive data.
 
 The phone offers Home Screen Small, Medium and Large, plus Lock Screen Rectangular.
-Its Home content reuses `ToyBoxWidgetViews`, retaining the Mac's text and avatar metrics
+Its Home content reuses `ToyBoxWidgetViews`, retaining the Mac's text metrics
 while passing a 44-point sibling Reply target. Reduce complete request rows to fit the
 system-provided height, with overflow based on the rows actually shown. The phone's
 Rectangular widget shows only "1 channel needs you" or "[N] channels need you", not a private

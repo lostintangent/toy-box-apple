@@ -29,8 +29,8 @@ struct NeedsYouWidget: Widget {
             NeedsYouWidgetView(entry: entry)
                 .containerBackground(.background, for: .widget)
         }
-        .configurationDisplayName("Needs you")
-        .description("Requests from your teams that are waiting for a reply.")
+        .configurationDisplayName("Toy Box")
+        .description("See which channels need your attention.")
         .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
     }
 }
