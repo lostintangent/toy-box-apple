@@ -91,15 +91,18 @@ test("Apple processing is distinct from upload acceptance", () => {
     expect(testFlightProcessingIsValid({ message: "UPLOAD SUCCEEDED" })).toBe(false);
 });
 
-test.skipIf(process.platform !== "darwin")("all three bundles get real metadata, aligned versions and privacy manifests without a server default", async () => {
+test.skipIf(process.platform !== "darwin")("all three bundles preserve HTTP access with release metadata and privacy manifests but no server default", async () => {
     await tools.temporary("toy-box-testflight-metadata-", async directory => {
         const app = join(directory, "Toy Box.app");
-        const components = [app, ...mobileExtensions.map(extension => join(app, "PlugIns", `${extension.executable}.appex`))];
-        for (const bundle of components) {
+        const components = [{ bundle: app, info: "Info.plist" }, ...mobileExtensions.map(extension => ({
+            bundle: join(app, "PlugIns", `${extension.executable}.appex`), info: extension.info,
+        }))];
+        for (const { bundle, info } of components) {
             await mkdir(bundle, { recursive: true });
+            const template = JSON.parse(await tools.text(["plutil", "-convert", "json", "-o", "-",
+                join(tools.root, "Resources/Mobile", info)]));
             await writeFile(join(bundle, "Info.plist"), JSON.stringify({
-                CFBundleIdentifier: bundle === app ? mobileBundleID : "extension",
-                MinimumOSVersion: "27.0", ToyBoxDefaultServerURL: "http://private.local:3100",
+                ...template, ToyBoxDefaultServerURL: "http://private.local:3100",
             }));
         }
         const original = tools.text;
@@ -110,7 +113,7 @@ test.skipIf(process.platform !== "darwin")("all three bundles get real metadata,
         });
         try {
             await prepareTestFlightBundle(app, release, metadata);
-            for (const bundle of components) {
+            for (const { bundle } of components) {
                 const info = await Bun.file(join(bundle, "Info.plist")).arrayBuffer();
                 expect(new Uint8Array(info).byteLength).toBeGreaterThan(0);
                 const parsed = JSON.parse(await original(["plutil", "-convert", "json", "-o", "-", join(bundle, "Info.plist")]));
@@ -118,6 +121,7 @@ test.skipIf(process.platform !== "darwin")("all three bundles get real metadata,
                     CFBundleShortVersionString: release.version, ITSAppUsesNonExemptEncryption: false,
                     UIDeviceFamily: [1], LSRequiresIPhoneOS: true, UIRequiredDeviceCapabilities: ["arm64"] });
                 expect(parsed).not.toHaveProperty("ToyBoxDefaultServerURL");
+                expect(parsed.NSAppTransportSecurity).toEqual({ NSAllowsArbitraryLoads: true });
                 expect(await Bun.file(join(bundle, "PrivacyInfo.xcprivacy")).exists()).toBe(true);
             }
         } finally { text.mockRestore(); }

@@ -91,7 +91,8 @@ test("the bundled push environment comes from signing rather than optimization",
 });
 
 for (const [platform, path] of [
-    ["phone", "Mobile/Info.plist"], ["phone widget", "Mobile/Widget-Info.plist"], ["Mac", "Info.plist"],
+    ["phone", "Mobile/Info.plist"], ["phone widget", "Mobile/Widget-Info.plist"],
+    ["phone notification", "Mobile/Notification-Info.plist"], ["Mac", "Info.plist"],
 ] as const) {
     test(`${platform} ATS allows user-selected HTTP servers without a local-only override`, async () => {
         const info = await readFile(join(import.meta.dir, "../../Resources", path), "utf8");
