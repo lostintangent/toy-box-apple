@@ -37,7 +37,7 @@ final class ChannelFollowController {
         let startedAt: Date
         let release: (ChannelStore) -> Void
         var token: Data?
-        var pendingToken: Data?
+        var registeredToken: Data?
         var jobs: [Task<Void, Never>] = []
         var observation: Task<Void, Never>?
         var update: Task<Void, Never>?
@@ -84,10 +84,9 @@ final class ChannelFollowController {
         let changed = self.registration != registration || self.catalog !== catalog
         let becameReady = isRegistrationReady && (!self.isRegistrationReady || changed)
         if changed {
-            let registrationChanged = self.registration.map {
-                $0.registrationID != registration?.registrationID
-            } ?? false
-            let serverChanged = self.catalog.map { $0.api.baseURL != catalog?.api.baseURL } ?? false
+            let registrationChanged = self.registration != nil
+                && self.registration?.registrationID != registration?.registrationID
+            let serverChanged = self.catalog != nil && self.catalog?.api.baseURL != catalog?.api.baseURL
             if registrationChanged || serverChanged {
                 let tracked = Set(entries.values.map { $0.activity.id })
                 for entry in Array(entries.values) { finish(entry, ending: .serverChanged, immediately: true) }
@@ -172,9 +171,8 @@ final class ChannelFollowController {
             entries[store.id] = follow
             acquire(store)
             monitor(follow)
-            let token = try await Self.firstToken(activity)
-            try requireCurrent(follow)
-            try await register(token, for: follow)
+            follow.token = try await Self.firstToken(activity)
+            try await register(follow)
             try requireCurrent(follow)
             starting.remove(store.id)
             monitorTokens(follow)
@@ -272,7 +270,6 @@ final class ChannelFollowController {
     }
 
     private func observe(_ entry: Follow) {
-        entry.observation?.cancel()
         let store = entry.store
         entry.observation = Task { [weak self, weak entry] in
             for await _ in Observations({ (store.state, store.phase) }) {
@@ -336,12 +333,10 @@ final class ChannelFollowController {
     private func monitorTokens(_ entry: Follow) {
         let activity = entry.activity
         entry.jobs.append(Task { [weak self, weak entry] in
-            if let token = activity.pushToken, let self, let entry, self.isCurrent(entry) {
-                await self.rotate(token, for: entry)
-            }
+            if let self, let entry { await self.registerExisting(entry) }
             for await token in activity.pushTokenUpdates {
                 guard !Task.isCancelled, let self, let entry, self.isCurrent(entry) else { return }
-                await self.rotate(token, for: entry)
+                await self.registerExisting(entry, token: token)
             }
         })
     }
@@ -350,23 +345,16 @@ final class ChannelFollowController {
         guard isRegistrationReady, registration == currentRegistration else { return }
         for entry in Array(entries.values)
             where entry.registration == registration && !starting.contains(entry.store.id) {
-            guard let token = entry.activity.pushToken ?? entry.pendingToken ?? entry.token else { continue }
-            await rotate(token, for: entry, force: force)
+            await registerExisting(entry, force: force)
         }
     }
 
-    private func rotate(_ observedToken: Data, for entry: Follow, force: Bool = false) async {
-        let token = entry.activity.pushToken ?? observedToken
-        guard isCurrent(entry), force || token != entry.token else { return }
-        guard !token.isEmpty else {
-            logger.error("ActivityKit supplied an empty rotated push token.")
-            return
-        }
-        entry.pendingToken = token
-        guard isRegistrationReady else { return }
+    private func registerExisting(_ entry: Follow, token: Data? = nil, force: Bool = false) async {
+        guard isCurrent(entry) else { return }
+        entry.token = entry.activity.pushToken ?? token ?? entry.token
+        guard isRegistrationReady, entry.token != nil, force || entry.token != entry.registeredToken else { return }
         do {
-            try requireCurrent(entry)
-            try await register(token, for: entry, force: force)
+            try await register(entry, force: force)
         } catch {
             if isCurrent(entry) {
                 logger.error("Could not register a followed channel subscription: \(error.localizedDescription)")
@@ -374,21 +362,21 @@ final class ChannelFollowController {
         }
     }
 
-    private func register(_ token: Data, for entry: Follow, force: Bool = false) async throws {
+    private func register(_ entry: Follow, force: Bool = false) async throws {
         let write = enqueueWrite(channelID: entry.store.id) {
             try self.requireCurrent(entry)
             guard self.isRegistrationReady else { throw Failure.registrationPending }
-            let currentToken = entry.activity.pushToken ?? entry.pendingToken ?? token
-            guard !currentToken.isEmpty else { throw Failure.missingToken }
-            guard force || currentToken != entry.token else { return }
+            guard let token = entry.activity.pushToken ?? entry.token, !token.isEmpty else {
+                throw Failure.missingToken
+            }
+            guard force || token != entry.registeredToken else { return }
             let input = PushSubscription(
-                token: currentToken.map { String(format: "%02x", $0) }.joined(),
+                token: token.map { String(format: "%02x", $0) }.joined(),
                 startedAt: entry.startedAt
             )
             try await self.registerActivity(entry.store, entry.registration.registrationID, input)
             try self.requireCurrent(entry)
-            entry.token = currentToken
-            if entry.pendingToken == currentToken { entry.pendingToken = nil }
+            entry.registeredToken = token
         }
         try await write.value
     }

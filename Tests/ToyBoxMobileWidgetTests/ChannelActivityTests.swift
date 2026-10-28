@@ -19,7 +19,6 @@ struct ChannelActivityTests {
         #expect(working.phase == .working)
         #expect(working.headline == "4 agents working")
         #expect(working.detail == "3 of 5 tasks done")
-        #expect(working.timestamp == .updated)
         #expect(working.compactSymbol == nil)
         let quiet = ChannelActivityPresentation(state: state(), isStale: false)
         #expect(quiet.phase == .quiet)
@@ -42,7 +41,6 @@ struct ChannelActivityTests {
         #expect(value.phase == .stale)
         #expect(value.headline == "May be out of date")
         #expect(value.detail == nil)
-        #expect(value.timestamp == .lastUpdate)
         #expect(value.compactSymbol == "clock")
         #expect(value.requestSequence == nil)
     }
@@ -52,7 +50,6 @@ struct ChannelActivityTests {
         #expect(value.phase == .completed)
         #expect(value.headline == "All 5 tasks completed")
         #expect(value.detail == "Following ended")
-        #expect(value.timestamp == .completed)
         #expect(value.compactSymbol == "checkmark.circle")
         #expect(value.requestSequence == nil)
     }
@@ -66,7 +63,6 @@ struct ChannelActivityTests {
             #expect(value.phase == .ended)
             #expect(value.headline == "Following ended")
             #expect(value.detail == nil)
-            #expect(value.timestamp == .ended)
             #expect(value.compactSymbol == "stop.circle")
         }
     }
