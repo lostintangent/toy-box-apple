@@ -1,7 +1,7 @@
 import { copyFile, mkdir, readdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { parseArgs } from "node:util";
-import { command, main, plist, root, scratchPath, temporary, text } from "../shared/lib/lib.ts";
+import { command, main, plist, root, scratchPath, temporary, text } from "../shared/lib/index.ts";
 import { version as buildVersion } from "../shared/lib/build-version.ts";
 import { bundleMobile, mobileBundleID, mobileEnvironment, mobileExtensions } from "./bundle/index.ts";
 import { mobileSigning, signMobileBundles } from "./bundle/sign.ts";

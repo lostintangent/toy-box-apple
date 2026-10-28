@@ -1,4 +1,4 @@
-import { command, text } from "../../shared/lib/lib.ts";
+import { command, text } from "../../shared/lib/index.ts";
 import { mobileEnvironment } from "../bundle/index.ts";
 
 type DeviceType = { identifier: string; productFamily: string };

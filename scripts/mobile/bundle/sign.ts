@@ -2,7 +2,7 @@ import { X509Certificate } from "node:crypto";
 import { copyFile, readFile, readdir, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { isMissing, plist, temporary, text } from "../../shared/lib/lib.ts";
+import { isMissing, plist, temporary, text } from "../../shared/lib/index.ts";
 import { mobileAppGroup, mobileBundleID, mobileEntitlements, mobileExtensions, mobilePushEnvironment } from "./index.ts";
 
 function record(value: unknown, label: string): Record<string, unknown> {

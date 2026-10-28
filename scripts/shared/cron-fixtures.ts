@@ -1,6 +1,6 @@
 import { createRequire } from "node:module";
 import { resolve } from "node:path";
-import { root } from "./lib/lib.ts";
+import { root } from "./lib/index.ts";
 
 const reference = resolve(process.argv[2] ?? "../toy-box");
 const require = createRequire(resolve(reference, "package.json"));

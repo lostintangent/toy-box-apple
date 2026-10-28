@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { join } from "node:path";
-import { bundleIdentity, CommandFailure, command, developerEnvironment, main, root, temporary, text } from "../shared/lib/lib.ts";
+import { bundleIdentity, CommandFailure, command, developerEnvironment, main, root, temporary, text } from "../shared/lib/index.ts";
 import { sparkleTools } from "./release/sparkle-tools.ts";
 
 if (import.meta.main) await main(async () => {

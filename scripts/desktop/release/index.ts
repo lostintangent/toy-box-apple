@@ -1,6 +1,6 @@
 import { mkdir } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
-import { command, main, plist, releaseTag, repositoryURL, required, root, temporary, text } from "../../shared/lib/lib.ts";
+import { command, main, plist, releaseTag, repositoryURL, required, root, temporary, text } from "../../shared/lib/index.ts";
 import { buildApp } from "../bundle/index.ts";
 import { checkVersion } from "./appcast.ts";
 import { signApp } from "../bundle/sign.ts";

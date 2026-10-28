@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { command, main, root } from "../../shared/lib/lib.ts";
+import { command, main, root } from "../../shared/lib/index.ts";
 import { configureShareExtension, shareExtension } from "./share-extension.ts";
 import { configureWidgetExtension, widgetExtension } from "./widget-extension.ts";
 

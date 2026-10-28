@@ -1,6 +1,6 @@
 import { copyFile, mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
-import { command, plist, root, text } from "../../shared/lib/lib.ts";
+import { command, plist, root, text } from "../../shared/lib/index.ts";
 
 export function shareExtension(app: string) { return join(app, "Contents/PlugIns/ToyBoxShare.appex"); }
 

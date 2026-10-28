@@ -1,6 +1,6 @@
 import { mkdir, mkdtemp, realpath, rename, rm } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
-import { bundleIdentity, command, isMissing, main, plist, required, root, text } from "../../shared/lib/lib.ts";
+import { bundleIdentity, command, isMissing, main, plist, required, root, text } from "../../shared/lib/index.ts";
 import { signApp } from "../bundle/sign.ts";
 import { validateShareExtension } from "../bundle/share-extension.ts";
 import { isolateIntegrations } from "./isolate.ts";

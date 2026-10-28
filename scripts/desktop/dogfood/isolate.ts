@@ -1,6 +1,6 @@
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
-import { command } from "../../shared/lib/lib.ts";
+import { command } from "../../shared/lib/index.ts";
 import { shareExtension } from "../bundle/share-extension.ts";
 import { widgetExtension, widgetGroupKey } from "../bundle/widget-extension.ts";
 

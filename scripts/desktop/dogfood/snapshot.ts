@@ -1,6 +1,6 @@
 import { parseArgs } from "node:util";
 import { join } from "node:path";
-import { CommandFailure, command, main, root, scratchPath } from "../../shared/lib/lib.ts";
+import { CommandFailure, command, main, root, scratchPath } from "../../shared/lib/index.ts";
 import { isolateIntegrations } from "./isolate.ts";
 import { signApp } from "../bundle/sign.ts";
 

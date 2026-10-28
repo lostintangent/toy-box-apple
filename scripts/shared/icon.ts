@@ -1,6 +1,6 @@
 import { copyFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { command, executable, main, plist, root, temporary } from "./lib/lib.ts";
+import { command, executable, main, plist, root, temporary } from "./lib/index.ts";
 import { compileAppIcon } from "./lib/app-icon.ts";
 
 if (import.meta.main) await main(async () => {

@@ -1,7 +1,7 @@
 import { mkdir, realpath, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
-import { bundleIdentity, command, machineLock, main, plist, required, root, temporary } from "../../shared/lib/lib.ts";
+import { bundleIdentity, command, machineLock, main, plist, required, root, temporary } from "../../shared/lib/index.ts";
 import { pidsFor } from "./validate.ts";
 import { isolateIntegrations } from "./isolate.ts";
 

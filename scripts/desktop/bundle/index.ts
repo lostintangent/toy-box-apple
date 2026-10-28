@@ -1,6 +1,6 @@
 import { copyFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { command, main, plist, root, scratchPath, text } from "../../shared/lib/lib.ts";
+import { command, main, plist, root, scratchPath, text } from "../../shared/lib/index.ts";
 import { embedSparkle } from "./sparkle.ts";
 import { signApp } from "./sign.ts";
 import { embedAppIcon } from "../../shared/lib/app-icon.ts";

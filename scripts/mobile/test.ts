@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { checkTestCompletion, command, machineLock, main } from "../shared/lib/lib.ts";
+import { checkTestCompletion, command, machineLock, main } from "../shared/lib/index.ts";
 import { buildMobile, mobileEnvironment } from "./bundle/index.ts";
 import { prepareMobileSimulator } from "./dogfood/boot.ts";
 

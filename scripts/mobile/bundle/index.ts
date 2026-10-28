@@ -1,6 +1,6 @@
 import { copyFile, lstat, mkdir, readlink, rm, symlink, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { command, plist, root, scratchPath, text } from "../../shared/lib/lib.ts";
+import { command, plist, root, scratchPath, text } from "../../shared/lib/index.ts";
 import { embedMobileAppIcon } from "../../shared/lib/app-icon.ts";
 
 export const mobileEnvironment = {

@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import { parseArgs } from "node:util";
-import { command, machineLock, main, scratchPath, text } from "../../shared/lib/lib.ts";
+import { command, machineLock, main, scratchPath, text } from "../../shared/lib/index.ts";
 import { bundleMobile, mobileBundleID, mobileEnvironment } from "../bundle/index.ts";
 import { prepareMobileSimulator } from "./boot.ts";
 import { prepareMobileDrive, runMobileDrive, runMobileSimulatorCommand, simulatorDriveHost } from "./drive.ts";

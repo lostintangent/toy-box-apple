@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { CommandFailure, command, developerEnvironment, main, root, temporary, text } from "../shared/lib/lib.ts";
+import { CommandFailure, command, developerEnvironment, main, root, temporary, text } from "../shared/lib/index.ts";
 import { mobileBundleID } from "./bundle/index.ts";
 import { mobileSigning } from "./bundle/sign.ts";
 

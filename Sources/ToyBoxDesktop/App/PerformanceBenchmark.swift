@@ -6,7 +6,7 @@ import QuartzCore
 
 /// `--benchmark launch|switch|messages|paging|scroll|trackpad|idle|key` measures one scenario in the first window,
 /// prints each result beside its budget and exits. `bun run benchmark` builds a release bundle and
-/// runs the scenarios against `bun run perf-demo`, whose `/perf/messages` route streams the agent
+/// runs the scenarios against `bun run demo:perf`, whose `/perf/messages` route streams the agent
 /// messages that `messages` measures.
 ///
 /// Busy time adds up the main run loop's passes, each from waking until it's about to sleep again,
@@ -290,7 +290,7 @@ final class PerformanceBenchmark {
             _ = await settled(quiet: 0.3)
         }
         guard store.messages.count > loaded else {
-            fail("\(channelID) has no older messages. Measure messages on history-demo from bun run perf-demo.")
+            fail("\(channelID) has no older messages. Measure messages on history-demo from bun run demo:perf.")
         }
         // Older pages keep the visible row in place, so return to the latest message, where new
         // messages arrive.
@@ -362,7 +362,7 @@ final class PerformanceBenchmark {
                   value: meter.busy * 1000, budget: Budget.olderPage)
         }
         guard page > 0 else {
-            fail("\(channelID) has no older messages. Measure paging on history-demo from bun run perf-demo.")
+            fail("\(channelID) has no older messages. Measure paging on history-demo from bun run demo:perf.")
         }
     }
 
@@ -388,7 +388,7 @@ final class PerformanceBenchmark {
             _ = await settled(quiet: 0.3)
         }
         guard store.messages.count > loaded else {
-            fail("\(channelID) has no older messages. Measure scroll on scroll-demo from bun run perf-demo.")
+            fail("\(channelID) has no older messages. Measure scroll on scroll-demo from bun run demo:perf.")
         }
         let gap = await scrollToEnd()
         guard gap < 2 else { fail("the transcript stayed \(Int(gap)) pt from the latest message") }
@@ -506,7 +506,7 @@ final class PerformanceBenchmark {
         let reach = min(Self.scrollDistance, offsetFromTop(scroll) - Self.scrollMargin)
         guard reach >= Self.scrollDistance / 2 else {
             fail("\(channelID) is \(Int(offsetFromTop(scroll))) pt tall, too short to scroll. "
-                 + "Measure scroll on scroll-demo from bun run perf-demo.")
+                 + "Measure scroll on scroll-demo from bun run demo:perf.")
         }
         info("Pointer at \(loaded) loaded", pointerIsOver(scroll)
              ? "over the transcript, so hover runs as it does for a person"
@@ -711,11 +711,11 @@ final class PerformanceBenchmark {
             let (data, response) = try await URLSession.shared.data(for: request)
             guard (response as? HTTPURLResponse)?.statusCode == 200 else {
                 fail("\(api.baseURL.absoluteString) can't set working agents: "
-                     + "\(String(decoding: data, as: UTF8.self)). Run it against bun run perf-demo.")
+                     + "\(String(decoding: data, as: UTF8.self)). Run it against bun run demo:perf.")
             }
         } catch {
             fail("\(api.baseURL.absoluteString) can't set working agents: \(error.localizedDescription). "
-                 + "Run it against bun run perf-demo.")
+                 + "Run it against bun run demo:perf.")
         }
     }
 
@@ -786,12 +786,12 @@ final class PerformanceBenchmark {
             let (data, response) = try await URLSession.shared.data(for: request)
             guard (response as? HTTPURLResponse)?.statusCode == 200 else {
                 fail("\(api.baseURL.absoluteString) can't stream benchmark messages: "
-                     + "\(String(decoding: data, as: UTF8.self)). Run it against bun run perf-demo.")
+                     + "\(String(decoding: data, as: UTF8.self)). Run it against bun run demo:perf.")
             }
             return try JSONDecoder().decode(Streamed.self, from: data).last
         } catch {
             fail("\(api.baseURL.absoluteString) can't stream benchmark messages: \(error.localizedDescription). "
-                 + "Run it against bun run perf-demo.")
+                 + "Run it against bun run demo:perf.")
         }
     }
 

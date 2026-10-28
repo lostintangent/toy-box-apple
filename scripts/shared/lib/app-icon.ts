@@ -1,6 +1,6 @@
 import { copyFile, mkdir, readdir } from "node:fs/promises";
 import { join } from "node:path";
-import { command, executable, plist, temporary } from "./lib.ts";
+import { command, executable, plist, temporary } from "./index.ts";
 
 export async function embedAppIcon(resources: string, app: string) {
     const names = ["AppIcon.icns", "Assets.car"];

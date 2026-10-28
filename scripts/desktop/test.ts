@@ -1,6 +1,6 @@
 import { dirname, join } from "node:path";
 import { mkdir, stat } from "node:fs/promises";
-import { checkTestCompletion, CommandFailure, command, developerEnvironment, main, root, scratchPath, text } from "../shared/lib/lib.ts";
+import { checkTestCompletion, CommandFailure, command, developerEnvironment, main, root, scratchPath, text } from "../shared/lib/index.ts";
 
 function testProcessTree(source: string, parentPID: number) {
     const rows = source.split("\n").flatMap(line => {

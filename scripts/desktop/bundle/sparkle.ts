@@ -1,6 +1,6 @@
 import { mkdir, rm, rename, chmod } from "node:fs/promises";
 import { join } from "node:path";
-import { command, main, text } from "../../shared/lib/lib.ts";
+import { command, main, text } from "../../shared/lib/index.ts";
 
 export async function embedSparkle(source: string, app: string, license: string) {
     const framework = join(app, "Contents/Frameworks/Sparkle.framework");

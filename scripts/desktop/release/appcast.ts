@@ -1,5 +1,5 @@
 import { basename, join, resolve } from "node:path";
-import { command, main, releaseTag, repositoryURL, required, root } from "../../shared/lib/lib.ts";
+import { command, main, releaseTag, repositoryURL, required, root } from "../../shared/lib/index.ts";
 import { sparkleTools } from "./sparkle-tools.ts";
 import { appcastItems } from "./xml.ts";
 import { releaseChangelog } from "../../shared/release-notes.ts";
