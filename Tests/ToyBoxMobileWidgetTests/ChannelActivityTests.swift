@@ -6,6 +6,16 @@ import Testing
 struct ChannelActivityTests {
     private let now = Date(timeIntervalSince1970: 1_000_000)
 
+    @Test func theActivityLogoUsesTheAppIconsArcPaths() throws {
+        let head = try SVGPath.parse(ChannelActivityLogo.headData)
+        let smile = try SVGPath.parse(ChannelActivityLogo.smileData)
+        #expect(!head.isEmpty)
+        #expect(!smile.isEmpty)
+        #expect(head.boundingRect.minX == 193)
+        #expect(head.boundingRect.maxX == 831)
+        #expect(abs(smile.boundingRect.width - 92.4) < 0.001)
+    }
+
     private func state(working: Int = 0, done: Int = 3, request: Int? = nil,
                        ending: ChannelActivityAttributes.Ending? = nil) -> ChannelActivityAttributes.ContentState {
         .init(workingAgents: (0..<working).map {

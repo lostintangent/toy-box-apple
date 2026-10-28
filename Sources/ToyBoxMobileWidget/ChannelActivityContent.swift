@@ -4,6 +4,7 @@ import SwiftUI
 struct ChannelActivityContent: View {
     let channelName: String
     let presentation: ChannelActivityPresentation
+    var logoStyle: ChannelActivityLogo.Style = .fullColor
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -14,7 +15,12 @@ struct ChannelActivityContent: View {
     }
 
     var heading: some View {
-        Label(channelName, systemImage: "bubble.left.and.bubble.right")
+        Label {
+            Text(channelName)
+        } icon: {
+            ChannelActivityLogo(style: logoStyle)
+                .frame(width: 20, height: 20)
+        }
             .font(.subheadline.weight(.semibold))
             .lineLimit(1)
     }
@@ -89,10 +95,6 @@ struct ChannelActivityPresentation {
         case .ended: "stop.circle"
         case .stale: "clock"
         }
-    }
-
-    var minimalSymbol: String {
-        compactSymbol ?? "bubble.left.and.bubble.right"
     }
 
     var requestSequence: Int? {

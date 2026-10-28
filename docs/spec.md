@@ -2985,9 +2985,12 @@ so updating the Activity never adds a second alert to force the Dynamic Island o
 
 Lock Screen content uses native background, 16-point padding, an 8-point heading-to-summary gap
 and 4-point related gaps. The channel name is subheadline semibold, state headline, task detail
-footnote and update time caption2. Compact Dynamic Island uses the conversation mark and actual
-working count or state symbol. Minimal uses one symbol. Expanded and the small supplemental
-Activity family retain the same hierarchy without progress animations, percentages or an ETA.
+footnote and update time caption2. The heading uses the full-color Toy Box app-icon mark.
+Compact Dynamic Island uses the monochrome Toy Box robot and actual working count or state
+symbol. Minimal uses the robot for working/quiet and retains the request, completion, ended
+and stale state symbols. Both marks use the original app icon's geometry. Expanded and the
+small supplemental Activity family retain the same hierarchy without progress animations,
+percentages or an ETA.
 
 Working and quiet content show actual working-agent and task counts. A current request says
 "Needs your reply" and its tap carries the exact request sequence. After the shared 15-minute
