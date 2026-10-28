@@ -2,6 +2,7 @@
 
 ## iPhone 0.1.1
 
+- Live Activities use the Toy Box logo on the Lock Screen and in the Dynamic Island.
 - Show channel and message details in notifications from HTTP servers, including Tailscale hosts.
 - Lead with the channel name and question in alerts, without a repeated requester name or avatar.
 - Retry a failed notification setup when the app becomes active again.

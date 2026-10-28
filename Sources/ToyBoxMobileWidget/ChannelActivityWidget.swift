@@ -11,7 +11,7 @@ struct ChannelActivityWidget: Widget {
         } dynamicIsland: { context in
             let presentation = ChannelActivityPresentation(state: context.state, isStale: context.isStale)
             let content = ChannelActivityContent(channelName: context.attributes.channelName,
-                                                 presentation: presentation)
+                                                 presentation: presentation, logoStyle: .monochrome)
             return DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
                     content.heading
@@ -20,7 +20,8 @@ struct ChannelActivityWidget: Widget {
                     content.summary
                 }
             } compactLeading: {
-                Image(systemName: "bubble.left.and.bubble.right")
+                ChannelActivityLogo(style: .monochrome)
+                    .frame(width: 18, height: 18)
                     .accessibilityLabel(context.attributes.channelName)
             } compactTrailing: {
                 if let symbol = presentation.compactSymbol {
@@ -31,8 +32,15 @@ struct ChannelActivityWidget: Widget {
                         .accessibilityLabel(presentation.headline)
                 }
             } minimal: {
-                Image(systemName: presentation.minimalSymbol)
-                    .accessibilityLabel(presentation.headline)
+                Group {
+                    if let symbol = presentation.compactSymbol {
+                        Image(systemName: symbol)
+                    } else {
+                        ChannelActivityLogo(style: .monochrome)
+                            .frame(width: 18, height: 18)
+                    }
+                }
+                .accessibilityLabel(presentation.headline)
             }
             .widgetURL(Self.destination(context))
         }
