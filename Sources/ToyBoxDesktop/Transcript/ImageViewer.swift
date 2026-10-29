@@ -5,6 +5,7 @@ import ChannelKit
 import ImageIO
 import OSLog
 import SwiftUI
+import ToyBoxUI
 import UniformTypeIdentifiers
 import VisionKit
 
@@ -952,7 +953,7 @@ private struct ImageViewerStage: View {
             .opacity(showsBackdrop ? 1 : 0)
         } else if item?.image == nil {
             let frame = viewer.frame(at: viewer.index, in: layout)
-            TranscriptDelayedSpinner()
+            DelayedProgressView().controlSize(.small)
                 .position(x: frame.midX, y: frame.midY)
                 .opacity(isRevealed ? 1 : 0)
         }

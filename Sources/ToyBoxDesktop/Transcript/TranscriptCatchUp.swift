@@ -7,19 +7,7 @@ import ToyBoxUI
 /// Native landing geometry around the shared summary session.
 @MainActor @Observable
 final class TranscriptCatchUp {
-    typealias Boundary = TranscriptCatchUpSession.Boundary
-    typealias Summary = TranscriptCatchUpSession.Summary
-    typealias Phase = TranscriptCatchUpSession.Phase
-
-    private let session: TranscriptCatchUpSession
-    var boundary: Boundary { session.boundary }
-    var request: CatchUpRequest { session.request }
-    var phase: Phase { session.phase }
-    var summary: Summary? { session.summary }
-    var isGenerating: Bool { session.isGenerating }
-    var isFading: Bool { session.isFading }
-    var generation: UUID? { session.generation }
-    var title: String { session.title }
+    let session: TranscriptCatchUpSession
     /// Until the reader scrolls, uses the keyboard or reveals anything, the transcript doesn't follow
     /// its bottom, so the card's top stays where it landed.
     var isPinned = true
@@ -30,16 +18,11 @@ final class TranscriptCatchUp {
     /// Nil unless the landing is eligible: the model is available, the setting is on, All Messages is
     /// showing, this boundary's summary wasn't dismissed, and enough unread text came from others.
     static func make(server: URL, state: ChannelState, unreadAfter: Int?, view: TranscriptView,
-                     availability: IntelligenceAvailability, isOn: Bool,
-                     timeout: Duration = .seconds(15)) -> TranscriptCatchUp? {
+                     availability: IntelligenceAvailability, isOn: Bool) -> TranscriptCatchUp? {
         guard let session = TranscriptCatchUpSession.make(
             server: server, state: state, unreadAfter: unreadAfter, view: view, boundaryIsLoaded: true,
-            availability: availability, isOn: isOn, timeout: timeout) else { return nil }
+            availability: availability, isOn: isOn) else { return nil }
         return TranscriptCatchUp(session: session)
-    }
-
-    init(request: CatchUpRequest, timeout: Duration = .seconds(15)) {
-        session = TranscriptCatchUpSession(request: request, timeout: timeout)
     }
 
     private init(session: TranscriptCatchUpSession) {
@@ -47,26 +30,12 @@ final class TranscriptCatchUp {
     }
 
     /// Whether following the transcript's bottom must wait, so the card's top holds still.
-    var holdsLanding: Bool { isPinned && phase != .collapsed }
-
-    func run(using service: any ChannelIntelligenceService) async {
-        await session.run(using: service)
-    }
-
-    /// Regenerates through the newest message, keeping this landing's boundary.
-    func update(from state: ChannelState, server: URL) {
-        session.update(from: state, server: server)
-    }
-
-    /// The summary stays gone for this channel and boundary for the rest of the session.
-    func dismiss() {
-        session.dismiss()
-    }
+    var holdsLanding: Bool { isPinned && session.phase != .collapsed }
 }
 
 /// Reads only the store's messages and roster, so it follows new messages but not every event.
 struct TranscriptCatchUpCard: View {
-    let catchUp: TranscriptCatchUp
+    let catchUp: TranscriptCatchUpSession
     let store: ChannelStore
     var onDismiss: () -> Void
     @Environment(\.channelTextScale) private var textScale
@@ -116,7 +85,7 @@ struct TranscriptCatchUpCard: View {
                 .accessibilityHidden(true)
             Spacer(minLength: 0)
             if catchUp.isGenerating {
-                TranscriptDelayedSpinner(controlSize: .mini).id(catchUp.generation)
+                DelayedProgressView().controlSize(.mini).id(catchUp.generation)
             }
             Button(action: onDismiss) {
                 Image(systemName: "xmark")
@@ -136,10 +105,10 @@ struct TranscriptCatchUpCard: View {
         .frame(minHeight: 18)
     }
 
-    private func content(_ summary: TranscriptCatchUp.Summary) -> some View {
+    private func content(_ summary: TranscriptCatchUpSession.Summary) -> some View {
         let messages = store.messages
         let agents = store.roster
-        let newer = channelAgentMessageCount(messages, after: summary.catchUp.through)
+        let newer = summary.newerMessageCount(in: messages)
         let isUpdating = catchUp.isGenerating
         return VStack(alignment: .leading, spacing: 8) {
             VStack(alignment: .leading, spacing: 2) {
@@ -154,10 +123,10 @@ struct TranscriptCatchUpCard: View {
             .opacity(isUpdating ? 0.5 : 1)
             .animation(.easeOut(duration: 0.2), value: isUpdating)
             HStack(spacing: 6) {
-                Text("Summarized on this Mac\(newer >= 4 ? " · \(newer) newer messages" : "")")
+                Text("Summarized on this Mac\(newer.map { " · \($0) newer messages" } ?? "")")
                     .foregroundStyle(.tertiary)
                     .help("Made on this Mac from the messages below. Summaries can be wrong.")
-                if newer >= 4 {
+                if newer != nil {
                     Button("Update") {
                         if let state = store.state { catchUp.update(from: state, server: store.api.baseURL) }
                     }

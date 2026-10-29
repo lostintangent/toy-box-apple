@@ -19,6 +19,12 @@ public final class TranscriptCatchUpSession {
             self.catchUp = catchUp
             self.count = count
         }
+
+        /// The agent messages after this summary once there are enough to earn an Update, else nil.
+        public func newerMessageCount(in messages: [ChannelMessage]) -> Int? {
+            let count = channelAgentMessageCount(messages, after: catchUp.through)
+            return count >= 4 ? count : nil
+        }
     }
 
     public enum Phase: Sendable, Equatable {
@@ -146,7 +152,7 @@ public final class TranscriptCatchUpSession {
     public func update(from state: ChannelState, server: URL) {
         guard case .ready(let current) = phase, !isFading, !Self.dismissed.contains(boundary),
               intelligenceServerKey(server) == boundary.server, state.channel.id == boundary.channelId,
-              channelAgentMessageCount(state.messages, after: current.catchUp.through) >= 4,
+              current.newerMessageCount(in: state.messages) != nil,
               let request = CatchUpRequest(server: server, state: state, unreadAfter: boundary.unreadAfter),
               request.key.through > self.request.key.through else { return }
         updatingFrom = self.request

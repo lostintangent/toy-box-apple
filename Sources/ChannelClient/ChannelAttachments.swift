@@ -311,6 +311,19 @@ public enum ChannelThumbnails {
         ChannelImageDecoder.rememberPixelSize(decoded.pixelSize, for: attachment, api: api)
         return remember(decoded.image, for: attachment, api: api)
     }
+
+    /// A transcript image's thumbnail and file. A sharp remembered thumbnail whose file is still on
+    /// disk is ready at once, so a row scrolling back into view never reads or decodes it again.
+    public static func load(for attachment: ChannelAttachment, api: ChannelAPI, scale: CGFloat, reload: Bool = false,
+                            fallback: Fallback? = nil) async throws -> (image: CGImage, file: URL) {
+        if !reload, let image = remembered(for: attachment, api: api, scale: scale),
+           let file = ChannelAttachmentCache.cachedFile(for: attachment, api: api) {
+            return (image, file)
+        }
+        let file = try await ChannelAttachmentCache.shared.file(for: attachment, api: api, reload: reload)
+        return (try await image(at: file, for: attachment, api: api, scale: scale, reload: reload, fallback: fallback),
+                file)
+    }
 }
 
 /// An inline transcript image's box: at most 240 by 160 points, never upscaled.

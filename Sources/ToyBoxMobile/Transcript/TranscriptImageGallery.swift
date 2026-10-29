@@ -355,7 +355,6 @@ private struct TranscriptGalleryPage: View {
     @AppStorage(TranscriptIntelligenceSettings.describesImages) private var describesImages = true
     @ViewState private var loaded: (image: UIImage, size: CGSize, file: URL)?
     @ViewState private var failure: String?
-    @ViewState private var showsProgress = false
     @ViewState private var attempt = 0
 
     private var descriptionRequest: AltTextRequest? {
@@ -379,8 +378,8 @@ private struct TranscriptGalleryPage: View {
                 } actions: {
                     Button("Retry") { self.failure = nil; attempt += 1 }
                 }
-            } else if showsProgress {
-                ProgressView("Loading image...").controlSize(.small)
+            } else {
+                DelayedProgressView("Loading image...").controlSize(.small)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -396,8 +395,6 @@ private struct TranscriptGalleryPage: View {
         let api = session.api
         let index = session.index
         let reload = attempt > 0
-        let progress = Task { try await Task.sleep(for: .milliseconds(300)); showsProgress = true }
-        defer { progress.cancel(); showsProgress = false }
         do {
             let file = try await ChannelAttachmentCache.shared.file(for: attachment, api: api, reload: reload)
             let name = attachment.imageName(index: index, count: session.images.count)

@@ -14,7 +14,6 @@ struct ArtifactViewer: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.openURL) private var openURL
     @ViewState private var reading = ArtifactReaderState()
-    @ViewState private var showsSpinner = false
     @AccessibilityFocusState private var titleFocused: Bool
 
     private var hasNavigation: Bool { (session.pages?.artifacts.count ?? 0) > 1 }
@@ -37,8 +36,8 @@ struct ArtifactViewer: View {
             page
                 .id(session.artifact?.id)
                 .transition(pageTransition)
-            if showsSpinner {
-                ProgressView("Loading artifact...")
+            if session.isLoading {
+                DelayedProgressView("Loading artifact...")
                     .controlSize(.small)
             }
         }
@@ -64,14 +63,6 @@ struct ArtifactViewer: View {
             Button("OK") { session.actionError = nil }
         } message: {
             Text(session.actionError ?? "").foregroundStyle(Color(uiColor: .label))
-        }
-        .task(id: session.isLoading) {
-            showsSpinner = false
-            guard session.isLoading else { return }
-            do { try await Task.sleep(for: .milliseconds(300)) }
-            catch is CancellationError { return }
-            catch { session.actionError = error.localizedDescription; return }
-            if !Task.isCancelled { showsSpinner = true }
         }
         .task(id: session.artifact?.id) { titleFocused = true }
         .onChange(of: session.artifact?.id) { _, _ in reading.cancelOriginal() }
@@ -316,8 +307,6 @@ private struct ArtifactHTMLDocument: View {
     let reading: ArtifactReaderState
     let bottomInset: CGFloat
     @ViewState private var renderer = ArtifactWebRenderer.phone()
-    @ViewState private var showsSpinner = false
-    @ViewState private var delayError: String?
     @ViewState private var retry = 0
 
     var body: some View {
@@ -327,8 +316,8 @@ private struct ArtifactHTMLDocument: View {
                     .ignoresSafeArea(edges: .vertical)
             }
             .scrollEdgeEffectStyle(.hard, for: .top)
-            if showsSpinner { ProgressView("Loading artifact...") }
-            if let error = renderer.error ?? delayError {
+            if renderer.isLoading { DelayedProgressView("Loading artifact...") }
+            if let error = renderer.error {
                 ContentUnavailableView {
                     Label("Couldn't Load Artifact", systemImage: "doc.badge.ellipsis")
                 } description: {
@@ -343,14 +332,6 @@ private struct ArtifactHTMLDocument: View {
             reading.webRenderer = renderer
             await loadDocument()
         }
-        .task(id: renderer.isLoading) {
-            showsSpinner = false
-            guard renderer.isLoading else { return }
-            do { try await Task.sleep(for: .milliseconds(300)) }
-            catch is CancellationError { return }
-            catch { delayError = error.localizedDescription; return }
-            if !Task.isCancelled { showsSpinner = true }
-        }
         .onDisappear {
             if let state = renderer.readingState { reading.webReadingStates[content.artifact.id] = state }
             renderer.stop()
@@ -359,7 +340,6 @@ private struct ArtifactHTMLDocument: View {
     }
 
     private func loadDocument() async {
-        delayError = nil
         guard let text = content.text else { return }
         await renderer.load(text, directory: content.directory, server: content.server, resource: content.resource,
                             state: reading.webReadingStates[content.artifact.id])

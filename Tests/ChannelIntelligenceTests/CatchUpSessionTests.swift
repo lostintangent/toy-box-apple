@@ -121,6 +121,9 @@ struct CatchUpSessionTests {
         let session = try #require(make())
         await session.run(using: SessionSummaryService(results: [.ready(summarySessionResult())]))
         let first = session.phase
+        let summary = try #require(session.summary)
+        #expect(summary.newerMessageCount(in: summarySessionState(through: 33).messages) == nil)
+        #expect(summary.newerMessageCount(in: summarySessionState(through: 34).messages) == 4)
         session.update(from: summarySessionState(through: 33), server: server)
         #expect(session.phase == first)
         #expect(session.request.through == 30)

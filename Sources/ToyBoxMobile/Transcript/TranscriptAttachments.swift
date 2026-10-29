@@ -59,7 +59,6 @@ struct TranscriptImage: View {
     @ViewState private var file: URL?
     @ViewState private var image: CGImage?
     @ViewState private var failed = false
-    @ViewState private var showsProgress = false
     @ViewState private var attempt = 0
 
     var body: some View {
@@ -106,8 +105,8 @@ struct TranscriptImage: View {
                         .labelStyle(.iconOnly)
                         .font(.footnote)
                         .frame(minWidth: 44, minHeight: 44)
-                } else if showsProgress {
-                    ProgressView()
+                } else {
+                    DelayedProgressView()
                 }
             }
         }
@@ -118,20 +117,12 @@ struct TranscriptImage: View {
 
     private func load() async {
         guard image == nil else { return }
-        if attempt == 0,
-           let remembered = ChannelThumbnails.remembered(for: attachment, api: api, scale: displayScale) {
-            image = remembered
-            return
-        }
-        let progress = Task { try await Task.sleep(for: .milliseconds(300)); showsProgress = true }
-        defer { progress.cancel(); showsProgress = false }
         do {
-            let file = try await ChannelAttachmentCache.shared.file(for: attachment, api: api, reload: attempt > 0)
-            let image = try await ChannelThumbnails.image(at: file, for: attachment, api: api, scale: displayScale,
+            let loaded = try await ChannelThumbnails.load(for: attachment, api: api, scale: displayScale,
                                                           reload: attempt > 0)
             try Task.checkCancellation()
-            self.image = image
-            self.file = file
+            image = loaded.image
+            file = loaded.file
         } catch is CancellationError {
         } catch {
             failed = true

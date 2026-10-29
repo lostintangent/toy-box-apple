@@ -137,9 +137,9 @@ private struct TranscriptDividerStack: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if let catchUp, summarizes, catchUp.phase != .collapsed {
-                TranscriptCatchUpCard(catchUp: catchUp, store: store) {
-                    catchUp.dismiss()
+            if let catchUp, summarizes, catchUp.session.phase != .collapsed {
+                TranscriptCatchUpCard(catchUp: catchUp.session, store: store) {
+                    catchUp.session.dismiss()
                     focusesDivider = true
                 }
                 .padding(.bottom, 12)

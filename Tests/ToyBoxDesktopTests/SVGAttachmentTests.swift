@@ -65,7 +65,7 @@ struct SVGAttachmentTests {
         let api = try ChannelAPI(serverURL: "http://localhost:3210")
         let file = try await ChannelAttachmentCache.shared.file(for: attachment, api: api)
         defer { try? FileManager.default.removeItem(at: file) }
-        let thumbnail = try await TranscriptThumbnails.image(at: file, for: attachment, api: api, scale: 2)
+        let thumbnail = try await TranscriptThumbnails.load(for: attachment, api: api, scale: 2).image
         #expect(CGSize(width: thumbnail.width, height: thumbnail.height) == CGSize(width: 480, height: 240))
         #expect(ChannelImageDecoder.pixelSize(for: attachment, api: api) == CGSize(width: 800, height: 400))
         #expect(ImageViewer.knownPixelSize(of: attachment, api: api) == CGSize(width: 800, height: 400))
@@ -83,7 +83,7 @@ struct SVGAttachmentTests {
         let api = try ChannelAPI(serverURL: "http://localhost:3210")
         let file = try await ChannelAttachmentCache.shared.file(for: attachment, api: api)
         defer { try? FileManager.default.removeItem(at: file) }
-        _ = try await TranscriptThumbnails.image(at: file, for: attachment, api: api, scale: 2)
+        _ = try await TranscriptThumbnails.load(for: attachment, api: api, scale: 2).image
         let layout = ImageViewer.Layout(size: CGSize(width: 1000, height: 800), topInset: 52)
         let viewer = ImageViewer()
         viewer.layout = layout
