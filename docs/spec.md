@@ -1031,7 +1031,28 @@ directory filtering unchanged. Pull to refresh holds its spinner until the finge
 fast fetch never ends it mid-pull. Command-F focuses channel search when the list is active,
 without replacing in-conversation Find. A catalog failure still shows its heading, useful error,
 Retry and reachable Settings at the bottom. Cached rows alone do not prove a live connection.
-First-launch Connect to Toy Box and the Mac sidebar remain unchanged.
+The Mac sidebar remains unchanged.
+
+**Phone channel toolbar, t518.** Channel Actions is a `ToolbarOverflowMenu`, so its ••• is always
+the last item. A compact top bar shows Overview, Tasks (only while unfinished), then •••. Regular
+width shows Message View, Tasks, Overview, then •••. Where the system stands bar items in a
+vertical bar (`toolbarVerticalEdge` non-nil, as on the folded Duo), and in regular width, Message
+View stays its own filter item. A compact scene with no vertical bar has no room for it: a
+`.bottomBar` item would sit under the composer. There the same All Messages / Your Messages picker
+leads Channel Actions in a Message View section, and Your Messages adds the subtitle "Your
+Messages" under the channel name. All Messages shows no subtitle, and open readers keep their own
+titles. iOS 27.0 has no vertical-bar API, so it always takes the compact no-bar path.
+
+**Phone Welcome, t518.** With no working server the phone shows Welcome, not a titled form. Its
+first Form row, with a clear background and no horizontal insets, holds the large bold heading
+"Welcome to Toy Box 👋" and one secondary sentence. The navigation bar is hidden. The shared Server
+URL card follows: the address and Test Connection, each a native row of the same height, with
+errors below them. Continue is a full-width `.glassProminent` button at `.controlSize(.extraLarge)`
+in `.safeAreaBar(edge: .bottom)`, aligned to the card's measured edges and 8 points above the
+bottom safe area, so it rides above the keyboard. The Form's bottom scroll edge is `.hard`, so
+nothing shows through or below the bar. At accessibility sizes the bar would cover the card, so
+Continue becomes the Form's last row after the card instead, with the same edges and style. It's
+disabled until the current address tests successfully.
 
 ### Visual system
 
@@ -1684,7 +1705,7 @@ Contrast/Reduce Transparency behavior. Reduce Motion uses the reveal path's nonm
 Working Now, Select Text, reactors, system-message details, Overview in both presentations,
 and Settings use native `Button(role: .close)`. iOS supplies the X. Place it at
 `.topBarTrailing` with an explicit accessible close label, never `.confirmationAction`, which iOS
-draws as blue prominent glass. No custom circle or fill. Settings changes remain applied on closing. Save, Create and Switch Server remain
+draws as blue prominent glass. No custom circle or fill. Settings changes remain applied on closing. Save and Create remain
 genuine confirmation actions. Mac keeps Done. Swipe dismissal, focus/draft restoration and
 read blocking are unchanged.
 
@@ -2377,9 +2398,13 @@ Cancel is the safe default. There is no fake Undo for irreversible server deleti
 Settings uses a native scene with General and Notifications sections. General includes Server
 URL, Test Connection, status, and the selected appearance (System by default). Validate HTTP(S),
 preserve path prefixes and display actionable failures. Changing servers prompts before replacing
-live connections, namespaces drafts, then refreshes the catalog. On iPhone, Use Server appears only
-while the field holds a valid address different from the current server, and Return in the field
-runs Test Connection. First-launch setup always shows Continue. Notifications explains requests
+live connections, namespaces drafts, then refreshes the catalog. On iPhone, Settings shares
+Welcome's Server URL card, with no separate Use Server action or confirmation. Return or Test
+Connection runs the test, and success on a different address switches to it at once: while it
+applies, the field and Close are disabled and the row reads Connecting…, then a green checkmark
+marks the connected address. Testing the server in use only confirms it. A failed test changes
+nothing and names the server still in use, and closing Settings drops an untested edit. A switch
+that fails to load the catalog shows its error in the card. Notifications explains requests
 and completions before asking system permission in response to an explicit enable action.
 Permission denial shows Open System Settings, never repeated permission prompts. General also
 holds Open at Login, Show in menu bar, the Quick Send shortcut recorder, and the two on-device

@@ -132,51 +132,143 @@ struct ShellTests {
         }
     }
 
-    @Test(arguments: [false, true])
-    func serverActionRowsKeepTheAddressRowsNativeHeight(firstLaunch: Bool) async throws {
+    @Test func serverCardKeepsTwoNativeRowsThroughATest() async throws {
         let connection = ServerConnectionProbe(address: "https://another.example/prefix", session: fixtureSession())
         let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 466, height: 678))
         let host = UIHostingController(rootView: Form {
-            ServerConnectionSection(connection: connection, requiresTest: firstLaunch,
-                                    currentServer: firstLaunch ? nil : "https://fixture.example/prefix",
-                                    onUse: {}, useFailure: .constant(nil))
+            ServerConnectionSection(connection: connection, placeholder: "Required", footer: "Footer",
+                                    failure: .constant(nil))
         })
         window.rootViewController = host
         window.isHidden = false
         defer { window.isHidden = true }
         host.view.frame = window.bounds
-        func rows() -> (heights: [CGFloat], labels: [String], cells: [CGRect]) {
+        func rows() -> (heights: [CGFloat], test: MobileAutomationTree.Element?, labels: [String]) {
             host.view.setNeedsLayout()
             host.view.layoutIfNeeded()
-            var cells: [CGRect] = []
-            func visit(_ view: UIView) {
-                if let cell = view as? UICollectionViewCell, !cell.isHidden {
-                    cells.append(cell.convert(cell.bounds, to: nil))
-                }
-                view.subviews.forEach(visit)
-            }
-            visit(host.view)
+            let cells = collectionCells(in: host.view)
             let tree = MobileAutomationTree(windows: [window])
-            func row(_ id: String) -> CGRect? {
-                guard let frame = tree.elements.first(where: { $0.identifier == id })?.frame else { return nil }
-                return cells.first { $0.contains(CGPoint(x: frame.midX, y: frame.midY)) }
-            }
-            let test = row("server-test")
+            let button = tree.elements.first { $0.identifier == "server-test" }
+            let test = button.flatMap { button in cells.first { $0.contains(CGPoint(x: button.frame.midX, y: button.frame.midY)) } }
             // The address field exposes no element in a test host, so its row is the cell right above Test Connection.
             let address = test.flatMap { test in cells.first { abs($0.maxY - test.minY) < 0.5 } }
-            return ([address, test, row("server-use")].compactMap { $0?.height }, tree.elements.map(\.label), cells)
+            return ([address, test].compactMap { $0?.height }, button, tree.elements.map(\.label))
         }
         let idle = rows()
-        #expect(idle.heights.count == 3, "\(idle.heights) \(idle.cells)")
-        #expect((idle.heights.max() ?? 0) - (idle.heights.min() ?? 0) < 0.5, "\(idle.heights) \(idle.cells)")
+        #expect(idle.heights.count == 2, "\(idle.heights)")
+        #expect((idle.heights.max() ?? 0) - (idle.heights.min() ?? 0) < 0.5, "\(idle.heights)")
         #expect((idle.heights.first ?? 0) >= 44, "\(idle.heights)")
-        #expect(idle.labels.contains("Test Connection"), "\(idle.labels)")
-        #expect(idle.labels.contains(firstLaunch ? "Continue" : "Use Server"), "\(idle.labels)")
+        #expect(idle.test?.label == "Test Connection", "\(idle.labels)")
+        #expect(idle.test?.value == "", "\(String(describing: idle.test))")
         let operation = try #require(connection.start())
         let connecting = rows()
-        #expect(connecting.labels.contains { $0.hasPrefix("Connecting") }, "\(connecting.labels)")
+        #expect(connecting.test?.label.hasPrefix("Connecting") == true, "\(connecting.labels)")
         #expect(connecting.heights == idle.heights, "\(connecting.heights) \(idle.heights)")
         await operation.value
+        let connected = rows()
+        #expect(connected.test?.label == "Test Connection", "\(connected.labels)")
+        #expect(connected.test?.value == "Connected", "\(String(describing: connected.test))")
+        #expect(connected.heights == idle.heights, "\(connected.heights) \(idle.heights)")
+        connection.address = "https://another.example/other"
+        #expect(rows().test?.value == "", "Editing the address clears the checkmark.")
+    }
+
+    /// Continue is pinned at default sizes and follows the card at accessibility sizes, where a bar would cover it.
+    @Test(arguments: [DynamicTypeSize.large, .accessibility5])
+    func welcomeKeepsContinueOnTheCardEdgesUntilATestPasses(size: DynamicTypeSize) async throws {
+        try await withDefaults { defaults in
+            let model = AppModel(arguments: [], environment: [:], defaults: defaults, session: fixtureSession())
+            // Tall enough that the inline row is laid out at accessibility sizes.
+            let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 466, height: size.isAccessibilitySize ? 2400 : 678))
+            let host = UIHostingController(rootView: NavigationStack { ConnectionSetupView() }
+                .environment(\.dynamicTypeSize, size).environment(model))
+            window.rootViewController = host
+            window.isHidden = false
+            defer { window.isHidden = true }
+            host.view.frame = window.bounds
+            host.view.layoutIfNeeded()
+            // Continue's insets come from the card's measured frame, which lands on the next pass.
+            await Task.yield()
+            host.view.setNeedsLayout()
+            host.view.layoutIfNeeded()
+            let tree = MobileAutomationTree(windows: [window])
+            let labels = tree.elements.map(\.label)
+            let proceed = try #require(tree.elements.first { $0.identifier == "server-use" }, "\(labels)")
+            let test = try #require(tree.elements.first { $0.identifier == "server-test" }, "\(labels)")
+            let cells = collectionCells(in: host.view)
+            let card = try #require(cells.first { $0.contains(CGPoint(x: test.frame.midX, y: test.frame.midY)) })
+            #expect(labels.contains("Welcome to Toy\u{00A0}Box\u{00A0}👋"), "\(labels)")
+            #expect(proceed.label == "Continue")
+            #expect(!proceed.isEnabled)
+            #expect(abs(proceed.frame.minX - card.minX) < 1, "\(proceed.frame) \(card)")
+            #expect(abs(proceed.frame.maxX - card.maxX) < 1, "\(proceed.frame) \(card)")
+            #expect(proceed.frame.minY > card.maxY, "\(proceed.frame) \(card)")
+            let isInline = cells.contains { $0.contains(CGPoint(x: proceed.frame.midX, y: proceed.frame.midY)) }
+            #expect(isInline == size.isAccessibilitySize, "\(proceed.frame) \(cells)")
+            if !size.isAccessibilitySize {
+                #expect(proceed.frame.height >= 48 && proceed.frame.height <= 56, "\(proceed.frame)")
+            }
+        }
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func settingsSwitchesWhenATestOfAnotherServerConnects() async throws {
+        try await withDefaults { defaults in
+            let notifications = ChannelNotifications(defaults: defaults, readAuthorization: { .notDetermined })
+            let model = AppModel(arguments: ["--server", "https://fixture.example/prefix"], environment: [:],
+                                 defaults: defaults, session: fixtureSession(), notifications: notifications)
+            defer { model.setScenePhase(.background) }
+            await model.refreshCatalog()
+            let fixture = fixtureSession()
+            let connection = ServerConnectionProbe(address: "", session: fixture) { api in
+                if api.baseURL.host == "unreachable.example" { throw URLError(.cannotConnectToHost) }
+                return try await api.catalog()
+            }
+            let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 466, height: 678))
+            let host = UIHostingController(rootView: SettingsView(connection: connection).environment(model))
+            window.rootViewController = host
+            window.isHidden = false
+            defer { window.isHidden = true }
+            host.view.frame = window.bounds
+            @MainActor func labels() -> [String] {
+                host.view.setNeedsLayout()
+                host.view.layoutIfNeeded()
+                return MobileAutomationTree(windows: [window]).elements.map(\.label)
+            }
+            _ = labels()
+            #expect(connection.address == "https://fixture.example/prefix")
+
+            await connection.start()?.value
+            _ = labels()
+            #expect(model.serverURL == "https://fixture.example/prefix", "Testing the server in use only confirms it.")
+
+            connection.address = "https://unreachable.example"
+            await connection.start()?.value
+            let failed = labels()
+            #expect(model.serverURL == "https://fixture.example/prefix", "A failed test changes nothing.")
+            #expect(failed.contains { $0.hasSuffix("Still using fixture.example.") }, "\(failed)")
+
+            connection.address = "https://another.example"
+            await connection.start()?.value
+            _ = labels()
+            let another = ChannelWaitingRequest.normalizedServer("https://another.example")
+            for await switched in Observations({
+                ChannelWaitingRequest.normalizedServer(model.serverURL) == another && model.catalog?.phase == .connected
+            }) where switched { break }
+            let switched = MobileAutomationTree(windows: [window]).elements
+            #expect(switched.first { $0.identifier == "server-test" }?.value == "Connected",
+                    "\(switched.map(\.label))")
+        }
+    }
+
+    private func collectionCells(in view: UIView) -> [CGRect] {
+        var cells: [CGRect] = []
+        func visit(_ view: UIView) {
+            if let cell = view as? UICollectionViewCell, !cell.isHidden { cells.append(cell.convert(cell.bounds, to: nil)) }
+            view.subviews.forEach(visit)
+        }
+        visit(view)
+        return cells
     }
 
     #endif
@@ -1493,49 +1585,27 @@ struct ShellTests {
         }
     }
 
-    @Test func firstLaunchRequiresARealCurrentProbeAndAllowsExplicitLoopbackTesting() async throws {
+    @Test func theCardTestsOnlyAValidIdleAddressAndMarksOnlyItsOwnSuccess() async throws {
         let connection = ServerConnectionProbe(address: "http://127.0.0.1:3100/prefix", session: fixtureSession())
-        let section = ServerConnectionSection(connection: connection, requiresTest: true, currentServer: nil,
-                                              onUse: {}, useFailure: .constant(nil))
-        #expect(section.showsUseButton)
+        let section = ServerConnectionSection(connection: connection, placeholder: "", footer: "",
+                                              failure: .constant(nil))
         #expect(section.canTest)
-        #expect(!section.canUse)
+        #expect(!section.isConnected)
         let operation = try #require(connection.start())
         #expect(!section.canTest)
-        #expect(!section.canUse)
+        #expect(!section.isConnected)
         await operation.value
-        #expect(section.canUse)
+        #expect(section.canTest)
+        #expect(section.isConnected)
+        let switching = ServerConnectionSection(connection: connection, placeholder: "", footer: "",
+                                                isSwitching: true, failure: .constant(nil))
+        #expect(!switching.canTest)
+        #expect(!switching.isConnected)
         connection.address = "http://127.0.0.1:3100/another-prefix"
         #expect(section.canTest)
-        #expect(!section.canUse)
+        #expect(!section.isConnected)
         connection.address = "not-a-server"
-        #expect(section.showsUseButton)
         #expect(!section.canTest)
-        #expect(!section.canUse)
-    }
-
-    @Test func settingsOffersUseServerOnlyForADifferentValidServer() async throws {
-        let connection = ServerConnectionProbe(address: "HTTPS://FIXTURE.EXAMPLE:443/prefix/", session: fixtureSession())
-        let section = ServerConnectionSection(connection: connection, requiresTest: false,
-                                              currentServer: "https://fixture.example/prefix",
-                                              onUse: {}, useFailure: .constant(nil))
-        #expect(section.canTest)
-        #expect(!section.showsUseButton)
-        #expect(!section.canUse)
-        connection.address = "https://another.example/prefix"
-        #expect(section.showsUseButton)
-        #expect(section.canUse)
-        let operation = try #require(connection.start())
-        #expect(section.showsUseButton)
-        #expect(!section.canUse)
-        await operation.value
-        #expect(section.canUse)
-        connection.address = "https://user:password@another.example"
-        #expect(!section.canTest)
-        #expect(!section.showsUseButton)
-        #expect(!section.canUse)
-        connection.address = "https://fixture.example/prefix"
-        #expect(!section.showsUseButton)
     }
 
     @Test func settingsFailuresKeepTheirRealCategoryAndPhoneAvailabilityReason() {
