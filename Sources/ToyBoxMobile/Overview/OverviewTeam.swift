@@ -19,13 +19,15 @@ struct OverviewTeamSection: View {
     }
 
     var body: some View {
-        let verticalInset: CGFloat = typeSize.isAccessibilitySize ? 15 : 14
+        // One point shorter than the measured 15-point native insets at accessibility sizes,
+        // and three shorter at ordinary sizes.
+        let verticalInset: CGFloat = typeSize.isAccessibilitySize ? 14.5 : 13.5
         OverviewSectionRows(summary: .team(store.roster.count), section: .team, session: session,
-                            isFirstSection: false) {
+                            isFirstSection: !OverviewAboutSection.hasContent(store.details)) {
             ForEach(ordered) { agent in
                 OverviewTeamRow(agent: agent, store: store, session: session,
                                 isLead: agent.id == store.roster.first?.id)
-                    .listRowInsets(.vertical, typeSize.isAccessibilitySize ? nil : 14)
+                    .listRowInsets(.vertical, verticalInset)
             }
             Button {
                 management.present(.addMember(channelId: store.id, name: ""))

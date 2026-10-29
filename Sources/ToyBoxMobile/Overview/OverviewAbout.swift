@@ -8,39 +8,36 @@ struct OverviewAboutSection: View {
     let store: ChannelStore
     @Bindable var session: OverviewSession
     @Environment(\.openURL) private var openURL
-    @Environment(\.dynamicTypeSize) private var typeSize
 
-    private var bodyFont: UIFont {
-        .preferredFont(forTextStyle: .body, compatibleWith: UITraitCollection(
-            preferredContentSizeCategory: UIContentSizeCategory(typeSize)))
+    /// Whether the headerless opening has a purpose, folder or preview to show. Without one it is
+    /// omitted, and Team opens the list.
+    static func hasContent(_ details: ChannelDetails?) -> Bool {
+        purpose(of: details) != nil || directory(of: details) != nil || details?.resolvedPreview != nil
+    }
+
+    private static func purpose(of details: ChannelDetails?) -> String? {
+        details?.purpose.flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 }
+    }
+
+    private static func directory(of details: ChannelDetails?) -> String? {
+        details?.directory.flatMap { $0.isEmpty ? nil : $0 }
     }
 
     var body: some View {
-        if let details = store.details {
-            let firstLineHeight = bodyFont.lineHeight
-            let controlHeight = max(44, firstLineHeight.rounded(.up))
-            let purpose = details.purpose.flatMap { value in
-                value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : value
-            }
-            let directory = details.directory.flatMap { $0.isEmpty ? nil : $0 }
-            let preview = details.resolvedPreview
+        let purpose = Self.purpose(of: store.details)
+        let directory = Self.directory(of: store.details)
+        let preview = store.details?.resolvedPreview
+        if Self.hasContent(store.details) {
             Section {
                 VStack(alignment: .leading, spacing: 16) {
-                    HStack(alignment: .top, spacing: 12) {
-                        if let purpose {
-                            OverviewPurpose(purpose: purpose, expanded: $session.purposeExpanded)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.top, (controlHeight - firstLineHeight) / 2)
-                        } else {
-                            Spacer(minLength: 0)
-                        }
-                        OverviewRootActions(store: store, controlHeight: controlHeight)
+                    if let purpose {
+                        OverviewPurpose(purpose: purpose, expanded: $session.purposeExpanded)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    .padding(.top, 12)
                     if directory != nil || preview != nil {
-                        VStack(alignment: .leading, spacing: 8) {
+                        VStack(alignment: .leading, spacing: 0) {
                             if let directory {
-                                OverviewFolderButton(directory: directory)
+                                OverviewFolderRow(directory: directory)
                                     .id(directory)
                             }
                             if let preview {
@@ -52,6 +49,7 @@ struct OverviewAboutSection: View {
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.top, 12)
                 .buttonStyle(.borderless)
                 .listRowInsets(.vertical, 0)
                 .listRowBackground(Color.clear)
@@ -72,8 +70,14 @@ struct OverviewAboutSection: View {
                 }
             } label: {
                 VStack(alignment: .leading, spacing: 4) {
-                    Label(preview.kind == "screen" ? "Screen Preview" : "Open Preview",
-                          systemImage: preview.kind == "screen" ? "display" : "globe")
+                    // Only the title is link ink, since it is About's one real link. A hierarchical
+                    // style here would resolve to the button's tint, so the icon names a concrete color.
+                    Label {
+                        Text(preview.kind == "screen" ? "Screen Preview" : "Open Preview")
+                    } icon: {
+                        Image(systemName: preview.kind == "screen" ? "display" : "globe")
+                            .foregroundStyle(Color.primary)
+                    }
                     if preview.kind != "screen" {
                         Text(address.absoluteString)
                             .font(.footnote)
@@ -105,22 +109,33 @@ struct OverviewAboutSection: View {
     }
 }
 
-private struct OverviewFolderButton: View {
+private struct OverviewFolderRow: View {
     let directory: String
     @ViewState private var copyToken: UUID?
 
     private var name: String { ChannelFolderName.name(of: directory) }
 
     var body: some View {
-        Button(action: copyPath) {
-            Label(copyToken == nil ? name : "Copied", systemImage: copyToken == nil ? "folder" : "checkmark")
+        HStack(spacing: 8) {
+            Label(name, systemImage: "folder")
+                .foregroundStyle(.primary)
                 .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                .contentShape(Rectangle())
+                .contentShape(.accessibility, Rectangle())
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("Folder, \(name)")
+                .accessibilityIdentifier("overview-folder")
+            Button(action: copyPath) {
+                Image(systemName: copyToken == nil ? "doc.on.doc" : "checkmark")
+                    .contentTransition(.symbolEffect(.replace))
+                    .frame(minWidth: 44, minHeight: 44)
+                    .contentShape([.interaction, .accessibility], Rectangle())
+            }
+            .foregroundStyle(.secondary)
+            .accessibilityLabel("Copy Path")
+            .accessibilityValue(copyToken == nil ? "" : "Copied")
+            .accessibilityIdentifier("overview-folder-copy")
         }
-        .accessibilityIdentifier("overview-folder")
-        .accessibilityLabel("Folder, \(name)")
-        .accessibilityValue(copyToken == nil ? "" : "Copied")
-        .accessibilityHint("Copies the full path")
+        .contentShape(Rectangle())
         .contextMenu {
             Section(directory) {
                 Button("Copy Path", systemImage: "doc.on.doc", action: copyPath)
@@ -162,7 +177,9 @@ private struct OverviewPurpose: View {
                         .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { fullHeight = $0 }
                 }
             if expanded || fullHeight > shownHeight + 0.5 {
-                Button(expanded ? "Less" : "More") { expanded.toggle() }
+                Button(expanded ? "Show Less" : "Show More") { expanded.toggle() }
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.secondary)
                     .frame(minHeight: 44)
             }
         }

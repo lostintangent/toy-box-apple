@@ -237,7 +237,7 @@ struct OverviewTests {
     }
 
     @Test(arguments: DynamicTypeSize.allCases)
-    func teamRowsAreTwoPointsShorterOnlyAtOrdinaryTextSizes(
+    func teamRowsAreThreePointsShorterAtOrdinarySizesAndOneAtAccessibilitySizes(
         size: DynamicTypeSize
     ) async throws {
         let store = ChannelStore(id: "channel", api: try ChannelAPI(serverURL: "https://fixture.example"),
@@ -274,7 +274,7 @@ struct OverviewTests {
         let tightened = try #require(list.layoutAttributesForItem(at: IndexPath(item: 1, section: 0))).frame
         let addAgent = try #require(list.layoutAttributesForItem(at: IndexPath(item: 2, section: 0))).frame
         let native = try #require(list.layoutAttributesForItem(at: IndexPath(item: 0, section: 1))).frame
-        let reduction: CGFloat = size.isAccessibilitySize ? 0 : 2
+        let reduction: CGFloat = size.isAccessibilitySize ? 1 : 3
         #expect(tightened.width == native.width && tightened.height >= 44)
         #expect(abs(native.height - tightened.height - reduction) < 0.01,
                 "Tightened row \(tightened), native row \(native)")
@@ -289,7 +289,7 @@ struct OverviewTests {
         #expect(abs(button.frame.height - addAgent.height) < 0.01)
         let body = UIFont.preferredFont(forTextStyle: .body, compatibleWith:
             UITraitCollection(preferredContentSizeCategory: UIContentSizeCategory(size)))
-        #expect(addAgent.height >= body.lineHeight + (size.isAccessibilitySize ? 30 : 28))
+        #expect(addAgent.height >= body.lineHeight + (size.isAccessibilitySize ? 29 : 27))
     }
 
     @Test(arguments: [DynamicTypeSize.large, .accessibility5])
@@ -423,20 +423,8 @@ struct OverviewTests {
         }
     }
 
-    @Test(arguments: [DynamicTypeSize.large, .accessibility5])
-    func overviewActionRowShowsOnlyTwoIconsNotVisibleActionTitles(size: DynamicTypeSize) throws {
-        let store = ChannelStore(id: "channel", api: try ChannelAPI(serverURL: "https://fixture.example"))
-        let renderer = ImageRenderer(content:
-            OverviewRootActions(store: store)
-                .environment(ChannelInteraction()).environment(ManagementPresenter())
-                .environment(ChannelFollowController())
-                .dynamicTypeSize(size))
-        let image = try #require(renderer.uiImage)
-        #expect(image.size == CGSize(width: 88, height: 44))
-    }
-
     @Test(arguments: [false, true], [DynamicTypeSize.large, .accessibility5])
-    func loadedOpeningAlignsItsFirstLineAndUsesTheSameGapAsEverySection(
+    func loadedOpeningStartsBelowTheToolbarAndUsesTheSameGapAsEverySection(
         teamExpanded: Bool, size: DynamicTypeSize
     ) async throws {
         let store = ChannelStore(id: "channel", api: try ChannelAPI(serverURL: "https://fixture.example"),
@@ -467,22 +455,12 @@ struct OverviewTests {
         host.view.layoutIfNeeded()
         let tree = MobileAutomationTree(windows: [window])
         let purpose = try #require(tree.elements.first { $0.label == "Build." })
-        let close = try #require(tree.elements.first { $0.label == "Close Overview" })
-        let menu = try #require(tree.elements.first { $0.identifier == "overview-channel-actions" })
-        #expect(abs(menu.frame.width - 44) < 0.5 && abs(close.frame.width - 44) < 0.5)
-        #expect(abs(close.frame.maxX - menu.frame.minX - 88) < 0.5)
-        #expect(menu.frame.height >= 44 && close.frame.height >= 44)
-        #expect(abs(menu.frame.midY - close.frame.midY) < 0.5)
-        #expect(abs(purpose.frame.midY - close.frame.midY) <= 1,
-                "Purpose \(purpose.frame), Close \(close.frame)")
-        let openingInset = close.frame.minY - window.safeAreaInsets.top
-        if size.isAccessibilitySize {
-            #expect(openingInset >= 12 && openingInset <= 24)
-        } else {
-            #expect(abs(openingInset - 12) < 0.5,
-                    "Loaded Close \(close.frame), safe area \(window.safeAreaInsets)")
-        }
+        #expect(!tree.elements.contains { $0.identifier == "overview-channel-actions" })
         let list = try #require(nativeList(in: host.view))
+        let contentTop = list.convert(CGPoint(x: 0, y: list.contentOffset.y + list.adjustedContentInset.top),
+                                      to: window).y
+        #expect(abs(purpose.frame.minY - contentTop - 12) < 0.5,
+                "Purpose \(purpose.frame), content top \(contentTop), inset \(list.adjustedContentInset)")
         let about = try #require(list.layoutAttributesForItem(at: IndexPath(item: 0, section: 0))).frame
         let team = try #require(list.layoutAttributesForItem(at: IndexPath(item: 0, section: 1))).frame
         let lastTeam = try #require(list.layoutAttributesForItem(
@@ -492,6 +470,35 @@ struct OverviewTests {
                 "About \(about), Team \(team), last Team \(lastTeam), Tasks \(tasks)")
         #expect(abs(tasks.minY - lastTeam.maxY - (team.minY - about.maxY)) < 0.5,
                 "About-to-Team \(team.minY - about.maxY), Team-to-Tasks \(tasks.minY - lastTeam.maxY)")
+    }
+
+    @Test func teamOpensTheListWhenThereIsNoPurposeFolderOrPreview() async throws {
+        let store = ChannelStore(id: "channel", api: try ChannelAPI(serverURL: "https://fixture.example"),
+                                 sendJournal: nil)
+        _ = try store.apply(.init(type: "snapshot", state: .init(
+            revision: 1,
+            channel: .init(id: "channel", name: "Workshop", model: .init(provider: "test", name: "test"),
+                           updatedAt: "2026-10-26T00:00:00Z"),
+            lead: .lead(id: "channel", profile: .init(name: "Lead", role: "Coordinator",
+                                                    avatar: .init(mark: "M4 12H20", color: "#123456")))
+        )))
+        #expect(!OverviewAboutSection.hasContent(store.details))
+        let host = UIHostingController(rootView:
+            OverviewView(store: store, session: OverviewSession(store: store), placement: .sheet)
+                .environment(OverviewPresentation()).environment(ChannelInteraction())
+                .environment(ChannelFollowController())
+                .environment(ManagementPresenter()).environment(try artifactSession(artifacts: []))
+                .environment(\.horizontalSizeClass, .compact))
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 466, height: 1200))
+        window.rootViewController = host
+        window.isHidden = false
+        defer { window.isHidden = true }
+        host.view.layoutIfNeeded()
+        await Task.yield()
+        host.view.layoutIfNeeded()
+        let list = try #require(nativeList(in: host.view))
+        let team = try #require(list.layoutAttributesForItem(at: IndexPath(item: 0, section: 0))).frame
+        #expect(abs(team.minY - 12) < 0.5, "Team \(team)")
     }
 
     @Test(arguments: ["screen", "url"], [ColorScheme.light, .dark])
@@ -530,8 +537,23 @@ struct OverviewTests {
         host.view.layoutIfNeeded()
         let tree = MobileAutomationTree(windows: [window])
         let folder = try #require(tree.elements.first { $0.identifier == "overview-folder" })
-        #expect(folder.label == "Folder, toy-box-desktop" && folder.traits.contains(.button))
-        #expect(folder.frame.height >= 44)
+        #expect(folder.label == "Folder, toy-box-desktop" && !folder.traits.contains(.button))
+        #expect(folder.frame.height > 43.99, "Folder \(folder.frame)")
+        let copy = try #require(tree.elements.first { $0.identifier == "overview-folder-copy" })
+        #expect(copy.label == "Copy Path" && copy.traits.contains(.button) && copy.value.isEmpty)
+        #expect(copy.frame.width > 43.99 && copy.frame.height > 43.99, "Copy \(copy.frame)")
+        #expect(abs(copy.frame.midY - folder.frame.midY) < 0.5 && copy.frame.minX >= folder.frame.maxX)
+        let preview = try #require(tree.elements.first {
+            $0.traits.contains(.button) && $0.label.contains(kind == "screen" ? "Screen Preview" : "Open Preview")
+        })
+        #expect(abs(preview.frame.minY - folder.frame.maxY) < 0.5, "Folder \(folder.frame), Preview \(preview.frame)")
+        #expect(copy.activate(in: [window]))
+        host.view.layoutIfNeeded()
+        await Task.yield()
+        host.view.layoutIfNeeded()
+        let copied = MobileAutomationTree(windows: [window])
+        #expect(copied.elements.first { $0.identifier == "overview-folder-copy" }?.value == "Copied")
+        #expect(copied.elements.first { $0.identifier == "overview-folder" }?.label == "Folder, toy-box-desktop")
         for removed in [directory, screenID, "Folder on Mac", "Copy Folder Path"] {
             #expect(!tree.elements.contains { $0.label.contains(removed) || $0.value.contains(removed) })
         }
@@ -539,17 +561,18 @@ struct OverviewTests {
         #expect(tree.elements.contains { $0.label.contains(address) } == (kind == "url"))
     }
 
-    @Test(arguments: [UserInterfaceSizeClass.compact, .regular])
-    func overviewRootHasNoNavigationBarButNestedScreensKeepTheirs(sizeClass: UserInterfaceSizeClass) async throws {
+    @Test(arguments: [OverviewPlacement.sheet, .inspector])
+    func onlyTheSheetCarriesASystemCloseOnEveryPage(placement: OverviewPlacement) async throws {
         let store = ChannelStore(id: "channel", api: try ChannelAPI(serverURL: "https://fixture.example"))
         let session = OverviewSession(store: store)
+        let interaction = ChannelInteraction(isInspectorPresented: true)
         let host = UIHostingController(rootView:
-            OverviewView(store: store, session: session, placement: .sheet)
+            OverviewView(store: store, session: session, placement: placement)
                 .environment(OverviewPresentation())
-                .environment(ChannelInteraction())
+                .environment(interaction)
                 .environment(ManagementPresenter())
                 .environment(ChannelFollowController())
-                .environment(\.horizontalSizeClass, sizeClass))
+                .environment(\.horizontalSizeClass, placement == .sheet ? .compact : .regular))
         let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 466, height: 678))
         window.rootViewController = host
         window.isHidden = false
@@ -558,13 +581,45 @@ struct OverviewTests {
         await Task.yield()
         host.view.layoutIfNeeded()
         let navigation = try #require(nativeNavigation(in: host))
-        #expect(navigation.isNavigationBarHidden)
-        let close = try #require(MobileAutomationTree(windows: [window]).elements.first {
-            $0.label == "Close Overview" && $0.traits.contains(.button)
+        // The test host does not vend UIKit's bar buttons to accessibility, so read the system
+        // navigation item and the control it renders in the bar.
+        func close() -> UIBarButtonItem? {
+            let item = navigation.topViewController?.navigationItem
+            return ((item?.rightBarButtonItems ?? []) + (item?.trailingItemGroups.flatMap(\.barButtonItems) ?? []))
+                .first { $0.accessibilityLabel == "Close Overview" }
+        }
+        func trailingBarControl() -> UIControl? {
+            let bar = navigation.navigationBar.convert(navigation.navigationBar.bounds, to: window)
+            func controls(in view: UIView) -> [UIControl] {
+                guard !view.isHidden, view.alpha > 0 else { return [] }
+                if let control = view as? UIControl { return [control] }
+                return view.subviews.flatMap(controls)
+            }
+            return controls(in: navigation.navigationBar)
+                .filter { let frame = $0.convert($0.bounds, to: window); return !frame.isEmpty && frame.midX > bar.midX }
+                .max { $0.convert($0.bounds, to: window).maxX < $1.convert($1.bounds, to: window).maxX }
+        }
+        func expectToolbarClose() async throws {
+            let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+            while close() == nil || trailingBarControl() == nil, ContinuousClock.now < deadline {
+                try await Task.sleep(for: .milliseconds(5))
+                host.view.layoutIfNeeded()
+            }
+            _ = try #require(close())
+            let control = try #require(trailingBarControl())
+            let frame = control.convert(control.bounds, to: window)
+            let bar = navigation.navigationBar.convert(navigation.navigationBar.bounds, to: window)
+            let top = try #require(navigation.topViewController?.view)
+            let barBottom = top.convert(CGPoint(x: 0, y: top.safeAreaInsets.top), to: window).y
+            // UIKit owns the bar button's glass and hit target, so only its placement is ours to check.
+            #expect(frame.minY >= bar.minY - 0.5 && frame.maxY <= barBottom + 0.5,
+                    "Close \(frame), bar \(bar), bar bottom \(barBottom)")
+        }
+        #expect(navigation.isNavigationBarHidden == (placement == .inspector))
+        #expect(!MobileAutomationTree(windows: [window]).elements.contains {
+            $0.identifier == "overview-channel-actions"
         })
-        #expect(close.frame.width >= 44 && close.frame.height >= 44)
-        #expect(abs(close.frame.minY - window.safeAreaInsets.top - 12) < 0.5,
-                "Close \(close.frame), window safe area \(window.safeAreaInsets), host safe area \(host.view.safeAreaInsets), navigation \(navigation.view.frame), bar \(navigation.navigationBar.frame)")
+        if placement == .sheet { try await expectToolbarClose() } else { #expect(close() == nil) }
         session.navigationPath = [.agent("agent")]
         let deadline = ContinuousClock.now.advanced(by: .seconds(2))
         while navigation.isNavigationBarHidden || navigation.topViewController?.navigationItem.title != "About Agent",
@@ -574,6 +629,12 @@ struct OverviewTests {
         }
         #expect(!navigation.isNavigationBarHidden)
         #expect(navigation.topViewController?.navigationItem.title == "About Agent")
+        guard placement == .sheet else {
+            #expect(close() == nil)
+            return
+        }
+        // The test host can't activate SwiftUI's bar items, so the simulator drive proves the tap.
+        try await expectToolbarClose()
     }
 
     @Test func listRowsKeepTheSeparatorBetweenRowsButNotBelowTheLastRow() async throws {
