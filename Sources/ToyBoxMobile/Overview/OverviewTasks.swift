@@ -30,10 +30,6 @@ struct OverviewSubtasksScreen: View {
     let parentID: String
     let store: ChannelStore
     let session: OverviewSession
-    let placement: OverviewPlacement
-    @Bindable var scroll: OverviewTaskScroll
-    @Environment(OverviewPresentation.self) private var presentation
-    @Environment(ChannelInteraction.self) private var interaction
 
     var body: some View {
         Group {
@@ -53,16 +49,6 @@ struct OverviewSubtasksScreen: View {
                     }
                 }
                 .accessibilityIdentifier("overview-subtasks-form-\(parentID)")
-                .scrollPosition($scroll.position)
-                .onScrollGeometryChange(for: CGFloat.self, of: { $0.contentOffset.y + $0.contentInsets.top }) { _, offset in
-                    if placement == presentation.placement, interaction.isInspectorPresented,
-                       scroll.restorationOffset == nil { scroll.offset = offset }
-                }
-                .task {
-                    await Task.yield()
-                    if !Task.isCancelled, placement == presentation.placement { scroll.restore() }
-                }
-                .onDisappear { scroll.prepare() }
             } else {
                 ContentUnavailableView("Task unavailable", systemImage: "checklist",
                                        description: Text("This task is no longer in the channel."))

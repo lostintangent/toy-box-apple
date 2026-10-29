@@ -2,9 +2,19 @@ import ChannelClient
 import ChannelKit
 import Observation
 import SwiftUI
+import ToyBoxUI
 
 enum OverviewPlacement: Equatable {
     case sheet, inspector
+
+    static let columnWidth: CGFloat = 296
+
+    /// The column takes room only where the conversation keeps the Mac's 420 points beside it, which
+    /// on the Duo is unfolded landscape. Unfolded portrait also reports a regular size class, so the
+    /// scene's width decides.
+    init(sceneWidth: CGFloat, sizeClass: UserInterfaceSizeClass?) {
+        self = sizeClass == .regular && sceneWidth >= Self.columnWidth + 420 ? .inspector : .sheet
+    }
 }
 
 enum OverviewRoute: Hashable {
@@ -30,9 +40,18 @@ final class OverviewPresentation {
         return session
     }
 
+    /// The landscape column has no close of its own. The Overview button and Close Overview own its
+    /// presence, like the sidebar's. SwiftUI writes `false` while the columns reflow during a
+    /// rotation or fold, so the column never writes back.
+    func columnBinding(for interaction: ChannelInteraction?) -> Binding<Bool> {
+        Binding(get: { [self] in
+            placement == .inspector && interaction?.isInspectorPresented == true
+                && interaction?.isArtifactViewerPresented != true
+        }, set: { _ in })
+    }
+
     func move(to placement: OverviewPlacement) {
         guard self.placement != placement else { return }
-        for session in sessions.values { session.prepareForPresentation() }
         self.placement = placement
     }
 
@@ -59,34 +78,16 @@ final class OverviewSession {
     var purposeExpanded = false
     var previewError: String?
     var taskDisclosure: [String: Disclosure] = [:]
-    var scrollPosition = ScrollPosition()
-    @ObservationIgnored var scrollOffset: CGFloat = 0
-    @ObservationIgnored private(set) var restorationOffset: CGFloat?
     @ObservationIgnored private var routines: [String: OverviewRoutineState] = [:]
-    @ObservationIgnored private var taskScrolls: [String: OverviewTaskScroll] = [:]
 
     init(store: ChannelStore) { self.store = store }
-
-    func prepareForPresentation() {
-        restorationOffset = scrollOffset
-        for scroll in taskScrolls.values { scroll.prepare() }
-    }
 
     func prepareForTaskReveal() {
         expandedSections[.tasks] = true
         navigationPath = []
-        restorationOffset = nil
-        scrollPosition = ScrollPosition()
     }
 
     func isExpanded(_ section: OverviewSection) -> Bool { expandedSections[section] ?? true }
-
-    func taskScroll(_ id: String) -> OverviewTaskScroll {
-        if let scroll = taskScrolls[id] { return scroll }
-        let scroll = OverviewTaskScroll()
-        taskScrolls[id] = scroll
-        return scroll
-    }
 
     func task(_ id: String) -> ChannelTask? {
         Self.task(id, in: store.tasks)
@@ -98,12 +99,6 @@ final class OverviewSession {
             if let found = Self.task(id, in: task.children ?? []) { return found }
         }
         return nil
-    }
-
-    func restoreScroll() {
-        guard let restorationOffset else { return }
-        scrollPosition.scrollTo(y: restorationOffset)
-        self.restorationOffset = nil
     }
 
     func reconcileTasks(_ tasks: [ChannelTask]) {
@@ -126,21 +121,6 @@ final class OverviewSession {
         let state = OverviewRoutineState()
         routines[id] = state
         return state
-    }
-}
-
-@MainActor @Observable
-final class OverviewTaskScroll {
-    var position = ScrollPosition()
-    @ObservationIgnored var offset: CGFloat = 0
-    @ObservationIgnored var restorationOffset: CGFloat?
-
-    func prepare() { restorationOffset = offset }
-
-    func restore() {
-        guard let restorationOffset else { return }
-        position.scrollTo(y: restorationOffset)
-        self.restorationOffset = nil
     }
 }
 

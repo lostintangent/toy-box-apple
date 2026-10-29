@@ -1911,6 +1911,14 @@ the bar (or the column's safe content edge) at every text size, using the full c
 and Folder and Preview use the full width below it. All opening information stays outside cards.
 Retain the Overview accessibility label, native sheet dismissal, nested agent/task navigation
 and the same content in both presentations.
+Overview takes the inspector column only where the conversation keeps the Mac's 420 points beside
+it, which on the Duo is unfolded landscape (user 5143/5146). Folded and unfolded portrait use the
+sheet, decided by the scene's width rather than its size class alone. Rotating or folding moves an
+open Overview between the two without closing it, keeping its open page, disclosures and section
+state. The new presentation opens at its top rather than the reader's scroll position: SwiftUI's
+List ignores a restored offset, and a restored top row didn't hold through every Duo rotation and
+fold (t532). The column never writes back to Overview's presence, so the transient close SwiftUI
+reports while columns reflow cannot dismiss it.
 Apply the compact 16-point / regular 20-point outer rail once, without the old compounded
 44-point list margin. Treat purpose, folder and Preview as the headerless first section.
 Use one 24-point section-gap constant from that block's last row to Team and between every

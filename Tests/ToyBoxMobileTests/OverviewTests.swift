@@ -29,7 +29,7 @@ struct OverviewTests {
         #expect(following.isEnabled)
     }
 
-    @Test func presentationChangesKeepTheSameOverviewStateAndScrollIntent() throws {
+    @Test func presentationChangesKeepTheSameOverviewState() throws {
         let api = try ChannelAPI(serverURL: "https://fixture.example")
         let store = ChannelStore(id: "channel", api: api)
         let presentation = OverviewPresentation()
@@ -37,7 +37,6 @@ struct OverviewTests {
         session.navigationPath = [.agent("agent")]
         session.purposeExpanded = true
         session.taskDisclosure["task"] = .init(status: "in_progress", expanded: false)
-        session.scrollOffset = 244
         session.routine("routine").expanded = true
         session.routine("routine").pending = true
         presentation.compactSheetDidAppear()
@@ -48,10 +47,38 @@ struct OverviewTests {
         #expect(session.navigationPath == [.agent("agent")])
         #expect(session.purposeExpanded)
         #expect(session.taskDisclosure["task"]?.expanded == false)
-        #expect(session.restorationOffset == 244)
         #expect(session.routine("routine").expanded)
         #expect(session.routine("routine").pending)
         #expect(presentation.session(for: ChannelStore(id: store.id, api: api)) !== session)
+    }
+
+    @Test func onlyUnfoldedLandscapeLeavesTheConversationRoomBesideTheColumn() {
+        #expect(OverviewPlacement(sceneWidth: 0, sizeClass: nil) == .sheet)
+        #expect(OverviewPlacement(sceneWidth: 466, sizeClass: .compact) == .sheet)
+        #expect(OverviewPlacement(sceneWidth: 678, sizeClass: .regular) == .sheet)
+        #expect(OverviewPlacement(sceneWidth: 669, sizeClass: .regular) == .sheet)
+        #expect(OverviewPlacement(sceneWidth: 951, sizeClass: .compact) == .sheet)
+        #expect(OverviewPlacement(sceneWidth: 951, sizeClass: .regular) == .inspector)
+    }
+
+    @Test func theColumnIgnoresReflowWritesAndShowsOnlyAnUncoveredRequestedOverview() {
+        let presentation = OverviewPresentation()
+        let interaction = ChannelInteraction(isInspectorPresented: true)
+        let column = presentation.columnBinding(for: interaction)
+        #expect(!column.wrappedValue)
+        presentation.move(to: .inspector)
+        #expect(column.wrappedValue)
+        column.wrappedValue = false
+        #expect(interaction.isInspectorPresented)
+        #expect(column.wrappedValue)
+        interaction.isArtifactViewerPresented = true
+        #expect(!column.wrappedValue)
+        interaction.isArtifactViewerPresented = false
+        interaction.isInspectorPresented = false
+        #expect(!column.wrappedValue)
+        column.wrappedValue = true
+        #expect(!interaction.isInspectorPresented)
+        #expect(presentation.columnBinding(for: nil).wrappedValue == false)
     }
 
     @Test func compactCoverageEndsOnDismissalAndObsoleteDismissalKeepsTheRequestedReplacementCovered() {
@@ -67,22 +94,6 @@ struct OverviewTests {
         #expect(presentation.isCompactSheetPresented)
         presentation.compactSheetDidDismiss(isRequested: false)
         #expect(!presentation.isCompactSheetPresented)
-    }
-
-    @Test func tasksRevealReplacesQueuedScrollRestorationAndAgentNavigation() throws {
-        let api = try ChannelAPI(serverURL: "https://fixture.example")
-        let session = OverviewSession(store: ChannelStore(id: "channel", api: api))
-        session.navigationPath = [.agent("agent")]
-        session.scrollPosition.scrollTo(point: CGPoint(x: 0, y: 120))
-        #expect(session.scrollPosition.point?.y == 120)
-        session.scrollOffset = 244
-        session.prepareForPresentation()
-        #expect(session.restorationOffset == 244)
-        session.prepareForTaskReveal()
-        session.restoreScroll()
-        #expect(session.navigationPath.isEmpty)
-        #expect(session.restorationOffset == nil)
-        #expect(session.scrollPosition.point == nil)
     }
 
     @Test func managementReconstructionRetainsEntriesPendingAndFocus() throws {
@@ -153,12 +164,7 @@ struct OverviewTests {
         #expect(session.taskDisclosure["parent"]?.expanded == true)
         #expect(session.taskDisclosure["child"]?.expanded == false)
         session.navigationPath = [.subtasks("parent"), .subtasks("child")]
-        let scroll = session.taskScroll("child")
-        scroll.offset = 244
         session.expandedSections[.team] = false
-        session.prepareForPresentation()
-        #expect(session.taskScroll("child") === scroll && scroll.restorationOffset == 244)
-        #expect(session.navigationPath == [.subtasks("parent"), .subtasks("child")])
         #expect(!session.isExpanded(.team))
         #expect(OverviewSession.task("leaf", in: tasks)?.title == "Leaf")
         #expect(OverviewSession.task("deleted", in: tasks) == nil)
@@ -803,9 +809,6 @@ struct OverviewTests {
         let store = ChannelStore(id: "channel", api: try ChannelAPI(serverURL: "https://fixture.example"))
         let session = OverviewSession(store: store)
         session.expandedSections[.tasks] = false
-        session.scrollPosition.scrollTo(point: CGPoint(x: 0, y: 244))
-        session.scrollOffset = 244
-        session.prepareForPresentation()
         let host = UIHostingController(rootView:
             ScrollViewReader { proxy in
                 OverviewList {
@@ -826,9 +829,6 @@ struct OverviewTests {
                         }
                     }
                 }
-                .scrollPosition(Binding(
-                    get: { session.scrollPosition },
-                    set: { session.scrollPosition = $0 }))
                 .onAppear { session.prepareForTaskReveal() }
                 .task {
                     await Task.yield()

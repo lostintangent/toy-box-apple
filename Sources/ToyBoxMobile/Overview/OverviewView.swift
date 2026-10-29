@@ -34,8 +34,7 @@ struct OverviewView: View {
                     case .agent(let id):
                         OverviewAgentDetails(agentID: id, store: store)
                     case .subtasks(let id):
-                        OverviewSubtasksScreen(parentID: id, store: store, session: session,
-                                               placement: placement, scroll: session.taskScroll(id))
+                        OverviewSubtasksScreen(parentID: id, store: store, session: session)
                     }
                 }
                 .navigationBarTitleDisplayMode(.inline)
@@ -99,31 +98,16 @@ private struct OverviewContent: View {
                 OverviewRoutinesSection(store: store, session: session)
             }
             .accessibilityIdentifier("overview-form")
-            .scrollPosition(Binding(
-                get: { session.scrollPosition },
-                set: { if placement == presentation.placement { session.scrollPosition = $0 } }
-            ))
-            .onScrollGeometryChange(for: CGFloat.self, of: { $0.contentOffset.y + $0.contentInsets.top }) { _, offset in
-                if placement == presentation.placement, interaction.isInspectorPresented,
-                   session.restorationOffset == nil {
-                    session.scrollOffset = offset
-                }
-            }
             .onChange(of: store.tasks, initial: true) { _, tasks in session.reconcileTasks(tasks) }
-            .onDisappear { session.prepareForPresentation() }
             .scrollEdgeEffectStyle(.hard, for: .top)
             .task(id: interaction.overviewTasksRequest) {
-                let request = interaction.overviewTasksRequest
+                guard let request = interaction.overviewTasksRequest else { return }
                 await Task.yield()
                 guard placement == presentation.placement, !Task.isCancelled,
                       interaction.overviewTasksRequest == request else { return }
-                if let request {
-                    session.prepareForTaskReveal()
-                    proxy.scrollTo("overview-tasks", anchor: .top)
-                    interaction.consumeOverviewTasksRequest(request)
-                } else {
-                    session.restoreScroll()
-                }
+                session.prepareForTaskReveal()
+                proxy.scrollTo("overview-tasks", anchor: .top)
+                interaction.consumeOverviewTasksRequest(request)
             }
         }
     }
