@@ -359,7 +359,7 @@ struct ShellTests {
         }) { defaults, registration, notifications in
             let model = AppModel(arguments: ["--server", "https://fixture.example"], environment: [:],
                                  defaults: defaults, session: fixtureSession(), notifications: notifications)
-            defer { model.setActive(false) }
+            defer { model.setScenePhase(.background) }
             await notifications.enable()
             registration.receivedToken(Data([1]))
             await registration.waitUntilIdle()
@@ -367,15 +367,15 @@ struct ShellTests {
             #expect(notifications.registrationError != nil)
             topics = []
             fails = false
-            model.setActive(true)
+            model.setScenePhase(.active)
             await registration.waitUntilIdle()
             #expect(registrations == 2)
             #expect(topics == ["on:requests", "off:completions"])
             #expect(notifications.registrationError == nil)
             #expect(notifications.isRegistrationReady)
-            model.setActive(true)
-            model.setActive(false)
-            model.setActive(true)
+            model.setScenePhase(.active)
+            model.setScenePhase(.background)
+            model.setScenePhase(.active)
             await registration.waitUntilIdle()
             #expect(registrations == 2)
             #expect(topics == ["on:requests", "off:completions"])
@@ -1228,7 +1228,7 @@ struct ShellTests {
         }
     }
 
-    @Test func storesAndInteractionSurviveNavigationAndInactiveStopsTheConnection() async throws {
+    @Test func storesAndInteractionSurviveNavigationAndTheBackgroundStopsTheConnection() async throws {
         await withDefaults { defaults in
             let model = AppModel(arguments: ["--server", "https://fixture.example"], environment: [:],
                                  defaults: defaults, session: fixtureSession())
@@ -1237,9 +1237,9 @@ struct ShellTests {
             let interaction = model.interaction(for: "first")
             interaction.messageView = .yours
             interaction.reveal(sequence: 42)
-            model.setActive(true)
+            model.setScenePhase(.active)
             #expect(store?.phase == .connecting)
-            model.setActive(false)
+            model.setScenePhase(.background)
             #expect(store?.phase == .idle)
             #expect(model.catalog?.isActive == false)
             model.selectedChannelID = "second"
@@ -1252,20 +1252,59 @@ struct ShellTests {
         }
     }
 
-    @Test func managementOwnersResumeWithoutASelectedChannelOnlyWhileActive() async throws {
+    @Test func briefInterruptionsKeepTheStreamAndOnlyTheBackgroundDropsIt() async throws {
         try await withDefaults { defaults in
             let model = AppModel(arguments: ["--server", "https://fixture.example"], environment: [:],
                                  defaults: defaults, session: fixtureSession())
-            defer { model.setActive(false) }
+            defer { model.setScenePhase(.background) }
+            await model.refreshCatalog()
+            let catalog = try #require(model.catalog)
+            model.selectedChannelID = "first"
+            let store = try #require(model.selectedStore)
+            model.setScenePhase(.active)
+            #expect(store.phase == .connecting)
+            #expect(model.canManageChannels)
+
+            let interrupted = ChangeFlag()
+            withObservationTracking {
+                _ = store.phase
+                _ = catalog.isActive
+            } onChange: { interrupted.set() }
+            model.setScenePhase(.inactive)
+            #expect(!model.isActive)
+            #expect(!model.canManageChannels)
+            model.setScenePhase(.active)
+            #expect(model.isActive)
+            #expect(!interrupted.isSet)
+            #expect(store.phase == .connecting)
+            #expect(catalog.isActive)
+
+            model.setScenePhase(.inactive)
+            model.setScenePhase(.background)
+            #expect(interrupted.isSet)
+            #expect(store.phase == .idle)
+            #expect(!catalog.isActive)
+            model.setScenePhase(.inactive)
+            #expect(store.phase == .connecting)
+            #expect(catalog.isActive)
+            #expect(!model.isActive)
+        }
+    }
+
+    @Test func managementOwnersResumeWithoutASelectedChannelOnlyInTheForeground() async throws {
+        try await withDefaults { defaults in
+            let model = AppModel(arguments: ["--server", "https://fixture.example"], environment: [:],
+                                 defaults: defaults, session: fixtureSession())
+            defer { model.setScenePhase(.background) }
             let store = try #require(model.catalog?.channel(id: "first"))
             model.acquire(store)
             #expect(model.selectedChannelID == nil)
             #expect(store.phase == .idle)
-            model.setActive(true)
+            model.setScenePhase(.inactive)
             #expect(store.phase == .connecting)
-            model.setActive(false)
+            model.setScenePhase(.background)
             #expect(store.phase == .idle)
-            model.setActive(true)
+            model.setScenePhase(.active)
             #expect(store.phase == .connecting)
             model.selectedChannelID = store.id
             #expect(model.selectedStore === store)
@@ -1278,7 +1317,7 @@ struct ShellTests {
         await withDefaults { defaults in
             let model = AppModel(arguments: ["--server", "https://fixture.example"], environment: [:],
                                  defaults: defaults, session: fixtureSession())
-            defer { model.setActive(false) }
+            defer { model.setScenePhase(.background) }
             #expect(model.sidebarConnection == .connecting)
             #expect(!model.canCreateChannel)
             #expect(!model.canManageChannels)
@@ -1286,13 +1325,13 @@ struct ShellTests {
             #expect(model.sidebarConnection == .connected)
             #expect(!model.canCreateChannel)
             #expect(!model.canManageChannels)
-            model.setActive(true)
+            model.setScenePhase(.active)
             #expect(model.canCreateChannel)
             #expect(model.selectedChannelID == nil)
             #expect(model.canManageChannels)
             model.selectedChannelID = "second"
             #expect(model.canManageChannels)
-            model.setActive(false)
+            model.setScenePhase(.inactive)
             #expect(!model.canCreateChannel)
             #expect(!model.canManageChannels)
         }
@@ -1394,7 +1433,7 @@ struct ShellTests {
                                  defaults: defaults, session: fixtureSession())
             var drafts: [ComposerDraft] = []
             defer {
-                model.setActive(false)
+                model.setScenePhase(.background)
                 for draft in drafts { draft.clear(ifUnchanged: draft.revision) }
                 for address in [firstAddress, secondAddress] {
                     do {
@@ -1415,7 +1454,7 @@ struct ShellTests {
             drafts.append(firstDraft)
             firstDraft.text = "Draft for the first server"
             model.visibleChannelID = firstStore.id
-            model.setActive(true)
+            model.setScenePhase(.active)
             #expect(firstStore.phase == .connecting)
             try model.switchServer(to: secondAddress, replacing: firstAddress)
             #expect(firstStore.phase == .idle)
@@ -1605,6 +1644,12 @@ private final class ShellFixtureProtocol: URLProtocol, @unchecked Sendable {
     }
 
     override func stopLoading() {}
+}
+
+private final class ChangeFlag: Sendable {
+    private let value = Mutex(false)
+    var isSet: Bool { value.withLock { $0 } }
+    func set() { value.withLock { $0 = true } }
 }
 
 @MainActor @Observable

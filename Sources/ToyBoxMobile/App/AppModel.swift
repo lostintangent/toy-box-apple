@@ -39,6 +39,7 @@ final class AppModel {
     }
 
     @ObservationIgnored private let connections = ChannelConnections<ChannelStore>()
+    @ObservationIgnored private var isForeground = false
     @ObservationIgnored private var holdsSelectedConnection = false
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let session: URLSession
@@ -123,7 +124,7 @@ final class AppModel {
 
     func acquire(_ store: ChannelStore) {
         connections.acquire(store)
-        if !isActive { store.disconnect() }
+        if !isForeground { store.disconnect() }
     }
 
     func release(_ store: ChannelStore) { connections.release(store) }
@@ -163,28 +164,35 @@ final class AppModel {
         restoredSelection = false
         resumeCatalogBaseline = nil
         if persist { defaults.set(self.serverURL, forKey: "serverURL") }
-        if isActive { catalog?.startPolling() }
+        if isForeground { catalog?.startPolling() }
         if integrationsStarted { observeIntegrations(generation: integrationsGeneration) }
     }
 
-    func setActive(_ active: Bool) {
-        guard isActive != active else { return }
-        isActive = active
-        if active { resumeCatalogBaseline = catalog?.lastRefreshedAt }
-        catalog?.setActive(active)
-        if active {
-            if notifications.registrationError != nil { notifications.retryRegistration() }
-            catalog?.startPolling()
-            for store in connections.stores { store.connect() }
-            connectSelection()
-        } else {
-            catalog?.stopPolling()
-            for store in connections.stores { store.disconnect() }
+    /// Streams and catalog polling last until the scene enters the background, so Control Center,
+    /// Notification Center or a glance at the app switcher never forces a reconnect. Marking read,
+    /// management and treating the open channel as seen still need the active scene.
+    func setScenePhase(_ phase: ScenePhase) {
+        let foreground = phase != .background
+        if isForeground != foreground {
+            isForeground = foreground
+            catalog?.setActive(foreground)
+            if foreground {
+                resumeCatalogBaseline = catalog?.lastRefreshedAt
+                catalog?.startPolling()
+                for store in connections.stores { store.connect() }
+                connectSelection()
+            } else {
+                catalog?.stopPolling()
+                for store in connections.stores { store.disconnect() }
+            }
         }
+        guard isActive != (phase == .active) else { return }
+        isActive = phase == .active
+        if isActive, notifications.registrationError != nil { notifications.retryRegistration() }
     }
 
     private func connectSelection() {
-        guard isActive, let selectedStore else { return }
+        guard isForeground, let selectedStore else { return }
         if holdsSelectedConnection {
             selectedStore.connect()
         } else {
