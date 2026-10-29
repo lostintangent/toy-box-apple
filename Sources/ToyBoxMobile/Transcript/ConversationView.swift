@@ -337,6 +337,7 @@ struct ConversationView: View {
             scroll.sync(rowIdentities)
             land(items)
         }
+        .onChange(of: store.phase.isConnected) { land(items) }
         .onChange(of: store.sendAttempts.map(\.id)) { old, _ in
             if startsOwnPost(after: old, in: store.sendAttempts) { place(scroll.update(.ownPostConfirmed)) }
         }
@@ -412,8 +413,10 @@ struct ConversationView: View {
         place(scroll.update(.jumpToLatest))
     }
 
+    /// Lands once connected, like the Mac. A reopened store's cached messages predate its new
+    /// unread boundary, which the next snapshot or resume captures.
     private func land(_ items: [TranscriptItem]) {
-        guard !scroll.hasLanded, store.isLoaded, !items.isEmpty else { return }
+        guard !scroll.hasLanded, store.isLoaded, store.phase.isConnected, !items.isEmpty else { return }
         if !capturedArrival {
             arrivalUnreadAfter = store.unreadAfter
             capturedArrival = true
