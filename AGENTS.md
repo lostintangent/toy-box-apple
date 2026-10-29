@@ -203,6 +203,7 @@ use demo servers only for write scripts. Never skip or retry actions.
   ChannelClient, ToyBoxUI, ToyBoxMobileIntegrations, ToyBoxMobileWidget and ToyBoxMobile
   tests on iOS Simulator via Apple's `xctest` host. ChannelKit/mocked Intelligence execute on Mac
   only but compile in the iOS build. Reject interrupted, failed and empty Swift Testing runs.
+  A suite silent for three minutes is sampled, stopped and fails naming the tests that never finished.
   Existing opt-ins stay off. Shut down the simulator only if this command booted it.
 - Mobile commands default to `/Applications/Xcode.app/Contents/Developer`. Set `DEVELOPER_DIR`
   to another installed Xcode if needed. Require Swift 6.4 and an iOS 27+ SDK, a Duo runtime for
