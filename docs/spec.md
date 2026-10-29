@@ -146,6 +146,9 @@ SwiftPM and XCTest descendants, prints their stacks and uploads diagnostics befo
 The job's twenty-minute limit remains unchanged. It runs ChannelClient with
 `LIBDISPATCH_COOPERATIVE_POOL_STRICT=1` before the full suite, so test gates must suspend rather than
 block a cooperative worker.
+The iOS gate stops a suite that prints nothing for three minutes, well inside its 25-minute job. It
+prints the call graph of that suite's own `xctest` process and the suites and tests that started
+without finishing, then ends the process before the simulator shuts down. It never retries.
 
 Every normal bundle embeds `Contents/PlugIns/ToyBoxShare.appex`, a SwiftPM executable linked with
 `_NSExtensionMain` for `com.apple.share-services`. Its activation rules accept text, URLs, images
