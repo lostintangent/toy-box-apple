@@ -140,10 +140,12 @@ struct TransportTests {
             try .stream([.init(type: "resumed", presence: ["test": .init(state: "working")])])
         }
         let store = ChannelStore(id: "test", api: try mock.api(),
-                                 reconnectPolicy: .init(initialDelay: 5), sendJournal: nil)
+                                 reconnectPolicy: .init(initialDelay: 5, grace: 0), sendJournal: nil)
         store.connect()
         defer { store.disconnect() }
-        try await eventually { store.phase.message != nil }
+        try await eventually {
+            store.phase.message.map { $0 != ChannelStore.unansweredConnect } ?? false
+        }
         try await eventually(observing: mock) { mock.stops == 1 }
         #expect(mock.requests.count == 1)
     }
@@ -193,10 +195,10 @@ struct TransportTests {
             try .stream([.init(type: "snapshot", state: initial)], keepOpen: false)
         }
         let store = ChannelStore(id: "test", api: try mock.api(),
-                                 reconnectPolicy: .init(initialDelay: 5), sendJournal: nil)
+                                 reconnectPolicy: .init(initialDelay: 5, grace: 0), sendJournal: nil)
         store.connect()
         defer { store.disconnect() }
-        try await eventually { store.phase.message != nil }
+        try await eventually { store.phase.message == ChannelAPIError.streamEnded.localizedDescription }
         #expect(store.state?.messages.count == 1)
         await #expect(throws: ChannelAPIError.disconnected) { try await store.post(content: "Not sent") }
         #expect(mock.requests.count == 1)

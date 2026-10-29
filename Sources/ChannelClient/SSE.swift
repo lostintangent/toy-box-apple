@@ -198,10 +198,14 @@ private func validate(_ event: ChannelObservationEvent) throws {
 public struct ReconnectPolicy: Sendable {
     public var initialDelay: TimeInterval
     public var maximumDelay: TimeInterval
+    /// How long a channel keeps trying to get live before it reports `.stale`. Until then it stays
+    /// `.connecting`, so a quick reconnect after coming back to the app shows no notice.
+    public var grace: TimeInterval
 
-    public init(initialDelay: TimeInterval = 0.5, maximumDelay: TimeInterval = 15) {
+    public init(initialDelay: TimeInterval = 0.5, maximumDelay: TimeInterval = 15, grace: TimeInterval = 3) {
         self.initialDelay = initialDelay
         self.maximumDelay = maximumDelay
+        self.grace = grace
     }
 
     public func delay(attempt: Int) -> TimeInterval {

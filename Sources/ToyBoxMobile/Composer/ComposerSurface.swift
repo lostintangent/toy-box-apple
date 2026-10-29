@@ -27,7 +27,6 @@ struct ComposerSurface: View {
     @ViewState private var dismissedCompletion: ChannelMentionContext?
     @ViewState private var completionHeight: CGFloat = 264
     @ViewState private var completionViewportHeight: CGFloat = 0
-    @ViewState private var connectionGrace = ConnectGrace()
     @ViewState private var keyboardIsVisible = false
 
     private var draft: ComposerDraft { session.draft }
@@ -60,7 +59,7 @@ struct ComposerSurface: View {
     private var hasNotices: Bool {
         draft.error != nil || composer.error != nil || store.attemptPersistenceError != nil
             || draft.text.utf16.count > 12_000 || session.isLoadingImages
-            || connectionGrace.explains(store.phase, for: draftID) || composer.attempt?.canRetry == true
+            || store.phase.isUnavailable || composer.attempt?.canRetry == true
             || dictation.notice != nil
     }
 
@@ -167,7 +166,6 @@ struct ComposerSurface: View {
         .task(id: scenePhase) {
             if scenePhase == .active, !isReaderCovered { await dictation.refreshLanguageSupport() }
         }
-        .task(id: store.phase) { await connectionGrace.watch(store.phase, for: draftID) }
         .confirmationDialog("Keep your current draft?", isPresented: Binding(
             get: { composer.pendingEdit != nil },
             set: { if !$0 { composer.pendingEdit = nil } }
@@ -364,7 +362,7 @@ struct ComposerSurface: View {
                 case .noMicrophone: Label(notice.text, systemImage: "mic.slash")
                 }
             }
-            if connectionGrace.explains(store.phase, for: draftID) {
+            if store.phase.isUnavailable {
                 Label(store.phase == .deleted ? "This channel was deleted. Copy your draft somewhere safe."
                       : "Reconnect before sending so the audience is current.", systemImage: "wifi.slash")
                 if store.phase != .deleted { Button("Reconnect") { store.reconnect() } }

@@ -20,12 +20,6 @@ struct AuxiliaryComposer: View {
     var focusID: UUID? = nil
     var incomingContentNotice: String? = nil
 
-    private struct ConnectionWait: Equatable {
-        let phase: ChannelConnectionPhase
-        let presentationID: UUID
-        let isPresented: Bool
-    }
-
     @Environment(\.channelTextScale) private var textScale
     @ViewState private var inputHeight: CGFloat = 84
     @ViewState private var dragging = false
@@ -33,7 +27,6 @@ struct AuxiliaryComposer: View {
     @ViewState private var focusRequest = UUID()
     @ViewState private var dictation = ComposerDictation()
     @ViewState private var finalizing = false
-    @ViewState private var connectGrace = ConnectGrace()
     @ViewState private var noticeHeight: CGFloat = 0
     @ViewState private var imageHeight: CGFloat = 92
 
@@ -111,10 +104,6 @@ struct AuxiliaryComposer: View {
             }
         }
         .onDisappear { dictation.deactivate() }
-        .task(id: ConnectionWait(phase: store.phase, presentationID: presentationID, isPresented: isPresented)) {
-            if isPresented { await connectGrace.watch(store.phase, for: draftID) }
-            else { connectGrace.reset() }
-        }
     }
 
     private var editor: some View {
@@ -218,7 +207,7 @@ struct AuxiliaryComposer: View {
             if let error = session.error, session.deliveryNotice == nil { Text(error).foregroundStyle(.primary) }
             if let notice = dictation.notice { Text(notice.text) }
             if draft.text.utf16.count > 12_000 { Text("Messages are limited to 12,000 characters.") }
-            if connectGrace.explains(store.phase, for: draftID) {
+            if store.phase.isUnavailable {
                 HStack(alignment: .firstTextBaseline) {
                     Text(connectionText)
                     Spacer(minLength: 0)
@@ -241,7 +230,6 @@ struct AuxiliaryComposer: View {
             return draft.isSavedLocally ? "This channel is no longer available. Your draft is saved."
                 : "This channel is no longer available. This draft could not be saved. Copy it somewhere safe."
         }
-        if ConnectGrace.isConnecting(store.phase) { return "Connecting…" }
         return draft.isSavedLocally ? "Offline. Your draft stays on this Mac."
             : "Offline. This draft could not be saved. Copy it somewhere safe."
     }
@@ -257,7 +245,6 @@ struct AuxiliaryComposer: View {
 
     private func updatePresentation() {
         if isPresented {
-            connectGrace.reset()
             session.beginPresentation()
             registerDraft()
             dictation.activate()

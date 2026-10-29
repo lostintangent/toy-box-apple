@@ -1741,10 +1741,12 @@ readable explicitly require reattachment, and must not appear ready to send.
 
 Editing remains available while offline, an intentional native improvement. Send and management
 mutations are unavailable until live state is established. Explain the reason next to the input
-rather than using disabled controls alone. Every channel switch reconnects, so a connect that goes
-live within a second shows no explanation and the composer doesn't jump. A slower connect, a stale
-connection or a deleted channel explains it. A stale snapshot must never determine a new send's
-audience without reconnection.
+rather than using disabled controls alone. A channel that is connecting or reconnecting says
+nothing, so switching channels or coming back to the app never flashes an explanation and the
+composer doesn't jump. The explanation appears only once the channel has tried for about three
+seconds without getting live, including a connect that hangs, or at once for a deleted channel.
+Time away from the app never counts toward those seconds. A stale snapshot must never determine a
+new send's audience without reconnection.
 
 Submitting creates one optimistic row with "Sending". A committed echo replaces it by UUID.
 On a definite rejection, retain the draft and mark the row "Not sent". On timeout or lost response,
@@ -2332,7 +2334,7 @@ navigation keeps list focus until explicitly moving into the conversation.
 | First channel snapshot | Static message placeholders and "Connecting". Composer shell remains present, Send unavailable |
 | New empty channel | "Your lead is getting started", "Send a message or type @ to add an agent". Keep composer and working status visible |
 | Filter has no messages | "No messages for you yet", Show All Messages. Keep paging older history until exhausted |
-| Reconnecting with cached state | Keep transcript and scroll intact. A 32-point inline banner below toolbar says "Reconnecting. Messages may be out of date" with Retry. Disable delivery, not editing |
+| Reconnecting with cached state | Keep transcript and scroll intact. After about three seconds of trying without getting live, a 32-point inline banner below toolbar says "Reconnecting. Messages may be out of date" with Retry. A reconnect that goes live sooner shows nothing. Disable delivery, not editing |
 | Disconnected without any state | `wifi.exclamationmark`, "Can't connect to Toy Box", server host, readable failure, Retry and Settings |
 | Catalog refresh fails | Keep existing rows, mark them stale and show the error block above the connection footer's orange status line (see Sidebar). Never replace them with "No channels" |
 | Failed send | Inline error above composer and explicit status on optimistic row, preserved text/attachments, no automatic retry |

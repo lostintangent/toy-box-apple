@@ -456,9 +456,12 @@ Edit only files you own. Ask the owner for anything else in the channel.
 - `AgentAvatarView`, `AgentAvatarStack`, `ChannelMark`, `ChannelTaskColors`, `ChannelColors`,
   `ChannelAttentionStyle` and `TranscriptSurface` (ToyBoxUI) preserve the Mac's identity and colors.
   Typography, navigation and layout stay platform-native.
-- `ComposerDraft`, `ComposerImage`, `ConnectGrace` and `ChannelConnections` live in ChannelClient.
+- `ComposerDraft`, `ComposerImage` and `ChannelConnections` live in ChannelClient.
   Supply a native image-readability check to the shared draft. Mac uses its existing lazy NSImage
   validation and iPhone uses UIImage. Keep persistence keys and send-attempt identity unchanged.
+- `ChannelStore` stays `.connecting` through connects and quick retries, and reports `.stale` only
+  after `ReconnectPolicy.grace` of trying without getting live. Idle time never counts. Composers
+  and banners explain only `phase.isUnavailable` (`.stale` or `.deleted`), never with a view timer.
 - `channelMatchesQuery` (ChannelKit) matches name, purpose and directory. Callers retain their
   existing query normalization and ordering. `ChannelAPI.channelURL(channelID:files:)` builds
   browser routes, preserving deployment prefixes. `SidebarConnection` (ToyBoxUI) projects the

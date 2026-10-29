@@ -4,12 +4,22 @@ import Observation
 
 public enum ChannelConnectionPhase: Equatable, Sendable {
     case idle
+    /// Connecting or reconnecting, quietly, for up to the reconnect policy's grace.
     case connecting
     case live
+    /// The channel has tried for longer than the grace without getting live.
     case stale(message: String, retryAt: Date)
     case deleted
 
     public var isLive: Bool { self == .live }
+    /// Whether the channel can't get live or was deleted. A composer explains why Send is off only
+    /// then, and says nothing while the channel is idle or connecting.
+    public var isUnavailable: Bool {
+        switch self {
+        case .stale, .deleted: true
+        case .idle, .connecting, .live: false
+        }
+    }
     public var message: String? {
         guard case .stale(let message, _) = self else { return nil }
         return message
@@ -76,6 +86,10 @@ public final class ChannelStore {
 
     @ObservationIgnored private var observation: Task<Void, Never>?
     @ObservationIgnored private var generation = UUID()
+    /// Ends a quiet `.connecting` period once it outlasts the reconnect policy's grace.
+    @ObservationIgnored private var grace: Task<Void, Never>?
+    /// The latest failure during the quiet period, which `phase` reports if the grace runs out.
+    @ObservationIgnored private var quietFailure: ChannelConnectionPhase?
     @ObservationIgnored private var capturedUnread = false
     @ObservationIgnored private var historyGeneration = UUID()
     @ObservationIgnored private var markingRead = false
@@ -94,7 +108,10 @@ public final class ChannelStore {
         self.sendJournal = sendJournal
     }
 
-    deinit { observation?.cancel() }
+    deinit {
+        observation?.cancel()
+        grace?.cancel()
+    }
 
     /// Starts the stream and the outbox restore at once. Events are read off the main actor and
     /// each one is queued for it as soon as it decodes. Iterating the stream from the main actor
@@ -104,7 +121,7 @@ public final class ChannelStore {
         guard observation == nil, phase != .deleted else { return }
         generation = UUID()
         let token = generation
-        phase = .connecting
+        beginTrying(token: token)
         let restore = attemptsRestored ? nil : restoreSendAttemptsConcurrently()
         let trace = api.observationTrace
         var first: AsyncThrowingStream<ChannelObservationEvent, any Error>? =
@@ -151,10 +168,41 @@ public final class ChannelStore {
     private func scheduleReconnect(after error: any Error, attempt: Int, token: UUID) -> TimeInterval? {
         guard !Task.isCancelled, generation == token else { return nil }
         let delay = reconnectPolicy.delay(attempt: attempt)
-        phase = .stale(message: error.localizedDescription, retryAt: Date.now.addingTimeInterval(delay))
+        let failure = ChannelConnectionPhase.stale(message: error.localizedDescription,
+                                                   retryAt: Date.now.addingTimeInterval(delay))
+        switch phase {
+        case .live:
+            beginTrying(token: token)
+            quietFailure = failure
+        case .connecting: quietFailure = failure
+        case .stale: phase = failure
+        case .idle, .deleted: break
+        }
         api.observationTrace?(.reconnectScheduled(attempt: attempt, delay: delay, after: state?.revision))
         return delay
     }
+
+    /// Says `.connecting` until the channel gets live, or until it has tried for the grace without
+    /// getting live, which reports the latest failure as `.stale`. Only trying counts, never idle.
+    private func beginTrying(token: UUID) {
+        stopTrying()
+        phase = .connecting
+        let grace = reconnectPolicy.grace
+        self.grace = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(grace))
+            guard !Task.isCancelled, let self, generation == token, phase == .connecting else { return }
+            self.grace = nil
+            phase = quietFailure ?? .stale(message: Self.unansweredConnect, retryAt: .now)
+        }
+    }
+
+    private func stopTrying() {
+        grace?.cancel()
+        grace = nil
+        quietFailure = nil
+    }
+
+    static let unansweredConnect = "The server hasn't responded yet. Still trying."
 
     private func resumeObservation(token: UUID) -> AsyncThrowingStream<ChannelObservationEvent, any Error>? {
         guard !Task.isCancelled, generation == token else { return nil }
@@ -166,6 +214,7 @@ public final class ChannelStore {
         generation = UUID()
         observation?.cancel()
         observation = nil
+        stopTrying()
         if phase != .deleted { phase = .idle }
     }
 
@@ -524,6 +573,7 @@ public final class ChannelStore {
 
     func apply(_ event: ChannelObservationEvent) throws -> Bool {
         if event.type == "deleted" {
+            stopTrying()
             phase = .deleted
             observation = nil
             return true
@@ -551,6 +601,7 @@ public final class ChannelStore {
             if event.type == "resumed" {
                 for attempt in sendAttempts where attempt.phase == .confirmed { reconcileSend(id: attempt.id) }
             }
+            stopTrying()
             phase = .live
         }
         return false
