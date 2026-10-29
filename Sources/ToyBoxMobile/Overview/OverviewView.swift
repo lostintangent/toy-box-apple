@@ -23,12 +23,11 @@ struct OverviewView: View {
                         description: Text(store.phase == .deleted
                                           ? "This channel is no longer available."
                                           : "Overview appears when the channel connects."))
-                        .overlay(alignment: .topTrailing) {
-                            OverviewRootActions(store: store).padding(.trailing, 16).padding(.top, 12)
-                        }
                 }
             }
-            .toolbar(.hidden, for: .navigationBar)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar(placement == .sheet ? .visible : .hidden, for: .navigationBar)
+            .toolbar { closeItem }
             .navigationDestination(for: OverviewRoute.self) { route in
                 Group {
                     switch route {
@@ -41,11 +40,7 @@ struct OverviewView: View {
                 }
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar(.visible, for: .navigationBar)
-                .toolbar {
-                    ToolbarItem(placement: .primaryAction) {
-                        OverviewRootActions(store: store)
-                    }
-                }
+                .toolbar { closeItem }
             }
         }
         .sheet(item: Binding(
@@ -60,46 +55,18 @@ struct OverviewView: View {
             }
         }
     }
-}
 
-struct OverviewRootActions: View {
-    let store: ChannelStore
-    var controlHeight: CGFloat = 44
-    @Environment(ChannelInteraction.self) private var interaction
-    @Environment(ManagementPresenter.self) private var management
-
-    var body: some View {
-        HStack(spacing: 0) {
-            Menu {
-                ChannelFollowMenuAction(store: store)
-                Section {
-                    Button("Edit Channel", systemImage: "pencil") {
-                        management.present(.editChannel(channelId: store.id))
-                    }
-                    .disabled(!store.phase.isConnected)
-                    Button("Delete Channel", systemImage: "trash", role: .destructive) {
-                        management.present(.deleteChannel(channelId: store.id))
-                    }
-                    .disabled(!store.phase.isConnected)
+    /// The sheet's system close button. The landscape column has none, because the channel's
+    /// Overview button closes it, like the sidebar.
+    @ToolbarContentBuilder
+    private var closeItem: some ToolbarContent {
+        if placement == .sheet {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("Close Overview", systemImage: "xmark", role: .close) {
+                    interaction.isInspectorPresented = false
                 }
-            } label: {
-                Label("Channel Actions", systemImage: "ellipsis")
-                    .frame(minWidth: 44, minHeight: controlHeight)
-                    .contentShape(Rectangle())
-            }
-            .accessibilityIdentifier("overview-channel-actions")
-            Button(role: .close) {
-                interaction.isInspectorPresented = false
-            } label: {
-                Label("Close Overview", systemImage: "xmark")
-                    .frame(minWidth: 44, minHeight: controlHeight)
-                    .contentShape(Rectangle())
             }
         }
-        .fixedSize()
-        .labelStyle(.iconOnly)
-        .font(.system(size: 17))
-        .buttonStyle(.borderless)
     }
 }
 

@@ -120,7 +120,7 @@ struct ManagementTests {
     }
 
     @Test(arguments: [248, 296, 368])
-    func truncatedPurposeEndsAtAWordAndLeavesRoomForMore(_ width: Int) throws {
+    func truncatedPurposeEndsAtAWordAndLeavesRoomForShowMore(_ width: Int) throws {
         let purpose = String(repeating: "Build a beautifully designed native Mac client for channels. ", count: 6)
         #expect(OverviewPurpose.truncated("A short purpose.", width: CGFloat(width), fontSize: 13) == nil)
         let prefix = try #require(OverviewPurpose.truncated(purpose, width: CGFloat(width), fontSize: 13))
@@ -129,9 +129,9 @@ struct ManagementTests {
         #expect(prefix.last.map { !$0.isWhitespace } == true)
         let next = purpose[purpose.index(purpose.startIndex, offsetBy: prefix.count)]
         #expect(next.isWhitespace)
-        #expect(!OverviewPurpose.requiresExpansion(prefix + "\u{2026} More", width: CGFloat(width), fontSize: 13))
+        #expect(!OverviewPurpose.requiresExpansion(prefix + "\u{2026} Show More", width: CGFloat(width), fontSize: 13))
         let longer = purpose.prefix(prefix.count + 12)
-        #expect(OverviewPurpose.requiresExpansion(longer + "\u{2026} More", width: CGFloat(width), fontSize: 13))
+        #expect(OverviewPurpose.requiresExpansion(longer + "\u{2026} Show More", width: CGFloat(width), fontSize: 13))
     }
 
     @Test func finishingMemberCreationDismissesOnlyTheMatchingSheet() {

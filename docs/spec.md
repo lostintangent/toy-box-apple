@@ -1853,31 +1853,39 @@ heading button.
 Separators appear only between rows, never below a group's final row. Preserve native
 navigation, swipe actions, task guides, disclosure, retained scroll and actual Tasks reveal.
 
-Remove the root Overview title bar without reserving its empty height. Keep Close and the
-channel-actions menu as icon-only top-right controls with full minimum-44 targets and retained
-accessible names. At default text size, their top is exactly 12 points below the safe content
-edge, with the purpose's first line vertically centered on that control row. At accessibility
-sizes, retain the native extra top inset within 12–24 points and preserve first-line alignment.
-Never render the control titles beside the purpose. Folder and Preview use the full content
-width below. All opening information stays outside cards. Retain the Overview accessibility
-label, native sheet dismissal, nested agent/task navigation and the same behavior in both
-presentations.
+The phone sheet's close is the system `Button(role: .close)` glass X, trailing in Overview's own
+inline navigation bar with no title, labeled "Close Overview". It sits on the root and on every
+pushed page and stays pinned while the content scrolls beneath it. UIKit owns its glass, size,
+hit target and placement: on the folded Duo it joins the trailing column beside the status bar,
+as every trailing bar item does there. The landscape inspector
+column has no close and keeps its root bar hidden, because the channel toolbar's Overview button
+closes it, like the sidebar. Overview has no channel-actions menu: Follow, Edit Channel and
+Delete Channel live in the channel's Channel Actions menu. The purpose starts 12 points below
+the bar (or the column's safe content edge) at every text size, using the full content width,
+and Folder and Preview use the full width below it. All opening information stays outside cards.
+Retain the Overview accessibility label, native sheet dismissal, nested agent/task navigation
+and the same content in both presentations.
 Apply the compact 16-point / regular 20-point outer rail once, without the old compounded
 44-point list margin. Treat purpose, folder and Preview as the headerless first section.
 Use one 24-point section-gap constant from that block's last row to Team and between every
 pair of sections, whether collapsed or expanded. This replaces the earlier 16-point opening
-gap and 12-point collapsed gap. At Large, keep 16 points from purpose to details, 8 from the
-folder button to Preview, and 4 from heading to content.
-More/Less stays minimum 44 with no extra spacer above it. Omit absent content and its gaps.
+gap and 12-point collapsed gap. At Large, keep 16 points from purpose to details and 4 from
+heading to content. Folder and Preview stack with no gap, so their 44-point rows read as a pair.
+Show More/Show Less is quiet footnote-semibold secondary text, matching the transcript's toggle,
+and stays minimum 44 with no extra spacer above it. Omit absent content and its gaps.
 Headings and rows grow with Dynamic Type. Mac container geometry stays unchanged.
 
-On the phone, Folder is one minimum-44-point button showing the folder icon and name. A tap
-copies the original full server path, briefly changes the label to a checkmark and "Copied",
-and gives success sensory feedback. VoiceOver reads "Folder, {name}" with the hint "Copies the
-full path". A long-press context menu is titled with the full path and offers Copy Path. Do
-not show "Folder on Mac", a path row or a separate copy button. Screen Preview has only its
-icon and title, with no window/display identity line. URL previews keep their address line.
+On the phone, Folder is a minimum-44-point row of plain primary text, never link ink: the
+`folder` icon and name, then a trailing `doc.on.doc` copy button in secondary glyph ink with a
+44 x 44 target. The button copies the original full server path, briefly replaces its symbol with
+a checkmark and gives success sensory feedback. VoiceOver reads the row as "Folder, {name}" and
+the button as "Copy Path", valued "Copied" while the checkmark shows. A long-press context menu
+on the row is titled with the full path and offers Copy Path. Do not show "Folder on Mac" or a
+path row. Screen Preview has only its icon and title, with no window/display identity line.
+URL previews keep their address line.
 Folder and Preview symbols share monochrome rendering rather than a mixed outline/filled palette.
+On the phone both symbols draw in primary foreground ink. The Preview title is About's one real
+link, so it alone keeps link ink. The Mac already draws both in the property rows' secondary ink.
 Both sidebars and Overviews use one shared folder-name rule: `NSString.lastPathComponent`,
 falling back to the original path if the component is empty, without expanding or resolving it.
 
@@ -1926,8 +1934,9 @@ sections belong to the Mac window scene, not channel, and to the phone's retaine
 Overview session. Empty sections stay with "No tasks yet", "Nothing shared yet" or "No routines".
 
 **About.** The purpose is 13 regular primary, about 18-point line height, at most 4 lines, then
-an inline "More" link that expands in place ("Less" collapses it). A missing purpose reads "Add
-a purpose…" in secondary and opens Edit Channel. Below it, 10 points down, come compact property
+an inline "Show More" link in quiet secondary ink that expands in place ("Show Less" collapses
+it), matching the transcript's toggle. Truncation leaves room for "… Show More" on the fourth
+line. A missing purpose reads "Add a purpose…" in secondary and opens Edit Channel. Below it, 10 points down, come compact property
 rows, each 22 high: an 18-point secondary SF Symbol column, a 6-point gap and a 12-point value.
 
 - Folder: `folder` and the shared folder name, middle-truncated and selectable. Keep the original
@@ -1950,12 +1959,12 @@ padding: a 24-point avatar, a 10-point gap, then the name in 13 regular primary 
 11-point status, 1 point apart. Status truncates at the tail with the full text in help.
 
 Phone keeps its 38-point content minimum, 12-point avatar/text gap, 2-point name/status gap
-and existing scaled avatar capped at 36. Ordinary text sizes use explicit 14-point native
-vertical row insets, 1 point less at each edge than the measured 15-point system defaults,
-making each row exactly 2 points shorter. Accessibility sizes retain the system's native
-insets and wrapping. Every navigation target remains at least 44 points high. Mac is unchanged.
+and existing scaled avatar capped at 36. Ordinary text sizes use explicit 13.5-point vertical
+row insets, making each row exactly 3 points shorter than the measured 15-point system
+defaults. Accessibility sizes use 14.5, 1 point shorter, and keep native wrapping. Snug, never
+cramped: every navigation target remains at least 44 points high. Mac is unchanged.
 Phone Add Agent uses the same 38-point content minimum and vertical spacing, matching a member
-row's height exactly at default text size. Its 14-point ordinary / measured 15-point accessibility
+row's height exactly at default text size. Its 13.5-point ordinary / 14.5-point accessibility
 padding belongs inside the button, with zero native vertical row insets, so the whole row is
 tappable and its accessible target spans that height. Its label grows and wraps without clipping.
 

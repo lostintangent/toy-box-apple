@@ -238,9 +238,10 @@ private struct OverviewAbout: View {
     }
 }
 
-/// Up to four lines of purpose with an inline More link that expands in place.
+/// Up to four lines of purpose with an inline Show More link that expands in place.
 struct OverviewPurpose: View {
     static let lineLimit = 4
+    static let showMore = "Show More"
     private static let toggleURL = URL(string: "toybox-overview:purpose")!
 
     @Environment(\.channelTextScale) private var textScale
@@ -267,9 +268,11 @@ struct OverviewPurpose: View {
             .lineLimit(expanded ? nil : Self.lineLimit)
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
+            // The purpose is plain text, so its only link is the quiet secondary toggle.
+            .tint(.secondary)
         Group {
             // Selectable text routes link clicks to its own text view, so a purpose that carries
-            // the More or Less link stays plain and offers Copy from its context menu instead.
+            // the Show More or Show Less link stays plain and offers Copy from its context menu instead.
             if truncated != nil || collapsible {
                 label.contextMenu {
                     Button("Copy Purpose") {
@@ -300,10 +303,10 @@ struct OverviewPurpose: View {
         var text: AttributedString
         if let truncated {
             text = AttributedString(truncated + "… ")
-            link = AttributedString("More")
+            link = AttributedString(Self.showMore)
         } else if collapsible {
             text = AttributedString(purpose + " ")
-            link = AttributedString("Less")
+            link = AttributedString("Show Less")
         } else {
             return AttributedString(purpose)
         }
@@ -317,13 +320,13 @@ struct OverviewPurpose: View {
         return lineCount(text, width: width, fontSize: fontSize, stoppingAfter: lineLimit) > lineLimit
     }
 
-    /// The longest prefix that still fits in four lines with "… More" after it, or nil when the purpose fits.
+    /// The longest prefix that still fits in four lines with "… Show More" after it, or nil when the purpose fits.
     static func truncated(_ text: String, width: CGFloat, fontSize: CGFloat) -> String? {
         guard requiresExpansion(text, width: width, fontSize: fontSize) else { return nil }
         let characters = Array(text)
         func fits(_ count: Int) -> Bool {
             let prefix = String(characters[..<count]).trimmingCharacters(in: .whitespacesAndNewlines)
-            return lineCount(prefix + "… More", width: width, fontSize: fontSize, stoppingAfter: lineLimit)
+            return lineCount(prefix + "… " + showMore, width: width, fontSize: fontSize, stoppingAfter: lineLimit)
                 <= lineLimit
         }
         var low = 0
