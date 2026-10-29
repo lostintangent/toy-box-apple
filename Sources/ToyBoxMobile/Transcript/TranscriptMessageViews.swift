@@ -382,12 +382,6 @@ enum TranscriptInk {
     })
 }
 
-extension Glass {
-    /// Regular glass alone lets bright images show through under white text, so floating
-    /// transcript controls tint it toward the background, matching the composer.
-    static var transcriptFloating: Glass { .regular.tint(Color(uiColor: .systemBackground).opacity(0.3)) }
-}
-
 struct TranscriptTimestamp: View {
     let timestamp: String
 
