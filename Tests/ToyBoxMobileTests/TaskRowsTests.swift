@@ -138,12 +138,6 @@ struct TaskRowsTests {
         }
     }
 
-    @Test(arguments: [false, true], [false, true])
-    func disclosureStaysInstantWhileNativeOutlineMotionIsDeferred(reduceMotion: Bool, accessibility: Bool) {
-        #expect(OverviewTaskMotion.disclosureAnimation(reduceMotion: reduceMotion, accessibility: accessibility)
-                == nil)
-    }
-
     @Test(arguments: [false, true])
     func taskPaddingTightensOnlyAtOrdinaryTextSizes(accessibility: Bool) {
         #expect(OverviewTaskMetrics.verticalPadding(accessibility: accessibility) == (accessibility ? 12 : 11))

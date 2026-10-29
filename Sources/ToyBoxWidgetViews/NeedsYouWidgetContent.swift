@@ -14,14 +14,12 @@ package struct NeedsYouEntry: TimelineEntry {
 
 package struct NeedsYouWidgetContent: View {
     let entry: NeedsYouEntry
-    let family: WidgetFamily
     let replyTargetSize: CGFloat
     let maximumRequests: Int?
+    @Environment(\.widgetFamily) private var family
 
-    package init(entry: NeedsYouEntry, family: WidgetFamily,
-                 replyTargetSize: CGFloat = 28, maximumRequests: Int? = nil) {
+    package init(entry: NeedsYouEntry, replyTargetSize: CGFloat = 28, maximumRequests: Int? = nil) {
         self.entry = entry
-        self.family = family
         self.replyTargetSize = replyTargetSize
         self.maximumRequests = maximumRequests
     }

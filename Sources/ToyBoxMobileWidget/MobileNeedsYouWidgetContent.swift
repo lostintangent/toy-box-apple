@@ -22,21 +22,17 @@ struct MobileNeedsYouWidgetContent: View {
     private var state: MobileNeedsYouState { .init(entry: entry) }
 
     var body: some View {
-        Group {
-            if family == .accessoryRectangular {
-                lockScreen
-            } else {
-                homeScreen
-            }
+        if family == .accessoryRectangular {
+            lockScreen
+        } else {
+            homeScreen
         }
-        .widgetURL(destination)
     }
 
     private var homeScreen: some View {
         ViewThatFits(in: .vertical) {
             ForEach(rowLimits, id: \.self) { limit in
-                NeedsYouWidgetContent(entry: entry, family: family,
-                                      replyTargetSize: 44, maximumRequests: limit)
+                NeedsYouWidgetContent(entry: entry, replyTargetSize: 44, maximumRequests: limit)
             }
         }
     }
@@ -47,15 +43,6 @@ struct MobileNeedsYouWidgetContent: View {
         case .systemMedium: [2, 1]
         default: [1]
         }
-    }
-
-    private var destination: URL {
-        guard family == .systemSmall, state == .waiting,
-              let snapshot = entry.snapshot, let request = snapshot.requests.first else {
-            return NeedsYouSnapshot.mainURL
-        }
-        return NeedsYouRequestLink(serverURL: snapshot.serverURL, channelID: request.channelID,
-                                   sequence: request.sequence).url ?? NeedsYouSnapshot.mainURL
     }
 
     private var lockScreen: some View {
@@ -83,5 +70,6 @@ struct MobileNeedsYouWidgetContent: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .widgetURL(NeedsYouSnapshot.mainURL)
     }
 }

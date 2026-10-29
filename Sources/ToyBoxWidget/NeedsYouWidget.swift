@@ -26,20 +26,11 @@ struct NeedsYouWidget: Widget {
 
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: kind, provider: NeedsYouProvider()) { entry in
-            NeedsYouWidgetView(entry: entry)
+            NeedsYouWidgetContent(entry: entry)
                 .containerBackground(.background, for: .widget)
         }
         .configurationDisplayName("Toy Box")
         .description("See which channels need your attention.")
         .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
-    }
-}
-
-struct NeedsYouWidgetView: View {
-    let entry: NeedsYouEntry
-    @Environment(\.widgetFamily) private var family
-
-    var body: some View {
-        NeedsYouWidgetContent(entry: entry, family: family)
     }
 }
