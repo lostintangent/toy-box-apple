@@ -237,7 +237,7 @@ struct OverviewTests {
     }
 
     @Test(arguments: DynamicTypeSize.allCases)
-    func teamRowsAreThreePointsShorterAtOrdinarySizesAndOneAtAccessibilitySizes(
+    func teamRowsAreFivePointsShorterAtOrdinarySizesAndThreeAtAccessibilitySizes(
         size: DynamicTypeSize
     ) async throws {
         let store = ChannelStore(id: "channel", api: try ChannelAPI(serverURL: "https://fixture.example"),
@@ -274,7 +274,7 @@ struct OverviewTests {
         let tightened = try #require(list.layoutAttributesForItem(at: IndexPath(item: 1, section: 0))).frame
         let addAgent = try #require(list.layoutAttributesForItem(at: IndexPath(item: 2, section: 0))).frame
         let native = try #require(list.layoutAttributesForItem(at: IndexPath(item: 0, section: 1))).frame
-        let reduction: CGFloat = size.isAccessibilitySize ? 1 : 3
+        let reduction: CGFloat = size.isAccessibilitySize ? 3 : 5
         #expect(tightened.width == native.width && tightened.height >= 44)
         #expect(abs(native.height - tightened.height - reduction) < 0.01,
                 "Tightened row \(tightened), native row \(native)")
@@ -289,7 +289,7 @@ struct OverviewTests {
         #expect(abs(button.frame.height - addAgent.height) < 0.01)
         let body = UIFont.preferredFont(forTextStyle: .body, compatibleWith:
             UITraitCollection(preferredContentSizeCategory: UIContentSizeCategory(size)))
-        #expect(addAgent.height >= body.lineHeight + (size.isAccessibilitySize ? 29 : 27))
+        #expect(addAgent.height >= body.lineHeight + (size.isAccessibilitySize ? 27 : 25))
     }
 
     @Test(arguments: [DynamicTypeSize.large, .accessibility5])
