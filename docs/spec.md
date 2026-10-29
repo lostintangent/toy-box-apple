@@ -1334,15 +1334,17 @@ code, inline code and tables, with selectable text. Code blocks offer Copy Code,
 scroll horizontally. Never execute HTML, scripts or embedded remote content from Markdown.
 
 Only coordination entries marked collapsible truncate, at 160 points of body text, with a subtle
-24-point bottom fade and Show More. Show Less returns to that same anchored row. Messages for the
+24-point bottom fade and Show More. Show More and Show Less are quiet secondary text, not the
+accent, on both platforms. Show Less returns to that same anchored row. Messages for the
 user and all flagged requests always remain expanded. User-initiated expansion is preserved while
 rows update. The copy action copies the original full message, including its leading mentions.
 
-On the phone, a Show More/Less footer occupies 44 points total at Large and grows with its
-text at larger Dynamic Type. Center the footnote semibold label vertically and align it to
-the body's leading edge. There is no additional 4-point body/footer gap or 10-point bubble
-padding below that target. Retain 12-point horizontal and 10-point top body padding and the
-24-point fade. Do not shrink the tap target or overlap links in the body. Bubbles without
+On the phone, a Show More/Less footer occupies 40 visible points at Large and grows with its
+text at larger Dynamic Type. Center the footnote semibold label vertically in that footer and
+align it to the body's leading edge. There is no additional 4-point body/footer gap or 10-point
+bubble padding below it. Its 44-point tap target extends 4 points below the bubble, never up
+into the body, so it doesn't overlap links. Retain 12-point horizontal and 10-point top body
+padding and the 24-point fade. Bubbles without
 this action retain their normal bottom padding. Phone mentions follow the identity-ink and
 contrast policy above, not generic primary text.
 

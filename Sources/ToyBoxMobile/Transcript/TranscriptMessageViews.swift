@@ -184,6 +184,7 @@ struct TranscriptAgentMessage: View {
 
     private static let avatarSize: CGFloat = 32
     private static let avatarGap: CGFloat = 8
+    static let footerHeight: CGFloat = 40
 
     var body: some View {
         HStack(alignment: .top, spacing: Self.avatarGap) {
@@ -197,15 +198,22 @@ struct TranscriptAgentMessage: View {
                 if !entry.body.isEmpty {
                     Group {
                         if entry.collapsible {
-                            // Show More's 44pt target is the bubble's footer, so it replaces the bottom padding.
+                            // Show More is the bubble's footer, so it replaces the bottom padding. Its 44pt
+                            // target reaches below the bubble rather than up into the body's links.
                             TranscriptCollapsibleBody(isExpanded: isExpanded, endPadding: 10) {
                                 TranscriptBody(text: entry.body, agents: context.agents, baseURL: context.api.baseURL,
                                                surface: surface, findHighlight: findHighlight)
                             } toggle: {
-                                Button(isExpanded ? "Show Less" : "Show More") { setExpanded(!isExpanded) }
-                                    .font(.footnote.weight(.semibold))
-                                    .frame(minHeight: 44)
-                                    .buttonStyle(.borderless)
+                                Button { setExpanded(!isExpanded) } label: {
+                                    Text(isExpanded ? "Show Less" : "Show More")
+                                        .frame(minHeight: Self.footerHeight)
+                                        .padding(.bottom, 44 - Self.footerHeight)
+                                        .contentShape(.rect)
+                                }
+                                .font(.footnote.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                                .buttonStyle(.borderless)
+                                .padding(.bottom, Self.footerHeight - 44)
                             }
                             .padding(.top, 10)
                         } else {
