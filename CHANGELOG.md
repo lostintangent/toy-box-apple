@@ -1,5 +1,25 @@
 # Changelog
 
+## iPhone 0.1.5
+
+- Connect from a simpler Welcome screen: enter your server, test it, then Continue.
+- Switch servers in Settings as soon as a test of the new address connects.
+- Find Message View first in a channel's overflow menu.
+- Open Tasks from the toolbar, now that the tray above the composer is gone.
+- Pull down to refresh the channel list, which now waits until you let go, without a Refresh button or More menu.
+- Keep Overview open when you rotate or fold the phone. It sits beside the conversation in unfolded landscape and opens as a sheet otherwise.
+- Keep messages marked read when you leave a channel right away.
+- See the Find bar sit just above the keyboard.
+- Open SVG artifacts in Overview faster.
+- Use the system overflow menu and a cleaner page bar in the image gallery.
+- See Settings and setup server rows at the standard row height, and evenly spaced team rows in Overview at every text size.
+
+## Mac 0.1.12
+
+- See Working Now rows in the menu bar inbox line up with your requests, without a separate heading.
+- Choose a channel in Quick Send from a native list that works with the arrow keys, Return and a click anywhere in a row.
+- Keep messages marked read when you close a channel right away.
+
 ## iPhone 0.1.4
 
 - See the New divider above your first unread message when you reopen a channel, instead of landing at the end with everything marked read.
