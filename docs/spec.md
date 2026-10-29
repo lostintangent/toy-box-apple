@@ -1415,7 +1415,7 @@ Older pages load only through reader paging, Find navigation or Reveal.
 Follow incoming messages only while within
 48 points of the end, or immediately after the user's own successful post. If scrolled away, a
 small glass Jump to Latest capsule appears in the floating activity row above the composer.
-It shares that row with the working summary when present. On the phone, those pills and the transient notices use plain regular glass with no tint, like the toolbar, and the conversation's bottom scroll edge is `.hard`, so their labels and the composer's stay legible over bright content. Preserve the visible top message and its offset while prepending history. While reading above the end, rows only move when the reader scrolls: when a row above the viewport changes height, or the lazy stack corrects its estimate for rows it hasn't built yet, the first row starting in the viewport keeps its place, and a row starting in the viewport grows downward. Following the end, landing, jumps, reveals and paging own the position instead. At the top,
+It shares that row with the working summary when present. On the phone, those pills and the transient notices use plain regular glass with no tint, like the toolbar. They and the composer float over the transcript like Messages: the conversation keeps the system's default bottom scroll edge, so rows pass behind the glass right to the screen edge with no band or hairline. Never add `.hard`, a band or a fill behind them. In Dark over a bright image, the placeholder and Find's result count read faintly. That is the accepted cost of floating plain glass. Preserve the visible top message and its offset while prepending history. While reading above the end, rows only move when the reader scrolls: when a row above the viewport changes height, or the lazy stack corrects its estimate for rows it hasn't built yet, the first row starting in the viewport keeps its place, and a row starting in the viewport grows downward. Following the end, landing, jumps, reveals and paging own the position instead. At the top,
 show Load Older Messages when more history is available, a small loading row while fetching, or
 "Couldn't load older messages" with Retry on failure. Once all history is loaded, show no
 "Beginning of conversation" label and reserve no empty header space. A filtered view must
@@ -1596,13 +1596,13 @@ and a circular Close. All three share one 44-point height from one `@ScaledMetri
 two 44-point targets in an 88-point capsule, `chevron.up` and `chevron.down` in primary body
 medium with the system's disabled dimming. Close is `xmark`, labeled "Close Find". The caret is
 the bar's only accent. The folded Duo gives the bar 382 points, measured in the native frame.
-Inside the field, keep a 6-point horizontal inset and a 4-point gap between the magnifier and the
+Inside the field, keep a 7-point horizontal inset and a 4-point gap between the magnifier and the
 query, so all three surfaces share one row.
 Use native body text for the query, the compact prompt "Find" and footnote tabular result digits.
 The field retains the accessible scope "Find in [channel]". Reserve its trailing 84-point status
 slot for every nonempty-query state; a spinner/count/error swap must not resize the field.
-Use real Liquid Glass, not thin material, a painted blur or a custom gradient. The conversation's
-bottom scroll edge is `.hard`, so plain-glass labels stay legible over bright content.
+Use real Liquid Glass, not thin material, a painted blur or a custom gradient. Find floats over
+the conversation's default bottom scroll edge like the composer, with no band or hairline.
 At accessibility sizes or failed measured fit, place the full-width field above the controls.
 Grow with native text rather than shrinking it. If status cannot fit beside a 64-point query
 viewport, allow status to wrap within the same growing field. No separate progress sentence.
@@ -1677,9 +1677,12 @@ read blocking are unchanged.
 14-point top insets, applied once. This is a 4-point increase in each direction, not a change
 to the accepted action-row padding. Keep measured one-to-three-line growth. The placeholder
 uses muted readable-secondary ink rather than primary draft ink and must reach 4.5:1 over
-actual Light/Dark glass. The static audience preview matches the Mac's capsule: 7-point horizontal
-inset, minimum-24 visual height growing with text, neutral secondary at 8% fill, in the existing
-44-point row. Input Needed stays unfilled with the Mac's filled orange question-circle.
+actual Light/Dark glass. The static audience preview matches the Mac's capsule shape: 7-point
+horizontal inset and minimum-24 visual height growing with text, in the existing 44-point row.
+Its fill is `secondarySystemFill` rather than the Mac's 8% secondary, so it reads on plain glass
+in Light and Dark at least as clearly as the disabled Send background. The orange No-one state
+keeps its own fill. Idle Dictate draws its `mic` in primary ink, like Attach Image, so every
+control in the row reads at full contrast over bright content. Input Needed stays unfilled with the Mac's filled orange question-circle.
 
 At larger phone text sizes, measure the full context without truncation. If audience and
 Input Needed cannot fit together, put the audience on its own row and the full wrapping

@@ -116,7 +116,7 @@ struct TranscriptFindAccessory: View {
                 }
             }
         }
-        .padding(.horizontal, 6)
+        .padding(.horizontal, 7)
         .padding(.vertical, 4)
         .frame(minHeight: height)
         .glassEffect(.regular, in: .rect(cornerRadius: height / 2))

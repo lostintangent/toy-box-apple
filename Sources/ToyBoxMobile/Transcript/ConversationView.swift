@@ -272,9 +272,6 @@ struct ConversationView: View {
             .coordinateSpace(.named(Self.space))
         }
         .scrollDismissesKeyboard(.interactively)
-        // The pills and the composer use plain glass, so their labels need the hard edge's backing
-        // over a bright image, like the toolbar's.
-        .scrollEdgeEffectStyle(.hard, for: .bottom)
         .accessibilityIdentifier("conversation-transcript")
         .scrollPosition($position)
         // The conversation owns the generation, so a card that leaves the lazy stack never cancels it.
