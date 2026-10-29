@@ -227,8 +227,10 @@ struct CatalogTests {
             response.keepOpen = true
             return response
         }
+        // The test moves time itself, so however long a held response takes to release never counts.
+        var clock = Date(timeIntervalSince1970: 1_000_000)
         let catalog = ChannelCatalogStore(api: try mock.api(),
-                                          reconnectPolicy: .init(initialDelay: 60, grace: 0.5))
+                                          reconnectPolicy: .init(initialDelay: 60, grace: 3), now: { clock })
         defer { catalog.stopPolling() }
         func finishPoll() async throws {
             try await eventually(observing: mock) { catalog.isFetching && mock.pendingResponseCount == 1 }
@@ -237,6 +239,7 @@ struct CatalogTests {
         }
         catalog.startPolling(interval: 60)
         try await finishPoll()
+        #expect(catalog.phase.failure == nil, "The first failure is within the grace")
         if recovering {
             catalog.setActive(false)
             try await finishPoll()
@@ -245,13 +248,22 @@ struct CatalogTests {
             // Away, as when the phone is in the background.
             catalog.stopPolling()
         }
-        try await Task.sleep(for: .milliseconds(600))
+        clock += 4
         #expect(catalog.phase.failure == nil)
 
         if recovering { catalog.setActive(true) } else { catalog.startPolling(interval: 60) }
         try await finishPoll()
         #expect(catalog.phase.failure == nil, "This failure starts a new quiet period")
         #expect(mock.requests.count == (recovering ? 3 : 2))
+
+        // Two consecutive failing polls past the grace do report.
+        catalog.stopPolling()
+        catalog.startPolling(interval: 60)
+        try await finishPoll()
+        clock += 4
+        catalog.setActive(!catalog.isActive)
+        try await finishPoll()
+        #expect(catalog.phase.failure != nil)
     }
 
     @Test @MainActor func transportCancellationDoesNotBecomeACatalogFailure() async throws {
