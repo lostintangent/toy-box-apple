@@ -264,8 +264,6 @@ comparisons and retained regression contracts are in [docs/test-history.md](docs
 | --- | --- | --- |
 | `ImageViewerLiveTextTests.onlyTheSettledCurrentImageIsAnalyzedAndTheWindowRemembersIt` | `TOY_BOX_TEST_LIVE_TEXT_ANALYSIS=1` | Transcript: identify cause and add deterministic analysis-gating coverage |
 | `imageStripOverflowRespondsToWheelInput` | `TOY_BOX_TEST_IMAGE_STRIP_SCROLLING=1` | Composer: native wheel animation requires awake/unlocked Mac, so keep per-frame/WindowServer checks opt-in |
-| `ChannelArtifactSessionTests.switchingScopeDiscardsTheVisitAndCancelsItsPendingLoad` | `TOY_BOX_TEST_ARTIFACT_SCOPE_TIMING=1` | Core, t340 `artifact-scope-readiness`: capture stalled stage, identify cause, add deterministic scope-replacement coverage |
-| `ChannelArtifactSessionTests.removingAnArtifactDuringLoadingRetainsItsIdentityWithoutPublishingTheResponse` | `TOY_BOX_TEST_ARTIFACT_SCOPE_TIMING=1` | Core, t340 `artifact-removal-readiness`: capture stalled stage, identify cause, add deterministic removal-during-load coverage |
 
 `TransportTests.storeReconnectsFromAppliedRevisionZero` and `recoverySnapshotReplacesCachedHistory`
 are restored to the default gate with immediate/held-response delivery, not
