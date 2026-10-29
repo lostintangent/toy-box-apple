@@ -253,7 +253,7 @@ private struct OverviewAddAgentRow: View {
         }
         .buttonStyle(.plain)
         .disabled(!isConnected)
-        .help(isAvailable ? "Add a member to this channel" : "Reconnect to add a member")
+        .help(isAvailable ? "Add a member to this channel" : "Available when the channel connects")
     }
 }
 

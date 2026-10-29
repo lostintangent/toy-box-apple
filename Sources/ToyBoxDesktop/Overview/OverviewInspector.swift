@@ -46,7 +46,7 @@ private struct OverviewInspectorContent: View {
                     ScrollView {
                         VStack(alignment: .leading, spacing: 0) {
                             if store.phase.isUnavailable {
-                                Label("Overview may be out of date. Reconnect before making changes.",
+                                Label("Overview may be out of date until the channel connects.",
                                       systemImage: "wifi.exclamationmark")
                                     .font(.system(size: 12 * textScale))
                                     .foregroundStyle(.secondary)
@@ -216,7 +216,7 @@ private struct OverviewAbout: View {
                     .font(.system(size: 13 * textScale))
                     .foregroundStyle(.secondary)
                     .disabled(!store.phase.isConnected)
-                    .help(store.phase.isUnavailable ? "Reconnect to edit the channel" : "Edit Channel")
+                    .help(store.phase.isUnavailable ? "Available when the channel connects" : "Edit Channel")
             }
             let preview = details.resolvedPreview
             if details.directory != nil || preview != nil {

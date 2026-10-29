@@ -2,30 +2,6 @@ import ChannelClient
 import ChannelKit
 import SwiftUI
 
-// Keep focus publication stable across native inspector layout passes.
-enum ChannelRefreshTarget: Equatable {
-    case catalog(AppModel)
-    case channel(ChannelStore)
-
-    static func == (lhs: Self, rhs: Self) -> Bool {
-        switch (lhs, rhs) {
-        case (.catalog(let lhs), .catalog(let rhs)): lhs === rhs
-        case (.channel(let lhs), .channel(let rhs)): lhs === rhs
-        default: false
-        }
-    }
-
-    @MainActor @discardableResult
-    func perform() -> Task<Void, Never>? {
-        switch self {
-        case .catalog(let model): return Task { await model.refreshCatalog() }
-        case .channel(let store):
-            store.reconnect()
-            return nil
-        }
-    }
-}
-
 @MainActor
 struct WindowCommandActions {
     var messageView: TranscriptView
@@ -39,7 +15,7 @@ struct WindowCommandActions {
     var toggleSidebar: (() -> Void)?
     var toggleInspector: (() -> Void)?
     var setMessageView: ((TranscriptView) -> Void)?
-    var refresh: (() -> Void)?
+    var refresh: () -> Void
     var nextChannel: ((ChannelNavigation.Direction) -> Void)?
     var nextAttention: (() -> Void)?
     var focusComposer: (() -> Void)?
@@ -51,8 +27,8 @@ private struct ChannelCommandsKey: FocusedValueKey {
     typealias Value = WindowCommandActions
 }
 
-private struct ChannelRefreshKey: FocusedValueKey {
-    typealias Value = ChannelRefreshTarget
+private struct ChannelListFocusKey: FocusedValueKey {
+    typealias Value = Bool
 }
 
 extension FocusedValues {
@@ -61,20 +37,17 @@ extension FocusedValues {
         set { self[ChannelCommandsKey.self] = newValue }
     }
 
-    var channelRefresh: ChannelRefreshTarget? {
-        get { self[ChannelRefreshKey.self] }
-        set { self[ChannelRefreshKey.self] = newValue }
+    var channelListFocused: Bool? {
+        get { self[ChannelListFocusKey.self] }
+        set { self[ChannelListFocusKey.self] = newValue }
     }
 }
 
 struct ChannelCommands: Commands {
     @FocusedValue(\.channelCommands) private var actions
-    @FocusedValue(\.channelRefresh) private var focusedRefresh
+    @FocusedValue(\.channelListFocused) private var channelListFocused
 
-    private var findsChannels: Bool {
-        if case .catalog? = focusedRefresh { return true }
-        return actions?.findInChannel == nil
-    }
+    private var findsChannels: Bool { channelListFocused == true || actions?.findInChannel == nil }
 
     var body: some Commands {
         CommandGroup(replacing: .newItem) {
@@ -118,12 +91,9 @@ struct ChannelCommands: Commands {
                 Text("Your Messages").tag(TranscriptView.yours).keyboardShortcut("2")
             }
             .disabled(actions?.setMessageView == nil)
-            Button("Refresh") {
-                if let focusedRefresh { focusedRefresh.perform() }
-                else { actions?.refresh?() }
-            }
+            Button("Refresh") { actions?.refresh() }
                 .keyboardShortcut("r")
-                .disabled(actions == nil || (focusedRefresh == nil && actions?.refresh == nil))
+                .disabled(actions == nil)
         }
         CommandMenu("Channel") {
             Button("Next Channel") { actions?.nextChannel?(.next) }

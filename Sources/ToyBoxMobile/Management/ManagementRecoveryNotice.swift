@@ -47,7 +47,7 @@ struct ManagementConnectionNotice: View {
 
     var body: some View {
         Label(store.phase == .deleted ? "This channel was deleted."
-              : "Reconnect before making changes. Your edits are preserved.",
+              : "Your edits are kept. Save them when the channel connects.",
               systemImage: "wifi.exclamationmark")
             .font(.footnote)
             .foregroundStyle(ChannelInk.secondary)

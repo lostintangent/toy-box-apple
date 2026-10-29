@@ -2,9 +2,9 @@ import ChannelClient
 import Foundation
 import SwiftUI
 
-/// How the sidebar footer shows the catalog's phase on both apps. See the connection glossary in
-/// docs/spec.md. A failure keeps the rows and shows orange, unless no rows have loaded or the server
-/// refused this app, which shows red.
+/// How the sidebar footer shows the catalog's phase on both apps. See Connections in docs/spec.md.
+/// A failure keeps the rows and shows orange, unless no rows have loaded or the server refused this
+/// app, which shows red.
 public struct SidebarFooter: Equatable {
     public let dot: Color
     public let heading: String?

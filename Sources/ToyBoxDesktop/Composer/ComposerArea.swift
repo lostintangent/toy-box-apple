@@ -26,7 +26,7 @@ extension ChannelConnectionPhase {
     /// A quiet connect says nothing, since Send is a spinner then.
     var sendUnavailableReason: String? {
         switch self {
-        case .failed: "Reconnect before sending"
+        case .failed: "The channel isn't connected"
         case .deleted: "This channel was deleted"
         case .connecting, .connected: nil
         }
@@ -159,7 +159,7 @@ private struct ChannelComposer: View {
     private var draft: ComposerDraft { session.draft }
     private var draftID: ObjectIdentifier { ObjectIdentifier(draft) }
 
-    private var explainsConnection: Bool { store.phase.isUnavailable }
+    private var explainsDeletion: Bool { store.phase == .deleted }
 
     private var isSubmitting: Bool { session.isSubmitting }
     private var submissionError: String? { session.error }
@@ -188,7 +188,7 @@ private struct ChannelComposer: View {
     private var isOverLimit: Bool { draft.text.utf16.count > 12_000 }
     private var hasNotices: Bool {
         draft.error != nil || store.attemptPersistenceError != nil || submissionError != nil
-            || explainsConnection || isOverLimit || dictation.notice != nil
+            || explainsDeletion || isOverLimit || dictation.notice != nil
     }
 
     var body: some View {
@@ -343,8 +343,8 @@ private struct ChannelComposer: View {
             if let error = submissionError {
                 composerError(error)
             }
-            if explainsConnection {
-                connectionExplanation
+            if explainsDeletion {
+                deletionNotice
             }
             if isOverLimit {
                 composerError("Messages are limited to 12,000 characters.")
@@ -492,17 +492,13 @@ private struct ChannelComposer: View {
         }
     }
 
-    private var connectionExplanation: some View {
+    private var deletionNotice: some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
-            Image(systemName: store.phase == .deleted ? "trash" : "wifi.slash")
-            Text(store.phase == .deleted
-                 ? "This channel was deleted. \(draft.isSavedLocally ? "Your draft is saved locally." : "Copy your draft somewhere safe.")"
-                 : "\(draft.isSavedLocally ? "Your draft is saved locally." : "This draft could not be saved locally.") Reconnect before sending so the audience is current.")
+            Image(systemName: "trash")
+            Text("This channel was deleted. \(draft.isSavedLocally ? "Your draft is saved locally." : "Copy your draft somewhere safe.")")
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
-            if store.phase != .deleted {
-                Button("Reconnect") { store.reconnect() }.buttonStyle(.link)
-            } else if draft.hasContent {
+            if draft.hasContent {
                 Button("Copy Draft") {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(draft.text, forType: .string)

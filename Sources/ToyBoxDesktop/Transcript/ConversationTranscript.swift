@@ -106,15 +106,9 @@ struct ConversationTranscript: View {
         } else if store.isLoaded {
             transcript
         } else {
-            VStack(spacing: 12) {
-                ProgressView("Connecting...")
-                if let error = store.phase.message {
-                    Text(error).font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
-                    Button("Reconnect") { store.reconnect() }
-                }
-            }
-            .padding(24)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            ProgressView("Connecting...")
+                .padding(24)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 

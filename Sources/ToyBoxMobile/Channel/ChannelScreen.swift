@@ -126,8 +126,6 @@ struct ChannelScreen: View {
                 interaction.isArtifactViewerPresented = false
                 if model.visibleChannelID == store.id { model.visibleChannelID = nil }
             }
-            .focusedValue(\.channelRefresh,
-                           model.isActive && store.phase != .deleted && !reader.requested ? .channel(store) : nil)
             .toolbar {
                 if !reader.requested { conversationToolbar(showsTray: showsTray) }
             }
@@ -192,8 +190,6 @@ struct ChannelScreen: View {
             }
             .disabled(store.phase == .deleted)
             ChannelFollowMenuAction(store: store)
-            Button("Refresh", systemImage: "arrow.clockwise") { store.reconnect() }
-                .disabled(!model.isActive || store.phase == .deleted)
             Button("Open in Toy Box", systemImage: "arrow.up.forward.square") {
                 model.openInToyBox(channelID: store.id)
             }

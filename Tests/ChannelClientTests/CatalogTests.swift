@@ -19,7 +19,6 @@ struct CatalogTests {
             ("state", { _ = catalog.state }),
             ("working", { _ = catalog.working }),
             ("phase", { _ = catalog.phase }),
-            ("isLoaded", { _ = catalog.isLoaded }),
             ("lastRefreshedAt", { _ = catalog.lastRefreshedAt }),
         ]
         for (name, read) in reads {
@@ -33,39 +32,50 @@ struct CatalogTests {
         let served = ChannelCatalog(lead: testLeadProfile, channels: [testState().channel], working: ["test"])
         let mock = MockTransport { _, _ in try .json(served) }
         let catalog = ChannelCatalogStore(api: try mock.api())
-        #expect(!catalog.isLoaded)
         #expect(await announcements(in: catalog) { await catalog.refresh() }
-                == ["state", "working", "phase", "isLoaded", "lastRefreshedAt"])
-        #expect(catalog.isLoaded)
+                == ["state", "working", "phase", "lastRefreshedAt"])
         #expect(await announcements(in: catalog) { await catalog.refresh() } == ["lastRefreshedAt"])
         #expect(catalog.state == served)
         #expect(mock.requests.count == 2)
     }
 
-    @Test @MainActor func aRepeatedFailureAnnouncesNothing() async throws {
-        let served = ChannelCatalog(lead: testLeadProfile, channels: [testState().channel])
+    @Test @MainActor func aFailureKeepsTheRowsAndAnnouncesOnlyWhatChanged() async throws {
+        let initial = ChannelCatalog(lead: testLeadProfile, channels: [testState().channel], working: ["test"])
+        let recovered = ChannelCatalog(lead: testLeadProfile)
         let mock = MockTransport { _, count in
             switch count {
-            case 1, 2: MockResponse(status: 503, body: Data(#"{"error":"Catalog unavailable."}"#.utf8))
-            case 3: MockResponse(status: 401, body: Data(#"{"error":"Catalog unavailable."}"#.utf8))
-            default: try .json(served)
+            case 1: try .json(initial)
+            case 2, 3: Self.unavailable()
+            case 4: MockResponse(status: 401, body: Data(#"{"error":"Sign in."}"#.utf8))
+            default: try .json(recovered)
             }
         }
         let catalog = ChannelCatalogStore(api: try mock.api())
+        await catalog.refresh()
+        let refreshedAt = catalog.lastRefreshedAt
         #expect(await announcements(in: catalog) { await catalog.refresh() } == ["phase"])
         #expect(await announcements(in: catalog) { await catalog.refresh() }.isEmpty)
-        #expect(catalog.phase.failure as? ChannelAPIError == .http(status: 503, message: "Catalog unavailable."))
-        #expect(!catalog.isLoaded)
+        #expect(catalog.phase == .failed(ChannelAPIError.http(status: 503, message: "Catalog unavailable.")))
+        #expect(catalog.state == initial)
+        #expect(catalog.working == ["test"])
+        #expect(catalog.lastRefreshedAt == refreshedAt)
 
         #expect(await announcements(in: catalog) { await catalog.refresh() } == ["phase"])
-        #expect(catalog.phase.failure as? ChannelAPIError == .http(status: 401, message: "Catalog unavailable."))
+        #expect(catalog.phase == .failed(ChannelAPIError.http(status: 401, message: "Sign in.")))
 
         #expect(await announcements(in: catalog) { await catalog.refresh() }
-                == ["state", "phase", "isLoaded", "lastRefreshedAt"])
-        #expect(catalog.phase.message == nil)
-        #expect(catalog.phase.failure == nil)
-        #expect(catalog.working.isEmpty)
+                == ["state", "working", "phase", "lastRefreshedAt"])
+        #expect(catalog.phase == .connected)
+        #expect(catalog.state == recovered)
     }
+
+    @Test func aPhaseDescribesOnlyItsFailure() {
+        let failure = ChannelAPIError.http(status: 503, message: "Catalog unavailable.")
+        #expect(ChannelCatalogPhase.failed(failure).message == failure.localizedDescription)
+        #expect(ChannelCatalogPhase.connected.message == nil)
+        #expect(ChannelCatalogPhase.connecting.failure == nil)
+    }
+
     @Test @MainActor func activityAndExactPollingIntervals() async throws {
         let mock = MockTransport { _, _ in
             try .json(ChannelCatalog(lead: testLeadProfile, channels: [testState().channel],
@@ -106,8 +116,7 @@ struct CatalogTests {
         try await eventually { catalog.lastRefreshedAt != nil && !catalog.isFetching }
         #expect(catalog.state == expected)
         #expect(catalog.working == ["test"])
-        #expect(catalog.phase.message == nil)
-        #expect(catalog.phase.failure == nil)
+        #expect(catalog.phase == .connected)
         #expect(mock.requests.count == 1)
     }
 
@@ -136,9 +145,7 @@ struct CatalogTests {
         #expect(catalog.state == initial)
         #expect(catalog.working == ["test"])
         #expect(catalog.lastRefreshedAt == refreshedAt)
-        #expect(catalog.phase.message == (hadFailure ? expectedFailure.localizedDescription : nil))
-        #expect(catalog.phase.failure as? ChannelAPIError == (hadFailure ? expectedFailure : nil))
-        if !hadFailure { #expect(catalog.phase.failure == nil) }
+        #expect(catalog.phase == (hadFailure ? .failed(expectedFailure) : .connected))
     }
 
     @Test @MainActor func changingActivityWakesASleepingPoll() async throws {
@@ -153,8 +160,7 @@ struct CatalogTests {
         catalog.setActive(true)
         try await eventually(observing: mock) { mock.requests.count == 3 && !catalog.isFetching }
         #expect(catalog.pollingInterval == 60)
-        #expect(catalog.phase.message == nil)
-        #expect(catalog.phase.failure == nil)
+        #expect(catalog.phase == .connected)
     }
 
     private static func unavailable() -> MockResponse {
@@ -185,8 +191,7 @@ struct CatalogTests {
         defer { catalog.stopPolling() }
         try await eventually(observing: mock) { catalog.phase.failure != nil }
         let failure = ChannelAPIError.http(status: 503, message: "Catalog unavailable.")
-        #expect(catalog.phase.failure as? ChannelAPIError == failure)
-        #expect(catalog.phase.message == failure.localizedDescription)
+        #expect(catalog.phase == .failed(failure))
     }
 
     @Test(arguments: [false, true])
@@ -210,7 +215,7 @@ struct CatalogTests {
         } else {
             await catalog.refresh()
         }
-        #expect(catalog.phase.failure as? ChannelAPIError == .http(status: 503, message: "Catalog unavailable."))
+        #expect(catalog.phase == .failed(ChannelAPIError.http(status: 503, message: "Catalog unavailable.")))
         #expect(mock.requests.count == 1)
     }
 
@@ -256,8 +261,7 @@ struct CatalogTests {
         #expect(!catalog.isFetching)
         #expect(catalog.state == nil)
         #expect(catalog.lastRefreshedAt == nil)
-        #expect(catalog.phase.message == nil)
-        #expect(catalog.phase.failure == nil)
+        #expect(catalog.phase == .connecting)
         #expect(mock.requests.count == 1)
     }
 
@@ -290,8 +294,7 @@ struct CatalogTests {
         #expect(store.members.isEmpty)
         await store.refresh()
         #expect(store.state?.lead == testLeadProfile)
-        #expect(store.phase.message == nil)
-        #expect(store.phase.failure == nil)
+        #expect(store.phase == .connected)
         #expect(mock.requests.count == 2)
     }
 
@@ -308,40 +311,8 @@ struct CatalogTests {
         await store.refresh()
         #expect(store.state?.lead == profile)
         #expect(store.lastRefreshedAt == refreshedAt)
-        #expect(store.phase.message != nil)
         #expect(store.phase.failure is DecodingError)
         #expect(mock.requests.count == 2)
-    }
-
-    @Test(arguments: [401, 403, 503])
-    @MainActor func refreshRetainsTypedFailuresAndClearsThemOnRecovery(status: Int) async throws {
-        let initial = ChannelCatalog(lead: testLeadProfile, channels: [testState().channel], working: ["test"])
-        let recovered = ChannelCatalog(lead: testLeadProfile)
-        let expected = ChannelAPIError.http(status: status, message: "Catalog unavailable.")
-        let mock = MockTransport { _, count in
-            if count == 1 { return try .json(initial) }
-            if count == 2 {
-                return MockResponse(status: status, body: Data(#"{"error":"Catalog unavailable."}"#.utf8))
-            }
-            return try .json(recovered)
-        }
-        let store = ChannelCatalogStore(api: try mock.api())
-        #expect(store.phase.failure == nil)
-        await store.refresh()
-        let refreshedAt = store.lastRefreshedAt
-        await store.refresh()
-        #expect(store.phase.failure as? ChannelAPIError == expected)
-        #expect(store.phase.message == expected.localizedDescription)
-        #expect(store.state == initial)
-        #expect(store.working == ["test"])
-        #expect(store.lastRefreshedAt == refreshedAt)
-        #expect(!store.isFetching)
-        await store.refresh()
-        #expect(store.phase.failure == nil)
-        #expect(store.phase.message == nil)
-        #expect(store.state == recovered)
-        #expect(store.working.isEmpty)
-        #expect(mock.requests.count == 3)
     }
 
     @Test(arguments: [true, false])

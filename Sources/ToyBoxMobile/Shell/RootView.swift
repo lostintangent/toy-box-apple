@@ -259,14 +259,6 @@ struct RootView: View {
         }
         let channels = model.catalog?.channels ?? []
         let attention = Set(channels.filter { model.sidebarProjection.attention($0) != nil }.map(\.id))
-        let refresh: (() -> Void)?
-        if let store {
-            refresh = { store.reconnect() }
-        } else if model.catalog != nil, model.visibleChannelID == nil {
-            refresh = { Task { await model.refreshCatalog() } }
-        } else {
-            refresh = nil
-        }
         return WindowCommandActions(
             messageView: interaction?.messageView ?? .all,
             sidebarVisible: columnVisibility != .detailOnly,
@@ -286,7 +278,7 @@ struct RootView: View {
             } : nil,
             toggleInspector: interaction.map { interaction in { interaction.isInspectorPresented.toggle() } },
             setMessageView: conversation.map { interaction in { interaction.messageView = $0 } },
-            refresh: refresh,
+            refresh: { Task { await model.refreshCatalog() } },
             nextChannel: channels.isEmpty ? nil : { direction in
                 selectChannel(ChannelNavigation.adjacent(in: channels.map(\.id), from: model.selectedChannelID,
                                                          direction: direction))

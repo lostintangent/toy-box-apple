@@ -86,7 +86,7 @@ struct ChannelSidebar: View {
         .searchable(text: $query, placement: .toolbar, prompt: "Search Channels")
         .searchFocused($searchFocused)
         .onChange(of: searchFocusRequest) { _, _ in searchFocused = true }
-        .focusedValue(\.channelRefresh, model.isActive && model.catalog != nil ? .catalog(model) : nil)
+        .focusedValue(\.channelListFocused, true)
         .refreshable { await model.refreshCatalog() }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {

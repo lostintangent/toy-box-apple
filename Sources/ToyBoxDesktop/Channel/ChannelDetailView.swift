@@ -353,7 +353,6 @@ struct ChannelDetailView: View {
                 Button("Open in Toy Box", systemImage: "arrow.up.forward.app") { model.openInToyBox(channelID: store.id) }
                 Button("Edit Channel…", systemImage: "pencil") { management.present(.editChannel(channelId: store.id)) }
                     .disabled(!store.phase.isConnected)
-                Button("Refresh", systemImage: "arrow.clockwise") { store.reconnect() }
                 Divider()
                 Button("Delete Channel…", systemImage: "trash", role: .destructive) {
                     management.present(.deleteChannel(channelId: store.id))

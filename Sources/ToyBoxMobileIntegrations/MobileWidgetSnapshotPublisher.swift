@@ -40,7 +40,7 @@ public final class MobileWidgetSnapshotPublisher {
             requests = [:]
         }
         guard let catalog, catalog.api.baseURL.absoluteString == serverURL,
-              catalog.isLoaded, catalog.phase.message == nil, catalog.state != nil else {
+              catalog.isLoaded, catalog.phase.message == nil else {
             var snapshot = previous?.serverURL == serverURL ? previous : nil
             if snapshot != nil { snapshot?.isOffline = true }
             try publish(snapshot ?? NeedsYouSnapshot(

@@ -117,11 +117,14 @@ private struct OverviewContent: View {
             OverviewList {
                 if store.phase.isUnavailable {
                     Section {
-                        Label("Overview may be out of date. Reconnect before making changes.",
+                        Label("Overview may be out of date until the channel connects.",
                               systemImage: "wifi.exclamationmark")
                             .font(.footnote)
                             .foregroundStyle(ChannelInk.secondary)
-                        Button("Reconnect", action: store.reconnect)
+                        // The sheet covers the transcript banner, so it carries the banner's Retry.
+                        if placement == .sheet, store.phase != .deleted {
+                            Button("Retry", action: store.reconnect)
+                        }
                     }
                 }
                 OverviewAboutSection(store: store, session: session)

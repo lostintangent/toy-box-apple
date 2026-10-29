@@ -45,7 +45,7 @@ struct ManagementSheet: View {
                                 Label("This channel was deleted.", systemImage: "trash")
                             } else if let message = store?.phase.message {
                                 ManagementError(message: message)
-                                Button("Reconnect") { store?.reconnect() }
+                                Button("Retry") { store?.reconnect() }
                             } else {
                                 ProgressView("Loading current channel")
                             }

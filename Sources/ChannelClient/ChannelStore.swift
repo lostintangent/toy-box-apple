@@ -2,13 +2,14 @@ import ChannelKit
 import Foundation
 import Observation
 
-/// See the connection glossary in docs/spec.md.
+/// See Connections in docs/spec.md.
 public enum ChannelConnectionPhase: Equatable, Sendable {
     /// Not connected yet and not failed: a first connect, a quiet retry within the grace, or a
     /// channel nobody holds.
     case connecting
     case connected
-    /// The channel tried for longer than the grace without connecting. Retrying continues.
+    /// The channel tried for longer than the grace without connecting. Retrying continues, and
+    /// the phase stays until the stream connects.
     case failed(String)
     case deleted
 
@@ -26,7 +27,7 @@ public enum ChannelConnectionPhase: Equatable, Sendable {
     }
 }
 
-/// See the connection glossary in docs/spec.md. A catalog has no stream to lose, so it's
+/// See Connections in docs/spec.md. A catalog has no stream to lose, so it's
 /// `.connecting` only before its first outcome.
 public enum ChannelCatalogPhase: Equatable, Sendable {
     case connecting
@@ -153,7 +154,8 @@ public final class ChannelStore {
         guard observation == nil, phase != .deleted else { return }
         generation = UUID()
         let token = generation
-        startGrace(token: token)
+        // Retry keeps a failure on screen until the stream connects.
+        if phase.message == nil { startGrace(token: token) }
         let restore = attemptsRestored ? nil : restoreSendAttemptsConcurrently()
         var first: AsyncThrowingStream<ChannelObservationEvent, any Error>? =
             api.observe(channelId: id, after: state?.revision)
@@ -230,16 +232,21 @@ public final class ChannelStore {
 
     /// Stops trying. Nothing waits on the phase this leaves, `.connecting` unless deleted.
     public func disconnect() {
+        stopTrying()
+        if phase != .deleted { phase = .connecting }
+    }
+
+    /// Tries again at once. A failed channel stays `.failed` until the stream connects.
+    public func reconnect() {
+        stopTrying()
+        connect()
+    }
+
+    private func stopTrying() {
         generation = UUID()
         observation?.cancel()
         observation = nil
         stopGrace()
-        if phase != .deleted { phase = .connecting }
-    }
-
-    public func reconnect() {
-        disconnect()
-        connect()
     }
 
     fileprivate func reconcileManagementSnapshot(_ snapshot: ChannelState) throws -> ChannelState {
@@ -659,9 +666,8 @@ public final class ChannelCatalogStore {
     public private(set) var working: Set<String> = []
     public private(set) var isActive = true
     public private(set) var phase: ChannelCatalogPhase = .connecting
-    /// Whether a catalog has arrived. It stays true through failures, so the rows stay, and unlike
-    /// `lastRefreshedAt` it changes once, so a view that asks only this doesn't re-render on polls.
-    public private(set) var isLoaded = false
+    /// Whether a catalog has arrived. It stays true through failures, so the rows stay.
+    public var isLoaded: Bool { state != nil }
     public private(set) var lastRefreshedAt: Date?
     @ObservationIgnored private var polling: Task<Void, Never>?
     @ObservationIgnored private var pollingDelay: Task<Void, Never>?
@@ -699,7 +705,7 @@ public final class ChannelCatalogStore {
 
     public func channel(id: String) -> ChannelStore {
         if let existing = detailStores[id] { return existing }
-        let store = ChannelStore(id: id, api: api)
+        let store = ChannelStore(id: id, api: api, reconnectPolicy: reconnectPolicy)
         detailStores[id] = store
         return store
     }
@@ -784,13 +790,17 @@ public final class ChannelCatalogStore {
 
     /// A poll that changes nothing announces only `lastRefreshedAt`, so the sidebar and its rows
     /// don't re-render every few seconds. `@Observable` skips assigning an equal value.
+    /// When the server comes back, held channels that failed try again at once instead of waiting
+    /// out their backoff.
     private func applyCatalog(_ catalog: ChannelCatalog) {
+        let recovered = failingSince != nil || phase.failure != nil
         state = catalog
         working = Set(catalog.working)
-        isLoaded = true
         lastRefreshedAt = .now
         failingSince = nil
         phase = .connected
+        guard recovered else { return }
+        for store in detailStores.values where store.phase.message != nil { store.reconnect() }
     }
 
     /// Requests the first catalog immediately. A main-actor task would send it only on the main

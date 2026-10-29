@@ -1,5 +1,6 @@
 import ChannelKit
 import Foundation
+import Synchronization
 import Testing
 @testable import ChannelClient
 
@@ -58,7 +59,7 @@ struct ConnectionGraceTests {
         #expect(!store.phase.isUnavailable)
     }
 
-    @Test func aHungConnectShowsItAfterTheGrace() async throws {
+    @Test func aHungConnectShowsItAfterTheGraceAndRetryKeepsIt() async throws {
         let mock = MockTransport { _, _ in try .stream([]) }
         let store = ChannelStore(id: "test", api: try mock.api(),
                                  reconnectPolicy: .init(grace: 0.05), sendJournal: nil)
@@ -68,8 +69,33 @@ struct ConnectionGraceTests {
         try await eventually { store.phase.message == ChannelStore.unansweredConnect }
         #expect(mock.requests.count == 1, "Nothing failed, so nothing retried")
 
+        store.reconnect()
+        #expect(store.phase.message == ChannelStore.unansweredConnect, "Retry keeps the failure until connected")
+        try await eventually(observing: mock) { mock.requests.count == 2 && mock.pendingResponseCount == 1 }
         #expect(mock.sendPendingBody(try MockResponse.stream([.init(type: "snapshot", state: testState())]).body) == 1)
         try await eventually { store.phase.isConnected }
+    }
+
+    @Test func catalogRecoveryRetriesAFailedChannelAtOnce() async throws {
+        let up = Mutex(false)
+        let mock = MockTransport { request, _ in
+            guard up.withLock({ $0 }) else { return MockResponse(status: 503) }
+            return try request.url?.path == "/api/v1/channels"
+                ? .json(ChannelCatalog(lead: testLeadProfile, channels: [testState().channel]))
+                : .stream([.init(type: "snapshot", state: testState())])
+        }
+        // The channel's backoff outlasts the test, so only the catalog's recovery can retry it.
+        let catalog = ChannelCatalogStore(api: try mock.api(), reconnectPolicy: .init(initialDelay: 60, grace: 0.05))
+        let store = catalog.channel(id: "test")
+        store.connect()
+        defer { store.disconnect() }
+        try await eventually { store.phase.message == unavailable }
+        await catalog.refresh()
+
+        up.withLock { $0 = true }
+        await catalog.refresh()
+        try await eventually { store.phase.isConnected }
+        #expect(mock.requests.filter { $0.url?.path == "/api/v1/channels/test" }.count == 2)
     }
 
     @Test func idleTimeNeverCountsTowardTheGrace() async throws {
