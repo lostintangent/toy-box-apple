@@ -532,11 +532,11 @@ opening anything. Stale Activity taps omit the sequence and open only the channe
 The phone stores the selected server's registration in `group.dev.toybox.mobile`. Selecting a
 different server generates a new UUID, including when returning to an earlier server. Equivalent
 URL spelling preserves the UUID. `MobileWidgetSnapshotPublisher.update(catalog:serverURL:)` writes
-the same `NeedsYouSnapshot` schema and filename as Mac, resolves questions through history without
-starting SSE, and reloads `ToyBoxNeedsYou`. It preserves a same-server offline cache, discards that
-cache on a server change, and keeps the Mac's 30-minute freshness and 15-minute unchanged refresh.
-Offline-only writes preserve the cached observation time and never heartbeat. They write and
-reload only when visible snapshot content changes. Live writes retain the unchanged refresh.
+the Mac's `NeedsYouSnapshot` schema and filename from the same `ChannelWaitingRequests`, without
+SSE or channel stores, and reloads `ToyBoxNeedsYou`. It keeps a same-server offline cache, drops it
+on a server change, and shares the Mac's 30-minute freshness and `NeedsYouSnapshot.replacing`.
+Offline-only writes keep the cached observation time, never heartbeat, and write and reload only
+when visible content changes. Live writes rewrite an unchanged snapshot every 15 minutes.
 
 ## Parity checklist
 
@@ -2543,12 +2543,14 @@ draft, disable sending and show the corresponding explanation with Open Channel.
 are separate from main-window and Quick Send drafts, keyed by normalized server URL, channel and
 request sequence. A new empty reply visibly seeds the requester's canonical @handle.
 
-Waiting comes from the same attention as the sidebar. Working must come from the one function
-the sidebar row uses (live presence for an open channel, otherwise the catalog's `working`), so
-the menu bar, the sidebar and the Dock can never disagree. Render identities with
-`AgentAvatarView`. Opening the inbox does not refresh the catalog. Its normal cadence
-(5 seconds active, 15 inactive) is the latency. Opening it, reading a quote and expanding Reply
-never mark a channel read.
+Waiting comes from ChannelClient's `ChannelWaitingRequests`, shared by the menu bar, Dock,
+notifications and both platforms' widgets. It lists the sidebar's waiting channels newest request
+first and quotes each from the channel's store, otherwise from one history lookup it remembers
+until the next request. Working must come from the one function the sidebar row uses (live
+presence for an open channel, otherwise the catalog's `working`), so the menu bar, the sidebar
+and the Dock can never disagree. Render identities with `AgentAvatarView`. Opening the inbox does
+not refresh the catalog. Its normal cadence (5 seconds active, 15 inactive) is the latency.
+Opening it, reading a quote and expanding Reply never mark a channel read.
 
 **Quick Send.** The app-menu command, inbox footer and configurable global shortcut present one
 retained, non-activating, key-capable floating `NSPanel`. It uses one regular system-glass surface,

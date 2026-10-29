@@ -36,11 +36,10 @@ final class AppModel {
     let menuBar = MenuBarPresence()
     var navigationRequest: ChannelNavigationRequest?
     var newChannelRequest: UUID?
-    /// Pending requests' messages shared by the menu bar, Dock and widget, by channel.
-    private(set) var menuBarRequests: [String: ChannelRequestMessage] = [:]
+    /// The waiting requests the menu bar, Dock, widget and notifications share.
+    private(set) var waitingRequests: ChannelWaitingRequests?
     @ObservationIgnored var openChannelWindow: ((String) -> Void)?
     @ObservationIgnored var openMainWindow: (() -> Void)?
-    @ObservationIgnored private var menuBarLookups: [String: Int] = [:]
     @ObservationIgnored private var unhideObserver: NSObjectProtocol?
     @ObservationIgnored let connections = ChannelConnections()
     @ObservationIgnored private let launchChannel = LaunchChannel()
@@ -87,7 +86,7 @@ final class AppModel {
             return self.api
         }
         notifications.resolveRequest = { [weak self] channel, sequence in
-            await self?.resolveRequest(channel: channel, sequence: sequence)
+            try? await self?.waitingRequests?.message(channelID: channel.id, sequence: sequence)
         }
         for name in [NSApplication.didBecomeActiveNotification, NSApplication.didResignActiveNotification] {
             applicationObservers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) {
@@ -167,17 +166,17 @@ final class AppModel {
             if persist, !launchOptions.isSnapshot {
                 UserDefaults.standard.set(self.serverURL, forKey: AppConfiguration.serverURLKey)
             }
-            catalog = ChannelCatalogStore(api: api)
+            let catalog = ChannelCatalogStore(api: api)
+            self.catalog = catalog
+            waitingRequests = ChannelWaitingRequests(catalog: catalog)
             isRefreshingCatalog = false
             configurationError = nil
             notifications.reset()
             dockAttention.reset()
-            menuBarRequests = [:]
-            menuBarLookups = [:]
             catalogGeneration = UUID()
             observeCatalog(generation: catalogGeneration)
-            catalog?.setActive(NSApplication.shared.isActive)
-            catalog?.startPolling()
+            catalog.setActive(NSApplication.shared.isActive)
+            catalog.startPolling()
             widgetSnapshots.update(status: menuBarStatus, serverURL: self.serverURL, hasCatalog: false)
         } catch {
             configurationError = error.localizedDescription
@@ -239,7 +238,7 @@ final class AppModel {
             notifications.update(channels: catalog.channels, activeChannelID: activeChannelID,
                                  serverURL: serverURL)
         }
-        resolveMenuBarRequests()
+        if showsMenuBarExtra { waitingRequests?.resolve(openChannelIDs: openChannelIDs) }
     }
 
     /// Brings a channel forward from outside its windows, as notifications and the menu bar do. The
@@ -299,57 +298,21 @@ final class AppModel {
         !launchOptions.isSnapshot && resizeBenchmark == nil && performanceBenchmark == nil
     }
 
-    /// What the menu bar extra shows, from the same attention and working agents as the sidebar.
+    /// What the menu bar extra shows, from the same waiting requests and working agents as the sidebar.
     var menuBarStatus: MenuBarStatus {
         let unreachable = configurationError != nil || catalog?.phase.message != nil
             ? SidebarFooter.server(serverURL) : nil
-        guard let catalog, catalog.state != nil else { return MenuBarStatus(unreachableHost: unreachable) }
-        let inputs = catalog.channels.map { channel in
-            let current = sidebarChannel(channel)
-            let isWaiting = sidebarAttention(channel) == .waiting
-            return MenuBarStatus.Input(channel: current, isWaiting: isWaiting,
-                                       working: sidebarWorking(channel, agents: sidebarAgents(channel)),
-                                       request: isWaiting ? menuBarRequest(current) : nil)
+        guard let catalog, let waitingRequests, catalog.state != nil else {
+            return MenuBarStatus(unreachableHost: unreachable)
         }
-        return MenuBarStatus(inputs, unreachableHost: unreachable)
-    }
-
-    /// An open channel's live request, otherwise the one looked up for its sequence.
-    private func menuBarRequest(_ channel: Channel) -> ChannelRequestMessage? {
-        guard let sequence = channel.requestSequence else { return nil }
-        let store = openChannelIDs.contains(channel.id) ? catalog?.channel(id: channel.id) : nil
-        return ChannelWaitingRequest.message(at: sequence, live: store?.request, agents: store?.roster ?? [],
-                                             cached: menuBarRequests[channel.id])
-    }
-
-    /// Looks up each new request once, including when the menu bar item is hidden.
-    private func resolveMenuBarRequests() {
-        guard let catalog, showsMenuBarExtra else { return }
-        let pending = Dictionary(catalog.channels.compactMap { channel in channel.requestSequence.map { (channel.id, $0) } },
-                                 uniquingKeysWith: { first, _ in first })
-        let kept = menuBarRequests.filter { pending[$0.key] == $0.value.message.sequence }
-        if kept.count != menuBarRequests.count { menuBarRequests = kept }
-        let generation = catalogGeneration
-        for channel in catalog.channels {
-            guard let sequence = pending[channel.id], kept[channel.id] == nil,
-                  menuBarLookups[channel.id] != sequence else { continue }
-            menuBarLookups[channel.id] = sequence
-            Task {
-                let resolved = await resolveRequest(channel: channel, sequence: sequence)
-                guard generation == catalogGeneration, menuBarLookups[channel.id] == sequence else { return }
-                // A failed lookup tries again on a later poll.
-                menuBarLookups[channel.id] = nil
-                if let resolved, self.catalog?.channels.first(where: { $0.id == channel.id })?.requestSequence == sequence {
-                    menuBarRequests[channel.id] = resolved
-                }
-            }
-        }
+        let projection = sidebarProjection
+        return MenuBarStatus(requests: waitingRequests.entries(openChannelIDs: openChannelIDs), catalog.channels.map {
+            .init(channel: projection.channel($0), working: projection.working($0, agents: projection.agents($0)))
+        }, unreachableHost: unreachable)
     }
 
     func retryMenuBarRequest(channelID: String) {
-        guard menuBarLookups[channelID] == nil else { return }
-        menuBarRequests[channelID] = nil
-        resolveMenuBarRequests()
+        waitingRequests?.retry(channelID: channelID, openChannelIDs: openChannelIDs)
     }
 
     /// Keeps the status item in step with activity, including an open channel's live presence.
@@ -383,25 +346,6 @@ final class AppModel {
 
     func sidebarWorking(_ channel: Channel, agents: [ChannelAgent]) -> [ChannelAgent] {
         sidebarProjection.working(channel, agents: agents)
-    }
-
-    func catalogAgents(channelID: String) -> [ChannelAgent] {
-        sidebarProjection.catalogAgents(channelID: channelID)
-    }
-
-    /// A request's message, from an open channel's live state, otherwise from its history.
-    private func resolveRequest(channel: Channel, sequence: Int) async -> ChannelRequestMessage? {
-        if let known = ChannelWaitingRequest.message(at: sequence, live: nil, agents: [],
-                                                     cached: menuBarRequests[channel.id]) { return known }
-        if let state = connections.stores.first(where: { $0.id == channel.id })?.state,
-           let message = ChannelWaitingRequest.message(at: sequence, in: state) {
-            return .init(message: message, agents: state.agents)
-        }
-        guard let catalog else { return nil }
-        let agents = catalogAgents(channelID: channel.id)
-        guard let page = try? await catalog.api.history(channelId: channel.id, before: sequence + 1),
-              let message = page.messages.first(where: { $0.sequence == sequence }) else { return nil }
-        return .init(message: message, agents: agents)
     }
 
     static func dockBadge(channels: [Channel], openChannelIDs: Set<String>) -> String? {

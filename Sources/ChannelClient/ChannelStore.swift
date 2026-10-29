@@ -710,6 +710,9 @@ public final class ChannelCatalogStore {
         return store
     }
 
+    /// A channel's store, only if something already asked for it.
+    public func existingChannel(id: String) -> ChannelStore? { detailStores[id] }
+
     /// A refresh someone asked for. It reports a failure at once, since the caller waits on the
     /// outcome, and joins an attempt already in flight instead of returning early. A poll that fails
     /// stays quiet and retries promptly until polls have failed for the grace, the way a channel

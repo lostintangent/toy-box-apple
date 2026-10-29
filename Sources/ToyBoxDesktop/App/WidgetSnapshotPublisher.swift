@@ -1,3 +1,4 @@
+import ChannelClient
 import ChannelKit
 import Foundation
 import OSLog
@@ -47,12 +48,7 @@ final class WidgetSnapshotPublisher {
                 snapshot = previous
                 snapshot.isOffline = true
             }
-            if let previous, previous.serverURL == serverURL {
-                snapshot.updatedAt = previous.updatedAt
-                if snapshot == previous,
-                   snapshot.isOffline || now.timeIntervalSince(previous.updatedAt) < 15 * 60 { return }
-                if !snapshot.isOffline { snapshot.updatedAt = now }
-            }
+            guard let snapshot = snapshot.replacing(previous, at: now) else { return }
             let data = try JSONEncoder().encode(snapshot)
             try data.write(to: file, options: .atomic)
             previous = snapshot
@@ -63,15 +59,8 @@ final class WidgetSnapshotPublisher {
     }
 
     static func snapshot(status: MenuBarStatus, serverURL: String, hasCatalog: Bool, now: Date) -> NeedsYouSnapshot {
-        NeedsYouSnapshot(
-            serverURL: serverURL, updatedAt: now, isOffline: status.unreachableHost != nil,
-            isAvailable: hasCatalog, waitingCount: status.waiting.count,
-            requests: status.waiting.prefix(5).compactMap { item in
-                guard let sequence = item.sequence, sequence > 0 else { return nil }
-                return .init(channelID: item.id, channelName: item.name, sequence: sequence,
-                             quote: item.quote ?? MenuBarStatus.needsReply, requestedAt: item.requestedAt)
-            }
-        )
+        NeedsYouSnapshot(serverURL: serverURL, updatedAt: now, isOffline: status.unreachableHost != nil,
+                         isAvailable: hasCatalog, waiting: status.requests)
     }
 }
 

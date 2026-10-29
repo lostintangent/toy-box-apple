@@ -7,6 +7,8 @@ public enum NotificationText {
     public static let requestPlaceholder = "Waiting for your reply"
     public static let completionPlaceholder = "Tasks completed"
     public static let unsentBody = "Your reply wasn't sent. It's saved as a draft."
+    /// A waiting request whose requester or words aren't known yet.
+    public static let needsReply = "Needs your reply"
 
     public static func subtitle(requester: String) -> String { "\(requester) needs your reply" }
 

@@ -49,6 +49,18 @@ public struct NeedsYouSnapshot: Codable, Equatable, Sendable {
     public func isStale(at now: Date) -> Bool {
         isOffline || now.timeIntervalSince(updatedAt) >= Self.freshnessInterval
     }
+
+    /// What to write over `previous`, or nil when it would change nothing. An unchanged live snapshot
+    /// still rewrites every 15 minutes as a heartbeat. Offline keeps the server's last reached time.
+    public func replacing(_ previous: NeedsYouSnapshot?, at now: Date) -> NeedsYouSnapshot? {
+        var snapshot = self
+        if let previous, previous.serverURL == serverURL {
+            snapshot.updatedAt = previous.updatedAt
+            if snapshot == previous, isOffline || now.timeIntervalSince(previous.updatedAt) < 15 * 60 { return nil }
+        }
+        if !isOffline { snapshot.updatedAt = now }
+        return snapshot
+    }
 }
 
 /// Lossless Mac route payload for exact saved-server matching, unlike the normalized

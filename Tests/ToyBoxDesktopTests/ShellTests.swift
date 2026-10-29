@@ -1,7 +1,7 @@
 import AppKit
 import Carbon
 import ChannelKit
-import ChannelClient
+@testable import ChannelClient
 import ChannelIntelligence
 import Observation
 import SwiftUI
@@ -1193,6 +1193,10 @@ struct MenuBarExtraTests {
               agents: [lead, ada, nova])
     }
 
+    private func waiting(_ channel: Channel, _ request: ChannelRequestMessage? = nil) -> ChannelWaitingRequests.Entry {
+        .init(channel: channel, sequence: channel.requestSequence ?? 0, request: request)
+    }
+
     @Test func theSymbolFollowsTheMostUrgentState() {
         let idle = MenuBarStatus([], unreachableHost: nil)
         #expect(idle.state == .idle && idle.symbol == "bubble" && !idle.isActive)
@@ -1202,29 +1206,25 @@ struct MenuBarExtraTests {
         #expect(offline.state == .disconnected && offline.symbol == "bubble" && !offline.isActive)
         #expect(offline.accessibilityValue == "Not connected" && offline.emptyText == "Can't connect to studio.local:3100")
 
-        let working = MenuBarStatus([.init(channel: channel("a"), isWaiting: false, working: [ada])],
-                                    unreachableHost: nil)
+        let working = MenuBarStatus([.init(channel: channel("a"), working: [ada])], unreachableHost: nil)
         #expect(working.state == .working && working.symbol == "ellipsis.bubble" && working.isActive)
         #expect(working.accessibilityValue == "1 agent working" && working.emptyText == nil)
 
-        let waiting = MenuBarStatus([
-            .init(channel: channel("a", request: 12), isWaiting: true, working: [lead, ada]),
-            .init(channel: channel("b"), isWaiting: false, working: [nova]),
+        let waiting = MenuBarStatus(requests: [self.waiting(channel("a", request: 12))], [
+            .init(channel: channel("a", request: 12), working: [lead, ada]),
+            .init(channel: channel("b"), working: [nova]),
         ], unreachableHost: "studio.local:3100")
         #expect(waiting.state == .waiting && waiting.symbol == "questionmark.bubble.fill" && waiting.isActive)
         #expect(waiting.accessibilityValue == "1 channel waiting for you, 3 agents working")
     }
 
-    @Test func waitingChannelsQuoteTheirRequestNewestFirst() throws {
+    @Test func waitingChannelsQuoteTheirRequestInTheSharedOrder() throws {
         let long = "Can you confirm the history review covers paging, search and the outbox before we ship it?"
-        let status = MenuBarStatus([
-            .init(channel: channel("older", request: 12), isWaiting: true, working: [],
-                  request: request("Pick a palette\nfor the icon", at: "2026-10-22T08:00:00Z")),
-            .init(channel: channel("newer", request: 14), isWaiting: true, working: [ada],
-                  request: request(long, sequence: 14, at: "2026-10-22T09:00:00Z")),
-            .init(channel: channel("unknown", updated: "2026-10-22T07:00:00Z", request: 3), isWaiting: true,
-                  working: []),
-        ], unreachableHost: nil)
+        let status = MenuBarStatus(requests: [
+            waiting(channel("newer", request: 14), request(long, sequence: 14, at: "2026-10-22T09:00:00Z")),
+            waiting(channel("older", request: 12), request("Pick a palette\nfor the icon", at: "2026-10-22T08:00:00Z")),
+            waiting(channel("unknown", updated: "2026-10-22T07:00:00Z", request: 3)),
+        ], [.init(channel: channel("newer", request: 14), working: [ada])], unreachableHost: nil)
         #expect(status.waiting.map(\.id) == ["newer", "older", "unknown"])
         #expect(status.waiting.map(\.sequence) == [14, 12, 3])
         #expect(status.waiting.map(\.agent?.id) == ["ada", "ada", nil])
@@ -1233,6 +1233,7 @@ struct MenuBarExtraTests {
         #expect(status.waiting[0].quote == long)
         #expect(status.waiting[2].quote == nil)
         #expect(status.waiting[2].subtitle == "Needs your reply")
+        #expect(status.waiting[0].requestedAt == ChannelDates.date("2026-10-22T09:00:00Z"))
         // A waiting channel stays out of Working even while its agents work.
         #expect(status.working.isEmpty)
     }
@@ -1243,9 +1244,9 @@ struct MenuBarExtraTests {
         #expect(MenuBarStatus.workingSubtitle(["Lead", "Ada", "Nova"]) == "Lead, Ada and Nova are working")
         #expect(MenuBarStatus.workingSubtitle(["Lead", "Ada", "Nova", "Max"]) == "Lead, Ada and 2 others are working")
         let status = MenuBarStatus([
-            .init(channel: channel("quiet"), isWaiting: false, working: []),
-            .init(channel: channel("early", updated: "2026-10-22T07:00:00Z"), isWaiting: false, working: [nova]),
-            .init(channel: channel("late", updated: "2026-10-22T09:00:00Z"), isWaiting: false, working: [lead, ada]),
+            .init(channel: channel("quiet"), working: []),
+            .init(channel: channel("early", updated: "2026-10-22T07:00:00Z"), working: [nova]),
+            .init(channel: channel("late", updated: "2026-10-22T09:00:00Z"), working: [lead, ada]),
         ], unreachableHost: nil)
         #expect(status.working.map(\.id) == ["late", "early"])
         #expect(status.working.map(\.agent?.id) == ["lead", "nova"])
@@ -1254,8 +1255,7 @@ struct MenuBarExtraTests {
 
     @Test func workingShowsThreeChannelsThenOpensTheWindowForTheRest() {
         let inputs = (0..<8).map { index in
-            MenuBarStatus.Input(channel: channel("c\(index)", updated: "2026-10-22T0\(index):00:00Z"),
-                                isWaiting: false, working: [ada])
+            MenuBarStatus.Input(channel: channel("c\(index)", updated: "2026-10-22T0\(index):00:00Z"), working: [ada])
         }
         let section = MenuBarStatus(inputs, unreachableHost: nil).workingSection
         #expect(section.items.map(\.id) == ["c7", "c6", "c5"] && section.overflow == 5)
@@ -1265,20 +1265,18 @@ struct MenuBarExtraTests {
 
     @Test func inboxQuotesFlattenMarkdownWithoutDroppingMentionsOrCuttingAtSixtyCharacters() {
         let text = "@user **Please review** [this proposal](https://example.test). " + String(repeating: "Details. ", count: 30)
-        let status = MenuBarStatus([
-            .init(channel: channel("one", request: 12), isWaiting: true, working: [], request: request(text))
-        ], unreachableHost: nil)
+        let status = MenuBarStatus(requests: [waiting(channel("one", request: 12), request(text))], [],
+                                   unreachableHost: nil)
         #expect(status.waiting[0].quote?.hasPrefix("@user Please review this proposal.") == true)
         #expect((status.waiting[0].quote?.count ?? 0) > 200)
         #expect(status.waiting[0].quote?.contains("https://") == false)
     }
 
     @Test func anOpenInboxKeepsAnsweredRowsAndAppendsNewRequestsWithoutReordering() {
-        let first = MenuBarStatus([
-            .init(channel: channel("one", request: 12), isWaiting: true, working: [], request: request("First?")),
-            .init(channel: channel("two", request: 13), isWaiting: true, working: [],
-                  request: request("Second?", sequence: 13)),
-        ], unreachableHost: nil)
+        let first = MenuBarStatus(requests: [
+            waiting(channel("one", request: 12), request("First?")),
+            waiting(channel("two", request: 13), request("Second?", sequence: 13)),
+        ], [], unreachableHost: nil)
         var inbox = MenuBarInboxState(status: first)
         let next = MenuBarStatus(waiting: [
             .init(id: "new", name: "New", subtitle: "Needs your reply", agent: ada, sequence: 14, quote: "New?"),
