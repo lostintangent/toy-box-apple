@@ -105,7 +105,9 @@ covering the banner. Three invariants hold:
   Cmd-R, the footer, pull to refresh or Quick Send, means only this channel list.
 - **A Test Connection failure is final.** It reports one attempt and doesn't retry.
 
-Send, management and read marking wait for `isConnected`. Notices, agent status and working
+Send, management and read marking wait for `isConnected`. A read write belongs to the store, so
+cancelling the reader that started it neither interrupts it nor reports an error. A later read
+joins that write, which sends the newest position before it finishes. Notices, agent status and working
 presence change on `isUnavailable` (failed or deleted), never on a view timer. Send attempts, Send
 Again and `reconcileManagementWrite` are delivery, not connection, and a handed-off channel that
 couldn't be opened is Handoff's `missing`.
