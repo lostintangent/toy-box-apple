@@ -126,7 +126,7 @@ struct ChannelSidebar: View {
             ContentUnavailableView {
                 Label("Connect to Toy Box", systemImage: "network")
             } description: {
-                Text("Choose your Mac's server in Settings.")
+                Text("Choose your Toy Box server in Settings.")
             } actions: {
                 Button("Settings") { showsSettings = true }
                     .frame(minHeight: 44)

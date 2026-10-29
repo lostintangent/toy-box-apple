@@ -1,15 +1,10 @@
 import ChannelClient
 import ChannelIntelligence
+import ChannelKit
 import SwiftUI
 import ToyBoxUI
 
 struct SettingsView: View {
-    private struct ServerChange: Identifiable {
-        let id = UUID()
-        let previous: String
-        let address: String
-    }
-
     @Environment(AppModel.self) private var model
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.channelIntelligence) private var intelligence
@@ -18,15 +13,20 @@ struct SettingsView: View {
     @AppStorage(TranscriptIntelligenceSettings.describesImages) private var describesImages = true
     @ViewState private var connection = ServerConnectionProbe()
     @ViewState private var availability: IntelligenceAvailability?
-    @ViewState private var pendingChange: ServerChange?
-    @ViewState private var useFailure: String?
-    @ViewState private var isApplying = false
+    @ViewState private var switchFailure: String?
+    @ViewState private var isSwitching = false
+
+    init(connection: ServerConnectionProbe = ServerConnectionProbe()) {
+        _connection = ViewState(initialValue: connection)
+    }
 
     var body: some View {
         Form {
-            ServerConnectionSection(connection: connection, requiresTest: false, currentServer: model.serverURL,
-                                    onUse: requestServerChange, useFailure: $useFailure)
-                .disabled(isApplying)
+            ServerConnectionSection(
+                connection: connection, placeholder: "Required",
+                footer: "Use your server's address, including its port and any path prefix. Toy Box switches to it once the test connects.",
+                currentServer: model.serverURL, isSwitching: isSwitching, failure: $switchFailure)
+                .disabled(isSwitching)
             Section("Appearance") {
                 Picker("Appearance", selection: $appearance) {
                     ForEach(AppAppearance.allCases) { value in Text(value.title).tag(value) }
@@ -41,7 +41,7 @@ struct SettingsView: View {
                                as? String ?? "Unavailable")
                 LabeledContent("Build", value: Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion")
                                as? String ?? "Unavailable")
-                Text("Toy Box connects to your server while open. Notifications and followed-channel updates can arrive while it is closed. Keep the Mac running your Toy Box server awake.")
+                Text("Toy Box connects to your server while open. Notifications and followed-channel updates can arrive while it is closed. Keep the computer running your Toy Box server awake.")
                     .font(.footnote).foregroundStyle(.secondary)
             }
         }
@@ -51,9 +51,10 @@ struct SettingsView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 Button(role: .close) { model.isSettingsPresented = false }
                     .accessibilityLabel("Close Settings")
-                    .disabled(isApplying)
+                    .disabled(isSwitching)
             }
         }
+        .interactiveDismissDisabled(isSwitching)
         .onAppear {
             connection.address = model.serverURL
             availability = intelligence.availability
@@ -64,45 +65,8 @@ struct SettingsView: View {
             else { connection.cancel() }
         }
         .task { await model.notifications.refreshAuthorization() }
-        .sheet(item: $pendingChange) { change in
-            NavigationStack {
-                Form {
-                    Section {
-                        Text("Live connections to the current server will close. Drafts stay saved separately for each server.")
-                    }
-                    Section {
-                        serverAddress("Current Server", address: change.previous)
-                        serverAddress("New Server", address: change.address)
-                    }
-                }
-                .font(.body)
-                .foregroundStyle(.primary)
-                .navigationTitle("Switch Server")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Cancel", role: .cancel) { pendingChange = nil }
-                            .disabled(isApplying)
-                    }
-                    ToolbarItem(placement: .confirmationAction) {
-                        Button("Switch") {
-                            pendingChange = nil
-                            apply(change)
-                        }
-                        .disabled(isApplying)
-                    }
-                }
-            }
-            .presentationDetents([.large])
-            .presentationSizing(.form)
-            .interactiveDismissDisabled(isApplying)
-        }
-    }
-
-    private func serverAddress(_ title: String, address: String) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(title).font(.headline)
-            Text(address).textSelection(.enabled)
+        .onChange(of: connectedServer) { _, server in
+            if let server { switchIfNeeded(to: server) }
         }
     }
 
@@ -140,26 +104,26 @@ struct SettingsView: View {
         }
     }
 
-    private func requestServerChange() {
-        guard connection.validationError == nil else { return }
-        pendingChange = ServerChange(previous: model.serverURL, address: connection.address)
+    private var connectedServer: URL? {
+        guard case .connected(let url, _)? = connection.phase else { return nil }
+        return url
     }
 
-    private func apply(_ change: ServerChange) {
-        guard !isApplying else { return }
-        isApplying = true
-        useFailure = nil
+    /// A successful test is the switch. Testing the server already in use only confirms it.
+    private func switchIfNeeded(to server: URL) {
+        guard !isSwitching, ChannelWaitingRequest.normalizedServer(server.absoluteString)
+                != ChannelWaitingRequest.normalizedServer(model.serverURL) else { return }
+        isSwitching = true
+        switchFailure = nil
         Task {
-            defer { isApplying = false }
+            defer { isSwitching = false }
             do {
-                try model.switchServer(to: change.address, replacing: change.previous)
-                connection.address = model.serverURL
-                connection.cancel()
+                try model.switchServer(to: server.absoluteString, replacing: model.serverURL)
                 let catalog = model.catalog
                 await model.refreshCatalog()
                 guard model.catalog === catalog else { return }
-                useFailure = catalog?.phase.message
-            } catch { useFailure = error.localizedDescription }
+                switchFailure = catalog?.phase.message
+            } catch { switchFailure = error.localizedDescription }
         }
     }
 }

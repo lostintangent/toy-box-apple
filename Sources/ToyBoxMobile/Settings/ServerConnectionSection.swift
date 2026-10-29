@@ -3,17 +3,21 @@ import ChannelKit
 import SwiftUI
 import ToyBoxUI
 
+/// The Server URL card shared by Welcome and Settings: the address, Test Connection and its errors.
 struct ServerConnectionSection: View {
     let connection: ServerConnectionProbe
-    let requiresTest: Bool
-    let currentServer: String?
-    let onUse: () -> Void
-    @Binding var useFailure: String?
+    let placeholder: String
+    let footer: String
+    /// The server in use, which a failed test names because the field now shows another one.
+    var currentServer: String?
+    /// Settings applies a successful test, and the row reads Connecting… until the switch lands.
+    var isSwitching = false
+    @Binding var failure: String?
 
     var body: some View {
         @Bindable var connection = connection
         Section {
-            TextField("Server URL", text: $connection.address, prompt: Text("Required"))
+            TextField("Server URL", text: $connection.address, prompt: Text(placeholder))
                 .textContentType(.URL)
                 .keyboardType(.URL)
                 .textInputAutocapitalization(.never)
@@ -25,68 +29,54 @@ struct ServerConnectionSection: View {
                 }
             Button(action: test) {
                 HStack {
-                    Text(connection.isConnecting ? "Connecting…" : testTitle)
-                    if connection.isConnecting { ProgressView() }
+                    Text(isBusy ? "Connecting…" : testTitle)
+                    if isBusy { ProgressView() }
+                    if isConnected {
+                        Spacer()
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                            .accessibilityHidden(true)
+                    }
                 }
             }
+            .accessibilityValue(isConnected ? "Connected" : "")
             .accessibilityIdentifier("server-test")
             .disabled(!canTest)
-            if showsUseButton {
-                Button(requiresTest ? "Continue" : "Use Server", action: onUse)
-                    .accessibilityIdentifier("server-use")
-                    .disabled(!canUse)
-            }
             if let message = Self.validationMessage(address: connection.address, error: connection.validationError) {
                 errorLabel(message)
             }
-            switch connection.phase {
-            case .connected(let url, _)?:
-                Label("Connected to \(SidebarFooter.server(url.absoluteString))", systemImage: "checkmark.circle")
-                    .foregroundStyle(.secondary)
-                    .textSelection(.enabled)
-            case .failed(let address, let error)?:
-                VStack(alignment: .leading, spacing: 4) {
-                    errorLabel(Self.failureMessage(error))
-                    Text(address).font(.footnote).textSelection(.enabled)
-                    Text("Check Tailscale, your Mac's server address, and that your Mac is awake with Toy Box running.")
-                        .font(.footnote).foregroundStyle(.secondary)
-                }
-            case .connecting?, nil:
-                EmptyView()
+            if case .failed(let address, let error)? = connection.phase {
+                errorLabel(Self.failureMessage(error), help: failureHelp(testing: address))
             }
-            if let useFailure { errorLabel(useFailure) }
+            if let failure { errorLabel(failure) }
         } header: {
-            Text("Server")
+            Text("Server URL")
         } footer: {
             VStack(alignment: .leading, spacing: 4) {
-                Text("Use an HTTP or HTTPS URL, including any server path prefix.")
+                Text(footer)
                 if let host = loopbackHost {
-                    Text("\(host) points to this iPhone, not your Mac. To reach your Mac, use its Tailscale address.")
+                    Text("“\(host)” points to this iPhone. Use an address this iPhone can reach, like your server's Tailscale name.")
                 }
             }
         }
-        .onChange(of: connection.address) { _, _ in useFailure = nil }
+        .onChange(of: connection.address) { _, _ in failure = nil }
     }
 
-    var canTest: Bool { !connection.isConnecting && connection.validationError == nil }
+    var canTest: Bool { !connection.isConnecting && !isSwitching && connection.validationError == nil }
 
-    /// First launch always offers Continue. Settings offers Use Server only for a different, valid address.
-    var showsUseButton: Bool {
-        requiresTest || (connection.validationError == nil && !isCurrentServer)
-    }
-
-    var canUse: Bool {
-        guard canTest, !isCurrentServer else { return false }
-        if requiresTest {
-            guard case .connected? = connection.phase else { return false }
-        }
+    /// The address in the field connected. Editing it clears the probe, and with it this checkmark.
+    var isConnected: Bool {
+        guard !isBusy, case .connected? = connection.phase else { return false }
         return true
     }
 
-    private var isCurrentServer: Bool {
-        guard let currentServer else { return false }
-        return ChannelWaitingRequest.normalizedServer(currentServer)
-            == ChannelWaitingRequest.normalizedServer(connection.address)
+    private var isBusy: Bool { connection.isConnecting || isSwitching }
+
+    private func failureHelp(testing address: String) -> String {
+        let help = "Check the address, and that your Toy Box server is running and reachable from this iPhone."
+        guard let currentServer, let current = ChannelWaitingRequest.normalizedServer(currentServer),
+              current != ChannelWaitingRequest.normalizedServer(address) else { return help }
+        return "\(help) Still using \(SidebarFooter.server(currentServer))."
     }
 
     private var loopbackHost: String? {
@@ -103,21 +93,24 @@ struct ServerConnectionSection: View {
     }
 
     private func test() {
-        useFailure = nil
+        failure = nil
         connection.start()
     }
 
-    private func errorLabel(_ message: String) -> some View {
+    private func errorLabel(_ message: String, help: String? = nil) -> some View {
         Label {
-            Text(message)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(message)
+                if let help { Text(help).foregroundStyle(.secondary) }
+            }
         } icon: {
             Image(systemName: "exclamationmark.circle.fill").foregroundStyle(.red)
         }
+        .labelStyle(ErrorLabelStyle())
         .font(.footnote)
         .fixedSize(horizontal: false, vertical: true)
         .textSelection(.enabled)
     }
-
     static func validationMessage(address: String, error: String?) -> String? {
         guard let error, !address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
         guard let parts = URLComponents(string: address.trimmingCharacters(in: .whitespacesAndNewlines)) else {
@@ -125,7 +118,7 @@ struct ServerConnectionSection: View {
         }
         guard let scheme = parts.scheme else { return "Enter the full server URL, starting with http:// or https://." }
         guard ["http", "https"].contains(scheme.lowercased()) else { return "Use HTTP or HTTPS for your Toy Box server." }
-        guard let host = parts.host, !host.isEmpty else { return "Include your Mac's hostname or Tailscale IP address." }
+        guard let host = parts.host, !host.isEmpty else { return "Include your server's hostname or IP address." }
         if parts.user != nil || parts.password != nil { return "Remove usernames and passwords from the server URL." }
         if parts.query != nil || parts.fragment != nil { return "Use the server's base URL without a query or fragment." }
         return error
@@ -157,5 +150,15 @@ struct ServerConnectionSection: View {
             }
         }
         return "Connection error: \(error.localizedDescription)"
+    }
+}
+
+/// The icon sits on the error's first line, and the help below lines up with the error text.
+private struct ErrorLabelStyle: LabelStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            configuration.icon
+            configuration.title
+        }
     }
 }

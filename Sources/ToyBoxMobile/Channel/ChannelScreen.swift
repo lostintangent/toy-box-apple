@@ -13,6 +13,7 @@ struct ChannelScreen: View {
     @Environment(TranscriptGalleryPresenter.self) private var gallery
     @Environment(OverviewPresentation.self) private var overview
     @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.usesVerticalToolbar) private var usesVerticalToolbar
     @ViewState private var keyboardIsVisible = false
     @ViewState private var permissionTipIsAvailable = false
     private let permissionTip = NotificationPermissionTip()
@@ -35,6 +36,10 @@ struct ChannelScreen: View {
             && !interaction.isRequestPreviewPresented && !keyboardIsVisible
             && !model.composerSession(for: store).editor.isFocused
     }
+
+    /// With no vertical bar, a compact `.bottomBar` would sit under the composer, so Message View
+    /// moves into Channel Actions and a filtered transcript names itself under the title instead.
+    private var messageViewIsInActions: Bool { sizeClass == .compact && !usesVerticalToolbar }
 
     var body: some View {
         ZStack {
@@ -63,6 +68,11 @@ struct ChannelScreen: View {
             }
             .navigationTitle(store.details?.name ?? model.catalog?.channels.first { $0.id == store.id }?.name ?? "")
             .navigationBarTitleDisplayMode(.inline)
+            .background {
+                if messageViewIsInActions && interaction.messageView == .yours && !reader.requested {
+                    Color.clear.navigationSubtitle("Your Messages")
+                }
+            }
             .task(id: model.notifications.tipsAvailable) {
                 guard model.notifications.tipsAvailable else { return }
                 for await available in permissionTip.shouldDisplayUpdates {
@@ -124,53 +134,64 @@ struct ChannelScreen: View {
             ToolbarItemGroup(placement: .primaryAction) {
                 overviewButton
                 tasksButton
-                channelActions
             }
-            ToolbarItem(placement: .bottomBar) {
-                messageView
+            if !messageViewIsInActions {
+                ToolbarItem(placement: .bottomBar) {
+                    messageView
+                }
             }
         } else {
             ToolbarItemGroup(placement: .primaryAction) {
                 messageView
-                channelActions
                 tasksButton
                 overviewButton
             }
         }
+        ToolbarOverflowMenu {
+            channelActions
+        }
     }
 
     private var messageView: some View {
-        @Bindable var interaction = interaction
-        return Menu("Message View", systemImage: "line.3.horizontal.decrease") {
-            Picker("Message View", selection: $interaction.messageView) {
-                Text("All Messages").tag(TranscriptView.all)
-                Text("Your Messages").tag(TranscriptView.yours)
-            }
-            .disabled(store.phase == .deleted)
+        Menu("Message View", systemImage: "line.3.horizontal.decrease") {
+            messageViewPicker
         }
     }
 
-    private var channelActions: some View {
-        Menu("Channel Actions", systemImage: "ellipsis") {
-            Button("Find in Conversation", systemImage: "magnifyingglass") {
-                interaction.findInChannel()
-            }
-            .disabled(store.phase == .deleted)
-            ChannelFollowMenuAction(store: store)
-            Button("Open in Toy Box", systemImage: "arrow.up.forward.square") {
-                model.openInToyBox(channelID: store.id)
-            }
-            .disabled(store.phase == .deleted)
-            Divider()
-            Button("Edit Channel", systemImage: "pencil") {
-                management.present(.editChannel(channelId: store.id))
-            }
-            .disabled(!store.phase.isConnected)
-            Button("Delete Channel", systemImage: "trash", role: .destructive) {
-                management.present(.deleteChannel(channelId: store.id))
-            }
-            .disabled(!store.phase.isConnected)
+    private var messageViewPicker: some View {
+        @Bindable var interaction = interaction
+        return Picker("Message View", selection: $interaction.messageView) {
+            Text("All Messages").tag(TranscriptView.all)
+            Text("Your Messages").tag(TranscriptView.yours)
         }
+        .disabled(store.phase == .deleted)
+    }
+
+    @ViewBuilder
+    private var channelActions: some View {
+        if messageViewIsInActions {
+            Section("Message View") {
+                messageViewPicker
+            }
+        }
+        Button("Find in Conversation", systemImage: "magnifyingglass") {
+            interaction.findInChannel()
+        }
+        .disabled(store.phase == .deleted)
+        ChannelFollowMenuAction(store: store)
+        Button("Open in Toy Box", systemImage: "arrow.up.forward.square") {
+            model.openInToyBox(channelID: store.id)
+        }
+        .disabled(store.phase == .deleted)
+        Divider()
+        Button("Edit Channel", systemImage: "pencil") {
+            management.present(.editChannel(channelId: store.id))
+        }
+        .disabled(!store.phase.isConnected)
+        Button("Delete Channel", systemImage: "trash", role: .destructive) {
+            management.present(.deleteChannel(channelId: store.id))
+        }
+        .disabled(!store.phase.isConnected)
     }
 
     private var overviewButton: some View {
@@ -204,5 +225,12 @@ struct ChannelReaderVisibility {
 
     var isVisible: Bool {
         requested && !compactOverviewRequested && !compactOverviewPresented
+    }
+}
+
+extension EnvironmentValues {
+    /// Whether bar items stand in the system's vertical bar, as on the folded iPhone Duo. iOS 27.0 has none.
+    var usesVerticalToolbar: Bool {
+        if #available(iOS 27.1, *) { toolbarVerticalEdge != nil } else { false }
     }
 }
