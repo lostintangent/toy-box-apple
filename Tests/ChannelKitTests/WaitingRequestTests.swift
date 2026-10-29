@@ -102,36 +102,6 @@ struct WaitingRequestTests {
         #expect(ChannelRequestMessage(message: state.messages[0], agents: state.agents).requester == nil)
     }
 
-    @Test func liveAndCatalogProjectionReadsOnlyTheChosenSourceAndRejectsOldSequences() throws {
-        let cached = ChannelRequestMessage(message: message(8), agents: [.init(id: "lead", name: "Cached Lead")])
-        var rosterReads = 0
-        var cacheReads = 0
-        func roster() -> [ChannelAgent] {
-            rosterReads += 1
-            return [.init(id: "lead", name: "Live Lead")]
-        }
-        func cache() -> ChannelRequestMessage? {
-            cacheReads += 1
-            return cached
-        }
-        // Assertion macros capture method arguments eagerly, including autoclosures.
-        let liveResult = ChannelWaitingRequest.message(at: 8, live: message(8), agents: roster(), cached: cache())
-        let live = try #require(liveResult)
-        #expect(live.requester?.name == "Live Lead")
-        #expect(rosterReads == 1)
-        #expect(cacheReads == 0)
-        let cachedResult = ChannelWaitingRequest.message(at: 8, live: message(7), agents: roster(), cached: cache())
-        #expect(cachedResult == cached)
-        #expect(rosterReads == 1)
-        #expect(cacheReads == 1)
-        let missing = ChannelWaitingRequest.message(at: 9, live: nil, agents: roster(), cached: cache())
-        #expect(missing == nil)
-        #expect(rosterReads == 1)
-        #expect(cacheReads == 2)
-        let absent = ChannelWaitingRequest.message(at: 8, live: nil, agents: roster(), cached: nil)
-        #expect(absent == nil && rosterReads == 1 && cacheReads == 2)
-    }
-
     @Test func liveDetailsReplaceOnlyDescriptiveFieldsAndTheLiveRequest() {
         let original = Channel(id: "studio", name: "Catalog", purpose: "Old purpose", directory: "/old",
                                model: .init(provider: "old", name: "old"),

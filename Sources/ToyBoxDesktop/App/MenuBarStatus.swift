@@ -1,3 +1,4 @@
+import ChannelClient
 import ChannelKit
 import Foundation
 
@@ -47,16 +48,14 @@ struct MenuBarStatus: Equatable {
     /// One channel as the sidebar sees it.
     struct Input {
         var channel: Channel
-        var isWaiting: Bool
         /// Lead first, as the sidebar row's avatar stack orders them.
         var working: [ChannelAgent]
-        /// The pending request's message, once it's known.
-        var request: ChannelRequestMessage?
     }
 
     static let workingLimit = 3
-    static let needsReply = "Needs your reply"
 
+    /// The requests behind `waiting`, which the widget shows.
+    var requests: [ChannelWaitingRequests.Entry] = []
     var waiting: [Item] = []
     var working: [Item] = []
     var workingAgents = 0
@@ -70,26 +69,22 @@ struct MenuBarStatus: Equatable {
         self.unreachableHost = unreachableHost
     }
 
-    /// Waiting channels, newest request first, then channels with working agents and no request,
+    /// Waiting requests in their shared order, then channels with working agents and no request,
     /// most recently updated first.
-    init(_ inputs: [Input], unreachableHost: String?) {
+    init(requests: [ChannelWaitingRequests.Entry] = [], _ inputs: [Input], unreachableHost: String?) {
+        self.requests = requests
         self.unreachableHost = unreachableHost
         workingAgents = inputs.reduce(0) { $0 + $1.working.count }
-        func date(_ value: String?) -> Date { value.flatMap(ChannelDates.date) ?? .distantPast }
-        waiting = inputs.filter(\.isWaiting)
-            .map { input in (input, date(input.request?.message.timestamp ?? input.channel.updatedAt)) }
-            .sorted { $0.1 > $1.1 }
-            .map { input, _ in
-                let request = input.request
-                let requester = request?.requester
-                return Item(id: input.channel.id, name: input.channel.name,
-                            subtitle: requester.map { NotificationText.subtitle(requester: $0.name) } ?? Self.needsReply,
-                            agent: requester, sequence: input.channel.requestSequence,
-                            quote: request.map(Self.quote),
-                            requestedAt: request.flatMap { ChannelDates.date($0.message.timestamp) })
-            }
-        working = inputs.filter { !$0.isWaiting && !$0.working.isEmpty }
-            .map { input in (input, date(input.channel.updatedAt)) }
+        waiting = requests.map { entry in
+            let requester = entry.request?.requester
+            return Item(id: entry.channel.id, name: entry.channel.name,
+                        subtitle: requester.map { NotificationText.subtitle(requester: $0.name) } ?? NotificationText.needsReply,
+                        agent: requester, sequence: entry.sequence, quote: entry.request?.quote,
+                        requestedAt: entry.requestedAt)
+        }
+        let waitingIDs = Set(waiting.map(\.id))
+        working = inputs.filter { !waitingIDs.contains($0.channel.id) && !$0.working.isEmpty }
+            .map { input in (input, ChannelDates.date(input.channel.updatedAt) ?? .distantPast) }
             .sorted { $0.1 > $1.1 }
             .map { input, _ in
                 Item(id: input.channel.id, name: input.channel.name,
@@ -145,11 +140,6 @@ struct MenuBarStatus: Equatable {
         case 3: return "\(names[0]), \(names[1]) and \(names[2]) are working"
         default: return "\(names[0]), \(names[1]) and \(names.count - 2) others are working"
         }
-    }
-
-    private static func quote(_ request: ChannelRequestMessage) -> String {
-        let text = NotificationText.plainText(request.message.text)
-        return text.isEmpty ? NotificationText.requestBody(request.message, agents: request.agents) : text
     }
 
     private static func count(_ value: Int, _ noun: String) -> String {

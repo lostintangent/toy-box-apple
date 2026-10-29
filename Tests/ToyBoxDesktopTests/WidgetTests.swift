@@ -1,4 +1,4 @@
-import ChannelClient
+@testable import ChannelClient
 import ChannelKit
 import Foundation
 import Observation
@@ -161,29 +161,34 @@ import Testing
     @Test @MainActor func snapshotUsesMenuBarOrderCountQuotesAndRequestAge() throws {
         let now = Date(timeIntervalSince1970: 1_000_000)
         let requested = now.addingTimeInterval(-600)
-        let status = MenuBarStatus(waiting: (1...6).map { index in
-            .init(id: "channel-\(index)", name: "Channel \(index)", subtitle: "Needs your reply",
-                  agent: .init(id: "lead", name: "Lead"), sequence: index,
-                  quote: index == 1 ? nil : "Question \(index)?",
-                  requestedAt: requested)
-        }, unreachableHost: "localhost")
+        let stamp = ISO8601DateFormatter().string(from: requested)
+        let status = MenuBarStatus(requests: (1...6).map { index in
+            .init(channel: Channel(id: "channel-\(index)", name: "Channel \(index)",
+                                   model: .init(provider: "test", name: "test"), requestSequence: index,
+                                   updatedAt: stamp),
+                  sequence: index, request: index == 1 ? nil : ChannelRequestMessage(
+                    message: .init(id: "m\(index)", sequence: index, timestamp: stamp, sender: .agent("lead"),
+                                   content: .text("Question \(index)?"), request: true),
+                    agents: [.init(id: "lead", name: "Lead")]))
+        }, [], unreachableHost: "localhost")
         let snapshot = WidgetSnapshotPublisher.snapshot(status: status, serverURL: "http://localhost/",
                                                         hasCatalog: true, now: now)
         #expect(snapshot.waitingCount == 6)
         #expect(snapshot.requests.map(\.sequence) == [1, 2, 3, 4, 5])
         #expect(snapshot.requests.first?.quote == "Needs your reply")
         #expect(snapshot.requests[1].quote == "Question 2?")
-        #expect(snapshot.requests.allSatisfy { $0.requestedAt == requested })
+        #expect(snapshot.requests.dropFirst().allSatisfy { $0.requestedAt == requested })
+        #expect(snapshot.requests[0].requestedAt == nil)
         #expect(snapshot.isOffline)
         #expect(snapshot.isAvailable)
         #expect(try JSONDecoder().decode(NeedsYouSnapshot.self, from: JSONEncoder().encode(snapshot)) == snapshot)
-        var row = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(snapshot.requests[0]))
+        var row = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(snapshot.requests[1]))
             as? [String: Any])
         #expect(Set(row.keys) == ["channelID", "channelName", "sequence", "quote", "requestedAt"])
         row["agentName"] = "Lead"
         row["avatarPNG"] = Data([1, 2, 3]).base64EncodedString()
         let legacy = try JSONSerialization.data(withJSONObject: row)
-        #expect(try JSONDecoder().decode(NeedsYouSnapshot.Request.self, from: legacy) == snapshot.requests[0])
+        #expect(try JSONDecoder().decode(NeedsYouSnapshot.Request.self, from: legacy) == snapshot.requests[1])
     }
 
     @Test @MainActor func missingCatalogDoesNotClaimAnEmptyInboxAndStalenessUsesAnInjectedTime() {

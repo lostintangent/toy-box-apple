@@ -1,4 +1,5 @@
 import AppKit
+import ChannelKit
 import Foundation
 
 @MainActor
@@ -20,7 +21,7 @@ enum DockMenu {
             for request in status.waiting {
                 let question = request.quote?.split(whereSeparator: \.isWhitespace).joined(separator: " ") ?? ""
                 let name = request.name.split(whereSeparator: \.isWhitespace).joined(separator: " ")
-                let fullTitle = "\(name): \(question.isEmpty ? MenuBarStatus.needsReply : question)"
+                let fullTitle = "\(name): \(question.isEmpty ? NotificationText.needsReply : question)"
                 let item = item(NotificationText.truncated(fullTitle, limit: titleLimit)) { open(request) }
                 item.toolTip = request.agent.map { "\(fullTitle)\n\($0.name) needs your reply" } ?? fullTitle
                 menu.addItem(item)

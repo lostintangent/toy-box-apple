@@ -13,6 +13,12 @@ public struct ChannelRequestMessage: Equatable, Sendable {
     public var requester: ChannelAgent? {
         agents.first { $0.id == message.sender.agentId }
     }
+
+    /// The request's own words, or how the transcript shows it when it has none.
+    public var quote: String {
+        let text = NotificationText.plainText(message.text)
+        return text.isEmpty ? NotificationText.requestBody(message, agents: agents) : text
+    }
 }
 
 public struct ChannelWaitingRequest: Equatable, Identifiable, Sendable {
@@ -52,13 +58,6 @@ public struct ChannelWaitingRequest: Equatable, Identifiable, Sendable {
 
     public static func message(at sequence: Int, in state: ChannelState) -> ChannelMessage? {
         state.request?.sequence == sequence ? state.request : state.messages.first { $0.sequence == sequence }
-    }
-
-    public static func message(at sequence: Int, live: ChannelMessage?, agents: @autoclosure () -> [ChannelAgent],
-                               cached: @autoclosure () -> ChannelRequestMessage?) -> ChannelRequestMessage? {
-        if let live, live.sequence == sequence { return .init(message: live, agents: agents()) }
-        guard let cached = cached(), cached.message.sequence == sequence else { return nil }
-        return cached
     }
 
     public static func isReplied(_ sequence: Int, in messages: [ChannelMessage]) -> Bool {

@@ -9,7 +9,7 @@ import Testing
 struct DockMenuTests {
     private func waiting(_ id: String = "core", sequence: Int = 10, quote: String? = "Should I tag v0.1.4?")
         -> MenuBarStatus.Item {
-        .init(id: id, name: id == "core" ? "Core" : id, subtitle: MenuBarStatus.needsReply,
+        .init(id: id, name: id == "core" ? "Core" : id, subtitle: NotificationText.needsReply,
               agent: nil, sequence: sequence, quote: quote)
     }
 
