@@ -373,4 +373,58 @@ struct TransportTests {
         await store.markRead(through: 1)
         #expect(mock.requests.filter { $0.httpMethod == "POST" }.count == 1)
     }
+
+    /// Transcript's read task is cancelled whenever the visible sequence moves, which used to cancel
+    /// the write in flight and report it as "Read position wasn't saved. cancelled".
+    @Test @MainActor func cancellingAReaderNeitherReportsAnErrorNorDropsItsRead() async throws {
+        let (mock, store) = try heldReadStore()
+        let reader = Task { await store.markRead(through: 2) }
+        try await eventually(observing: mock) { mock.pendingResponseCount == 1 }
+        reader.cancel()
+        #expect(mock.finishPendingResponses() == 1)
+        await reader.value
+        #expect(store.readError == nil)
+        await store.markRead(through: 2)
+        #expect(try readTargets(mock) == [2])
+    }
+
+    /// A later read that arrives during a write joins it, so cancelling the first reader can't strand
+    /// the later target until the next scroll.
+    @Test @MainActor func aLaterReadIsStillWrittenWhenTheFirstReaderIsCancelled() async throws {
+        let (mock, store) = try heldReadStore()
+        let first = Task { await store.markRead(through: 2) }
+        try await eventually(observing: mock) { mock.pendingResponseCount == 1 }
+        let (started, start) = AsyncStream<Void>.makeStream()
+        let later = Task {
+            start.finish()
+            await store.markRead(through: 3)
+        }
+        // The main actor runs the later read until it suspends inside markRead before this resumes.
+        for await _ in started {}
+        first.cancel()
+        #expect(mock.finishPendingResponses() == 1)
+        await later.value
+        await first.value
+        #expect(store.readError == nil)
+        #expect(try readTargets(mock) == [2, 3])
+    }
+
+    /// A connected store that has seen message 1 of 3, whose first read response stays open until the test finishes it.
+    @MainActor private func heldReadStore() throws -> (MockTransport, ChannelStore) {
+        let mock = MockTransport { request, count in
+            let sequence = try JSONDecoder().decode([String: Int].self, from: requestBody(request))["sequence"] ?? 0
+            var response = MockResponse(body: Data(#"{"version":1,"seenThrough":\#(sequence)}"#.utf8))
+            response.keepOpen = count == 1
+            return response
+        }
+        let store = ChannelStore(id: "test", api: try mock.api(), sendJournal: nil)
+        var state = testState(revision: 10, messages: [testMessage(1), testMessage(2), testMessage(3)])
+        state.channel.seenThrough = 1
+        _ = try store.apply(.init(type: "snapshot", state: state))
+        return (mock, store)
+    }
+
+    private func readTargets(_ mock: MockTransport) throws -> [Int?] {
+        try mock.requests.map { try JSONDecoder().decode([String: Int].self, from: requestBody($0))["sequence"] }
+    }
 }

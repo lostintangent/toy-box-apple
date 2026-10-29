@@ -125,7 +125,7 @@ public final class ChannelStore {
     @ObservationIgnored private var lastFailure: String?
     @ObservationIgnored private var capturedUnread = false
     @ObservationIgnored private var historyGeneration = UUID()
-    @ObservationIgnored private var markingRead = false
+    @ObservationIgnored private var readWrite: Task<Void, Never>?
     @ObservationIgnored private var pendingRead = 0
     @ObservationIgnored private var acknowledgedRead = 0
     @ObservationIgnored private let reconnectPolicy: ReconnectPolicy
@@ -578,13 +578,22 @@ public final class ChannelStore {
         return task
     }
 
+    /// Returns once the read through `sequence`, and any later read raised meanwhile, is written or a
+    /// write fails. The store owns the write, so cancelling a caller neither interrupts it nor reports
+    /// an error, and a later caller joins it rather than leaving its read for the next scroll.
     public func markRead(through sequence: Int) async {
         guard phase.isConnected, let channel = state?.channel else { return }
         pendingRead = max(pendingRead, min(sequence, channel.latestSequence))
-        guard !markingRead, pendingRead > max(channel.seenThrough, acknowledgedRead) else { return }
-        markingRead = true
-        readError = nil
-        defer { markingRead = false }
+        if readWrite == nil {
+            guard pendingRead > max(channel.seenThrough, acknowledgedRead) else { return }
+            readError = nil
+            readWrite = Task { await writeReads() }
+        }
+        await readWrite?.value
+    }
+
+    private func writeReads() async {
+        defer { readWrite = nil }
         while let current = state?.channel, pendingRead > max(current.seenThrough, acknowledgedRead), phase.isConnected {
             let target = pendingRead
             do {
