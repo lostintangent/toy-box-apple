@@ -1,10 +1,8 @@
 import ChannelClient
 import ChannelKit
-import Combine
 import SwiftUI
 import TipKit
 import ToyBoxUI
-import UIKit
 
 struct ChannelScreen: View {
     let store: ChannelStore
@@ -52,6 +50,7 @@ struct ChannelScreen: View {
                 }
             }
         }
+            .softwareKeyboardVisibility($keyboardIsVisible)
             .safeAreaBar(edge: .top, spacing: 0) {
                 if showsPermissionTip {
                     TipView(permissionTip) { _ in
@@ -71,13 +70,6 @@ struct ChannelScreen: View {
                 }
             }
             .onAppear { model.visibleChannelID = store.id }
-            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillChangeFrameNotification)) { event in
-                guard let window = model.composerSession(for: store).editor.textView?.window,
-                      let screenFrame = event.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect else { return }
-                keyboardIsVisible = ComposerBottomSpacing.keyboardIsVisible(
-                    frame: window.convert(screenFrame, from: window.screen.coordinateSpace), in: window.bounds,
-                    safeAreaBottom: window.safeAreaInsets.bottom)
-            }
             .onChange(of: store.id) { _, id in model.visibleChannelID = id }
             .onChange(of: store.artifacts, initial: true) { _, current in
                 artifacts.configure(api: store.api, channelID: store.id, artifacts: current)
