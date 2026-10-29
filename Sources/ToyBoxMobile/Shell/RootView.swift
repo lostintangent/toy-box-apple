@@ -45,6 +45,9 @@ struct RootView: View {
             overviewContent(at: .inspector)
                 .inspectorColumnWidth(min: 280, ideal: 296, max: 360)
         }
+        // An animated inspector narrows the detail every frame, re-wrapping the transcript each time.
+        // Cutting straight to the final width lays it out once. The sheet below keeps its animation.
+        .transaction(value: selectedInteraction?.isInspectorPresented) { $0.disablesAnimations = true }
         .sheet(isPresented: Binding(
             get: { overview.placement == .sheet && selectedInteraction?.isInspectorPresented == true },
             set: { if overview.placement == .sheet { selectedInteraction?.isInspectorPresented = $0 } }
