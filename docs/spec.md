@@ -2346,7 +2346,9 @@ Cancel is the safe default. There is no fake Undo for irreversible server deleti
 Settings uses a native scene with General and Notifications sections. General includes Server
 URL, Test Connection, status, and the selected appearance (System by default). Validate HTTP(S),
 preserve path prefixes and display actionable failures. Changing servers prompts before replacing
-live connections, namespaces drafts, then refreshes the catalog. Notifications explains requests
+live connections, namespaces drafts, then refreshes the catalog. On iPhone, Use Server appears only
+while the field holds a valid address different from the current server, and Return in the field
+runs Test Connection. First-launch setup always shows Continue. Notifications explains requests
 and completions before asking system permission in response to an explicit enable action.
 Permission denial shows Open System Settings, never repeated permission prompts. General also
 holds Open at Login, Show in menu bar, the Quick Send shortcut recorder, and the two on-device

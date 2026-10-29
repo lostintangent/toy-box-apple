@@ -32,10 +32,12 @@ struct ServerConnectionSection: View {
             }
             .accessibilityIdentifier("server-test")
             .disabled(!canTest)
-            Button(requiresTest ? "Continue" : "Use Server", action: onUse)
-                .frame(minHeight: 44)
-                .accessibilityIdentifier("server-use")
-                .disabled(!canUse)
+            if showsUseButton {
+                Button(requiresTest ? "Continue" : "Use Server", action: onUse)
+                    .frame(minHeight: 44)
+                    .accessibilityIdentifier("server-use")
+                    .disabled(!canUse)
+            }
             if let message = Self.validationMessage(address: connection.address, error: connection.validationError) {
                 errorLabel(message)
             }
@@ -70,15 +72,23 @@ struct ServerConnectionSection: View {
 
     var canTest: Bool { !connection.isConnecting && connection.validationError == nil }
 
+    /// First launch always offers Continue. Settings offers Use Server only for a different, valid address.
+    var showsUseButton: Bool {
+        requiresTest || (connection.validationError == nil && !isCurrentServer)
+    }
+
     var canUse: Bool {
-        guard canTest else { return false }
+        guard canTest, !isCurrentServer else { return false }
         if requiresTest {
             guard case .connected? = connection.phase else { return false }
         }
-        if let currentServer,
-           ChannelWaitingRequest.normalizedServer(currentServer)
-            == ChannelWaitingRequest.normalizedServer(connection.address) { return false }
         return true
+    }
+
+    private var isCurrentServer: Bool {
+        guard let currentServer else { return false }
+        return ChannelWaitingRequest.normalizedServer(currentServer)
+            == ChannelWaitingRequest.normalizedServer(connection.address)
     }
 
     private var loopbackHost: String? {
