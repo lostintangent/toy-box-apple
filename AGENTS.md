@@ -63,7 +63,7 @@ view.
 - `TOY_BOX_TEST_LIVE_TEXT_INTERACTION=1 SCRATCH_PATH=/tmp/tbm-<you> bun run test --filter pressesOnTextReachLiveTextAndEverythingElseReachesTheViewer`
   opts into native Live Text press/drag routing in an ordered off-screen window. WindowServer
   events can stop the runner's outer run loop. Deterministic geometry/routing-policy checks remain
-  in the default suite. VisionKit analysis is quarantined under Test reliability.
+  in the default suite, as is VisionKit analysis gating.
 - `SCRATCH_PATH=/tmp/tbm-<you> bun run benchmark [--summaries] [launch|switch|messages|paging|key|idle ...]`
   builds release `dev.toybox.desktop.benchmark`, runs each scenario on a fresh `bun run demo:perf`
   at 3292 (`TOY_BOX_PERF_PORT`), prints result/budget and exits 1 if over. See the spec's Performance
@@ -262,7 +262,6 @@ comparisons and retained regression contracts are in [docs/test-history.md](docs
 
 | Test | Opt-in | Owner / condition for restoring merge-gate coverage |
 | --- | --- | --- |
-| `ImageViewerLiveTextTests.onlyTheSettledCurrentImageIsAnalyzedAndTheWindowRemembersIt` | `TOY_BOX_TEST_LIVE_TEXT_ANALYSIS=1` | Transcript: identify cause and add deterministic analysis-gating coverage |
 | `imageStripOverflowRespondsToWheelInput` | `TOY_BOX_TEST_IMAGE_STRIP_SCROLLING=1` | Composer: native wheel animation requires awake/unlocked Mac, so keep per-frame/WindowServer checks opt-in |
 
 `TransportTests.storeReconnectsFromAppliedRevisionZero` and `recoverySnapshotReplacesCachedHistory`
@@ -270,8 +269,8 @@ are restored to the default gate with immediate/held-response delivery, not
 `TOY_BOX_TEST_RECONNECT_TIMING=1`. Image-strip CI still covers both
 scroller styles, equal height, overflow, native clip scrolling and trailing-edge visibility through
 `imageStripKeepsOneHeightWhenItsImagesOverflowAndStillScrolls`. Wheel failure diagnostics include
-geometry, window visibility, display sleep and session lock state. Live Text timeouts record
-analysis errors/completion/text detection and load.
+geometry, window visibility, display sleep and session lock state. The Live Text analysis test is
+restored to the default local suite, awaiting the viewer's own load and analysis tasks.
 
 ## Validating the running app
 

@@ -122,7 +122,7 @@ final class ImageViewer {
     @ObservationIgnored private var vectorRasterPixels = 0
     /// The Live Text view over the presented image, which holds its text selection.
     @ObservationIgnored weak var liveTextView: ImageAnalysisOverlayView?
-    @ObservationIgnored private var analysisTask: Task<Void, Never>?
+    @ObservationIgnored private(set) var analysisTask: Task<Void, Never>?
     @ObservationIgnored private lazy var analyzer = ImageAnalyzer()
     /// The window's recent analyses by attachment digest, most recent last.
     @ObservationIgnored private var analyses: [(key: String, analysis: ImageAnalysis)] = []
