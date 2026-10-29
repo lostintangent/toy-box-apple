@@ -109,28 +109,13 @@ struct ManagementSheet: View {
 struct ManagementActionLabel: View {
     let title: String
     let pendingSince: ContinuousClock.Instant?
-    @ViewState private var showsProgress = false
 
     var body: some View {
         HStack {
-            if showsProgress {
-                ProgressView().controlSize(.small).accessibilityHidden(true)
+            if let pendingSince {
+                DelayedProgressView(since: pendingSince).controlSize(.small).accessibilityHidden(true)
             }
             Text(title)
-        }
-        .task(id: pendingSince) {
-            showsProgress = false
-            guard let pendingSince else { return }
-            let delay = Duration.milliseconds(300) - pendingSince.duration(to: .now)
-            do {
-                if delay > .zero { try await Task.sleep(for: delay) }
-                guard !Task.isCancelled else { return }
-                showsProgress = true
-            } catch is CancellationError {
-                return
-            } catch {
-                NSLog("Management progress delay failed: %@", error.localizedDescription)
-            }
         }
     }
 }

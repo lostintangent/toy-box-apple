@@ -182,7 +182,7 @@ private struct TranscriptAttachment: View {
                         .scaledToFit()
                         .frame(width: size.width, height: size.height)
                 } else {
-                    TranscriptDelayedSpinner()
+                    DelayedProgressView().controlSize(.small)
                 }
             }
             .frame(width: max(44, size.width), height: max(44, size.height))
@@ -227,15 +227,18 @@ private struct TranscriptAttachment: View {
         error = nil
         defer { isLoading = false }
         do {
+            if isImage {
+                let loaded = try await TranscriptThumbnails.load(for: attachment, api: api, scale: displayScale,
+                                                                 reload: retry > 0)
+                guard !Task.isCancelled else { return }
+                thumbnail = loaded.image
+                localURL = loaded.file
+                return
+            }
             let file = try await ChannelAttachmentCache.shared.file(for: attachment, api: api, reload: retry > 0)
             guard !Task.isCancelled else { return }
             localURL = file
-            if isImage {
-                let image = try await TranscriptThumbnails.image(at: file, for: attachment, api: api,
-                                                                 scale: displayScale, reload: retry > 0)
-                guard !Task.isCancelled else { return }
-                thumbnail = image
-            } else if isVideo {
+            if isVideo {
                 let asset = AVURLAsset(url: file)
                 let generator = AVAssetImageGenerator(asset: asset)
                 generator.appliesPreferredTrackTransform = true
@@ -252,24 +255,9 @@ private struct TranscriptAttachment: View {
         } catch is CancellationError {
             return
         } catch {
+            // An image that downloaded but can't be decoded still opens in Quick Look.
+            localURL = ChannelAttachmentCache.cachedFile(for: attachment, api: api)
             self.error = error.localizedDescription
-        }
-    }
-}
-
-/// A loading indicator that appears only after 300 ms, so quick loads never flash a spinner.
-struct TranscriptDelayedSpinner: View {
-    var controlSize: ControlSize = .small
-    @ViewState private var isVisible = false
-
-    var body: some View {
-        ZStack {
-            if isVisible { ProgressView().controlSize(controlSize) }
-        }
-        .task {
-            do { try await Task.sleep(for: .milliseconds(300)) }
-            catch { return }
-            isVisible = true
         }
     }
 }
@@ -305,10 +293,9 @@ private struct TranscriptVideo: View {
 /// The shared thumbnails, with the SVG rasterizer ImageIO lacks.
 @MainActor
 enum TranscriptThumbnails {
-    static func image(at file: URL, for attachment: ChannelAttachment, api: ChannelAPI, scale: CGFloat,
-                      reload: Bool = false) async throws -> CGImage {
-        try await ChannelThumbnails.image(at: file, for: attachment, api: api, scale: scale,
-                                          reload: reload, fallback: svg)
+    static func load(for attachment: ChannelAttachment, api: ChannelAPI, scale: CGFloat,
+                     reload: Bool = false) async throws -> (image: CGImage, file: URL) {
+        try await ChannelThumbnails.load(for: attachment, api: api, scale: scale, reload: reload, fallback: svg)
     }
 
     nonisolated static func decode(_ file: URL, scale: CGFloat) throws -> CGImage {

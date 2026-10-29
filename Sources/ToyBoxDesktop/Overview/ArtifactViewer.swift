@@ -46,7 +46,6 @@ struct ArtifactViewerStage: View {
     let artifact: ChannelArtifact
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @FocusState private var focused: Bool
-    @ViewState private var showsSpinner = false
 
     private var hasStrip: Bool { (opener.pages?.artifacts.count ?? 0) > 1 }
     private var background: Color {
@@ -96,14 +95,6 @@ struct ArtifactViewerStage: View {
             return .handled
         }
         .animation(.easeInOut(duration: 0.2), value: artifact.id)
-        .task(id: opener.isLoading) {
-            showsSpinner = false
-            guard opener.isLoading else { return }
-            do { try await Task.sleep(for: .milliseconds(300)) }
-            catch is CancellationError { return }
-            catch { opener.actionError = error.localizedDescription; return }
-            if !Task.isCancelled { showsSpinner = true }
-        }
         .quickLookPreview($opener.previewFile)
         .accessibilityElement(children: .contain)
         .accessibilityAddTraits(.isModal)
@@ -148,7 +139,7 @@ struct ArtifactViewerStage: View {
             }
         } else {
             Group {
-                if showsSpinner { ProgressView("Loading artifact…").controlSize(.small) }
+                if opener.isLoading { DelayedProgressView("Loading artifact…").controlSize(.small) }
                 else { Color.clear }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -216,7 +207,6 @@ private struct ArtifactWebPage: View {
     let opener: ArtifactOpener
     let bottomInset: CGFloat
     @ViewState private var renderer: ArtifactWebContent
-    @ViewState private var showsSpinner = false
 
     init(content: ArtifactContent, opener: ArtifactOpener, bottomInset: CGFloat) {
         self.content = content
@@ -238,7 +228,7 @@ private struct ArtifactWebPage: View {
                 ContentUnavailableView("Couldn't Load Artifact", systemImage: "doc.badge.ellipsis",
                                        description: Text("The artifact's text is unavailable."))
             }
-            if showsSpinner { ProgressView("Loading artifact…").controlSize(.small) }
+            if renderer.isLoading { DelayedProgressView("Loading artifact…").controlSize(.small) }
             if let error = renderer.error {
                 ContentUnavailableView {
                     Label("Couldn't Load Artifact", systemImage: "doc.badge.ellipsis")
@@ -257,14 +247,6 @@ private struct ArtifactWebPage: View {
             await renderer.load(text, directory: content.directory,
                                 server: content.server, resource: content.resource,
                                 state: opener.webReadingStates[content.artifact.id])
-        }
-        .task(id: renderer.isLoading) {
-            showsSpinner = false
-            guard renderer.isLoading else { return }
-            do { try await Task.sleep(for: .milliseconds(300)) }
-            catch is CancellationError { return }
-            catch { opener.actionError = error.localizedDescription; return }
-            if !Task.isCancelled { showsSpinner = true }
         }
         .onDisappear {
             renderer.stop()

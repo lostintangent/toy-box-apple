@@ -518,7 +518,6 @@ private struct TranscriptPagingAccessory: View {
     let isLoading: Bool
     let error: String?
     let load: () -> Void
-    @ViewState private var showsProgress = false
 
     var body: some View {
         Group {
@@ -529,16 +528,11 @@ private struct TranscriptPagingAccessory: View {
                     Button("Retry", action: load).font(.footnote.weight(.semibold)).frame(minHeight: 44)
                 }
                 .padding(.top, 8)
-            } else if showsProgress {
-                ProgressView()
+            } else if isLoading {
+                DelayedProgressView()
             }
         }
         .frame(maxWidth: .infinity, minHeight: 44)
-        .task(id: isLoading) {
-            guard isLoading else { showsProgress = false; return }
-            try? await Task.sleep(for: .milliseconds(300))
-            showsProgress = !Task.isCancelled
-        }
     }
 }
 
@@ -779,7 +773,6 @@ private struct TranscriptState: View {
     let loadOlder: () -> Void
     @Environment(AppModel.self) private var model
     @Environment(ChannelInteraction.self) private var interaction
-    @ViewState private var showsProgress = false
 
     var body: some View {
         if !store.isLoaded {
@@ -794,12 +787,8 @@ private struct TranscriptState: View {
                 }
             } else {
                 VStack(spacing: 12) {
-                    if showsProgress { ProgressView() }
+                    DelayedProgressView()
                     Text("Connecting").font(.footnote).foregroundStyle(TranscriptInk.secondary)
-                }
-                .task {
-                    try? await Task.sleep(for: .milliseconds(300))
-                    showsProgress = !Task.isCancelled
                 }
             }
         } else if isEmpty && interaction.messageView == .yours {

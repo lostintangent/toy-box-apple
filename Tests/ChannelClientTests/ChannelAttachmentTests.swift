@@ -68,6 +68,21 @@ struct ChannelAttachmentTests {
         #expect(try await ChannelThumbnails.image(at: smallFile, for: small, api: api, scale: 2) === whole)
     }
 
+    @Test func aSharpRememberedThumbnailLoadsWithItsFileAndAMissingFileIsFetchedAgain() async throws {
+        let attachment = ChannelAttachment(name: "remembered.png", mimeType: "image/png",
+                                           base64: try encodedImage(width: 1000, height: 500, type: .png))
+        let api = try ChannelAPI(serverURL: "http://localhost:3210")
+        let first = try await ChannelThumbnails.load(for: attachment, api: api, scale: 2)
+        #expect(first.image.width == 480)
+        let again = try await ChannelThumbnails.load(for: attachment, api: api, scale: 2)
+        #expect(again.image === first.image && again.file == first.file)
+
+        try FileManager.default.removeItem(at: first.file)
+        let refetched = try await ChannelThumbnails.load(for: attachment, api: api, scale: 2)
+        #expect(refetched.image === first.image)
+        #expect(FileManager.default.fileExists(atPath: refetched.file.path))
+    }
+
     @Test func overlappingCommitsKeepTheSharperThumbnail() async throws {
         let payload = try encodedImage(width: 1000, height: 500, type: .png)
         let attachment = ChannelAttachment(name: "overlap.png", mimeType: "image/png", base64: payload)

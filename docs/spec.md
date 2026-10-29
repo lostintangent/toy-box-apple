@@ -2383,7 +2383,7 @@ navigation keeps list focus until explicitly moving into the conversation.
 | No channels | Source-list empty state: "Your channels live here" and New Channel. The connection footer already names the server, so the empty state doesn't repeat it |
 | Search has no matches | "No channels match [query]", Clear Search. Do not show the no-channels creation state |
 | Nothing selected | Centered `bubble.left.and.bubble.right` symbol, "Choose a channel", concise navigation hint |
-| First channel snapshot | Static message placeholders and "Connecting". Composer shell remains present, Send unavailable |
+| First channel snapshot | Static message placeholders and "Connecting", whose spinner appears after 300 ms. On the Mac the label waits with it. Composer shell remains present, Send unavailable |
 | New empty channel | "Your lead is getting started", "Send a message or type @ to add an agent". Keep composer and working status visible |
 | Filter has no messages | "No messages for you yet", Show All Messages. Keep paging older history until exhausted |
 | Reconnecting with cached state | Keep transcript and scroll intact. After about three seconds of trying without connecting, a 32-point inline banner below toolbar says "Reconnecting. Messages may be out of date" with Retry, the channel's only outage notice apart from Overview's note. Retry keeps the banner until the channel connects, and the catalog's recovery retries it at once. A reconnect that goes live sooner shows nothing. Until then agent status, working presence and every connection notice stay as they were while live. Disable delivery and management actions, not editing. Time away from the app never counts toward the three seconds |

@@ -2234,79 +2234,25 @@ private func transcriptSettled<Value: Equatable>(in view: NSView, reading: () th
 struct TranscriptCatchUpTests {
     /// Each test uses its own server, so the session's memo and dismissals never cross tests.
     let server = URL(string: "https://catch-up-\(UUID().uuidString.lowercased()).invalid")!
-    let summary = CatchUp(needsYou: nil, changes: [.init(text: "Lead verified the reconnect fix.", sources: [12])],
-                          through: 30)
 
-    func make(_ state: ChannelState = catchUpTestState(), unreadAfter: Int? = 10, view: TranscriptView = .all,
-              availability: IntelligenceAvailability = .available, isOn: Bool = true,
-              timeout: Duration = .seconds(15)) -> TranscriptCatchUp? {
-        TranscriptCatchUp.make(server: server, state: state, unreadAfter: unreadAfter, view: view,
-                               availability: availability, isOn: isOn, timeout: timeout)
+    func make(unreadAfter: Int = 10, availability: IntelligenceAvailability = .available) -> TranscriptCatchUp? {
+        TranscriptCatchUp.make(server: server, state: catchUpTestState(), unreadAfter: unreadAfter, view: .all,
+                               availability: availability, isOn: true)
     }
 
-    @Test func aLandingIsEligibleOnlyWithTheModelTheSettingAndEnoughToRead() throws {
-        let catchUp = try #require(make())
-        #expect(catchUp.phase == .loading)
-        #expect(catchUp.generation != nil)
-        #expect(catchUp.holdsLanding)
-        #expect(catchUp.title == "Summarizing 20 new messages")
+    /// The shared session's own suite covers eligibility, results and updates. The Mac adds the hold.
+    @Test func anEligibleLandingHoldsUntilTheReaderMovesOrItsSummaryCollapses() async throws {
         #expect(make(availability: .unavailable(.modelNotReady)) == nil)
-        #expect(make(isOn: false) == nil)
-        #expect(make(view: .yours) == nil)
-        #expect(make(unreadAfter: nil) == nil)
-        #expect(make(unreadAfter: 28) == nil)
-        let suite = "catch-up-\(UUID().uuidString)"
-        let defaults = try #require(UserDefaults(suiteName: suite))
-        defer { defaults.removePersistentDomain(forName: suite) }
-        let key = TranscriptIntelligenceSettings.summarizesNewMessages
-        #expect(TranscriptIntelligenceSettings.isOn(key, defaults: defaults))
-        defaults.set(false, forKey: key)
-        #expect(!TranscriptIntelligenceSettings.isOn(key, defaults: defaults))
-    }
-
-    @Test func dismissingHidesTheSummaryForThatBoundaryForTheRestOfTheSession() async throws {
         let catchUp = try #require(make())
-        catchUp.dismiss()
-        #expect(catchUp.generation == nil)
-        #expect(make() == nil)
-        #expect(make(unreadAfter: 9) != nil)
-        try await transcriptUntil { catchUp.phase == .collapsed }
-        #expect(catchUp.phase == .collapsed)
+        #expect(catchUp.session.phase == .loading)
+        #expect(catchUp.holdsLanding)
+        catchUp.isPinned = false
         #expect(!catchUp.holdsLanding)
-    }
 
-    @Test func aSummaryMadeEarlierIsThereOnTheFirstFrame() async throws {
-        let service = StubChannelIntelligence(results: [.ready(summary)])
-        let first = try #require(make())
-        await first.run(using: service)
-        #expect(first.phase == .ready(.init(catchUp: summary, count: 20)))
-        #expect(first.title == "Summary of 20 new messages")
-
-        let again = try #require(make())
-        #expect(again.phase == first.phase)
-        #expect(again.generation == nil)
-        await again.run(using: service)
-        #expect(service.catchUpCount == 1)
-    }
-
-    @Test func aSlowModelCollapsesAtTheTimeoutAndIsAskedAgainNextTime() async throws {
-        let service = StubChannelIntelligence(results: [.ready(summary)], delay: .seconds(300))
-        let catchUp = try #require(make(timeout: .milliseconds(50)))
-        let start = ContinuousClock.now
-        await catchUp.run(using: service)
-        #expect(catchUp.phase == .collapsed)
-        // Generous, since other suites can keep the main actor busy for seconds at a time.
-        #expect(ContinuousClock.now - start < .seconds(60))
-        #expect(make()?.phase == .loading)
-    }
-
-    @Test(arguments: [CatchUpResult.nothingNew, .declined, .unavailable(.modelNotReady)])
-    func aSummaryWithNothingToSayCollapses(result: CatchUpResult) async throws {
-        let catchUp = try #require(make())
-        await catchUp.run(using: StubChannelIntelligence(results: [result]))
-        #expect(catchUp.phase == .collapsed)
-        #expect(catchUp.isFading)
-        #expect(!catchUp.holdsLanding)
+        let collapsing = try #require(make(unreadAfter: 9))
+        collapsing.session.dismiss()
+        try await transcriptUntil { collapsing.session.phase == .collapsed }
+        #expect(!collapsing.holdsLanding)
     }
 
     @Test func aLineFromAChannelEventLeadsWithThatEventsOwnSymbol() {
@@ -2331,29 +2277,6 @@ struct TranscriptCatchUpTests {
         #expect(slot(11) == .avatar("lead"))
         #expect(slot(12, isReplied: true) == .need(isReplied: true))
         #expect(slot(99) == .unknown)
-    }
-
-    @Test func aFailedUpdateKeepsTheSummaryAndUpdateTriesAgain() async throws {
-        let newer = CatchUp(needsYou: nil, changes: [.init(text: "Ada shipped the beta.", sources: [34])], through: 36)
-        let service = StubChannelIntelligence(results: [.ready(summary), .declined, .ready(newer)])
-        let catchUp = try #require(make())
-        await catchUp.run(using: service)
-        let first = TranscriptCatchUp.Summary(catchUp: summary, count: 20)
-
-        let later = catchUpTestState(through: 36)
-        #expect(channelAgentMessageCount(later.messages, after: summary.through) == 6)
-        catchUp.update(from: later, server: server)
-        #expect(catchUp.phase == .updating(first))
-        #expect(catchUp.title == "Summarizing 26 new messages")
-        await catchUp.run(using: service)
-        #expect(catchUp.phase == .ready(first))
-        #expect(catchUp.title == "Summary of 20 new messages")
-
-        catchUp.update(from: later, server: server)
-        #expect(catchUp.isGenerating)
-        await catchUp.run(using: service)
-        #expect(catchUp.phase == .ready(.init(catchUp: newer, count: 26)))
-        #expect(service.catchUpCount == 3)
     }
 
     @Test func imagesAreDescribedOnlyForVoiceOverAndOnlyOnce() async throws {

@@ -56,7 +56,7 @@ struct TranscriptCatchUpCard: View {
                 .accessibilityHidden(true)
             Spacer(minLength: 0)
             if catchUp.isGenerating {
-                TranscriptDelayedProgress().id(catchUp.generation)
+                DelayedProgressView().controlSize(.small).id(catchUp.generation)
             }
             Button("Dismiss Summary", systemImage: "xmark", action: onDismiss)
                 .labelStyle(.iconOnly)
@@ -72,7 +72,7 @@ struct TranscriptCatchUpCard: View {
     private func content(_ summary: TranscriptCatchUpSession.Summary) -> some View {
         let messages = store.messages
         let agents = store.roster
-        let newer = channelAgentMessageCount(messages, after: summary.catchUp.through)
+        let newer = summary.newerMessageCount(in: messages)
         let isUpdating = catchUp.isGenerating
         return VStack(alignment: .leading, spacing: 4) {
             VStack(alignment: .leading, spacing: 0) {
@@ -87,10 +87,10 @@ struct TranscriptCatchUpCard: View {
             .opacity(isUpdating ? 0.5 : 1)
             .animation(.easeOut(duration: 0.2), value: isUpdating)
             HStack(spacing: 6) {
-                Text("Summarized on this iPhone\(newer >= 4 ? " · \(newer) newer messages" : "")")
+                Text("Summarized on this iPhone\(newer.map { " · \($0) newer messages" } ?? "")")
                     .foregroundStyle(.secondary)
                 TranscriptCatchUpCaveat()
-                if newer >= 4 {
+                if newer != nil {
                     Button("Update") {
                         if let state = store.state { catchUp.update(from: state, server: store.api.baseURL) }
                     }
@@ -123,21 +123,6 @@ private struct TranscriptCatchUpCaveat: View {
                     .frame(idealWidth: 260)
                     .fixedSize(horizontal: false, vertical: true)
                     .presentationCompactAdaptation(.popover)
-            }
-    }
-}
-
-/// Shows progress only once work outlasts a glance, so a quick result never flashes a spinner.
-private struct TranscriptDelayedProgress: View {
-    @ViewState private var isShown = false
-
-    var body: some View {
-        ProgressView()
-            .controlSize(.small)
-            .opacity(isShown ? 1 : 0)
-            .task {
-                try? await Task.sleep(for: .milliseconds(300))
-                isShown = !Task.isCancelled
             }
     }
 }

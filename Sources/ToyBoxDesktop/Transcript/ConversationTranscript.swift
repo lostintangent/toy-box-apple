@@ -106,7 +106,7 @@ struct ConversationTranscript: View {
         } else if store.isLoaded {
             transcript
         } else {
-            ProgressView("Connecting...")
+            DelayedProgressView("Connecting...")
                 .padding(24)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
@@ -167,7 +167,7 @@ struct ConversationTranscript: View {
                     await prepareSnapshot(using: proxy)
                 }
                 // Owned here rather than by the card, which the lazy stack drops when it scrolls away.
-                .task(id: catchUp?.generation) { await catchUp?.run(using: intelligence) }
+                .task(id: catchUp?.session.generation) { await catchUp?.session.run(using: intelligence) }
         }
     }
 
@@ -683,15 +683,15 @@ struct ConversationTranscript: View {
         }
         do { try await Task.sleep(for: .milliseconds(150)) }
         catch { return }
-        let wasLoading = catchUp.isGenerating
+        let wasLoading = catchUp.session.isGenerating
         let landedAtBottom = isAtBottom
         guard let landed = catchUp.top, let offset = window.scrollOffset else { return }
         guard landedAtBottom || abs(landed - 20) <= 1 else {
             snapshot.failState(name, message: "The card landed at \(landed), not 20 points below the viewport's top.")
             return
         }
-        _ = await waitForSnapshotLayout(within: 20) { !catchUp.isGenerating }
-        guard catchUp.summary != nil else {
+        _ = await waitForSnapshotLayout(within: 20) { !catchUp.session.isGenerating }
+        guard catchUp.session.summary != nil else {
             snapshot.failState(name, message: "The summary collapsed or never arrived.")
             return
         }
