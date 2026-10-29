@@ -15,8 +15,6 @@ struct ChannelScreen: View {
     @Environment(TranscriptGalleryPresenter.self) private var gallery
     @Environment(OverviewPresentation.self) private var overview
     @Environment(\.horizontalSizeClass) private var sizeClass
-    @ScaledMetric(relativeTo: .body) private var minimumTrayHeight: CGFloat = 660
-    @ViewState private var usableHeight: CGFloat = 0
     @ViewState private var keyboardIsVisible = false
     @ViewState private var permissionTipIsAvailable = false
     private let permissionTip = NotificationPermissionTip()
@@ -41,9 +39,8 @@ struct ChannelScreen: View {
     }
 
     var body: some View {
-        let showsTray = Self.showsTray(usableHeight: usableHeight, minimumHeight: minimumTrayHeight)
         ZStack {
-            conversation(showsTray: showsTray)
+            conversation
                 .opacity(reader.isVisible ? 0 : 1)
                 .allowsHitTesting(!reader.requested)
                 .accessibilityHidden(reader.requested)
@@ -64,26 +61,6 @@ struct ChannelScreen: View {
                     .padding(.horizontal, sizeClass == .compact ? 16 : 20)
                     .padding(.vertical, 8)
                 }
-            }
-            .background {
-                // Measuring behind the keyboard must not opt the composer out of avoidance.
-                GeometryReader { geometry in
-                    #if DEBUG
-                    let mode = showsTray ? "shown" : "hidden"
-                    let measurement = "Usable height \(geometry.size.height), minimum \(max(660, minimumTrayHeight)), tray \(mode)"
-                    #endif
-                    Color.clear
-                        .onChange(of: geometry.size.height, initial: true) { _, height in
-                            usableHeight = height
-                        }
-                        #if DEBUG
-                        .accessibilityElement()
-                        .accessibilityLabel("Conversation layout")
-                        .accessibilityValue(Text(verbatim: measurement))
-                        .accessibilityHidden(ProcessInfo.processInfo.environment["TOY_BOX_AUTOMATION_SCRIPT"] == nil)
-                        #endif
-                }
-                .ignoresSafeArea(.keyboard)
             }
             .navigationTitle(store.details?.name ?? model.catalog?.channels.first { $0.id == store.id }?.name ?? "")
             .navigationBarTitleDisplayMode(.inline)
@@ -127,16 +104,12 @@ struct ChannelScreen: View {
                 if model.visibleChannelID == store.id { model.visibleChannelID = nil }
             }
             .toolbar {
-                if !reader.requested { conversationToolbar(showsTray: showsTray) }
+                if !reader.requested { conversationToolbar }
             }
     }
 
-    static func showsTray(usableHeight: CGFloat, minimumHeight: CGFloat) -> Bool {
-        usableHeight >= max(660, minimumHeight)
-    }
-
     @ViewBuilder
-    private func conversation(showsTray: Bool) -> some View {
+    private var conversation: some View {
         Group {
             if store.phase == .deleted {
                 DeletedChannelView(draft: model.composerSession(for: store).draft) {
@@ -146,7 +119,7 @@ struct ChannelScreen: View {
                 ConversationView(store: store)
                     .safeAreaBar(edge: .bottom, spacing: 0) {
                         if !interaction.isFinding {
-                            ComposerView(store: store, showsTray: showsTray).findSwapTransition()
+                            ComposerView(store: store).findSwapTransition()
                         }
                     }
             }
@@ -154,11 +127,11 @@ struct ChannelScreen: View {
     }
 
     @ToolbarContentBuilder
-    private func conversationToolbar(showsTray: Bool) -> some ToolbarContent {
+    private var conversationToolbar: some ToolbarContent {
         if sizeClass == .compact {
             ToolbarItemGroup(placement: .primaryAction) {
                 overviewButton
-                if !showsTray { tasksButton }
+                tasksButton
                 channelActions
             }
             ToolbarItem(placement: .bottomBar) {
@@ -168,7 +141,7 @@ struct ChannelScreen: View {
             ToolbarItemGroup(placement: .primaryAction) {
                 messageView
                 channelActions
-                if !showsTray { tasksButton }
+                tasksButton
                 overviewButton
             }
         }

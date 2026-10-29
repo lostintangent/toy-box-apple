@@ -8,7 +8,6 @@ import UniformTypeIdentifiers
 
 struct ComposerSurface: View {
     @Bindable var session: ComposerSession
-    let showsTray: Bool
     @Environment(AppModel.self) private var model
     @Environment(ChannelInteraction.self) private var interaction
     @Environment(ManagementPresenter.self) private var management
@@ -180,7 +179,6 @@ struct ComposerSurface: View {
 
     private var container: some View {
         VStack(spacing: 0) {
-            if showsTray { ComposerTaskProgress(store: store, showTasks: showTasks) }
             if dynamicTypeSize.isAccessibilitySize {
                 ComposerUpperRegion {
                     accessories
@@ -475,11 +473,6 @@ struct ComposerSurface: View {
         guard scenePhase == .active, session.canSend else { return }
         interaction.jumpToLatest()
         Task { if await session.send() { interaction.jumpToLatest() } }
-    }
-
-    private func showTasks() {
-        if sizeClass == .compact { editor.setReaderCovered(true, canRestoreFocus: false) }
-        interaction.showOverviewTasks()
     }
 
     private func preparePresentation() {
