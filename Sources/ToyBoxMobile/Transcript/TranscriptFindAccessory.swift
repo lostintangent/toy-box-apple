@@ -11,8 +11,29 @@ extension TranscriptFindHighlight {
     }
 }
 
-/// Find sits under the navigation bar on three Liquid Glass surfaces, like the system's find
-/// navigator: a field with its status slot inside, joined Previous and Next, and Done.
+/// Find and the composer swap on one short spring: the leaving bar blurs out and drops a few points
+/// while the arriving one rises into the same spot. Reduce Motion crossfades.
+enum TranscriptFindSwap {
+    static func animation(reduceMotion: Bool) -> Animation {
+        reduceMotion ? .easeInOut(duration: 0.2) : .smooth(duration: 0.3)
+    }
+}
+
+extension View {
+    func findSwapTransition() -> some View { modifier(FindSwapTransition()) }
+}
+
+private struct FindSwapTransition: ViewModifier {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func body(content: Content) -> some View {
+        content.transition(reduceMotion ? .opacity : AnyTransition(.blurReplace).combined(with: .offset(y: 8)))
+    }
+}
+
+/// Find takes the composer's place at the bottom, like Safari's and Notes' find bars, on three
+/// Liquid Glass surfaces of one height: a field with its status slot inside, joined Previous and
+/// Next, and Close. The caret is its only accent.
 struct TranscriptFindAccessory: View {
     @Bindable var find: TranscriptFind
     let channelName: String
@@ -23,8 +44,10 @@ struct TranscriptFindAccessory: View {
     @ViewState private var selection: TextSelection?
     @ViewState private var progressDelayElapsed = false
     @ViewState private var showsError = false
+    @ViewState private var keyboardIsVisible = false
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    @ScaledMetric(relativeTo: .body) private var surfaceHeight = 36
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    @ScaledMetric(relativeTo: .body) private var height = 44
 
     var body: some View {
         GlassEffectContainer(spacing: 8) {
@@ -40,8 +63,17 @@ struct TranscriptFindAccessory: View {
                 }
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 4)
+        // The composer's frame, which this replaces.
+        .padding(.top, 8)
+        .padding(.horizontal, sizeClass == .compact ? 12 : 16)
+        .padding(.bottom, ComposerBottomSpacing.value(compact: sizeClass == .compact,
+                                                      keyboardVisible: keyboardIsVisible))
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillChangeFrameNotification)) { event in
+            guard let screen = event.object as? UIScreen,
+                  let frame = event.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect else { return }
+            keyboardIsVisible = ComposerBottomSpacing.keyboardIsVisible(frame: frame, in: screen.bounds,
+                                                                         safeAreaBottom: 0)
+        }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Find in Conversation")
         // A task runs once the bar is in the hierarchy, so the field can take focus.
@@ -64,7 +96,7 @@ struct TranscriptFindAccessory: View {
     private var controls: some View {
         HStack(spacing: 8) {
             navigation
-            done
+            closeButton
         }
     }
 
@@ -86,9 +118,8 @@ struct TranscriptFindAccessory: View {
         }
         .padding(.horizontal, 6)
         .padding(.vertical, 4)
-        .frame(minHeight: surfaceHeight)
-        .glassEffect(.regular, in: .rect(cornerRadius: surfaceHeight / 2))
-        .frame(minHeight: 44)
+        .frame(minHeight: height)
+        .glassEffect(.regular, in: .rect(cornerRadius: height / 2))
         .contentShape(.rect)
         .onTapGesture { isFocused = true }
     }
@@ -116,29 +147,26 @@ struct TranscriptFindAccessory: View {
     private var navigation: some View {
         HStack(spacing: 0) {
             Button("Previous Match", systemImage: "chevron.up") { navigate(-1) }
-                .frame(width: 44, height: 44)
+                .frame(width: height, height: height)
             Button("Next Match", systemImage: "chevron.down") { navigate(1) }
-                .frame(width: 44, height: 44)
+                .frame(width: height, height: height)
         }
         .labelStyle(.iconOnly)
-        .fontWeight(.medium)
-        .frame(minHeight: surfaceHeight)
+        .font(.body.weight(.medium))
+        .tint(.primary)
         .glassEffect(.regular.interactive(), in: .capsule)
         .disabled(find.matches.isEmpty)
     }
 
-    private var done: some View {
+    private var closeButton: some View {
         Button(action: close) {
-            Text("Done")
-                .fontWeight(.semibold)
-                .padding(.horizontal, 6)
-                .frame(minWidth: 54, minHeight: surfaceHeight)
-                .glassEffect(.regular.interactive(), in: .capsule)
-                .frame(minHeight: 44)
-                .contentShape(.rect)
+            Image(systemName: "xmark")
+                .font(.body.weight(.medium))
+                .frame(width: height, height: height)
+                .contentShape(.circle)
         }
         .buttonStyle(.plain)
-        .foregroundStyle(.tint)
+        .glassEffect(.regular.interactive(), in: .circle)
         .keyboardShortcut(.cancelAction)
         .accessibilityLabel("Close Find")
     }

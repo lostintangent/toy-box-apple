@@ -168,6 +168,7 @@ struct ConversationView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.channelIntelligence) private var intelligence
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ViewState private var rowBuilder = TranscriptRowBuilder()
     @ViewState private var scroll = TranscriptScroll()
     @ViewState private var position = ScrollPosition()
@@ -286,14 +287,23 @@ struct ConversationView: View {
                 find.resumeReading()
             }
         }
-        // A bar rather than an overlay, so the end of the conversation settles clear of them and
-        // the scroll edge effect reaches up behind them.
+        // A bar rather than an overlay, so the end of the conversation settles clear of them, a
+        // revealed match lands above Find, and the scroll edge effect reaches up behind them.
         .safeAreaBar(edge: .bottom, spacing: 0) {
-            TranscriptFloatingAccessories(store: store, showsJumpToLatest: showsJumpToLatest,
-                                          showsWorkingNow: $showsWorkingNow) {
-                jumpToLatest()
+            if find.isPresented {
+                TranscriptFindAccessory(find: find, channelName: store.state?.channel.name ?? store.id,
+                                        focusRequest: interaction.findRequest,
+                                        navigate: navigateFind, close: { swapFind(presented: false) })
+                    .findSwapTransition()
+            } else {
+                TranscriptFloatingAccessories(store: store, showsJumpToLatest: showsJumpToLatest,
+                                              showsWorkingNow: $showsWorkingNow) {
+                    jumpToLatest()
+                }
+                .findSwapTransition()
             }
         }
+        .onChange(of: find.isPresented, initial: true) { interaction.isFinding = find.isPresented }
         .overlay(alignment: .top) {
             if store.isLoaded, let message = store.phase.message {
                 TranscriptReconnecting(message: message) { store.reconnect() }
@@ -319,14 +329,6 @@ struct ConversationView: View {
         .onChange(of: store.sendAttempts.map(\.id)) { old, _ in
             if startsOwnPost(after: old, in: store.sendAttempts) { place(scroll.update(.ownPostConfirmed)) }
         }
-        // A bar rather than an overlay, so the scroll edge effect extends under it and a reveal clears it.
-        .safeAreaBar(edge: .top, spacing: 0) {
-            if find.isPresented {
-                TranscriptFindAccessory(find: find, channelName: store.state?.channel.name ?? store.id,
-                                        focusRequest: interaction.findRequest,
-                                        navigate: navigateFind, close: { find.close() })
-            }
-        }
         .onChange(of: interaction.findRequest) { openFind() }
         .onChange(of: interaction.findNavigation?.token) {
             openFind()
@@ -338,7 +340,10 @@ struct ConversationView: View {
             prepareFind()
             await find.searchOlder { try await store.api.history(channelId: store.id, before: $0).messages }
         }
-        .onDisappear { find.close() }
+        .onDisappear {
+            find.close()
+            interaction.isFinding = false
+        }
         .onChange(of: interaction.jumpToLatestRequest) { jumpToLatest() }
         // A request routed before the conversation appears waits here for the channel to load and
         // for its first layout. A store that's already loaded would otherwise reveal before either.
@@ -363,7 +368,19 @@ struct ConversationView: View {
 
     private func openFind() {
         prepareFind()
-        find.present()
+        swapFind(presented: true)
+    }
+
+    /// Find and the composer trade places in one transaction, so no frame shows both bars or neither.
+    private func swapFind(presented: Bool) {
+        guard find.isPresented != presented else {
+            if presented { find.present() }
+            return
+        }
+        withAnimation(TranscriptFindSwap.animation(reduceMotion: reduceMotion)) {
+            if presented { find.present() } else { find.close() }
+            interaction.isFinding = presented
+        }
     }
 
     private func prepareFind() {
@@ -379,7 +396,7 @@ struct ConversationView: View {
     }
 
     private func jumpToLatest() {
-        find.close()
+        swapFind(presented: false)
         find.resumeReading()
         place(scroll.update(.jumpToLatest))
     }
