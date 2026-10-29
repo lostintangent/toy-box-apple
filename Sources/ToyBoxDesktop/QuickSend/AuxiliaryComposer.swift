@@ -35,6 +35,7 @@ struct AuxiliaryComposer: View {
     private var draftID: ObjectIdentifier { ObjectIdentifier(draft) }
     private var noticeRegionHeight: CGFloat { noticeHeight > 0 ? min(noticeHeight, 84) + 16 : 0 }
     private var canEdit: Bool { !session.isReadOnly && session.confirmation == nil }
+    private var isConnecting: Bool { store.phase == .connecting }
     private var canSend: Bool {
         !finalizing && (session.canSend || (dictation.hasWords && !store.isSending && channelCanSend(
             isLive: store.phase.isLive, isSending: false, isSubmitting: false,
@@ -154,8 +155,14 @@ struct AuxiliaryComposer: View {
                     .accessibilityLabel("Sending")
             } else if session.isUnconfirmed {
                 Button("Edit") { session.edit(); focusRequest = UUID() }.buttonStyle(.borderless)
-                Button("Send Again") { send(opensChannel: false) }.disabled(!canSend)
-                    .help("Retry the original message with the same message ID")
+                if isConnecting {
+                    ComposerConnectingIndicator()
+                } else {
+                    Button("Send Again") { send(opensChannel: false) }.disabled(!canSend)
+                        .help("Retry the original message with the same message ID")
+                }
+            } else if isConnecting {
+                ComposerConnectingIndicator()
             } else {
                 Button { send(opensChannel: false) } label: {
                     Image(systemName: "arrow.up")
@@ -168,8 +175,8 @@ struct AuxiliaryComposer: View {
                 .disabled(!canSend)
                 .help(style == .reply ? "Reply \u{00b7} Return" : "Send \u{00b7} Return")
                 .accessibilityLabel(style == .reply ? "Reply" : "Send message")
-                .accessibilityHint(!store.phase.isLive ? "Reconnect before sending."
-                                   : session.requestChanged ? session.requestChangeNotice : "")
+                .accessibilityHint(store.phase.sendUnavailableReason
+                                   ?? (session.requestChanged ? session.requestChangeNotice : ""))
                 .contextMenu {
                     Button("Send and Open Channel") { send(opensChannel: true) }
                         .keyboardShortcut(.return, modifiers: .command).disabled(!canSend)

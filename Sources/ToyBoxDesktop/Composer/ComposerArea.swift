@@ -21,6 +21,30 @@ struct ComposerArea: View {
     }
 }
 
+extension ChannelConnectionPhase {
+    /// Why Send is off once the channel is unavailable, for its help and accessibility hint.
+    /// A quiet connect says nothing, since Send is a spinner then.
+    var sendUnavailableReason: String? {
+        switch self {
+        case .stale: "Reconnect before sending"
+        case .deleted: "This channel was deleted"
+        case .idle, .connecting, .live: nil
+        }
+    }
+}
+
+/// Stands in for Send, in its frame, while the channel connects quietly.
+struct ComposerConnectingIndicator: View {
+    var size: CGFloat = 28
+
+    var body: some View {
+        ProgressView().controlSize(.small)
+            .frame(width: size, height: size)
+            .accessibilityElement()
+            .accessibilityLabel("Connecting")
+    }
+}
+
 /// Opens the image picker. Like Dictate, the whole 28pt circle takes clicks and is its accessibility frame.
 struct AttachImagesButton: View {
     let action: () -> Void
@@ -378,19 +402,22 @@ private struct ChannelComposer: View {
                     dictation.contextualStrings = dictationContext
                     dictation.toggle()
                 }
-                Button(action: send) {
-                    Image(systemName: associatedAttempt?.canRetry == true ? "arrow.clockwise" : "arrow.up")
-                        .font(.system(size: 13, weight: .semibold))
-                        .frame(width: 28, height: 28)
-                        .background(canSend ? Color.accentColor : Color(nsColor: .quaternaryLabelColor), in: Circle())
-                        .foregroundStyle(canSend ? .white : .secondary)
+                if store.phase == .connecting {
+                    ComposerConnectingIndicator()
+                } else {
+                    Button(action: send) {
+                        Image(systemName: associatedAttempt?.canRetry == true ? "arrow.clockwise" : "arrow.up")
+                            .font(.system(size: 13, weight: .semibold))
+                            .frame(width: 28, height: 28)
+                            .background(canSend ? Color.accentColor : Color(nsColor: .quaternaryLabelColor), in: Circle())
+                            .foregroundStyle(canSend ? .white : .secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!canSend)
+                    .help(store.phase.sendUnavailableReason
+                          ?? (associatedAttempt?.canRetry == true ? "Send Again using the original message ID" : "Send message (Return)"))
+                    .accessibilityLabel(associatedAttempt?.canRetry == true ? "Send Again" : "Send message")
                 }
-                .buttonStyle(.plain)
-                .disabled(!canSend)
-                .help(store.phase.isLive
-                      ? (associatedAttempt?.canRetry == true ? "Send Again using the original message ID" : "Send message (Return)")
-                      : "Reconnect before sending")
-                .accessibilityLabel(associatedAttempt?.canRetry == true ? "Send Again" : "Send message")
             }
             .font(.system(size: 12))
             .frame(height: 28)

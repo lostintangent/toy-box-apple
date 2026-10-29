@@ -14,6 +14,49 @@ import UniformTypeIdentifiers
 
 @MainActor @Suite(.timeLimit(.minutes(1)))
 struct ComposerTests {
+    @Test func sendIsASpinnerOnlyWhileItsChannelConnectsAndExplainsOnlyOnceUnavailable() async throws {
+        #expect(ChannelConnectionPhase.idle.sendUnavailableReason == nil)
+        #expect(ChannelConnectionPhase.connecting.sendUnavailableReason == nil)
+        #expect(ChannelConnectionPhase.live.sendUnavailableReason == nil)
+        #expect(ChannelConnectionPhase.stale(message: "Offline", retryAt: .now).sendUnavailableReason
+                == "Reconnect before sending")
+        #expect(ChannelConnectionPhase.deleted.sendUnavailableReason == "This channel was deleted")
+
+        try await withDraft { draft, _ in
+            let configuration = URLSessionConfiguration.ephemeral
+            configuration.protocolClasses = [UnansweredConnectProtocol.self]
+            let api = try ChannelAPI(serverURL: "http://unanswered.test", session: URLSession(configuration: configuration))
+            let store = ChannelStore(id: "test", api: api, reconnectPolicy: .init(grace: 60), sendJournal: nil)
+            let session = AuxiliaryComposerSession(store: store, scope: .quickSend, draft: draft)
+            let host = NSHostingView(rootView: AuxiliaryComposer(
+                session: session, style: .quickSend, onConfirmed: { _ in }, onOpenChannel: {}, onDismiss: {}))
+            host.frame = NSRect(x: 0, y: 0, width: 420, height: 220)
+            let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: true)
+            window.isReleasedWhenClosed = false
+            window.contentView = host
+            defer {
+                store.disconnect()
+                window.close()
+            }
+            func spinners(in view: NSView) -> Int {
+                (view is NSProgressIndicator ? 1 : 0) + view.subviews.reduce(0) { $0 + spinners(in: $1) }
+            }
+            try await waitForUpdate(of: host, "the composer mounts") { composerInput(in: host) != nil }
+            #expect(store.phase == .idle)
+            #expect(spinners(in: host) == 0, "An idle channel keeps the ordinary disabled Send")
+
+            store.connect()
+            #expect(store.phase == .connecting)
+            try await waitForUpdate(of: host, "Send waits as a spinner") { spinners(in: host) == 1 }
+
+            let channel = Channel(id: "test", name: "Test", model: .init(provider: "test", name: "test"),
+                                  updatedAt: "2026-10-24T00:00:00Z")
+            _ = try store.apply(.init(type: "snapshot", state: .init(revision: 1, channel: channel, lead: .lead(id: "lead"))))
+            #expect(store.phase.isLive)
+            try await waitForUpdate(of: host, "Send returns once live") { spinners(in: host) == 0 }
+        }
+    }
+
     @Test func sharedDraftNormalizesTheMacsNativeSVGInsteadOfLosingIt() async throws {
         let data = Data("""
             <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64">
@@ -1578,6 +1621,14 @@ struct ComposerTests {
         do { try FileManager.default.removeItem(at: url) }
         catch { Issue.record("Composer test cleanup failed: \(error.localizedDescription)") }
     }
+}
+
+/// A server that accepts every request and never answers, so a channel stays connecting.
+private final class UnansweredConnectProtocol: URLProtocol, @unchecked Sendable {
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {}
+    override func stopLoading() {}
 }
 
 private final class AuxiliaryPostProtocol: URLProtocol, @unchecked Sendable {
