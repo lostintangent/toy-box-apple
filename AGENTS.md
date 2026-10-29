@@ -463,6 +463,8 @@ Edit only files you own. Ask the owner for anything else in the channel.
   after `ReconnectPolicy.grace` of trying without getting live. Idle time never counts. Notices,
   agent status and working presence change only on `phase.isUnavailable` (`.stale` or `.deleted`),
   never with a view timer. Actions such as Send and management stay off until `phase.isLive`.
+  `ChannelCatalogStore` gives failing polls the same grace, retrying after `initialDelay`. A
+  requested `refresh()` reports its failure at once, because its caller waits on the outcome.
 - `channelMatchesQuery` (ChannelKit) matches name, purpose and directory. Callers retain their
   existing query normalization and ordering. `ChannelAPI.channelURL(channelID:files:)` builds
   browser routes, preserving deployment prefixes. `SidebarConnection` (ToyBoxUI) projects the

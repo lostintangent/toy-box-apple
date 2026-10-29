@@ -652,9 +652,17 @@ public final class ChannelCatalogStore {
     @ObservationIgnored private var activePollingInterval: TimeInterval = 5
     @ObservationIgnored private var catalogGeneration = UUID()
     @ObservationIgnored private var reconcilingManagement = false
+    @ObservationIgnored private let reconnectPolicy: ReconnectPolicy
+    /// When the polls that are failing without reporting it began. Only polling counts.
+    @ObservationIgnored private var failingSince: Date?
+    /// Whether a requested refresh joined the attempt in flight, so its failure reports at once.
+    @ObservationIgnored private var isRequested = false
     public var pollingInterval: TimeInterval { isActive ? activePollingInterval : 15 }
 
-    public init(api: ChannelAPI) { self.api = api }
+    public init(api: ChannelAPI, reconnectPolicy: ReconnectPolicy = .init()) {
+        self.api = api
+        self.reconnectPolicy = reconnectPolicy
+    }
     deinit {
         polling?.cancel()
         pollingDelay?.cancel()
@@ -667,14 +675,23 @@ public final class ChannelCatalogStore {
         return store
     }
 
+    /// Reports a failure at once, since the caller waits on the outcome. A poll that fails stays
+    /// quiet and retries promptly until polls have failed for the grace, the way a channel stays
+    /// `.connecting`, so a failed request on coming back to the app shows nothing.
     public func refresh() async {
-        await refresh(prefetched: nil)
+        await refresh(prefetched: nil, requested: true)
     }
 
-    private func refresh(prefetched: Task<ChannelCatalog, any Error>?) async {
-        guard !isLoading else { prefetched?.cancel(); return }
+    private func refresh(prefetched: Task<ChannelCatalog, any Error>?, requested: Bool) async {
+        guard !isLoading else {
+            prefetched?.cancel()
+            if requested { isRequested = true }
+            return
+        }
         let token = UUID()
+        let started = Date.now
         catalogGeneration = token
+        isRequested = requested
         isLoading = true
         defer { if catalogGeneration == token { isLoading = false } }
         do {
@@ -690,6 +707,11 @@ public final class ChannelCatalogStore {
             guard !Task.isCancelled, !(error is CancellationError),
                   (error as? URLError)?.code != .cancelled,
                   catalogGeneration == token else { return }
+            if !isRequested, failure == nil {
+                let since = failingSince ?? started
+                failingSince = since
+                guard Date.now.timeIntervalSince(since) >= reconnectPolicy.grace else { return }
+            }
             setFailure(error)
         }
     }
@@ -737,6 +759,7 @@ public final class ChannelCatalogStore {
         working = Set(catalog.working)
         hasLoaded = true
         lastRefreshedAt = .now
+        failingSince = nil
         setFailure(nil)
     }
 
@@ -762,15 +785,16 @@ public final class ChannelCatalogStore {
     public func startPolling(interval: TimeInterval = 5) {
         guard polling == nil else { return }
         activePollingInterval = interval
+        failingSince = nil
         let api = api
         let first = Task.detached(priority: Task.currentPriority) { try await api.catalog() }
         polling = Task { [weak self] in
             var prefetched: Task<ChannelCatalog, any Error>? = first
             defer { prefetched?.cancel() }
             while !Task.isCancelled {
-                await self?.refresh(prefetched: prefetched)
+                await self?.refresh(prefetched: prefetched, requested: false)
                 prefetched = nil
-                guard !Task.isCancelled, let delay = self?.pollingInterval else { return }
+                guard !Task.isCancelled, let delay = self?.nextPollDelay else { return }
                 let pause = Task {
                     do { try await Task.sleep(for: .seconds(delay)) }
                     catch { return }
@@ -781,6 +805,10 @@ public final class ChannelCatalogStore {
                 self?.pollingDelay = nil
             }
         }
+    }
+
+    private var nextPollDelay: TimeInterval {
+        failingSince != nil && failure == nil ? reconnectPolicy.initialDelay : pollingInterval
     }
 
     public func setActive(_ active: Bool) {

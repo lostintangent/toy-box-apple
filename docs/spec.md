@@ -1196,7 +1196,9 @@ indeterminate spinner,
 `ProgressView().controlSize(.mini)`, which is 10 points. Center it on the dot's center and don't
 clip it, so it overhangs the 7-point slot by 1.5 points on each side and the host text never moves.
 When the attempt resolves, it crossfades back to the resulting dot. Background polling never shows
-the spinner. Never overlay a spinner or "Loading Channels" on the list. The static placeholder rows
+the spinner. A failed poll also stays quiet and retries every half second until polls have failed for
+about three seconds, the same grace a channel gets, so coming back to the app never flashes the
+orange dot or the block. A refresh the user asked for reports its failure at once. Never overlay a spinner or "Loading Channels" on the list. The static placeholder rows
 show the shape and the footer shows the activity.
 
 In an inactive window the system draws a hairline above the bar, just as it does under the
@@ -2340,7 +2342,7 @@ navigation keeps list focus until explicitly moving into the conversation.
 | Filter has no messages | "No messages for you yet", Show All Messages. Keep paging older history until exhausted |
 | Reconnecting with cached state | Keep transcript and scroll intact. After about three seconds of trying without getting live, a 32-point inline banner below toolbar says "Reconnecting. Messages may be out of date" with Retry. A reconnect that goes live sooner shows nothing. Until then agent status, working presence and every connection notice stay as they were while live. Disable delivery and management actions, not editing |
 | Disconnected without any state | `wifi.exclamationmark`, "Can't connect to Toy Box", server host, readable failure, Retry and Settings |
-| Catalog refresh fails | Keep existing rows, mark them stale and show the error block above the connection footer's orange status line (see Sidebar). Never replace them with "No channels" |
+| Catalog refresh fails | Keep existing rows, mark them stale and show the error block above the connection footer's orange status line (see Sidebar), after about three seconds of failing polls or at once for a refresh the user asked for. Never replace them with "No channels" |
 | Failed send | Inline error above composer and explicit status on optimistic row, preserved text/attachments, no automatic retry |
 | Channel deleted | Stop observation, dismiss its inspector, show "This channel was deleted". Back to Channels and Copy Draft if nonempty. Never silently discard a draft or redirect to another channel |
 | Invalid URL or authorization failure | Show the actual category and server, Settings/Retry as appropriate. No fabricated successful connection |
