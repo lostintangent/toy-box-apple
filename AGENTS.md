@@ -286,7 +286,7 @@ analysis errors/completion/text detection and load.
   Layout evidence only: no native interaction, WindowServer shadows/corner masks, or correct
   27+ Liquid Glass/sidebar selection. Verify materials, selection and scroll-edge effects in a real window.
 - Computer Use accepts bundle IDs, not paths. User: `dev.toybox.desktop`. Agents:
-  `dev.toybox.desktop.test` ("Toy Box Test", `.build/agents`), built/launched by `bun run validate`.
+  `dev.toybox.desktop.test` ("Toy Box Test"), built/launched by `bun run validate`.
   Shared IDs permit reads, not clicks. Validation builds and registers only the isolated test copy,
   never a shared-bundle fallback. Computer Use approval is still required by the tool.
 - Launch your own build in the background against the demo:
@@ -294,11 +294,13 @@ analysis errors/completion/text detection and load.
   `-g` avoids focus. `--server` / `TOY_BOX_SERVER_URL` is session-only, never replacing saved Settings.
   Keep `-ApplePersistenceIgnoreState YES` for isolation even with restored-zero-window fallback:
   test instances must neither restore nor overwrite shared saved window state.
-- Keep the first bundle path a Computer Use session inspects, or it rejects other paths
-  ("no longer belongs to the approved app"). `SCRATCH_PATH=/tmp/tbm-<you> bun run validate` always uses
-  `CONFIGURATION=release`, swaps an optimized build into the isolated bundle without disturbing running
-  instances, and launches the test bundle against the demo in background. Judge feel there,
-  not quick `bun run build` debug builds.
+- Computer Use resolves the test ID through LaunchServices, which never resolves a copy under `/tmp`
+  and otherwise picks among every registered copy. Any other copy is rejected with "no longer belongs
+  to the approved app". So validation from any worktree installs into the main checkout's
+  `.build/agents/Toy Box Test.app` and unregisters every other copy of the ID.
+  `SCRATCH_PATH=/tmp/tbm-<you> bun run validate` always uses `CONFIGURATION=release`, swaps an
+  optimized build into that bundle without disturbing running instances, and launches it against
+  the demo in background. Judge feel there, not quick `bun run build` debug builds.
 - Only one instance may have the test ID for clicks. On "no perception baseline for this pid",
   wait for the other agent's instance to quit. Reads still work: `list_apps` with your own `window`.
   Confirm `studio-demo` before acting. Never act in a window listing live channels.
