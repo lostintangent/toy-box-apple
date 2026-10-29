@@ -678,6 +678,7 @@ public final class ChannelCatalogStore {
     @ObservationIgnored private let reconnectPolicy: ReconnectPolicy
     /// When the polls that are failing without reporting it began. Only polling counts.
     @ObservationIgnored private var failingSince: Date?
+    @ObservationIgnored private let now: () -> Date
     /// Whether someone asked for the attempt in flight, so its failure reports at once. Internal and
     /// observed, so tests can wait for a requested refresh to join a poll.
     private(set) var isRequested = false
@@ -694,9 +695,11 @@ public final class ChannelCatalogStore {
     @ObservationIgnored private var joiners: [CheckedContinuation<Void, Never>] = []
     public var pollingInterval: TimeInterval { isActive ? activePollingInterval : 15 }
 
-    public init(api: ChannelAPI, reconnectPolicy: ReconnectPolicy = .init()) {
+    /// `now` measures the grace. Tests pass a clock they move instead of waiting.
+    public init(api: ChannelAPI, reconnectPolicy: ReconnectPolicy = .init(), now: @escaping () -> Date = { .now }) {
         self.api = api
         self.reconnectPolicy = reconnectPolicy
+        self.now = now
     }
     deinit {
         polling?.cancel()
@@ -729,7 +732,7 @@ public final class ChannelCatalogStore {
             return await withCheckedContinuation { joiners.append($0) }
         }
         let token = UUID()
-        let started = Date.now
+        let started = now()
         catalogGeneration = token
         isRequested = requested
         isFetching = true
@@ -750,7 +753,7 @@ public final class ChannelCatalogStore {
             if !isRequested, phase.failure == nil {
                 let since = failingSince ?? started
                 failingSince = since
-                guard Date.now.timeIntervalSince(since) >= reconnectPolicy.grace else { return }
+                guard now().timeIntervalSince(since) >= reconnectPolicy.grace else { return }
             }
             phase = .failed(error)
         }

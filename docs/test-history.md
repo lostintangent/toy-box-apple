@@ -2,6 +2,21 @@
 
 Incident records moved from AGENTS.md on 2026-10-27, with their evidence and restoration boundaries preserved. Current gates and instructions are in [AGENTS.md](../AGENTS.md#test-reliability). A passing rerun does not close an incident or restore a quarantined test.
 
+## Catalog failure grace
+
+- On 2026-10-29, every main run that finished, from t485's merge `6195ffd` (run 40813614411) through
+  `11b36bd` (run 40831447179) failed the strict-pool ChannelClient step at
+  `CatalogTests.onlyConsecutiveFailingPollsCountTowardTheGrace(recovering: false)`, at both
+  `phase.failure == nil` expectations. The grace runs from when the failing poll starts. The test
+  held each response open and used a 0.5-second grace, so releasing a held response on the
+  strict single cooperative worker could take longer than the grace and report the first
+  failure at once.
+- Holding each response 700 ms before release reproduced both failures locally under
+  `LIBDISPATCH_COOPERATIVE_POOL_STRICT=1`. Fixed rather than quarantined: `ChannelCatalogStore`
+  takes a defaulted `now` clock, unchanged in production, and the test moves it explicitly. The
+  test now also checks that the first failure stays quiet and that two consecutive failures past
+  the grace report. It passes with the same 700 ms delay.
+
 ## Phone audience-capsule rendering
 
 - `ToyBoxMobileTests/ComposerTests.audienceCapsuleIsSeparateFromIts44PointRowAndGrowsWithText`
