@@ -1460,6 +1460,7 @@ struct ShellTests {
         let connection = ServerConnectionProbe(address: "http://127.0.0.1:3100/prefix", session: fixtureSession())
         let section = ServerConnectionSection(connection: connection, requiresTest: true, currentServer: nil,
                                               onUse: {}, useFailure: .constant(nil))
+        #expect(section.showsUseButton)
         #expect(section.canTest)
         #expect(!section.canUse)
         let operation = try #require(connection.start())
@@ -1471,22 +1472,33 @@ struct ShellTests {
         #expect(section.canTest)
         #expect(!section.canUse)
         connection.address = "not-a-server"
+        #expect(section.showsUseButton)
         #expect(!section.canTest)
         #expect(!section.canUse)
     }
 
-    @Test func settingsUseIsExplicitAndRejectsTheCurrentNormalizedServer() {
-        let connection = ServerConnectionProbe(address: "HTTPS://FIXTURE.EXAMPLE:443/prefix/")
+    @Test func settingsOffersUseServerOnlyForADifferentValidServer() async throws {
+        let connection = ServerConnectionProbe(address: "HTTPS://FIXTURE.EXAMPLE:443/prefix/", session: fixtureSession())
         let section = ServerConnectionSection(connection: connection, requiresTest: false,
                                               currentServer: "https://fixture.example/prefix",
                                               onUse: {}, useFailure: .constant(nil))
         #expect(section.canTest)
+        #expect(!section.showsUseButton)
         #expect(!section.canUse)
         connection.address = "https://another.example/prefix"
+        #expect(section.showsUseButton)
+        #expect(section.canUse)
+        let operation = try #require(connection.start())
+        #expect(section.showsUseButton)
+        #expect(!section.canUse)
+        await operation.value
         #expect(section.canUse)
         connection.address = "https://user:password@another.example"
         #expect(!section.canTest)
+        #expect(!section.showsUseButton)
         #expect(!section.canUse)
+        connection.address = "https://fixture.example/prefix"
+        #expect(!section.showsUseButton)
     }
 
     @Test func settingsFailuresKeepTheirRealCategoryAndPhoneAvailabilityReason() {
