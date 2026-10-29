@@ -74,6 +74,40 @@ struct TranscriptTests {
         #expect(anchor.row == "p1" && anchor.offset == 100)
     }
 
+    @Test func jumpingToLatestDuringAFlickLandsAtTheEndInOneTap() {
+        let viewport = TranscriptScrollModel.Viewport(width: 386, height: 600, topInset: 0, bottomInset: 0)
+        let scroll = TranscriptScroll()
+        scroll.rows = (0..<40).map { .init(id: "r\($0)", order: $0) }
+        for index in 0..<40 { scroll.measure("r\(index)", frame: CGRect(x: 0, y: CGFloat(index) * 100, width: 386, height: 100)) }
+        scroll.metrics = .init(viewport: viewport, origin: 3400, documentEnd: 4000)
+        _ = scroll.update(.land(.end))
+
+        // The reader flicks up and taps Jump to Latest while the flick is still decelerating.
+        scroll.isReaderScrolling = true
+        scroll.metrics?.origin = 1000
+        _ = scroll.update()
+        #expect(scroll.update(.jumpToLatest)?.origin == 3400)
+
+        // A frame the flick produced before the jump stopped it arrives, and the estimated end grows.
+        scroll.measure("r39", frame: CGRect(x: 0, y: 3900, width: 386, height: 200))
+        scroll.metrics?.origin = 950
+        scroll.metrics?.documentEnd = 4100
+        #expect(scroll.update()?.origin == 3500)
+        #expect(scroll.intent == .following)
+
+        // The jump stopped the flick. Once geometry holds the end, the reader's next flick reads again.
+        scroll.isReaderScrolling = false
+        scroll.metrics?.origin = 3500
+        #expect(scroll.update() == nil)
+        scroll.isReaderScrolling = true
+        scroll.metrics?.origin = 2000
+        _ = scroll.update()
+        guard case .reading = scroll.intent else {
+            Issue.record("The reader's flick after landing should read, not hold the end.")
+            return
+        }
+    }
+
     @Test func aRevealFinishesFromSettledGeometryOrWhenTheReaderTakesOver() {
         let viewport = TranscriptScrollModel.Viewport(width: 386, height: 600, topInset: 0, bottomInset: 0)
         let scroll = TranscriptScroll()

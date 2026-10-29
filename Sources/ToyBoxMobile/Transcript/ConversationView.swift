@@ -21,8 +21,9 @@ final class TranscriptScroll {
     var rows: [Model.RowIdentity] = []
     var metrics: Metrics?
     var isReaderScrolling = false
-    /// Keeps a captured anchor in place through a page insertion even while the reader scrolls.
-    var holdsAnchorThroughInput = false
+    /// Keeps the model's placement through reader scrolling until geometry holds it: an anchor
+    /// through a page insertion, or the end after a move that stopped a flick still reporting frames.
+    var holdsPlacementThroughInput = false
     private(set) var intent: Model.Intent = .landing(.end)
     private(set) var hasLanded = false
     /// The reveal still waiting for native geometry to hold its row.
@@ -38,7 +39,7 @@ final class TranscriptScroll {
            hasLanded {
             // Older history arrived above: keep the reader's row where it was.
             _ = update(.holdCurrentPosition)
-            holdsAnchorThroughInput = true
+            holdsPlacementThroughInput = true
             // The page moved every row down, so the old frames would hold the anchor at the top.
             frames.removeAll()
         }
@@ -64,12 +65,16 @@ final class TranscriptScroll {
     func update(_ explicit: Model.Event? = nil) -> Model.Placement? {
         guard let layout else { return nil }
         defer { lastLayout = layout }
+        if holdsPlacementThroughInput, let origin = Model.placement(for: intent, layout: layout).origin,
+           abs(origin - layout.origin) <= 0.5 {
+            holdsPlacementThroughInput = false
+        }
         let event: Model.Event
         if let explicit {
             event = explicit
         } else if !hasLanded {
             return nil
-        } else if isReaderScrolling && !holdsAnchorThroughInput {
+        } else if isReaderScrolling && !holdsPlacementThroughInput {
             event = .readerScrolled(to: layout.origin)
         } else if let last = lastLayout {
             guard let change = Model.layoutEvent(from: last, to: layout) else { return nil }
@@ -84,6 +89,7 @@ final class TranscriptScroll {
         case .land: hasLanded = true
         // A request alert's reveal replaces the first landing.
         case .reveal where placement.unavailableTarget == nil: hasLanded = true
+        case .jumpToLatest, .ownPostConfirmed: holdsPlacementThroughInput = true
         default: break
         }
         return placement
@@ -397,7 +403,7 @@ struct ConversationView: View {
                     position.scrollTo(y: origin + metrics.viewport.topInset)
                     isMoving = true
                 } else {
-                    scroll.holdsAnchorThroughInput = false
+                    scroll.holdsPlacementThroughInput = false
                 }
             } else if let id = placement.needsMeasurement {
                 position.scrollTo(id: id, anchor: .top)
