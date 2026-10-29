@@ -37,7 +37,7 @@ struct ChannelSidebarProjectionTests {
         #expect(closed.working(listed, agents: closed.agents(listed)).map(\.name) == ["Lead"])
 
         await catalog.refresh()
-        #expect(catalog.error != nil)
+        #expect(catalog.phase.message != nil)
         #expect(closed.working(listed, agents: closed.agents(listed)).isEmpty)
         #expect(open.working(listed, agents: open.agents(listed)).count == 1)
         store.disconnect()

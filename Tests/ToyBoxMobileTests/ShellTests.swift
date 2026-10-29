@@ -78,7 +78,7 @@ struct ShellTests {
             host.view.setNeedsLayout()
             host.view.layoutIfNeeded()
             let labels = MobileAutomationTree(windows: [window]).elements.map(\.label)
-            #expect(navigation.phase == .unavailable)
+            #expect(navigation.phase == .missing)
             #expect(labels.contains("Channel unavailable"), "\(labels)")
             #expect(labels.contains("This channel isn't available."), "\(labels)")
             #expect(labels.contains("Show Channels"), "\(labels)")
@@ -456,7 +456,7 @@ struct ShellTests {
             model.isSettingsPresented = true
             try serve(channels, status: 503)
             await catalog.refresh()
-            #expect(catalog.error != nil)
+            #expect(catalog.phase.message != nil)
             try serve(channels)
             await catalog.refresh()
             await badges.waitForCalls(2)
@@ -1074,9 +1074,9 @@ struct ShellTests {
             let other = try #require(model.catalog?.channel(id: "second"))
             defer { store.disconnect() }
             #expect(ChannelRefreshTarget.channel(store).perform() == nil)
-            #expect(store.phase == .connecting)
-            #expect(other.phase == .idle)
-            #expect(model.catalog?.hasLoaded == false)
+            #expect(store.isTrying)
+            #expect(!other.isTrying)
+            #expect(model.catalog?.isLoaded == false)
         }
     }
 
@@ -1091,7 +1091,7 @@ struct ShellTests {
             await target.perform()?.value
             #expect(model.catalog !== previousCatalog)
             #expect(model.catalog?.api.baseURL.absoluteString == "https://second.example/prefix")
-            #expect(model.catalog?.hasLoaded == true)
+            #expect(model.catalog?.isLoaded == true)
             #expect(model.catalog?.channels.count == 2)
         }
     }
@@ -1117,10 +1117,11 @@ struct ShellTests {
         #expect(accessible.height > regular.height)
     }
 
-    @Test(arguments: [SidebarConnection.connecting, .connected])
-    func nonFailureCatalogStatesReserveNoFooterSpace(connection: SidebarConnection) {
+    @Test(arguments: [ChannelCatalogPhase.connecting, .connected])
+    func nonFailureCatalogStatesReserveNoFooterSpace(phase: ChannelCatalogPhase) {
         let host = UIHostingController(rootView: ChannelSidebarFailure(
-            connection: connection, error: nil, canRetry: true, retry: {}, openSettings: {}
+            footer: SidebarFooter(phase: phase, isLoaded: true), error: nil, canRetry: true,
+            retry: {}, openSettings: {}
         ))
         host.loadViewIfNeeded()
         let size = host.sizeThatFits(in: CGSize(width: 320, height: CGFloat.greatestFiniteMagnitude))
@@ -1128,13 +1129,14 @@ struct ShellTests {
     }
 
     #if DEBUG
-    @Test(arguments: [SidebarConnection.reconnecting, .unreachable], [false, true])
+    @Test(arguments: [true, false], [false, true])
     func catalogFailuresKeepTheirHeadingErrorRetryAndUnfoldedSettings(
-        connection: SidebarConnection, showsSettings: Bool
+        isLoaded: Bool, showsSettings: Bool
     ) throws {
         let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 320, height: 400))
+        let footer = SidebarFooter(phase: .failed(URLError(.timedOut)), isLoaded: isLoaded)
         let host = UIHostingController(rootView: ChannelSidebarFailure(
-            connection: connection, error: "The server is unavailable.", canRetry: true,
+            footer: footer, error: "The server is unavailable.", canRetry: true,
             retry: {}, openSettings: {}, showsSettingsButton: showsSettings
         ))
         window.rootViewController = host
@@ -1143,7 +1145,7 @@ struct ShellTests {
         host.view.frame = window.bounds
         host.view.layoutIfNeeded()
         let labels = MobileAutomationTree(windows: [window]).elements.map(\.label)
-        #expect(labels.contains(try #require(connection.heading)), "\(labels)")
+        #expect(labels.contains(try #require(footer.heading)), "\(labels)")
         #expect(labels.contains("The server is unavailable."), "\(labels)")
         #expect(labels.contains("Retry"), "\(labels)")
         #expect(labels.contains("Settings") == showsSettings, "\(labels)")
@@ -1258,9 +1260,9 @@ struct ShellTests {
             interaction.messageView = .yours
             interaction.reveal(sequence: 42)
             model.setScenePhase(.active)
-            #expect(store?.phase == .connecting)
+            #expect(store?.isTrying == true)
             model.setScenePhase(.background)
-            #expect(store?.phase == .idle)
+            #expect(store?.isTrying == false)
             #expect(model.catalog?.isActive == false)
             model.selectedChannelID = "second"
             model.selectedChannelID = "first"
@@ -1268,7 +1270,7 @@ struct ShellTests {
             #expect(model.interaction(for: "first") === interaction)
             #expect(interaction.messageView == .yours)
             #expect(interaction.revealRequest?.sequence == 42)
-            #expect(model.selectedStore?.phase == .idle)
+            #expect(model.selectedStore?.isTrying == false)
         }
     }
 
@@ -1282,7 +1284,7 @@ struct ShellTests {
             model.selectedChannelID = "first"
             let store = try #require(model.selectedStore)
             model.setScenePhase(.active)
-            #expect(store.phase == .connecting)
+            #expect(store.isTrying)
             #expect(model.canManageChannels)
 
             let interrupted = ChangeFlag()
@@ -1296,16 +1298,16 @@ struct ShellTests {
             model.setScenePhase(.active)
             #expect(model.isActive)
             #expect(!interrupted.isSet)
-            #expect(store.phase == .connecting)
+            #expect(store.isTrying)
             #expect(catalog.isActive)
 
             model.setScenePhase(.inactive)
             model.setScenePhase(.background)
             #expect(interrupted.isSet)
-            #expect(store.phase == .idle)
+            #expect(!store.isTrying)
             #expect(!catalog.isActive)
             model.setScenePhase(.inactive)
-            #expect(store.phase == .connecting)
+            #expect(store.isTrying)
             #expect(catalog.isActive)
             #expect(!model.isActive)
         }
@@ -1317,19 +1319,19 @@ struct ShellTests {
                                  defaults: defaults, session: fixtureSession())
             defer { model.setScenePhase(.background) }
             let store = try #require(model.catalog?.channel(id: "first"))
-            model.acquire(store)
+            model.hold(store)
             #expect(model.selectedChannelID == nil)
-            #expect(store.phase == .idle)
+            #expect(!store.isTrying)
             model.setScenePhase(.inactive)
-            #expect(store.phase == .connecting)
+            #expect(store.isTrying)
             model.setScenePhase(.background)
-            #expect(store.phase == .idle)
+            #expect(!store.isTrying)
             model.setScenePhase(.active)
-            #expect(store.phase == .connecting)
+            #expect(store.isTrying)
             model.selectedChannelID = store.id
             #expect(model.selectedStore === store)
             model.release(store)
-            #expect(store.phase == .connecting)
+            #expect(store.isTrying)
         }
     }
 
@@ -1338,11 +1340,11 @@ struct ShellTests {
             let model = AppModel(arguments: ["--server", "https://fixture.example"], environment: [:],
                                  defaults: defaults, session: fixtureSession())
             defer { model.setScenePhase(.background) }
-            #expect(model.sidebarConnection == .connecting)
+            #expect(model.catalog?.phase == .connecting)
             #expect(!model.canCreateChannel)
             #expect(!model.canManageChannels)
             await model.refreshCatalog()
-            #expect(model.sidebarConnection == .connected)
+            #expect(model.catalog?.phase == .connected)
             #expect(!model.canCreateChannel)
             #expect(!model.canManageChannels)
             model.setScenePhase(.active)
@@ -1396,7 +1398,7 @@ struct ShellTests {
             let previousInteraction = model.interaction(for: "first")
             try model.configure(serverURL: "https://second.example")
             #expect(model.selectedStore == nil)
-            #expect(previousStore?.phase == .idle)
+            #expect(previousStore?.isTrying == false)
             #expect(model.interaction(for: "first") !== previousInteraction)
             #expect(defaults.dictionary(forKey: "lastChannelByServer")?["https://first.example"] as? String == "first")
             #expect(defaults.string(forKey: "serverURL") == "https://second.example")
@@ -1475,9 +1477,9 @@ struct ShellTests {
             firstDraft.text = "Draft for the first server"
             model.visibleChannelID = firstStore.id
             model.setScenePhase(.active)
-            #expect(firstStore.phase == .connecting)
+            #expect(firstStore.isTrying)
             try model.switchServer(to: secondAddress, replacing: firstAddress)
-            #expect(firstStore.phase == .idle)
+            #expect(!firstStore.isTrying)
             #expect(model.selectedStore == nil)
             #expect(model.visibleChannelID == nil)
             #expect(defaults.string(forKey: "serverURL") == secondAddress)

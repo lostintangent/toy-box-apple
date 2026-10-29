@@ -2576,10 +2576,10 @@ private final class TranscriptHarness {
         if warm {
             store.connect()
             let deadline = ContinuousClock.now + .seconds(60)
-            while !(store.isLoaded && store.phase.isLive), ContinuousClock.now < deadline {
+            while !(store.isLoaded && store.phase.isConnected), ContinuousClock.now < deadline {
                 try await Task.sleep(for: .milliseconds(20))
             }
-            try #require(store.isLoaded && store.phase.isLive)
+            try #require(store.isLoaded && store.phase.isConnected)
         }
         let view = NSHostingView(rootView: ConversationTranscript(store: store, find: find, revealTimeout: revealTimeout)
             .onPreferenceChange(TranscriptMessageFrames.self) { capture.frames = $0 }

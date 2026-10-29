@@ -35,7 +35,7 @@ struct OverviewRoutineRow: View {
     private var isRunning: Bool { item[key].isRunning }
     private var runRequestedAt: Date? { item[key].runRequestedAt }
     private var recovery: ChannelManagementWriteRecovery? { recoveries[key] }
-    private var canRun: Bool { !isRunning && recovery?.blocksWrites != true && store.phase.isLive }
+    private var canRun: Bool { !isRunning && recovery?.blocksWrites != true && store.phase.isConnected }
     private var showsMenu: Bool { isHovering || focus != nil || voiceOver }
     private var scheduleSummary: String { RoutineScheduleSummary.text(for: routine.schedule) }
     private var scheduleLine: String {
@@ -121,7 +121,7 @@ struct OverviewRoutineRow: View {
         Button("Delete Routine…", role: .destructive) {
             management.present(.deleteRoutine(channelId: store.id, routineId: routine.id))
         }
-        .disabled(isRunning || !store.phase.isLive)
+        .disabled(isRunning || !store.phase.isConnected)
     }
 
     private func details(next: Result<Date, Error>) -> some View {

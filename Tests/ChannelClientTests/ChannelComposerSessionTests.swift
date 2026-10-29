@@ -67,7 +67,7 @@ struct ChannelComposerSessionTests {
         let store = ChannelStore(id: "test", api: try mock.api(), sendJournal: nil)
         store.connect()
         defer { store.disconnect() }
-        try await eventually { store.phase.isLive }
+        try await eventually { store.phase.isConnected }
         let draft = ComposerDraft(imageIsReadable: { _ in false })
         draft.text = "Send once"
         let session = ChannelComposerSession(store: store, draft: draft)
@@ -98,7 +98,7 @@ struct ChannelComposerSessionTests {
         let store = ChannelStore(id: "test", api: try mock.api(), sendJournal: nil)
         store.connect()
         defer { store.disconnect() }
-        try await eventually { store.phase.isLive }
+        try await eventually { store.phase.isConnected }
         let draft = ComposerDraft(imageIsReadable: { _ in false })
         draft.text = "Original words"
         let session = ChannelComposerSession(store: store, draft: draft)
@@ -133,7 +133,7 @@ struct ChannelComposerSessionTests {
         let store = ChannelStore(id: "test", api: try mock.api(), sendJournal: nil)
         store.connect()
         defer { store.disconnect() }
-        try await eventually { store.phase.isLive }
+        try await eventually { store.phase.isConnected }
         await #expect(throws: ChannelAPIError.http(status: 503, message: "Response lost")) {
             try await store.post(id: "legacy", content: "Original", attachments: [image.attachment])
         }

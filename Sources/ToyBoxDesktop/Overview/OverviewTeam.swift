@@ -22,7 +22,7 @@ struct OverviewTeamList: View {
     var body: some View {
         let roster = store.roster
         let presence = store.presence
-        let isLive = store.phase.isLive
+        let isConnected = store.phase.isConnected
         let isAvailable = !store.phase.isUnavailable
         VStack(alignment: .leading, spacing: 0) {
             ForEach(slots.entries(Self.ordered(roster), in: store.id)) { entry in
@@ -30,9 +30,9 @@ struct OverviewTeamList: View {
                 let isLead = agent.id == roster.first?.id
                 OverviewAgentRow(agent: agent, key: entry.key, presence: presence[agent.id], isLead: isLead,
                                  model: isLead ? agent.model ?? store.details?.model : agent.model,
-                                 channelId: store.id, isLive: isLive, isAvailable: isAvailable)
+                                 channelId: store.id, isConnected: isConnected, isAvailable: isAvailable)
             }
-            OverviewAddAgentRow(isLive: isLive, isAvailable: isAvailable) {
+            OverviewAddAgentRow(isConnected: isConnected, isAvailable: isAvailable) {
                 management.present(.addMember(channelId: store.id, name: ""))
             }
         }
@@ -54,7 +54,7 @@ struct OverviewAgentRow: View {
     let model: ModelConfiguration?
     let channelId: String
     /// Enables member management.
-    let isLive: Bool
+    let isConnected: Bool
     /// Shows the last reported presence, which stays through a reconnect.
     let isAvailable: Bool
     @ViewState private var about = OverviewItemState(false)
@@ -131,11 +131,11 @@ struct OverviewAgentRow: View {
             Button("Edit Member…") {
                 management.present(.editMember(channelId: channelId, agentId: agent.id))
             }
-            .disabled(!isLive)
+            .disabled(!isConnected)
             Button("Remove Member…", role: .destructive) {
                 management.present(.removeMember(channelId: channelId, agentId: agent.id))
             }
-            .disabled(!isLive)
+            .disabled(!isConnected)
         }
     }
 }
@@ -235,7 +235,7 @@ private struct OverviewAgentAbout: View {
 /// Ends the Team list: a dashed circle and secondary label that opens Add Member.
 private struct OverviewAddAgentRow: View {
     @Environment(\.channelTextScale) private var textScale
-    let isLive: Bool
+    let isConnected: Bool
     let isAvailable: Bool
     let action: () -> Void
 
@@ -252,7 +252,7 @@ private struct OverviewAddAgentRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .disabled(!isLive)
+        .disabled(!isConnected)
         .help(isAvailable ? "Add a member to this channel" : "Reconnect to add a member")
     }
 }

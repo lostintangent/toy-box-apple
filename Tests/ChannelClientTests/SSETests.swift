@@ -8,16 +8,13 @@ struct SSETests {
             + ": heartbeat\n\ndata: third\n\n"
         var decoder = SSEDecoder()
         let frames = try text.utf8.compactMap { try decoder.consume($0) }
-        #expect(frames == [
-            SSEFrame(data: "first\nsecond", id: "0", event: "channel", retryMilliseconds: 1200),
-            SSEFrame(data: "third", id: "0", event: nil, retryMilliseconds: nil),
-        ])
+        #expect(frames == ["first\nsecond", "third"])
     }
 
     @Test func bareCarriageReturnsAndEmptyData() throws {
         var decoder = SSEDecoder()
         let frames = try "data:\r\rdata: ✓\r\r".utf8.compactMap { try decoder.consume($0) }
-        #expect(frames.map(\.data) == ["", "✓"])
+        #expect(frames == ["", "✓"])
     }
 
     @Test func frameSizeIsBounded() {

@@ -25,8 +25,8 @@ struct ServerConnectionSection: View {
                 }
             Button(action: test) {
                 HStack {
-                    Text(connection.isTesting ? "Connecting…" : testTitle)
-                    if connection.isTesting { ProgressView() }
+                    Text(connection.isConnecting ? "Connecting…" : testTitle)
+                    if connection.isConnecting { ProgressView() }
                 }
                 .frame(minHeight: 44)
             }
@@ -40,18 +40,18 @@ struct ServerConnectionSection: View {
                 errorLabel(message)
             }
             switch connection.phase {
-            case .connected(let url, _):
-                Label("Connected to \(SidebarConnection.server(url.absoluteString))", systemImage: "checkmark.circle")
+            case .connected(let url, _)?:
+                Label("Connected to \(SidebarFooter.server(url.absoluteString))", systemImage: "checkmark.circle")
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)
-            case .failed(let address, let error):
+            case .failed(let address, let error)?:
                 VStack(alignment: .leading, spacing: 4) {
                     errorLabel(Self.failureMessage(error))
                     Text(address).font(.footnote).textSelection(.enabled)
                     Text("Check Tailscale, your Mac's server address, and that your Mac is awake with Toy Box running.")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
-            case .idle, .testing:
+            case .connecting?, nil:
                 EmptyView()
             }
             if let useFailure { errorLabel(useFailure) }
@@ -68,12 +68,12 @@ struct ServerConnectionSection: View {
         .onChange(of: connection.address) { _, _ in useFailure = nil }
     }
 
-    var canTest: Bool { !connection.isTesting && connection.validationError == nil }
+    var canTest: Bool { !connection.isConnecting && connection.validationError == nil }
 
     var canUse: Bool {
         guard canTest else { return false }
         if requiresTest {
-            guard case .connected = connection.phase else { return false }
+            guard case .connected? = connection.phase else { return false }
         }
         if let currentServer,
            ChannelWaitingRequest.normalizedServer(currentServer)
@@ -90,7 +90,7 @@ struct ServerConnectionSection: View {
     }
 
     private var testTitle: String {
-        if case .failed = connection.phase { return "Retry" }
+        if case .failed? = connection.phase { return "Retry" }
         return "Test Connection"
     }
 

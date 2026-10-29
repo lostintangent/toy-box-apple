@@ -33,7 +33,7 @@ public struct ChannelSidebarProjection {
         if openChannelIDs.contains(channel.id), let store = catalog?.channel(id: channel.id) {
             return store.phase.isUnavailable ? [] : agents.filter { store.presence[$0.id]?.state == "working" }
         }
-        guard let catalog, catalog.error == nil else { return [] }
+        guard let catalog, catalog.phase.message == nil else { return [] }
         return agents.filter { catalog.working.contains($0.id) }
     }
 

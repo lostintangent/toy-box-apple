@@ -40,7 +40,7 @@ public final class MobileWidgetSnapshotPublisher {
             requests = [:]
         }
         guard let catalog, catalog.api.baseURL.absoluteString == serverURL,
-              catalog.hasLoaded, catalog.error == nil, catalog.state != nil else {
+              catalog.isLoaded, catalog.phase.message == nil, catalog.state != nil else {
             var snapshot = previous?.serverURL == serverURL ? previous : nil
             if snapshot != nil { snapshot?.isOffline = true }
             try publish(snapshot ?? NeedsYouSnapshot(
@@ -100,7 +100,7 @@ public final class MobileWidgetSnapshotPublisher {
         let catalog = ChannelCatalogStore(api: try ChannelAPI(serverURL: serverURL, session: session))
         await catalog.refresh()
         try Task.checkCancellation()
-        if let failure = catalog.failure { throw failure }
+        if let failure = catalog.phase.failure { throw failure }
         return try await resolvedSnapshot(
             catalog: catalog, serverURL: serverURL, token: token, allowsPartialHistory: false)
     }

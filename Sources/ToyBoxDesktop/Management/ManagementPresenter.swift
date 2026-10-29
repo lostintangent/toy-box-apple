@@ -98,7 +98,7 @@ private struct ManagementSheet: View {
             if let store { app.release(store) }
             let connection = app.catalog?.channel(id: id) ?? ChannelStore(id: id, api: api)
             store = connection
-            app.acquire(connection)
+            app.hold(connection)
         }
         .onDisappear { if let store { app.release(store) } }
     }

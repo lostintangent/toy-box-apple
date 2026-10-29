@@ -19,11 +19,7 @@ struct ChannelSidebar: View {
         (model.catalog?.channels ?? []).filter { channelMatchesQuery($0, query: trimmedQuery) }
     }
 
-    private var connection: SidebarConnection { model.sidebarConnection }
-
-    private var initialLoading: Bool {
-        model.catalog != nil && connection == .connecting
-    }
+    private var initialLoading: Bool { model.catalog?.phase == .connecting }
 
     private var canCreate: Bool { model.canCreateChannel }
 
@@ -77,8 +73,8 @@ struct ChannelSidebar: View {
         }
         .safeAreaBar(edge: .bottom) {
             ChannelSidebarFailure(
-                connection: connection,
-                error: model.configurationError ?? model.catalog?.error,
+                footer: model.sidebarFooter,
+                error: model.configurationError ?? model.catalog?.phase.message,
                 canRetry: model.catalog != nil && model.isActive,
                 retry: { Task { await model.refreshCatalog() } },
                 openSettings: { showsSettings = true },
@@ -135,7 +131,7 @@ struct ChannelSidebar: View {
                 Button("Settings") { showsSettings = true }
                     .frame(minHeight: 44)
             }
-        } else if connection == .connected, channels.isEmpty {
+        } else if model.catalog?.phase == .connected, channels.isEmpty {
             if trimmedQuery.isEmpty {
                 ContentUnavailableView {
                     Label("Your channels live here", systemImage: "bubble.left.and.bubble.right")

@@ -15,7 +15,7 @@ struct ContentPolicyTests {
     }
 
     @Test func sendEligibilityStopsAtEachBlockerAndKeepsTheLengthBoundary() {
-        let inputs = ["isLive", "isSending", "isSubmitting", "hasContent",
+        let inputs = ["isConnected", "isSending", "isSubmitting", "hasContent",
                       "isLoadingImages", "hasUnreadableImage", "textUTF16Count"]
         let cases = (0..<6).map { (blocker: $0, length: 12_001, allowed: false) } + [
             (blocker: 6, length: 0, allowed: true),
@@ -34,7 +34,7 @@ struct ContentPolicyTests {
                 return example.length
             }
             let eligible = channelCanSend(
-                isLive: read(0, example.blocker != 0),
+                isConnected: read(0, example.blocker != 0),
                 isSending: read(1, example.blocker == 1),
                 isSubmitting: read(2, example.blocker == 2),
                 hasContent: read(3, example.blocker != 3),

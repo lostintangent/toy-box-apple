@@ -104,7 +104,6 @@ public struct EditMemberInput: Encodable, Sendable {
 public struct ChannelAPI: Sendable {
     public let baseURL: URL
     let session: URLSession
-    var observationTrace: (@Sendable (ChannelObservationStage) -> Void)?
 
     public init(baseURL: URL, session: URLSession = .shared) throws {
         guard ["http", "https"].contains(baseURL.scheme?.lowercased() ?? ""),

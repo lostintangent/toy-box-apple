@@ -35,7 +35,7 @@ struct MemberEditor: View {
         return nextName != member.name || nextRole != (member.role ?? "") || model != member.model
     }
     private var canSave: Bool {
-        !nextName.isEmpty && violation == nil && changed && !saving && !recovery.blocksWrites && store.phase.isLive
+        !nextName.isEmpty && violation == nil && changed && !saving && !recovery.blocksWrites && store.phase.isConnected
     }
     private var catalog: ChannelCatalogStore? {
         app.catalog === session.catalog ? session.catalog : nil
@@ -91,7 +91,7 @@ struct MemberEditor: View {
                     Button("Remove from Channel", systemImage: "person.badge.minus", role: .destructive) {
                         presenter.present(.removeMember(channelId: channel.id, agentId: member.id))
                     }
-                    .disabled(recovery.blocksWrites || !store.phase.isLive)
+                    .disabled(recovery.blocksWrites || !store.phase.isConnected)
                 }
             }
         }

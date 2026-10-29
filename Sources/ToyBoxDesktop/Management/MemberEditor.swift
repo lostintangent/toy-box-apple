@@ -46,7 +46,7 @@ struct MemberEditor: View {
         return nextName != member.name || nextRole != (member.role ?? "") || model != member.model
     }
     private var canSave: Bool {
-        isValid && hasChanges && !isSaving && !recovery.blocksWrites && store.phase.isLive
+        isValid && hasChanges && !isSaving && !recovery.blocksWrites && store.phase.isConnected
     }
     private var refreshedMember: ChannelMember? {
         guard let member else { return nil }
@@ -103,7 +103,7 @@ struct MemberEditor: View {
                 Button("Remove from Channel\u{2026}", role: .destructive) {
                     presenter.present(.removeMember(channelId: channel.id, agentId: member.id))
                 }
-                .disabled(recovery.blocksWrites || !store.phase.isLive)
+                .disabled(recovery.blocksWrites || !store.phase.isConnected)
             }
             Spacer()
             Button("Cancel", role: .cancel) { presenter.flow = nil }

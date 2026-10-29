@@ -2,7 +2,7 @@ import SwiftUI
 import ToyBoxUI
 
 struct ChannelSidebarFailure: View {
-    let connection: SidebarConnection
+    let footer: SidebarFooter
     let error: String?
     let canRetry: Bool
     let retry: () -> Void
@@ -10,7 +10,7 @@ struct ChannelSidebarFailure: View {
     var showsSettingsButton = true
 
     var body: some View {
-        if let heading = connection.heading, let error {
+        if let heading = footer.heading, let error {
             VStack(alignment: .leading, spacing: 4) {
                 Label(heading, systemImage: "wifi.exclamationmark")
                     .font(.footnote.weight(.semibold))

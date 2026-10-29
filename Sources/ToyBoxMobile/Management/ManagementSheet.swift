@@ -64,7 +64,7 @@ struct ManagementSheet: View {
             guard let channelID, let catalog = app.catalog else { return }
             let connection = catalog.channel(id: channelID)
             store = connection
-            app.acquire(connection)
+            app.hold(connection)
         }
         .onDisappear {
             if let store { app.release(store) }

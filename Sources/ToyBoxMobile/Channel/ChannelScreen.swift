@@ -202,11 +202,11 @@ struct ChannelScreen: View {
             Button("Edit Channel", systemImage: "pencil") {
                 management.present(.editChannel(channelId: store.id))
             }
-            .disabled(!store.phase.isLive)
+            .disabled(!store.phase.isConnected)
             Button("Delete Channel", systemImage: "trash", role: .destructive) {
                 management.present(.deleteChannel(channelId: store.id))
             }
-            .disabled(!store.phase.isLive)
+            .disabled(!store.phase.isConnected)
         }
     }
 

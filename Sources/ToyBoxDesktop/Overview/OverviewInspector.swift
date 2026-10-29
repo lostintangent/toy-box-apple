@@ -215,7 +215,7 @@ private struct OverviewAbout: View {
                     .buttonStyle(.plain)
                     .font(.system(size: 13 * textScale))
                     .foregroundStyle(.secondary)
-                    .disabled(!store.phase.isLive)
+                    .disabled(!store.phase.isConnected)
                     .help(store.phase.isUnavailable ? "Reconnect to edit the channel" : "Edit Channel")
             }
             let preview = details.resolvedPreview

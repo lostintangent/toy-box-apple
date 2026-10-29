@@ -103,7 +103,7 @@ struct RootView: View {
             model.setScenePhase(phase)
             if phase == .active { Task { await model.notifications.refreshAuthorization() } }
         }
-        .onChange(of: model.catalog?.hasLoaded, initial: true) { _, _ in
+        .onChange(of: model.catalog?.isLoaded, initial: true) { _, _ in
             model.reconcileSelection()
         }
         .onChange(of: model.isResolvingNavigation) { _, resolving in
@@ -298,7 +298,7 @@ struct RootView: View {
             focusComposer: conversation.map { interaction in { interaction.focusComposer() } },
             jumpToLatest: conversation.map { interaction in { interaction.jumpToLatest() } },
             revealRequest: store.flatMap { store in
-                guard store.phase.isLive, let sequence = store.requestSequence, let interaction = conversation else {
+                guard store.phase.isConnected, let sequence = store.requestSequence, let interaction = conversation else {
                     return nil
                 }
                 return { interaction.reveal(sequence: sequence) }

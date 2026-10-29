@@ -21,7 +21,7 @@ final class RequestSpotlight {
 
         @MainActor init(_ model: AppModel) {
             server = model.catalog == nil ? nil : ChannelWaitingRequest.normalizedServer(model.serverURL)
-            entries = model.catalog?.hasLoaded == true
+            entries = model.catalog?.isLoaded == true
                 ? model.menuBarStatus.waiting.compactMap { WaitingRequestEntry(item: $0, serverURL: model.serverURL) }
                 : nil
         }

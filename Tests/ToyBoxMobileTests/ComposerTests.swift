@@ -25,7 +25,7 @@ struct ComposerTests {
         let id = UUID().uuidString
 
         #expect(fixture.store.state == nil)
-        #expect(!fixture.store.phase.isLive)
+        #expect(!fixture.store.phase.isConnected)
         let result = await ComposerNotificationReply.send(
             text, to: "lead", store: fixture.store, id: id, isCurrentRegistration: { true })
 

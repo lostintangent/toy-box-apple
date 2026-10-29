@@ -38,7 +38,7 @@ struct AuxiliaryComposer: View {
     private var isConnecting: Bool { store.phase == .connecting }
     private var canSend: Bool {
         !finalizing && (session.canSend || (dictation.hasWords && !store.isSending && channelCanSend(
-            isLive: store.phase.isLive, isSending: false, isSubmitting: false,
+            isConnected: store.phase.isConnected, isSending: false, isSubmitting: false,
             hasContent: !session.requestChanged,
             isLoadingImages: draft.isLoadingImages, hasUnreadableImage: draft.hasUnreadableImage,
             textUTF16Count: draft.text.utf16.count

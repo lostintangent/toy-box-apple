@@ -88,7 +88,7 @@ struct IntentsTests {
         var intent = OpenRequestIntent(target: WaitingRequestEntity(entry))
         intent.context = context
         _ = try await intent.perform()
-        #expect(host.revealedRequests == ["studio:8"] && host.acquired.isEmpty)
+        #expect(host.revealedRequests == ["studio:8"] && host.held.isEmpty)
         host.waitingRequests = []
         #expect(try await query.entities(for: [entry.id]).isEmpty)
         await #expect(throws: ChannelIntentError.requestNotWaiting) { try await intent.perform() }
@@ -416,7 +416,7 @@ struct IntentsTests {
                                  message: "Sounds good")
         intent.context = host.context
         await #expect(throws: ChannelIntentError.noServer) { try await intent.perform() }
-        #expect(host.confirmations.isEmpty && host.acquired.isEmpty)
+        #expect(host.confirmations.isEmpty && host.held.isEmpty)
     }
 
     @Test func anEmptyMessageIsNeverConfirmedOrSent() async throws {
@@ -424,7 +424,7 @@ struct IntentsTests {
         var intent = SendMessageIntent(channel: ChannelEntity(channel("c", "Docs")), message: " \n ")
         intent.context = host.context
         await #expect(throws: ChannelIntentError.emptyMessage) { try await intent.perform() }
-        #expect(host.confirmations.isEmpty && host.acquired.isEmpty)
+        #expect(host.confirmations.isEmpty && host.held.isEmpty)
     }
 
     // MARK: Helpers
@@ -475,7 +475,7 @@ extension IntentsTests {
             intent.context = host.context
             _ = try await intent.perform()
             #expect(host.opened == ["studio-demo"])
-            #expect(host.acquired.isEmpty)
+            #expect(host.held.isEmpty)
         }
 
         @Test(.enabled(if: demoURL != nil))
@@ -491,8 +491,8 @@ extension IntentsTests {
 
             #expect(value.contains("Studio demo"))
             if channel.requestSequence != nil { #expect(value.hasPrefix("Lead needs your reply in Studio demo: \u{201C}")) }
-            #expect(host.acquired == ["studio-demo"])
-            #expect(host.store("studio-demo")?.phase == .idle)
+            #expect(host.held == ["studio-demo"])
+            #expect(host.holds["studio-demo"] == 0, "The intent released the channel it held")
             let requests = RequestRecorder.requests
             #expect(!requests.isEmpty && requests.allSatisfy { $0.hasPrefix("GET ") })
         }
@@ -569,7 +569,7 @@ extension IntentsTests {
             #expect(state.channel.latestSequence > channel.latestSequence)
             let store = try #require(host.store("studio-demo"))
             #expect(store.sendAttempts.allSatisfy { $0.phase == .confirmed })
-            #expect(store.phase == .idle)
+            #expect(host.holds["studio-demo"] == 0, "The intent released the channel it held")
         }
 
         @Test(.enabled(if: demoURL != nil))
@@ -581,7 +581,7 @@ extension IntentsTests {
             var intent = SendMessageIntent(channel: ChannelEntity(channel), message: "Never sent")
             intent.context = host.context
             await #expect(throws: CancellationError.self) { try await intent.perform() }
-            #expect(host.confirmations.count == 1 && host.acquired.isEmpty)
+            #expect(host.confirmations.count == 1 && host.held.isEmpty)
             #expect(!RequestRecorder.requests.contains { $0.hasPrefix("POST ") })
         }
 
@@ -646,8 +646,8 @@ private final class TestHost {
     let journal = ChannelSendJournal(directory: FileManager.default.temporaryDirectory
         .appending(path: "IntentsTests-\(UUID().uuidString)", directoryHint: .isDirectory))
     private var stores: [String: ChannelStore] = [:]
-    private var holds: [String: Int] = [:]
-    private(set) var acquired: [String] = []
+    private(set) var holds: [String: Int] = [:]
+    private(set) var held: [String] = []
     private(set) var opened: [String] = []
     private(set) var confirmations: [ChannelIntentsContext.SendConfirmation] = []
     var declines = false
@@ -658,8 +658,8 @@ private final class TestHost {
         let context = ChannelIntentsContext(host: .init(
             api: { self.api },
             store: { self.store($0) },
-            acquire: { store in
-                self.acquired.append(store.id)
+            hold: { store in
+                self.held.append(store.id)
                 self.holds[store.id, default: 0] += 1
                 if self.holds[store.id] == 1 { store.connect() }
             },

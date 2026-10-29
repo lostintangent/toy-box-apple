@@ -159,7 +159,7 @@ struct RequestSpotlightTests {
         let posts = RequestPostProtocol.posts.withLock { $0 }
         #expect(posts == [.init(id: "owned-id", content: "@lead Ship it.")])
         #expect(fixture.confirmations == [.init(channel: "Studio", message: "Ship it.", recipient: "Lead")])
-        #expect(fixture.opened.isEmpty && fixture.acquired == 1 && fixture.released == 1)
+        #expect(fixture.opened.isEmpty && fixture.held == 1 && fixture.released == 1)
         #expect(fixture.store.sendAttempts.isEmpty)
         #expect(fixture.store.messages.contains { $0.id == "owned-id" && $0.sender == .user })
     }
@@ -277,14 +277,14 @@ private final class RequestIntentFixture {
     let entry: WaitingRequestEntry
     var entries: [WaitingRequestEntry]
     var opened: [String] = []
-    var acquired = 0
+    var held = 0
     var released = 0
     var confirmations: [ChannelIntentsContext.SendConfirmation] = []
     var onConfirm: () throws -> Void = {}
     lazy var context: ChannelIntentsContext = {
         let context = ChannelIntentsContext(host: .init(
             api: { self.api }, store: { _ in self.store },
-            acquire: { _ in self.acquired += 1 }, release: { _ in self.released += 1 },
+            hold: { _ in self.held += 1 }, release: { _ in self.released += 1 },
             open: { _ in Issue.record("Reply must not open a window") },
             requests: { self.entries }, revealRequest: { self.opened.append("\($0):\($1)") }
         ))

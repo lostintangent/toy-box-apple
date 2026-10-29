@@ -112,7 +112,7 @@ struct TransportTests {
     @MainActor func storeReconnectsFromAppliedRevisionZero(holdsResumed: Bool) async throws {
         let initial = testState()
         let resumed = ChannelObservationEvent(type: "resumed", presence: ["test": .init(state: "working")])
-        let mock = MockTransport(recordingLifecycle: true) { _, count in
+        let mock = MockTransport { _, count in
             if count == 1 { return try .stream([.init(type: "snapshot", state: initial)], keepOpen: false) }
             return try .stream(holdsResumed ? [] : [resumed])
         }
@@ -123,12 +123,10 @@ struct TransportTests {
         if holdsResumed {
             try await eventually(observing: mock) { mock.requests.count == 2 && mock.pendingResponseCount == 1 }
             #expect(store.state?.revision == 0)
-            #expect(!store.phase.isLive)
+            #expect(!store.phase.isConnected)
             #expect(mock.sendPendingBody(try MockResponse.stream([resumed]).body) == 1)
         }
-        try await eventually(observing: mock, diagnostics: {
-            reconnectReadinessDiagnostics(store: store, transport: mock)
-        }) { mock.requests.count == 2 && store.phase.isLive }
+        try await eventually(observing: mock) { mock.requests.count == 2 && store.phase.isConnected }
         #expect(mock.requests[0].url?.query == nil)
         #expect(mock.requests[1].url?.query == "after=0")
         #expect(mock.requests[1].value(forHTTPHeaderField: "Last-Event-ID") == "0")
@@ -167,7 +165,7 @@ struct TransportTests {
     @MainActor func recoverySnapshotReplacesCachedHistory(holdsRecovery: Bool) async throws {
         let initial = testState(revision: 5, messages: [testMessage(1)])
         let recovered = testState(revision: 100, messages: [testMessage(100)])
-        let mock = MockTransport(recordingLifecycle: true) { _, count in
+        let mock = MockTransport { _, count in
             try .stream(holdsRecovery && count > 1 ? [] : [.init(type: "snapshot", state: count == 1 ? initial : recovered)],
                         keepOpen: count > 1)
         }
@@ -179,12 +177,10 @@ struct TransportTests {
             try await eventually(observing: mock) { mock.requests.count == 2 && mock.pendingResponseCount == 1 }
             #expect(store.state?.revision == 5)
             #expect(store.state?.messages.map(\.sequence) == [1])
-            #expect(!store.phase.isLive)
+            #expect(!store.phase.isConnected)
             #expect(mock.sendPendingBody(try MockResponse.stream([.init(type: "snapshot", state: recovered)]).body) == 1)
         }
-        try await eventually(diagnostics: {
-            reconnectReadinessDiagnostics(store: store, transport: mock)
-        }) { store.state?.revision == 100 && store.phase.isLive }
+        try await eventually { store.state?.revision == 100 && store.phase.isConnected }
         #expect(mock.requests[1].value(forHTTPHeaderField: "Last-Event-ID") == "5")
         #expect(store.state?.messages.map(\.sequence) == [100])
     }
@@ -210,7 +206,7 @@ struct TransportTests {
         var store: ChannelStore? = ChannelStore(id: "test", api: try mock.api(), sendJournal: nil)
         weak let weakStore = store
         store?.connect()
-        try await eventually { store?.phase.isLive == true }
+        try await eventually { store?.phase.isConnected == true }
         store = nil
         #expect(weakStore == nil)
         try await eventually(observing: mock) { mock.stops == 1 }
@@ -228,7 +224,7 @@ struct TransportTests {
         let store = ChannelStore(id: "test", api: try mock.api(), sendJournal: nil)
         store.connect()
         defer { store.disconnect() }
-        try await eventually { store.phase.isLive }
+        try await eventually { store.phase.isConnected }
         await store.loadOlder()
         #expect(store.state?.revision == 10)
         #expect(store.state?.messages.map(\.sequence) == [99, 100])
@@ -247,7 +243,7 @@ struct TransportTests {
         let store = ChannelStore(id: "test", api: try mock.api(), sendJournal: nil)
         store.connect()
         defer { store.disconnect() }
-        try await eventually { store.phase.isLive }
+        try await eventually { store.phase.isConnected }
         await store.loadHistory(through: 5)
         #expect(store.hasOlderMessages)
         #expect(store.state?.messages.map(\.sequence) == [100])
@@ -267,7 +263,7 @@ struct TransportTests {
         let store = ChannelStore(id: "test", api: try mock.api(), sendJournal: nil)
         store.connect()
         defer { store.disconnect() }
-        try await eventually { store.phase.isLive }
+        try await eventually { store.phase.isConnected }
         #expect(await store.loadHistory(through: 95) == nil)
         #expect(store.state?.messages.first?.sequence == 94)
         #expect(mock.requests.filter { $0.url?.path.hasSuffix("/messages") == true }.count == 3)
@@ -284,7 +280,7 @@ struct TransportTests {
         let store = ChannelStore(id: "test", api: try mock.api(), sendJournal: nil)
         store.connect()
         defer { store.disconnect() }
-        try await eventually { store.phase.isLive }
+        try await eventually { store.phase.isConnected }
         let failure = await store.loadHistory(through: 95)
         #expect(failure != nil && failure == store.historyError)
         #expect(mock.requests.filter { $0.url?.path.hasSuffix("/messages") == true }.count == 1)
@@ -345,7 +341,7 @@ struct TransportTests {
         let store = ChannelStore(id: "test", api: try mock.api(), sendJournal: nil)
         store.connect()
         defer { store.disconnect() }
-        try await eventually { store.phase.isLive }
+        try await eventually { store.phase.isConnected }
         await #expect(throws: ChannelAPIError.http(status: 503, message: "Try later.")) {
             try await store.post(content: "Hello")
         }
@@ -370,7 +366,7 @@ struct TransportTests {
         let store = ChannelStore(id: "test", api: try mock.api(), sendJournal: nil)
         store.connect()
         defer { store.disconnect() }
-        try await eventually { store.phase.isLive }
+        try await eventually { store.phase.isConnected }
         #expect(store.unreadAfter == 1)
         await store.markRead(through: 2)
         #expect(store.unreadAfter == 1)

@@ -52,7 +52,7 @@ struct ChannelEditor: View {
     }
     private var canSave: Bool {
         isValid && hasChanges && !isSaving && !recovery.blocksWrites
-            && (store == nil || store?.phase.isLive == true)
+            && (store == nil || store?.phase.isConnected == true)
     }
 
     var body: some View {

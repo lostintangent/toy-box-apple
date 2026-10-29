@@ -31,7 +31,7 @@ public final class ChannelComposerSession {
     public func canSend(hasAdditionalContent: @autoclosure () -> Bool = false,
                         isLoadingAdditionalImages: @autoclosure () -> Bool = false) -> Bool {
         channelCanSend(
-            isLive: store.phase.isLive, isSending: store.isSending, isSubmitting: isSubmitting,
+            isConnected: store.phase.isConnected, isSending: store.isSending, isSubmitting: isSubmitting,
             hasContent: draft.hasContent || hasAdditionalContent(),
             isLoadingImages: draft.isLoadingImages || isLoadingAdditionalImages(),
             hasUnreadableImage: draft.hasUnreadableImage, textUTF16Count: draft.text.utf16.count

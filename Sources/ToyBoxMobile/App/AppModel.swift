@@ -22,7 +22,6 @@ final class AppModel {
     var isSettingsPresented = false
     var navigationNotice: String?
     var browserFailure: BrowserFailure?
-    let requestedRefresh = RequestedCatalogRefresh()
     var selectedChannelID: String? {
         didSet {
             guard oldValue != selectedChannelID else { return }
@@ -38,7 +37,7 @@ final class AppModel {
         }
     }
 
-    @ObservationIgnored private let connections = ChannelConnections<ChannelStore>()
+    @ObservationIgnored private let connections = ChannelConnections()
     @ObservationIgnored private var isForeground = false
     @ObservationIgnored private var holdsSelectedConnection = false
     @ObservationIgnored private let defaults: UserDefaults
@@ -107,14 +106,9 @@ final class AppModel {
 
     var api: ChannelAPI? { catalog?.api }
 
-    var sidebarConnection: SidebarConnection {
-        SidebarConnection(
-            loaded: catalog?.hasLoaded == true, failing: catalog?.error != nil,
-            fatal: catalog == nil || SidebarConnection.isFatal(catalog?.failure)
-        )
-    }
+    var sidebarFooter: SidebarFooter { SidebarFooter(phase: catalog?.phase, isLoaded: catalog?.isLoaded == true) }
 
-    var canManageChannels: Bool { isActive && sidebarConnection == .connected }
+    var canManageChannels: Bool { isActive && catalog?.phase == .connected }
     var canCreateChannel: Bool { canManageChannels }
 
     var sidebarProjection: ChannelSidebarProjection {
@@ -122,8 +116,8 @@ final class AppModel {
         return ChannelSidebarProjection(catalog: catalog, openChannelIDs: Set(visible.map { [$0] } ?? []))
     }
 
-    func acquire(_ store: ChannelStore) {
-        connections.acquire(store)
+    func hold(_ store: ChannelStore) {
+        connections.hold(store)
         if !isForeground { store.disconnect() }
     }
 
@@ -196,13 +190,13 @@ final class AppModel {
         if holdsSelectedConnection {
             selectedStore.connect()
         } else {
-            connections.acquire(selectedStore)
+            connections.hold(selectedStore)
             holdsSelectedConnection = true
         }
     }
 
     func reconcileSelection() {
-        guard !restoredSelection, !isResolvingNavigation, let catalog, catalog.hasLoaded else { return }
+        guard !restoredSelection, !isResolvingNavigation, let catalog, catalog.isLoaded else { return }
         restoredSelection = true
         guard selectedChannelID == nil, let id = rememberedSelections[serverIdentity] else { return }
         if catalog.channels.contains(where: { $0.id == id }) {
@@ -217,7 +211,7 @@ final class AppModel {
 
     func refreshCatalog() async {
         guard let catalog else { return }
-        await requestedRefresh.run(catalog)
+        await catalog.refresh()
         reconcileSelection()
     }
 
@@ -260,9 +254,9 @@ final class AppModel {
                 && selectedStore.map({ interaction(for: $0.id).isArtifactViewerPresented != true }) != false
                 ? visibleChannelID : nil
             return (channels: channels, active: active,
-                    withdraw: isActive && catalog?.hasLoaded == true && catalog?.error == nil
+                    withdraw: isActive && catalog?.isLoaded == true && catalog?.phase.message == nil
                         && catalog?.lastRefreshedAt != resumeCatalogBaseline,
-                    refreshed: catalog?.lastRefreshedAt, failure: catalog?.error,
+                    refreshed: catalog?.lastRefreshedAt, failure: catalog?.phase.message,
                     registration: notifications.currentRegistration?.registrationID)
         } onChange: { [weak self] in
             Task { @MainActor in self?.observeIntegrations(generation: generation) }
@@ -272,7 +266,7 @@ final class AppModel {
             await notifications.update(channels: context.channels, activeChannelID: context.active,
                                        withdraw: context.withdraw)
         }
-        if let catalog, catalog.error == nil, let refreshed = catalog.lastRefreshedAt,
+        if let catalog, catalog.phase.message == nil, let refreshed = catalog.lastRefreshedAt,
            refreshed != badgeRefresh {
             badgeRefresh = refreshed
             notifications.updateBadge(catalog.channels.filter { channelStatus($0) == .waiting }.count)
@@ -327,11 +321,11 @@ final class AppModel {
         let generation = UUID()
         navigationGeneration = generation
         isResolvingNavigation = true
-        if !catalog.hasLoaded { await requestedRefresh.run(catalog) }
+        if !catalog.isLoaded { await catalog.refresh() }
         guard navigationGeneration == generation, self.catalog === catalog else { return }
         isResolvingNavigation = false
         restoredSelection = true
-        guard catalog.hasLoaded, catalog.channels.contains(where: { $0.id == id }) else {
+        guard catalog.isLoaded, catalog.channels.contains(where: { $0.id == id }) else {
             selectedChannelID = nil
             navigationNotice = "This channel isn't available."
             return

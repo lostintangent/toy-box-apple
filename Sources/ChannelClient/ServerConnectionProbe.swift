@@ -9,8 +9,7 @@ public func isLoopbackHost(_ host: String) -> Bool {
 @MainActor @Observable
 public final class ServerConnectionProbe {
     public enum Phase {
-        case idle
-        case testing(URL)
+        case connecting
         case connected(URL, channelCount: Int)
         case failed(address: String, error: any Error)
     }
@@ -20,7 +19,8 @@ public final class ServerConnectionProbe {
             if oldValue != address { cancel() }
         }
     }
-    public private(set) var phase: Phase = .idle
+    /// Nil until a test runs, and again once the address changes.
+    public private(set) var phase: Phase?
 
     @ObservationIgnored private let session: URLSession
     @ObservationIgnored private let loadCatalog: @Sendable (ChannelAPI) async throws -> ChannelCatalog
@@ -40,8 +40,8 @@ public final class ServerConnectionProbe {
 
     deinit { work?.cancel() }
 
-    public var isTesting: Bool {
-        if case .testing = phase { return true }
+    public var isConnecting: Bool {
+        if case .connecting? = phase { return true }
         return false
     }
 
@@ -64,17 +64,17 @@ public final class ServerConnectionProbe {
         let input = address
         let token = generation
         let loadCatalog = loadCatalog
-        phase = .testing(api.baseURL)
+        phase = .connecting
         let operation = Task { [weak self] in
             do {
                 let catalog = try await loadCatalog(api)
                 guard let self, self.generation == token, self.address == input else { return }
                 self.work = nil
-                self.phase = Task.isCancelled ? .idle : .connected(api.baseURL, channelCount: catalog.channels.count)
+                self.phase = Task.isCancelled ? nil : .connected(api.baseURL, channelCount: catalog.channels.count)
             } catch {
                 guard let self, self.generation == token, self.address == input else { return }
                 self.work = nil
-                self.phase = Task.isCancelled ? .idle : .failed(address: input, error: error)
+                self.phase = Task.isCancelled ? nil : .failed(address: input, error: error)
             }
         }
         work = operation
@@ -85,6 +85,6 @@ public final class ServerConnectionProbe {
         generation = UUID()
         work?.cancel()
         work = nil
-        phase = .idle
+        phase = nil
     }
 }

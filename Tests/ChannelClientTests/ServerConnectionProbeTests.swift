@@ -44,9 +44,9 @@ struct ServerConnectionProbeTests {
         let api = try mock.api()
         let probe = ServerConnectionProbe(address: api.baseURL.absoluteString + "/prefix", session: api.session)
         let operation = try #require(probe.start())
-        #expect(probe.isTesting)
+        #expect(probe.isConnecting)
         await operation.value
-        guard case .connected(let url, let count) = probe.phase else {
+        guard case .connected(let url, let count)? = probe.phase else {
             Issue.record("The valid catalog did not produce a connected result.")
             return
         }
@@ -62,7 +62,7 @@ struct ServerConnectionProbeTests {
         let api = try mock.api()
         let probe = ServerConnectionProbe(address: api.baseURL.absoluteString, session: api.session)
         await probe.start()?.value
-        guard case .failed(let address, let error) = probe.phase else {
+        guard case .failed(let address, let error)? = probe.phase else {
             Issue.record("A missing Lead was reported as connected.")
             return
         }
@@ -79,7 +79,7 @@ struct ServerConnectionProbeTests {
         let probe = ServerConnectionProbe(address: "file:///not-a-server", session: api.session)
         #expect(probe.validationError != nil)
         #expect(probe.start() == nil)
-        guard case .failed(_, let error) = probe.phase else {
+        guard case .failed(_, let error)? = probe.phase else {
             Issue.record("Invalid input did not retain a failure.")
             return
         }
@@ -95,7 +95,7 @@ struct ServerConnectionProbeTests {
         let first = try #require(probe.start())
         let old = try #require(await requests.next())
         probe.address = "https://second.example/prefix"
-        #expect(!probe.isTesting)
+        #expect(!probe.isConnecting)
         let second = try #require(probe.start())
         let current = try #require(await requests.next())
         #expect(current.api.baseURL.absoluteString == probe.address)
@@ -107,7 +107,7 @@ struct ServerConnectionProbeTests {
             old.completion.resume(throwing: ChannelAPIError.http(status: 503, message: "Old server"))
         }
         await first.value
-        guard case .connected(let url, let count) = probe.phase else {
+        guard case .connected(let url, let count)? = probe.phase else {
             Issue.record("An obsolete completion replaced the current successful probe.")
             return
         }
@@ -127,7 +127,7 @@ struct ServerConnectionProbeTests {
         await second.value
         old.completion.resume(returning: ChannelCatalog(lead: testLeadProfile))
         await first.value
-        guard case .failed(let address, let error) = probe.phase else {
+        guard case .failed(let address, let error)? = probe.phase else {
             Issue.record("The prior generation replaced the current failure.")
             return
         }
@@ -144,9 +144,6 @@ struct ServerConnectionProbeTests {
         probe.cancel()
         request.completion.resume(returning: ChannelCatalog(lead: testLeadProfile))
         await operation.value
-        guard case .idle = probe.phase else {
-            Issue.record("A canceled probe published its result.")
-            return
-        }
+        #expect(probe.phase == nil, "A canceled probe published its result.")
     }
 }

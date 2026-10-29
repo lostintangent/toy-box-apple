@@ -43,7 +43,7 @@ struct ComposerThumbnailTests {
         store.connect()
         defer { store.disconnect() }
         try await eventually(observing: mock) {
-            store.state?.revision == 1 && store.phase.isLive && mock.pendingResponseCount == 1
+            store.state?.revision == 1 && store.phase.isConnected && mock.pendingResponseCount == 1
         }
 
         let loading = Task { await draft.loadThumbnail(for: image) }
@@ -53,7 +53,7 @@ struct ComposerThumbnailTests {
         #expect(!observed.withLock { $0.onMainThread })
         #expect(draft.thumbnail(for: image) == nil)
         #expect(mock.finishPendingResponses() == 1)
-        try await eventually { store.state?.revision == 2 && store.phase.isLive }
+        try await eventually { store.state?.revision == 2 && store.phase.isConnected }
         #expect(store.messages.map(\.sequence) == [2])
         #expect(draft.thumbnail(for: image) == nil)
         #expect(draft.images == [image])

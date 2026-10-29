@@ -94,7 +94,7 @@ struct QuickSendView: View {
             if model.quickSend.replyTarget != nil { installReplySession() }
         }
         .onChange(of: model.quickSend.pendingPrefill?.id) { _, _ in receivePendingPrefill() }
-        .onChange(of: model.catalog?.hasLoaded) { _, loaded in
+        .onChange(of: model.catalog?.isLoaded) { _, loaded in
             if loaded == true, model.quickSend.isPresented,
                selectedID == nil || model.quickSend.replyTarget != nil { chooseInitialTarget() }
         }
@@ -116,9 +116,9 @@ struct QuickSendView: View {
             incoming = nil
         }
         .onDisappear { endPresentation() }
-        .task(id: model.catalog?.hasLoaded) {
+        .task(id: model.catalog?.isLoaded) {
             catalogConnectingLong = false
-            guard model.catalog?.hasLoaded == false else { return }
+            guard model.catalog?.isLoaded == false else { return }
             do { try await Task.sleep(for: .seconds(1)) }
             catch { return }
             catalogConnectingLong = true
@@ -161,10 +161,10 @@ struct QuickSendView: View {
                     openSettings()
                 }
             } else if let target = model.quickSend.replyTarget {
-                let unavailable = model.catalog?.error != nil || replyItem?.quote != nil
+                let unavailable = model.catalog?.phase.message != nil || replyItem?.quote != nil
                 Text(unavailable ? "Request preview unavailable" : "Loading request...")
                     .font(.system(size: 15, weight: .semibold))
-                Text(model.catalog?.error ?? (unavailable
+                Text(model.catalog?.phase.message ?? (unavailable
                     ? "The requester is no longer available. Open the channel to review this request."
                     : "The original request is being checked before you reply."))
                     .foregroundStyle(.secondary)
@@ -175,18 +175,18 @@ struct QuickSendView: View {
                         model.activate(channelID: target.channelID, sequence: target.sequence)
                     }
                 }
-            } else if model.catalog?.hasLoaded == true, channels.isEmpty {
+            } else if model.catalog?.isLoaded == true, channels.isEmpty {
                 Text("No channels yet").font(.system(size: 15, weight: .semibold))
                 Text("Open Toy Box to create one.").foregroundStyle(.secondary)
                 Button("Open Toy Box") {
                     model.quickSend.dismiss()
                     model.activate(channelID: nil)
                 }
-            } else if let error = model.catalog?.error {
+            } else if let error = model.catalog?.phase.message {
                 Text("Offline.").font(.system(size: 15, weight: .semibold))
                 Text(error).font(.system(size: 12)).foregroundStyle(.secondary)
                 Button("Retry") { Task { await model.catalog?.refresh() } }
-            } else if model.catalog?.hasLoaded == true {
+            } else if model.catalog?.isLoaded == true {
                 Text("Choose a channel to start a message.").foregroundStyle(.secondary)
             } else if catalogConnectingLong {
                 Text("Connecting…").foregroundStyle(.secondary)
@@ -260,7 +260,7 @@ struct QuickSendView: View {
 
     private func applyIncoming() {
         guard model.quickSend.replyTarget == nil, let session, model.api?.baseURL == session.store.api.baseURL,
-              model.catalog?.hasLoaded != true || channels.contains(where: { $0.id == session.store.id }),
+              model.catalog?.isLoaded != true || channels.contains(where: { $0.id == session.store.id }),
               incoming?.apply(to: session) == true else { return }
         trackDraft()
         focusID = UUID()
@@ -274,13 +274,13 @@ struct QuickSendView: View {
         }
         guard let api = model.api else { showsChooser = false; return }
         history?.restoreTarget(channels: channels, lastUsedID: model.activeChannelID ?? lastUsedChannel(),
-                               catalogLoaded: model.catalog?.hasLoaded == true) {
+                               catalogLoaded: model.catalog?.isLoaded == true) {
             ComposerDraft.shared(serverURL: api.baseURL, channelID: $0, scope: .quickSend).hasContent
         }
         if let selectedID {
             installSession(channelID: selectedID)
         } else {
-            showsChooser = model.catalog?.hasLoaded == true && !channels.isEmpty
+            showsChooser = model.catalog?.isLoaded == true && !channels.isEmpty
         }
     }
 
@@ -301,7 +301,7 @@ struct QuickSendView: View {
         if replySession?.store.id != target.channelID || replySession?.requestSequence != target.sequence {
             let draft = ComposerDraft.shared(serverURL: catalog.api.baseURL, channelID: target.channelID,
                                              scope: .inboxReply(sequence: target.sequence))
-            let knownChanged = catalog.hasLoaded
+            let knownChanged = catalog.isLoaded
                 && channels.first(where: { $0.id == target.channelID })?.requestSequence != target.sequence
             guard requester != nil || !draft.isNew || draft.hasContent || knownChanged else {
                 replySession = nil
@@ -312,7 +312,7 @@ struct QuickSendView: View {
         } else if let requester {
             replySession?.seedRequesterIfNew(requester)
         }
-        if catalog.hasLoaded {
+        if catalog.isLoaded {
             let current = channels.first { $0.id == target.channelID }?.requestSequence
             if current != target.sequence { replySession?.invalidateRequest(replacementSequence: current) }
         }
@@ -328,7 +328,7 @@ struct QuickSendView: View {
         guard heldStore !== next else { return }
         if let heldStore { model.release(heldStore) }
         heldStore = next
-        if let next { model.acquire(next) }
+        if let next { model.hold(next) }
     }
 
     private func trackDraft() {

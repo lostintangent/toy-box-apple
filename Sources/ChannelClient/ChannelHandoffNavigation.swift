@@ -5,12 +5,12 @@ import Observation
 @MainActor @Observable
 public final class ChannelHandoffNavigation {
     public enum Phase: Equatable, Sendable {
-        case idle, opening, unavailable
+        /// The handed-off channel couldn't be opened.
+        case idle, opening, missing
     }
 
     public private(set) var phase: Phase = .idle
     @ObservationIgnored private var generation = UUID()
-    @ObservationIgnored private let refresh = RequestedCatalogRefresh()
 
     public init() {}
 
@@ -24,21 +24,20 @@ public final class ChannelHandoffNavigation {
         let token = generation
         phase = .opening
         guard let handoff = ChannelHandoff(activity: activity), let catalog = currentCatalog() else {
-            phase = .unavailable
+            phase = .missing
             return
         }
-        if !catalog.hasLoaded || catalog.error != nil
-            || !catalog.channels.contains(where: { $0.id == handoff.channelID }) {
-            await refresh.run(catalog)
+        if catalog.phase != .connected || !catalog.channels.contains(where: { $0.id == handoff.channelID }) {
+            await catalog.refresh()
         }
         guard generation == token else { return }
         guard !Task.isCancelled else {
             phase = .idle
             return
         }
-        guard currentCatalog() === catalog, catalog.hasLoaded, catalog.error == nil,
+        guard currentCatalog() === catalog, catalog.phase == .connected,
               catalog.channels.contains(where: { $0.id == handoff.channelID }) else {
-            phase = .unavailable
+            phase = .missing
             return
         }
         open(handoff.channelID)

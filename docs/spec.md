@@ -66,8 +66,8 @@ Reference sources (read-only):
   rather than `state`, which changes on every event. An event then re-renders only the views that
   show what it changed. `roster` leaves out each agent's status, which `agentStatuses` carries, so
   status updates don't re-render identity. A catalog poll that changes nothing announces only
-  `lastRefreshedAt` and `isLoading`, and a failure that repeats the current one isn't announced
-  again. Views that only ask whether the catalog has loaded read `hasLoaded`.
+  `lastRefreshedAt`, and a failure that repeats the current one isn't announced again. Views that
+  only ask whether the catalog has loaded read `isLoaded`.
 - **Phone scene:** the iPhone keeps its channel streams and catalog polling while its scene is
   merely inactive, as under Control Center, Notification Center or the app switcher, so a brief
   look away never forces a reconnect. It drops them only when the scene enters the background, and
@@ -85,6 +85,47 @@ Reference sources (read-only):
     of failing the stream.
   - Resource URLs (artifacts, attachments) resolve against the configured server base URL, which may
     include a path prefix.
+
+### Connection words
+
+Every connection uses three words: `connecting`, `connected` and `failed`. That covers a channel's
+stream, the catalog's polls and Settings' Test Connection. A channel adds `deleted`. Anything else
+is copy a view chooses or a detail kept inside a store.
+
+| Word | Meaning |
+| --- | --- |
+| `connecting` | Not connected and not failed: a first connect, a quiet retry within the grace, or a channel nobody holds |
+| `connected` | Channel: the stream delivered its snapshot and is open. Catalog: the last refresh succeeded, or polls have failed for less than the grace. Test Connection: the server returned its catalog |
+| `failed` | Tried for the grace without connecting, or a refresh someone asked for failed. Retrying continues |
+| `deleted` | Channel only. The server deleted it. Terminal |
+| `isConnected` | Send, management and read marking wait for it |
+| `isUnavailable` | Failed or deleted, the only phases that change what's on screen. Notices, agent status and working presence change on it, never with a view timer |
+| grace | `ReconnectPolicy.grace`, the three seconds `connecting` may last before `failed`. Only time spent trying counts |
+
+- **Channel stream:** `connect()` starts the stream and keeps retrying until `disconnect()`, and
+  does nothing while already trying. `disconnect()` stops trying and leaves `connecting` unless
+  deleted. Nothing waits on that phase change. `reconnect()` is both, for Retry. One observation
+  loop opens the stream, receives each event and backs off after an error. The grace runs exactly
+  while that loop is trying and the phase is `connecting`. The server's heartbeat keeps the stream
+  open: 35 seconds of silence fails it through the stream request's own timeout.
+- **Catalog:** `phase` is `connecting`, `connected` or `failed(any Error)`. It keeps the typed
+  error, because a refused sign-in shows red and the widget rethrows it. A catalog has no stream to
+  lose, so it's `connecting` only before its first outcome and coming back never turns the footer
+  dot gray. `isLoaded` means the first catalog arrived. It stays true through failures so the rows
+  stay, the same word `ChannelStore` uses. `refresh()` is a refresh someone asked for. It reports a
+  failure at once and waits for an attempt already in flight. Polls (`startPolling`, `stopPolling`,
+  `setActive`) run every 5 seconds while active and every 15 otherwise, stay quiet within the grace
+  and retry after the policy's initial delay.
+- **Footer:** `SidebarFooter` (ToyBoxUI) turns `phase` and `isLoaded` into the dot, heading, help
+  verb and VoiceOver value on both apps (see Sidebar). Only a refresh the user asked for lights the
+  Mac's footer spinner, through `AppModel.isRefreshingCatalog`. Polls, Handoff, management, Quick
+  Send and the widget never do.
+- **Test Connection:** `ServerConnectionProbe.phase` is nil until a test runs, then `connecting`,
+  `connected` with the channel count, or `failed`. `isConnecting` drives the button.
+- **Holders:** `ChannelConnections` counts who holds each store through `hold` and `release`. The
+  last release lingers as State describes, and `disconnectAll` serves a server change.
+- **Not connection words:** send attempts, Send Again and `reconcileManagementWrite` are delivery.
+  A handed-off channel that couldn't be opened is Handoff's `missing`.
 
 ## Releases
 
@@ -2342,7 +2383,7 @@ navigation keeps list focus until explicitly moving into the conversation.
 | First channel snapshot | Static message placeholders and "Connecting". Composer shell remains present, Send unavailable |
 | New empty channel | "Your lead is getting started", "Send a message or type @ to add an agent". Keep composer and working status visible |
 | Filter has no messages | "No messages for you yet", Show All Messages. Keep paging older history until exhausted |
-| Reconnecting with cached state | Keep transcript and scroll intact. After about three seconds of trying without getting live, a 32-point inline banner below toolbar says "Reconnecting. Messages may be out of date" with Retry. A reconnect that goes live sooner shows nothing. Until then agent status, working presence and every connection notice stay as they were while live. Disable delivery and management actions, not editing |
+| Reconnecting with cached state | Keep transcript and scroll intact. After about three seconds of trying without connecting, a 32-point inline banner below toolbar says "Reconnecting. Messages may be out of date" with Retry. A reconnect that goes live sooner shows nothing. Until then agent status, working presence and every connection notice stay as they were while live. Disable delivery and management actions, not editing |
 | Disconnected without any state | `wifi.exclamationmark`, "Can't connect to Toy Box", server host, readable failure, Retry and Settings |
 | Catalog refresh fails | Keep existing rows, mark them stale and show the error block above the connection footer's orange status line (see Sidebar), after about three seconds of failing polls or at once for a refresh the user asked for. Never replace them with "No channels" |
 | Failed send | Inline error above composer and explicit status on optimistic row, preserved text/attachments, no automatic retry |
