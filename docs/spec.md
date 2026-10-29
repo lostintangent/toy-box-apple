@@ -72,7 +72,9 @@ Reference sources (read-only):
   merely inactive, as under Control Center, Notification Center or the app switcher, so a brief
   look away never forces a reconnect. It drops them only when the scene enters the background, and
   reconnects as soon as it returns. Marking read, management and treating the open channel as seen
-  still need the active scene.
+  still need the active scene. Nothing on screen changes because the scene went inactive or a
+  channel is reconnecting quietly: sidebar working agents and the notification tip stay until the
+  channel is stale or deleted.
 - **Background sends:** `ChannelStore.postInBackground(id:content:)` accepts a caller-owned UUID
   without opening or waiting for SSE. It restores the same outbox, durably records the attempt
   before its one HTTP request, and retains rejection or uncertain-delivery classification before
