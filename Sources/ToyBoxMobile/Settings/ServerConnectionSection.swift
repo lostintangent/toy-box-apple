@@ -28,13 +28,11 @@ struct ServerConnectionSection: View {
                     Text(connection.isConnecting ? "Connecting…" : testTitle)
                     if connection.isConnecting { ProgressView() }
                 }
-                .frame(minHeight: 44)
             }
             .accessibilityIdentifier("server-test")
             .disabled(!canTest)
             if showsUseButton {
                 Button(requiresTest ? "Continue" : "Use Server", action: onUse)
-                    .frame(minHeight: 44)
                     .accessibilityIdentifier("server-use")
                     .disabled(!canUse)
             }

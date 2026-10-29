@@ -132,6 +132,53 @@ struct ShellTests {
         }
     }
 
+    @Test(arguments: [false, true])
+    func serverActionRowsKeepTheAddressRowsNativeHeight(firstLaunch: Bool) async throws {
+        let connection = ServerConnectionProbe(address: "https://another.example/prefix", session: fixtureSession())
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 466, height: 678))
+        let host = UIHostingController(rootView: Form {
+            ServerConnectionSection(connection: connection, requiresTest: firstLaunch,
+                                    currentServer: firstLaunch ? nil : "https://fixture.example/prefix",
+                                    onUse: {}, useFailure: .constant(nil))
+        })
+        window.rootViewController = host
+        window.isHidden = false
+        defer { window.isHidden = true }
+        host.view.frame = window.bounds
+        func rows() -> (heights: [CGFloat], labels: [String], cells: [CGRect]) {
+            host.view.setNeedsLayout()
+            host.view.layoutIfNeeded()
+            var cells: [CGRect] = []
+            func visit(_ view: UIView) {
+                if let cell = view as? UICollectionViewCell, !cell.isHidden {
+                    cells.append(cell.convert(cell.bounds, to: nil))
+                }
+                view.subviews.forEach(visit)
+            }
+            visit(host.view)
+            let tree = MobileAutomationTree(windows: [window])
+            func row(_ id: String) -> CGRect? {
+                guard let frame = tree.elements.first(where: { $0.identifier == id })?.frame else { return nil }
+                return cells.first { $0.contains(CGPoint(x: frame.midX, y: frame.midY)) }
+            }
+            let test = row("server-test")
+            // The address field exposes no element in a test host, so its row is the cell right above Test Connection.
+            let address = test.flatMap { test in cells.first { abs($0.maxY - test.minY) < 0.5 } }
+            return ([address, test, row("server-use")].compactMap { $0?.height }, tree.elements.map(\.label), cells)
+        }
+        let idle = rows()
+        #expect(idle.heights.count == 3, "\(idle.heights) \(idle.cells)")
+        #expect((idle.heights.max() ?? 0) - (idle.heights.min() ?? 0) < 0.5, "\(idle.heights) \(idle.cells)")
+        #expect((idle.heights.first ?? 0) >= 44, "\(idle.heights)")
+        #expect(idle.labels.contains("Test Connection"), "\(idle.labels)")
+        #expect(idle.labels.contains(firstLaunch ? "Continue" : "Use Server"), "\(idle.labels)")
+        let operation = try #require(connection.start())
+        let connecting = rows()
+        #expect(connecting.labels.contains { $0.hasPrefix("Connecting") }, "\(connecting.labels)")
+        #expect(connecting.heights == idle.heights, "\(connecting.heights) \(idle.heights)")
+        await operation.value
+    }
+
     #endif
 
     @Test func registrationKeepsItsAddressAndChangesOnlyNotificationTopicsWhenDisabled() async throws {
