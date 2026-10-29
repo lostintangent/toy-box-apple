@@ -1,5 +1,5 @@
 import { mkdir, mkdtemp, realpath, rename, rm } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { bundleIdentity, command, isMissing, main, plist, required, root, text } from "../../shared/lib/index.ts";
 import { signApp } from "../bundle/sign.ts";
 import { validateShareExtension } from "../bundle/share-extension.ts";
@@ -7,6 +7,35 @@ import { isolateIntegrations } from "./isolate.ts";
 import { validateWidgetExtension } from "../bundle/widget-extension.ts";
 
 const lsregister = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister";
+
+function registeredCopies(dump: string, identifier: string) {
+    const paths = new Set<string>();
+    for (const record of dump.split(/^-{2,}$/m)) {
+        if (record.match(/^identifier:[ \t]+(.+)$/m)?.[1].trim() !== identifier) continue;
+        const path = record.match(/^path:[ \t]+(.+?)(?:[ \t]+\(0x[\da-f]+\))?[ \t]*$/im)?.[1];
+        if (path && isAbsolute(path)) paths.add(path);
+    }
+    return [...paths];
+}
+
+// Computer Use resolves the test ID through LaunchServices, which never resolves a copy under
+// /tmp and otherwise picks among every registered copy. So every worktree installs into the main
+// checkout, the path the user approved, and other copies are unregistered.
+async function testAppPath(name: string) {
+    const common = await text(["git", "rev-parse", "--path-format=absolute", "--git-common-dir"], { allowFailure: true });
+    const checkout = basename(common) === ".git" ? dirname(common) : root;
+    return join(checkout, ".build/agents", `${name}.app`);
+}
+
+async function registerOnly(app: string, identifier: string) {
+    const kept = await realpath(app);
+    for (const path of registeredCopies(await text([lsregister, "-dump"]), identifier)) {
+        if (path === kept) continue;
+        const result = await command([lsregister, "-u", path], { quiet: true, allowFailure: true });
+        if (result.exitCode) console.warn(`Could not unregister ${path}, so Computer Use may resolve ${identifier} to it.`);
+    }
+    await command([lsregister, "-f", app]);
+}
 
 async function installBundle(staged: string, destination: string) {
     const old = await mkdtemp(join(dirname(destination), ".old."));
@@ -35,7 +64,7 @@ if (import.meta.main) await main(async () => {
     const server = process.env.SERVER_URL || "http://127.0.0.1:3210";
     const testName = "Toy Box Test";
     const testID = `${bundleIdentity}.test`;
-    const testApp = join(root, ".build/agents", `${testName}.app`);
+    const testApp = await testAppPath(testName);
     await command([process.execPath, join(root, "scripts/desktop/bundle/index.ts"), "--no-open"], {
         env: { CONFIGURATION: "release", SCRATCH_PATH: scratch }, quiet: true,
     });
@@ -60,7 +89,7 @@ if (import.meta.main) await main(async () => {
         await signApp(staged);
         await installBundle(staged, testApp);
     } finally { await rm(stage, { recursive: true, force: true }); }
-    await command([lsregister, "-f", testApp]);
+    await registerOnly(testApp, testID);
     const binary = await realpath(join(testApp, "Contents/MacOS/ToyBoxDesktop"));
     const before = new Set(await pidsFor(binary));
     await command(["open", "-n", "-g", testApp, "--args", "--server", server,
