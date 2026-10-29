@@ -184,8 +184,6 @@ struct TranscriptImageGallery: View {
     @ViewState private var reader = TranscriptGalleryReader()
     @AccessibilityFocusState private var titleFocused: Bool
 
-    static let capsuleClearance: CGFloat = 8 + 60 + 16
-
     var body: some View {
         if let session = presenter.session {
             gallery(session)
@@ -194,8 +192,7 @@ struct TranscriptImageGallery: View {
 
     private func margin(_ session: TranscriptGalleryPresenter.Session) -> EdgeInsets {
         let side: CGFloat = sizeClass == .regular ? 24 : 16
-        return EdgeInsets(top: side, leading: side,
-                          bottom: session.images.count > 1 ? Self.capsuleClearance : side, trailing: side)
+        return EdgeInsets(top: side, leading: side, bottom: session.images.count > 1 ? 16 : side, trailing: side)
     }
 
     private func gallery(_ session: TranscriptGalleryPresenter.Session) -> some View {
@@ -207,8 +204,7 @@ struct TranscriptImageGallery: View {
                 .transition(pageTransition(session.direction))
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Color(uiColor: .systemBackground))
-            .overlay(alignment: .bottom) {
+            .safeAreaBar(edge: .bottom) {
                 if session.images.count > 1 {
                     PagerCapsule(noun: "Image", label: "Images", ids: Array(session.images.indices),
                                  selection: session.index, canShowPrevious: session.canShowPrevious,
@@ -221,6 +217,7 @@ struct TranscriptImageGallery: View {
                     .padding(.bottom, 8)
                 }
             }
+            .background(Color(uiColor: .systemBackground))
             .background {
                 Button("Close", action: escape)
                     .keyboardShortcut(.escape, modifiers: [])
@@ -276,27 +273,25 @@ struct TranscriptImageGallery: View {
                 Text("\(session.source.sender)\n\(subtitle)")
             }
         }
-        ToolbarItemGroup(placement: .topBarTrailing) {
+        ToolbarItem(placement: .topBarTrailing) {
             let share = TranscriptGalleryShareItem(session)
             ShareLink(item: share, preview: SharePreview(share.name, image: share.preview)) {
                 Label("Share", systemImage: "square.and.arrow.up")
             }
-            Menu {
-                Button("Copy Image", systemImage: "doc.on.doc") { copyImage() }
-                    .disabled(original == nil)
-                Button("Quick Look", systemImage: "eye") { reader.preview = original?.export }
-                    .disabled(original == nil)
-                if let remote = remoteURL(session) {
-                    Button("Open in Browser", systemImage: "safari") { openURL(remote) }
-                }
-                Divider()
-                Button("Fit Image", systemImage: "arrow.down.right.and.arrow.up.left") { reader.canvas?.fit() }
-                    .disabled(reader.canvas == nil)
-                Button("Actual Size", systemImage: "1.magnifyingglass") { reader.canvas?.actualSize() }
-                    .disabled(reader.canvas == nil)
-            } label: {
-                Label("More", systemImage: "ellipsis")
+        }
+        ToolbarOverflowMenu {
+            Button("Copy Image", systemImage: "doc.on.doc") { copyImage() }
+                .disabled(original == nil)
+            Button("Quick Look", systemImage: "eye") { reader.preview = original?.export }
+                .disabled(original == nil)
+            if let remote = remoteURL(session) {
+                Button("Open in Browser", systemImage: "safari") { openURL(remote) }
             }
+            Divider()
+            Button("Fit Image", systemImage: "arrow.down.right.and.arrow.up.left") { reader.canvas?.fit() }
+                .disabled(reader.canvas == nil)
+            Button("Actual Size", systemImage: "1.magnifyingglass") { reader.canvas?.actualSize() }
+                .disabled(reader.canvas == nil)
         }
     }
 
