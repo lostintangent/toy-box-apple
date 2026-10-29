@@ -59,18 +59,20 @@ struct MemberEditor: View {
                 }
             }
             Section {
-                Text(member == nil ? "Joins \(channel.name) and starts onboarding right away." : "Member of \(channel.name).")
-                    .font(.footnote).foregroundStyle(ChannelInk.secondary)
-            }
-            Section {
-                TextField("Name", text: $session.name,
-                          prompt: Text("Required").foregroundStyle(ChannelInk.secondary))
-                    .focused($focus, equals: .name)
-                    .submitLabel(.next)
-                    .onSubmit { focus = .role }
-                    .accessibilityIdentifier("member-name")
+                LabeledContent {
+                    TextField("Name", text: $session.name,
+                              prompt: Text("Required").foregroundStyle(ChannelInk.secondary))
+                        .labelsHidden()
+                        .multilineTextAlignment(.trailing)
+                        .focused($focus, equals: .name)
+                        .submitLabel(.next)
+                        .onSubmit { focus = .role }
+                        .accessibilityIdentifier("member-name")
+                } label: {
+                    Text("Name").accessibilityIdentifier("member-name-label")
+                }
                 TextField("Role", text: $session.role,
-                          prompt: Text("What this agent owns and how it works, including its persona.")
+                          prompt: Text("What is this agent's role in the channel?")
                             .foregroundStyle(ChannelInk.secondary),
                           axis: .vertical)
                     .lineLimit(5...10)
@@ -105,9 +107,8 @@ struct MemberEditor: View {
             }
             ToolbarItem(placement: .confirmationAction) {
                 Button(action: submit) {
-                    ManagementActionLabel(
-                        title: saving ? (member == nil ? "Adding…" : "Saving…") : member == nil ? "Add Agent" : "Save",
-                        pendingSince: session.pendingSince)
+                    ManagementActionLabel(title: Self.submitTitle(adding: member == nil, saving: saving),
+                                          pendingSince: session.pendingSince)
                 }
                 .accessibilityIdentifier("member-submit")
                 .keyboardShortcut(.return, modifiers: .command)
@@ -124,6 +125,10 @@ struct MemberEditor: View {
         .onChange(of: session.focus) { _, field in
             if isCurrentHost { focus = field }
         }
+    }
+
+    static func submitTitle(adding: Bool, saving: Bool) -> String {
+        adding ? (saving ? "Adding…" : "Add") : (saving ? "Saving…" : "Save")
     }
 
     private func submit() {
