@@ -95,6 +95,11 @@ final class TranscriptScroll {
         return placement
     }
 
+    /// A new touch is the reader's own, unlike the frames of a flick that a jump stopped.
+    func readerTouched() {
+        if intent == .following { holdsPlacementThroughInput = false }
+    }
+
     private func capturesPosition(_ event: Model.Event) -> Bool {
         switch event {
         case .readerScrolled, .holdCurrentPosition, .resumeFromCurrentPosition: true
@@ -273,7 +278,10 @@ struct ConversationView: View {
         }
         .onScrollPhaseChange { _, phase in
             scroll.isReaderScrolling = phase == .tracking || phase == .interacting || phase == .decelerating
-            if phase == .tracking || phase == .interacting { find.resumeReading() }
+            if phase == .tracking || phase == .interacting {
+                scroll.readerTouched()
+                find.resumeReading()
+            }
         }
         // A bar rather than an overlay, so the end of the conversation settles clear of them and
         // the scroll edge effect reaches up behind them.

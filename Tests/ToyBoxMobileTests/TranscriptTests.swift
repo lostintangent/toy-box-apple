@@ -108,6 +108,28 @@ struct TranscriptTests {
         }
     }
 
+    @Test func aNewTouchReadsEvenBeforeAJumpSettlesAtTheEnd() {
+        let viewport = TranscriptScrollModel.Viewport(width: 386, height: 600, topInset: 0, bottomInset: 0)
+        let scroll = TranscriptScroll()
+        scroll.rows = (0..<40).map { .init(id: "r\($0)", order: $0) }
+        for index in 0..<40 { scroll.measure("r\(index)", frame: CGRect(x: 0, y: CGFloat(index) * 100, width: 386, height: 100)) }
+        scroll.metrics = .init(viewport: viewport, origin: 3400, documentEnd: 4000)
+        _ = scroll.update(.land(.end))
+        scroll.metrics?.origin = 1000
+        _ = scroll.update()
+        #expect(scroll.update(.jumpToLatest)?.origin == 3400)
+
+        // Geometry hasn't reached the end yet when the reader puts a finger down and drags.
+        scroll.readerTouched()
+        scroll.isReaderScrolling = true
+        scroll.metrics?.origin = 1200
+        _ = scroll.update()
+        guard case .reading = scroll.intent else {
+            Issue.record("A new touch should read, not hold the end.")
+            return
+        }
+    }
+
     @Test func aRevealFinishesFromSettledGeometryOrWhenTheReaderTakesOver() {
         let viewport = TranscriptScrollModel.Viewport(width: 386, height: 600, topInset: 0, bottomInset: 0)
         let scroll = TranscriptScroll()
