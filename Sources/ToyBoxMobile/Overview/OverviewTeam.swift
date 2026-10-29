@@ -19,9 +19,9 @@ struct OverviewTeamSection: View {
     }
 
     var body: some View {
-        // Three points shorter than the measured 15-point native insets at accessibility sizes,
-        // and five shorter at ordinary sizes.
-        let verticalInset: CGFloat = typeSize.isAccessibilitySize ? 13.5 : 12.5
+        // Four points shorter than the measured 15-point native insets at accessibility sizes,
+        // and six shorter at ordinary sizes.
+        let verticalInset: CGFloat = typeSize.isAccessibilitySize ? 13 : 12
         OverviewSectionRows(summary: .team(store.roster.count), section: .team, session: session,
                             isFirstSection: !OverviewAboutSection.hasContent(store.details)) {
             ForEach(ordered) { agent in
