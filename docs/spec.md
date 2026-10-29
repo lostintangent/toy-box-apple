@@ -732,7 +732,8 @@ pending requests keep their orange edge.
 The working summary is live application status, not historical transcript content. It floats
 as a glass capsule directly above the composer, even when reading older history. Show at most
 three 20-point avatars and the count or name. Details open in a native popover on explicit
-activation. Hide working presence when observation is stale. Place Jump to Latest at the
+activation. Keep the last working presence while the channel connects or reconnects, and hide it
+only once the channel is stale or deleted. Place Jump to Latest at the
 trailing edge of the same floating row when needed. Neither control may become a synthetic
 message or read target.
 
@@ -1142,7 +1143,8 @@ Unfolded rows show no chevron.
 The working-avatar stack exists independently of attention, so a working team and pending question
 can coexist. Keep the full-team names in row help/accessibility even though idle members are no
 longer pictured in the activity stack. Closed channels use catalog activity only if the protocol actually supplies it. Never
-invent presence or keep stale work animations after losing observation.
+invent presence. An open channel keeps its last working agents while it reconnects quietly, and
+drops them once it is stale or deleted.
 
 The row stays one accessibility element. Its value reads in this order: last activity, folder (with
 "not on this Mac" or "missing" when it applies), attention, working agents, then team. When the
@@ -1902,8 +1904,10 @@ tappable and its accessible target spans that height. Its label grows and wraps 
 | Waiting | A static 9-point heavy `pause.fill` in a 12-point cue lane, then a 4-point gap and the reason in secondary, such as "Waiting for Moss's review". Center the glyph on the status font's cap height, not its line box, within 0.5 points on Mac. Tint only the glyph `#9A6700` in Light and `#F4BE66` in Dark, shared with iPhone | With a valid wake time, a leading `bell`, 4-point gap and "8m" in 11 secondary tabular digits, updated at minute boundaries, help "Checks again at 9:32 AM". "Due" once it passes |
 | Idle | "Idle" in secondary | Nothing |
 
-Both apps share status copy and spoken state. Missing live presence reads "Status unavailable";
-disconnected presence reads "Status unavailable while disconnected". Neither keeps an activity cue.
+Both apps share status copy and spoken state. Missing live presence reads "Status unavailable".
+A stale or deleted channel reads "Status unavailable while disconnected". Neither keeps an
+activity cue. A channel that is connecting or reconnecting keeps its last presence, so coming
+back to the app doesn't blink every status.
 Both also read the status-text ink rule from `ChannelAgentStatusPresentation`: working uses
 primary foreground ink at 85%, while waiting, idle and unavailable remain muted. The phone
 must not render working text in the same secondary ink as waiting. Keep cue colors separate
@@ -1912,9 +1916,9 @@ phone's opaque secondary ink and the Mac's existing semantic secondary.
 
 Both apps show the waiting check-in in the existing row, never a new metadata line. Mac keeps
 its trailing position and hover-menu replacement. Phone places the bell and duration just
-before the native chevron, in muted footnote text. Show this only for live waiting presence
-with a valid `wakeAt`; omit it for working, idle, unavailable, disconnected or absent/invalid
-wake times. A single ToyBoxUI view owns both the countdown and its localized text, preserving
+before the native chevron, in muted footnote text. Show this only for waiting presence
+with a valid `wakeAt` on a channel that isn't stale or deleted; omit it for working, idle,
+unavailable or absent/invalid wake times. A single ToyBoxUI view owns both the countdown and its localized text, preserving
 the Mac's rounded-up remaining duration and Due behavior. Phone updates only at minute
 boundaries while its row is visible. Keep the bell/value group together and trailing even
 when phone name/status wrap at accessibility sizes. Add no row height at default text.
@@ -2334,7 +2338,7 @@ navigation keeps list focus until explicitly moving into the conversation.
 | First channel snapshot | Static message placeholders and "Connecting". Composer shell remains present, Send unavailable |
 | New empty channel | "Your lead is getting started", "Send a message or type @ to add an agent". Keep composer and working status visible |
 | Filter has no messages | "No messages for you yet", Show All Messages. Keep paging older history until exhausted |
-| Reconnecting with cached state | Keep transcript and scroll intact. After about three seconds of trying without getting live, a 32-point inline banner below toolbar says "Reconnecting. Messages may be out of date" with Retry. A reconnect that goes live sooner shows nothing. Disable delivery, not editing |
+| Reconnecting with cached state | Keep transcript and scroll intact. After about three seconds of trying without getting live, a 32-point inline banner below toolbar says "Reconnecting. Messages may be out of date" with Retry. A reconnect that goes live sooner shows nothing. Until then agent status, working presence and every connection notice stay as they were while live. Disable delivery and management actions, not editing |
 | Disconnected without any state | `wifi.exclamationmark`, "Can't connect to Toy Box", server host, readable failure, Retry and Settings |
 | Catalog refresh fails | Keep existing rows, mark them stale and show the error block above the connection footer's orange status line (see Sidebar). Never replace them with "No channels" |
 | Failed send | Inline error above composer and explicit status on optimistic row, preserved text/attachments, no automatic retry |

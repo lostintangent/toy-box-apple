@@ -460,8 +460,9 @@ Edit only files you own. Ask the owner for anything else in the channel.
   Supply a native image-readability check to the shared draft. Mac uses its existing lazy NSImage
   validation and iPhone uses UIImage. Keep persistence keys and send-attempt identity unchanged.
 - `ChannelStore` stays `.connecting` through connects and quick retries, and reports `.stale` only
-  after `ReconnectPolicy.grace` of trying without getting live. Idle time never counts. Composers
-  and banners explain only `phase.isUnavailable` (`.stale` or `.deleted`), never with a view timer.
+  after `ReconnectPolicy.grace` of trying without getting live. Idle time never counts. Notices,
+  agent status and working presence change only on `phase.isUnavailable` (`.stale` or `.deleted`),
+  never with a view timer. Actions such as Send and management stay off until `phase.isLive`.
 - `channelMatchesQuery` (ChannelKit) matches name, purpose and directory. Callers retain their
   existing query normalization and ordering. `ChannelAPI.channelURL(channelID:files:)` builds
   browser routes, preserving deployment prefixes. `SidebarConnection` (ToyBoxUI) projects the

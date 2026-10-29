@@ -205,7 +205,7 @@ struct OverviewTests {
         let renderer = ImageRenderer(content:
             OverviewAgentStatus(
                 presence: .init(state: "waiting", text: "WAITING MMMM MMMM MMMM MMMM MMMM"),
-                live: true)
+                available: true)
                 .frame(width: 180, alignment: .leading)
                 .background(scheme == .dark ? Color.black : Color.white)
                 .environment(\.colorScheme, scheme)

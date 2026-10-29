@@ -18,8 +18,8 @@ package struct ChannelAgentWakePresentation: Equatable, Sendable {
         spoken = "checks again in " + duration.formatted(.units(allowed: units, width: .wide).locale(locale))
     }
 
-    package static func wake(for presence: ChannelAgentPresence?, isLive: Bool) -> Date? {
-        guard isLive, let presence, presence.state == "waiting", let raw = presence.wakeAt else { return nil }
+    package static func wake(for presence: ChannelAgentPresence?, isAvailable: Bool) -> Date? {
+        guard isAvailable, let presence, presence.state == "waiting", let raw = presence.wakeAt else { return nil }
         return ChannelDates.date(raw)
     }
 }

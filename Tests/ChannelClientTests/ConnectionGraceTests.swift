@@ -13,9 +13,12 @@ struct ConnectionGraceTests {
 
     /// The stream drops, a retry fails at once, and the next retry is held open.
     private func droppingTransport() -> MockTransport {
-        MockTransport { _, count in
+        var state = testState()
+        state.presence = ["test": .init(state: "working")]
+        let working = state
+        return MockTransport { _, count in
             switch count {
-            case 1: try .stream([.init(type: "snapshot", state: testState())], keepOpen: false)
+            case 1: try .stream([.init(type: "snapshot", state: working)], keepOpen: false)
             case 2: MockResponse(status: 503)
             default: try .stream([])
             }
@@ -31,6 +34,7 @@ struct ConnectionGraceTests {
         try await eventually(observing: mock) { mock.requests.count == 3 && mock.pendingResponseCount == 1 }
         #expect(store.phase == .connecting, "A drop and a failed retry stay quiet within the grace")
         #expect(!store.phase.isUnavailable)
+        #expect(store.presence["test"]?.state == "working", "The last presence stays on screen while reconnecting")
 
         #expect(mock.sendPendingBody(try MockResponse.stream([resumed]).body) == 1)
         try await eventually { store.phase.isLive }

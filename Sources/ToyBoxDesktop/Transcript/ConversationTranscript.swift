@@ -352,7 +352,7 @@ struct ConversationTranscript: View {
 
     /// The looking and working reactions by sequence. Roster leaves statuses out, so they're merged back.
     private var statusReactions: [Int: [ChannelReaction]] {
-        guard store.phase.isLive else { return [:] }
+        guard !store.phase.isUnavailable else { return [:] }
         let statuses = store.agentStatuses
         let agents = store.roster.map { agent in
             var agent = agent
@@ -424,7 +424,7 @@ struct ConversationTranscript: View {
     }
 
     private var floatingControls: some View {
-        let presence = store.phase.isLive ? store.presence : [:]
+        let presence = store.phase.isUnavailable ? [:] : store.presence
         let hasWorkingAgents = store.roster.contains { presence[$0.id]?.state == "working" }
         let rises: AnyTransition = reduceMotion ? .opacity : .opacity.combined(with: .offset(y: 4))
         let hasNotices = revealError != nil || sendActionError != nil || store.readError != nil

@@ -334,7 +334,7 @@ struct ConversationView: View {
     }
 
     private var statusReactions: [Int: [ChannelReaction]] {
-        guard store.phase.isLive else { return [:] }
+        guard !store.phase.isUnavailable else { return [:] }
         let statuses = store.agentStatuses
         let agents = store.roster.map { agent in
             var agent = agent
@@ -577,7 +577,7 @@ private struct TranscriptFloatingAccessories: View {
     private var rises: AnyTransition { reduceMotion ? .opacity : .opacity.combined(with: .offset(y: 4)) }
 
     private var working: [ChannelAgent] {
-        guard store.phase.isLive else { return [] }
+        guard !store.phase.isUnavailable else { return [] }
         return store.roster.filter { store.presence[$0.id]?.state == "working" }
     }
 
@@ -668,7 +668,7 @@ private struct TranscriptWorkingNow: View {
     @Environment(\.dismiss) private var dismiss
 
     private var working: [ChannelAgent] {
-        guard store.phase.isLive else { return [] }
+        guard !store.phase.isUnavailable else { return [] }
         return store.roster.filter { store.presence[$0.id]?.state == "working" }
     }
 

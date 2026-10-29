@@ -75,7 +75,7 @@ struct ManagementConfirmation: View {
                 Text(exists ? consequence : "The target is no longer available.")
                     .fixedSize(horizontal: false, vertical: true)
             }
-            if !store.phase.isLive { Section { ManagementConnectionNotice(store: store) } }
+            if store.phase.isUnavailable { Section { ManagementConnectionNotice(store: store) } }
             if let error = recovery.error { Section { ManagementError(message: error) } }
             if let state = recovery.state {
                 Section {

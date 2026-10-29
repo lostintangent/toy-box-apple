@@ -23,13 +23,14 @@ struct OverviewTeamList: View {
         let roster = store.roster
         let presence = store.presence
         let isLive = store.phase.isLive
+        let isAvailable = !store.phase.isUnavailable
         VStack(alignment: .leading, spacing: 0) {
             ForEach(slots.entries(Self.ordered(roster), in: store.id)) { entry in
                 let agent = entry.item
                 let isLead = agent.id == roster.first?.id
                 OverviewAgentRow(agent: agent, key: entry.key, presence: presence[agent.id], isLead: isLead,
                                  model: isLead ? agent.model ?? store.details?.model : agent.model,
-                                 channelId: store.id, isLive: isLive)
+                                 channelId: store.id, isLive: isLive, isAvailable: isAvailable)
             }
             OverviewAddAgentRow(isLive: isLive) {
                 management.present(.addMember(channelId: store.id, name: ""))
@@ -52,7 +53,10 @@ struct OverviewAgentRow: View {
     let isLead: Bool
     let model: ModelConfiguration?
     let channelId: String
+    /// Enables member management.
     let isLive: Bool
+    /// Shows the last reported presence, which stays through a reconnect.
+    let isAvailable: Bool
     @ViewState private var about = OverviewItemState(false)
     @ViewState private var isHovering = false
     @ViewState private var isVisible = false
@@ -60,10 +64,10 @@ struct OverviewAgentRow: View {
     @FocusState private var focus: Focus?
 
     private var status: ChannelAgentPresence? { presence }
-    private var wake: Date? { ChannelAgentWakePresentation.wake(for: presence, isLive: isLive) }
+    private var wake: Date? { ChannelAgentWakePresentation.wake(for: presence, isAvailable: isAvailable) }
     private var showsMenu: Bool { isHovering || focus != nil || voiceOver }
     private var spokenStatus: String {
-        let status = OverviewAgentStatusLine.spoken(status, isLive: isLive)
+        let status = OverviewAgentStatusLine.spoken(status, isAvailable: isAvailable)
         guard wake != nil, isVisible, let wakeAnnouncement else { return status }
         return "\(status), \(wakeAnnouncement)"
     }
@@ -77,13 +81,13 @@ struct OverviewAgentRow: View {
                 HStack(spacing: 10) {
                     AgentAvatarView(agent: agent, size: 24)
                         .popover(isPresented: showingAbout, arrowEdge: .leading) {
-                            OverviewAgentAbout(agent: agent, isLead: isLead, model: model, status: status, isLive: isLive)
+                            OverviewAgentAbout(agent: agent, isLead: isLead, model: model, status: status, isAvailable: isAvailable)
                         }
                     VStack(alignment: .leading, spacing: 1) {
                         Text(agent.name)
                             .font(.system(size: 13 * textScale))
                             .lineLimit(1)
-                        OverviewAgentStatusLine(agent: agent, status: status, isLive: isLive)
+                        OverviewAgentStatusLine(agent: agent, status: status, isAvailable: isAvailable)
                     }
                     Spacer(minLength: 0)
                 }
@@ -142,18 +146,18 @@ struct OverviewAgentStatusLine: View {
     @Environment(\.colorScheme) private var colorScheme
     let agent: ChannelAgent
     let status: ChannelAgentPresence?
-    let isLive: Bool
+    let isAvailable: Bool
 
-    static func text(_ status: ChannelAgentPresence?, isLive: Bool) -> String {
-        ChannelAgentStatusPresentation(presence: status, isLive: isLive).text
+    static func text(_ status: ChannelAgentPresence?, isAvailable: Bool) -> String {
+        ChannelAgentStatusPresentation(presence: status, isAvailable: isAvailable).text
     }
 
-    static func spoken(_ status: ChannelAgentPresence?, isLive: Bool) -> String {
-        ChannelAgentStatusPresentation(presence: status, isLive: isLive).spoken
+    static func spoken(_ status: ChannelAgentPresence?, isAvailable: Bool) -> String {
+        ChannelAgentStatusPresentation(presence: status, isAvailable: isAvailable).spoken
     }
 
     var body: some View {
-        let presentation = ChannelAgentStatusPresentation(presence: status, isLive: isLive)
+        let presentation = ChannelAgentStatusPresentation(presence: status, isAvailable: isAvailable)
         HStack(alignment: presentation.cue == .waiting ? .firstTextBaseline : .center, spacing: 4) {
             if presentation.cue == .working {
                 OverviewWorkingEllipsis(color: agent.avatar.flatMap { Color(hex: $0.color) } ?? Color.accentColor)
@@ -184,7 +188,7 @@ private struct OverviewAgentAbout: View {
     let isLead: Bool
     let model: ModelConfiguration?
     let status: ChannelAgentPresence?
-    let isLive: Bool
+    let isAvailable: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -209,7 +213,7 @@ private struct OverviewAgentAbout: View {
             Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 8, verticalSpacing: 4) {
                 GridRow {
                     Text("Status").foregroundStyle(.secondary).gridColumnAlignment(.trailing)
-                    Text(OverviewAgentStatusLine.spoken(status, isLive: isLive))
+                    Text(OverviewAgentStatusLine.spoken(status, isAvailable: isAvailable))
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 GridRow {

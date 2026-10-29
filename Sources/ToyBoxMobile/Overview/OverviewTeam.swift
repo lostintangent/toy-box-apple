@@ -59,10 +59,10 @@ struct OverviewTeamRow: View {
     @ViewState private var wakeAnnouncement: String?
 
     private var wake: Date? {
-        ChannelAgentWakePresentation.wake(for: store.presence[agent.id], isLive: store.phase.isLive)
+        ChannelAgentWakePresentation.wake(for: store.presence[agent.id], isAvailable: !store.phase.isUnavailable)
     }
     private var status: ChannelAgentStatusPresentation {
-        .init(presence: store.presence[agent.id], isLive: store.phase.isLive)
+        .init(presence: store.presence[agent.id], isAvailable: !store.phase.isUnavailable)
     }
     private var canManage: Bool { store.phase.isLive && agent.deleted != true }
     private var active: Bool {
@@ -77,7 +77,8 @@ struct OverviewTeamRow: View {
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(agent.name).font(.body)
-                    OverviewAgentStatus(presence: store.presence[agent.id], live: store.phase.isLive, active: active)
+                    OverviewAgentStatus(presence: store.presence[agent.id], available: !store.phase.isUnavailable,
+                                        active: active)
                 }
                 .lineLimit(typeSize.isAccessibilitySize ? nil : 1)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -152,9 +153,9 @@ struct OverviewAgentDetails: View {
                 }
             }
             Section {
-                OverviewAgentStatus(presence: store.presence[agentID], live: store.phase.isLive)
+                OverviewAgentStatus(presence: store.presence[agentID], available: !store.phase.isUnavailable)
                 if let wake = ChannelAgentWakePresentation.wake(for: store.presence[agentID],
-                                                                isLive: store.phase.isLive) {
+                                                                isAvailable: !store.phase.isUnavailable) {
                     LabeledContent("Checks again") {
                         Text(wake.formatted(date: .abbreviated, time: .shortened))
                             .foregroundStyle(ChannelInk.secondary)
@@ -196,7 +197,7 @@ struct OverviewAgentDetails: View {
 
 struct OverviewAgentStatus: View {
     let presence: ChannelAgentPresence?
-    let live: Bool
+    let available: Bool
     var active = false
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dynamicTypeSize) private var typeSize
@@ -204,7 +205,7 @@ struct OverviewAgentStatus: View {
     @ScaledMetric(relativeTo: .footnote) private var cueWidth = 12
 
     var body: some View {
-        let status = ChannelAgentStatusPresentation(presence: presence, isLive: live)
+        let status = ChannelAgentStatusPresentation(presence: presence, isAvailable: available)
         // Scaled metrics do not track the preferred font's point size at accessibility sizes.
         let capHeight = UIFont.preferredFont(
             forTextStyle: .footnote,
