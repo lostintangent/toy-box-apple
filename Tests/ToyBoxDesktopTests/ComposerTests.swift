@@ -338,6 +338,69 @@ struct ComposerTests {
         #expect(otherServer.initialTarget(channels: [alpha, beta], lastUsedID: nil, hasDraft: { _ in false }) == nil)
     }
 
+    @Test func quickSendChooserIsATransparentNativeListWhereAClickOrReturnChoosesAnyRow() async throws {
+        let alpha = Channel(id: "alpha", name: "Alpha", purpose: "Build the launch",
+                            model: .init(provider: "test", name: "test"), updatedAt: "2026-10-24T00:00:00Z")
+        let channels = ["alpha", "beta", "gamma", "delta"].map { id in
+            var channel = alpha
+            channel.id = id; channel.name = id.capitalized
+            return channel
+        }
+        var chosen: [String] = []
+        let host = NSHostingView(rootView: QuickSendChannelChooser(channels: channels, history: nil,
+                                                                   selectedID: "beta") { chosen.append($0.id) })
+        let panel = QuickSendPanel(contentRect: NSRect(x: 0, y: 0, width: 340, height: 400),
+                                   styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        panel.isReleasedWhenClosed = false
+        panel.contentView = host
+        panel.setFrameOrigin(NSPoint(x: -10_000, y: -10_000))
+        panel.orderFrontRegardless()
+        panel.makeKey()
+        defer { panel.close() }
+        func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(descendants) }
+        var table: NSTableView? { descendants(host).lazy.compactMap { $0 as? NSTableView }.first }
+        try await waitForUpdate(of: host, "the rows mount and the current channel is highlighted") {
+            table?.numberOfRows == 4 && table?.selectedRow == 1
+        }
+        let list = try #require(table)
+        let scroll = try #require(list.enclosingScrollView)
+        #expect(!scroll.drawsBackground, "The popover's material shows through the list")
+        let rowsHeight = list.rect(ofRow: 3).maxY - list.rect(ofRow: 0).minY
+        #expect(scroll.frame.height >= rowsHeight && scroll.frame.height < 252, "The list fits its rows")
+        let rendering = try #require(list.bitmapImageRepForCachingDisplay(in: list.bounds))
+        list.cacheDisplay(in: list.bounds, to: rendering)
+        let scale = CGFloat(rendering.pixelsHigh) / list.bounds.height
+        let boundary = list.rect(ofRow: 2)
+        let separated = stride(from: boundary.minX + 24, to: boundary.maxX - 24, by: 8).contains { x in
+            (rendering.colorAt(x: Int(x * scale), y: Int(boundary.maxY * scale) - 1)?.alphaComponent ?? 0) > 0.05
+        }
+        #expect(!separated, "No separator is drawn between two unselected rows")
+
+        try await waitForUpdate(of: host, "the search field takes focus") { panel.firstResponder is NSTextView }
+        panel.sendEvent(try key(String(UnicodeScalar(NSUpArrowFunctionKey)!), code: 126, in: panel,
+                                modifiers: [.numericPad, .function]))
+        try await waitForUpdate(of: host, "the up arrow moves the native highlight from the search field") {
+            list.selectedRow == 0
+        }
+        panel.sendEvent(try key("\r", code: 36, in: panel))
+        #expect(chosen == ["alpha"])
+
+        func click(row: Int, at y: (NSRect) -> CGFloat = { $0.midY }) throws {
+            let rect = list.rect(ofRow: row)
+            let point = list.convert(NSPoint(x: rect.midX, y: y(rect)), to: nil)
+            for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+                panel.sendEvent(try #require(NSEvent.mouseEvent(
+                    with: type, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                    windowNumber: panel.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)))
+            }
+        }
+        try click(row: 0)
+        #expect(chosen == ["alpha", "alpha"], "Clicking the highlighted row chooses it though the selection can't change")
+        try click(row: 2) { $0.minY + 1 }
+        try click(row: 1) { $0.maxY - 1 }
+        #expect(chosen == ["alpha", "alpha", "gamma", "beta"], "Either edge of a row chooses it too")
+    }
+
     @Test(arguments: [422, 503])
     func auxiliarySendAgainUsesTheSharedOutboxAndOriginalImmutableMessage(status: Int) async throws {
         try await withDraft { draft, _ in

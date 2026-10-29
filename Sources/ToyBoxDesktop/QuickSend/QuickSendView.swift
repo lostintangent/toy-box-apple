@@ -373,15 +373,18 @@ struct QuickSendView: View {
     }
 }
 
-private struct QuickSendChannelChooser: View {
+struct QuickSendChannelChooser: View {
     let channels: [Channel]
     let history: QuickSendTargetHistory?
     let selectedID: String?
     let choose: (Channel) -> Void
     @ViewState private var query = ""
     @ViewState private var highlightedID: String?
+    @ViewState private var listHeight: CGFloat?
     @FocusState private var searching: Bool
     @Environment(\.dismiss) private var dismiss
+
+    private static let maximumListHeight: CGFloat = 252
 
     private var matches: [Channel] {
         history?.choices(channels: channels, query: query)
@@ -398,9 +401,10 @@ private struct QuickSendChannelChooser: View {
                 Text(query.isEmpty ? "No channels yet" : "No channels found")
                     .foregroundStyle(.secondary).frame(maxWidth: .infinity, minHeight: 44)
             } else {
+                // The list's own selection is the highlight the arrow keys move.
                 List(matches, selection: $highlightedID) { channel in
                     HStack(spacing: 8) {
-                        VStack(alignment: .leading, spacing: 3) {
+                        VStack(alignment: .leading, spacing: 2) {
                             Text(channel.name).lineLimit(1)
                             if let purpose = channel.purpose, !purpose.isEmpty {
                                 Text(purpose).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
@@ -411,15 +415,23 @@ private struct QuickSendChannelChooser: View {
                             Image(systemName: "checkmark").foregroundStyle(.secondary)
                         }
                     }
-                    .frame(height: 44)
-                    .contentShape(Rectangle())
+                    // A click anywhere in the row chooses it, including the row that's already highlighted,
+                    // which never changes the selection.
+                    .contentShape(Rectangle().inset(by: -8))
                     .onTapGesture { choose(channel) }
                     .tag(channel.id)
+                    .listRowSeparator(.hidden)
                     .accessibilityAddTraits(.isButton)
                     .accessibilityAction { choose(channel) }
                 }
-                .listStyle(.plain)
-                .frame(height: min(CGFloat(matches.count) * 44 + 8, 252))
+                .listStyle(.inset)
+                .scrollContentBackground(.hidden)
+                .onScrollGeometryChange(for: CGFloat.self) { geometry in
+                    geometry.contentSize.height + geometry.contentInsets.top + geometry.contentInsets.bottom
+                } action: { _, height in
+                    listHeight = height
+                }
+                .frame(height: min(listHeight ?? Self.maximumListHeight, Self.maximumListHeight))
             }
         }
         .font(.system(size: 13))
