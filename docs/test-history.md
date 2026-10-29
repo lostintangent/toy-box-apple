@@ -35,6 +35,34 @@ Incident records moved from AGENTS.md on 2026-10-27, with their evidence and res
   suites, with the probe as the 238-test Mobile suite's single opt-in skip. The prefixed run passed
   with no Mobile skip, so all 24 cases ran. That verifies the gate and its delivery, not the cause
   of the original failure.
+- Restored by t510 on 2026-10-29. The failing read came from where the pixels are produced. The test
+  drew `ImageRenderer.uiImage`'s CGImage, an image-provider image (`(IP)`) whose pixels are produced
+  only when it's first drawn. A temporary probe ran first in a local Mobile process and rendered all
+  24 cases both ways. `IOSurfaceClientSetSurfaceNotify failed e00002c7` appeared exactly once,
+  between obtaining the first `uiImage` and drawing it (23 ms, then about 8 ms for later draws), and
+  never during the synchronous render just before it. So the provider rasterizes through an
+  IOSurface, and the message marks the process's first such rasterization. The synchronous render
+  before it was the process's first render of the cue, and it drew the cue, which argues against a
+  cold `pause.fill` symbol. On CI the message appeared as this test started. No earlier test in that
+  process had triggered it, so the failing light / `.xSmall` case was the process's first IOSurface
+  rasterization. t465's capsule
+  failure also read `uiImage` pixels, and its first case failed shortly after the same message. Why
+  that rasterization lost the cue on CI once can't be reproduced locally: all 24 local provider
+  renders were fully opaque, with the cue in place.
+- The test now renders through `ImageRenderer.render(rasterizationScale:renderer:)` into its own
+  bitmap, so none of the pixels it reads come from a deferred provider or an IOSurface. The status
+  fills an opaque background, so the test first requires every pixel to be opaque. An incomplete
+  render now fails as one, instead of a transparent image reading as black text with no cue.
+  `waitingCueProbeTellsABlankRenderFromAMissingCue` pins both outcomes in light and dark: a
+  transparent image is rejected as incomplete, and the disconnected status renders completely, with
+  text rows and no cue rows. All 24 cases and the centering and wrapping thresholds are unchanged.
+  Locally the synchronous render put the cue and first line within a row of `uiImage`'s, for example
+  cue rows 9...30 against 10...31 at `.xSmall`, with every pixel opaque. The probe's output is
+  `probe-sync-vs-uiImage.log` in Overview's session files, beside the CI log.
+- The artifact-action ink test, the file's other `uiImage` pixel read, shares the new helper with
+  unchanged thresholds. `TaskRowsTests.segmentedGuidesRenderExactlyLikeOneContinuousGuide` and
+  `SidebarAttentionTests` still read pixels from `uiImage`. On `2439914` plus t510,
+  `test:mobile` passed all five suites, with 241 Mobile tests and no Mobile opt-in skip.
 
 ## Catalog failure grace
 

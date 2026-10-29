@@ -263,7 +263,6 @@ comparisons and retained regression contracts are in [docs/test-history.md](docs
 | Test | Opt-in | Owner / condition for restoring merge-gate coverage |
 | --- | --- | --- |
 | `imageStripOverflowRespondsToWheelInput` | `TOY_BOX_TEST_IMAGE_STRIP_SCROLLING=1` | Composer: native wheel animation requires awake/unlocked Mac, so keep per-frame/WindowServer checks opt-in |
-| `ToyBoxMobileTests/OverviewTests.waitingCueStaysCenteredOnTheFirstLineWhileTheReasonWraps` | `SIMCTL_CHILD_TOY_BOX_TEST_MOBILE_WAITING_CUE_RENDERING=1 bun run test:mobile` | Overview, t510 `mobile-waiting-cue-rendering`: distinguish a blank render from a missing cue, identify the cause and add deterministic regression coverage before restoring |
 
 `TransportTests.storeReconnectsFromAppliedRevisionZero` and `recoverySnapshotReplacesCachedHistory`
 are restored to the default gate with immediate/held-response delivery, not
@@ -272,6 +271,8 @@ scroller styles, equal height, overflow, native clip scrolling and trailing-edge
 `imageStripKeepsOneHeightWhenItsImagesOverflowAndStillScrolls`. Wheel failure diagnostics include
 geometry, window visibility, display sleep and session lock state. The Live Text analysis test is
 restored to the default local suite, awaiting the viewer's own load and analysis tasks.
+The phone waiting-cue probe is restored too, rendering into its own bitmap instead of reading
+`ImageRenderer.uiImage`, and rejecting an incomplete render before it looks for the cue.
 
 ## Validating the running app
 
