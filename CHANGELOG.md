@@ -1,5 +1,20 @@
 # Changelog
 
+## iPhone 0.1.4
+
+- See the New divider above your first unread message when you reopen a channel, instead of landing at the end with everything marked read.
+- Read the conversation behind the floating composer, pills and Find bar.
+- See who you're writing to in a clearer To badge, beside a white mic.
+- Type in a roomier Find field.
+- Scan tighter team rows in Overview.
+- Close sheets with a plain close button.
+- See Use Server in Settings only when you've typed a different, valid address.
+- Add an agent with a labeled Name row, a question about its role and an Add button, matching New Channel.
+
+## Mac 0.1.11
+
+- See the New divider above your first unread message when you reopen a channel.
+
 ## iPhone 0.1.3
 
 - Find in a conversation from the bottom of the screen, where the search bar takes the composer's place until you close it.
