@@ -186,7 +186,7 @@ Incident records moved from AGENTS.md on 2026-10-27, with their evidence and res
 
 ## Artifact scope replacement and removal
 
-- `ChannelArtifactSessionTests.switchingScopeDiscardsTheVisitAndCancelsItsPendingLoad` is quarantined
+- `ChannelArtifactSessionTests.switchingScopeDiscardsTheVisitAndCancelsItsPendingLoad` was quarantined
   behind `TOY_BOX_TEST_ARTIFACT_SCOPE_TIMING=1`. Its `changingServer: false` argument failed the
   unchanged private three-second polling helper at line 81 in the 2026-10-26 Client diagnostic run
   (`reconnect-diagnostics-mac.log` in Core's session files, based on `db3b71d` with failure tracing).
@@ -195,7 +195,7 @@ Incident records moved from AGENTS.md on 2026-10-27, with their evidence and res
   add deterministic scope-replacement coverage before restoring this case. Both argument bodies
   and the deadline remain unchanged. Do not clear the incident by retrying the original candidate.
 - `ChannelArtifactSessionTests.removingAnArtifactDuringLoadingRetainsItsIdentityWithoutPublishingTheResponse`
-  is also quarantined behind `TOY_BOX_TEST_ARTIFACT_SCOPE_TIMING=1`. It failed the unchanged
+  was also quarantined behind `TOY_BOX_TEST_ARTIFACT_SCOPE_TIMING=1`. It failed the unchanged
   three-second polling helper at line 82 in the 2026-10-26 Mac integration run of `a65267d`
   (`/tmp/lead-int8-mac.log`, issue at line 2088, failure after 7.537 seconds at line 2130).
   Core preserved that run as `artifact-removal-readiness-failed-a65267d.log` in its session files.
@@ -208,3 +208,22 @@ Incident records moved from AGENTS.md on 2026-10-27, with their evidence and res
   load-task completion, without readiness polling. It releases the obsolete request while its
   successor is still held, checking both the selected content and loading state. This adds
   controlled coverage, but does not establish either historical failure's cause or lift its gate.
+- Resolved by t340 on 2026-10-29. No artifact-session stage stalled. Both failures were the
+  helper's final `#expect(await condition())` after its three-second wall-clock deadline, polling
+  every 5 ms on the main actor. Around each failure, dozens of trivial, unrelated ChannelClient tests
+  finished together after 3.3 to 7.6 seconds (lines 1170–1211 of the diagnostic run and 2060–2125 of
+  `a65267d`), so parallel suite work held the shared main actor past the deadline. When it was
+  released, the expired loop's last check could run before the load task's main-actor continuation
+  published. A temporary reproduction queued a 3.5-second synchronous main-actor block before each
+  original wait. Both scope arguments and the removal case failed at that same final expectation,
+  while the signal-based rewrite passed under the same blocks (`t340-main-actor-repro.log` in
+  Core's session files). The fix is in the tests' readiness, not production.
+- `switchingScopeDiscardsTheVisitAndCancelsItsPendingLoad` is deleted rather than restored. The
+  default `anObsoleteLoadCannotEndOrReplaceItsSuccessorsPendingVisit` channel and server cases make
+  the same configuration changes, closing the visit, cancelling the obsolete load and opening a
+  successor, and are stricter: they release the obsolete response while the successor is still held.
+- The removal case is restored to the default gate under its name, waiting only on the mock's request
+  signal and the load task's completion. It is the one case where the removed artifact stays
+  presented with an unchanged token, so only cancellation and the `!isUnavailable` guard keep the late
+  response out. Dropping both fails this case (`obsolete.isCancelled`, `content == nil`) while the
+  successor contract still passes (`t340-removal-mutation.log`). The helper and the opt-in are gone.
