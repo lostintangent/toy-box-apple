@@ -1014,13 +1014,18 @@ visible conversation actively acknowledges reading. Restoring a window must not 
 silently mark its unseen content as read.
 
 **Phone channel search, user 3501 and Lead 3503.** Use the native bottom-bar search item beside
-Settings in the channel-list column, folded and unfolded. Search raises the keyboard with its
-field above it, and Cancel restores the bar. No hand-built safe-area text field or duplicate
-gear in the rail. Keep the large Toy Box title, New Channel and More at the top. Report a native
+Settings in the channel-list column, folded and unfolded. While the split view is collapsed, as
+on a folded Duo, `.searchToolbarBehavior(.minimize)` shows it as a Search button that expands into
+the bottom field, because a full field makes UIKit cancel the first pull to refresh after Back
+(t520). The unfolded overlay sidebar keeps the full field, since UIKit places the minimized button
+past the sidebar's trailing edge. Search raises the keyboard with its field above it, and Cancel
+restores the bar. No hand-built safe-area text field or duplicate gear in the rail. Keep the large
+Toy Box title and New Channel at the top, with no More menu or Refresh item. Report a native
 placement limitation in the unfolded column instead of substituting custom controls.
 Remove the healthy/connecting connection dot, server label and busy footer spinner. Settings
 owns server identity and connection details. Keep pull to refresh and the shared name/purpose/
-directory filtering unchanged. Command-F focuses channel search when the list is active,
+directory filtering unchanged. Pull to refresh holds its spinner until the finger lifts, so a
+fast fetch never ends it mid-pull. Command-F focuses channel search when the list is active,
 without replacing in-conversation Find. A catalog failure still shows its heading, useful error,
 Retry and reachable Settings at the bottom. Cached rows alone do not prove a live connection.
 First-launch Connect to Toy Box and the Mac sidebar remain unchanged.

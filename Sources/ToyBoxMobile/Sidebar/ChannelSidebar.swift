@@ -10,7 +10,10 @@ struct ChannelSidebar: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Binding var showsSettings: Bool
     let searchFocusRequest: UUID
+    /// The split view shows one column at a time, as on a folded Duo.
+    let isCollapsed: Bool
     @ViewState private var query = ""
+    @ViewState private var pull = PullGesture()
     @FocusState private var searchFocused: Bool
 
     private var trimmedQuery: String { query.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -61,6 +64,9 @@ struct ChannelSidebar: View {
             }
             .listSectionSeparator(.hidden)
         }
+        .onScrollPhaseChange { _, phase in
+            pull.isTouching = phase == .tracking || phase == .interacting
+        }
     }
 
     var body: some View {
@@ -84,25 +90,21 @@ struct ChannelSidebar: View {
         .navigationTitle("Toy Box")
         .navigationBarTitleDisplayMode(.large)
         .searchable(text: $query, placement: .toolbar, prompt: "Search Channels")
+        // A full search field makes UIKit cancel the first pull to refresh after Back, so the
+        // collapsed list minimizes it. The overlay sidebar keeps the field, since UIKit places
+        // the minimized button beyond its trailing edge.
+        .searchToolbarBehavior(isCollapsed ? .minimize : .automatic)
         .searchFocused($searchFocused)
         .onChange(of: searchFocusRequest) { _, _ in searchFocused = true }
         .focusedValue(\.channelListFocused, true)
-        .refreshable { await model.refreshCatalog() }
+        .refreshable {
+            await model.refreshCatalog()
+            await pull.released()
+        }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button("New Channel", systemImage: "plus") { management.present(.newChannel) }
                     .disabled(!canCreate)
-            }
-            ToolbarItem(placement: .primaryAction) {
-                Menu("More", systemImage: "ellipsis") {
-                    if sizeClass != .compact {
-                        Button("Settings", systemImage: "gear") { showsSettings = true }
-                    }
-                    Button("Refresh", systemImage: "arrow.clockwise") {
-                        Task { await model.refreshCatalog() }
-                    }
-                    .disabled(model.catalog == nil || !model.isActive)
-                }
             }
             ToolbarItem(placement: .bottomBar) {
                 Button("Settings", systemImage: "gear") { showsSettings = true }
@@ -171,6 +173,17 @@ struct ChannelSidebar: View {
             management.present(.deleteChannel(channelId: channel.id))
         }
         .disabled(!model.canManageChannels)
+    }
+}
+
+/// UIKit ends a pull to refresh in place when its action returns while the finger is still down,
+/// dropping the spinner and jolting the list mid-pull. Holding the action until the finger lifts
+/// lets the control settle and collapse as it does after a slower load.
+@MainActor @Observable private final class PullGesture {
+    var isTouching = false
+
+    func released() async {
+        for await touching in Observations({ self.isTouching }) where !touching { return }
     }
 }
 
