@@ -1577,19 +1577,32 @@ using separate loose chevrons.
 Controls retain 28-point hit targets, and the field yields width before the controls truncate.
 At the narrow supported window size the count and all controls remain visible.
 
-On iPhone, keep Find immediately below the channel navigation bar in the existing `safeAreaBar`,
-not an overlay or another screen. Remove the opaque plate and divider. Use native regular
-Liquid Glass on three surfaces: a flexible capsule field, one joined Previous/Next capsule and
-Done. Each is 36 points visibly high inside a minimum-44-point touch area. Keep 16-point outer
-insets, 8-point gaps and 4-point top/bottom padding, for a 52-point bar at default text size.
-The folded Duo gives the bar 382 points, measured in the native frame. At that width the field is
-192, navigation is 88 (44 per button) and Done is 54. Inside the field, keep a 6-point horizontal
-inset and a 4-point gap between the magnifier and the query, so all three surfaces share one row.
+On iPhone, Find takes the composer's place at the bottom, like Safari's and Notes' find bars,
+so the keyboard and the field stay together and the transcript keeps the space above them. While
+Find is open, `ChannelInteraction.isFinding` hides the composer, which keeps its draft, images and
+request, and the working and Jump to Latest pills. The reconnecting banner stays. Closing Find
+brings the composer back with the keyboard down. With the keyboard down the bar stays docked, and
+tapping the field brings the keyboard back. Opening and closing swap the bars in one
+`.smooth(duration: 0.3)` transaction: the outgoing bar fades with a slight blur and drops 8
+points while the incoming one rises into the same place. Reduce Motion gets a plain 0.2-second
+crossfade. The keyboard keeps UIKit's own animation, and the transcript's bottom edge follows the
+bar's height in the same transaction, so no frame shows two settled bars or an empty gap and the last message
+glides rather than hops. Find sits in the conversation's bottom `safeAreaBar`,
+not an overlay or another screen, so revealed matches land in the visible band above it. It uses
+the composer's frame: 12-point side insets in compact width (16 in regular), 8 points above, and
+`ComposerBottomSpacing` below. Use plain regular Liquid Glass on three surfaces in one
+`GlassEffectContainer(spacing: 8)`: a flexible capsule field, one joined Previous/Next capsule
+and a circular Close. All three share one 44-point height from one `@ScaledMetric`. The arrows are
+two 44-point targets in an 88-point capsule, `chevron.up` and `chevron.down` in primary body
+medium with the system's disabled dimming. Close is `xmark`, labeled "Close Find". The caret is
+the bar's only accent. The folded Duo gives the bar 382 points, measured in the native frame.
+Inside the field, keep a 6-point horizontal inset and a 4-point gap between the magnifier and the
+query, so all three surfaces share one row.
 Use native body text for the query, the compact prompt "Find" and footnote tabular result digits.
 The field retains the accessible scope "Find in [channel]". Reserve its trailing 84-point status
 slot for every nonempty-query state; a spinner/count/error swap must not resize the field.
-Use real Liquid Glass, not thin material, a painted blur or a custom gradient. Preserve the
-native scroll-edge effect and reserve the bar's content inset so revealed senders remain visible.
+Use real Liquid Glass, not thin material, a painted blur or a custom gradient. The conversation's
+bottom scroll edge is `.hard`, so plain-glass labels stay legible over bright content.
 At accessibility sizes or failed measured fit, place the full-width field above the controls.
 Grow with native text rather than shrinking it. If status cannot fit beside a 64-point query
 viewport, allow status to wrap within the same growing field. No separate progress sentence.
@@ -1597,8 +1610,8 @@ The Mac retains its native search field, 28-point controls and bar material, not
 
 Find Next (`Cmd-G` or Return in the search field) and Find Previous (`Shift-Cmd-G` or
 Shift-Return) move chronologically through matching messages and wrap at the ends. Each matching
-message is one result, even if its text contains the query more than once. Escape or Done closes
-the bar without moving the conversation or changing its draft. Opening and closing both preserve
+message is one result, even if its text contains the query more than once. Escape, the Mac's Done or the
+phone's Close closes the bar without moving the conversation or changing its draft. Opening and closing both preserve
 the visible message anchor at the same pixel-aligned screen position after layout, with no bounce.
 Changes to progress or error status preserve that anchor too. Closing retains the query.
 Reopening Find selects the current query for replacement. Switching channels cancels that
@@ -1642,7 +1655,7 @@ Opening Find, fetching history and revealing results never mark messages read or
 request. Read marking remains suspended after search navigation until the reader explicitly
 resumes normal scrolling or Jump to Latest. Closing the bar alone is not a read action.
 VoiceOver gets "Find in [channel]", named Previous Match and Next Match controls, the result
-position and a "Done" button with "Close Find" help. Give one delayed "Searching older messages"
+position and, on the Mac, a "Done" button with "Close Find" help, or the phone's "Close Find" button. Give one delayed "Searching older messages"
 announcement and one polite completion or error announcement per current query, never per
 older page. User-initiated navigation speaks the position, "found so far" and "still searching"
 when results remain incomplete. Preserve the text field's native editable value.

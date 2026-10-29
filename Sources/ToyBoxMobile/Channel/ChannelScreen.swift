@@ -145,7 +145,9 @@ struct ChannelScreen: View {
             } else {
                 ConversationView(store: store)
                     .safeAreaBar(edge: .bottom, spacing: 0) {
-                        ComposerView(store: store, showsTray: showsTray)
+                        if !interaction.isFinding {
+                            ComposerView(store: store, showsTray: showsTray).findSwapTransition()
+                        }
                     }
             }
         }

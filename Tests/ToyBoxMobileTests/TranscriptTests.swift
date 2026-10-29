@@ -364,7 +364,7 @@ struct TranscriptTests {
         #expect(!find.blocksRead)
     }
 
-    @Test func phoneFindIsOneFiftyTwoPointRowWithAStableStatusSlotAndStacksAtAccessibilitySizes() {
+    @Test func phoneFindIsOneSixtyPointRowWithAStableStatusSlotAndStacksAtAccessibilitySizes() {
         func size(_ view: some View, width: CGFloat, _ type: DynamicTypeSize = .large) -> CGSize {
             UIHostingController(rootView: view.environment(\.dynamicTypeSize, type))
                 .sizeThatFits(in: CGSize(width: width, height: .greatestFiniteMagnitude))
@@ -383,12 +383,13 @@ struct TranscriptTests {
         let bar = TranscriptFindAccessory(find: find, channelName: "Studio demo", focusRequest: UUID(),
                                           navigate: { _ in }, close: {})
         // The folded Duo's bar measures 382 points in the native frame. The unfolded conversation column
-        // with Overview open is wider, so every width from just under that up keeps one 52-point row.
+        // with Overview open is wider, so every width from just under that up keeps one 44-point row
+        // inside the composer's 8-point margins, 60 points in all.
         for width in [380, 386, 400, 454, 480, 560, 720] as [CGFloat] {
-            #expect(size(bar, width: width).height.rounded() == 52, "\(width)")
+            #expect(size(bar, width: width).height.rounded() == 60, "\(width)")
         }
         find.query = String(repeating: "a long typed query ", count: 4)
-        #expect(size(bar, width: 380).height.rounded() == 52)
+        #expect(size(bar, width: 380).height.rounded() == 60)
         // The full-width field sits above the controls instead of shrinking type.
         #expect(size(bar, width: 386, .accessibility5).height > 2 * 44)
 
@@ -402,7 +403,7 @@ struct TranscriptTests {
         #expect(size(field, width: 171) == CGSize(width: 171, height: 30 + 4 + 20))
     }
 
-    @Test func phoneFindPlacesFieldAndDoneOnOneRowInTheFoldedDuosMeasuredBar() async throws {
+    @Test func phoneFindPlacesFieldAndCloseOnOneRowInTheFoldedDuosMeasuredBar() async throws {
         let find = TranscriptFind()
         find.present()
         find.query = "checkpoint"
@@ -421,9 +422,10 @@ struct TranscriptTests {
         func views(in view: UIView) -> [UIView] { view.subviews + view.subviews.flatMap(views) }
         let field = try #require(views(in: host.view).first { $0 is UITextField })
         let fieldFrame = field.convert(field.bounds, to: window)
-        let done = try #require(MobileAutomationTree(windows: [window]).elements.first { $0.label == "Close Find" })
-        #expect(abs(done.frame.midY - fieldFrame.midY) < 1, "field \(fieldFrame), Done \(done.frame)")
-        #expect(done.frame.maxX <= 380 - 16 + 0.5)
+        let close = try #require(MobileAutomationTree(windows: [window]).elements.first { $0.label == "Close Find" })
+        #expect(abs(close.frame.midY - fieldFrame.midY) < 1, "field \(fieldFrame), Close \(close.frame)")
+        #expect(close.frame.maxX <= 380 - 12 + 0.5)
+        #expect(close.frame.height.rounded() == 44)
     }
 
     @Test func phoneFindKeepsMatchTextReadableInBothAppearances() throws {
