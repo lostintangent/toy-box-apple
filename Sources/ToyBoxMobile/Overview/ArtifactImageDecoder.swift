@@ -146,23 +146,12 @@ final class SVGDimensions: NSObject, XMLParserDelegate {
 }
 
 @MainActor
-private final class SVGImageRenderer: NSObject, WKNavigationDelegate {
-    private let webView: WKWebView
-    private var completion: CheckedContinuation<Data, any Error>?
-    private var timeout: Task<Void, Never>?
-
-    private init(size: CGSize, rules: WKContentRuleList) {
-        let configuration = WKWebViewConfiguration()
-        configuration.websiteDataStore = .nonPersistent()
-        configuration.defaultWebpagePreferences.allowsContentJavaScript = false
-        configuration.userContentController.add(rules)
-        let viewport = ArtifactImageDecoder.pixelSize(size, maximum: 1024)
-        webView = WKWebView(frame: CGRect(origin: .zero, size: viewport), configuration: configuration)
-        super.init()
-        webView.navigationDelegate = self
-        webView.isOpaque = false
-        webView.backgroundColor = .clear
-        webView.scrollView.backgroundColor = .clear
+private enum SVGImageRenderer {
+    private struct AboutBlankOnly: WebPage.NavigationDeciding {
+        func decidePolicy(for action: WebPage.NavigationAction,
+                          preferences: inout WebPage.NavigationPreferences) async -> WKNavigationActionPolicy {
+            action.request.url?.absoluteString == "about:blank" ? .allow : .cancel
+        }
     }
 
     static func render(_ data: Data, size: CGSize) async throws -> Data {
@@ -171,59 +160,49 @@ private final class SVGImageRenderer: NSObject, WKNavigationDelegate {
             [{"trigger":{"url-filter":".*"},"action":{"type":"block"}},
              {"trigger":{"url-filter":"^data:"},"action":{"type":"ignore-previous-rules"}}]
             """) else { throw ChannelAttachmentError.invalidImage }
-        let renderer = SVGImageRenderer(size: size, rules: rules)
-        return try await withTaskCancellationHandler {
-            try Task.checkCancellation()
-            return try await withCheckedThrowingContinuation { continuation in
-                renderer.completion = continuation
-                renderer.timeout = Task { @MainActor [weak renderer] in
-                    do { try await Task.sleep(for: .seconds(15)) }
-                    catch { return }
-                    renderer?.finish(.failure(ChannelAPIError.invalidMessage("The SVG preview took too long to render.")))
+        var configuration = WebPage.Configuration()
+        configuration.websiteDataStore = .nonPersistent()
+        configuration.defaultNavigationPreferences.allowsContentJavaScript = false
+        configuration.userContentController.add(rules)
+        let page = WebPage(configuration: configuration, navigationDecider: AboutBlankOnly())
+        let viewport = ArtifactImageDecoder.pixelSize(size, maximum: 1024)
+        let html = """
+            <!doctype html><html><head><meta name="viewport" content="width=\(Int(viewport.width)),initial-scale=1">
+            <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src 'none'; connect-src 'none'; frame-src 'none'">
+            <style>html,body{margin:0;width:\(Int(viewport.width))px;height:\(Int(viewport.height))px;overflow:hidden;background:transparent}img{display:block;width:100%;height:100%}</style>
+            </head><body><img alt="" src="data:image/svg+xml;base64,\(data.base64EncodedString())"></body></html>
+            """
+        return try await withThrowingTaskGroup { group in
+            group.addTask {
+                try await withTaskCancellationHandler {
+                    try await export(page, html: html, region: CGRect(origin: .zero, size: viewport))
+                } onCancel: {
+                    Task { @MainActor in page.stopLoading() }
                 }
-                renderer.webView.loadHTMLString("""
-                <!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
-                <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src 'none'; connect-src 'none'; frame-src 'none'">
-                <style>html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent}img{display:block;width:100%;height:100%}</style>
-                </head><body><img alt="" src="data:image/svg+xml;base64,\(data.base64EncodedString())"></body></html>
-                """, baseURL: nil)
             }
-        } onCancel: {
-            Task { @MainActor in renderer.finish(.failure(CancellationError())) }
+            group.addTask {
+                try await Task.sleep(for: .seconds(15))
+                throw ChannelAPIError.invalidMessage("The SVG preview took too long to render.")
+            }
+            defer { group.cancelAll() }
+            return try await group.next()!
         }
     }
 
-    private func finish(_ result: Result<Data, any Error>) {
-        guard let completion else { return }
-        self.completion = nil
-        timeout?.cancel()
-        timeout = nil
-        webView.stopLoading()
-        webView.navigationDelegate = nil
-        completion.resume(with: result)
-    }
-
-    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        let configuration = WKPDFConfiguration()
-        configuration.rect = webView.bounds
-        configuration.allowTransparentBackground = true
-        webView.createPDF(configuration: configuration) { [weak self] result in self?.finish(result) }
-    }
-
-    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: any Error) {
-        finish(.failure(error))
-    }
-
-    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: any Error) {
-        finish(.failure(error))
-    }
-
-    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
-        finish(.failure(ChannelAPIError.invalidMessage("The SVG renderer stopped unexpectedly.")))
-    }
-
-    func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
-                 decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void) {
-        decisionHandler(navigationAction.request.url?.absoluteString == "about:blank" ? .allow : .cancel)
+    private static func export(_ page: WebPage, html: String, region: CGRect) async throws -> Data {
+        do {
+            for try await event in page.load(html: html) where event == .finished {
+                try Task.checkCancellation()
+                return try await page.exported(as: .pdf(region: .rect(region), allowTransparentBackground: true))
+            }
+        } catch let error as WebPage.NavigationError {
+            switch error {
+            case .failedProvisionalNavigation(let underlying): throw underlying
+            case .webContentProcessTerminated:
+                throw ChannelAPIError.invalidMessage("The SVG renderer stopped unexpectedly.")
+            default: throw error
+            }
+        }
+        throw ChannelAttachmentError.invalidImage
     }
 }
