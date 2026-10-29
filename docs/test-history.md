@@ -2,6 +2,40 @@
 
 Incident records moved from AGENTS.md on 2026-10-27, with their evidence and restoration boundaries preserved. Current gates and instructions are in [AGENTS.md](../AGENTS.md#test-reliability). A passing rerun does not close an incident or restore a quarantined test.
 
+## Phone waiting-cue rendering
+
+- `ToyBoxMobileTests/OverviewTests.waitingCueStaysCenteredOnTheFirstLineWhileTheReasonWraps` was
+  quarantined behind `TOY_BOX_TEST_MOBILE_WAITING_CUE_RENDERING=1` on 2026-10-29. Main `194dcb1`
+  (t505's merge) failed the iOS foundation job in
+  [run 40902466732](https://github.com/lostintangent/toy-box-apple/actions/runs/40902466732).
+  Only the first of its 24 cases failed, light / `.xSmall`, at `OverviewTests.swift:232` with
+  `cueRows == []`: no row had the orange `pause.fill` cue's color. The other 23 passed, and the
+  Mobile suite finished with 238 tests and one issue. t505 changed the composer, transcript Find
+  and spec, not Overview. The test dates to `1ce521d` (2026-10-26). None of the failed main runs
+  from 2026-10-28 on recorded an issue in it, though cancelled runs may have stopped before iOS tests.
+- That evidence doesn't establish that only the cue was missing. The pixel reader draws into a
+  zeroed buffer, so a fully transparent image reads as black, which counts as text on the light
+  background. A blank image therefore passes the light case's text check and fails at the cue, as
+  here, while in dark mode it would fail at the text check instead. Image dimensions and coverage
+  weren't logged. The log records `IOSurfaceClientSetSurfaceNotify failed e00002c7` as the test
+  started, which t465 found in every local run too.
+- Two hypotheses remain unproven: a cold `pause.fill` symbol on the first render, or t465's
+  deferred `ImageRenderer.uiImage` rasterization coming back empty, since this test still reads
+  pixels through `uiImage?.cgImage`. No production cause or first-render race has been identified.
+- Overview owns t510, `mobile-waiting-cue-rendering`: distinguish a blank render from a missing cue,
+  identify the cause and add deterministic regression coverage before restoring the merge gate.
+  Failure messages now record appearance, Dynamic Type, image dimensions, nontransparent pixel
+  count and text and cue row counts. All 24 cases and thresholds are unchanged behind the opt-in.
+  No sleeps, retries or production changes were added. No other default test covers the cue's
+  alignment with the reason's first line.
+- `simctl spawn` forwards only `SIMCTL_CHILD_`-prefixed variables to the test process, so a bare
+  `TOY_BOX_TEST_MOBILE_WAITING_CUE_RENDERING=1` would never reach it. Run the opt-in as
+  `SIMCTL_CHILD_TOY_BOX_TEST_MOBILE_WAITING_CUE_RENDERING=1 SCRATCH_PATH=/tmp/tbm-<you> bun run test:mobile`.
+  On `7b20f9f` plus the quarantine, the default run and a bare-variable run both passed all five
+  suites, with the probe as the 238-test Mobile suite's single opt-in skip. The prefixed run passed
+  with no Mobile skip, so all 24 cases ran. That verifies the gate and its delivery, not the cause
+  of the original failure.
+
 ## Catalog failure grace
 
 - On 2026-10-29, every main run that finished, from t485's merge `6195ffd` (run 40813614411) through

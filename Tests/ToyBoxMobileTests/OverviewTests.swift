@@ -198,7 +198,8 @@ struct OverviewTests {
         #expect(image.size.height > 10 && image.size.height < 50)
     }
 
-    @Test(arguments: [ColorScheme.light, .dark], DynamicTypeSize.allCases)
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["TOY_BOX_TEST_MOBILE_WAITING_CUE_RENDERING"] == "1"),
+          arguments: [ColorScheme.light, .dark], DynamicTypeSize.allCases)
     func waitingCueStaysCenteredOnTheFirstLineWhileTheReasonWraps(
         scheme: ColorScheme, size: DynamicTypeSize
     ) throws {
@@ -226,10 +227,13 @@ struct OverviewTests {
                 }
             }
         }
-        let firstTextRow = try #require(textRows.min())
+        let nontransparentPixels = stride(from: 3, to: pixels.count, by: 4).filter { pixels[$0] > 0 }.count
+        let render = "Waiting cue render: \(scheme), \(size), \(image.width)x\(image.height), "
+            + "nontransparent pixels \(nontransparentPixels), text rows \(textRows.count), cue rows \(cueRows.count)"
+        let firstTextRow = try #require(textRows.min(), "\(render)")
         var lastFirstLineRow = firstTextRow
         while textRows.contains(lastFirstLineRow + 1) { lastFirstLineRow += 1 }
-        let firstCueRow = try #require(cueRows.min())
+        let firstCueRow = try #require(cueRows.min(), "\(render)")
         let lastCueRow = try #require(cueRows.max())
         #expect(abs(CGFloat(firstCueRow + lastCueRow - firstTextRow - lastFirstLineRow) / 6) <= 1,
                 "Cue \(firstCueRow)...\(lastCueRow), first line \(firstTextRow)...\(lastFirstLineRow)")
