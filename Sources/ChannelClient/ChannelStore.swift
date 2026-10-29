@@ -265,11 +265,12 @@ public final class ChannelStore {
         phase = .deleted
     }
 
+    /// Places the New divider for someone opening the channel. A store that disconnected kept its
+    /// last state, so the divider matches those cached rows until the reconnect's snapshot or replay
+    /// completes and places it for good.
     public func captureUnreadBoundary() {
-        if let state {
-            unreadAfter = channelUnreadAfter(state.channel)
-            capturedUnread = true
-        } else { capturedUnread = false }
+        unreadAfter = state.flatMap { channelUnreadAfter($0.channel) }
+        capturedUnread = state != nil && phase.isConnected
     }
 
     public func loadOlder() async {
@@ -613,10 +614,6 @@ public final class ChannelStore {
                 reconcileSend(id: attempt.id)
             }
             hasOlderMessages = (snapshot.messages.first?.sequence ?? 1) > 1
-            if !capturedUnread {
-                unreadAfter = channelUnreadAfter(snapshot.channel)
-                capturedUnread = true
-            }
         } else if let previous = state {
             state = reduceChannelState(previous, event)
             if let message = event.message, event.revision != nil {
@@ -624,6 +621,10 @@ public final class ChannelStore {
             }
         } else { throw ChannelAPIError.invalidEvent("pre-snapshot \(event.type)") }
         if event.type == "snapshot" || event.type == "resumed" {
+            if !capturedUnread, let state {
+                unreadAfter = channelUnreadAfter(state.channel)
+                capturedUnread = true
+            }
             if event.type == "resumed" {
                 for attempt in sendAttempts where attempt.phase == .confirmed { reconcileSend(id: attempt.id) }
             }

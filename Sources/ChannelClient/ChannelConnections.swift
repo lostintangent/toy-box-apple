@@ -31,7 +31,8 @@
             lingering.remove(at: index).expiry.cancel()
         }
         held[key] = (store, 1)
-        // Opening a channel places its New divider, even when the store stayed connected.
+        // Opening a channel places its New divider, at once when the store stayed connected and
+        // otherwise once its reconnect catches up.
         store.captureUnreadBoundary()
         // Does nothing while the store is still connected or retrying.
         store.connect()
