@@ -189,7 +189,7 @@ struct ComposerTests {
         if requested { interaction.focusComposer() }
         let (session, target) = try dictatingSession(MobileTestRecognizer())
         defer { session.dictation.deactivate() }
-        let host = UIHostingController(rootView: ComposerSurface(session: session, showsTray: false)
+        let host = UIHostingController(rootView: ComposerSurface(session: session)
             .environment(app)
             .environment(interaction)
             .environment(ManagementPresenter())
@@ -611,7 +611,7 @@ struct ComposerTests {
                            environment: [:], defaults: defaults)
         let (session, target) = try dictatingSession(MobileTestRecognizer())
         defer { session.dictation.deactivate() }
-        let host = UIHostingController(rootView: ComposerSurface(session: session, showsTray: false)
+        let host = UIHostingController(rootView: ComposerSurface(session: session)
             .environment(app)
             .environment(ChannelInteraction(isInspectorPresented: false))
             .environment(ManagementPresenter())

@@ -1839,6 +1839,11 @@ open anchored native popovers, preferred 360 wide, max 420 high. Task rows are t
 as the inspector. URL Preview opens the configured URL in the default browser. Screen Preview
 opens that channel in Toy Box, with an explicit label, never a fictitious local live screen.
 
+The tray is Mac only. The iPhone composer has no tray at any screen height, size class or text
+size. While any direct-root task is unfinished, Tasks (`checklist`) is a top-bar button in both
+size classes, speaking "Tasks, 1 of 4 done" and opening Overview's Tasks. Artifacts and Preview
+live in Overview.
+
 ### Overview inspector and readers
 
 The Overview is an inspector in the Keynote and Xcode sense: a quiet, dense column of facts about
