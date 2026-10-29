@@ -320,7 +320,7 @@ private struct TranscriptSelectTextSheet: View {
             .navigationTitle("Select Text")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
+                ToolbarItem(placement: .topBarTrailing) {
                     Button(role: .close) { dismiss() }
                         .accessibilityLabel("Close Select Text")
                 }
@@ -513,7 +513,7 @@ struct TranscriptReactionChip: View {
                 .navigationTitle("\(emoji) \(label)")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
-                    ToolbarItem(placement: .confirmationAction) {
+                    ToolbarItem(placement: .topBarTrailing) {
                         Button(role: .close) { showsReactors = false }
                             .accessibilityLabel("Close Reactions")
                     }
@@ -583,7 +583,7 @@ struct TranscriptSystemDetails: View {
             .navigationTitle(messages.count > 1 ? "Membership" : ChannelSystemText.phrase(for: messages.first?.system))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
+                ToolbarItem(placement: .topBarTrailing) {
                     Button(role: .close) { dismiss() }
                         .accessibilityLabel("Close Details")
                 }
