@@ -108,6 +108,33 @@ struct TranscriptTests {
         }
     }
 
+    @Test func aPostureChangeSettlesAtTheEndAfterTheStackDropsItsPlacement() {
+        let viewport = TranscriptScrollModel.Viewport(width: 466, height: 669, topInset: 82, bottomInset: 186)
+        let scroll = TranscriptScroll()
+        scroll.rows = (0..<40).map { .init(id: "r\($0)", order: $0) }
+        for index in 0..<40 { scroll.measure("r\(index)", frame: CGRect(x: 0, y: CGFloat(index) * 100, width: 466, height: 100)) }
+        scroll.metrics = .init(viewport: viewport, origin: 3517, documentEnd: 4000)
+        #expect(scroll.update(.land(.end))?.origin == 3517)
+
+        // Unfolding widens the conversation, and the lazy stack re-estimates the rows above.
+        scroll.metrics?.viewport = .init(width: 571, height: 669, topInset: 82, bottomInset: 186)
+        scroll.metrics?.documentEnd = 4100
+        #expect(scroll.update()?.origin == 3617)
+
+        // The stack keeps its own anchor rather than the placement, so only the origin moves at last.
+        scroll.isScrollIdle = false
+        scroll.metrics?.origin = 2592
+        #expect(scroll.update() == nil)
+        scroll.isScrollIdle = true
+        scroll.metrics?.origin = 2600
+        #expect(scroll.update()?.origin == 3617)
+
+        // Once geometry holds the end, a report there places nothing.
+        scroll.metrics?.origin = 3617
+        #expect(scroll.update() == nil)
+        #expect(scroll.distanceToEnd == 0)
+    }
+
     @Test func aNewTouchReadsEvenBeforeAJumpSettlesAtTheEnd() {
         let viewport = TranscriptScrollModel.Viewport(width: 386, height: 600, topInset: 0, bottomInset: 0)
         let scroll = TranscriptScroll()

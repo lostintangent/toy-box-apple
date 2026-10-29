@@ -21,6 +21,7 @@ final class TranscriptScroll {
     var rows: [Model.RowIdentity] = []
     var metrics: Metrics?
     var isReaderScrolling = false
+    var isScrollIdle = true
     /// Keeps the model's placement through reader scrolling until geometry holds it: an anchor
     /// through a page insertion, or the end after a move that stopped a flick still reporting frames.
     var holdsPlacementThroughInput = false
@@ -77,7 +78,9 @@ final class TranscriptScroll {
         } else if isReaderScrolling && !holdsPlacementThroughInput {
             event = .readerScrolled(to: layout.origin)
         } else if let last = lastLayout {
-            guard let change = Model.layoutEvent(from: last, to: layout) else { return nil }
+            guard let change = Model.layoutEvent(from: last, to: layout) ?? drift(from: last, to: layout) else {
+                return nil
+            }
             event = change
         } else {
             event = .layoutChanged
@@ -93,6 +96,16 @@ final class TranscriptScroll {
         default: break
         }
         return placement
+    }
+
+    /// A lazy stack that's still re-estimating rows, as after a posture change, can drop a placement
+    /// and keep its own anchor instead. When the scroll comes to rest away from the placement with
+    /// nothing else changed, place it again.
+    private func drift(from last: Model.Layout, to layout: Model.Layout) -> Model.Event? {
+        guard isScrollIdle, layout.origin != last.origin,
+              let origin = Model.placement(for: intent, layout: layout).origin,
+              abs(origin - layout.origin) > 0.5 else { return nil }
+        return .layoutChanged
     }
 
     /// A new touch is the reader's own, unlike the frames of a flick that a jump stopped.
@@ -282,6 +295,7 @@ struct ConversationView: View {
         }
         .onScrollPhaseChange { _, phase in
             scroll.isReaderScrolling = phase == .tracking || phase == .interacting || phase == .decelerating
+            scroll.isScrollIdle = phase == .idle
             if phase == .tracking || phase == .interacting {
                 scroll.readerTouched()
                 find.resumeReading()
@@ -428,7 +442,15 @@ struct ConversationView: View {
         if let placement {
             if let origin = placement.origin {
                 if let metrics = scroll.metrics, abs(origin - metrics.origin) > 0.5 {
-                    position.scrollTo(y: origin + metrics.viewport.topInset)
+                    let y = origin + metrics.viewport.topInset
+                    let endOrigin = metrics.documentEnd - metrics.viewport.height + metrics.viewport.bottomInset
+                    // SwiftUI ignores a position it already holds, as when a dropped request is
+                    // placed again, so the end is asked for by edge instead.
+                    if position.point?.y == y, origin >= endOrigin - 0.5 {
+                        position.scrollTo(edge: .bottom)
+                    } else {
+                        position.scrollTo(y: y)
+                    }
                     isMoving = true
                 } else {
                     scroll.holdsPlacementThroughInput = false
