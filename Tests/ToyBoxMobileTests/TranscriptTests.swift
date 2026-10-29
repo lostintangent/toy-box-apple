@@ -135,6 +135,26 @@ struct TranscriptTests {
         #expect(scroll.distanceToEnd == 0)
     }
 
+    @Test func aReaderAtRestIsNeverPulledBackToTheirAnchor() {
+        let viewport = TranscriptScrollModel.Viewport(width: 386, height: 600, topInset: 0, bottomInset: 0)
+        let scroll = TranscriptScroll()
+        scroll.rows = (0..<40).map { .init(id: "r\($0)", order: $0) }
+        for index in 0..<40 { scroll.measure("r\(index)", frame: CGRect(x: 0, y: CGFloat(index) * 100, width: 386, height: 100)) }
+        scroll.metrics = .init(viewport: viewport, origin: 3400, documentEnd: 4000)
+        _ = scroll.update(.land(.end))
+        scroll.isReaderScrolling = true
+        scroll.metrics?.origin = 1500
+        _ = scroll.update()
+        scroll.isReaderScrolling = false
+
+        // A late report or a scroll to the top moves only the origin, and the reader stays there.
+        scroll.isScrollIdle = true
+        scroll.metrics?.origin = 1480
+        #expect(scroll.update() == nil)
+        scroll.metrics?.origin = 0
+        #expect(scroll.update() == nil)
+    }
+
     @Test func aNewTouchReadsEvenBeforeAJumpSettlesAtTheEnd() {
         let viewport = TranscriptScrollModel.Viewport(width: 386, height: 600, topInset: 0, bottomInset: 0)
         let scroll = TranscriptScroll()

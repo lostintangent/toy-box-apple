@@ -99,10 +99,10 @@ final class TranscriptScroll {
     }
 
     /// A lazy stack that's still re-estimating rows, as after a posture change, can drop a placement
-    /// and keep its own anchor instead. When the scroll comes to rest away from the placement with
-    /// nothing else changed, place it again.
+    /// at the end and keep its own anchor instead. When the scroll comes to rest away from the end
+    /// with nothing else changed, place it again. A reader's anchor is never re-asserted this way.
     private func drift(from last: Model.Layout, to layout: Model.Layout) -> Model.Event? {
-        guard isScrollIdle, layout.origin != last.origin,
+        guard intent == .following || intent == .landing(.end), isScrollIdle, layout.origin != last.origin,
               let origin = Model.placement(for: intent, layout: layout).origin,
               abs(origin - layout.origin) > 0.5 else { return nil }
         return .layoutChanged
