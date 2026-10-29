@@ -640,14 +640,89 @@ struct ComposerTests {
 
     @Test func keyboardOcclusionDoesNotMistakeTheHomeIndicatorSafeAreaForAVisibleKeyboard() {
         let bounds = CGRect(x: 0, y: 0, width: 466, height: 900)
-        #expect(!ComposerBottomSpacing.keyboardIsVisible(
+        #expect(!SoftwareKeyboard.isVisible(
             frame: CGRect(x: 0, y: 866, width: 466, height: 34), in: bounds, safeAreaBottom: 34))
-        #expect(!ComposerBottomSpacing.keyboardIsVisible(
+        #expect(!SoftwareKeyboard.isVisible(
             frame: CGRect(x: 0, y: 900, width: 466, height: 300), in: bounds, safeAreaBottom: 34))
-        #expect(ComposerBottomSpacing.keyboardIsVisible(
+        #expect(SoftwareKeyboard.isVisible(
             frame: CGRect(x: 0, y: 600, width: 466, height: 300), in: bounds, safeAreaBottom: 34))
-        #expect(!ComposerBottomSpacing.keyboardIsVisible(
+        #expect(!SoftwareKeyboard.isVisible(
             frame: CGRect(x: 500, y: 600, width: 466, height: 300), in: bounds, safeAreaBottom: 34))
+    }
+
+    /// Find replaces the composer while the keyboard stays up, and the keyboard can then go down
+    /// while Find is open. Both bars and the screen read one source, so neither change is missed.
+    @Test func composerFindAndTheChannelScreenShareOneKeyboardSourceAcrossTheFindSwap() async throws {
+        let suite = "composer-keyboard-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let app = AppModel(arguments: ["--server", "https://composer-keyboard.invalid"],
+                           environment: [:], defaults: defaults)
+        let (session, target) = try dictatingSession(MobileTestRecognizer())
+        defer { session.dictation.deactivate() }
+        let find = TranscriptFind()
+        find.present()
+        let screen = KeyboardScreen()
+        let host = UIHostingController(rootView: KeyboardScreenHarness(
+            screen: screen, composer: ComposerSurface(session: session),
+            find: TranscriptFindAccessory(find: find, channelName: "Test", focusRequest: UUID(),
+                                          navigate: { _ in }, close: {}))
+            .environment(app)
+            .environment(ChannelInteraction(isInspectorPresented: false))
+            .environment(ManagementPresenter())
+            .environment(OverviewPresentation())
+            .environment(\.horizontalSizeClass, .compact)
+            .dynamicTypeSize(.large))
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 466, height: 900))
+        window.rootViewController = host
+        window.isHidden = false
+        defer { window.isHidden = true }
+
+        func settle() async {
+            host.view.layoutIfNeeded()
+            await Task.yield()
+            host.view.layoutIfNeeded()
+        }
+        func keyboard(top: CGFloat) async {
+            let frame = CGRect(x: 0, y: top, width: 466, height: 336)
+            NotificationCenter.default.post(
+                name: UIResponder.keyboardWillChangeFrameNotification, object: window.screen,
+                userInfo: [UIResponder.keyboardFrameEndUserInfoKey: NSValue(cgRect: frame)])
+            await settle()
+        }
+        func composerBottom() throws -> CGFloat {
+            let input = try #require(session.editor.textView)
+            #expect(input.window === window)
+            return input.convert(input.bounds, to: window).maxY
+        }
+        func findBottom() throws -> CGFloat {
+            try #require(MobileAutomationTree(windows: [window]).elements.first { $0.label == "Close Find" }).frame.maxY
+        }
+
+        await settle()
+        #expect(!screen.keyboardIsVisible)
+        let composerResting = try composerBottom()
+
+        await keyboard(top: 564)
+        #expect(screen.keyboardIsVisible)
+        #expect(try composerBottom() == composerResting - 8)
+
+        // Find arrives over a keyboard that doesn't move, so no notification tells it.
+        screen.showsFind = true
+        await settle()
+        let findAboveKeyboard = try findBottom()
+        #expect(screen.keyboardIsVisible)
+
+        // The keyboard goes down while the composer is gone.
+        await keyboard(top: 900)
+        #expect(!screen.keyboardIsVisible)
+        #expect(try findBottom() == findAboveKeyboard + 8)
+
+        screen.showsFind = false
+        await settle()
+        #expect(!screen.keyboardIsVisible)
+        #expect(try composerBottom() == composerResting)
+        withExtendedLifetime(target) {}
     }
 
     @Test func editorFitsOneThroughThreeMeasuredLinesWithoutChangingItsTextOrCaret() throws {
@@ -1389,5 +1464,29 @@ struct ComposerTests {
         #expect(!preview.isPresented)
         #expect(preview.question == question)
         #expect(preview.outcome == .failed("Actual operation error"))
+    }
+}
+
+@MainActor @Observable private final class KeyboardScreen {
+    var showsFind = false
+    var keyboardIsVisible = false
+}
+
+/// The channel screen's shape: one probe at the root, and Find taking the composer's place.
+private struct KeyboardScreenHarness<Composer: View, Find: View>: View {
+    let screen: KeyboardScreen
+    let composer: Composer
+    let find: Find
+    @ViewState private var keyboardIsVisible = false
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Spacer(minLength: 0)
+            if screen.showsFind { find } else { composer }
+        }
+        // The test posts keyboard frames without a keyboard, so SwiftUI's own avoidance stays out.
+        .ignoresSafeArea(.keyboard)
+        .softwareKeyboardVisibility($keyboardIsVisible)
+        .onChange(of: keyboardIsVisible, initial: true) { _, visible in screen.keyboardIsVisible = visible }
     }
 }

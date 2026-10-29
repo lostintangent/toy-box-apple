@@ -769,7 +769,10 @@ does not establish that this delay is fixed.
 Folded with the software keyboard down, remove the extra 8-point bottom gap so the composer's
 bottom edge meets the bottom safe area. Add no toolbar-frame geometry seam or measured offset.
 Always keep the existing 8-point clearance above a visible keyboard, native keyboard avoidance
-and all control targets. Unfolded keeps its existing bottom spacing.
+and all control targets. Unfolded keeps its existing bottom spacing. Find's bar follows the same
+rule. The channel screen owns the only keyboard observer, and the composer, Find and the
+notification tip all read it. A bar that arrives over a keyboard that's already up, or returns
+after the keyboard went down behind Find, starts from the current state.
 
 Normal agent surfaces use a visible neutral tonal fill, not an almost invisible outline on the
 same color as the conversation. Derive the fill from primary ink over the opaque conversation

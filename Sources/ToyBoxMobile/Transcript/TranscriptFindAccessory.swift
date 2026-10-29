@@ -44,7 +44,7 @@ struct TranscriptFindAccessory: View {
     @ViewState private var selection: TextSelection?
     @ViewState private var progressDelayElapsed = false
     @ViewState private var showsError = false
-    @ViewState private var keyboardIsVisible = false
+    @Environment(\.softwareKeyboardIsVisible) private var keyboardIsVisible
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.horizontalSizeClass) private var sizeClass
     @ScaledMetric(relativeTo: .body) private var height = 44
@@ -68,12 +68,6 @@ struct TranscriptFindAccessory: View {
         .padding(.horizontal, sizeClass == .compact ? 12 : 16)
         .padding(.bottom, ComposerBottomSpacing.value(compact: sizeClass == .compact,
                                                       keyboardVisible: keyboardIsVisible))
-        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillChangeFrameNotification)) { event in
-            guard let screen = event.object as? UIScreen,
-                  let frame = event.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect else { return }
-            keyboardIsVisible = ComposerBottomSpacing.keyboardIsVisible(frame: frame, in: screen.bounds,
-                                                                         safeAreaBottom: 0)
-        }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Find in Conversation")
         // A task runs once the bar is in the hierarchy, so the field can take focus.
