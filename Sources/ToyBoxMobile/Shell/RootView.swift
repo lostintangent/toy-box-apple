@@ -31,19 +31,9 @@ struct RootView: View {
         .environment(managementSessions)
         .accessibilityHidden(overview.isCompactSheetPresented
                              || (overview.placement == .sheet && selectedInteraction?.isInspectorPresented == true))
-        .inspector(isPresented: Binding(
-            get: {
-                overview.placement == .inspector && selectedInteraction?.isInspectorPresented == true
-                    && selectedInteraction?.isArtifactViewerPresented != true
-            },
-            set: {
-                if overview.placement == .inspector, selectedInteraction?.isArtifactViewerPresented != true {
-                    selectedInteraction?.isInspectorPresented = $0
-                }
-            }
-        )) {
+        .inspector(isPresented: overview.columnBinding(for: selectedInteraction)) {
             overviewContent(at: .inspector)
-                .inspectorColumnWidth(min: 280, ideal: 296, max: 360)
+                .inspectorColumnWidth(min: 280, ideal: OverviewPlacement.columnWidth, max: 360)
         }
         // An animated inspector narrows the detail every frame, re-wrapping the transcript each time.
         // Cutting straight to the final width lays it out once. The sheet below keeps its animation.
@@ -60,9 +50,9 @@ struct RootView: View {
                 .presentationDetents([.large])
                 .presentationBackgroundInteraction(.disabled)
         }
-        .onChange(of: sizeClass, initial: true) { _, value in
-            overview.move(to: value == .compact ? .sheet : .inspector)
-        }
+        .onGeometryChange(for: OverviewPlacement.self) { [sizeClass] in
+            OverviewPlacement(sceneWidth: $0.size.width, sizeClass: sizeClass)
+        } action: { overview.move(to: $0) }
     }
 
     var body: some View {
@@ -86,11 +76,6 @@ struct RootView: View {
         }
         .onChange(of: management.flow) { _, flow in
             if flow == nil { managementSessions.reset() }
-        }
-        .onChange(of: selectedInteraction?.isInspectorPresented) { _, presented in
-            if presented == true, let store = model.selectedStore {
-                overview.session(for: store).prepareForPresentation()
-            }
         }
         .onChange(of: management.createdChannel?.token) { _, token in
             if token != nil, let created = management.createdChannel {

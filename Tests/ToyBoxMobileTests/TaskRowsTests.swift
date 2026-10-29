@@ -478,8 +478,7 @@ struct TaskRowsTests {
             VStack {
                 if scoped {
                     NavigationStack {
-                        OverviewSubtasksScreen(parentID: "scope", store: store, session: session,
-                                               placement: .sheet, scroll: session.taskScroll("scope"))
+                        OverviewSubtasksScreen(parentID: "scope", store: store, session: session)
                     }
                 } else if statusDriven {
                     OverviewView(store: store, session: session, placement: .sheet)
