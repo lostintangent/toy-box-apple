@@ -216,7 +216,7 @@ private struct OverviewAbout: View {
                     .font(.system(size: 13 * textScale))
                     .foregroundStyle(.secondary)
                     .disabled(!store.phase.isLive)
-                    .help(store.phase.isLive ? "Edit Channel" : "Reconnect to edit the channel")
+                    .help(store.phase.isUnavailable ? "Reconnect to edit the channel" : "Edit Channel")
             }
             let preview = details.resolvedPreview
             if details.directory != nil || preview != nil {
