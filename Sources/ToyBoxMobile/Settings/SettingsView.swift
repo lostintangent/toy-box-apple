@@ -60,10 +60,7 @@ struct SettingsView: View {
         }
         .onDisappear { connection.cancel() }
         .onChange(of: scenePhase) { _, phase in
-            if phase == .active {
-                availability = intelligence.availability
-                Task { await model.notifications.refreshAuthorization() }
-            }
+            if phase == .active { availability = intelligence.availability }
             else { connection.cancel() }
         }
         .task { await model.notifications.refreshAuthorization() }
