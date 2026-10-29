@@ -20,7 +20,7 @@ Incident records moved from AGENTS.md on 2026-10-27, with their evidence and res
 ## Phone audience-capsule rendering
 
 - `ToyBoxMobileTests/ComposerTests.audienceCapsuleIsSeparateFromIts44PointRowAndGrowsWithText`
-  is quarantined behind `TOY_BOX_TEST_MOBILE_AUDIENCE_RENDERING=1`. On 2026-10-28, main
+  was quarantined behind `TOY_BOX_TEST_MOBILE_AUDIENCE_RENDERING=1`. On 2026-10-28, main
   `8316411` failed the iOS job in [run 40760049648, attempt 1](https://github.com/lostintangent/toy-box-apple/actions/runs/40760049648/attempts/1).
   The light / `.large` case reached `ComposerTests.swift:449` with `filledRows == []`, so the
   center column had no nontransparent pixels. The image existed and passed its minimum-height
@@ -44,6 +44,21 @@ Incident records moved from AGENTS.md on 2026-10-27, with their evidence and res
   suites. The 233-test Mobile suite reported the capsule probe as its single opt-in skip.
   Core retained the output as `t465-mobile-gate.log`. This verifies the default gate and
   compilation of the quarantined body, not the cause of the original failure.
+- Restored by t465 on 2026-10-29. The blank image came from where the pixels are produced, not
+  from layout. `ImageRenderer.uiImage` returns a CGImage backed by an image provider (`(IP)` in
+  its description): it returns in about 1.5 ms with its size already fixed by layout, and the
+  pixels are rasterized only when the test first draws it (3–10 ms, then about 10 times faster on a
+  second draw). So a correctly sized image with no drawn pixels, as on CI, points to that deferred
+  rasterization rather than misplaced badge geometry. Why that rasterization came back empty on the CI
+  simulator once is not provable from one run. The IOSurface message appears in every local run
+  too, so it isn't evidence either way. 240 local renders under the full suite were all complete.
+- The composer tests' `render` helper now draws with `ImageRenderer.render(rasterizationScale:renderer:)`
+  into the test's own bitmap before returning, so no pixel read waits on a deferred provider. That
+  path gave the same center column (24 rows from row 10 at `.large`, 60 at accessibility5) and the
+  same coverage as `uiImage`. The placeholder, hint, attachment and context tests share the helper.
+  All four cases and thresholds are unchanged. Removing the capsule background makes all four fail,
+  so the probe still guards the visible badge. `test:mobile` passes with no Mobile opt-in skips.
+  Other suites' pixel tests still read `uiImage` or `cgImage`.
 
 ## Mobile icon tooling
 

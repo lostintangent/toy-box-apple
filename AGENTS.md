@@ -262,7 +262,6 @@ comparisons and retained regression contracts are in [docs/test-history.md](docs
 
 | Test | Opt-in | Owner / condition for restoring merge-gate coverage |
 | --- | --- | --- |
-| `ToyBoxMobileTests/ComposerTests.audienceCapsuleIsSeparateFromIts44PointRowAndGrowsWithText` | `TOY_BOX_TEST_MOBILE_AUDIENCE_RENDERING=1` | Core, t465 `mobile-audience-capsule-rendering`: identify the transparent center-column render cause and add deterministic regression coverage before restoring |
 | `ImageViewerLiveTextTests.onlyTheSettledCurrentImageIsAnalyzedAndTheWindowRemembersIt` | `TOY_BOX_TEST_LIVE_TEXT_ANALYSIS=1` | Transcript: identify cause and add deterministic analysis-gating coverage |
 | `imageStripOverflowRespondsToWheelInput` | `TOY_BOX_TEST_IMAGE_STRIP_SCROLLING=1` | Composer: native wheel animation requires awake/unlocked Mac, so keep per-frame/WindowServer checks opt-in |
 | `ChannelArtifactSessionTests.switchingScopeDiscardsTheVisitAndCancelsItsPendingLoad` | `TOY_BOX_TEST_ARTIFACT_SCOPE_TIMING=1` | Core, t340 `artifact-scope-readiness`: capture stalled stage, identify cause, add deterministic scope-replacement coverage |
