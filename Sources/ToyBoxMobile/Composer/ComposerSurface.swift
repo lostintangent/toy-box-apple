@@ -35,6 +35,7 @@ struct ComposerSurface: View {
     private var dictation: ComposerDictation { session.dictation }
     private var editor: ComposerEditorState { session.editor }
     private var draftID: ObjectIdentifier { ObjectIdentifier(draft) }
+    private var isConnecting: Bool { store.phase == .connecting }
     private var isReaderCovered: Bool {
         interaction.isArtifactViewerPresented || overviewPresentation.isCompactSheetPresented
             || (sizeClass == .compact && interaction.isInspectorPresented)
@@ -325,7 +326,8 @@ struct ComposerSurface: View {
     private var sendButton: some View {
         Button(action: send) {
             Group {
-                if session.isFinalizingDictation || composer.isSubmitting || composer.attempt?.phase == .sending {
+                if session.isFinalizingDictation || composer.isSubmitting || composer.attempt?.phase == .sending
+                    || isConnecting {
                     ProgressView().frame(width: 32, height: 32)
                 } else {
                     Image(systemName: composer.attempt?.canRetry == true ? "arrow.clockwise" : "arrow.up")
@@ -341,7 +343,7 @@ struct ComposerSurface: View {
         .buttonStyle(.plain)
         .disabled(!session.canSend || scenePhase != .active)
         .keyboardShortcut(.return, modifiers: .command)
-        .accessibilityLabel(composer.attempt?.canRetry == true ? "Send Again" : "Send message")
+        .accessibilityLabel(isConnecting ? "Connecting" : composer.attempt?.canRetry == true ? "Send Again" : "Send message")
         .accessibilityShowsLargeContentViewer()
     }
 
