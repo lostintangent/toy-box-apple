@@ -59,7 +59,7 @@ struct ComposerDictateButton: View {
         case .idle, .preparing:
             Image(systemName: dictation.accessOff == nil ? "mic" : "mic.slash")
                 .font(.system(size: 17))
-                .foregroundStyle(ChannelInk.secondary)
+                .foregroundStyle(Color.primary)
         }
     }
 
