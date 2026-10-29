@@ -2288,6 +2288,15 @@ prompt. Leave Purpose, model/options, validation, focus, cancellation and write 
 unchanged. Neither channel form shows an explanatory introduction. Edit Channel also omits its
 subtitle on the Mac.
 
+**Phone member forms, user 5235 and Lead 5238.** Add Agent matches New Channel. Its Name row
+has a visible "Name" label with "Required" as the field prompt, and the unlabeled Role field asks
+"What is this agent's role in the channel?". Neither Add Agent nor Edit Agent shows a note above
+the form, so the onboarding and "Member of" lines stay Mac-only. The identity footer still reads
+"Names are unique in this channel.", led by the live handle once there's a name. Add Agent's
+button is Add, and Adding… while it saves. Edit Agent keeps Save. Role's height, the model,
+validation, focus, cancellation and write recovery are unchanged. The Mac sheets keep their
+subtitles, role prompt and Add Agent button.
+
 New Channel, Edit Channel, Add Agent and Edit Member share one sheet language:
 
 - **Size.** 480 wide. The sheet fits its content, with no empty band above the buttons and no
