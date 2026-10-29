@@ -1969,12 +1969,12 @@ padding: a 24-point avatar, a 10-point gap, then the name in 13 regular primary 
 11-point status, 1 point apart. Status truncates at the tail with the full text in help.
 
 Phone keeps its 38-point content minimum, 12-point avatar/text gap, 2-point name/status gap
-and existing scaled avatar capped at 36. Ordinary text sizes use explicit 12.5-point vertical
-row insets, making each row exactly 5 points shorter than the measured 15-point system
-defaults. Accessibility sizes use 13.5, 3 points shorter, and keep native wrapping. Snug, never
+and existing scaled avatar capped at 36. Ordinary text sizes use explicit 12-point vertical
+row insets, making each row exactly 6 points shorter than the measured 15-point system
+defaults. Accessibility sizes use 13, 4 points shorter, and keep native wrapping. Snug, never
 cramped: every navigation target remains at least 44 points high. Mac is unchanged.
 Phone Add Agent uses the same 38-point content minimum and vertical spacing, matching a member
-row's height exactly at default text size. Its 12.5-point ordinary / 13.5-point accessibility
+row's height exactly at default text size. Its 12-point ordinary / 13-point accessibility
 padding belongs inside the button, with zero native vertical row insets, so the whole row is
 tappable and its accessible target spans that height. Its label grows and wraps without clipping.
 
