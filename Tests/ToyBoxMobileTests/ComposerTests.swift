@@ -411,12 +411,10 @@ struct ComposerTests {
     func placeholderUsesReadableSecondaryInkEvenUnderAnInheritedPrimaryStyle(
         scheme: ColorScheme, listening: Bool
     ) throws {
-        let renderer = ImageRenderer(content: ComposerPlaceholder(isListening: listening)
+        let image = try render(ComposerPlaceholder(isListening: listening)
             .foregroundStyle(Color.primary)
             .environment(\.colorScheme, scheme)
             .dynamicTypeSize(.large))
-        renderer.scale = 1
-        let image = try #require(renderer.uiImage?.cgImage)
         let pixels = try renderedPixels(image)
         let strongest = try #require(stride(from: 0, to: pixels.count, by: 4).max {
             pixels[$0 + 3] < pixels[$1 + 3]
@@ -428,21 +426,16 @@ struct ComposerTests {
         }
     }
 
-    @Test(.enabled(if: ProcessInfo.processInfo.environment["TOY_BOX_TEST_MOBILE_AUDIENCE_RENDERING"] == "1"),
-          arguments: [ColorScheme.light, .dark], [DynamicTypeSize.large, .accessibility5])
+    @Test(arguments: [ColorScheme.light, .dark], [DynamicTypeSize.large, .accessibility5])
     func audienceCapsuleIsSeparateFromIts44PointRowAndGrowsWithText(
         scheme: ColorScheme, size: DynamicTypeSize
     ) throws {
         let lead = ChannelAgent.lead(id: "test", profile: .init(
             name: "Lead", role: "Coordinator", avatar: .init(mark: "M4 12H20", color: "#123456")
         ))
-        let renderer = ImageRenderer(content:
-            ComposerAudienceView(text: "", agents: [lead], acknowledgesRequest: false)
-                .environment(\.colorScheme, scheme)
-                .dynamicTypeSize(size))
-        renderer.scale = 1
-        renderer.proposedSize = .init(width: 260, height: nil)
-        let image = try #require(renderer.uiImage?.cgImage)
+        let image = try render(ComposerAudienceView(text: "", agents: [lead], acknowledgesRequest: false)
+            .environment(\.colorScheme, scheme)
+            .dynamicTypeSize(size), width: 260)
         #expect(image.height >= 44)
         let pixels = try renderedPixels(image)
         let center = image.width / 2
@@ -573,11 +566,22 @@ struct ComposerTests {
         view.subviews.flatMap { [$0] + descendants(of: $0) }
     }
 
+    /// Draws at 1x into the test's own bitmap before returning. `uiImage` leaves the pixels to an
+    /// image provider that rasterizes later, which once returned a correctly sized blank image on CI.
     private func render<Content: View>(_ content: Content, width: CGFloat? = nil) throws -> CGImage {
         let renderer = ImageRenderer(content: content)
-        renderer.scale = 1
         renderer.proposedSize = .init(width: width, height: nil)
-        return try #require(renderer.uiImage?.cgImage)
+        let space = try #require(CGColorSpace(name: CGColorSpace.sRGB))
+        var image: CGImage?
+        renderer.render { size, draw in
+            guard let context = CGContext(
+                data: nil, width: Int(size.width.rounded(.up)), height: Int(size.height.rounded(.up)),
+                bitsPerComponent: 8, bytesPerRow: 0, space: space,
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return }
+            draw(context)
+            image = context.makeImage()
+        }
+        return try #require(image)
     }
 
     private func renderedPixels(_ image: CGImage) throws -> [UInt8] {

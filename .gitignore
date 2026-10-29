@@ -5,4 +5,4 @@
 dist/
 *.p12
 *.p8
-node_modules/
+node_modules
