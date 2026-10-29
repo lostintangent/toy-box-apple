@@ -253,13 +253,9 @@ Agents never create these accounts, accept agreements, read private keys or set 
   regression coverage. Do not loosen assertions or add retries to turn an unexplained failure green.
 - Test gates and hooks suspend, never block a cooperative worker. CI runs ChannelClient with
   `LIBDISPATCH_COOPERATIVE_POOL_STRICT=1` to enforce this.
-- Client readiness waits use Observation and explicit per-mock request, held-response and stop
-  signals, not polling or an elapsed-time assertion. Their suites have a one-minute Swift Testing
-  hang limit. Keep actual heartbeat/backoff checks unchanged.
-- Read failure diagnostics only after the readiness wait fails, outside Observation tracking.
-  Record callback submissions, final phase, applied revision, presence and transport counters before
-  disconnecting. Submitted callbacks do not prove URLSession/event consumption. Keep the internal
-  per-API trace unset in ordinary clients, and never let recording send mock readiness notifications.
+- Client tests wait with `eventually`, through Observation and the mock's own request, held-response
+  and stop signals, never polling or an elapsed-time assertion. Their suites have a one-minute
+  Swift Testing hang limit.
 
 Current opt-ins and restoration conditions follow. Full failed runs, deadlines, logs, causal
 comparisons and retained regression contracts are in [docs/test-history.md](docs/test-history.md).
@@ -269,13 +265,12 @@ comparisons and retained regression contracts are in [docs/test-history.md](docs
 | `ToyBoxMobileTests/ComposerTests.audienceCapsuleIsSeparateFromIts44PointRowAndGrowsWithText` | `TOY_BOX_TEST_MOBILE_AUDIENCE_RENDERING=1` | Core, t465 `mobile-audience-capsule-rendering`: identify the transparent center-column render cause and add deterministic regression coverage before restoring |
 | `ImageViewerLiveTextTests.onlyTheSettledCurrentImageIsAnalyzedAndTheWindowRemembersIt` | `TOY_BOX_TEST_LIVE_TEXT_ANALYSIS=1` | Transcript: identify cause and add deterministic analysis-gating coverage |
 | `imageStripOverflowRespondsToWheelInput` | `TOY_BOX_TEST_IMAGE_STRIP_SCROLLING=1` | Composer: native wheel animation requires awake/unlocked Mac, so keep per-frame/WindowServer checks opt-in |
-| Three `MainActorTurnTests` occupancy probes | `TOY_BOX_TEST_MAIN_ACTOR_TIMING=1 bun run test --filter MainActorTurnTests` | Core, t340 (`client-test-actor-isolation`): isolate probes and replace timing-dependent readiness with controlled events. Run locally before changing launch network work |
 | `ChannelArtifactSessionTests.switchingScopeDiscardsTheVisitAndCancelsItsPendingLoad` | `TOY_BOX_TEST_ARTIFACT_SCOPE_TIMING=1` | Core, t340 `artifact-scope-readiness`: capture stalled stage, identify cause, add deterministic scope-replacement coverage |
 | `ChannelArtifactSessionTests.removingAnArtifactDuringLoadingRetainsItsIdentityWithoutPublishingTheResponse` | `TOY_BOX_TEST_ARTIFACT_SCOPE_TIMING=1` | Core, t340 `artifact-removal-readiness`: capture stalled stage, identify cause, add deterministic removal-during-load coverage |
 
 `TransportTests.storeReconnectsFromAppliedRevisionZero` and `recoverySnapshotReplacesCachedHistory`
 are restored to the default gate with immediate/held-response delivery, not
-`TOY_BOX_TEST_RECONNECT_TIMING=1`. The actor probes remain opt-in. Image-strip CI still covers both
+`TOY_BOX_TEST_RECONNECT_TIMING=1`. Image-strip CI still covers both
 scroller styles, equal height, overflow, native clip scrolling and trailing-edge visibility through
 `imageStripKeepsOneHeightWhenItsImagesOverflowAndStillScrolls`. Wheel failure diagnostics include
 geometry, window visibility, display sleep and session lock state. Live Text timeouts record
@@ -459,17 +454,14 @@ Edit only files you own. Ask the owner for anything else in the channel.
 - `ComposerDraft`, `ComposerImage` and `ChannelConnections` live in ChannelClient.
   Supply a native image-readability check to the shared draft. Mac uses its existing lazy NSImage
   validation and iPhone uses UIImage. Keep persistence keys and send-attempt identity unchanged.
-- `ChannelStore` stays `.connecting` through connects and quick retries, and reports `.stale` only
-  after `ReconnectPolicy.grace` of trying without getting live. Idle time never counts. Notices,
-  agent status and working presence change only on `phase.isUnavailable` (`.stale` or `.deleted`),
-  never with a view timer. Actions such as Send and management stay off until `phase.isLive`.
-  `ChannelCatalogStore` gives failing polls the same grace, retrying after `initialDelay`. A
-  requested `refresh()` reports its failure at once, because its caller waits on the outcome.
+- Connections use only the spec's Connection words: `connecting`, `connected`, `failed` and a
+  channel's `deleted`. Views change on `phase.isUnavailable`, never a timer, and actions wait for
+  `phase.isConnected`. Nothing waits on a phase change at disconnect, and background work never
+  lights the footer spinner.
 - `channelMatchesQuery` (ChannelKit) matches name, purpose and directory. Callers retain their
   existing query normalization and ordering. `ChannelAPI.channelURL(channelID:files:)` builds
-  browser routes, preserving deployment prefixes. `SidebarConnection` (ToyBoxUI) projects the
-  shared footer connection state and server label.
+  browser routes, preserving deployment prefixes. `SidebarFooter` (ToyBoxUI) projects the
+  catalog phase into the shared footer and names its server.
 - `ChannelSidebarProjection` (ChannelClient) takes the catalog and the host's current
   `openChannelIDs`. Its `channel`, `attention`, `agents`, `working` and `catalogAgents` methods
-  preserve the Mac's live-versus-catalog rules and granular observation. `RequestedCatalogRefresh`
-  tracks user-requested work separately from polling and joins refreshes already in flight.
+  preserve the Mac's live-versus-catalog rules and granular observation.

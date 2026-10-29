@@ -80,11 +80,11 @@ final class WindowSnapshot {
         let deadline = Date.now.addingTimeInterval(25)
         while Date.now < deadline {
             if let error = model.configurationError { throw LaunchArgumentError(error) }
-            if let catalog = model.catalog, let error = catalog.error, catalog.lastRefreshedAt == nil {
+            if let catalog = model.catalog, let error = catalog.phase.message, catalog.lastRefreshedAt == nil {
                 throw LaunchArgumentError(error)
             }
             if let store = model.catalog?.channel(id: id),
-               store.phase.isLive || options.snapshotState == "handoff-unavailable" {
+               store.phase.isConnected || options.snapshotState == "handoff-unavailable" {
                 // At launch SwiftUI briefly restores the split view's saved height as the window's
                 // minimum, which can clamp the first resize, so the size is applied again here.
                 applyRequestedSize()

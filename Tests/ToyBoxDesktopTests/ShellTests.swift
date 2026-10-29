@@ -748,24 +748,29 @@ struct SidebarFacesYieldTests {
 @MainActor
 @Suite("Sidebar connection footer")
 struct SidebarConnectionFooterTests {
-    @Test(arguments: [
-        (false, false, false, SidebarConnection.connecting),
-        (true, false, false, .connected),
-        (true, true, false, .reconnecting),
-        (false, true, false, .unreachable),
-        (true, true, true, .unreachable),
-        (false, false, true, .unreachable),
-    ])
-    func theDotFollowsTheCatalog(loaded: Bool, failing: Bool, fatal: Bool, state: SidebarConnection) {
-        #expect(SidebarConnection(loaded: loaded, failing: failing, fatal: fatal) == state)
+    @Test func theFooterFollowsTheCatalogPhase() {
+        func shown(_ phase: ChannelCatalogPhase?, loaded: Bool) -> String {
+            SidebarFooter(phase: phase, isLoaded: loaded).accessibilityValue
+        }
+        let offline = URLError(.cannotConnectToHost)
+        #expect(shown(.connecting, loaded: false) == "connecting")
+        #expect(shown(.connected, loaded: true) == "connected")
+        #expect(shown(.failed(offline), loaded: true) == "reconnecting")
+        #expect(shown(.failed(ChannelAPIError.http(status: 502, message: "Bad Gateway")), loaded: true) == "reconnecting")
+        #expect(shown(.failed(offline), loaded: false) == "can't connect")
+        #expect(shown(nil, loaded: true) == "can't connect", "The server address can't be used")
+        for status in [401, 403] {
+            #expect(shown(.failed(ChannelAPIError.http(status: status, message: "Refused")), loaded: true)
+                == "can't connect", "A refused sign-in never looks temporary")
+        }
     }
 
-    @Test func everyStateButConnectedNamesItselfAboveTheDot() {
-        #expect(SidebarConnection.connected.heading == nil)
-        #expect(SidebarConnection.reconnecting.heading == "Channels may be out of date")
-        #expect(SidebarConnection.unreachable.heading == "Can't connect to Toy Box")
-        #expect([SidebarConnection.connecting, .connected, .reconnecting, .unreachable].map(\.accessibilityValue)
-            == ["connecting", "connected", "reconnecting", "can't connect"])
+    @Test func everyFailureNamesItselfAboveTheDot() {
+        let offline = URLError(.cannotConnectToHost)
+        let footers = [SidebarFooter(phase: .connecting, isLoaded: false), SidebarFooter(phase: .connected, isLoaded: true),
+                       SidebarFooter(phase: .failed(offline), isLoaded: true), SidebarFooter(phase: .failed(offline), isLoaded: false)]
+        #expect(footers.map(\.heading) == [nil, nil, "Channels may be out of date", "Can't connect to Toy Box"])
+        #expect(footers.map(\.dot) == [.secondary, .green, .orange, .red])
     }
 
     @Test(arguments: [
@@ -779,21 +784,14 @@ struct SidebarConnectionFooterTests {
         ("not a server", "not a server"),
     ])
     func serverShowsTheHostAndOnlyAnUnusualPort(url: String, shown: String) {
-        #expect(SidebarConnection.server(url) == shown)
-    }
-
-    @Test func onlyARefusedAuthorizationIsFatal() {
-        #expect(SidebarConnection.isFatal(ChannelAPIError.http(status: 401, message: "Unauthorized")))
-        #expect(SidebarConnection.isFatal(ChannelAPIError.http(status: 403, message: "Forbidden")))
-        #expect(!SidebarConnection.isFatal(ChannelAPIError.http(status: 502, message: "Bad Gateway")))
-        #expect(!SidebarConnection.isFatal(URLError(.cannotConnectToHost)))
-        #expect(!SidebarConnection.isFatal(nil))
+        #expect(SidebarFooter.server(url) == shown)
     }
 
     @Test func theSpinnerKeepsTheSameStatusLineSize() {
         func size(spinning: Bool) -> CGSize {
             NSHostingView(rootView:
-                SidebarStatusLine(connection: .reconnecting, spinning: spinning, serverURL: "http://localhost:3100")
+                SidebarStatusLine(footer: SidebarFooter(phase: .failed(URLError(.timedOut)), isLoaded: true),
+                                  spinning: spinning, serverURL: "http://localhost:3100")
             ).fittingSize
         }
         let resting = size(spinning: false)

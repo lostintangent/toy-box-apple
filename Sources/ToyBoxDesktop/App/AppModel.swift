@@ -31,7 +31,8 @@ final class AppModel {
     let notifications = ChannelNotifications()
     private(set) var morningDigest: MorningDigest?
     let folders = ChannelFolders()
-    let requestedRefresh = RequestedCatalogRefresh()
+    /// Retry or View > Refresh is in flight, which spins the sidebar footer. Polls never do.
+    private(set) var isRefreshingCatalog = false
     let menuBar = MenuBarPresence()
     var navigationRequest: ChannelNavigationRequest?
     var newChannelRequest: UUID?
@@ -41,7 +42,7 @@ final class AppModel {
     @ObservationIgnored var openMainWindow: (() -> Void)?
     @ObservationIgnored private var menuBarLookups: [String: Int] = [:]
     @ObservationIgnored private var unhideObserver: NSObjectProtocol?
-    @ObservationIgnored let connections = ChannelConnections<ChannelStore>()
+    @ObservationIgnored let connections = ChannelConnections()
     @ObservationIgnored private let launchChannel = LaunchChannel()
     @ObservationIgnored private var launchChannelID: String?
     @ObservationIgnored private var windows: [UUID: String] = [:]
@@ -167,6 +168,7 @@ final class AppModel {
                 UserDefaults.standard.set(self.serverURL, forKey: AppConfiguration.serverURLKey)
             }
             catalog = ChannelCatalogStore(api: api)
+            isRefreshingCatalog = false
             configurationError = nil
             notifications.reset()
             dockAttention.reset()
@@ -183,7 +185,7 @@ final class AppModel {
     }
 
     /// Connects a store for a window, sheet or intent that shows it. Pair each with a release.
-    func acquire(_ store: ChannelStore) { connections.acquire(store) }
+    func hold(_ store: ChannelStore) { connections.hold(store) }
 
     /// The last release keeps the store connected for a few seconds, so switching back is live at once.
     func release(_ store: ChannelStore) { connections.release(store) }
@@ -299,8 +301,8 @@ final class AppModel {
 
     /// What the menu bar extra shows, from the same attention and working agents as the sidebar.
     var menuBarStatus: MenuBarStatus {
-        let unreachable = configurationError != nil || catalog?.error != nil
-            ? SidebarConnection.server(serverURL) : nil
+        let unreachable = configurationError != nil || catalog?.phase.message != nil
+            ? SidebarFooter.server(serverURL) : nil
         guard let catalog, catalog.state != nil else { return MenuBarStatus(unreachableHost: unreachable) }
         let inputs = catalog.channels.map { channel in
             let current = sidebarChannel(channel)
@@ -354,7 +356,7 @@ final class AppModel {
     private func observeMenuBarActivity() {
         let (status, hasCatalog) = withObservationTracking {
             _ = catalog?.lastRefreshedAt
-            return (menuBarStatus, catalog?.hasLoaded == true)
+            return (menuBarStatus, catalog?.isLoaded == true)
         } onChange: { [weak self] in
             Task { @MainActor in self?.observeMenuBarActivity() }
         }
@@ -437,7 +439,11 @@ final class AppModel {
     /// Retry and View > Refresh, the catalog refreshes someone asks for.
     func refreshCatalog() {
         guard let catalog else { return }
-        Task { await requestedRefresh.run(catalog) }
+        isRefreshingCatalog = true
+        Task {
+            await catalog.refresh()
+            if self.catalog === catalog { isRefreshingCatalog = false }
+        }
     }
 
     func openInToyBox(channelID: String) {

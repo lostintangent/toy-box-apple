@@ -38,7 +38,7 @@ struct SendAttemptTests {
         #expect(message.id == id)
         #expect(message.sequence == 17)
         #expect(store.state == nil)
-        #expect(store.phase == .idle)
+        #expect(store.phase == .connecting)
         #expect(store.sendAttempts.isEmpty)
         #expect(try await journal.load(server: api.baseURL, channelId: "test").isEmpty)
         #expect(mock.requests.count == 1)
@@ -73,7 +73,7 @@ struct SendAttemptTests {
         let retry = try await restored.postInBackground(id: id, content: "Keep my reply")
         #expect(retry == .alreadyAccepted(id: id))
         #expect(restored.sendAttempts.first?.phase == .confirmed)
-        #expect(restored.phase == .idle)
+        #expect(restored.phase == .connecting)
         #expect(try await journal.load(server: api.baseURL, channelId: "test") == restored.sendAttempts)
         #expect(try await restored.postInBackground(id: id, content: "Keep my reply") == retry)
         await #expect(throws: ChannelAPIError.invalidMessage(
@@ -94,7 +94,7 @@ struct SendAttemptTests {
         #expect(store.sendAttempts.first?.id == id)
         #expect(store.sendAttempts.first?.phase == .deliveryNotConfirmed)
         #expect(mock.requests.count == 1)
-        #expect(store.phase == .idle)
+        #expect(store.phase == .connecting)
     }
 
     @Test @MainActor func backgroundReplyDuringAnotherSendIsDurablyRetainedWithoutPosting() async throws {
@@ -170,7 +170,7 @@ struct SendAttemptTests {
         let store = ChannelStore(id: "test", api: try mock.api(), sendJournal: nil)
         store.connect()
         defer { store.disconnect() }
-        try await eventually { store.phase.isLive }
+        try await eventually { store.phase.isConnected }
         await #expect(throws: ChannelAPIError.http(status: 422, message: "Rejected")) {
             try await store.post(content: "Original")
         }
@@ -216,13 +216,13 @@ struct SendAttemptTests {
         let store = ChannelStore(id: "test", api: try mock.api(), sendJournal: nil)
         store.connect()
         defer { store.disconnect() }
-        try await eventually { store.phase.isLive }
+        try await eventually { store.phase.isConnected }
         await #expect(throws: URLError.self) { try await store.post(content: "Do not duplicate") }
         let attempt = try #require(store.sendAttempts.first)
         #expect(attempt.phase == .deliveryNotConfirmed)
         let result = try await store.retrySend(id: attempt.id)
         #expect(result == .alreadyAccepted(id: attempt.id))
-        try await eventually { store.phase.isLive && store.sendAttempts.isEmpty }
+        try await eventually { store.phase.isConnected && store.sendAttempts.isEmpty }
         let posts = mock.requests.filter { $0.httpMethod == "POST" }
         #expect(posts.count == 2)
         #expect(try posts.map { try Self.posted($0).id } == [attempt.id, attempt.id])
@@ -240,7 +240,7 @@ struct SendAttemptTests {
         let store = ChannelStore(id: "test", api: try mock.api(), sendJournal: nil)
         store.connect()
         defer { store.disconnect() }
-        try await eventually { store.phase.isLive }
+        try await eventually { store.phase.isConnected }
         #expect(store.lastSendFailure == nil)
         let id = UUID().uuidString
         let expectedError = ChannelAPIError.http(status: status, message: "Repeated failure")
@@ -261,7 +261,7 @@ struct SendAttemptTests {
         let posts = mock.requests.filter { $0.httpMethod == "POST" }
         #expect(try posts.map { try Self.posted($0).id } == [id, id])
         store.reconnect()
-        try await eventually { store.phase.isLive }
+        try await eventually { store.phase.isConnected }
         #expect(store.lastSendFailure == retry)
         try await store.discardSendAttempt(id: id)
         #expect(store.lastSendFailure == nil)
@@ -283,7 +283,7 @@ struct SendAttemptTests {
         let store = ChannelStore(id: "test", api: api, sendJournal: journal)
         store.connect()
         defer { store.disconnect() }
-        try await eventually { store.phase.isLive }
+        try await eventually { store.phase.isConnected }
         #expect(store.sendAttempts.first?.id == attempt.id)
         #expect(store.sendAttempts.first?.phase == (phase == .sending ? .deliveryNotConfirmed : phase))
         #expect(store.sendAttempts.first?.attachments == attempt.attachments)
@@ -318,12 +318,7 @@ struct SendAttemptTests {
         let mock = MockTransport { _, _ in
             try .stream([.init(type: "snapshot", state: testState(revision: 1, messages: [message]))])
         }
-        let received = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
-        defer { received.continuation.finish() }
-        var api = try mock.api()
-        api.observationTrace = { stage in
-            if stage == .eventReceived(type: "snapshot") { received.continuation.yield(()) }
-        }
+        let api = try mock.api()
         try await journal.save([.init(id: id, content: content, attachments: [],
                                       timestamp: "2026-10-01T00:00:00Z", phase: .sending)],
                                server: api.baseURL, channelId: "test")
@@ -337,13 +332,13 @@ struct SendAttemptTests {
         if snapshotArrivesFirst {
             var loads = started.stream.makeAsyncIterator()
             try #require(await loads.next() != nil)
-            var iterator = received.stream.makeAsyncIterator()
-            try #require(await iterator.next() != nil)
+            // The stream opened alongside the restore, so its snapshot is in flight.
+            try await eventually(observing: mock) { mock.requests.count == 1 }
             #expect(store.state == nil)
             #expect(store.phase == .connecting)
             release.continuation.yield()
         }
-        try await eventually { store.phase.isLive }
+        try await eventually { store.phase.isConnected }
         await #expect(throws: ChannelAPIError.self) { try await store.retrySend(id: "unknown") }
         #expect(store.state?.messages.map(\.id) == [id])
         #expect(store.sendAttempts.isEmpty)
@@ -365,11 +360,11 @@ struct SendAttemptTests {
         let store = ChannelStore(id: "test", api: try mock.api(), sendJournal: nil)
         store.connect()
         defer { store.disconnect() }
-        try await eventually { store.phase.isLive }
+        try await eventually { store.phase.isConnected }
         await #expect(throws: URLError.self) { try await store.post(id: id, content: content) }
         #expect(store.lastSendFailure?.messageId == id)
         store.reconnect()
-        try await eventually { store.phase.isLive && store.state?.messages.first?.id == id }
+        try await eventually { store.phase.isConnected && store.state?.messages.first?.id == id }
         #expect(store.lastSendFailure == nil)
         #expect(store.sendAttempts.isEmpty)
         #expect(mock.requests.filter { $0.httpMethod == "POST" }.count == 1)
@@ -385,7 +380,7 @@ struct SendAttemptTests {
         let store = ChannelStore(id: "test", api: try mock.api(), sendJournal: journal)
         store.connect()
         defer { store.disconnect() }
-        try await eventually { store.phase.isLive }
+        try await eventually { store.phase.isConnected }
         try FileManager.default.removeItem(at: directory)
         try Data("Not a directory".utf8).write(to: directory)
         let id = UUID().uuidString
@@ -413,7 +408,7 @@ struct SendAttemptTests {
         let store = ChannelStore(id: "test", api: try mock.api(), sendJournal: journal)
         store.connect()
         defer { store.disconnect() }
-        try await eventually { store.phase.isLive }
+        try await eventually { store.phase.isConnected }
         await #expect(throws: (any Error).self) { try await store.post(content: "Must not leave without its UUID") }
         #expect(store.attemptPersistenceError != nil)
         #expect(store.lastSendFailure == nil)

@@ -43,8 +43,8 @@ struct ChannelDetailView: View {
     /// The transcript, an error or the deleted state is on screen.
     private var hasFirstContent: Bool {
         switch store.phase {
-        case .stale, .deleted: true
-        case .idle, .connecting, .live: store.isLoaded
+        case .failed, .deleted: true
+        case .connecting, .connected: store.isLoaded
         }
     }
     private var wideInspector: Binding<Bool> {
@@ -183,7 +183,7 @@ struct ChannelDetailView: View {
                     Button("Copy Draft") { interaction.copyDraft?() }
                 }
             }
-        } else if !store.isLoaded, case .stale(let error, _) = store.phase {
+        } else if !store.isLoaded, case .failed(let error) = store.phase {
             ContentUnavailableView {
                 Label("Can't connect to Toy Box", systemImage: "wifi.exclamationmark")
             } description: {
@@ -202,7 +202,7 @@ struct ChannelDetailView: View {
                     .id(ObjectIdentifier(store))
             }
             .safeAreaBar(edge: .top, spacing: 0) {
-                if case .stale(let error, _) = store.phase {
+                if case .failed(let error) = store.phase {
                     staleBanner(error)
                 }
             }
@@ -268,7 +268,7 @@ struct ChannelDetailView: View {
         Divider()
         Button("New Channel…") { management.present(.newChannel) }
         Button("Edit Channel…") { management.present(.editChannel(channelId: store.id)) }
-            .disabled(!store.phase.isLive)
+            .disabled(!store.phase.isConnected)
     }
 
     static func badge(_ attention: ChannelAttention?) -> Text? {
@@ -352,13 +352,13 @@ struct ChannelDetailView: View {
             Menu {
                 Button("Open in Toy Box", systemImage: "arrow.up.forward.app") { model.openInToyBox(channelID: store.id) }
                 Button("Edit Channel…", systemImage: "pencil") { management.present(.editChannel(channelId: store.id)) }
-                    .disabled(!store.phase.isLive)
+                    .disabled(!store.phase.isConnected)
                 Button("Refresh", systemImage: "arrow.clockwise") { store.reconnect() }
                 Divider()
                 Button("Delete Channel…", systemImage: "trash", role: .destructive) {
                     management.present(.deleteChannel(channelId: store.id))
                 }
-                .disabled(!store.phase.isLive)
+                .disabled(!store.phase.isConnected)
             } label: {
                 Label("Channel Actions", systemImage: "ellipsis")
             }
@@ -405,7 +405,7 @@ private final class ColumnPresentation {
 
     func hold(_ store: ChannelStore, in model: AppModel) {
         guard store !== self.store else { return }
-        model.acquire(store)
+        model.hold(store)
         if let held = self.store { model.release(held) }
         self.store = store
     }

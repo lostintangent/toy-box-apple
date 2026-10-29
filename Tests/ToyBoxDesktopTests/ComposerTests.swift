@@ -15,11 +15,9 @@ import UniformTypeIdentifiers
 @MainActor @Suite(.timeLimit(.minutes(1)))
 struct ComposerTests {
     @Test func sendIsASpinnerOnlyWhileItsChannelConnectsAndExplainsOnlyOnceUnavailable() async throws {
-        #expect(ChannelConnectionPhase.idle.sendUnavailableReason == nil)
         #expect(ChannelConnectionPhase.connecting.sendUnavailableReason == nil)
-        #expect(ChannelConnectionPhase.live.sendUnavailableReason == nil)
-        #expect(ChannelConnectionPhase.stale(message: "Offline", retryAt: .now).sendUnavailableReason
-                == "Reconnect before sending")
+        #expect(ChannelConnectionPhase.connected.sendUnavailableReason == nil)
+        #expect(ChannelConnectionPhase.failed("Offline").sendUnavailableReason == "Reconnect before sending")
         #expect(ChannelConnectionPhase.deleted.sendUnavailableReason == "This channel was deleted")
 
         try await withDraft { draft, _ in
@@ -41,18 +39,15 @@ struct ComposerTests {
             func spinners(in view: NSView) -> Int {
                 (view is NSProgressIndicator ? 1 : 0) + view.subviews.reduce(0) { $0 + spinners(in: $1) }
             }
-            try await waitForUpdate(of: host, "the composer mounts") { composerInput(in: host) != nil }
-            #expect(store.phase == .idle)
-            #expect(spinners(in: host) == 0, "An idle channel keeps the ordinary disabled Send")
-
             store.connect()
+            try await waitForUpdate(of: host, "the composer mounts") { composerInput(in: host) != nil }
             #expect(store.phase == .connecting)
             try await waitForUpdate(of: host, "Send waits as a spinner") { spinners(in: host) == 1 }
 
             let channel = Channel(id: "test", name: "Test", model: .init(provider: "test", name: "test"),
                                   updatedAt: "2026-10-24T00:00:00Z")
             _ = try store.apply(.init(type: "snapshot", state: .init(revision: 1, channel: channel, lead: .lead(id: "lead"))))
-            #expect(store.phase.isLive)
+            #expect(store.phase.isConnected)
             try await waitForUpdate(of: host, "Send returns once live") { spinners(in: host) == 0 }
         }
     }

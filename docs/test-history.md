@@ -73,6 +73,11 @@ Incident records moved from AGENTS.md on 2026-10-27, with their evidence and res
 
 ## Main-actor probes, reconnect readiness and thumbnail decoding
 
+- On 2026-10-29, t483 removed the three `MainActorTurnTests` probes, `ReconnectReadinessTests`,
+  `ReadinessTests`, `MockTransport`'s lifecycle recording and readiness diagnostics, and the
+  internal observation trace, with the spec's Connection words. `bun run benchmark launch` measures
+  launch network work for real, and `TransportTests` keeps both reconnect cases in the gate. This
+  closes t340's actor-probe item. The history below explains why they existed.
 - The three `MainActorTurnTests` occupancy probes remain quarantined behind
   `TOY_BOX_TEST_MAIN_ACTOR_TIMING=1 bun run test --filter MainActorTurnTests`.
   The 2026-10-26 Mac run of `c4c761d` recorded nine Client readiness failures in

@@ -89,7 +89,7 @@ final class ChannelFollowController {
         if starting.contains(store.id) { return .starting }
         if entries[store.id] != nil { return .following }
         guard isRegistrationReady, currentRegistration != nil, catalog?.api.baseURL == store.api.baseURL,
-              store.phase.isLive, let state = store.state else { return .unavailable }
+              store.phase.isConnected, let state = store.state else { return .unavailable }
         let progress = channelTasksProgress(state.channel.tasks)
         return progress.total > progress.done ? .available : .unavailable
     }
@@ -103,7 +103,7 @@ final class ChannelFollowController {
                 await activity.end(activity.content)
             }
             guard isRegistrationReady, self.registration == registration, self.catalog?.api.baseURL == store.api.baseURL,
-                  starting.contains(store.id), store.phase.isLive, let state = store.state,
+                  starting.contains(store.id), store.phase.isConnected, let state = store.state,
                   channelTasksProgress(state.channel.tasks).done < state.channel.tasks.count
             else { throw Failure.obsolete }
             let date = now()

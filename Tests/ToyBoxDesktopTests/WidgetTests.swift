@@ -25,7 +25,7 @@ import Testing
             try JSONDecoder().decode(NeedsYouSnapshot.self, from: Data(contentsOf: file))
         }
         await catalog.refresh()
-        #expect(catalog.error == nil)
+        #expect(catalog.phase.message == nil)
         publisher.update(status: .init(), serverURL: server, hasCatalog: catalog.state != nil, now: now)
         let first = try read()
         let state = catalog.state
@@ -37,7 +37,7 @@ import Testing
         }
         now = start.addingTimeInterval(31 * 60)
         await catalog.refresh()
-        #expect(catalog.error == nil)
+        #expect(catalog.phase.message == nil)
         #expect(didRefresh.withLock { $0 })
         publisher.update(status: .init(), serverURL: server, hasCatalog: catalog.state != nil, now: now)
         let refreshed = try read()

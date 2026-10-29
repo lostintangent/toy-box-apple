@@ -73,7 +73,7 @@ struct ConversationTranscript: View {
     private var visibleReadSequence: Int? {
         // A viewer covers the transcript, so nothing beneath it counts as read.
         guard snapshot == nil, hasLanded, !isRevealing, pagingAnchor == nil, window.isKeyWindow,
-              scenePhase == .active, store.phase.isLive, viewer?.session == nil,
+              scenePhase == .active, store.phase.isConnected, viewer?.session == nil,
               !interaction.isArtifactViewerPresented, !find.blocksRead else { return nil }
         return visibleSequence
     }
@@ -158,8 +158,8 @@ struct ConversationTranscript: View {
                     }
                 }
                 .onDisappear { find.close() }
-                .task(id: store.phase.isLive) {
-                    guard store.phase.isLive, !hasLanded else { return }
+                .task(id: store.phase.isConnected) {
+                    guard store.phase.isConnected, !hasLanded else { return }
                     await land(using: proxy)
                 }
                 .task(id: interaction.isArtifactViewerPresented ? nil : interaction.revealRequestToken) {
@@ -206,7 +206,7 @@ struct ConversationTranscript: View {
             }
             .onChange(of: store.requestSequence, initial: true) { _, sequence in
                 let eligible = snapshot == nil && hasLanded && window.isKeyWindow
-                    && scenePhase == .active && store.phase.isLive
+                    && scenePhase == .active && store.phase.isConnected
                 guard requestAnnouncements.receive(sequence, isEligible: eligible),
                       let sequence else { return }
                 if let request = store.request, request.sequence == sequence,
@@ -383,7 +383,7 @@ struct ConversationTranscript: View {
                             catch { sendActionError = error.localizedDescription }
                         }
                     }
-                    .disabled(!store.phase.isLive || store.isSending)
+                    .disabled(!store.phase.isConnected || store.isSending)
                     .help("Send again with the original message ID. Never retried automatically.")
                 }
                 .font(.caption)
@@ -763,7 +763,7 @@ struct ConversationTranscript: View {
     /// Hides the rows of a transcript opening on its first unread message until that message is in
     /// place, so the first frame drawn never shows the bottom or a landing on its way there.
     private var hidesOpening: Bool {
-        opening.rowID != nil && !hasLanded && !isRevealing && store.phase.isLive
+        opening.rowID != nil && !hasLanded && !isRevealing && store.phase.isConnected
     }
 
     /// Resolved by the first body. A transcript that's already loaded opens directly on its first
@@ -772,7 +772,7 @@ struct ConversationTranscript: View {
     private func resolveOpening() {
         guard !opening.isResolved else { return }
         opening.isResolved = true
-        guard snapshot == nil, store.isLoaded, store.phase.isLive else { return }
+        guard snapshot == nil, store.isLoaded, store.phase.isConnected else { return }
         opening.plan = TranscriptLanding.opening(
             unreadAfter: store.unreadAfter, oldestSequence: store.messages.first?.sequence,
             hasOlderMessages: store.hasOlderMessages, rows: rows)

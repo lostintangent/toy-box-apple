@@ -214,14 +214,14 @@ final class PerformanceBenchmark {
         guard let meter else { return }
         _ = await settled()
         header()
-        var warm: [(frame: Double, span: Double, gap: Double, busy: Double, live: Double, wasLive: Bool)] = []
+        var warm: [(frame: Double, span: Double, gap: Double, busy: Double, connected: Double, wasConnected: Bool)] = []
         var lastSelection = ContinuousClock.now
         for round in 0..<8 {
             let target = round.isMultiple(of: 2) ? other : channelID
             let isWarm = store(target)?.isLoaded == true
             try? await Task.sleep(for: .milliseconds(300))
             _ = await settled(quiet: 0.3)
-            let wasLive = store(target)?.phase.isLive == true
+            let wasConnected = store(target)?.phase.isConnected == true
             meter.reset()
             let start = CACurrentMediaTime()
             lastSelection = .now
@@ -229,10 +229,10 @@ final class PerformanceBenchmark {
             let frame = await meter.passEnd()
             await load(target)
             // The main thread can't apply a connection's first event before the first frame ends.
-            let live = wasLive ? start : CACurrentMediaTime()
+            let connected = wasConnected ? start : CACurrentMediaTime()
             _ = await settled()
             let result = (frame: (frame - start) * 1000, span: meter.longestSpan * 1000, gap: meter.longestGap * 1000,
-                          busy: meter.busy * 1000, live: (live - start) * 1000, wasLive: wasLive)
+                          busy: meter.busy * 1000, connected: (connected - start) * 1000, wasConnected: wasConnected)
             if isWarm {
                 warm.append(result)
             } else {
@@ -247,15 +247,18 @@ final class PerformanceBenchmark {
               + "\(format(median(warm.map(\.frame).sorted()))) median first frame, "
               + "\(format(median(warm.map(\.busy).sorted()))) median busy, over \(warm.count) switches",
               value: median(spans), budget: Budget.warmSwitch)
-        info("Warm switch connection", "\(warm.filter(\.wasLive).count) of \(warm.count) still connected when "
-             + "selected, \(format(median(warm.map(\.live).sorted()))) median until live")
+        info("Warm switch connection", "\(warm.filter(\.wasConnected).count) of \(warm.count) still connected when "
+             + "selected, \(format(median(warm.map(\.connected).sorted()))) median until connected")
         await afterSwitching(since: lastSelection, channels: [channelID, other])
     }
 
     /// What leaving a channel costs: idle while its store lingers, then once the linger has ended.
     private func afterSwitching(since selection: ContinuousClock.Instant, channels: [String]) async {
         guard let meter else { return }
-        func connected() -> Int { channels.filter { store($0).map { $0.phase != .idle } ?? false }.count }
+        func connected() -> Int {
+            let held = model?.connections.stores ?? []
+            return channels.filter { id in held.contains { $0.id == id } }.count
+        }
         _ = await settled()
         let lingering = connected()
         meter.reset()
@@ -726,7 +729,7 @@ final class PerformanceBenchmark {
     private func load(_ id: String) async {
         await until("\(id) didn't load") { [weak self] in
             guard let store = self?.store(id) else { return false }
-            return store.isLoaded && store.phase.isLive
+            return store.isLoaded && store.phase.isConnected
         }
     }
 

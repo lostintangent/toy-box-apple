@@ -14,7 +14,7 @@ final class ChannelIntentsContext {
         var api: @MainActor () -> ChannelAPI?
         var store: @MainActor (String) -> ChannelStore?
         /// Keeps a store connected while an intent uses it, shared with any window showing it.
-        var acquire: @MainActor (ChannelStore) -> Void
+        var hold: @MainActor (ChannelStore) -> Void
         var release: @MainActor (ChannelStore) -> Void
         var open: @MainActor (String) -> Void
         var requests: @MainActor () async throws -> [WaitingRequestEntry] = { [] }
@@ -293,10 +293,10 @@ final class ChannelIntentsContext {
     /// window has it open.
     private func connected<T>(_ channelID: String, _ body: (ChannelStore) async throws -> T) async throws -> T {
         guard let store = host.store(channelID) else { throw ChannelIntentError.noServer }
-        host.acquire(store)
+        host.hold(store)
         defer { host.release(store) }
         let deadline = ContinuousClock.now + connectionTimeout
-        while !store.phase.isLive || store.state == nil {
+        while !store.phase.isConnected || store.state == nil {
             if store.phase == .deleted { throw ChannelIntentError.channelNotFound }
             guard ContinuousClock.now < deadline else { throw ChannelIntentError.unreachable }
             try await Task.sleep(for: .milliseconds(50))
@@ -312,7 +312,7 @@ extension ChannelIntentsContext {
         self.init(host: Host(
             api: { model.api },
             store: { model.catalog?.channel(id: $0) },
-            acquire: { model.acquire($0) },
+            hold: { model.hold($0) },
             release: { model.release($0) },
             open: { id in
                 NSApplication.shared.activate()
@@ -322,8 +322,8 @@ extension ChannelIntentsContext {
             requests: {
                 try await Self.resolveWaitingRequests {
                     guard let catalog = model.catalog else { throw ChannelIntentError.noServer }
-                    guard catalog.error == nil else { throw ChannelIntentError.unreachable }
-                    return (model.serverURL, catalog.hasLoaded, model.menuBarStatus.waiting)
+                    guard catalog.phase.message == nil else { throw ChannelIntentError.unreachable }
+                    return (model.serverURL, catalog.isLoaded, model.menuBarStatus.waiting)
                 }
             },
             revealRequest: { model.activate(channelID: $0, sequence: $1) }

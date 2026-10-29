@@ -38,7 +38,7 @@ struct OverviewTeamSection: View {
             }
             .listRowInsets(.vertical, 0)
             .accessibilityIdentifier("overview-add-agent")
-            .disabled(!store.phase.isLive)
+            .disabled(!store.phase.isConnected)
             .modifier(OverviewListRowBoundary(isLast: true))
         }
     }
@@ -64,7 +64,7 @@ struct OverviewTeamRow: View {
     private var status: ChannelAgentStatusPresentation {
         .init(presence: store.presence[agent.id], isAvailable: !store.phase.isUnavailable)
     }
-    private var canManage: Bool { store.phase.isLive && agent.deleted != true }
+    private var canManage: Bool { store.phase.isConnected && agent.deleted != true }
     private var active: Bool {
         isVisible && interaction.isInspectorPresented && management.flow == nil
             && !viewer.isPresented && session.navigationPath.isEmpty

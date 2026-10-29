@@ -37,7 +37,7 @@ struct ConnectionGraceTests {
         #expect(store.presence["test"]?.state == "working", "The last presence stays on screen while reconnecting")
 
         #expect(mock.sendPendingBody(try MockResponse.stream([resumed]).body) == 1)
-        try await eventually { store.phase.isLive }
+        try await eventually { store.phase.isConnected }
         #expect(store.phase.message == nil)
     }
 
@@ -54,7 +54,7 @@ struct ConnectionGraceTests {
         #expect(mock.requests.count == 3)
 
         #expect(mock.sendPendingBody(try MockResponse.stream([resumed]).body) == 1)
-        try await eventually { store.phase.isLive }
+        try await eventually { store.phase.isConnected }
         #expect(!store.phase.isUnavailable)
     }
 
@@ -69,7 +69,7 @@ struct ConnectionGraceTests {
         #expect(mock.requests.count == 1, "Nothing failed, so nothing retried")
 
         #expect(mock.sendPendingBody(try MockResponse.stream([.init(type: "snapshot", state: testState())]).body) == 1)
-        try await eventually { store.phase.isLive }
+        try await eventually { store.phase.isConnected }
     }
 
     @Test func idleTimeNeverCountsTowardTheGrace() async throws {
@@ -80,7 +80,7 @@ struct ConnectionGraceTests {
         store.disconnect()
         // Away for several graces, as when the phone is in the background.
         try await Task.sleep(for: .milliseconds(250))
-        #expect(store.phase == .idle, "An idle channel never becomes stale")
+        #expect(store.phase == .connecting, "A channel nobody holds never fails")
 
         store.connect()
         defer { store.disconnect() }

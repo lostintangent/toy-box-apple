@@ -173,7 +173,7 @@ extension ChannelSpotlight.Catalog {
             return
         }
         self.init(server: model.serverURL,
-                  channels: catalog.hasLoaded ? catalog.channels.map(ChannelSpotlight.Entry.init) : nil)
+                  channels: catalog.isLoaded ? catalog.channels.map(ChannelSpotlight.Entry.init) : nil)
     }
 }
 

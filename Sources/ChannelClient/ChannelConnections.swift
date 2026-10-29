@@ -1,26 +1,17 @@
-/// What the app's connection count needs from a channel store.
-@MainActor public protocol ConnectableChannel: AnyObject {
-    func captureUnreadBoundary()
-    func connect()
-    func disconnect()
-}
-
-extension ChannelStore: ConnectableChannel {}
-
 /// Counts who holds each channel store, and keeps a store its last holder released connected for a
-/// short linger. Switching back to a channel you just left then lands on a live store, without a
+/// short linger. Switching back to a channel you just left then lands on a connected store, without a
 /// first frame that shows the composer connecting and holds off the transcript's landing and the
 /// working row.
 ///
 /// A lingering store has no view, so it never marks read, and notifications come from the catalog,
 /// which a connection doesn't change. Only the newest `capacity` stores linger, so leaving a third
 /// channel disconnects the oldest at once.
-@MainActor public final class ChannelConnections<Store: ConnectableChannel> {
+@MainActor public final class ChannelConnections {
     public let linger: Duration
     public let capacity: Int
-    private var held: [ObjectIdentifier: (store: Store, count: Int)] = [:]
+    private var held: [ObjectIdentifier: (store: ChannelStore, count: Int)] = [:]
     /// Oldest first.
-    private var lingering: [(store: Store, expiry: Task<Void, Never>)] = []
+    private var lingering: [(store: ChannelStore, expiry: Task<Void, Never>)] = []
 
     public init(linger: Duration = .seconds(5), capacity: Int = 2) {
         self.linger = linger
@@ -28,10 +19,9 @@ extension ChannelStore: ConnectableChannel {}
     }
 
     /// Held and lingering stores, each with its own connection.
-    public var stores: [Store] { held.values.map(\.store) + lingering.map(\.store) }
-    public var lingeringCount: Int { lingering.count }
+    public var stores: [ChannelStore] { held.values.map(\.store) + lingering.map(\.store) }
 
-    public func acquire(_ store: Store) {
+    public func hold(_ store: ChannelStore) {
         let key = ObjectIdentifier(store)
         if let entry = held[key] {
             held[key] = (store, entry.count + 1)
@@ -47,7 +37,7 @@ extension ChannelStore: ConnectableChannel {}
         store.connect()
     }
 
-    public func release(_ store: Store) {
+    public func release(_ store: ChannelStore) {
         let key = ObjectIdentifier(store)
         guard let entry = held[key] else { return }
         guard entry.count == 1 else {

@@ -33,7 +33,7 @@ struct OverviewRoutineRow: View {
     private var requestedAt: Date? { state.requestedAt }
     private var recovery: ChannelManagementWriteRecovery { state.recovery }
 
-    private var canRun: Bool { store.phase.isLive && !pending && !recovery.blocksWrites }
+    private var canRun: Bool { store.phase.isConnected && !pending && !recovery.blocksWrites }
     private var schedule: String { (try? cronSummary(routine.schedule)) ?? routine.schedule }
     private var contentEndsSection: Bool { isLast && recovery.error == nil && recovery.state == nil }
 
@@ -64,7 +64,7 @@ struct OverviewRoutineRow: View {
                 management.present(.deleteRoutine(channelId: store.id, routineId: routine.id))
             }
             .frame(minHeight: 44)
-            .disabled(pending || !store.phase.isLive)
+            .disabled(pending || !store.phase.isConnected)
             .modifier(OverviewListRowBoundary(isLast: contentEndsSection))
         } label: {
             VStack(alignment: .leading, spacing: 4) {
@@ -80,7 +80,7 @@ struct OverviewRoutineRow: View {
             Button("Delete Routine", systemImage: "trash", role: .destructive) {
                 management.present(.deleteRoutine(channelId: store.id, routineId: routine.id))
             }
-            .disabled(pending || !store.phase.isLive)
+            .disabled(pending || !store.phase.isConnected)
         }
         .task(id: requestedAt) {
             guard let requestedAt else { return }

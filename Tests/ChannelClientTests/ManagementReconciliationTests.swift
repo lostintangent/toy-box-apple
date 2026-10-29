@@ -147,7 +147,7 @@ struct ManagementReconciliationTests {
         let detail = catalog.channel(id: "test")
         detail.connect()
         defer { detail.disconnect() }
-        try await eventually { detail.phase.isLive }
+        try await eventually { detail.phase.isConnected }
         await #expect(throws: ChannelAPIError.http(status: 500, message: "Unable to delete.")) {
             try await write.perform(using: api)
         }
@@ -161,14 +161,14 @@ struct ManagementReconciliationTests {
             #expect(review.state == updated)
             #expect(detail.state == updated)
             #expect(detail.unreadAfter == 1)
-            try await eventually { detail.phase.isLive }
+            try await eventually { detail.phase.isConnected }
             let snapshots = mock.requests.filter { $0.url?.path == "/api/v1/channels/test" && $0.url?.query == nil }
             #expect(snapshots.count == 2)
             #expect(snapshots.allSatisfy { $0.value(forHTTPHeaderField: "Last-Event-ID") == nil })
         }
         #expect(mock.requests.filter { $0.httpMethod == "DELETE" }.count == 1)
-        #expect(catalog.error == nil)
-        #expect(catalog.failure == nil)
+        #expect(catalog.phase.message == nil)
+        #expect(catalog.phase.failure == nil)
     }
 
     @Test @MainActor func uncertainCreateReturnsTheCatalogWithoutGuessingOrReposting() async throws {
@@ -208,15 +208,15 @@ struct ManagementReconciliationTests {
         let detail = catalog.channel(id: "test")
         detail.connect()
         defer { detail.disconnect() }
-        try await eventually { detail.phase.isLive }
+        try await eventually { detail.phase.isConnected }
         await #expect(throws: ChannelAPIError.self) {
             try await catalog.reconcileManagementWrite(channelId: "test")
         }
-        #expect(catalog.error != nil)
-        #expect(!catalog.isLoading)
+        #expect(catalog.phase.message != nil)
+        #expect(!catalog.isFetching)
         #expect(catalog.channels.isEmpty)
         #expect(detail.state == initial)
-        #expect(detail.phase.isLive)
+        #expect(detail.phase.isConnected)
         #expect(mock.requests.count == 3)
         #expect(mock.requests.allSatisfy { $0.httpMethod == "GET" })
     }
@@ -243,16 +243,16 @@ struct ManagementReconciliationTests {
         await #expect(throws: expected) {
             try await catalog.reconcileManagementWrite(channelId: "test")
         }
-        #expect(catalog.failure as? ChannelAPIError == expected)
-        #expect(catalog.error == expected.localizedDescription)
+        #expect(catalog.phase.failure as? ChannelAPIError == expected)
+        #expect(catalog.phase.message == expected.localizedDescription)
         #expect(catalog.state == initial)
         #expect(catalog.working == ["test"])
         #expect(catalog.lastRefreshedAt == refreshedAt)
-        #expect(!catalog.isLoading)
+        #expect(!catalog.isFetching)
         let review = try await catalog.reconcileManagementWrite()
         #expect(review.catalog == recovered)
-        #expect(catalog.failure == nil)
-        #expect(catalog.error == nil)
+        #expect(catalog.phase.failure == nil)
+        #expect(catalog.phase.message == nil)
         #expect(catalog.state == recovered)
         #expect(catalog.working.isEmpty)
         #expect(mock.requests.count == (failsDuringDetail ? 4 : 3))
@@ -281,7 +281,7 @@ struct ManagementReconciliationTests {
                 try await catalog.reconcileManagementWrite(channelId: "test")
             }
             #expect(detail.phase != .deleted)
-            #expect(catalog.error != nil)
+            #expect(catalog.phase.message != nil)
         }
         #expect(mock.requests.count == 3)
         #expect(mock.requests.allSatisfy { $0.httpMethod == "GET" })
@@ -300,11 +300,11 @@ struct ManagementReconciliationTests {
         let detail = catalog.channel(id: "test")
         detail.connect()
         defer { detail.disconnect() }
-        try await eventually { detail.phase.isLive }
+        try await eventually { detail.phase.isConnected }
         let review = try await catalog.reconcileManagementWrite(channelId: "test")
         #expect(review.state == live)
         #expect(detail.state == live)
-        #expect(detail.phase.isLive)
+        #expect(detail.phase.isConnected)
         #expect(mock.requests.count == 3)
     }
 
@@ -321,10 +321,10 @@ struct ManagementReconciliationTests {
             try await catalog.reconcileManagementWrite(channelId: "test")
         }
         #expect(mock.requests.count == 1)
-        #expect(catalog.isLoading)
+        #expect(catalog.isFetching)
         first.cancel()
         await #expect(throws: (any Error).self) { try await first.value }
-        #expect(!catalog.isLoading)
+        #expect(!catalog.isFetching)
     }
 
     @Test @MainActor func aSupersededPollCannotPublishItsErrorOverReconciliation() async throws {
@@ -345,8 +345,8 @@ struct ManagementReconciliationTests {
         await poll.value
         #expect(review.catalog == latest)
         #expect(catalog.channels == latest.channels)
-        #expect(catalog.error == nil)
-        #expect(catalog.failure == nil)
-        #expect(!catalog.isLoading)
+        #expect(catalog.phase.message == nil)
+        #expect(catalog.phase.failure == nil)
+        #expect(!catalog.isFetching)
     }
 }

@@ -80,7 +80,7 @@ struct MenuBarInbox: View {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Offline. Requests may be out of date.")
                             .font(.system(size: 12))
-                            .help(model.catalog?.error ?? "Can't connect to \(host)")
+                            .help(model.catalog?.phase.message ?? "Can't connect to \(host)")
                         Button("Retry") { model.refreshCatalog() }
                             .controlSize(.small)
                     }
@@ -97,7 +97,7 @@ struct MenuBarInbox: View {
                     working(status.workingSection, total: status.working.count)
                 }
                 if inbox.requests.isEmpty && status.working.isEmpty {
-                    if model.catalog?.hasLoaded == false && status.unreachableHost == nil {
+                    if model.catalog?.isLoaded == false && status.unreachableHost == nil {
                         Text("Connecting…").font(.system(size: 13)).foregroundStyle(.secondary)
                     } else if model.catalog?.channels.isEmpty == true && status.unreachableHost == nil {
                         empty(title: "No channels yet", detail: "Open Toy Box to create one.")
@@ -307,7 +307,7 @@ struct MenuBarInbox: View {
         collapseReply()
         replyError = nil
         replySession = AuxiliaryComposerSession(store: store, scope: .inboxReply(sequence: sequence), requester: requester)
-        model.acquire(store)
+        model.hold(store)
         holdsReplyConnection = true
         expandedChannelID = item.id
     }

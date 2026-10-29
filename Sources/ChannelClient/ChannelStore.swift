@@ -2,27 +2,56 @@ import ChannelKit
 import Foundation
 import Observation
 
+/// See the connection glossary in docs/spec.md.
 public enum ChannelConnectionPhase: Equatable, Sendable {
-    case idle
-    /// Connecting or reconnecting, quietly, for up to the reconnect policy's grace.
+    /// Not connected yet and not failed: a first connect, a quiet retry within the grace, or a
+    /// channel nobody holds.
     case connecting
-    case live
-    /// The channel has tried for longer than the grace without getting live.
-    case stale(message: String, retryAt: Date)
+    case connected
+    /// The channel tried for longer than the grace without connecting. Retrying continues.
+    case failed(String)
     case deleted
 
-    public var isLive: Bool { self == .live }
-    /// Whether the channel can't get live or was deleted. A composer explains why Send is off only
-    /// then, and says nothing while the channel is idle or connecting.
+    public var isConnected: Bool { self == .connected }
+    /// Whether the channel failed or was deleted, the only phases that change what's on screen.
     public var isUnavailable: Bool {
         switch self {
-        case .stale, .deleted: true
-        case .idle, .connecting, .live: false
+        case .failed, .deleted: true
+        case .connecting, .connected: false
         }
     }
     public var message: String? {
-        guard case .stale(let message, _) = self else { return nil }
+        guard case .failed(let message) = self else { return nil }
         return message
+    }
+}
+
+/// See the connection glossary in docs/spec.md. A catalog has no stream to lose, so it's
+/// `.connecting` only before its first outcome.
+public enum ChannelCatalogPhase: Equatable, Sendable {
+    case connecting
+    /// The last refresh succeeded, or polls have failed for less than the grace.
+    case connected
+    /// A refresh someone asked for failed, or polls failed for the grace. Polling continues. It keeps
+    /// the typed error, since a sign-in failure reports differently and the widget rethrows it.
+    case failed(any Error)
+
+    public var failure: (any Error)? {
+        guard case .failed(let error) = self else { return nil }
+        return error
+    }
+    public var message: String? { failure?.localizedDescription }
+
+    /// A failure that repeats the current one is equal to it, so polls that keep failing the same
+    /// way don't notify on each attempt.
+    public static func == (lhs: Self, rhs: Self) -> Bool {
+        switch (lhs, rhs) {
+        case (.connecting, .connecting), (.connected, .connected): true
+        case let (.failed(lhs), .failed(rhs)):
+            if let lhs = lhs as? ChannelAPIError, let rhs = rhs as? ChannelAPIError { lhs == rhs }
+            else { type(of: lhs) == type(of: rhs) && lhs.localizedDescription == rhs.localizedDescription }
+        default: false
+        }
     }
 }
 
@@ -71,7 +100,7 @@ public final class ChannelStore {
     /// Whether a snapshot has arrived, without observing anything that changes after it.
     public var isLoaded: Bool { details != nil }
 
-    public private(set) var phase: ChannelConnectionPhase = .idle
+    public private(set) var phase: ChannelConnectionPhase = .connecting
     public private(set) var unreadAfter: Int?
     public private(set) var isLoadingOlder = false
     public private(set) var hasOlderMessages = true
@@ -85,11 +114,14 @@ public final class ChannelStore {
     public private(set) var optimisticMessageIds: Set<String> = []
 
     @ObservationIgnored private var observation: Task<Void, Never>?
+    /// From `connect()` until `disconnect()`. Internal and unobserved, so tests check a disconnect
+    /// here, since the phase it leaves is `.connecting` either way.
+    var isTrying: Bool { observation != nil }
     @ObservationIgnored private var generation = UUID()
     /// Ends a quiet `.connecting` period once it outlasts the reconnect policy's grace.
     @ObservationIgnored private var grace: Task<Void, Never>?
-    /// The latest failure during the quiet period, which `phase` reports if the grace runs out.
-    @ObservationIgnored private var quietFailure: ChannelConnectionPhase?
+    /// The latest failure while connecting, which `phase` reports if the grace runs out.
+    @ObservationIgnored private var lastFailure: String?
     @ObservationIgnored private var capturedUnread = false
     @ObservationIgnored private var historyGeneration = UUID()
     @ObservationIgnored private var markingRead = false
@@ -113,20 +145,21 @@ public final class ChannelStore {
         grace?.cancel()
     }
 
-    /// Starts the stream and the outbox restore at once. Events are read off the main actor and
-    /// each one is queued for it as soon as it decodes. Iterating the stream from the main actor
-    /// would hop off and back even for a buffered event, which at launch held the first snapshot
-    /// until after the window's first render.
+    /// Starts the stream and the outbox restore at once, then keeps retrying until `disconnect()`.
+    /// Events are read off the main actor and each one is queued for it as soon as it decodes.
+    /// Iterating the stream from the main actor would hop off and back even for a buffered event,
+    /// which at launch held the first snapshot until after the window's first render.
     public func connect() {
         guard observation == nil, phase != .deleted else { return }
         generation = UUID()
         let token = generation
-        beginTrying(token: token)
+        startGrace(token: token)
         let restore = attemptsRestored ? nil : restoreSendAttemptsConcurrently()
-        let trace = api.observationTrace
         var first: AsyncThrowingStream<ChannelObservationEvent, any Error>? =
             api.observe(channelId: id, after: state?.revision)
         observation = Task.detached(priority: Task.currentPriority) { [weak self] in
+            // Events reconcile restored send attempts, so they wait for the restore.
+            await restore?.value
             // Each stream lives only inside `do`, so leaving it for any reason closes the request.
             var next = first.take()
             var attempt = 0
@@ -134,88 +167,74 @@ public final class ChannelStore {
                 do {
                     guard let events = next.take() else { return }
                     for try await event in events {
-                        guard try await self?.receive(event, token: token, after: restore) == true else { return }
-                        trace?(.eventHandled(type: event.type))
+                        guard try await self?.receive(event, token: token) == true else { return }
                         if event.type == "snapshot" || event.type == "resumed" { attempt = 0 }
                     }
                     throw ChannelAPIError.streamEnded
                 } catch {
-                    trace?(.reconnectPending(attempt: attempt))
-                    guard let delay = await self?.scheduleReconnect(after: error, attempt: attempt, token: token)
+                    guard let delay = await self?.retry(after: error, attempt: attempt, token: token)
                     else { return }
                     attempt += 1
                     do { try await Task.sleep(for: .seconds(delay)) }
                     catch { return }
-                    trace?(.reconnectDelayElapsed)
-                    next = await self?.resumeObservation(token: token)
+                    next = await self?.reopen(token: token)
                 }
             }
         }
     }
 
-    /// Applies an observed event once restored send attempts are known, so the event can
-    /// reconcile them. Returns whether observation continues.
-    private func receive(_ event: ChannelObservationEvent, token: UUID,
-                         after restore: Task<Void, Never>?) async throws -> Bool {
-        api.observationTrace?(.eventReceived(type: event.type))
-        await restore?.value
+    /// Applies an observed event. Returns whether observation continues.
+    private func receive(_ event: ChannelObservationEvent, token: UUID) throws -> Bool {
         guard !Task.isCancelled, generation == token else { return false }
-        let terminal = try apply(event)
-        api.observationTrace?(.eventApplied(type: event.type, revision: state?.revision))
-        return !terminal
+        return try !apply(event)
     }
 
-    private func scheduleReconnect(after error: any Error, attempt: Int, token: UUID) -> TimeInterval? {
+    /// Records a failed attempt and returns the backoff before the next one. A connected channel
+    /// goes back to `.connecting` and a failed one reports the latest failure.
+    private func retry(after error: any Error, attempt: Int, token: UUID) -> TimeInterval? {
         guard !Task.isCancelled, generation == token else { return nil }
-        let delay = reconnectPolicy.delay(attempt: attempt)
-        let failure = ChannelConnectionPhase.stale(message: error.localizedDescription,
-                                                   retryAt: Date.now.addingTimeInterval(delay))
         switch phase {
-        case .live:
-            beginTrying(token: token)
-            quietFailure = failure
-        case .connecting: quietFailure = failure
-        case .stale: phase = failure
-        case .idle, .deleted: break
+        case .connected: startGrace(token: token)
+        case .failed: phase = .failed(error.localizedDescription)
+        case .connecting, .deleted: break
         }
-        api.observationTrace?(.reconnectScheduled(attempt: attempt, delay: delay, after: state?.revision))
-        return delay
+        lastFailure = error.localizedDescription
+        return reconnectPolicy.delay(attempt: attempt)
     }
 
-    /// Says `.connecting` until the channel gets live, or until it has tried for the grace without
-    /// getting live, which reports the latest failure as `.stale`. Only trying counts, never idle.
-    private func beginTrying(token: UUID) {
-        stopTrying()
+    private func reopen(token: UUID) -> AsyncThrowingStream<ChannelObservationEvent, any Error>? {
+        guard !Task.isCancelled, generation == token else { return nil }
+        return api.observe(channelId: id, after: state?.revision)
+    }
+
+    /// Says `.connecting` until the stream connects, or until it has tried for the grace without
+    /// connecting, which reports the latest failure as `.failed`. Only time spent trying counts.
+    private func startGrace(token: UUID) {
+        stopGrace()
         phase = .connecting
-        let grace = reconnectPolicy.grace
-        self.grace = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(grace))
+        let seconds = reconnectPolicy.grace
+        grace = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(seconds))
             guard !Task.isCancelled, let self, generation == token, phase == .connecting else { return }
-            self.grace = nil
-            phase = quietFailure ?? .stale(message: Self.unansweredConnect, retryAt: .now)
+            phase = .failed(lastFailure ?? Self.unansweredConnect)
         }
     }
 
-    private func stopTrying() {
+    private func stopGrace() {
         grace?.cancel()
         grace = nil
-        quietFailure = nil
+        lastFailure = nil
     }
 
     static let unansweredConnect = "The server hasn't responded yet. Still trying."
 
-    private func resumeObservation(token: UUID) -> AsyncThrowingStream<ChannelObservationEvent, any Error>? {
-        guard !Task.isCancelled, generation == token else { return nil }
-        api.observationTrace?(.reconnectRequested(after: state?.revision))
-        return api.observe(channelId: id, after: state?.revision)
-    }
-
+    /// Stops trying. Nothing waits on the phase this leaves, `.connecting` unless deleted.
     public func disconnect() {
         generation = UUID()
         observation?.cancel()
         observation = nil
-        stopTrying()
-        if phase != .deleted { phase = .idle }
+        stopGrace()
+        if phase != .deleted { phase = .connecting }
     }
 
     public func reconnect() {
@@ -229,7 +248,7 @@ public final class ChannelStore {
         disconnect()
         _ = try apply(.init(type: "snapshot", state: snapshot))
         if wasObserving { connect() }
-        else { phase = .idle }
+        else { phase = .connecting }
         return snapshot
     }
 
@@ -289,7 +308,7 @@ public final class ChannelStore {
     @discardableResult
     public func post(id suppliedId: String? = nil, content: String,
                      attachments: [ChannelAttachment] = []) async throws -> ChannelSendResult {
-        try await post(id: suppliedId, content: content, attachments: attachments, requiresLiveConnection: true)
+        try await post(id: suppliedId, content: content, attachments: attachments, requiresConnection: true)
     }
 
     /// Persists before sending once, without starting or waiting for the channel's stream.
@@ -297,7 +316,7 @@ public final class ChannelStore {
     public func postInBackground(id: String, content: String) async throws -> ChannelSendResult {
         let result: ChannelSendResult
         do {
-            result = try await post(id: id, content: content, attachments: [], requiresLiveConnection: false)
+            result = try await post(id: id, content: content, attachments: [], requiresConnection: false)
         } catch {
             if sendAttempts.contains(where: { $0.id == id && $0.canRetry }) {
                 try await persistSendAttempts()
@@ -312,16 +331,16 @@ public final class ChannelStore {
     }
 
     private func post(id suppliedId: String?, content: String, attachments: [ChannelAttachment],
-                      requiresLiveConnection: Bool) async throws -> ChannelSendResult {
+                      requiresConnection: Bool) async throws -> ChannelSendResult {
         try await restoreSendAttempts()
-        guard !requiresLiveConnection || (phase.isLive && state != nil) else {
+        guard !requiresConnection || (phase.isConnected && state != nil) else {
             throw ChannelAPIError.disconnected
         }
-        if !requiresLiveConnection, phase == .deleted {
+        if !requiresConnection, phase == .deleted {
             throw ChannelAPIError.http(status: 404, message: "Channel not found.")
         }
         let busyError = ChannelAPIError.invalidMessage("A message is already being sent.")
-        guard !isSending || !requiresLiveConnection else { throw busyError }
+        guard !isSending || !requiresConnection else { throw busyError }
         let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty || !attachments.isEmpty else {
             throw ChannelAPIError.invalidMessage("A message or attachment is required.")
@@ -336,7 +355,7 @@ public final class ChannelStore {
             }
             if existing.phase == .confirmed { return .alreadyAccepted(id: id) }
             guard !isSending else { throw busyError }
-            return try await retrySend(id: id, requiresLiveConnection: requiresLiveConnection)
+            return try await retrySend(id: id, requiresConnection: requiresConnection)
         }
         if let committed = state?.messages.first(where: { $0.id == id }) {
             guard committed.sender == .user, committed.content == .text(trimmed),
@@ -354,23 +373,23 @@ public final class ChannelStore {
             recordSendFailure(id: id, phase: .notSent, error: busyError.localizedDescription)
             throw busyError
         }
-        return try await deliver(attempt, requiresLiveConnection: requiresLiveConnection)
+        return try await deliver(attempt, requiresConnection: requiresConnection)
     }
 
     @discardableResult
     public func retrySend(id: String) async throws -> ChannelSendResult {
-        try await retrySend(id: id, requiresLiveConnection: true)
+        try await retrySend(id: id, requiresConnection: true)
     }
 
-    private func retrySend(id: String, requiresLiveConnection: Bool) async throws -> ChannelSendResult {
+    private func retrySend(id: String, requiresConnection: Bool) async throws -> ChannelSendResult {
         try await restoreSendAttempts()
-        guard !requiresLiveConnection || phase.isLive else { throw ChannelAPIError.disconnected }
+        guard !requiresConnection || phase.isConnected else { throw ChannelAPIError.disconnected }
         guard !isSending else { throw ChannelAPIError.invalidMessage("A message is already being sent.") }
         guard let attempt = sendAttempts.first(where: { $0.id == id }), attempt.canRetry else {
             throw ChannelAPIError.invalidMessage("This send attempt cannot be repeated.")
         }
         updateAttempt(id: id, phase: .sending, error: nil)
-        return try await deliver(attempt, requiresLiveConnection: requiresLiveConnection)
+        return try await deliver(attempt, requiresConnection: requiresConnection)
     }
 
     public func discardSendAttempt(id: String) async throws {
@@ -396,7 +415,7 @@ public final class ChannelStore {
     }
 
     private func deliver(_ attempt: ChannelSendAttempt,
-                         requiresLiveConnection: Bool) async throws -> ChannelSendResult {
+                         requiresConnection: Bool) async throws -> ChannelSendResult {
         isSending = true
         sendError = nil
         lastSendFailure = nil
@@ -411,8 +430,8 @@ public final class ChannelStore {
             reconcileSend(id: attempt.id)
             return .committed(committed)
         }
-        guard (!requiresLiveConnection || phase.isLive), phase != .deleted else {
-            let error: ChannelAPIError = !requiresLiveConnection && phase == .deleted
+        guard (!requiresConnection || phase.isConnected), phase != .deleted else {
+            let error: ChannelAPIError = !requiresConnection && phase == .deleted
                 ? .http(status: 404, message: "Channel not found.") : .disconnected
             recordSendFailure(id: attempt.id, phase: .notSent, error: error.localizedDescription)
             saveAttemptsInBackground()
@@ -435,7 +454,7 @@ public final class ChannelStore {
             }
             updateAttempt(id: attempt.id, phase: .confirmed, error: nil)
             saveAttemptsInBackground()
-            if requiresLiveConnection { reconnect() }
+            if requiresConnection { reconnect() }
             return .alreadyAccepted(id: attempt.id)
         } catch {
             if let message = state?.messages.first(where: { $0.id == attempt.id }) {
@@ -552,13 +571,13 @@ public final class ChannelStore {
     }
 
     public func markRead(through sequence: Int) async {
-        guard phase.isLive, let channel = state?.channel else { return }
+        guard phase.isConnected, let channel = state?.channel else { return }
         pendingRead = max(pendingRead, min(sequence, channel.latestSequence))
         guard !markingRead, pendingRead > max(channel.seenThrough, acknowledgedRead) else { return }
         markingRead = true
         readError = nil
         defer { markingRead = false }
-        while let current = state?.channel, pendingRead > max(current.seenThrough, acknowledgedRead), phase.isLive {
+        while let current = state?.channel, pendingRead > max(current.seenThrough, acknowledgedRead), phase.isConnected {
             let target = pendingRead
             do {
                 let seen = try await api.markRead(channelId: id, sequence: target)
@@ -573,7 +592,7 @@ public final class ChannelStore {
 
     func apply(_ event: ChannelObservationEvent) throws -> Bool {
         if event.type == "deleted" {
-            stopTrying()
+            stopGrace()
             phase = .deleted
             observation = nil
             return true
@@ -601,8 +620,8 @@ public final class ChannelStore {
             if event.type == "resumed" {
                 for attempt in sendAttempts where attempt.phase == .confirmed { reconcileSend(id: attempt.id) }
             }
-            stopTrying()
-            phase = .live
+            stopGrace()
+            phase = .connected
         }
         return false
     }
@@ -639,12 +658,10 @@ public final class ChannelCatalogStore {
     public var members: [ChannelMember] { state?.members ?? [] }
     public private(set) var working: Set<String> = []
     public private(set) var isActive = true
-    public private(set) var isLoading = false
-    public private(set) var error: String?
-    public private(set) var failure: (any Error)?
-    /// Whether any catalog has arrived. Unlike `lastRefreshedAt`, it changes once, so a view that
-    /// only asks whether the catalog loaded doesn't re-render on every poll.
-    public private(set) var hasLoaded = false
+    public private(set) var phase: ChannelCatalogPhase = .connecting
+    /// Whether a catalog has arrived. It stays true through failures, so the rows stay, and unlike
+    /// `lastRefreshedAt` it changes once, so a view that asks only this doesn't re-render on polls.
+    public private(set) var isLoaded = false
     public private(set) var lastRefreshedAt: Date?
     @ObservationIgnored private var polling: Task<Void, Never>?
     @ObservationIgnored private var pollingDelay: Task<Void, Never>?
@@ -655,8 +672,20 @@ public final class ChannelCatalogStore {
     @ObservationIgnored private let reconnectPolicy: ReconnectPolicy
     /// When the polls that are failing without reporting it began. Only polling counts.
     @ObservationIgnored private var failingSince: Date?
-    /// Whether a requested refresh joined the attempt in flight, so its failure reports at once.
-    @ObservationIgnored private var isRequested = false
+    /// Whether someone asked for the attempt in flight, so its failure reports at once. Internal and
+    /// observed, so tests can wait for a requested refresh to join a poll.
+    private(set) var isRequested = false
+    /// A refresh or management check is in flight. When it ends, the refreshes that joined it return.
+    /// Internal, so no view spins for background work. Tests wait on it.
+    private(set) var isFetching = false {
+        didSet {
+            guard !isFetching else { return }
+            let joined = joiners
+            joiners = []
+            for joiner in joined { joiner.resume() }
+        }
+    }
+    @ObservationIgnored private var joiners: [CheckedContinuation<Void, Never>] = []
     public var pollingInterval: TimeInterval { isActive ? activePollingInterval : 15 }
 
     public init(api: ChannelAPI, reconnectPolicy: ReconnectPolicy = .init()) {
@@ -675,25 +704,27 @@ public final class ChannelCatalogStore {
         return store
     }
 
-    /// Reports a failure at once, since the caller waits on the outcome. A poll that fails stays
-    /// quiet and retries promptly until polls have failed for the grace, the way a channel stays
-    /// `.connecting`, so a failed request on coming back to the app shows nothing.
+    /// A refresh someone asked for. It reports a failure at once, since the caller waits on the
+    /// outcome, and joins an attempt already in flight instead of returning early. A poll that fails
+    /// stays quiet and retries promptly until polls have failed for the grace, the way a channel
+    /// stays `.connecting`, so a failed request on coming back to the app shows nothing.
     public func refresh() async {
         await refresh(prefetched: nil, requested: true)
     }
 
     private func refresh(prefetched: Task<ChannelCatalog, any Error>?, requested: Bool) async {
-        guard !isLoading else {
+        if isFetching {
             prefetched?.cancel()
-            if requested { isRequested = true }
-            return
+            guard requested else { return }
+            isRequested = true
+            return await withCheckedContinuation { joiners.append($0) }
         }
         let token = UUID()
         let started = Date.now
         catalogGeneration = token
         isRequested = requested
-        isLoading = true
-        defer { if catalogGeneration == token { isLoading = false } }
+        isFetching = true
+        defer { if catalogGeneration == token { isFetching = false } }
         do {
             let catalog = if let prefetched {
                 try await withTaskCancellationHandler { try await prefetched.value }
@@ -707,12 +738,12 @@ public final class ChannelCatalogStore {
             guard !Task.isCancelled, !(error is CancellationError),
                   (error as? URLError)?.code != .cancelled,
                   catalogGeneration == token else { return }
-            if !isRequested, failure == nil {
+            if !isRequested, phase.failure == nil {
                 let since = failingSince ?? started
                 failingSince = since
                 guard Date.now.timeIntervalSince(since) >= reconnectPolicy.grace else { return }
             }
-            setFailure(error)
+            phase = .failed(error)
         }
     }
 
@@ -722,10 +753,10 @@ public final class ChannelCatalogStore {
         }
         reconcilingManagement = true
         catalogGeneration = UUID()
-        isLoading = true
+        isFetching = true
         defer {
             reconcilingManagement = false
-            isLoading = false
+            isFetching = false
         }
         do {
             var catalog = try await api.catalog()
@@ -746,38 +777,20 @@ public final class ChannelCatalogStore {
             applyCatalog(catalog)
             return .init(catalog: catalog, channelId: channelId, state: snapshot)
         } catch {
-            setFailure(error)
+            phase = .failed(error)
             throw error
         }
     }
 
-    /// A poll that changes nothing announces only `lastRefreshedAt` and `isLoading`, so the sidebar
-    /// and its rows don't re-render every few seconds. `@Observable` skips assigning an equal
-    /// value, and only `failure`, which isn't Equatable, needs its own check.
+    /// A poll that changes nothing announces only `lastRefreshedAt`, so the sidebar and its rows
+    /// don't re-render every few seconds. `@Observable` skips assigning an equal value.
     private func applyCatalog(_ catalog: ChannelCatalog) {
         state = catalog
         working = Set(catalog.working)
-        hasLoaded = true
+        isLoaded = true
         lastRefreshedAt = .now
         failingSince = nil
-        setFailure(nil)
-    }
-
-    /// A failure that repeats the current one keeps it, so polls that keep failing the same way
-    /// don't notify on each attempt.
-    private func setFailure(_ new: (any Error)?) {
-        switch (failure, new) {
-        case (nil, nil): return
-        case let (current?, new?) where Self.isSameFailure(current, new): return
-        default:
-            error = new?.localizedDescription
-            failure = new
-        }
-    }
-
-    private static func isSameFailure(_ lhs: any Error, _ rhs: any Error) -> Bool {
-        if let lhs = lhs as? ChannelAPIError, let rhs = rhs as? ChannelAPIError { return lhs == rhs }
-        return type(of: lhs) == type(of: rhs) && lhs.localizedDescription == rhs.localizedDescription
+        phase = .connected
     }
 
     /// Requests the first catalog immediately. A main-actor task would send it only on the main
@@ -808,7 +821,7 @@ public final class ChannelCatalogStore {
     }
 
     private var nextPollDelay: TimeInterval {
-        failingSince != nil && failure == nil ? reconnectPolicy.initialDelay : pollingInterval
+        failingSince != nil && phase.failure == nil ? reconnectPolicy.initialDelay : pollingInterval
     }
 
     public func setActive(_ active: Bool) {

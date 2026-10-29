@@ -161,7 +161,7 @@ struct SettingsView: View {
                 let catalog = model.catalog
                 await model.refreshCatalog()
                 guard model.catalog === catalog else { return }
-                useFailure = catalog?.error
+                useFailure = catalog?.phase.message
             } catch { useFailure = error.localizedDescription }
         }
     }

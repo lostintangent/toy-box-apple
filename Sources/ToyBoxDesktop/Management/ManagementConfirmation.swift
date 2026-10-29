@@ -88,7 +88,7 @@ struct ManagementConfirmation: View {
                     .keyboardShortcut(.cancelAction)
                     .disabled(isDeleting)
                 Button(isDeleting ? "Deleting..." : buttonTitle, role: .destructive) { remove() }
-                    .disabled(isDeleting || recovery.blocksWrites || !exists || !store.phase.isLive)
+                    .disabled(isDeleting || recovery.blocksWrites || !exists || !store.phase.isConnected)
             }
         }
         .padding(24)
@@ -97,7 +97,7 @@ struct ManagementConfirmation: View {
     }
 
     private func remove() {
-        guard !isDeleting, !recovery.blocksWrites, exists, store.phase.isLive else { return }
+        guard !isDeleting, !recovery.blocksWrites, exists, store.phase.isConnected else { return }
         isDeleting = true
         recovery.clearError()
         Task {

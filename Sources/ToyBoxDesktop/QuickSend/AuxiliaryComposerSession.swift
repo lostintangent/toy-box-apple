@@ -79,7 +79,7 @@ final class AuxiliaryComposerSession {
 
     var canSend: Bool {
         channelCanSend(
-            isLive: store.phase.isLive, isSending: store.isSending, isSubmitting: isSubmitting,
+            isConnected: store.phase.isConnected, isSending: store.isSending, isSubmitting: isSubmitting,
             hasContent: !requestChanged && confirmation == nil && draft.hasContent,
             isLoadingImages: draft.isLoadingImages, hasUnreadableImage: draft.hasUnreadableImage,
             textUTF16Count: draft.text.utf16.count

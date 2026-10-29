@@ -66,27 +66,27 @@ struct SettingsView: View {
                 Text("Use an HTTP or HTTPS URL, including any server path prefix.")
                     .font(.caption).foregroundStyle(.secondary)
                 HStack {
-                    Button(connection.isTesting ? "Connecting..." : "Test Connection") {
+                    Button(connection.isConnecting ? "Connecting..." : "Test Connection") {
                         configurationFailure = nil
                         connection.start()
                     }
-                        .disabled(connection.isTesting || validationError != nil)
-                    if connection.isTesting { ProgressView().controlSize(.small) }
+                        .disabled(connection.isConnecting || validationError != nil)
+                    if connection.isConnecting { ProgressView().controlSize(.small) }
                     Spacer()
                     Button("Use Server") { requestServerChange() }
-                        .disabled(connection.address == model.serverURL || validationError != nil || connection.isTesting)
+                        .disabled(connection.address == model.serverURL || validationError != nil || connection.isConnecting)
                 }
                 if let validationError {
                     errorLabel(validationError)
                 }
                 switch connection.phase {
-                case .connected(let url, let count):
+                case .connected(let url, let count)?:
                     Label(Self.connectionSummary(serverURL: url.absoluteString, channelCount: count),
                           systemImage: "checkmark.circle")
                         .font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
-                case .failed(let address, let error):
+                case .failed(let address, let error)?:
                     errorLabel("Couldn't connect to \(address): \(error.localizedDescription)")
-                case .idle, .testing:
+                case .connecting?, nil:
                     EmptyView()
                 }
                 if let configurationFailure {

@@ -1,4 +1,5 @@
 import AppKit
+import ChannelClient
 import ChannelKit
 import SwiftUI
 import ToyBoxUI
@@ -20,19 +21,14 @@ struct ChannelSidebar: View {
         return channels.filter { channelMatchesQuery($0, query: query) }
     }
 
-    private var connection: SidebarConnection {
-        SidebarConnection(
-            loaded: model.catalog?.hasLoaded == true, failing: model.catalog?.error != nil,
-            fatal: model.configurationError != nil || SidebarConnection.isFatal(model.catalog?.failure)
-        )
+    /// A server address the app can't use has no catalog phase to show.
+    private var phase: ChannelCatalogPhase? {
+        model.configurationError == nil ? model.catalog?.phase ?? .connecting : nil
     }
 
-    private var initialLoading: Bool { connection == .connecting }
+    private var initialLoading: Bool { phase == .connecting }
 
-    private var busy: Bool {
-        guard let catalog = model.catalog else { return false }
-        return initialLoading || model.requestedRefresh.isRunning(for: catalog)
-    }
+    private var busy: Bool { model.catalog != nil && (initialLoading || model.isRefreshingCatalog) }
 
     /// The list's own selection, which follows `selection` except during a Command-click.
     @ViewState private var listSelection: String?
@@ -76,12 +72,13 @@ struct ChannelSidebar: View {
         }
         .listStyle(.sidebar)
         .overlay {
-            if connection == .connected, channels.isEmpty { emptyState }
+            if phase == .connected, channels.isEmpty { emptyState }
         }
         .safeAreaBar(edge: .bottom) {
             SidebarConnectionFooter(
-                connection: connection, busy: busy, serverURL: model.serverURL,
-                error: model.configurationError ?? model.catalog?.error,
+                footer: SidebarFooter(phase: phase, isLoaded: model.catalog?.isLoaded == true),
+                busy: busy, serverURL: model.serverURL,
+                error: model.configurationError ?? model.catalog?.phase.message,
                 retry: model.configurationError == nil && model.catalog != nil ? { model.refreshCatalog() } : nil,
                 openSettings: { openSettings() }
             )
@@ -106,7 +103,7 @@ struct ChannelSidebar: View {
     private func prepareRetrySnapshot() async {
         let state = "sidebar-retry"
         guard model.snapshot?.requestedState == state, let catalog = model.catalog else { return }
-        while catalog.error == nil || catalog.isLoading {
+        while catalog.phase.failure == nil {
             do { try await Task.sleep(for: .milliseconds(50)) } catch { return }
         }
         model.refreshCatalog()

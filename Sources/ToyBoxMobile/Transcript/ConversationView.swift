@@ -434,7 +434,7 @@ struct ConversationView: View {
 
     /// Reads advance only for committed rows the reader can see in an active scene.
     private func markRead() {
-        guard scroll.hasLanded, scenePhase == .active, store.phase.isLive, isUncovered, !find.blocksRead else { return }
+        guard scroll.hasLanded, scenePhase == .active, store.phase.isConnected, isUncovered, !find.blocksRead else { return }
         let visible = Set(scroll.visibleRows)
         guard !visible.isEmpty else { return }
         let sequence = items.lazy.filter { visible.contains($0.id) }.map(\.sequence).max() ?? 0
@@ -552,7 +552,7 @@ private struct TranscriptSendAttempt: View {
                             } catch { actionError = error.localizedDescription }
                         }
                     }
-                    .disabled(!store.phase.isLive || store.isSending)
+                    .disabled(!store.phase.isConnected || store.isSending)
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)

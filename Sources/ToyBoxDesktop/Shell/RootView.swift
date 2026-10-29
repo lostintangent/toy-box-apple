@@ -218,7 +218,7 @@ struct RootView: View {
             setOverviewVisible(false)
             snapshot.markStateReady(state)
         case "handoff-unavailable":
-            if handoff.phase == .unavailable { snapshot.markStateReady(state) }
+            if handoff.phase == .missing { snapshot.markStateReady(state) }
         case "new-channel":
             management.present(.newChannel)
             snapshot.markStateReady(state)
@@ -257,7 +257,7 @@ struct RootView: View {
         let store = selectedId.flatMap { model.catalog?.channel(id: $0) }
         return WindowCommandActions(
             hasChannel: selectedId != nil && store?.phase != .deleted,
-            hasRequest: store?.phase.isLive == true && store?.requestSequence != nil,
+            hasRequest: store?.phase.isConnected == true && store?.requestSequence != nil,
             sidebarVisible: columnVisibility != .detailOnly, inspectorVisible: isOverviewVisible,
             messageView: interaction.messageView,
             imageZoom: imageZoom,

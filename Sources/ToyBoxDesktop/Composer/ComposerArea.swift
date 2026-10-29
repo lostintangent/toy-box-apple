@@ -26,9 +26,9 @@ extension ChannelConnectionPhase {
     /// A quiet connect says nothing, since Send is a spinner then.
     var sendUnavailableReason: String? {
         switch self {
-        case .stale: "Reconnect before sending"
+        case .failed: "Reconnect before sending"
         case .deleted: "This channel was deleted"
-        case .idle, .connecting, .live: nil
+        case .connecting, .connected: nil
         }
     }
 }
@@ -381,7 +381,7 @@ private struct ChannelComposer: View {
                                     agents: store.roster,
                                     onSend: send, onFiles: draft.attachFiles, onImage: draft.append,
                                     onError: { draft.error = $0 },
-                                    agentManagement: store.phase.isLive ? .enabled(create: { name in
+                                    agentManagement: store.phase.isConnected ? .enabled(create: { name in
                                         try await management.createMentionMember(name: name, store: store, catalog: app.catalog)
                                     }, edit: { agent in
                                         management.present(.editMember(channelId: store.id, agentId: agent.id))

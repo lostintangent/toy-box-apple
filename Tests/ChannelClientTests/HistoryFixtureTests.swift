@@ -21,7 +21,7 @@ struct HistoryFixtureTests {
         let store = ChannelStore(id: "history-demo", api: api, sendJournal: nil)
         store.connect()
         defer { store.disconnect() }
-        try await eventually { store.phase.isLive }
+        try await eventually { store.phase.isConnected }
         #expect(store.state?.messages.count == 100)
         #expect(store.state?.messages.first?.sequence == 381)
         #expect(store.unreadAfter == 450)

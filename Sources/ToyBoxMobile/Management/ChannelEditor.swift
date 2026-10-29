@@ -34,7 +34,7 @@ struct ChannelEditor: View {
     }
     private var canSave: Bool {
         !nextName.isEmpty && model != nil && violation == nil && changed && !saving && !recovery.blocksWrites
-            && (store == nil || store?.phase.isLive == true)
+            && (store == nil || store?.phase.isConnected == true)
     }
     private var catalog: ChannelCatalogStore? {
         app.catalog === session.catalog ? session.catalog : nil

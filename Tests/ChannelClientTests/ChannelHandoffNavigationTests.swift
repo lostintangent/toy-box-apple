@@ -41,7 +41,7 @@ struct ChannelHandoffNavigationTests {
         await navigation.continueActivity(incoming, currentCatalog: { catalog }) { _ in
             Issue.record("A missing ID opened another channel.")
         }
-        #expect(navigation.phase == .unavailable)
+        #expect(navigation.phase == .missing)
         #expect(mock.requests.count == 2)
     }
 
@@ -119,7 +119,7 @@ struct ChannelHandoffNavigationTests {
         current = ChannelCatalogStore(api: try mock.api())
         #expect(mock.finishPendingResponses() == 1)
         await continuation.value
-        #expect(navigation.phase == .unavailable)
+        #expect(navigation.phase == .missing)
     }
 
     @Test func windowsCancelIndependentlyAndKeepTheSharedCatalogRequest() async throws {
@@ -159,7 +159,7 @@ struct ChannelHandoffNavigationTests {
             await navigation.continueActivity(incoming, currentCatalog: { nil }) { _ in
                 Issue.record("An activity opened without a receiving catalog.")
             }
-            #expect(navigation.phase == .unavailable)
+            #expect(navigation.phase == .missing)
             navigation.cancel()
             #expect(navigation.phase == .idle)
         }
@@ -174,8 +174,8 @@ struct ChannelHandoffNavigationTests {
         await navigation.continueActivity(activity("test"), currentCatalog: { catalog }) { _ in
             Issue.record("An unreachable catalog selected a channel.")
         }
-        #expect(navigation.phase == .unavailable)
-        #expect(catalog.error != nil)
+        #expect(navigation.phase == .missing)
+        #expect(catalog.phase.message != nil)
         #expect(mock.requests.count == 1)
     }
 
@@ -189,12 +189,12 @@ struct ChannelHandoffNavigationTests {
         let catalog = ChannelCatalogStore(api: try mock.api())
         await catalog.refresh()
         await catalog.refresh()
-        #expect(catalog.hasLoaded && catalog.error != nil)
+        #expect(catalog.isLoaded && catalog.phase.message != nil)
         let navigation = ChannelHandoffNavigation()
         await navigation.continueActivity(activity("test"), currentCatalog: { catalog }) { _ in
             Issue.record("A failed current catalog opened a cached channel.")
         }
-        #expect(navigation.phase == .unavailable)
+        #expect(navigation.phase == .missing)
         #expect(mock.requests.count == 3)
     }
 
@@ -209,7 +209,7 @@ struct ChannelHandoffNavigationTests {
                                           currentCatalog: { catalog }) { _ in
             Issue.record("An invalid activity selected a channel.")
         }
-        #expect(navigation.phase == .unavailable)
+        #expect(navigation.phase == .missing)
         #expect(mock.requests.isEmpty)
     }
 }

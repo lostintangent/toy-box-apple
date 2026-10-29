@@ -93,7 +93,7 @@ struct ManagementConfirmation: View {
                         .frame(minHeight: 44)
                 }
                 .accessibilityIdentifier("management-review-delete")
-                .disabled(deleting || recovery.blocksWrites || !exists || !store.phase.isLive)
+                .disabled(deleting || recovery.blocksWrites || !exists || !store.phase.isConnected)
             }
         }
         .navigationTitle(buttonTitle)
@@ -110,22 +110,22 @@ struct ManagementConfirmation: View {
         )) {
             Button(buttonTitle, role: .destructive, action: remove)
                 .accessibilityIdentifier("management-confirm-delete")
-                .disabled(deleting || recovery.blocksWrites || !exists || !store.phase.isLive)
+                .disabled(deleting || recovery.blocksWrites || !exists || !store.phase.isConnected)
             Button("Cancel", role: .cancel) { sessions.cancel(session, presenter: presenter) }
                 .accessibilityIdentifier("management-confirm-cancel")
         } message: {
             Text(consequence)
         }
-        .task(id: store.phase.isLive) {
+        .task(id: store.phase.isConnected) {
             guard isCurrentHost, sessions.isCurrent(session, app: app, presenter: presenter),
-                  exists, store.phase.isLive, !session.hasRequestedConfirmation else { return }
+                  exists, store.phase.isConnected, !session.hasRequestedConfirmation else { return }
             session.hasRequestedConfirmation = true
             session.isConfirmationPresented = true
         }
     }
 
     private func remove() {
-        guard !deleting, !recovery.blocksWrites, exists, store.phase.isLive else { return }
+        guard !deleting, !recovery.blocksWrites, exists, store.phase.isConnected else { return }
         session.pending = true
         recovery.clearError()
         let catalog = catalog

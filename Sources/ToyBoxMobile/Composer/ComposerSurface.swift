@@ -434,7 +434,7 @@ struct ComposerSurface: View {
             }
             .frame(minHeight: 44).contentShape(Rectangle())
         }
-        .disabled(choice.isCreate && !store.phase.isLive)
+        .disabled(choice.isCreate && !store.phase.isConnected)
         .accessibilityIdentifier("composer-mention-\(choice.id)")
         .padding(.vertical, 6)
         .padding(.horizontal, 12)
@@ -445,7 +445,7 @@ struct ComposerSurface: View {
                     preparePresentation()
                     management.present(.editMember(channelId: store.id, agentId: agent.id))
                 }
-                .disabled(!store.phase.isLive)
+                .disabled(!store.phase.isConnected)
             }
         }
     }
@@ -466,7 +466,7 @@ struct ComposerSurface: View {
     private func accept(_ choice: ChannelMentionChoice) {
         guard let context = mentionContext else { return }
         if choice.isCreate {
-            guard store.phase.isLive else { return }
+            guard store.phase.isConnected else { return }
             dismissedCompletion = context
             preparePresentation()
             management.present(.addMember(channelId: store.id, name: choice.name))
