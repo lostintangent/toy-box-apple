@@ -32,7 +32,7 @@ struct OverviewTeamList: View {
                                  model: isLead ? agent.model ?? store.details?.model : agent.model,
                                  channelId: store.id, isLive: isLive, isAvailable: isAvailable)
             }
-            OverviewAddAgentRow(isLive: isLive) {
+            OverviewAddAgentRow(isLive: isLive, isAvailable: isAvailable) {
                 management.present(.addMember(channelId: store.id, name: ""))
             }
         }
@@ -236,6 +236,7 @@ private struct OverviewAgentAbout: View {
 private struct OverviewAddAgentRow: View {
     @Environment(\.channelTextScale) private var textScale
     let isLive: Bool
+    let isAvailable: Bool
     let action: () -> Void
 
     var body: some View {
@@ -252,7 +253,7 @@ private struct OverviewAddAgentRow: View {
         }
         .buttonStyle(.plain)
         .disabled(!isLive)
-        .help(isLive ? "Add a member to this channel" : "Reconnect to add a member")
+        .help(isAvailable ? "Add a member to this channel" : "Reconnect to add a member")
     }
 }
 
