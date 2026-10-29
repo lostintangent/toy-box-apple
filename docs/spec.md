@@ -1665,9 +1665,9 @@ Contrast/Reduce Transparency behavior. Reduce Motion uses the reveal path's nonm
 ### Phone sheet semantics
 
 Working Now, Select Text, reactors, system-message details, Overview in both presentations,
-and Settings use native `Button(role: .close)`. iOS supplies the X. Keep the existing native
-toolbar placement and an explicit accessible close label, without a custom circle or blue
-fill. Settings changes remain applied on closing. Save, Create and Switch Server remain
+and Settings use native `Button(role: .close)`. iOS supplies the X. Place it at
+`.topBarTrailing` with an explicit accessible close label, never `.confirmationAction`, which iOS
+draws as blue prominent glass. No custom circle or fill. Settings changes remain applied on closing. Save, Create and Switch Server remain
 genuine confirmation actions. Mac keeps Done. Swipe dismissal, focus/draft restoration and
 read blocking are unchanged.
 

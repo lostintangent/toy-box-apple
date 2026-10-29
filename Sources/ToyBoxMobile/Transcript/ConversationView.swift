@@ -674,10 +674,8 @@ private struct TranscriptFloatingAccessories: View {
             }
             .buttonStyle(.plain)
             .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 22))
-            .accessibilityElement(children: .ignore)
             .accessibilityLabel(summary(working))
             .accessibilityHint("Shows current work details")
-            .accessibilityAddTraits(.isButton)
             .popover(isPresented: $showsWorkingNow) {
                 TranscriptWorkingNow(store: store)
                     .presentationDetents([.medium, .large])
@@ -744,7 +742,7 @@ private struct TranscriptWorkingNow: View {
             .navigationTitle("Working Now")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
+                ToolbarItem(placement: .topBarTrailing) {
                     Button(role: .close) { dismiss() }
                         .accessibilityLabel("Close Working Now")
                 }

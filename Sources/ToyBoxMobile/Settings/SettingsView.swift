@@ -48,7 +48,7 @@ struct SettingsView: View {
         .accessibilityIdentifier("settings-form")
         .navigationTitle("Settings")
         .toolbar {
-            ToolbarItem(placement: .confirmationAction) {
+            ToolbarItem(placement: .topBarTrailing) {
                 Button(role: .close) { model.isSettingsPresented = false }
                     .accessibilityLabel("Close Settings")
                     .disabled(isApplying)
