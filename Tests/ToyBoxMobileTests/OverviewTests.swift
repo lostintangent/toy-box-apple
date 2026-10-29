@@ -198,46 +198,74 @@ struct OverviewTests {
         #expect(image.size.height > 10 && image.size.height < 50)
     }
 
-    @Test(.enabled(if: ProcessInfo.processInfo.environment["TOY_BOX_TEST_MOBILE_WAITING_CUE_RENDERING"] == "1"),
-          arguments: [ColorScheme.light, .dark], DynamicTypeSize.allCases)
+    @Test(arguments: [ColorScheme.light, .dark], DynamicTypeSize.allCases)
     func waitingCueStaysCenteredOnTheFirstLineWhileTheReasonWraps(
         scheme: ColorScheme, size: DynamicTypeSize
     ) throws {
-        let renderer = ImageRenderer(content:
+        let rows = try statusRows(scheme: scheme, size: size)
+        try #require(rows.complete, "Incomplete render: \(rows)")
+        let firstTextRow = try #require(rows.text.min(), "\(rows)")
+        var lastFirstLineRow = firstTextRow
+        while rows.text.contains(lastFirstLineRow + 1) { lastFirstLineRow += 1 }
+        let firstCueRow = try #require(rows.cue.min(), "\(rows)")
+        let lastCueRow = try #require(rows.cue.max())
+        #expect(abs(CGFloat(firstCueRow + lastCueRow - firstTextRow - lastFirstLineRow) / 6) <= 1,
+                "Cue \(firstCueRow)...\(lastCueRow), first line \(firstTextRow)...\(lastFirstLineRow)")
+        #expect(try #require(rows.text.max()) > lastFirstLineRow)
+    }
+
+    @Test(arguments: [ColorScheme.light, .dark])
+    func waitingCueProbeTellsABlankRenderFromAMissingCue(scheme: ColorScheme) throws {
+        let space = try #require(CGColorSpace(name: CGColorSpace.sRGB))
+        let blank = try #require(CGContext(
+            data: nil, width: 540, height: 93, bitsPerComponent: 8, bytesPerRow: 0, space: space,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)?.makeImage())
+        #expect(try !StatusRows(blank, scheme: scheme, size: .xSmall).complete)
+        let disconnected = try statusRows(scheme: scheme, size: .xSmall, available: false)
+        #expect(disconnected.complete && !disconnected.text.isEmpty && disconnected.cue.isEmpty,
+                "\(disconnected)")
+    }
+
+    private func statusRows(scheme: ColorScheme, size: DynamicTypeSize, available: Bool = true) throws -> StatusRows {
+        let image = try render(
             OverviewAgentStatus(
                 presence: .init(state: "waiting", text: "WAITING MMMM MMMM MMMM MMMM MMMM"),
-                available: true)
+                available: available)
                 .frame(width: 180, alignment: .leading)
                 .background(scheme == .dark ? Color.black : Color.white)
                 .environment(\.colorScheme, scheme)
-                .dynamicTypeSize(size))
-        renderer.scale = 3
-        let image = try #require(renderer.uiImage?.cgImage)
-        let pixels = try rgba(image)
-        let background = scheme == .dark ? 0 : 255
-        var cueRows = Set<Int>()
-        var textRows = Set<Int>()
-        for y in 0..<image.height {
-            for x in 0..<image.width {
-                let offset = (y * image.width + x) * 4
-                let red = Int(pixels[offset]), green = Int(pixels[offset + 1]), blue = Int(pixels[offset + 2])
-                if red > green + 20, green > blue + 20 { cueRows.insert(y) }
-                if abs(red - green) <= 4, abs(green - blue) <= 4, abs(red - background) > 24 {
-                    textRows.insert(y)
+                .dynamicTypeSize(size),
+            scale: 3)
+        return try StatusRows(image, scheme: scheme, size: size)
+    }
+
+    /// Rows of an `OverviewAgentStatus` render that hold its gray text and its orange waiting cue.
+    /// The status fills an opaque background, so any transparent pixel marks an incomplete render.
+    private struct StatusRows: CustomStringConvertible {
+        let text: Set<Int>
+        let cue: Set<Int>
+        let complete: Bool
+        let description: String
+
+        init(_ image: CGImage, scheme: ColorScheme, size: DynamicTypeSize) throws {
+            let pixels = try OverviewTests.rgba(image)
+            let background = scheme == .dark ? 0 : 255
+            var text = Set<Int>(), cue = Set<Int>(), opaque = 0
+            for y in 0..<image.height {
+                for x in 0..<image.width {
+                    let offset = (y * image.width + x) * 4
+                    let red = Int(pixels[offset]), green = Int(pixels[offset + 1]), blue = Int(pixels[offset + 2])
+                    if pixels[offset + 3] == 255 { opaque += 1 }
+                    if red > green + 20, green > blue + 20 { cue.insert(y) }
+                    if abs(red - green) <= 4, abs(green - blue) <= 4, abs(red - background) > 24 { text.insert(y) }
                 }
             }
+            self.text = text
+            self.cue = cue
+            complete = opaque == image.width * image.height
+            description = "\(scheme), \(size), \(image.width)x\(image.height), opaque pixels \(opaque), "
+                + "text rows \(text.count), cue rows \(cue.count)"
         }
-        let nontransparentPixels = stride(from: 3, to: pixels.count, by: 4).filter { pixels[$0] > 0 }.count
-        let render = "Waiting cue render: \(scheme), \(size), \(image.width)x\(image.height), "
-            + "nontransparent pixels \(nontransparentPixels), text rows \(textRows.count), cue rows \(cueRows.count)"
-        let firstTextRow = try #require(textRows.min(), "\(render)")
-        var lastFirstLineRow = firstTextRow
-        while textRows.contains(lastFirstLineRow + 1) { lastFirstLineRow += 1 }
-        let firstCueRow = try #require(cueRows.min(), "\(render)")
-        let lastCueRow = try #require(cueRows.max())
-        #expect(abs(CGFloat(firstCueRow + lastCueRow - firstTextRow - lastFirstLineRow) / 6) <= 1,
-                "Cue \(firstCueRow)...\(lastCueRow), first line \(firstTextRow)...\(lastFirstLineRow)")
-        #expect(try #require(textRows.max()) > lastFirstLineRow)
     }
 
     @Test(arguments: DynamicTypeSize.allCases)
@@ -832,7 +860,7 @@ struct OverviewTests {
     func artifactActionUsesOnlyNormalInsetsAndKeepsItsEnabledInkUnderLinkTint(
         scheme: ColorScheme, enabled: Bool
     ) throws {
-        let renderer = ImageRenderer(content:
+        let cgImage = try render(
             Button {} label: {
                 OverviewTaskArtifactLabel(title: enabled ? "Plan" : "Artifact unavailable")
             }
@@ -842,13 +870,10 @@ struct OverviewTests {
             .tint(.blue)
             .background(scheme == .dark ? Color.black : Color.white)
             .dynamicTypeSize(.large)
-            .environment(\.colorScheme, scheme))
-        renderer.proposedSize = ProposedViewSize(width: 220, height: nil)
-        renderer.scale = 1
-        let image = try #require(renderer.uiImage)
-        let cgImage = try #require(image.cgImage)
-        #expect(image.size.height < 44)
-        let pixels = try rgba(cgImage)
+            .environment(\.colorScheme, scheme),
+            scale: 1, width: 220)
+        #expect(cgImage.height < 44)
+        let pixels = try Self.rgba(cgImage)
         var inkRows: [Int] = []
         var tintedPixels = 0
         let background = scheme == .dark ? 0 : 255
@@ -1119,7 +1144,7 @@ struct OverviewTests {
         let image = try #require(UIGraphicsImageRenderer(bounds: window.bounds, format: format).image { context in
             window.layer.render(in: context.cgContext)
         }.cgImage)
-        let pixels = try rgba(image)
+        let pixels = try Self.rgba(image)
         for (path, shouldBeVisible) in visible.map({ ($0, true) }) + hidden.map({ ($0, false) }) {
             let frame = try #require(list.layoutAttributesForItem(at: path)).frame
             let bottom = list.convert(frame, to: window).maxY
@@ -1137,7 +1162,27 @@ struct OverviewTests {
         }
     }
 
-    private func rgba(_ image: CGImage) throws -> [UInt8] {
+    /// Draws into the test's own bitmap before returning. `uiImage` returns an image-provider CGImage
+    /// that rasterizes through an IOSurface when first drawn, the path both CI pixel failures read
+    /// (t465 and t510).
+    private func render(_ content: some View, scale: CGFloat, width: CGFloat? = nil) throws -> CGImage {
+        let renderer = ImageRenderer(content: content)
+        renderer.proposedSize = ProposedViewSize(width: width, height: nil)
+        let space = try #require(CGColorSpace(name: CGColorSpace.sRGB))
+        var image: CGImage?
+        renderer.render(rasterizationScale: scale) { size, draw in
+            guard let context = CGContext(
+                data: nil, width: Int((size.width * scale).rounded(.up)),
+                height: Int((size.height * scale).rounded(.up)), bitsPerComponent: 8, bytesPerRow: 0,
+                space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return }
+            context.scaleBy(x: scale, y: scale)
+            draw(context)
+            image = context.makeImage()
+        }
+        return try #require(image)
+    }
+
+    nonisolated private static func rgba(_ image: CGImage) throws -> [UInt8] {
         let colorSpace = try #require(CGColorSpace(name: CGColorSpace.sRGB))
         var pixels = [UInt8](repeating: 0, count: image.width * image.height * 4)
         try pixels.withUnsafeMutableBytes { bytes in
