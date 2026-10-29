@@ -216,8 +216,7 @@ struct ComposerSurface: View {
             controls.padding(.horizontal, 8).padding(.bottom, 6)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .glassEffect(.regular.tint(Color(uiColor: .systemBackground).opacity(0.3)),
-                     in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
         .overlay {
             if dragging {
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
@@ -412,8 +411,7 @@ struct ComposerSurface: View {
         .frame(maxHeight: min(264, completionHeight))
         .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { completionViewportHeight = $0 }
         .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .glassEffect(.regular.tint(Color(uiColor: .systemBackground).opacity(0.3)),
-                     in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
     }
 
     private func completionRow(_ choice: ChannelMentionChoice) -> some View {
