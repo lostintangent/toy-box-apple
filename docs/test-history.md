@@ -74,14 +74,24 @@ Incident records moved from AGENTS.md on 2026-10-27, with their evidence and res
 
 ## Live Text analysis
 
-- `ImageViewerLiveTextTests.onlyTheSettledCurrentImageIsAnalyzedAndTheWindowRemembersIt` is
+- `ImageViewerLiveTextTests.onlyTheSettledCurrentImageIsAnalyzedAndTheWindowRemembersIt` was
   quarantined behind `TOY_BOX_TEST_LIVE_TEXT_ANALYSIS=1`. On 2026-10-26, Composer's full Mac run on
   `9bada33` plus test-gating changes (`image-strip-quarantined-mac-gate.log` in Composer's session
   files, lines 2523–2526) waited the unchanged 30s at `TranscriptTests.swift:1615` for the first
-  image's Live Text, at a five-minute load average near 99. No viewer code changed and no cause is
-  established. The saved log can't tell whether VisionKit's analysis threw, never returned or found
-  no text, so a timeout now records those states and the load. Transcript owns restoring it:
-  identify the cause and add deterministic analysis-gating coverage first. Don't retry it to green.
+  image's Live Text, at a five-minute load average near 99. No viewer code changed.
+- Cause (t503): the test's 30s polling deadline, not the viewer. Each analysis runs out of process in
+  `mediaanalysisd`, whose latency scales with machine load. Instrumented runs on 2026-10-29 measured
+  0.2–1s per analysis unloaded and in a full Mac run, 5.5s and 8.7s for the first image under 40 and
+  100 busy loops, and 27.2s for one image under 30 background-QoS busy loops on the two efficiency
+  cores. VisionKit never threw and always found the text. A run past 30s wasn't reproduced, so load
+  near 99 exceeding it is inferred from that scaling.
+- Restored to the default local suite. The test now awaits the viewer's own load and analysis tasks
+  (`loads`, `analysisTask`) instead of a deadline, so a slow analysis waits and a missing one fails
+  at once by name. A two-minute Swift Testing hang limit bounds it. It also asserts gating directly:
+  no analysis task before the opening settles, a paged-past image's task is cancelled, and a reopen
+  starts no task. Removing the settle guard, the paging cancel or remembering each failed it at the
+  matching assertion. CI still skips it through `.readsTextInImages`, since GitHub's runners never
+  read text, and no other default test covers this gating.
 
 ## Image-strip wheel input
 
