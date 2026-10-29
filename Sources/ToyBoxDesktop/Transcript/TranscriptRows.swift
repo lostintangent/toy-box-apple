@@ -284,6 +284,7 @@ struct TranscriptAgentMessage: View, @MainActor Equatable {
                         } toggle: {
                             Button(expanded ? "Show Less" : "Show More") { onSetExpanded(entry.id, !expanded) }
                                 .buttonStyle(.borderless)
+                                .foregroundStyle(.secondary)
                                 .font(.system(size: 12 * textScale))
                         }
                     } else {

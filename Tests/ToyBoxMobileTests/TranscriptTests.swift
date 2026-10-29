@@ -664,7 +664,8 @@ struct TranscriptTests {
             UIHostingController(rootView: TranscriptCollapsibleBody(isExpanded: expanded, endPadding: 10) {
                 Text(text).font(.body)
             } toggle: {
-                Button("Show More") {}.frame(minHeight: 44)
+                // The phone's footer shows 40 points and lends its target's last 4 to the space below.
+                Button("Show More") {}.frame(minHeight: 44).padding(.bottom, -4)
             }).sizeThatFits(in: CGSize(width: 300, height: CGFloat.infinity)).height
         }
         let long = Array(repeating: "A line that wraps across the bubble.", count: 30).joined(separator: "\n")
@@ -673,8 +674,8 @@ struct TranscriptTests {
         let short = UIHostingController(rootView: Text("Short").font(.body))
             .sizeThatFits(in: CGSize(width: 300, height: CGFloat.infinity)).height
         // A first measurement that comes back clamped means the row never changes height after it's placed.
-        #expect(height(long, expanded: false) == TranscriptCollapsibleBody<Text, Text>.clampHeight + 44)
-        #expect(abs(height(long, expanded: true) - (full + 44)) < 1)
+        #expect(height(long, expanded: false) == TranscriptCollapsibleBody<Text, Text>.clampHeight + 40)
+        #expect(abs(height(long, expanded: true) - (full + 40)) < 1)
         #expect(abs(height("Short", expanded: false) - (short + 10)) < 1)
     }
 
