@@ -86,6 +86,26 @@ struct ShellTests {
         }
     }
 
+    @Test func anInactiveSceneKeepsTheSidebarsWorkingAgents() async {
+        await withDefaults { defaults in
+            let model = AppModel(arguments: ["--server", "https://fixture.example"], environment: [:],
+                                 defaults: defaults, session: fixtureSession())
+            defer { model.setScenePhase(.background) }
+            await model.refreshCatalog()
+            let root = RootView(handoff: ChannelHandoffNavigation()).environment(model).environment(\.scenePhase, .inactive)
+            let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 466, height: 678))
+            let host = UIHostingController(rootView: root)
+            window.rootViewController = host
+            window.isHidden = false
+            defer { window.isHidden = true }
+            host.view.frame = window.bounds
+            host.view.layoutIfNeeded()
+            let values = MobileAutomationTree(windows: [window]).elements.map(\.value)
+            #expect(!model.isActive)
+            #expect(values.contains { $0.contains("Lead working") }, "\(values)")
+        }
+    }
+
     @Test(arguments: [false, true])
     func registrationErrorsAreShownOnlyWhileNotificationsAreEnabled(enabled: Bool) async throws {
         try await withNotifications(register: { _, _, _ in throw URLError(.cannotConnectToHost) }) {
@@ -1633,7 +1653,8 @@ private final class ShellFixtureProtocol: URLProtocol, @unchecked Sendable {
                 channels: ["first", "second"].map {
                     Channel(id: $0, name: $0, model: .init(provider: "test", name: "test"),
                             updatedAt: "2026-10-25T12:00:00Z")
-                }
+                },
+                working: ["first"]
             )
             client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
             client?.urlProtocol(self, didLoad: try JSONEncoder().encode(catalog))

@@ -120,7 +120,7 @@ struct ChannelSidebar: View {
         let agents = projection.agents(channel)
         return ChannelSidebarRow(
             channel: projection.channel(channel), agents: agents,
-            working: model.isActive ? projection.working(channel, agents: agents) : [],
+            working: projection.working(channel, agents: agents),
             attention: projection.attention(channel), now: now
         )
     }

@@ -32,8 +32,8 @@ struct ChannelScreen: View {
 
     private var showsPermissionTip: Bool {
         permissionTipIsAvailable && model.notifications.canOfferPermissionTip
-            && model.isActive && model.visibleChannelID == store.id
-            && store.phase.isLive && store.requestSequence != nil && !model.isSettingsPresented
+            && model.visibleChannelID == store.id
+            && !store.phase.isUnavailable && store.requestSequence != nil && !model.isSettingsPresented
             && management.flow == nil && !reader.requested && !overview.isCompactSheetPresented
             && !(sizeClass == .compact && interaction.isInspectorPresented)
             && !interaction.isRequestPreviewPresented && !keyboardIsVisible
