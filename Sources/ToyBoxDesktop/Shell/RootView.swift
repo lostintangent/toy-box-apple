@@ -273,7 +273,7 @@ struct RootView: View {
             toggleSidebar: { columnVisibility = columnVisibility == .detailOnly ? .all : .detailOnly },
             toggleInspector: { setOverviewVisible(!isOverviewVisible) },
             setMessageView: { interaction.messageView = $0 },
-            refresh: { store?.reconnect(); model.refreshCatalog() },
+            refresh: { model.refreshCatalog() },
             nextChannel: selectAdjacent,
             nextAttention: selectNextAttention,
             focusComposer: { interaction.focusComposer() },

@@ -185,12 +185,12 @@ struct QuickSendView: View {
             } else if let error = model.catalog?.phase.message {
                 Text("Offline.").font(.system(size: 15, weight: .semibold))
                 Text(error).font(.system(size: 12)).foregroundStyle(.secondary)
-                Button("Retry") { Task { await model.catalog?.refresh() } }
+                Button("Retry") { model.refreshCatalog() }
             } else if model.catalog?.isLoaded == true {
                 Text("Choose a channel to start a message.").foregroundStyle(.secondary)
             } else if catalogConnectingLong {
                 Text("Connecting…").foregroundStyle(.secondary)
-                Button("Retry") { Task { await model.catalog?.refresh() } }
+                Button("Retry") { model.refreshCatalog() }
             }
         }
     }

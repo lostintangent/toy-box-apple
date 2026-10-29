@@ -17,7 +17,7 @@ struct ComposerTests {
     @Test func sendIsASpinnerOnlyWhileItsChannelConnectsAndExplainsOnlyOnceUnavailable() async throws {
         #expect(ChannelConnectionPhase.connecting.sendUnavailableReason == nil)
         #expect(ChannelConnectionPhase.connected.sendUnavailableReason == nil)
-        #expect(ChannelConnectionPhase.failed("Offline").sendUnavailableReason == "Reconnect before sending")
+        #expect(ChannelConnectionPhase.failed("Offline").sendUnavailableReason == "The channel isn't connected")
         #expect(ChannelConnectionPhase.deleted.sendUnavailableReason == "This channel was deleted")
 
         try await withDraft { draft, _ in

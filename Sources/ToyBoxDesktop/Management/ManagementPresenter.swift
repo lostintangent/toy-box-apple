@@ -71,7 +71,7 @@ private struct ManagementSheet: View {
                         } else if let error = store?.phase.message {
                             Label(error, systemImage: "wifi.exclamationmark")
                                 .foregroundStyle(.secondary)
-                            Button("Try Again") { store?.reconnect() }
+                            Button("Retry") { store?.reconnect() }
                         } else {
                             ProgressView("Loading current channel")
                         }
@@ -156,7 +156,7 @@ struct ManagementConnectionNotice: View {
         if let store, store.phase.isUnavailable {
             Label(store.phase == .deleted
                   ? "This channel was deleted."
-                  : "Reconnect before making changes. Your edits are preserved.",
+                  : "Your edits are kept. Save them when the channel connects.",
                   systemImage: "wifi.exclamationmark")
                 .font(.callout)
                 .foregroundStyle(.secondary)

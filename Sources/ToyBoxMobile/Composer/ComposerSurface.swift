@@ -364,10 +364,8 @@ struct ComposerSurface: View {
                 case .noMicrophone: Label(notice.text, systemImage: "mic.slash")
                 }
             }
-            if store.phase.isUnavailable {
-                Label(store.phase == .deleted ? "This channel was deleted. Copy your draft somewhere safe."
-                      : "Reconnect before sending so the audience is current.", systemImage: "wifi.slash")
-                if store.phase != .deleted { Button("Reconnect") { store.reconnect() } }
+            if store.phase == .deleted {
+                Label("This channel was deleted. Copy your draft somewhere safe.", systemImage: "trash")
             }
             if let attempt = composer.attempt, attempt.canRetry {
                 Label(attempt.phase == .notSent ? "\(attempt.phase.label). \(attempt.error ?? "Try sending again.")"

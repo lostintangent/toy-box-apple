@@ -21,7 +21,7 @@ public enum ChannelAPIError: Error, Equatable, LocalizedError, Sendable {
         case .http(let status, let message): "\(message) (HTTP \(status))"
         case .duplicateMessage: "This message ID was already accepted. It was not sent again."
         case .invalidMessage(let message): message
-        case .disconnected: "Wait for the channel to reconnect before sending."
+        case .disconnected: "The channel isn't connected."
         case .streamEnded: "The channel connection ended. Reconnecting."
         case .heartbeatTimeout: "The server stopped responding. Reconnecting."
         case .invalidEvent(let kind): "The server returned an invalid \(kind) event."

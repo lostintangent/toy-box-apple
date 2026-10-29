@@ -456,10 +456,9 @@ Edit only files you own. Ask the owner for anything else in the channel.
 - `ComposerDraft`, `ComposerImage` and `ChannelConnections` live in ChannelClient.
   Supply a native image-readability check to the shared draft. Mac uses its existing lazy NSImage
   validation and iPhone uses UIImage. Keep persistence keys and send-attempt identity unchanged.
-- Connections use only the spec's Connection words: `connecting`, `connected`, `failed` and a
-  channel's `deleted`. Views change on `phase.isUnavailable`, never a timer, and actions wait for
-  `phase.isConnected`. Nothing waits on a phase change at disconnect, and background work never
-  lights the footer spinner.
+- Connections follow the spec's Connections invariants: one notice and one verb, Retry, per scope.
+  Views change on `phase.isUnavailable`, never a timer, and actions wait for `phase.isConnected`.
+  Refresh means only the channel list, and background work never lights the footer spinner.
 - `channelMatchesQuery` (ChannelKit) matches name, purpose and directory. Callers retain their
   existing query normalization and ordering. `ChannelAPI.channelURL(channelID:files:)` builds
   browser routes, preserving deployment prefixes. `SidebarFooter` (ToyBoxUI) projects the
