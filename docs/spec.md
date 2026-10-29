@@ -2558,7 +2558,7 @@ fixed footer, with 16-point content insets.
 | Waiting for You | 15-point semibold header with the live waiting count. Every pending channel is shown, newest request first on opening. A 28-point requester avatar precedes the 13-point semibold channel name and 11-point secondary "[Agent] needs your reply" |
 | Request | Full, wrapping 13-point quote, flattened from Markdown without dropping @mentions. No character or line truncation. The channel title and separate 28-point Open control reveal the request in the main window. Reply expands an editor beneath the quote |
 | Reply | One expanded editor at a time. Native 14-point text, three lines before scrolling, 12-point insets, 10-point corners and primary-at-5% fill. Attach Images, the canonical audience, Dictate and Send reuse the existing composer components, without another glass surface |
-| Working Now | Up to three channels with working agents and no pending request, most recently updated first. Static 20-point avatar stacks show up to three agents, lead first. The existing working subtitle names the team. Overflow opens the main window |
+| Working Now | Up to three channels with working agents and no pending request, most recently updated first, without a section heading or count. The 13-point medium channel name and the existing 11-point secondary working subtitle sit on the leading inset, with a trailing static 20-point avatar stack of up to three agents, lead first. Overflow opens the main window |
 | Empty and unavailable | "All caught up" when nothing needs attention, "Connecting…" before the first catalog, "No channels yet" with the main-window route, and "Connect to Toy Box" with Settings for invalid configuration. Offline keeps cached rows, says requests may be out of date and offers Retry |
 | Footer | A fixed Quick Send command with the configured shortcut, then Open Toy Box and Settings. Close the inbox before opening another surface. No Quit, because this is a regular Dock app |
 
@@ -2587,8 +2587,12 @@ top. Content growth preserves that top edge. The host uses the system utility-wi
 Appearance, Text Size, Increase Contrast and Reduce Transparency follow the app and system.
 
 Content has 16-point padding, a 32-point channel row, a native transparent 16-point editor and a
-32-point controls row. Command-L opens the searchable channel chooser. Choices put up to three
-recent channels before the remaining alphabetical list. Changing channels saves and restores
+32-point controls row. Command-L opens the searchable channel chooser. Its results are a
+transparent native inset list over the popover's material, with the system selection highlight
+and row metrics, no separators, and a height that fits its rows up to 252 points before
+scrolling. The arrow keys move that selection, Return chooses it and Escape closes the chooser.
+One click anywhere in a row chooses it, including the already highlighted row. Choices put up to
+three recent channels before the remaining alphabetical list. Changing channels saves and restores
 separate Quick Send drafts rather than borrowing the main-window draft. Target history is scoped
 to the server and prefers an unfinished Quick Send draft, then the last explicit Quick Send target,
 the last main-window channel or the sole available channel. With no suitable target it offers

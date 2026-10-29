@@ -94,7 +94,7 @@ struct MenuBarInbox: View {
                 }
                 if !status.working.isEmpty {
                     if !inbox.requests.isEmpty { Divider() }
-                    working(status.workingSection, total: status.working.count)
+                    working(status.workingSection)
                 }
                 if inbox.requests.isEmpty && status.working.isEmpty {
                     if model.catalog?.isLoaded == false && status.unreachableHost == nil {
@@ -198,25 +198,19 @@ struct MenuBarInbox: View {
         }
     }
 
-    private func working(_ section: MenuBarStatus.Section, total: Int) -> some View {
+    private func working(_ section: MenuBarStatus.Section) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 6) {
-                Text("Working Now").font(.system(size: 12, weight: .semibold))
-                Text("\(total)").font(.system(size: 12)).monospacedDigit()
-            }
-            .foregroundStyle(.secondary)
             ForEach(section.items) { item in
                 Button {
                     closeThen { model.activate(channelID: item.id) }
                 } label: {
                     HStack(spacing: 10) {
-                        AgentAvatarStack(agents: item.agents, size: 20, showsOverflow: false)
-                            .frame(width: 52, alignment: .leading)
                         VStack(alignment: .leading, spacing: 3) {
                             Text(item.name).font(.system(size: 13, weight: .medium)).lineLimit(1)
                             Text(item.subtitle).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(2)
                         }
                         Spacer(minLength: 0)
+                        AgentAvatarStack(agents: item.agents, size: 20, showsOverflow: false)
                     }
                     .frame(height: 40)
                     .contentShape(.rect)
