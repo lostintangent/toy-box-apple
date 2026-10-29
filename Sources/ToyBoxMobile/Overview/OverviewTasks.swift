@@ -4,13 +4,6 @@ import SwiftUI
 import ToyBoxUI
 import UIKit
 
-enum OverviewTaskMotion {
-    static func disclosureAnimation(reduceMotion: Bool, accessibility: Bool) -> Animation? {
-        // Keep transparent native rows instant until outline motion no longer overlaps following sections.
-        nil
-    }
-}
-
 enum OverviewTaskMetrics {
     static func verticalPadding(accessibility: Bool) -> CGFloat { accessibility ? 12 : 11 }
 }
@@ -39,8 +32,6 @@ struct OverviewSubtasksScreen: View {
     let session: OverviewSession
     let placement: OverviewPlacement
     @Bindable var scroll: OverviewTaskScroll
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.dynamicTypeSize) private var typeSize
     @Environment(OverviewPresentation.self) private var presentation
     @Environment(ChannelInteraction.self) private var interaction
 
@@ -79,11 +70,7 @@ struct OverviewSubtasksScreen: View {
         }
         .navigationTitle("Subtasks")
         .navigationBarTitleDisplayMode(.inline)
-        .onChange(of: store.tasks, initial: true) { _, tasks in
-            withAnimation(OverviewTaskMotion.disclosureAnimation(
-                reduceMotion: reduceMotion, accessibility: typeSize.isAccessibilitySize)
-            ) { session.reconcileTasks(tasks) }
-        }
+        .onChange(of: store.tasks, initial: true) { _, tasks in session.reconcileTasks(tasks) }
     }
 }
 
@@ -116,7 +103,6 @@ struct OverviewTaskNode: View {
     let depth: Int
     let layout: OverviewTaskReadingLayout
     @Environment(ChannelArtifactSession.self) private var viewer
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ViewState private var isVisible = false
 
     private var children: [ChannelTask] { task.children ?? [] }
@@ -249,11 +235,7 @@ struct OverviewTaskNode: View {
     }
 
     private func toggle() {
-        withAnimation(OverviewTaskMotion.disclosureAnimation(
-            reduceMotion: reduceMotion, accessibility: layout.accessibility)
-        ) {
-            session.taskDisclosure[task.id] = .init(status: task.status, expanded: !expanded)
-        }
+        session.taskDisclosure[task.id] = .init(status: task.status, expanded: !expanded)
     }
 
     private func spoken(timing: ChannelTaskTiming?) -> String {

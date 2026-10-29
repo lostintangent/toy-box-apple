@@ -76,8 +76,6 @@ private struct OverviewContent: View {
     let placement: OverviewPlacement
     @Environment(OverviewPresentation.self) private var presentation
     @Environment(ChannelInteraction.self) private var interaction
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -111,11 +109,7 @@ private struct OverviewContent: View {
                     session.scrollOffset = offset
                 }
             }
-            .onChange(of: store.tasks, initial: true) { _, tasks in
-                withAnimation(OverviewTaskMotion.disclosureAnimation(
-                    reduceMotion: reduceMotion, accessibility: typeSize.isAccessibilitySize)
-                ) { session.reconcileTasks(tasks) }
-            }
+            .onChange(of: store.tasks, initial: true) { _, tasks in session.reconcileTasks(tasks) }
             .onDisappear { session.prepareForPresentation() }
             .scrollEdgeEffectStyle(.hard, for: .top)
             .task(id: interaction.overviewTasksRequest) {
