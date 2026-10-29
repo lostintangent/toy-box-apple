@@ -100,7 +100,7 @@ struct RootView: View {
             if id == nil { columnVisibility = .all }
         }
         .onChange(of: scenePhase, initial: true) { _, phase in
-            model.setActive(phase == .active)
+            model.setScenePhase(phase)
             if phase == .active { Task { await model.notifications.refreshAuthorization() } }
         }
         .onChange(of: model.catalog?.hasLoaded, initial: true) { _, _ in

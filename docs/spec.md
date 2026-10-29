@@ -68,6 +68,11 @@ Reference sources (read-only):
   status updates don't re-render identity. A catalog poll that changes nothing announces only
   `lastRefreshedAt` and `isLoading`, and a failure that repeats the current one isn't announced
   again. Views that only ask whether the catalog has loaded read `hasLoaded`.
+- **Phone scene:** the iPhone keeps its channel streams and catalog polling while its scene is
+  merely inactive, as under Control Center, Notification Center or the app switcher, so a brief
+  look away never forces a reconnect. It drops them only when the scene enters the background, and
+  reconnects as soon as it returns. Marking read, management and treating the open channel as seen
+  still need the active scene.
 - **Background sends:** `ChannelStore.postInBackground(id:content:)` accepts a caller-owned UUID
   without opening or waiting for SSE. It restores the same outbox, durably records the attempt
   before its one HTTP request, and retains rejection or uncertain-delivery classification before
