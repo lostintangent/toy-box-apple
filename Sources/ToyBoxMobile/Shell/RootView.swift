@@ -13,7 +13,7 @@ struct RootView: View {
     @ViewState private var managementSessions = ManagementSessions()
     @ViewState private var columnVisibility = NavigationSplitViewVisibility.automatic
     @ViewState private var preferredCompactColumn = NavigationSplitViewColumn.sidebar
-    @ViewState private var searchFocusRequest = UUID()
+    @FocusState private var isSearchFocused: Bool
     @ViewState private var handoff: ChannelHandoffNavigation
     #if DEBUG
     @ViewState private var didRunHandoffProof = false
@@ -180,7 +180,7 @@ struct RootView: View {
     private var channelNavigation: some View {
         @Bindable var model = model
         return NavigationSplitView(columnVisibility: $columnVisibility, preferredCompactColumn: $preferredCompactColumn) {
-            ChannelSidebar(showsSettings: $model.isSettingsPresented, searchFocusRequest: searchFocusRequest,
+            ChannelSidebar(showsSettings: $model.isSettingsPresented, searchFocused: $isSearchFocused,
                            isCollapsed: sizeClass == .compact)
                 .navigationSplitViewColumnWidth(min: 240, ideal: 256, max: 320)
         } detail: {
@@ -271,7 +271,7 @@ struct RootView: View {
                 if sizeClass == .compact { interaction?.isInspectorPresented = false }
                 columnVisibility = .all
                 preferredCompactColumn = .sidebar
-                searchFocusRequest = UUID()
+                isSearchFocused = true
             },
             findInChannel: conversation.map { interaction in { interaction.findInChannel() } },
             findNext: conversation.map { interaction in { interaction.findNext($0) } },

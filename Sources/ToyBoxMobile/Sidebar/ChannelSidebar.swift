@@ -9,12 +9,11 @@ struct ChannelSidebar: View {
     @Environment(ManagementPresenter.self) private var management
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Binding var showsSettings: Bool
-    let searchFocusRequest: UUID
+    var searchFocused: FocusState<Bool>.Binding
     /// The split view shows one column at a time, as on a folded Duo.
     let isCollapsed: Bool
     @ViewState private var query = ""
     @ViewState private var pull = PullGesture()
-    @FocusState private var searchFocused: Bool
 
     private var trimmedQuery: String { query.trimmingCharacters(in: .whitespacesAndNewlines) }
 
@@ -70,7 +69,7 @@ struct ChannelSidebar: View {
     }
 
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 60)) { context in
+        TimelineView(.everyMinute) { context in
             channelList(now: context.date)
         }
         .listStyle(.plain)
@@ -94,8 +93,7 @@ struct ChannelSidebar: View {
         // collapsed list minimizes it. The overlay sidebar keeps the field, since UIKit places
         // the minimized button beyond its trailing edge.
         .searchToolbarBehavior(isCollapsed ? .minimize : .automatic)
-        .searchFocused($searchFocused)
-        .onChange(of: searchFocusRequest) { _, _ in searchFocused = true }
+        .searchFocused(searchFocused)
         .focusedValue(\.channelListFocused, true)
         .refreshable {
             await model.refreshCatalog()
