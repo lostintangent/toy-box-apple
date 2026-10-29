@@ -41,6 +41,10 @@ struct ChannelSidebarProjectionTests {
         #expect(closed.working(listed, agents: closed.agents(listed)).isEmpty)
         #expect(open.working(listed, agents: open.agents(listed)).count == 1)
         store.disconnect()
+        #expect(open.working(listed, agents: open.agents(listed)).count == 1,
+                "A quiet disconnect keeps the last presence until the channel becomes unavailable")
+        _ = try store.apply(.init(type: "deleted", channelId: "test"))
+        #expect(store.phase.isUnavailable)
         #expect(open.working(listed, agents: open.agents(listed)).isEmpty)
 
         let absent = ChannelSidebarProjection(catalog: nil, openChannelIDs: ["test"])

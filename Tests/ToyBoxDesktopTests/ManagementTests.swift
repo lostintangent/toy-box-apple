@@ -405,7 +405,7 @@ struct ManagementTests {
         let renderer = ImageRenderer(content:
             OverviewAgentStatusLine(
                 agent: .init(id: "agent", name: "Agent", role: "Engineer"),
-                status: .init(state: "waiting", text: "WAITING MMMM"), isLive: true)
+                status: .init(state: "waiting", text: "WAITING MMMM"), isAvailable: true)
                 .padding(4)
                 .background(scheme == .dark ? Color.black : Color.white)
                 .environment(\.colorScheme, scheme)

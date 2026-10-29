@@ -7,12 +7,12 @@ import Testing
 @MainActor
 struct ChannelAgentStatusTests {
     @Test func absentAndDisconnectedPresenceNeverInventIdleOrKeepAnActivityCue() {
-        let missing = ChannelAgentStatusPresentation(presence: nil, isLive: true)
+        let missing = ChannelAgentStatusPresentation(presence: nil, isAvailable: true)
         #expect(missing.text == "Status unavailable" && missing.spoken == missing.text && missing.cue == .none)
         let presences: [ChannelAgentPresence?] = [nil, .init(state: "working", text: "Compiling"),
                                                 .init(state: "waiting", text: "Review")]
         for presence in presences {
-            let stale = ChannelAgentStatusPresentation(presence: presence, isLive: false)
+            let stale = ChannelAgentStatusPresentation(presence: presence, isAvailable: false)
             #expect(stale.text == "Status unavailable while disconnected")
             #expect(stale.spoken == stale.text && stale.cue == .none)
         }
@@ -21,29 +21,29 @@ struct ChannelAgentStatusTests {
     @Test func workingKeepsTheMessageAndSpeaksItsStateExactlyOnce() {
         let emptyMessages: [String?] = [nil, "", "  \n"]
         for message in emptyMessages {
-            let status = ChannelAgentStatusPresentation(presence: .init(state: "working", text: message), isLive: true)
+            let status = ChannelAgentStatusPresentation(presence: .init(state: "working", text: message), isAvailable: true)
             #expect(status.text == "Working" && status.spoken == "Working" && status.cue == .working)
         }
-        let working = ChannelAgentStatusPresentation(presence: .init(state: "working", text: "Compiling"), isLive: true)
+        let working = ChannelAgentStatusPresentation(presence: .init(state: "working", text: "Compiling"), isAvailable: true)
         #expect(working.text == "Compiling" && working.spoken == "Working, Compiling")
         let prefixed = ChannelAgentStatusPresentation(presence: .init(state: "working", text: "Working on layout"),
-                                                     isLive: true)
+                                                     isAvailable: true)
         #expect(prefixed.spoken == "Working on layout")
     }
 
     @Test func waitingPreservesAnExistingPrefixAndIdleHasNoCue() {
         let emptyMessages: [String?] = [nil, ""]
         for message in emptyMessages {
-            let status = ChannelAgentStatusPresentation(presence: .init(state: "waiting", text: message), isLive: true)
+            let status = ChannelAgentStatusPresentation(presence: .init(state: "waiting", text: message), isAvailable: true)
             #expect(status.text == "Waiting" && status.spoken == "Waiting" && status.cue == .waiting)
         }
         let reason = ChannelAgentStatusPresentation(presence: .init(state: "waiting", text: "Moss's review"),
-                                                   isLive: true)
+                                                   isAvailable: true)
         #expect(reason.text == "Waiting for Moss's review" && reason.spoken == reason.text)
         let prefixed = ChannelAgentStatusPresentation(presence: .init(state: "waiting", text: "Waiting on a test"),
-                                                     isLive: true)
+                                                     isAvailable: true)
         #expect(prefixed.text == "Waiting on a test" && prefixed.spoken == prefixed.text)
-        let idle = ChannelAgentStatusPresentation(presence: .init(state: "idle", text: "Old message"), isLive: true)
+        let idle = ChannelAgentStatusPresentation(presence: .init(state: "idle", text: "Old message"), isAvailable: true)
         #expect(idle.text == "Idle" && idle.spoken == "Idle" && idle.cue == .none)
     }
 
@@ -58,12 +58,12 @@ struct ChannelAgentStatusTests {
     }
 
     @Test func onlyLiveWorkingStatusUsesTheStrongerForegroundInk() {
-        let working = ChannelAgentStatusPresentation(presence: .init(state: "working"), isLive: true)
+        let working = ChannelAgentStatusPresentation(presence: .init(state: "working"), isAvailable: true)
         #expect(working.textColor == Color.primary.opacity(0.85))
         for presence: ChannelAgentPresence? in [nil, .init(state: "waiting"), .init(state: "idle")] {
-            #expect(ChannelAgentStatusPresentation(presence: presence, isLive: true).textColor == ChannelInk.secondary)
+            #expect(ChannelAgentStatusPresentation(presence: presence, isAvailable: true).textColor == ChannelInk.secondary)
         }
-        #expect(ChannelAgentStatusPresentation(presence: .init(state: "working"), isLive: false).textColor == ChannelInk.secondary)
+        #expect(ChannelAgentStatusPresentation(presence: .init(state: "working"), isAvailable: false).textColor == ChannelInk.secondary)
     }
 
     @Test func wakeCountdownRoundsUpAndKeepsHoursMinutesAndDueSemantics() {
@@ -99,14 +99,14 @@ struct ChannelAgentStatusTests {
     @Test func wakeCountdownRequiresLiveWaitingPresenceAndAValidWakeTime() throws {
         let raw = "2026-10-26T23:00:00Z"
         let date = try #require(ChannelDates.date(raw))
-        #expect(ChannelAgentWakePresentation.wake(for: .init(state: "waiting", wakeAt: raw), isLive: true) == date)
+        #expect(ChannelAgentWakePresentation.wake(for: .init(state: "waiting", wakeAt: raw), isAvailable: true) == date)
         for presence: ChannelAgentPresence? in [
             nil, .init(state: "waiting"), .init(state: "waiting", wakeAt: "invalid"),
             .init(state: "working", wakeAt: raw), .init(state: "idle", wakeAt: raw)
         ] {
-            #expect(ChannelAgentWakePresentation.wake(for: presence, isLive: true) == nil)
+            #expect(ChannelAgentWakePresentation.wake(for: presence, isAvailable: true) == nil)
         }
-        #expect(ChannelAgentWakePresentation.wake(for: .init(state: "waiting", wakeAt: raw), isLive: false) == nil)
+        #expect(ChannelAgentWakePresentation.wake(for: .init(state: "waiting", wakeAt: raw), isAvailable: false) == nil)
     }
 
     @Test(arguments: [11.0, 13, 36], [1.0, 2, 3])

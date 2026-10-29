@@ -10,8 +10,10 @@ package struct ChannelAgentStatusPresentation: Equatable, Sendable {
 
     package var textColor: Color { cue == .working ? .primary.opacity(0.85) : ChannelInk.secondary }
 
-    package init(presence: ChannelAgentPresence?, isLive: Bool) {
-        guard isLive else {
+    /// `isAvailable` is false only while the channel's phase `isUnavailable`. Through a reconnect the
+    /// last reported presence stays, so statuses don't blink.
+    package init(presence: ChannelAgentPresence?, isAvailable: Bool) {
+        guard isAvailable else {
             text = "Status unavailable while disconnected"
             spoken = text
             cue = .none

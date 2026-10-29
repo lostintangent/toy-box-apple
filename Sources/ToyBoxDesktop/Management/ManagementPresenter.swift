@@ -153,7 +153,7 @@ struct ManagementError: View {
 struct ManagementConnectionNotice: View {
     let store: ChannelStore?
     var body: some View {
-        if let store, !store.phase.isLive {
+        if let store, store.phase.isUnavailable {
             Label(store.phase == .deleted
                   ? "This channel was deleted."
                   : "Reconnect before making changes. Your edits are preserved.",

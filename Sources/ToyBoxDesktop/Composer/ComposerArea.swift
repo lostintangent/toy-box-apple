@@ -129,19 +129,14 @@ private struct ChannelComposer: View {
     @ViewState private var showAppendConfirmation = false
     @ViewState private var dictation = ComposerDictation()
     @ViewState private var sendsAfterDictation = false
-    @ViewState private var connectGrace = ConnectGrace()
 
     /// The draft's identity. There's one draft per server and channel.
     private var store: ChannelStore { session.store }
     private var draft: ComposerDraft { session.draft }
     private var draftID: ObjectIdentifier { ObjectIdentifier(draft) }
 
-    private var explainsConnection: Bool { connectGrace.explains(store.phase, for: draftID) }
+    private var explainsConnection: Bool { store.phase.isUnavailable }
 
-    private struct ConnectionWait: Equatable {
-        let draft: ObjectIdentifier
-        let isConnecting: Bool
-    }
     private var isSubmitting: Bool { session.isSubmitting }
     private var submissionError: String? { session.error }
 
@@ -218,11 +213,7 @@ private struct ChannelComposer: View {
             showPicker = false
             isDragging = false
             showAppendConfirmation = false
-            connectGrace.reset()
             adoptDraft()
-        }
-        .task(id: ConnectionWait(draft: draftID, isConnecting: ConnectGrace.isConnecting(store.phase))) {
-            await connectGrace.watch(store.phase, for: draftID)
         }
         .onChange(of: draft.revision) { _, revision in
             registerDraft()

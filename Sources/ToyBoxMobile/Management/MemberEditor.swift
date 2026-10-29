@@ -47,7 +47,7 @@ struct MemberEditor: View {
 
     var body: some View {
         Form {
-            if !store.phase.isLive { Section { ManagementConnectionNotice(store: store) } }
+            if store.phase.isUnavailable { Section { ManagementConnectionNotice(store: store) } }
             if recovery.error != nil || recovery.state != nil {
                 Section {
                     if let error = recovery.error { ManagementError(message: error) }

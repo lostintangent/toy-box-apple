@@ -42,7 +42,7 @@ struct ChannelEditor: View {
 
     var body: some View {
         Form {
-            if let store, !store.phase.isLive {
+            if let store, store.phase.isUnavailable {
                 Section { ManagementConnectionNotice(store: store) }
             }
             if recovery.error != nil || recovery.state != nil {

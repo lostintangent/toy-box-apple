@@ -159,6 +159,96 @@ struct CatalogTests {
         #expect(catalog.failure == nil)
     }
 
+    private static func unavailable() -> MockResponse {
+        MockResponse(status: 503, body: Data(#"{"error":"Catalog unavailable."}"#.utf8))
+    }
+
+    @Test @MainActor func aFailedPollStaysQuietAndRetriesPromptly() async throws {
+        let served = ChannelCatalog(lead: testLeadProfile, channels: [testState().channel])
+        let mock = MockTransport { _, count in count == 1 ? Self.unavailable() : try .json(served) }
+        let catalog = ChannelCatalogStore(api: try mock.api(),
+                                          reconnectPolicy: .init(initialDelay: 0.01, grace: 60))
+        defer { catalog.stopPolling() }
+        let announced = await announcements(in: catalog) {
+            catalog.startPolling(interval: 60)
+            try? await eventually(observing: mock) { catalog.lastRefreshedAt != nil && !catalog.isLoading }
+        }
+        #expect(catalog.state == served)
+        #expect(mock.requests.count == 2, "The retry came long before the next poll")
+        #expect(announced.isDisjoint(with: ["error", "failure"]), "Nothing reported the failed poll")
+    }
+
+    @Test @MainActor func pollsThatKeepFailingReportOnceTheGraceHasPassed() async throws {
+        let mock = MockTransport { _, _ in Self.unavailable() }
+        let catalog = ChannelCatalogStore(api: try mock.api(),
+                                          reconnectPolicy: .init(initialDelay: 0.01, grace: 0.05))
+        catalog.startPolling(interval: 60)
+        defer { catalog.stopPolling() }
+        try await eventually(observing: mock) { catalog.failure != nil }
+        let failure = ChannelAPIError.http(status: 503, message: "Catalog unavailable.")
+        #expect(catalog.failure as? ChannelAPIError == failure)
+        #expect(catalog.error == failure.localizedDescription)
+    }
+
+    @Test(arguments: [false, true])
+    @MainActor func aRequestedRefreshReportsItsFailureAtOnce(joiningAPoll: Bool) async throws {
+        let mock = MockTransport { _, _ in
+            var response = Self.unavailable()
+            response.keepOpen = joiningAPoll
+            return response
+        }
+        let catalog = ChannelCatalogStore(api: try mock.api(),
+                                          reconnectPolicy: .init(initialDelay: 60, grace: 60))
+        defer { catalog.stopPolling() }
+        if joiningAPoll {
+            catalog.startPolling(interval: 60)
+            try await eventually(observing: mock) { catalog.isLoading && mock.pendingResponseCount == 1 }
+            await catalog.refresh()
+            #expect(catalog.failure == nil, "The poll is still in flight")
+            #expect(mock.finishPendingResponses() == 1)
+            try await eventually { catalog.failure != nil }
+        } else {
+            await catalog.refresh()
+        }
+        #expect(catalog.failure as? ChannelAPIError == .http(status: 503, message: "Catalog unavailable."))
+        #expect(mock.requests.count == 1)
+    }
+
+    @Test(arguments: [false, true])
+    @MainActor func onlyConsecutiveFailingPollsCountTowardTheGrace(recovering: Bool) async throws {
+        let mock = MockTransport { _, count in
+            var response = recovering && count == 2 ? try .json(ChannelCatalog(lead: testLeadProfile))
+                                                    : Self.unavailable()
+            response.keepOpen = true
+            return response
+        }
+        let catalog = ChannelCatalogStore(api: try mock.api(),
+                                          reconnectPolicy: .init(initialDelay: 60, grace: 0.5))
+        defer { catalog.stopPolling() }
+        func finishPoll() async throws {
+            try await eventually(observing: mock) { catalog.isLoading && mock.pendingResponseCount == 1 }
+            #expect(mock.finishPendingResponses() == 1)
+            try await eventually { !catalog.isLoading }
+        }
+        catalog.startPolling(interval: 60)
+        try await finishPoll()
+        if recovering {
+            catalog.setActive(false)
+            try await finishPoll()
+            #expect(catalog.lastRefreshedAt != nil)
+        } else {
+            // Away, as when the phone is in the background.
+            catalog.stopPolling()
+        }
+        try await Task.sleep(for: .milliseconds(600))
+        #expect(catalog.failure == nil)
+
+        if recovering { catalog.setActive(true) } else { catalog.startPolling(interval: 60) }
+        try await finishPoll()
+        #expect(catalog.failure == nil, "This failure starts a new quiet period")
+        #expect(mock.requests.count == (recovering ? 3 : 2))
+    }
+
     @Test @MainActor func transportCancellationDoesNotBecomeACatalogFailure() async throws {
         let mock = MockTransport { _, _ in throw URLError(.cancelled) }
         let catalog = ChannelCatalogStore(api: try mock.api())

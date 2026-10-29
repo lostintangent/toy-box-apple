@@ -115,7 +115,7 @@ private struct OverviewContent: View {
     var body: some View {
         ScrollViewReader { proxy in
             OverviewList {
-                if !store.phase.isLive {
+                if store.phase.isUnavailable {
                     Section {
                         Label("Overview may be out of date. Reconnect before making changes.",
                               systemImage: "wifi.exclamationmark")

@@ -732,7 +732,8 @@ pending requests keep their orange edge.
 The working summary is live application status, not historical transcript content. It floats
 as a glass capsule directly above the composer, even when reading older history. Show at most
 three 20-point avatars and the count or name. Details open in a native popover on explicit
-activation. Hide working presence when observation is stale. Place Jump to Latest at the
+activation. Keep the last working presence while the channel connects or reconnects, and hide it
+only once the channel is stale or deleted. Place Jump to Latest at the
 trailing edge of the same floating row when needed. Neither control may become a synthetic
 message or read target.
 
@@ -1142,7 +1143,8 @@ Unfolded rows show no chevron.
 The working-avatar stack exists independently of attention, so a working team and pending question
 can coexist. Keep the full-team names in row help/accessibility even though idle members are no
 longer pictured in the activity stack. Closed channels use catalog activity only if the protocol actually supplies it. Never
-invent presence or keep stale work animations after losing observation.
+invent presence. An open channel keeps its last working agents while it reconnects quietly, and
+drops them once it is stale or deleted.
 
 The row stays one accessibility element. Its value reads in this order: last activity, folder (with
 "not on this Mac" or "missing" when it applies), attention, working agents, then team. When the
@@ -1194,7 +1196,9 @@ indeterminate spinner,
 `ProgressView().controlSize(.mini)`, which is 10 points. Center it on the dot's center and don't
 clip it, so it overhangs the 7-point slot by 1.5 points on each side and the host text never moves.
 When the attempt resolves, it crossfades back to the resulting dot. Background polling never shows
-the spinner. Never overlay a spinner or "Loading Channels" on the list. The static placeholder rows
+the spinner. A failed poll also stays quiet and retries every half second until polls have failed for
+about three seconds, the same grace a channel gets, so coming back to the app never flashes the
+orange dot or the block. A refresh the user asked for reports its failure at once. Never overlay a spinner or "Loading Channels" on the list. The static placeholder rows
 show the shape and the footer shows the activity.
 
 In an inactive window the system draws a hairline above the bar, just as it does under the
@@ -1741,10 +1745,12 @@ readable explicitly require reattachment, and must not appear ready to send.
 
 Editing remains available while offline, an intentional native improvement. Send and management
 mutations are unavailable until live state is established. Explain the reason next to the input
-rather than using disabled controls alone. Every channel switch reconnects, so a connect that goes
-live within a second shows no explanation and the composer doesn't jump. A slower connect, a stale
-connection or a deleted channel explains it. A stale snapshot must never determine a new send's
-audience without reconnection.
+rather than using disabled controls alone. A channel that is connecting or reconnecting says
+nothing, so switching channels or coming back to the app never flashes an explanation and the
+composer doesn't jump. The explanation appears only once the channel has tried for about three
+seconds without getting live, including a connect that hangs, or at once for a deleted channel.
+Time away from the app never counts toward those seconds. A stale snapshot must never determine a
+new send's audience without reconnection.
 
 Submitting creates one optimistic row with "Sending". A committed echo replaces it by UUID.
 On a definite rejection, retain the draft and mark the row "Not sent". On timeout or lost response,
@@ -1900,8 +1906,10 @@ tappable and its accessible target spans that height. Its label grows and wraps 
 | Waiting | A static 9-point heavy `pause.fill` in a 12-point cue lane, then a 4-point gap and the reason in secondary, such as "Waiting for Moss's review". Center the glyph on the status font's cap height, not its line box, within 0.5 points on Mac. Tint only the glyph `#9A6700` in Light and `#F4BE66` in Dark, shared with iPhone | With a valid wake time, a leading `bell`, 4-point gap and "8m" in 11 secondary tabular digits, updated at minute boundaries, help "Checks again at 9:32 AM". "Due" once it passes |
 | Idle | "Idle" in secondary | Nothing |
 
-Both apps share status copy and spoken state. Missing live presence reads "Status unavailable";
-disconnected presence reads "Status unavailable while disconnected". Neither keeps an activity cue.
+Both apps share status copy and spoken state. Missing live presence reads "Status unavailable".
+A stale or deleted channel reads "Status unavailable while disconnected". Neither keeps an
+activity cue. A channel that is connecting or reconnecting keeps its last presence, so coming
+back to the app doesn't blink every status.
 Both also read the status-text ink rule from `ChannelAgentStatusPresentation`: working uses
 primary foreground ink at 85%, while waiting, idle and unavailable remain muted. The phone
 must not render working text in the same secondary ink as waiting. Keep cue colors separate
@@ -1910,9 +1918,9 @@ phone's opaque secondary ink and the Mac's existing semantic secondary.
 
 Both apps show the waiting check-in in the existing row, never a new metadata line. Mac keeps
 its trailing position and hover-menu replacement. Phone places the bell and duration just
-before the native chevron, in muted footnote text. Show this only for live waiting presence
-with a valid `wakeAt`; omit it for working, idle, unavailable, disconnected or absent/invalid
-wake times. A single ToyBoxUI view owns both the countdown and its localized text, preserving
+before the native chevron, in muted footnote text. Show this only for waiting presence
+with a valid `wakeAt` on a channel that isn't stale or deleted; omit it for working, idle,
+unavailable or absent/invalid wake times. A single ToyBoxUI view owns both the countdown and its localized text, preserving
 the Mac's rounded-up remaining duration and Due behavior. Phone updates only at minute
 boundaries while its row is visible. Keep the bell/value group together and trailing even
 when phone name/status wrap at accessibility sizes. Add no row height at default text.
@@ -2332,9 +2340,9 @@ navigation keeps list focus until explicitly moving into the conversation.
 | First channel snapshot | Static message placeholders and "Connecting". Composer shell remains present, Send unavailable |
 | New empty channel | "Your lead is getting started", "Send a message or type @ to add an agent". Keep composer and working status visible |
 | Filter has no messages | "No messages for you yet", Show All Messages. Keep paging older history until exhausted |
-| Reconnecting with cached state | Keep transcript and scroll intact. A 32-point inline banner below toolbar says "Reconnecting. Messages may be out of date" with Retry. Disable delivery, not editing |
+| Reconnecting with cached state | Keep transcript and scroll intact. After about three seconds of trying without getting live, a 32-point inline banner below toolbar says "Reconnecting. Messages may be out of date" with Retry. A reconnect that goes live sooner shows nothing. Until then agent status, working presence and every connection notice stay as they were while live. Disable delivery and management actions, not editing |
 | Disconnected without any state | `wifi.exclamationmark`, "Can't connect to Toy Box", server host, readable failure, Retry and Settings |
-| Catalog refresh fails | Keep existing rows, mark them stale and show the error block above the connection footer's orange status line (see Sidebar). Never replace them with "No channels" |
+| Catalog refresh fails | Keep existing rows, mark them stale and show the error block above the connection footer's orange status line (see Sidebar), after about three seconds of failing polls or at once for a refresh the user asked for. Never replace them with "No channels" |
 | Failed send | Inline error above composer and explicit status on optimistic row, preserved text/attachments, no automatic retry |
 | Channel deleted | Stop observation, dismiss its inspector, show "This channel was deleted". Back to Channels and Copy Draft if nonempty. Never silently discard a draft or redirect to another channel |
 | Invalid URL or authorization failure | Show the actual category and server, Settings/Retry as appropriate. No fabricated successful connection |

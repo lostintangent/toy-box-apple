@@ -45,7 +45,7 @@ private struct OverviewInspectorContent: View {
                 ScrollViewReader { proxy in
                     ScrollView {
                         VStack(alignment: .leading, spacing: 0) {
-                            if !store.phase.isLive {
+                            if store.phase.isUnavailable {
                                 Label("Overview may be out of date. Reconnect before making changes.",
                                       systemImage: "wifi.exclamationmark")
                                     .font(.system(size: 12 * textScale))
