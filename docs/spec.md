@@ -1403,8 +1403,10 @@ Toy Box's blue: a 1-point system blue rule at 70% across the full lane, and "New
 semibold blue 6 points after its trailing end. When a day change and the unread boundary
 coincide, the day label sits 6 points above the New rule as one divider, read as "Today, New
 messages". Capture the unread boundary only after snapshot or replay completes, and never move it as
-the user reads. This boundary is not an extra synthetic message. Reference renders of day labels,
-the New divider, system rows and both request states: `docs/transcript-events.png`.
+the user reads. A reopened store that disconnected while the channel was closed waits for its
+reconnect, rather than capturing from the state it cached. This boundary is not an extra synthetic
+message. Reference renders of day labels, the New divider, system rows and both request states:
+`docs/transcript-events.png`.
 
 Opening uses only the latest 100 messages supplied by the snapshot and never fetches older pages.
 Land on the first unread row when its boundary is in the loaded page, otherwise the end. If the

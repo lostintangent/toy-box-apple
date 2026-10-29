@@ -95,4 +95,38 @@ struct ChannelConnectionsTests {
         #expect(connections.stores.isEmpty)
         try await eventually(observing: mock) { mock.stops == 1 }
     }
+
+    /// A disconnected store keeps its last state, which is stale once the channel reopens.
+    @Test(arguments: ["snapshot", "resumed"])
+    func reopeningADisconnectedStorePlacesTheDividerAfterItsReconnect(reply: String) async throws {
+        let mock = MockTransport { _, count in
+            if count == 1 {
+                return try .stream([.init(type: "snapshot", state: testState(revision: 1, messages: [testMessage(1), testMessage(2)]))])
+            }
+            if reply == "snapshot" {
+                var later = testState(revision: 3, messages: [testMessage(1), testMessage(2), testMessage(3)])
+                later.channel.seenThrough = 2
+                return try .stream([.init(type: "snapshot", state: later)])
+            }
+            return try .stream([.init(type: "message", revision: 3, message: testMessage(3)),
+                                .init(type: "resumed", presence: [:])])
+        }
+        let connections = ChannelConnections(linger: .zero)
+        let store = ChannelStore(id: "a", api: try mock.api(), sendJournal: nil)
+        connections.hold(store)
+        try await eventually { store.phase.isConnected }
+        #expect(store.unreadAfter == 0)
+        #expect(mock.sendPendingBody(try MockResponse.stream([.init(type: "read", revision: 2, seenThrough: 2)]).body) == 1)
+        try await eventually { store.state?.channel.seenThrough == 2 }
+        connections.release(store)
+        #expect(!store.isTrying)
+
+        // Message 3 arrives while the channel is closed, so the catalog shows its unread dot.
+        connections.hold(store)
+        #expect(store.unreadAfter == nil, "Until the reconnect, the divider matches the cached rows, all read")
+        try await eventually { store.phase.isConnected }
+        #expect(store.messages.last?.sequence == 3)
+        #expect(channelStatus(try #require(store.state).channel) == .unread)
+        #expect(store.unreadAfter == 2, "The New divider sits after the last message read")
+    }
 }
