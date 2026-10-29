@@ -258,6 +258,9 @@ struct ConversationView: View {
             .coordinateSpace(.named(Self.space))
         }
         .scrollDismissesKeyboard(.interactively)
+        // The pills and the composer use plain glass, so their labels need the hard edge's backing
+        // over a bright image, like the toolbar's.
+        .scrollEdgeEffectStyle(.hard, for: .bottom)
         .accessibilityIdentifier("conversation-transcript")
         .scrollPosition($position)
         // The conversation owns the generation, so a card that leaves the lazy stack never cancels it.
@@ -640,7 +643,7 @@ private struct TranscriptFloatingAccessories: View {
                 .contentShape(.rect(cornerRadius: 22))
             }
             .buttonStyle(.plain)
-            .glassEffect(.transcriptFloating.interactive(), in: .rect(cornerRadius: 22))
+            .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 22))
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(summary(working))
             .accessibilityHint("Shows current work details")
@@ -662,7 +665,7 @@ private struct TranscriptFloatingAccessories: View {
                     .frame(minHeight: 44)
             }
             .buttonStyle(.plain)
-            .glassEffect(.transcriptFloating.interactive(), in: .capsule)
+            .glassEffect(.regular.interactive(), in: .capsule)
             .transition(rises)
         }
     }
@@ -738,7 +741,7 @@ private struct TranscriptReconnecting: View {
         }
         .padding(.horizontal, 14)
         .frame(minHeight: 44)
-        .glassEffect(.transcriptFloating, in: .capsule)
+        .glassEffect(.regular, in: .capsule)
         .accessibilityElement(children: .combine)
         .accessibilityHint(message)
         .padding(.top, 8)
@@ -761,7 +764,7 @@ private struct TranscriptRevealNotice: View {
         }
         .padding(.horizontal, 14)
         .frame(minHeight: 44)
-        .glassEffect(.transcriptFloating, in: .capsule)
+        .glassEffect(.regular, in: .capsule)
         .padding(.top, 8)
         .padding(.horizontal, 16)
         .transition(reduceMotion ? .opacity : .opacity.combined(with: .offset(y: -4)))
