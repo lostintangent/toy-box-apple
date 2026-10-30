@@ -220,8 +220,6 @@ struct AuxiliaryComposer: View {
                     Spacer(minLength: 0)
                     if store.phase == .deleted, let onChooseChannel {
                         Button("Choose Channel", action: onChooseChannel).buttonStyle(.link)
-                    } else if store.phase != .deleted {
-                        Button("Retry") { store.reconnect() }.buttonStyle(.link)
                     }
                 }
             }

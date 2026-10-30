@@ -2667,8 +2667,9 @@ three recent channels before the remaining alphabetical list. Changing channels 
 separate Quick Send drafts rather than borrowing the main-window draft. Target history is scoped
 to the server and prefers an unfinished Quick Send draft, then the last explicit Quick Send target,
 the last main-window channel or the sole available channel. With no suitable target it offers
-the chooser instead of selecting an urgent channel. No-server, no-channel, deleted-target and
-offline states offer the appropriate Settings, main-window, Choose Channel or Retry action.
+the chooser instead of selecting an urgent channel. No-server, no-channel and deleted-target
+states offer Settings, the main window or Choose Channel. A channel list that can't load offers
+Retry. An offline target keeps its note without Retry, because the channel reconnects on its own.
 
 Return sends, Shift-Return inserts a newline and Command-Return sends and opens the confirmed
 message. IME and mention completion consume Return first. Escape closes completion or a picker
