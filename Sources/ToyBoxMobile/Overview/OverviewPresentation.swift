@@ -18,7 +18,6 @@ enum OverviewPlacement: Equatable {
 }
 
 enum OverviewRoute: Hashable {
-    case agent(String)
     case subtasks(String)
 }
 

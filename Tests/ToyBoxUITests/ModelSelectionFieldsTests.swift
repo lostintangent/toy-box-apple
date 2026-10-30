@@ -23,6 +23,13 @@ struct ModelSelectionFieldsTests {
         #expect(choices.count == 6)
         #expect(!choices.contains { $0.id.isEmpty })
         #expect(ModelOptionChoice.reasoning([], current: "old").isEmpty)
+        func label(_ effort: JSONValue?) -> String? {
+            ModelConfiguration(provider: "copilot", name: "model",
+                               options: effort.map { ["reasoningEffort": $0] } ?? [:]).reasoningLabel
+        }
+        #expect(label(.string("xhigh")) == "Extra High")
+        #expect(label(.string("adaptive_reasoning")) == "Adaptive Reasoning")
+        #expect(label(.string("")) == nil && label(nil) == nil && label(.bool(true)) == nil)
     }
 
     @Test func unknownContextWindowsKeepTheTierNameAndUnsupportedValuesKeepTheirCurrentRow() throws {

@@ -238,6 +238,14 @@ private extension ProviderModel {
     var selfKey: String { "\(provider)/\(id)" }
 }
 
+extension ModelConfiguration {
+    /// The requested reasoning effort in Edit Agent's words, such as "Extra High", or nil when unset.
+    public var reasoningLabel: String? {
+        guard let effort = options["reasoningEffort"]?.string, !effort.isEmpty else { return nil }
+        return ModelOptionChoice.reasoningLabel(effort)
+    }
+}
+
 struct ModelOptionChoice: Equatable, Identifiable {
     let id: String
     let label: String
@@ -262,7 +270,7 @@ struct ModelOptionChoice: Equatable, Identifiable {
         return [.init(id: current, label: "\(current) (current)")] + choices
     }
 
-    private static func reasoningLabel(_ value: String) -> String {
+    static func reasoningLabel(_ value: String) -> String {
         let value = value.lowercased() == "xhigh" ? "Extra High" : value
         return value.split { $0.isWhitespace || $0 == "_" || $0 == "-" }
             .map { $0.prefix(1).uppercased() + $0.dropFirst() }
