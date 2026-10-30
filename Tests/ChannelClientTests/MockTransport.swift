@@ -86,8 +86,10 @@ final class MockTransport: Sendable {
     }
 
     @discardableResult
-    func sendPendingBody(_ data: Data) -> Int {
+    /// Sends `data` to every held response, or only to those for `path`.
+    func sendPendingBody(_ data: Data, path: String? = nil) -> Int {
         let pending = state.withLock { Array($0.pending.values) }
+            .filter { path == nil || $0.request.url?.path == path }
         for response in pending {
             response.client?.urlProtocol(response, didLoad: data)
         }

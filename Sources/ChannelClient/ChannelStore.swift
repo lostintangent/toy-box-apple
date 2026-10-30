@@ -118,6 +118,9 @@ public final class ChannelStore {
     /// From `connect()` until `disconnect()`. Internal and unobserved, so tests check a disconnect
     /// here, since the phase it leaves is `.connecting` either way.
     var isTrying: Bool { observation != nil }
+    /// The observation loop is waiting out a backoff with no request under way, so a prompt retry
+    /// can start over without cancelling anything.
+    @ObservationIgnored private var isBackingOff = false
     @ObservationIgnored private var generation = UUID()
     /// Ends a quiet `.connecting` period once it outlasts the reconnect policy's grace.
     @ObservationIgnored private var grace: Task<Void, Never>?
@@ -212,11 +215,13 @@ public final class ChannelStore {
         case .connecting, .deleted: break
         }
         lastFailure = error.localizedDescription
+        isBackingOff = true
         return reconnectPolicy.delay(attempt: attempt)
     }
 
     private func reopen(token: UUID) -> AsyncThrowingStream<ChannelObservationEvent, any Error>? {
         guard !Task.isCancelled, generation == token else { return nil }
+        isBackingOff = false
         return api.observe(channelId: id, after: state?.revision, arrivals: arrivals)
     }
 
@@ -270,8 +275,23 @@ public final class ChannelStore {
         connect()
     }
 
+    /// Ends a backoff early, as when the server or the app comes back. An attempt already under way
+    /// keeps going, so a snapshot still arriving never starts over.
+    func retryPromptly() {
+        guard isBackingOff else { return }
+        reconnect()
+    }
+
+    /// Starts a fresh attempt for a channel that's trying without being connected, because the
+    /// network came back or moved, and an attempt under way may be stuck on the old path.
+    func retryOnNewPath() {
+        guard isTrying, phase != .connected, phase != .deleted else { return }
+        reconnect()
+    }
+
     private func stopTrying() {
         generation = UUID()
+        isBackingOff = false
         observation?.cancel()
         observation = nil
         stopGrace()
@@ -709,6 +729,8 @@ public final class ChannelCatalogStore {
     public private(set) var lastRefreshedAt: Date?
     @ObservationIgnored private var polling: Task<Void, Never>?
     @ObservationIgnored private var pollingDelay: Task<Void, Never>?
+    @ObservationIgnored private var pathWatch: Task<Void, Never>?
+    @ObservationIgnored private let networkPath: NetworkPathSource
     @ObservationIgnored private var detailStores: [String: ChannelStore] = [:]
     @ObservationIgnored private var activePollingInterval: TimeInterval = 5
     @ObservationIgnored private var catalogGeneration = UUID()
@@ -733,15 +755,19 @@ public final class ChannelCatalogStore {
     @ObservationIgnored private var joiners: [CheckedContinuation<Void, Never>] = []
     public var pollingInterval: TimeInterval { isActive ? activePollingInterval : 15 }
 
-    /// `now` measures the grace. Tests pass a clock they move instead of waiting.
-    public init(api: ChannelAPI, reconnectPolicy: ReconnectPolicy = .init(), now: @escaping () -> Date = { .now }) {
+    /// `now` measures the grace. Tests pass a clock they move instead of waiting, and a network path
+    /// they change.
+    public init(api: ChannelAPI, reconnectPolicy: ReconnectPolicy = .init(), now: @escaping () -> Date = { .now },
+                networkPath: NetworkPathSource = .system) {
         self.api = api
         self.reconnectPolicy = reconnectPolicy
         self.now = now
+        self.networkPath = networkPath
     }
     deinit {
         polling?.cancel()
         pollingDelay?.cancel()
+        pathWatch?.cancel()
     }
 
     public func channel(id: String) -> ChannelStore {
@@ -834,8 +860,7 @@ public final class ChannelCatalogStore {
 
     /// A poll that changes nothing announces only `lastRefreshedAt`, so the sidebar and its rows
     /// don't re-render every few seconds. `@Observable` skips assigning an equal value.
-    /// When the server comes back, held channels that failed try again at once instead of waiting
-    /// out their backoff.
+    /// When the server comes back, held channels waiting out a backoff try again at once.
     private func applyCatalog(_ catalog: ChannelCatalog) {
         let recovered = failingSince != nil || phase.failure != nil
         state = catalog
@@ -844,7 +869,7 @@ public final class ChannelCatalogStore {
         failingSince = nil
         phase = .connected
         guard recovered else { return }
-        for store in detailStores.values where store.phase.message != nil { store.reconnect() }
+        for store in detailStores.values { store.retryPromptly() }
     }
 
     /// Requests the first catalog immediately. A main-actor task would send it only on the main
@@ -853,6 +878,7 @@ public final class ChannelCatalogStore {
         guard polling == nil else { return }
         activePollingInterval = interval
         failingSince = nil
+        watchNetworkPath()
         let api = api
         let first = Task.detached(priority: Task.currentPriority) { try await api.catalog() }
         polling = Task { [weak self] in
@@ -878,10 +904,13 @@ public final class ChannelCatalogStore {
         failingSince != nil && phase.failure == nil ? reconnectPolicy.initialDelay : pollingInterval
     }
 
+    /// Coming back to the app polls at once and ends every held channel's backoff.
     public func setActive(_ active: Bool) {
         guard active != isActive else { return }
         isActive = active
         pollingDelay?.cancel()
+        guard active else { return }
+        for store in detailStores.values { store.retryPromptly() }
     }
 
     public func stopPolling() {
@@ -889,5 +918,23 @@ public final class ChannelCatalogStore {
         polling = nil
         pollingDelay?.cancel()
         pollingDelay = nil
+        pathWatch?.cancel()
+        pathWatch = nil
+    }
+
+    /// While polling, a network that comes back or moves to another interface polls at once and
+    /// gives every held channel that isn't connected a fresh attempt instead of its backoff.
+    private func watchNetworkPath() {
+        let paths = networkPath.paths()
+        pathWatch = Task { [weak self] in
+            var previous: NetworkPath?
+            for await path in paths {
+                defer { previous = path }
+                guard path.isReturn(from: previous) else { continue }
+                guard let self else { return }
+                pollingDelay?.cancel()
+                for store in detailStores.values { store.retryOnNewPath() }
+            }
+        }
     }
 }

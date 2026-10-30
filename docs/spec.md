@@ -89,16 +89,21 @@ Reference sources (read-only):
 ### Connections
 
 A channel's stream, the catalog's polls and Settings' Test Connection each report `connecting`,
-`connected` or `failed`, and a channel can also be `deleted`. Each scope shows one notice with one
-verb, Retry: the transcript banner for a channel, the sidebar footer for the catalog and Settings
-for Test Connection. Overview notes why its actions wait, and repeats Retry only as a phone sheet
-covering the banner. Three invariants hold:
+`connected` or `failed`, and a channel can also be `deleted`. Each scope shows one notice: the
+transcript's "Reconnecting to server" for a channel, the sidebar footer for the catalog and Settings
+for Test Connection. A channel with cached state reconnects on its own, so its notice has no verb
+and Overview adds no notice of its own. Retry stays only where nothing has loaded yet, on Can't
+Connect and a management sheet with no channel behind it, and on the catalog footer and Test
+Connection. Three invariants hold:
 
 - **A channel failure keeps retrying its stream.** A channel is `failed` once it has tried for a
   grace (`ReconnectPolicy.grace`, three seconds spent trying) in which nothing arrived, without
-  connecting, and it keeps trying with backoff. Retry tries again at once and keeps `failed`, and so
-  the banner, until the stream connects. When a catalog request succeeds after one failed, every
-  held channel still `failed` retries at once.
+  connecting. It keeps trying with backoff and stays `failed`, and so does its notice, until the
+  stream connects. Three moments try again at once with the backoff reset. The network path
+  becoming satisfied or moving to another interface starts a fresh attempt for every held channel
+  that isn't connected, since one under way may be stuck on the old path. Coming back to the app,
+  and a catalog request succeeding after one failed, end every held channel's backoff but leave an
+  attempt under way to finish, so a snapshot still arriving never starts over.
 - **A catalog failure describes poll and refresh health.** Polls report after failing for the
   grace, and a refresh someone asked for reports at once. Polling continues and the rows stay. The
   error stays typed, because a refused sign-in shows red and the widget rethrows it. Refresh, from
@@ -114,17 +119,20 @@ couldn't be opened is Handoff's `missing`.
 
 - **Channel stream:** `connect()` starts the stream and keeps retrying until `disconnect()`, and
   does nothing while already trying. `disconnect()` stops trying and leaves `connecting` unless
-  deleted. Nothing waits on that phase change. `reconnect()` serves Retry. One observation loop
-  opens the stream, receives each event and backs off after an error. The grace runs only while
-  that loop is trying and the phase is `connecting`. A grace with stream bytes in it waits another
-  round, so a large snapshot on a slow link reads Connecting while it arrives, and failure follows
-  the first full grace in which nothing arrived. The server's heartbeat keeps the stream open:
-  35 seconds of silence fails it through the stream request's own timeout.
+  deleted. Nothing waits on that phase change. `reconnect()` serves Can't Connect's Retry. One
+  observation loop opens the stream, receives each event and backs off after an error. The grace
+  runs only while that loop is trying and the phase is `connecting`. A grace with stream bytes in
+  it waits another round, so a large snapshot on a slow link reads Connecting while it arrives, and
+  failure follows the first full grace in which nothing arrived. The server's heartbeat keeps the
+  stream open: 35 seconds of silence fails it through the stream request's own timeout.
 - **Catalog:** with no stream to lose, it's `connecting` only before its first outcome, so coming
   back never turns the footer dot gray. `isLoaded` means a catalog has arrived, the same word
   `ChannelStore` uses. `refresh()` joins an attempt already in flight. Polls (`startPolling`,
   `stopPolling`, `setActive`) run every 5 seconds while active and every 15 otherwise, and retry
-  after the policy's initial delay while quiet.
+  after the policy's initial delay while quiet. While polling, the catalog watches the network
+  path through `NetworkPathSource`, which follows `NWPathMonitor` unless a test injects one. Its
+  first report is only where things stand. A path that comes back or moves polls at once, as
+  `setActive(true)` does, and the held channels try again as the first invariant describes.
 - **Footer:** `SidebarFooter` (ToyBoxUI) turns `phase` and `isLoaded` into the dot, heading, help
   verb and VoiceOver value on both apps (see Sidebar). Only a refresh the user asked for lights the
   Mac's footer spinner, through `AppModel.isRefreshingCatalog`. Polls, Handoff, management and the
@@ -2507,9 +2515,9 @@ navigation keeps list focus until explicitly moving into the conversation.
 | First channel snapshot | Static message placeholders and "Connecting", whose spinner appears after 300 ms. On the Mac the label waits with it. Composer shell remains present, Send unavailable |
 | New empty channel | "Your lead is getting started", "Send a message or type @ to add an agent". Keep composer and working status visible |
 | Filter has no messages | "No messages for you yet", Show All Messages. Keep paging older history until exhausted |
-| Reconnecting with cached state | Keep transcript and scroll intact. After about three seconds of trying without connecting, a 32-point inline banner below toolbar says "Reconnecting. Messages may be out of date" with Retry, the channel's only outage notice apart from Overview's note. Retry keeps the banner until the channel connects, and the catalog's recovery retries it at once. A reconnect that goes live sooner shows nothing. Until then agent status, working presence and every connection notice stay as they were while live. Disable delivery and management actions, not editing. Time away from the app never counts toward the three seconds |
+| Reconnecting with cached state | Keep transcript and scroll intact. After about three seconds of trying without connecting, the transcript's floating pill says "Reconnecting to server" over "Messages may be out of date" (see Reconnecting notice), the channel's only outage notice. It has no Retry, because the channel keeps trying and tries again at once when the network comes back or moves, the app becomes active again or the catalog recovers (see Connections). The notice stays until the channel connects. A reconnect that goes live sooner shows nothing. Until then agent status, working presence and every connection notice stay as they were while live. Disable delivery and management actions, not editing. Time away from the app never counts toward the three seconds |
 | Disconnected without any state | `wifi.exclamationmark`, "Can't connect to Toy Box", server host, readable failure, Retry and Settings |
-| Catalog refresh fails | Keep existing rows, mark them stale and show the error block above the connection footer's orange status line (see Sidebar), after about three seconds of failing polls or at once for a refresh the user asked for. Never replace them with "No channels". When it recovers, every failed channel retries at once |
+| Catalog refresh fails | Keep existing rows, mark them stale and show the error block above the connection footer's orange status line (see Sidebar), after about three seconds of failing polls or at once for a refresh the user asked for. Never replace them with "No channels". When it recovers, every channel waiting out a backoff retries at once |
 | Failed send | Inline error above composer and explicit status on optimistic row, preserved text/attachments, no automatic retry |
 | Channel deleted | Stop observation, dismiss its inspector, show "This channel was deleted". Back to Channels and Copy Draft if nonempty. Never silently discard a draft or redirect to another channel |
 | Invalid URL or authorization failure | Show the actual category and server, Settings/Retry as appropriate. No fabricated successful connection |
