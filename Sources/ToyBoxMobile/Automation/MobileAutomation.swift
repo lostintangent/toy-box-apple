@@ -191,11 +191,10 @@ struct MobileAutomationTree {
             if object.accessibilityActivate() { return true }
             guard let target = nativeTarget(in: windows) else { return false }
             if let input = target as? UIResponder, input is any UIKeyInput { return input.becomeFirstResponder() }
-            if let control = target as? UIControl {
-                if control.isEnabled && (control is UIButton || traits.contains(.button)) {
-                    control.performPrimaryAction()
-                    return true
-                }
+            if let control = target as? UIControl, control.isEnabled, control is UIButton
+                || traits.contains(.button) || control.allControlEvents.contains(.primaryActionTriggered) {
+                control.performPrimaryAction()
+                return true
             }
             if let item = target as? UIBarButtonItem, item.isEnabled, let action = item.action {
                 return UIApplication.shared.sendAction(action, to: item.target, from: item, for: nil)
@@ -431,7 +430,7 @@ struct MobileAutomationTree {
 }
 
 @MainActor
-private final class MobileAutomationRun {
+final class MobileAutomationRun {
     private struct Status: Encodable {
         let state: String
         let step: Int
@@ -453,11 +452,15 @@ private final class MobileAutomationRun {
     }
 
     private let script: URL
+    private let currentTree: @MainActor () -> MobileAutomationTree
     private var index = 0
     private var deadline = ContinuousClock.now
     private var directory: URL { script.deletingLastPathComponent() }
 
-    init(script: URL) { self.script = script }
+    init(script: URL, currentTree: @escaping @MainActor () -> MobileAutomationTree = { .current }) {
+        self.script = script
+        self.currentTree = currentTree
+    }
 
     func run() async {
         do {
@@ -477,7 +480,7 @@ private final class MobileAutomationRun {
     }
 
     private func publish(_ state: String, error: String? = nil) throws {
-        let tree = MobileAutomationTree.current
+        let tree = currentTree()
         let traits: MobileAutomationTree.Traits?
         let traitsError: String?
         switch tree.traits {
@@ -493,29 +496,29 @@ private final class MobileAutomationRun {
         switch step.action {
         case .tap(let target):
             let element = try await wait(timeout: step.timeout) {
-                let matches = MobileAutomationTree.current.matching(target)
+                let matches = currentTree().matching(target)
                     .filter { !$0.traits.contains(.notEnabled) }
                 let buttons = matches.filter { $0.traits.contains(.button) }
                 let choices = buttons.count == 1 ? buttons : matches
                 guard choices.count <= 1 else { throw Failure("Ambiguous accessibility target: \(target)") }
                 return choices.first
             }
-            guard element.activate(in: MobileAutomationTree.current.windows) else {
+            guard element.activate(in: currentTree().windows) else {
                 throw Failure("Accessibility activation was not handled by \(target) (\(type(of: element.object))).")
             }
         case .type(let text):
             let input = try await wait(timeout: step.timeout) {
-                MobileAutomationTree.current.firstResponder as? any UIKeyInput
+                currentTree().firstResponder as? any UIKeyInput
             }
             input.insertText(text)
         case .wait(let target, let absent):
             _ = try await wait(timeout: step.timeout) {
-                let tree = MobileAutomationTree.current
+                let tree = currentTree()
                 return !tree.viewport.isEmpty && tree.contains(target) != absent ? true : nil
             }
         case .customAction(let name, let target):
             let element = try await wait(timeout: step.timeout) {
-                let matches = MobileAutomationTree.current.matching(target).filter {
+                let matches = currentTree().matching(target).filter {
                     !$0.traits.contains(.notEnabled) && $0.actions.contains { $0.name == name }
                 }
                 guard matches.count <= 1 else { throw Failure("Ambiguous custom action \(name) on \(target).") }
@@ -527,26 +530,25 @@ private final class MobileAutomationRun {
             }
         case .scroll(let direction, let target):
             _ = try await wait(timeout: step.timeout) {
-                try MobileAutomationTree.current.scroll(direction, on: target) ? true : nil
+                try currentTree().scroll(direction, on: target) ? true : nil
             }
         case .drag(let direction, let target):
-            let view = try await wait(timeout: step.timeout) { try MobileAutomationTree.current.scrollView(target) }
+            let view = try await wait(timeout: step.timeout) { try currentTree().scrollView(target) }
             try await MobileAutomationTree.drag(view, direction, deadline: deadline)
         case .back(let ifPresent):
             let tree = try await wait(timeout: step.timeout) {
-                let tree = MobileAutomationTree.current
+                let tree = currentTree()
                 return tree.viewport.isEmpty ? nil : tree
             }
             let back = tree.matching("BackButton").first
             if back == nil && ifPresent { break }
-            let performed = tree.activateBack(back)
-            guard performed else {
+            guard tree.activateBack(back) else {
                 let details = back.map { " Back target: \(type(of: $0.object))." } ?? ""
                 throw Failure("No visible window handled the accessibility escape action.\(details)")
             }
             if let back {
                 _ = try await wait(timeout: step.timeout) {
-                    let current = MobileAutomationTree.current.matching("BackButton")
+                    let current = currentTree().matching("BackButton")
                     return current.allSatisfy { $0.object !== back.object || $0.description != back.description }
                         ? true : nil
                 }
@@ -555,10 +557,10 @@ private final class MobileAutomationRun {
             try await settle(timeout: step.timeout)
             try await hostAction(timeout: step.timeout)
         case .menuAction(let title):
-            let selection = try MobileAutomationMenu.select(title, in: .current)
+            let selection = try MobileAutomationMenu.select(title, in: currentTree())
             defer { selection.marked.restoreIdentifier() }
             _ = try await wait(timeout: step.timeout) {
-                try selection.isVisible(in: .current) ? true : nil
+                try selection.isVisible(in: currentTree()) ? true : nil
             }
             selection.interaction.dismissMenu()
             _ = try await wait(timeout: step.timeout) {
@@ -567,21 +569,21 @@ private final class MobileAutomationRun {
             try await settle(timeout: step.timeout)
             try Task.checkCancellation()
             guard ContinuousClock.now < deadline else { throw Failure("Menu dismissal exceeded the step deadline.") }
-            try selection.perform(in: .current)
+            try selection.perform(in: currentTree())
         case .posture(let posture):
             do {
                 try await settle(timeout: step.timeout, posture: posture)
             } catch {
                 throw Failure("Expected \(posture.rawValue) scene \(posture.viewport), "
-                              + "but measured \(MobileAutomationTree.current.viewport). \(error)")
+                              + "but measured \(currentTree().viewport). \(error)")
             }
             return
         case .fold:
-            let before = MobileAutomationTree.current.viewport
+            let before = currentTree().viewport
             try await hostAction(timeout: step.timeout)
             do {
                 _ = try await wait(timeout: step.timeout) {
-                    let after = MobileAutomationTree.current.viewport
+                    let after = currentTree().viewport
                     return !after.isEmpty && after != before ? after : nil
                 }
             } catch let failure as Failure {
@@ -593,32 +595,48 @@ private final class MobileAutomationRun {
     }
 
     private func hostAction(timeout: TimeInterval) async throws {
+        // The host bounds its child by the step timeout from seeing "ready", then always acknowledges. Its
+        // budget starts here and pauses this step's own deadline, so a slow capture can't fail the app first.
+        let ready = ContinuousClock.now
+        defer { deadline = deadline.advanced(by: ready.duration(to: .now)) }
         try publish("ready")
-        _ = try await wait(timeout: timeout) {
-            let url = self.directory.appending(path: "ack.json")
+        let budget = timeout + 5
+        let url = directory.appending(path: "ack.json")
+        let acknowledged = try await poll(until: ready.advanced(by: .seconds(budget))) {
             guard FileManager.default.fileExists(atPath: url.path) else { return nil as Bool? }
             let ack = try JSONDecoder().decode(Acknowledgement.self, from: Data(contentsOf: url))
             guard ack.step == self.index else { return nil }
             if let error = ack.error { throw Failure(error) }
             return true
         }
+        guard acknowledged != nil else {
+            throw Failure("The host did not acknowledge step \(index + 1) within \(budget) seconds.")
+        }
     }
 
     private func wait<Value>(timeout: TimeInterval, until read: () throws -> Value?) async throws -> Value {
         let deadline = min(self.deadline, ContinuousClock.now + .milliseconds(Int64(timeout * 1_000)))
+        guard let result = try await poll(until: deadline, read) else {
+            throw Failure("Timed out after \(timeout) seconds at step \(index + 1).")
+        }
+        return result
+    }
+
+    private func poll<Value>(until deadline: ContinuousClock.Instant,
+                             _ read: () throws -> Value?) async throws -> Value? {
         repeat {
             try Task.checkCancellation()
             if let result = try read() { return result }
             try await Task.sleep(for: .milliseconds(100))
         } while ContinuousClock.now < deadline
-        throw Failure("Timed out after \(timeout) seconds at step \(index + 1).")
+        return nil
     }
 
     private func settle(timeout: TimeInterval, posture: MobileAutomationPosture? = nil) async throws {
         var previous: [String] = []
         var stable = 0
         _ = try await wait(timeout: timeout) {
-            let tree = MobileAutomationTree.current
+            let tree = currentTree()
             for window in tree.windows { window.layoutIfNeeded() }
             let measured = tree.elements.map { "\($0.description) \($0.frame)" } + [String(describing: tree.viewport)]
             let expected = posture?.matches(tree.viewport) ?? true

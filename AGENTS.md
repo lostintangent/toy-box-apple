@@ -119,7 +119,7 @@ use demo servers only for write scripts. Never skip or retry actions.
 | `{"type":"text"}` | Text insertion |
 | `{"wait":"label or value fragment"}` | `absent: true` waits for disappearance |
 | `{"screenshot":"name","display":1}` | Capture only after settled accessibility/layout |
-| `{"back":true}` | Native Back, then public window accessibility escape only if activation is unhandled. Disabled Back never falls through. `ifPresent: true` allows an explicitly optional initial return from restored navigation. Wait for the channel name, then optional Back before tapping its row |
+| `{"back":true}` | Native Back, including the restored stack's trait-less Back control through its primary action, then public window accessibility escape only if activation is unhandled. Disabled Back never falls through. `ifPresent: true` allows an explicitly optional initial return from restored navigation. Wait for the channel name, then optional Back before tapping its row |
 | `{"action":"Reply","on":"message-12"}` | Named accessibility custom action on one exact label or identifier |
 | `{"posture":"unfolded","timeout":60}` | Wait for the measured scene, not hinge movement |
 | `{"menuAction":"Edit Channel"}` | Visible-menu action dispatch, not a tap. See below |
@@ -130,8 +130,10 @@ use demo servers only for write scripts. Never skip or retry actions.
   offsets but balances started end callbacks, never reporting completion. Captures wait for settled layout.
 - Host acknowledgement requires a settled app accessibility/layout snapshot and both
   `<name>.png` and `<name>.json` under `SCRATCH_PATH/mobile-drive/`, containing its step, state,
-  labels and viewport. Later `status.json` cannot erase it. Capture/control children share the step deadline
-  and interruption signal. Cancellation kills the exact child and awaits exit before shutdown/release.
+  labels and viewport. Later `status.json` cannot erase it. The host bounds each capture/control child by
+  the step timeout from the app's ready signal and always acknowledges. `simctl` can exit seconds after writing
+  the image, so the app waits that timeout plus five seconds with its own step deadline paused. Children share
+  the interruption signal. Cancellation kills the exact child and awaits exit before shutdown/release.
 - DEBUG status reports loaded-content `traits.contentSizeCategory` / `traits.interfaceStyle`, or
   `traitsError`. Active presented content takes priority, and visible controllers must agree.
   Never force view loading or substitute screen/requested launch traits for measured content.
