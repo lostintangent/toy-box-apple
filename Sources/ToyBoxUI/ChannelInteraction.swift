@@ -32,7 +32,8 @@ public final class ChannelInteraction {
     public private(set) var jumpToLatestRequest = UUID()
     public private(set) var findRequest = UUID()
     public private(set) var findNavigation: (direction: Int, token: UUID)?
-    /// The phone's transcript sets this while Find is open, so its bar takes the composer's place.
+    /// Each transcript sets this while Find is open. The phone's Find bar takes the composer's place,
+    /// and the Mac's reconnecting notice drops below its Find bar.
     public var isFinding = false
 
     public init(isInspectorPresented: Bool = true) {

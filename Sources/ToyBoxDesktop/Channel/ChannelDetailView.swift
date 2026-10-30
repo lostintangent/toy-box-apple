@@ -201,10 +201,8 @@ struct ChannelDetailView: View {
                 ConversationTranscript(store: store)
                     .id(ObjectIdentifier(store))
             }
-            .safeAreaBar(edge: .top, spacing: 0) {
-                if case .failed(let error) = store.phase {
-                    staleBanner(error)
-                }
+            .overlay(alignment: .top) {
+                ReconnectingNotice(failure: store.phase.message, isBelowFind: interaction.isFinding)
             }
             .safeAreaBar(edge: .bottom, spacing: 0) { composer }
         }
@@ -217,21 +215,6 @@ struct ChannelDetailView: View {
         } else {
             Color.clear.frame(height: 125)
         }
-    }
-
-    private func staleBanner(_ error: String) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: "wifi.exclamationmark").foregroundStyle(.secondary)
-            Text("Reconnecting to server. Messages may be out of date").lineLimit(1)
-        }
-        .font(.caption)
-        .padding(.horizontal, 14)
-        .frame(height: 32)
-        .glassEffect(.regular, in: .capsule)
-        .help(error)
-        .padding(.top, 8)
-        .frame(maxWidth: .infinity)
-        .modifier(ConversationRail())
     }
 
     /// Narrow windows show Overview as a sheet, which keeps a visible title and a default Done.
@@ -379,6 +362,44 @@ struct ChannelDetailView: View {
     }
 
     private var catalogChannel: Channel? { model.catalog?.channels.first { $0.id == store.id } }
+}
+
+/// Floats over a cached transcript whose stream dropped, like the phone's, so the rows, their
+/// scroll inset and the reader's anchor never move when it comes or goes. The channel retries on
+/// its own, so it offers no Retry.
+struct ReconnectingNotice: View {
+    /// Find's bar spans the top of the transcript: a 28-point field inside 6 points above and below.
+    static let findBarHeight: CGFloat = 40
+
+    let failure: String?
+    let isBelowFind: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        ZStack {
+            if let failure {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small).accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text("Reconnecting to server").font(.subheadline.weight(.semibold))
+                        Text("Messages may be out of date").font(.caption).foregroundStyle(.secondary)
+                    }
+                    .lineLimit(1)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 7)
+                .glassEffect(.regular, in: .capsule)
+                .help(failure)
+                .accessibilityElement(children: .combine)
+                .accessibilityHint(failure)
+                .padding(.top, isBelowFind ? Self.findBarHeight + 8 : 8)
+                .transition(reduceMotion ? .opacity : .opacity.combined(with: .offset(y: -4)))
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .modifier(ConversationRail())
+        .animation(.easeOut(duration: 0.2), value: failure != nil)
+    }
 }
 
 /// The one lane the transcript, the floating activity row and the composer share: the whole
