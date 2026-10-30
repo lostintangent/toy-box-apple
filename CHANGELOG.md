@@ -1,5 +1,20 @@
 # Changelog
 
+## iPhone 0.1.7
+
+- See "Reconnecting to server" when a channel loses its connection. It reconnects on its own, so there's no Retry button.
+- Reconnect as soon as your network comes back or moves between Wi-Fi and cellular.
+- Keep seeing Connecting while a large channel loads over a slow connection, instead of Can't Connect.
+- See Overview without a separate reconnecting note.
+- See Welcome's Continue button float over the screen without a band behind it.
+
+## Mac 0.1.14
+
+- See "Reconnecting to server" float over the conversation when a channel loses its connection, without moving any messages. It reconnects on its own, so there's no Retry button.
+- Reconnect as soon as your network comes back or changes, or when you switch back to Toy Box.
+- Keep seeing Connecting while a large channel loads over a slow connection, instead of Can't Connect.
+- See Overview without a separate reconnecting note, and Quick Send without a Retry button while a channel reconnects.
+
 ## iPhone 0.1.6
 
 - Tap a team member in Overview to see their role, status and model, in a popover beside the conversation when unfolded or a sheet sized to fit when folded.
