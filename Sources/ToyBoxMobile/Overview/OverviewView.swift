@@ -78,18 +78,6 @@ private struct OverviewContent: View {
     var body: some View {
         ScrollViewReader { proxy in
             OverviewList {
-                if store.phase.isUnavailable {
-                    Section {
-                        Label("Overview may be out of date until the channel connects.",
-                              systemImage: "wifi.exclamationmark")
-                            .font(.footnote)
-                            .foregroundStyle(ChannelInk.secondary)
-                        // The sheet covers the transcript banner, so it carries the banner's Retry.
-                        if placement == .sheet, store.phase != .deleted {
-                            Button("Retry", action: store.reconnect)
-                        }
-                    }
-                }
                 OverviewAboutSection(store: store, session: session)
                 OverviewTeamSection(store: store, session: session, placement: placement)
                 OverviewTasksSection(store: store, session: session)
