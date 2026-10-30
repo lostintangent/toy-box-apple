@@ -1349,6 +1349,21 @@ struct MenuBarExtraTests {
         #expect(try #require(long.documentView).frame.height > 2 * MenuBarInboxRequestText.maximumHeight)
     }
 
+    @Test func aLongRequestFadesItsBottomUntilTheReaderReachesTheEnd() {
+        func opacity(offset: CGFloat, content: CGFloat) -> Double {
+            let geometry = ScrollGeometry(contentOffset: CGPoint(x: 0, y: offset),
+                                          contentSize: CGSize(width: 348, height: content),
+                                          contentInsets: EdgeInsets(),
+                                          containerSize: CGSize(width: 348, height: min(content, 160)))
+            return MenuBarInboxRequestText.endOpacity(hiddenBelow: MenuBarInboxRequestText.hiddenBelow(geometry))
+        }
+        #expect(opacity(offset: 0, content: 16) == 1)
+        #expect(opacity(offset: 0, content: 544) == 0)
+        #expect(opacity(offset: 372, content: 544) == 0.5)
+        #expect(opacity(offset: 384, content: 544) == 1)
+        #expect(opacity(offset: 400, content: 544) == 1)
+    }
+
     @Test func whenActiveLingersAfterActivityAndHoldsWhileAMenuIsOpen() async throws {
         let center = NotificationCenter()
         let menu = NSMenu()
