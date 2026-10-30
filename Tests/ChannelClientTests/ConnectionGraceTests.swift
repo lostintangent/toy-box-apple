@@ -98,6 +98,33 @@ struct ConnectionGraceTests {
         #expect(mock.requests.filter { $0.url?.path == "/api/v1/channels/test" }.count == 2)
     }
 
+    @Test func aSnapshotStillArrivingStaysConnectingUntilAGracePassesInSilence() async throws {
+        let mock = MockTransport { _, _ in try .stream([]) }
+        let timer = GraceTimer()
+        let store = ChannelStore(id: "test", api: try mock.api(), sendJournal: nil, sleep: { _ in await timer.wait() })
+        store.connect()
+        defer { store.disconnect() }
+        try await eventually(observing: mock) { mock.pendingResponseCount == 1 }
+
+        // One byte at a time, so nothing arrives after a grace looks.
+        let snapshot = try MockResponse.stream([.init(type: "snapshot", state: testState())]).body
+        for index in 0..<3 {
+            #expect(mock.sendPendingBody(snapshot[index..<index + 1]) == 1)
+            try await eventually { store.isArriving }
+            timer.end()
+            try await eventually { !store.isArriving || store.phase != .connecting }
+            #expect(store.phase == .connecting, "A grace with bytes in it keeps the snapshot connecting")
+        }
+
+        timer.end()
+        try await eventually { store.phase != .connecting }
+        #expect(store.phase.message == ChannelStore.unansweredConnect, "A grace with nothing arriving fails")
+        #expect(mock.requests.count == 1, "The stream stayed open, so nothing retried")
+
+        #expect(mock.sendPendingBody(snapshot.dropFirst(3)) == 1)
+        try await eventually { store.phase.isConnected }
+    }
+
     @Test func idleTimeNeverCountsTowardTheGrace() async throws {
         let mock = MockTransport { _, _ in try .stream([]) }
         let store = ChannelStore(id: "test", api: try mock.api(),
@@ -112,5 +139,47 @@ struct ConnectionGraceTests {
         defer { store.disconnect() }
         #expect(store.phase == .connecting, "Coming back starts a new quiet period")
         try await eventually { store.phase.message == ChannelStore.unansweredConnect }
+    }
+}
+
+/// Ends each grace when a test says so instead of after real time. An end with no grace waiting
+/// ends the next wait at once, so a test never races the store's grace task.
+private final class GraceTimer: Sendable {
+    private struct State {
+        var waits: [(id: UUID, resume: CheckedContinuation<Void, Never>)] = []
+        var ended = 0
+    }
+    private let state = Mutex(State())
+
+    func wait() async {
+        let id = UUID()
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                let now = state.withLock { state in
+                    if Task.isCancelled { return true }
+                    guard state.ended == 0 else {
+                        state.ended -= 1
+                        return true
+                    }
+                    state.waits.append((id, continuation))
+                    return false
+                }
+                if now { continuation.resume() }
+            }
+        } onCancel: {
+            state.withLock { state in
+                state.waits.firstIndex { $0.id == id }.map { state.waits.remove(at: $0).resume }
+            }?.resume()
+        }
+    }
+
+    func end() {
+        state.withLock { state -> CheckedContinuation<Void, Never>? in
+            guard !state.waits.isEmpty else {
+                state.ended += 1
+                return nil
+            }
+            return state.waits.removeFirst().resume
+        }?.resume()
     }
 }

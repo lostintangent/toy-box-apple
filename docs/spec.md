@@ -94,11 +94,11 @@ verb, Retry: the transcript banner for a channel, the sidebar footer for the cat
 for Test Connection. Overview notes why its actions wait, and repeats Retry only as a phone sheet
 covering the banner. Three invariants hold:
 
-- **A channel failure keeps retrying its stream.** A channel is `failed` once it has tried for the
-  grace (`ReconnectPolicy.grace`, three seconds spent trying) without connecting, and it keeps
-  trying with backoff. Retry tries again at once and keeps `failed`, and so the banner, until the
-  stream connects. When a catalog request succeeds after one failed, every held channel still
-  `failed` retries at once.
+- **A channel failure keeps retrying its stream.** A channel is `failed` once it has tried for a
+  grace (`ReconnectPolicy.grace`, three seconds spent trying) in which nothing arrived, without
+  connecting, and it keeps trying with backoff. Retry tries again at once and keeps `failed`, and so
+  the banner, until the stream connects. When a catalog request succeeds after one failed, every
+  held channel still `failed` retries at once.
 - **A catalog failure describes poll and refresh health.** Polls report after failing for the
   grace, and a refresh someone asked for reports at once. Polling continues and the rows stay. The
   error stays typed, because a refused sign-in shows red and the widget rethrows it. Refresh, from
@@ -116,7 +116,9 @@ couldn't be opened is Handoff's `missing`.
   does nothing while already trying. `disconnect()` stops trying and leaves `connecting` unless
   deleted. Nothing waits on that phase change. `reconnect()` serves Retry. One observation loop
   opens the stream, receives each event and backs off after an error. The grace runs only while
-  that loop is trying and the phase is `connecting`. The server's heartbeat keeps the stream open:
+  that loop is trying and the phase is `connecting`. A grace with stream bytes in it waits another
+  round, so a large snapshot on a slow link reads Connecting while it arrives, and failure follows
+  the first full grace in which nothing arrived. The server's heartbeat keeps the stream open:
   35 seconds of silence fails it through the stream request's own timeout.
 - **Catalog:** with no stream to lose, it's `connecting` only before its first outcome, so coming
   back never turns the footer dot gray. `isLoaded` means a catalog has arrived, the same word
