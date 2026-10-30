@@ -1326,6 +1326,29 @@ struct MenuBarExtraTests {
         #expect(inbox.requests[0].canReply)
     }
 
+    @Test func aShortRequestTakesItsLinesAndALongOneScrollsWithinTheCap() throws {
+        func scrollView(for quote: String) throws -> NSScrollView {
+            let host = NSHostingView(rootView: MenuBarInboxRequestText(quote: quote, presentationID: UUID())
+                .frame(width: 348)
+                .fixedSize(horizontal: false, vertical: true))
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 348, height: 400),
+                                  styleMask: [.borderless], backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            defer { window.close() }
+            window.contentView = host
+            host.layoutSubtreeIfNeeded()
+            func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(descendants) }
+            return try #require(descendants(host).compactMap { $0 as? NSScrollView }.first)
+        }
+        let short = try scrollView(for: "Where should the shared library sit?")
+        let shortContent = try #require(short.documentView).frame.height
+        #expect(short.frame.height == shortContent)
+        #expect(shortContent > 0 && shortContent < 40)
+        let long = try scrollView(for: String(repeating: "The request keeps going with constraints. ", count: 40))
+        #expect(long.frame.height == MenuBarInboxRequestText.maximumHeight)
+        #expect(try #require(long.documentView).frame.height > 2 * MenuBarInboxRequestText.maximumHeight)
+    }
+
     @Test func whenActiveLingersAfterActivityAndHoldsWhileAMenuIsOpen() async throws {
         let center = NotificationCenter()
         let menu = NSMenu()

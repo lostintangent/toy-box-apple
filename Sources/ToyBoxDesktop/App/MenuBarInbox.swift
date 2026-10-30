@@ -7,7 +7,6 @@ import ToyBoxUI
 struct MenuBarInbox: View {
     @Environment(AppModel.self) private var model
     @Environment(\.openSettings) private var openSettings
-    @Environment(\.channelTextScale) private var textScale
     @ViewState private var inbox = MenuBarInboxState()
     @ViewState private var isPresented = false
     @ViewState private var presentationID = UUID()
@@ -113,12 +112,12 @@ struct MenuBarInbox: View {
     private var waiting: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 6) {
-                Text("Waiting for You").font(.system(size: 15, weight: .semibold))
+                Text("Needs Your Reply").font(.system(size: 15, weight: .semibold))
                 Text("\(model.menuBarStatus.waiting.count)")
                     .font(.system(size: 13)).foregroundStyle(.secondary).monospacedDigit()
             }
             ForEach(Array(inbox.requests.enumerated()), id: \.element.id) { index, request in
-                if index > 0 { Divider().padding(.leading, 38) }
+                if index > 0 { Divider() }
                 requestRow(request)
             }
         }
@@ -126,23 +125,13 @@ struct MenuBarInbox: View {
 
     private func requestRow(_ request: MenuBarInboxState.Request) -> some View {
         let item = request.item
-        return VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .top, spacing: 10) {
-                if let agent = item.agent {
-                    AgentAvatarView(agent: agent, size: 28)
-                } else {
-                    Image(systemName: "questionmark.bubble")
-                        .foregroundStyle(.secondary).frame(width: 28, height: 28).accessibilityHidden(true)
-                }
-                VStack(alignment: .leading, spacing: 3) {
-                    Button(item.name) { open(item) }
-                        .buttonStyle(.plain)
-                        .font(.system(size: 13, weight: .semibold))
-                        .lineLimit(1)
-                        .help("Open \(item.name)")
-                    Text(item.agent.map { "\($0.name) needs your reply" } ?? "Waiting for your reply")
-                        .font(.system(size: 11)).foregroundStyle(.secondary)
-                }
+        return VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 10) {
+                Button(item.name) { open(item) }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 13, weight: .semibold))
+                    .lineLimit(1)
+                    .help("Open \(item.name)")
                 Spacer(minLength: 0)
                 Button { open(item) } label: {
                     Image(systemName: "arrow.up.forward.app").frame(width: 28, height: 28)
@@ -154,10 +143,7 @@ struct MenuBarInbox: View {
             }
             VStack(alignment: .leading, spacing: 8) {
                 if let quote = item.quote {
-                    Text(quote)
-                        .font(.system(size: 13 * textScale))
-                        .lineSpacing(2)
-                        .accessibilityLabel(quote)
+                    MenuBarInboxRequestText(quote: quote, presentationID: presentationID)
                 } else {
                     Text("Request preview unavailable")
                         .font(.system(size: 13)).foregroundStyle(.secondary)
@@ -191,10 +177,9 @@ struct MenuBarInbox: View {
                     .buttonStyle(.plain)
                     .font(.system(size: 12, weight: .medium))
                     .frame(minHeight: 28)
-                    .accessibilityLabel("Reply to \(item.agent?.name ?? item.name) in \(item.name)")
+                    .accessibilityLabel("Reply in \(item.name)")
                 }
             }
-            .padding(.leading, 38)
         }
     }
 
@@ -343,6 +328,29 @@ struct MenuBarInbox: View {
     private func closeThen(_ action: @escaping @MainActor () -> Void) {
         close()
         DispatchQueue.main.async(execute: action)
+    }
+}
+
+/// A short request takes only its lines. A longer one scrolls within the cap, and AppKit hands the
+/// wheel back to the inbox at either end. Opening the inbox flashes the scroller to show there's more.
+struct MenuBarInboxRequestText: View {
+    static let maximumHeight: CGFloat = 160
+    var quote: String
+    var presentationID: UUID
+    @Environment(\.channelTextScale) private var textScale
+
+    var body: some View {
+        ScrollView {
+            Text(quote)
+                .font(.system(size: 13 * textScale))
+                .lineSpacing(2)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityLabel(quote)
+        }
+        .scrollIndicatorsFlash(onAppear: true)
+        .scrollIndicatorsFlash(trigger: presentationID)
+        .frame(maxHeight: Self.maximumHeight)
+        .fixedSize(horizontal: false, vertical: true)
     }
 }
 
