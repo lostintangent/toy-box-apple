@@ -119,6 +119,31 @@ struct ManagementTests {
         #expect(!OverviewPurpose.requiresExpansion(short, width: 0, fontSize: 13))
     }
 
+    @Test func aboutValuesUseThePopoversWidthBeforeWrapping() throws {
+        // The rightmost ink, in points. The header and "Workspace default" end well before 200.
+        func inkExtent(status: String) throws -> Int {
+            let about = OverviewAgentAbout(agent: .init(id: "pixel", name: "Pixel"), isLead: false, model: nil,
+                                           status: .init(state: "waiting", text: status), isAvailable: true)
+                .background(Color.white)
+                .environment(\.colorScheme, .light)
+            let renderer = ImageRenderer(content: about)
+            renderer.scale = 1
+            let image = NSBitmapImageRep(cgImage: try #require(renderer.cgImage))
+            var extent = 0
+            for y in 0..<image.pixelsHigh {
+                for x in stride(from: image.pixelsWide - 1, to: extent, by: -1)
+                where (image.colorAt(x: x, y: y)?.brightnessComponent ?? 1) < 0.6 {
+                    extent = x
+                    break
+                }
+            }
+            return extent
+        }
+        #expect(try inkExtent(status: "Idle") < 200)
+        // About 300 points of callout text. An even split wrapped it at about 165 points.
+        #expect(try inkExtent(status: "Waiting for Moss's review of the plan, then the layout") > 240)
+    }
+
     @Test(arguments: [248, 296, 368])
     func truncatedPurposeEndsAtAWordAndLeavesRoomForShowMore(_ width: Int) throws {
         let purpose = String(repeating: "Build a beautifully designed native Mac client for channels. ", count: 6)
