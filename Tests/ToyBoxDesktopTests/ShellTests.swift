@@ -1197,25 +1197,32 @@ struct MenuBarExtraTests {
         .init(channel: channel, sequence: channel.requestSequence ?? 0, request: request)
     }
 
-    @Test func theSymbolFollowsTheMostUrgentState() {
+    @Test func theIconFollowsTheMostUrgentState() {
         let idle = MenuBarStatus([], unreachableHost: nil)
-        #expect(idle.state == .idle && idle.symbol == "bubble" && !idle.isActive)
+        #expect(idle.state == .idle && idle.icon == .face && !idle.isActive)
         #expect(idle.accessibilityValue == "No agents working" && idle.emptyText == "No agents are working")
 
         let offline = MenuBarStatus([], unreachableHost: "studio.local:3100")
-        #expect(offline.state == .disconnected && offline.symbol == "bubble" && !offline.isActive)
+        #expect(offline.state == .disconnected && offline.icon == .face && !offline.isActive)
         #expect(offline.accessibilityValue == "Not connected" && offline.emptyText == "Can't connect to studio.local:3100")
 
         let working = MenuBarStatus([.init(channel: channel("a"), working: [ada])], unreachableHost: nil)
-        #expect(working.state == .working && working.symbol == "ellipsis.bubble" && working.isActive)
+        #expect(working.state == .working && working.icon == .working && working.isActive)
         #expect(working.accessibilityValue == "1 agent working" && working.emptyText == nil)
 
         let waiting = MenuBarStatus(requests: [self.waiting(channel("a", request: 12))], [
             .init(channel: channel("a", request: 12), working: [lead, ada]),
             .init(channel: channel("b"), working: [nova]),
         ], unreachableHost: "studio.local:3100")
-        #expect(waiting.state == .waiting && waiting.symbol == "questionmark.bubble.fill" && waiting.isActive)
+        #expect(waiting.state == .waiting && waiting.icon == .waiting && waiting.isActive)
         #expect(waiting.accessibilityValue == "1 channel waiting for you, 3 agents working")
+    }
+
+    @Test func everyIconIsATemplateOnOneCanvas() {
+        for icon in MenuBarIcon.allCases {
+            #expect(icon.image.size == CGSize(width: 17, height: 16) && icon.image.isTemplate)
+            #expect(icon.image.cgImage(forProposedRect: nil, context: nil, hints: nil) != nil)
+        }
     }
 
     @Test func waitingChannelsQuoteTheirRequestInTheSharedOrder() throws {
@@ -1347,6 +1354,21 @@ struct MenuBarExtraTests {
         let long = try scrollView(for: String(repeating: "The request keeps going with constraints. ", count: 40))
         #expect(long.frame.height == MenuBarInboxRequestText.maximumHeight)
         #expect(try #require(long.documentView).frame.height > 2 * MenuBarInboxRequestText.maximumHeight)
+    }
+
+    @Test func aLongRequestFadesItsBottomUntilTheReaderReachesTheEnd() {
+        func opacity(offset: CGFloat, content: CGFloat) -> Double {
+            let geometry = ScrollGeometry(contentOffset: CGPoint(x: 0, y: offset),
+                                          contentSize: CGSize(width: 348, height: content),
+                                          contentInsets: EdgeInsets(),
+                                          containerSize: CGSize(width: 348, height: min(content, 160)))
+            return MenuBarInboxRequestText.endOpacity(hiddenBelow: MenuBarInboxRequestText.hiddenBelow(geometry))
+        }
+        #expect(opacity(offset: 0, content: 16) == 1)
+        #expect(opacity(offset: 0, content: 544) == 0)
+        #expect(opacity(offset: 372, content: 544) == 0.5)
+        #expect(opacity(offset: 384, content: 544) == 1)
+        #expect(opacity(offset: 400, content: 544) == 1)
     }
 
     @Test func whenActiveLingersAfterActivityAndHoldsWhileAMenuIsOpen() async throws {

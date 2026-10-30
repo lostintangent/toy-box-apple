@@ -2577,19 +2577,21 @@ banners with sound and send completions to Notification Center only, since the s
 shows them. The active key channel still never notifies. Keep the existing per-milestone
 deduplication and the two Settings toggles.
 
-**Menu bar extra.** One template symbol tells you, from any app, whether your team is working or
-waiting for you. It never animates, because a team can work for hours, and it never uses color.
+**Menu bar extra.** One template image of the app icon's robot head tells you, from any app,
+whether your team is working or waiting for you. It never animates, because a team can work
+for hours, and it never uses color.
 
-| State | Symbol | Accessibility value |
+| State | Image | Accessibility value |
 | --- | --- | --- |
-| A channel is waiting for you | `questionmark.bubble.fill` | "1 channel waiting for you" (plus the working count when nonzero) |
-| Agents working, nothing waiting | `ellipsis.bubble` | "3 agents working" |
-| Nothing active (Always only) | `bubble` | "No agents working" |
-| Catalog unreachable | `bubble` | "Not connected" |
+| A channel is waiting for you | The robot's face with a solid badge at its top-right | "1 channel waiting for you" (plus the working count when nonzero) |
+| Agents working, nothing waiting | Three dots in the visor instead of the face | "3 agents working" |
+| Nothing active (Always only) | The robot's face | "No agents working" |
+| Catalog unreachable | The robot's face | "Not connected" |
 
-The label is "Toy Box". Waiting outranks working. The symbol swaps with
-`.contentTransition(.symbolEffect(.replace))` where the status item supports it, and instantly
-under Reduce Motion. Show no count, because the Dock badge already counts.
+The label is "Toy Box". Waiting outranks working. Each image is a 17 by 16 point template drawn
+from the icon's own head path, with the visor knocked out. The canvas always reserves the badge's
+room, so the item never changes width. Images swap instantly. Show no count, because the Dock badge
+already counts.
 
 General settings adds "Show in menu bar" as a pop-up with Always, When Active and Never. When
 Active is the default, with the footer "When Active shows the icon while agents are working or a
@@ -2605,7 +2607,7 @@ fixed footer, with 16-point content insets.
 | Inbox part | Specification |
 | --- | --- |
 | Needs Your Reply | 15-point semibold header with the live waiting count. Every pending channel is shown, newest request first on opening, between full-width dividers. Each row starts with the 13-point semibold channel name and a trailing 28-point Open control |
-| Request | Wrapping 13-point quote aligned with the channel name, flattened from Markdown without dropping @mentions. A short request takes only its lines. A longer one scrolls within 160 points, and opening the inbox flashes its scroll indicator. At either end of the request, the wheel carries on scrolling the inbox. The channel name and Open reveal the request in the main window. Reply, labeled "Reply in [channel]", expands an editor beneath the quote without moving the request's scroll position |
+| Request | Wrapping 13-point quote aligned with the channel name, flattened from Markdown without dropping @mentions. A short request takes only its lines. A longer one scrolls within 160 points, and opening the inbox flashes its scroll indicator. While more is below, its bottom 24 points fade like a clamped transcript message, clearing over the last 24 points of scrolling. At either end of the request, the wheel carries on scrolling the inbox. The channel name and Open reveal the request in the main window. Reply, labeled "Reply in [channel]", expands an editor beneath the quote without moving the request's scroll position |
 | Reply | One expanded editor at a time. Native 14-point text, three lines before scrolling, 12-point insets, 10-point corners and primary-at-5% fill. Attach Images, the canonical audience, Dictate and Send reuse the existing composer components, without another glass surface |
 | Working Now | Up to three channels with working agents and no pending request, most recently updated first, without a section heading or count. The 13-point medium channel name and the existing 11-point secondary working subtitle sit on the leading inset, with a trailing static 20-point avatar stack of up to three agents, lead first. Overflow opens the main window |
 | Empty and unavailable | "All caught up" when nothing needs attention, "Connecting…" before the first catalog, "No channels yet" with the main-window route, and "Connect to Toy Box" with Settings for invalid configuration. Offline keeps cached rows, says requests may be out of date and offers Retry |

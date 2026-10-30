@@ -332,12 +332,16 @@ struct MenuBarInbox: View {
 }
 
 /// A short request takes only its lines. A longer one scrolls within the cap, and AppKit hands the
-/// wheel back to the inbox at either end. Opening the inbox flashes the scroller to show there's more.
+/// wheel back to the inbox at either end. Opening the inbox flashes the scroller to show there's more,
+/// and the bottom fades like a clamped transcript message until the reader reaches the end.
 struct MenuBarInboxRequestText: View {
     static let maximumHeight: CGFloat = 160
+    static let fadeHeight: CGFloat = 24
     var quote: String
     var presentationID: UUID
     @Environment(\.channelTextScale) private var textScale
+    /// How much of the request is below the visible part, up to the fade's height.
+    @ViewState private var hiddenBelow: CGFloat = 0
 
     var body: some View {
         ScrollView {
@@ -347,10 +351,30 @@ struct MenuBarInboxRequestText: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .accessibilityLabel(quote)
         }
+        .onScrollGeometryChange(for: CGFloat.self) { Self.hiddenBelow($0) } action: { _, hidden in
+            hiddenBelow = hidden
+        }
+        .mask(alignment: .bottom) {
+            VStack(spacing: 0) {
+                Rectangle()
+                LinearGradient(colors: [.black, .black.opacity(Self.endOpacity(hiddenBelow: hiddenBelow))],
+                               startPoint: .top, endPoint: .bottom)
+                    .frame(height: Self.fadeHeight)
+            }
+        }
         .scrollIndicatorsFlash(onAppear: true)
         .scrollIndicatorsFlash(trigger: presentationID)
         .frame(maxHeight: Self.maximumHeight)
         .fixedSize(horizontal: false, vertical: true)
+    }
+
+    static func hiddenBelow(_ geometry: ScrollGeometry) -> CGFloat {
+        min(max(geometry.contentSize.height - geometry.visibleRect.maxY, 0), fadeHeight)
+    }
+
+    /// The last line clears over the final points of scrolling, so the fade never drops off in one step.
+    static func endOpacity(hiddenBelow: CGFloat) -> Double {
+        1 - hiddenBelow / fadeHeight
     }
 }
 
