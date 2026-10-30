@@ -85,7 +85,8 @@ struct ConnectionGraceTests {
                 : .stream([.init(type: "snapshot", state: testState())])
         }
         // The channel's backoff outlasts the test, so only the catalog's recovery can retry it.
-        let catalog = ChannelCatalogStore(api: try mock.api(), reconnectPolicy: .init(initialDelay: 60, grace: 0.05))
+        let catalog = ChannelCatalogStore(api: try mock.api(),
+                                          reconnectPolicy: .init(initialDelay: 600, maximumDelay: 600, grace: 0.05))
         let store = catalog.channel(id: "test")
         store.connect()
         defer { store.disconnect() }
