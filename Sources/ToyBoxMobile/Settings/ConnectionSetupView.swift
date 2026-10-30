@@ -41,7 +41,6 @@ struct ConnectionSetupView: View {
             }
         }
         .accessibilityIdentifier("server-setup")
-        .scrollEdgeEffectStyle(.hard, for: .bottom)
         .toolbarVisibility(.hidden, for: .navigationBar)
         .safeAreaBar(edge: .bottom) {
             if !dynamicTypeSize.isAccessibilitySize {

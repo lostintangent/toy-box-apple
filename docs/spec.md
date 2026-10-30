@@ -1049,10 +1049,10 @@ first Form row, with a clear background and no horizontal insets, holds the larg
 URL card follows: the address and Test Connection, each a native row of the same height, with
 errors below them. Continue is a full-width `.glassProminent` button at `.controlSize(.extraLarge)`
 in `.safeAreaBar(edge: .bottom)`, aligned to the card's measured edges and 8 points above the
-bottom safe area, so it rides above the keyboard. The Form's bottom scroll edge is `.hard`, so
-nothing shows through or below the bar. At accessibility sizes the bar would cover the card, so
-Continue becomes the Form's last row after the card instead, with the same edges and style. It's
-disabled until the current address tests successfully.
+bottom safe area, so it rides above the keyboard. The Form keeps its default soft bottom scroll
+edge, so Continue floats like the composer, with no band or hairline. At accessibility sizes the
+bar would cover the card, so Continue becomes the Form's last row after the card instead, with the
+same edges and style. It's disabled until the current address tests successfully.
 
 ### Visual system
 
