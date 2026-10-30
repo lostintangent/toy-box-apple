@@ -4,12 +4,12 @@ import Observation
 
 /// See Connections in docs/spec.md.
 public enum ChannelConnectionPhase: Equatable, Sendable {
-    /// Not connected yet and not failed: a first connect, a quiet retry within the grace, or a
-    /// channel nobody holds.
+    /// Not connected yet and not failed: a first connect, a snapshot still arriving, a quiet retry
+    /// within the grace, or a channel nobody holds.
     case connecting
     case connected
-    /// The channel tried for longer than the grace without connecting. Retrying continues, and
-    /// the phase stays until the stream connects.
+    /// The channel tried for a grace in which nothing arrived, without connecting. Retrying
+    /// continues, and the phase stays until the stream connects.
     case failed(String)
     case deleted
 
@@ -123,6 +123,11 @@ public final class ChannelStore {
     @ObservationIgnored private var grace: Task<Void, Never>?
     /// The latest failure while connecting, which `phase` reports if the grace runs out.
     @ObservationIgnored private var lastFailure: String?
+    /// The stream received bytes during the current grace, so the grace waits another round instead
+    /// of failing. Internal and observed, so tests can wait for an arrival.
+    private(set) var isArriving = false
+    @ObservationIgnored private var arrivals: StreamArrivals?
+    @ObservationIgnored private let sleep: @Sendable (TimeInterval) async throws -> Void
     @ObservationIgnored private var capturedUnread = false
     @ObservationIgnored private var historyGeneration = UUID()
     @ObservationIgnored private var readWrite: Task<Void, Never>?
@@ -133,12 +138,15 @@ public final class ChannelStore {
     @ObservationIgnored private var attemptsRestored = false
     @ObservationIgnored private var persistenceTask: Task<Void, any Error>?
 
+    /// `sleep` waits out each grace. Tests pass one they end instead of waiting.
     public init(id: String, api: ChannelAPI, reconnectPolicy: ReconnectPolicy = .init(),
-                sendJournal: ChannelSendJournal? = .shared) {
+                sendJournal: ChannelSendJournal? = .shared,
+                sleep: @escaping @Sendable (TimeInterval) async throws -> Void = { try await Task.sleep(for: .seconds($0)) }) {
         self.id = id
         self.api = api
         self.reconnectPolicy = reconnectPolicy
         self.sendJournal = sendJournal
+        self.sleep = sleep
     }
 
     deinit {
@@ -154,11 +162,14 @@ public final class ChannelStore {
         guard observation == nil, phase != .deleted else { return }
         generation = UUID()
         let token = generation
+        arrivals = StreamArrivals { [weak self] in
+            Task { @MainActor [weak self] in self?.streamArrived(token: token) }
+        }
         // Retry keeps a failure on screen until the stream connects.
         if phase.message == nil { startGrace(token: token) }
         let restore = attemptsRestored ? nil : restoreSendAttemptsConcurrently()
         var first: AsyncThrowingStream<ChannelObservationEvent, any Error>? =
-            api.observe(channelId: id, after: state?.revision)
+            api.observe(channelId: id, after: state?.revision, arrivals: arrivals)
         observation = Task.detached(priority: Task.currentPriority) { [weak self] in
             // Events reconcile restored send attempts, so they wait for the restore.
             await restore?.value
@@ -206,19 +217,34 @@ public final class ChannelStore {
 
     private func reopen(token: UUID) -> AsyncThrowingStream<ChannelObservationEvent, any Error>? {
         guard !Task.isCancelled, generation == token else { return nil }
-        return api.observe(channelId: id, after: state?.revision)
+        return api.observe(channelId: id, after: state?.revision, arrivals: arrivals)
     }
 
-    /// Says `.connecting` until the stream connects, or until it has tried for the grace without
-    /// connecting, which reports the latest failure as `.failed`. Only time spent trying counts.
+    private func streamArrived(token: UUID) {
+        guard generation == token, phase == .connecting else { return }
+        isArriving = true
+    }
+
+    /// Says `.connecting` until the stream connects, or until a grace passes in which the loop
+    /// tried without connecting and nothing arrived, which reports the latest failure as `.failed`.
+    /// Only time spent trying counts, and a grace with bytes in it waits another round, so a large
+    /// snapshot on a slow link stays `.connecting` while it arrives.
     private func startGrace(token: UUID) {
         stopGrace()
         phase = .connecting
         let seconds = reconnectPolicy.grace
+        let sleep = self.sleep
         grace = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(seconds))
-            guard !Task.isCancelled, let self, generation == token, phase == .connecting else { return }
-            phase = .failed(lastFailure ?? Self.unansweredConnect)
+            while true {
+                try? await sleep(seconds)
+                guard !Task.isCancelled, let self, generation == token, phase == .connecting else { return }
+                guard isArriving else {
+                    phase = .failed(lastFailure ?? Self.unansweredConnect)
+                    return
+                }
+                isArriving = false
+                arrivals?.rearm()
+            }
         }
     }
 
@@ -226,6 +252,8 @@ public final class ChannelStore {
         grace?.cancel()
         grace = nil
         lastFailure = nil
+        isArriving = false
+        arrivals?.rearm()
     }
 
     static let unansweredConnect = "The server hasn't responded yet. Still trying."

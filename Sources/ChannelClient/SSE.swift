@@ -1,5 +1,6 @@
 import ChannelKit
 import Foundation
+import Synchronization
 
 public struct SSEDecoder: Sendable {
     private var line: [UInt8] = []
@@ -62,6 +63,12 @@ public extension ChannelAPI {
     /// receives nothing for its timeout interval.
     func observe(channelId: String, after: Int? = nil,
                  heartbeatTimeout: TimeInterval = 35) -> AsyncThrowingStream<ChannelObservationEvent, any Error> {
+        observe(channelId: channelId, after: after, heartbeatTimeout: heartbeatTimeout, arrivals: nil)
+    }
+
+    /// Notes each byte of an accepted stream in `arrivals`, before any event completes.
+    internal func observe(channelId: String, after: Int?, heartbeatTimeout: TimeInterval = 35,
+                          arrivals: StreamArrivals?) -> AsyncThrowingStream<ChannelObservationEvent, any Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
                 do {
@@ -82,6 +89,7 @@ public extension ChannelAPI {
                     let decoder = JSONDecoder()
                     for try await byte in bytes {
                         try Task.checkCancellation()
+                        arrivals?.received()
                         guard let payload = try frames.consume(byte) else { continue }
                         let event = try decoder.decode(ChannelObservationEvent.self, from: Data(payload.utf8))
                         try validate(event)
@@ -118,12 +126,30 @@ private func validate(_ event: ChannelObservationEvent) throws {
     guard valid else { throw ChannelAPIError.invalidEvent(event.type) }
 }
 
+/// Tells a channel's store that its stream is receiving, so a large snapshot on a slow link reads as
+/// arriving rather than silent. It reports once, then stays quiet until the store's grace rearms it,
+/// so a byte costs one relaxed load.
+final class StreamArrivals: Sendable {
+    private let reported = Atomic(false)
+    private let report: @Sendable () -> Void
+
+    init(_ report: @escaping @Sendable () -> Void) { self.report = report }
+
+    func received() {
+        guard !reported.load(ordering: .relaxed) else { return }
+        reported.store(true, ordering: .relaxed)
+        report()
+    }
+
+    func rearm() { reported.store(false, ordering: .relaxed) }
+}
+
 public struct ReconnectPolicy: Sendable {
     public var initialDelay: TimeInterval
     public var maximumDelay: TimeInterval
-    /// How long a channel keeps trying to connect before it reports `.failed`, and how long catalog
-    /// polls keep failing before they report. Until then nothing changes, so a quick reconnect after
-    /// coming back to the app shows no notice.
+    /// How long a channel tries to connect with nothing arriving before it reports `.failed`, and
+    /// how long catalog polls keep failing before they report. Until then nothing changes, so a
+    /// quick reconnect after coming back to the app shows no notice.
     public var grace: TimeInterval
 
     public init(initialDelay: TimeInterval = 0.5, maximumDelay: TimeInterval = 15, grace: TimeInterval = 3) {
