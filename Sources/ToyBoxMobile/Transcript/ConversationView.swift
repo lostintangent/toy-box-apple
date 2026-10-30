@@ -317,7 +317,7 @@ struct ConversationView: View {
         .onChange(of: find.isPresented, initial: true) { interaction.isFinding = find.isPresented }
         .overlay(alignment: .top) {
             if store.isLoaded, let message = store.phase.message {
-                TranscriptReconnecting(message: message) { store.reconnect() }
+                TranscriptReconnecting(message: message)
             } else if let revealError {
                 TranscriptRevealNotice(message: revealError) { self.revealError = nil }
             } else if landsOnReveal {
@@ -756,19 +756,18 @@ private struct TranscriptWorkingNow: View {
 }
 
 /// Floating glass notice for a cached channel whose stream dropped. Content and anchor stay put.
+/// It has no Retry, since the channel is already reconnecting on its own.
 private struct TranscriptReconnecting: View {
     let message: String
-    let retry: () -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         HStack(spacing: 8) {
             ProgressView().controlSize(.small)
             VStack(alignment: .leading, spacing: 0) {
-                Text("Reconnecting").font(.footnote.weight(.semibold))
+                Text("Reconnecting to server").font(.footnote.weight(.semibold))
                 Text("Messages may be out of date").font(.caption).foregroundStyle(TranscriptInk.secondary)
             }
-            Button("Retry", action: retry).font(.footnote.weight(.semibold)).frame(minHeight: 44)
         }
         .padding(.horizontal, 14)
         .frame(minHeight: 44)
