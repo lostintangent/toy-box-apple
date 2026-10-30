@@ -928,9 +928,10 @@ spacing of 8 or more, because that fuses them into one shape.
 
 **Stale banner.** Replace the full-width `.bar` strip with a top `safeAreaBar` holding one glass
 capsule, centered on the rail 8 points below the toolbar. It is 32 high with 14-point horizontal
-padding and holds `wifi.exclamationmark`, "Reconnecting. Messages may be out of date" in
-caption, and a borderless Retry. The full error stays in its help text. Retry keeps the banner
-until the channel connects.
+padding and holds `wifi.exclamationmark` and "Reconnecting to server. Messages may be out of date"
+in caption, with no Retry, since the channel is already reconnecting. The full error stays in its
+help text. It fits on one line at the narrowest conversation, about 440 points beside the open
+inspector in a 1000-point window.
 
 **Real-window acceptance.** App snapshots capture the composited window and its sheets with
 ScreenCaptureKit, so they show glass and content beneath a `safeAreaBar` as drawn. Without Screen
@@ -1295,7 +1296,7 @@ outset 6 points so the dot never moves. Help reads "Connected to http://localhos
 VoiceOver reads one button labeled "Server" with the value "localhost:3100, connected" (or
 connecting, reconnecting, can't connect). Dot colors crossfade over 0.2 seconds, instantly with
 Reduce Motion. Never pulse the dot. The footer reflects the catalog connection only. An open
-channel's own stream keeps its inline "Reconnecting" banner in the detail column.
+channel's own stream keeps its inline "Reconnecting to server" banner in the detail column.
 
 ### Transcript
 
