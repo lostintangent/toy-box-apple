@@ -1,5 +1,17 @@
 # Changelog
 
+## iPhone 0.1.6
+
+- Tap a team member in Overview to see their role, status and model, in a popover beside the conversation when unfolded or a sheet sized to fit when folded.
+- See icons beside All Messages and Your Messages in the Message View menu.
+
+## Mac 0.1.13
+
+- See the Toy Box robot in the menu bar, with a badge when a channel needs your reply and dots while agents work.
+- Read requests under Needs Your Reply in the menu bar inbox. Long requests scroll in place, so you can read all of one while you reply.
+- Choose All Messages or Your Messages straight from the toolbar's filter button, with icons that match the View menu.
+- See an agent's status and model use the About popover's full width.
+
 ## iPhone 0.1.5
 
 - Connect from a simpler Welcome screen: enter your server, test it, then Continue.
