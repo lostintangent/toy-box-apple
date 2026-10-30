@@ -268,7 +268,11 @@ export async function runMobileDrive(drive: MobileDrive, host: DriveHost, signal
             console.log(`Drive complete. Screenshots: ${drive.output}`);
             return session.screenshots;
         }
-        if (acknowledgement) await atomicJSON(join(drive.directory, "ack.json"), acknowledgement);
+        if (acknowledgement) {
+            await atomicJSON(join(drive.directory, "ack.json"), acknowledgement);
+            // The app paused its step deadline while waiting for this acknowledgement, so the wait restarts here.
+            deadline = Date.now() + ((drive.steps[status.step]!.timeout ?? 12) + 5) * 1_000;
+        }
         await Bun.sleep(100);
     }
     throw latest ? driveFailure(latest, "Host timed out waiting for the app.")

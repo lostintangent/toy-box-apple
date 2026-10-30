@@ -572,6 +572,54 @@ struct AutomationTests {
         #expect(window.escapes == 0)
     }
 
+    @Test func aRestoredNavigationBackControlPerformsItsPrimaryActionWithoutEscaping() {
+        // A restored stack's Back is a private UIControl with only UIKit's private back trait, not a button.
+        let window = EscapeWindow()
+        window.isHidden = false
+        defer { window.isHidden = true }
+        let control = UIControl()
+        var presses = 0
+        control.addAction(UIAction { _ in presses += 1 }, for: .primaryActionTriggered)
+        let back = MobileAutomationTree.Element(object: control, label: "", value: "", identifier: "BackButton",
+                                                traits: UIAccessibilityTraits(rawValue: 1 << 27), frame: .zero)
+        #expect(MobileAutomationTree(windows: [window]).activateBack(back))
+        #expect(presses == 1)
+        #expect(window.escapes == 0)
+
+        let inert = UIControl()
+        inert.addAction(UIAction { _ in presses += 1 }, for: .valueChanged)
+        let element = MobileAutomationTree.Element(object: inert, label: "Level", value: "", identifier: "",
+                                                   traits: [], frame: .zero)
+        #expect(!element.activate())
+        #expect(presses == 1)
+    }
+
+    @Test func aHostAcknowledgingAfterTheStepTimeoutStillCompletesTheCapture() async throws {
+        struct Published: Decodable { let state: String; let error: String? }
+        let directory = URL.temporaryDirectory.appending(path: "automation-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let script = directory.appending(path: "steps.json")
+        try Data(#"[{"screenshot":"capture","timeout":2}]"#.utf8).write(to: script)
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 440, height: 956))
+        window.isHidden = false
+        defer { window.isHidden = true }
+        let run = Task {
+            await MobileAutomationRun(script: script, currentTree: { MobileAutomationTree(windows: [window]) }).run()
+        }
+        func published() -> Published? {
+            try? JSONDecoder().decode(Published.self, from: Data(contentsOf: directory.appending(path: "status.json")))
+        }
+        while published() == nil || published()?.state == "running" { try await Task.sleep(for: .milliseconds(50)) }
+        try #require(published()?.state == "ready")
+        // simctl sometimes returns ten seconds after writing the image, so the host acknowledges after the
+        // whole step timeout. The step deadline started before the pre-capture settle and has already passed.
+        try await Task.sleep(for: .seconds(2.5))
+        try Data(#"{"step":0}"#.utf8).write(to: directory.appending(path: "ack.json"), options: .atomic)
+        await run.value
+        #expect(published()?.state == "completed", "\(published()?.error ?? "")")
+    }
+
     @Test func virtualAccessibilityElementsActivateTheirMeasuredNativeControl() {
         let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 440, height: 956))
         window.isHidden = false
