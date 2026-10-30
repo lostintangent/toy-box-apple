@@ -222,8 +222,7 @@ struct ChannelDetailView: View {
     private func staleBanner(_ error: String) -> some View {
         HStack(spacing: 8) {
             Image(systemName: "wifi.exclamationmark").foregroundStyle(.secondary)
-            Text("Reconnecting. Messages may be out of date").lineLimit(1)
-            Button("Retry") { store.reconnect() }.buttonStyle(.borderless)
+            Text("Reconnecting to server. Messages may be out of date").lineLimit(1)
         }
         .font(.caption)
         .padding(.horizontal, 14)
