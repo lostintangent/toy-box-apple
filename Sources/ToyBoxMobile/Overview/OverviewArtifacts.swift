@@ -86,7 +86,17 @@ struct OverviewArtifactSymbol: View {
     let size: CGFloat
 
     var body: some View {
-        Image(systemName: ChannelArtifactSymbol.name(for: ArtifactContentKind(artifact)))
+        OverviewRowSymbol(systemName: ChannelArtifactSymbol.name(for: ArtifactContentKind(artifact)), size: size)
+    }
+}
+
+/// A monochrome symbol bounded to one square footprint, shared by artifact and routine rows.
+struct OverviewRowSymbol: View {
+    let systemName: String
+    let size: CGFloat
+
+    var body: some View {
+        Image(systemName: systemName)
             .resizable()
             .scaledToFit()
             .foregroundStyle(.primary)

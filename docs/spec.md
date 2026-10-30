@@ -2279,6 +2279,21 @@ requested" in place of the schedule line for 4 seconds, never as a synthetic tra
 Delete has a native confirmation that names the routine. The user does not create or edit
 routines here, matching the pane.
 
+Phone routine rows match the phone artifact rows: `calendar.badge.clock` in the same 24-point
+icon lane, primary ink and 12-point icon/text gap, so routine and artifact titles share one
+leading edge. The body title and footnote schedule line sit 4 points apart in a minimum-44 label
+with exactly 6 points of native vertical row inset, growing for wrapping or larger text, with no
+64-point minimum. The disclosure trails the title inline, as for phone task parents: one wrapping
+`Text` with the title, two non-breaking spaces and the footnote-semibold secondary
+`chevron.right` or `chevron.down`, never a stock `DisclosureGroup` or trailing accessory. The
+whole row is one plain button that toggles immediately, without a fade, and keeps its expansion
+for the Overview session. Expanded rows are indented to the title: the selectable prompt, Next
+run, the cron expression with its time zone, Run Now and Delete Routine…. The final row hides
+only the section's last separator. VoiceOver reads the title as the label, the schedule line
+then "Expanded" or "Collapsed" as the value, "Shows the prompt and next run" or "Hides the prompt
+and next run" as the hint, with Expand or Collapse as an action. The context menu keeps Run Now
+and Delete Routine….
+
 ### Artifact viewer
 
 Shared work deserves the same direct, in-window treatment as an image, not a dialog around a

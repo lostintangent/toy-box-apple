@@ -737,6 +737,142 @@ struct OverviewTests {
             hidden: [IndexPath(item: count - 1, section: 0)])
     }
 
+    @Test(arguments: [DynamicTypeSize.large, .accessibility5])
+    func routineRowsShareTheArtifactRhythmAndIndentTheirDetailsToTheTitle(size: DynamicTypeSize) async throws {
+        let suite = "mobile-overview-routine-rhythm-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let model = AppModel(arguments: ["--server", "https://fixture.example"], environment: [:], defaults: defaults)
+        let store = ChannelStore(id: "channel", api: try ChannelAPI(serverURL: "https://fixture.example"))
+        let state = OverviewRoutineState()
+        let host = UIHostingController(rootView:
+            OverviewList {
+                OverviewArtifactRow(
+                    artifact: .init(file: .init(kind: "machine", path: "plan.md"), title: "Daily notes"),
+                    share: nil, api: store.api, channelID: store.id)
+                    .listRowInsets(.vertical, 6)
+                OverviewRoutineRow(
+                    routine: .init(id: "routine", title: "Daily review", schedule: "0 9 * * *",
+                                   prompt: "Review the workshop."),
+                    store: store, state: state, isLast: true)
+            }
+            .environment(model).environment(ManagementPresenter()).environment(ChannelInteraction())
+            .environment(try artifactSession(artifacts: []))
+            .environment(\.horizontalSizeClass, .compact).environment(\.colorScheme, .light)
+            .dynamicTypeSize(size))
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 1_400))
+        window.rootViewController = host
+        window.isHidden = false
+        defer { window.isHidden = true }
+        host.view.layoutIfNeeded()
+        await Task.yield()
+        host.view.layoutIfNeeded()
+        let list = try #require(nativeList(in: host.view))
+        try #require(list.numberOfItems(inSection: 0) == 2)
+        let artifact = try #require(list.layoutAttributesForItem(at: IndexPath(item: 0, section: 0))).frame
+        let routine = try #require(list.layoutAttributesForItem(at: IndexPath(item: 1, section: 0))).frame
+        if size == .large {
+            #expect(abs(routine.height - 56) <= 1 && abs(routine.height - artifact.height) <= 1)
+        } else {
+            #expect(routine.height > 64)
+        }
+
+        state.expanded = true
+        let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+        while list.numberOfItems(inSection: 0) != 7, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(5))
+            host.view.layoutIfNeeded()
+        }
+        try #require(list.numberOfItems(inSection: 0) == 7)
+        let cell = list.convert(try #require(list.layoutAttributesForItem(at: IndexPath(item: 2, section: 0))).frame,
+                                to: window)
+        let prompt = try #require(MobileAutomationTree(windows: [window]).matching("Review the workshop.").first).frame
+        let lane = UIFontMetrics(forTextStyle: .title2)
+            .scaledValue(for: 24, compatibleWith: UITraitCollection(preferredContentSizeCategory: .init(size)))
+        #expect(abs(prompt.minX - (cell.minX + 16 + lane + 12)) <= 1,
+                "Prompt at \(prompt.minX), row at \(cell.minX), lane \(lane)")
+
+        // One-line titles starting with the same glyph, so the leftmost title ink is that glyph's stem.
+        let width = routine.width - 32
+        let artifactTitle = try titleStart(render(
+            OverviewArtifactLabel(artifact: .init(file: .init(kind: "machine", path: "plan.md"), title: "Daily"),
+                                  share: nil)
+                .dynamicTypeSize(size).environment(\.colorScheme, .light), scale: 3, width: width))
+        for expanded in [false, true] {
+            let routineTitle = try titleStart(render(
+                OverviewRoutineLabel(title: "Daily", schedule: "Every day at 9:00 AM", expanded: expanded)
+                    .dynamicTypeSize(size).environment(\.colorScheme, .light), scale: 3, width: width))
+            #expect(abs(routineTitle - artifactTitle) <= 1,
+                    "Routine title at pixel \(routineTitle), artifact title at \(artifactTitle)")
+        }
+    }
+
+    @Test func routineSymbolKeepsTheArtifactSymbolsBounds() throws {
+        let renderer = ImageRenderer(content: OverviewRowSymbol(systemName: "calendar.badge.clock", size: 22))
+        let image = try #require(renderer.uiImage)
+        #expect(image.size == CGSize(width: 22, height: 22))
+    }
+
+    @Test func routineRowTogglesLikeATaskParentAndSpeaksItsSchedule() async throws {
+        let suite = "mobile-overview-routine-toggle-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let model = AppModel(arguments: ["--server", "https://fixture.example"], environment: [:], defaults: defaults)
+        let store = ChannelStore(id: "channel", api: try ChannelAPI(serverURL: "https://fixture.example"))
+        let state = OverviewRoutineState()
+        let host = UIHostingController(rootView:
+            OverviewList {
+                OverviewRoutineRow(
+                    routine: .init(id: "routine", title: "Daily review", schedule: "0 9 * * 1-5",
+                                   prompt: "Review the workshop."),
+                    store: store, state: state, isLast: true)
+            }
+            .environment(model).environment(ManagementPresenter()))
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 900))
+        window.rootViewController = host
+        window.isHidden = false
+        defer { window.isHidden = true }
+        host.view.layoutIfNeeded()
+        await Task.yield()
+        host.view.layoutIfNeeded()
+        let list = try #require(nativeList(in: host.view))
+        func row() throws -> MobileAutomationTree.Element {
+            try #require(MobileAutomationTree(windows: [window]).matching("overview-routine-routine").first)
+        }
+        func settle(rows: Int) async throws {
+            let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+            while list.numberOfItems(inSection: 0) != rows, ContinuousClock.now < deadline {
+                try await Task.sleep(for: .milliseconds(5))
+                host.view.layoutIfNeeded()
+            }
+            #expect(list.numberOfItems(inSection: 0) == rows)
+        }
+
+        let schedule = ChannelRoutineRunPresentation.label(
+            schedule: try cronSummary("0 9 * * 1-5"), pending: false, requestedAt: nil)
+        #expect(schedule.hasPrefix("Weekdays at 9:00"))
+        var collapsed = try row()
+        #expect(collapsed.label == "Daily review")
+        #expect(collapsed.value == "\(schedule), Collapsed")
+        #expect(collapsed.object.accessibilityHint == "Shows the prompt and next run")
+        #expect(collapsed.traits.contains(.button))
+        #expect(collapsed.frame.height >= 44)
+        let expand = try #require(collapsed.actions.first { $0.name == "Expand" })
+        #expect(collapsed.perform(expand))
+        #expect(state.expanded)
+        try await settle(rows: 6)
+
+        let expanded = try row()
+        #expect(expanded.value == "\(schedule), Expanded")
+        #expect(expanded.object.accessibilityHint == "Hides the prompt and next run")
+        #expect(expanded.actions.contains { $0.name == "Collapse" })
+        #expect(expanded.activate(in: [window]))
+        #expect(!state.expanded)
+        try await settle(rows: 1)
+        collapsed = try row()
+        #expect(collapsed.value == "\(schedule), Collapsed")
+    }
+
     @Test(arguments: ["plan.md", "workshop.html", "shapes.svg", "reference.png", "unknown.bin"])
     func artifactSymbolsKeepTheCurrentDocumentIconsBounds(path: String) throws {
         let renderer = ImageRenderer(content: OverviewArtifactSymbol(artifact: artifact(path), size: 22))
@@ -1181,6 +1317,29 @@ struct OverviewTests {
             image = context.makeImage()
         }
         return try #require(image)
+    }
+
+    /// The first primary-ink pixel column after a row label's symbol and a gap of at least 6 points:
+    /// where its title begins. Secondary schedule, date and chevron ink stay lighter than this.
+    private func titleStart(_ image: CGImage) throws -> Int {
+        let pixels = try Self.rgba(image)
+        let ink = (0..<image.width).map { x in
+            (0..<image.height).contains { y in
+                let offset = (y * image.width + x) * 4
+                return pixels[offset + 3] > 200
+                    && pixels[offset] < 50 && pixels[offset + 1] < 50 && pixels[offset + 2] < 50
+            }
+        }
+        let symbol = try #require(ink.firstIndex(of: true))
+        var gap = 0
+        var title: Int?
+        for x in symbol..<ink.count where title == nil {
+            if ink[x] {
+                if gap >= 18 { title = x }
+                gap = 0
+            } else { gap += 1 }
+        }
+        return try #require(title)
     }
 
     nonisolated private static func rgba(_ image: CGImage) throws -> [UInt8] {
