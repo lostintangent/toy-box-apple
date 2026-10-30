@@ -22,7 +22,7 @@ enum MenuBarVisibility: String, CaseIterable, Identifiable {
     }
 }
 
-/// What the menu bar extra says: one symbol for the whole team, and the channels behind it.
+/// What the menu bar extra says: one image for the whole team, and the channels behind it.
 /// Waiting and working come from the same functions as the sidebar, so the two never disagree.
 struct MenuBarStatus: Equatable {
     enum State: Equatable { case waiting, working, idle, disconnected }
@@ -102,11 +102,11 @@ struct MenuBarStatus: Equatable {
     /// Whether When Active shows the item.
     var isActive: Bool { state == .waiting || state == .working }
 
-    var symbol: String {
+    var icon: MenuBarIcon {
         switch state {
-        case .waiting: "questionmark.bubble.fill"
-        case .working: "ellipsis.bubble"
-        case .idle, .disconnected: "bubble"
+        case .waiting: .waiting
+        case .working: .working
+        case .idle, .disconnected: .face
         }
     }
 

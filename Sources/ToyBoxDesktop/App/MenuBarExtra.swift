@@ -79,21 +79,19 @@ final class MenuBarPresence {
     }
 }
 
-/// The status item: one template symbol, never animated in place and never colored.
+/// The status item: one template image that swaps instantly, never animated and never colored.
 struct MenuBarLabel: View {
     let model: AppModel
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         let status = model.menuBarStatus
         Label {
             Text(MenuBarAccessibility.title)
         } icon: {
-            // The status item takes its accessibility title from the symbol's label.
-            Image(systemName: status.symbol)
+            // The status item takes its accessibility title from the image's label.
+            Image(nsImage: status.icon.image)
                 .accessibilityLabel(MenuBarAccessibility.title)
         }
-        .contentTransition(reduceMotion ? .identity : .symbolEffect(.replace))
         .task(id: status.accessibilityValue) { await MenuBarAccessibility.apply(status.accessibilityValue) }
         .task(id: model.menuBar.presentationRequest) {
             guard let id = model.menuBar.presentationRequest else { return }

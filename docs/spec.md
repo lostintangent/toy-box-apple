@@ -2577,19 +2577,21 @@ banners with sound and send completions to Notification Center only, since the s
 shows them. The active key channel still never notifies. Keep the existing per-milestone
 deduplication and the two Settings toggles.
 
-**Menu bar extra.** One template symbol tells you, from any app, whether your team is working or
-waiting for you. It never animates, because a team can work for hours, and it never uses color.
+**Menu bar extra.** One template image of the app icon's robot head tells you, from any app,
+whether your team is working or waiting for you. It never animates, because a team can work
+for hours, and it never uses color.
 
-| State | Symbol | Accessibility value |
+| State | Image | Accessibility value |
 | --- | --- | --- |
-| A channel is waiting for you | `questionmark.bubble.fill` | "1 channel waiting for you" (plus the working count when nonzero) |
-| Agents working, nothing waiting | `ellipsis.bubble` | "3 agents working" |
-| Nothing active (Always only) | `bubble` | "No agents working" |
-| Catalog unreachable | `bubble` | "Not connected" |
+| A channel is waiting for you | The robot's face with a solid badge at its top-right | "1 channel waiting for you" (plus the working count when nonzero) |
+| Agents working, nothing waiting | Three dots in the visor instead of the face | "3 agents working" |
+| Nothing active (Always only) | The robot's face | "No agents working" |
+| Catalog unreachable | The robot's face | "Not connected" |
 
-The label is "Toy Box". Waiting outranks working. The symbol swaps with
-`.contentTransition(.symbolEffect(.replace))` where the status item supports it, and instantly
-under Reduce Motion. Show no count, because the Dock badge already counts.
+The label is "Toy Box". Waiting outranks working. Each image is a 17 by 16 point template drawn
+from the icon's own head path, with the visor knocked out. The canvas always reserves the badge's
+room, so the item never changes width. Images swap instantly. Show no count, because the Dock badge
+already counts.
 
 General settings adds "Show in menu bar" as a pop-up with Always, When Active and Never. When
 Active is the default, with the footer "When Active shows the icon while agents are working or a
