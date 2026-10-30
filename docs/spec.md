@@ -1969,7 +1969,7 @@ Team counts the lead plus current members, not working agents. Tasks uses shared
 roots / total roots, never descendant or visible-row counts: "Tasks 1/4", or "Tasks 0" when
 there are no roots. Artifacts counts channel artifact entries; Routines counts registered
 routines, not executions. Keep known zeros and local empty sentences. Never invent zeros
-before loading; retain cached counts with the stale notice. Tasks' recursive `channelTasksDiff`
+before loading; retain cached counts while reconnecting. Tasks' recursive `channelTasksDiff`
 is separate change volume, not progress. Keep the shared +/− pair together in 11-point Mac /
 footnote 13 phone, with its readable colors, tabular digits and 6-point pair gap. Leave at least
 12 points after name/count and 8 before the disclosure lane. Nil omits the diff; measured

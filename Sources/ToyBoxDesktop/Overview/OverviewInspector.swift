@@ -45,14 +45,6 @@ private struct OverviewInspectorContent: View {
                 ScrollViewReader { proxy in
                     ScrollView {
                         VStack(alignment: .leading, spacing: 0) {
-                            if store.phase.isUnavailable {
-                                Label("Overview may be out of date until the channel connects.",
-                                      systemImage: "wifi.exclamationmark")
-                                    .font(.system(size: 12 * textScale))
-                                    .foregroundStyle(.secondary)
-                                    .fixedSize(horizontal: false, vertical: true)
-                                    .padding(.bottom, 10)
-                            }
                             OverviewAbout(details: details, store: store)
                                 .padding(.bottom, 12)
                             OverviewTeamSection(store: store, collapsed: collapsed)
