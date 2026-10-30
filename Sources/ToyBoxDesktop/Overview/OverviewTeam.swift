@@ -183,7 +183,7 @@ struct OverviewAgentStatusLine: View {
 }
 
 /// Public facts about a member: name, full role, status and model, never private session contents.
-private struct OverviewAgentAbout: View {
+struct OverviewAgentAbout: View {
     let agent: ChannelAgent
     let isLead: Bool
     let model: ModelConfiguration?
@@ -210,19 +210,24 @@ private struct OverviewAgentAbout: View {
                 .frame(maxHeight: 240)
                 .fixedSize(horizontal: false, vertical: true)
             }
+            // Without flexible values, Grid splits the width evenly and wraps them early.
             Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 8, verticalSpacing: 4) {
                 GridRow {
                     Text("Status").foregroundStyle(.secondary).gridColumnAlignment(.trailing)
                     Text(OverviewAgentStatusLine.spoken(status, isAvailable: isAvailable))
                         .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 GridRow {
                     Text("Model").foregroundStyle(.secondary)
-                    if let model {
-                        Text("\(model.name) · \(model.provider)").textSelection(.enabled)
-                    } else {
-                        Text("Workspace default")
+                    Group {
+                        if let model {
+                            Text("\(model.name) · \(model.provider)").textSelection(.enabled)
+                        } else {
+                            Text("Workspace default")
+                        }
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
             .font(.callout)
