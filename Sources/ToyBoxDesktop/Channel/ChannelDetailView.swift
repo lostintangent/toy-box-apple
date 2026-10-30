@@ -334,9 +334,11 @@ struct ChannelDetailView: View {
         ToolbarItem(placement: .primaryAction) {
             Menu {
                 Picker("Message View", selection: Bindable(interaction).messageView) {
-                    Text("All Messages").tag(TranscriptView.all)
-                    Text("Your Messages").tag(TranscriptView.yours)
+                    Label("All Messages", systemImage: "bubble.left.and.bubble.right").tag(TranscriptView.all)
+                    Label("Your Messages", systemImage: "person").tag(TranscriptView.yours)
                 }
+                .pickerStyle(.inline)
+                .labelsHidden()
             } label: {
                 Label("Message View", systemImage: interaction.messageView == .all
                       ? "line.3.horizontal.decrease" : "line.3.horizontal.decrease.circle.fill")

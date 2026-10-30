@@ -161,8 +161,8 @@ struct ChannelScreen: View {
     private var messageViewPicker: some View {
         @Bindable var interaction = interaction
         return Picker("Message View", selection: $interaction.messageView) {
-            Text("All Messages").tag(TranscriptView.all)
-            Text("Your Messages").tag(TranscriptView.yours)
+            Label("All Messages", systemImage: "bubble.left.and.bubble.right").tag(TranscriptView.all)
+            Label("Your Messages", systemImage: "person").tag(TranscriptView.yours)
         }
         .disabled(store.phase == .deleted)
     }
