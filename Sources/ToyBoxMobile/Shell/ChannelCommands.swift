@@ -87,8 +87,8 @@ struct ChannelCommands: Commands {
                 get: { actions?.messageView ?? .all },
                 set: { actions?.setMessageView?($0) }
             )) {
-                Text("All Messages").tag(TranscriptView.all).keyboardShortcut("1")
-                Text("Your Messages").tag(TranscriptView.yours).keyboardShortcut("2")
+                Label("All Messages", systemImage: "bubble.left.and.bubble.right").tag(TranscriptView.all).keyboardShortcut("1")
+                Label("Your Messages", systemImage: "person").tag(TranscriptView.yours).keyboardShortcut("2")
             }
             .disabled(actions?.setMessageView == nil)
             Button("Refresh") { actions?.refresh() }

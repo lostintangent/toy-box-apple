@@ -1511,7 +1511,13 @@ Compile Markdown and mention patterns once, not once per row. The transcript rea
 `messages`, `roster`, `agentStatuses`, `presence` and `request` slices, so task, artifact, routine
 and detail events don't re-render it.
 
-The Message View menu is a native radio-choice menu: All Messages and Your Messages. A non-default
+The Message View menu is a native radio-choice menu: All Messages and Your Messages. Like the web
+pane and Messages, each choice carries an outline SF Symbol, `bubble.left.and.bubble.right` for All
+Messages and `person` for Your Messages, beside the system checkmark. The same labels appear in the
+toolbar menu, the View menu commands and, on the phone, the Channel Actions section. The Mac toolbar
+menu lists the two choices directly with an inline picker and no header, while the menu bar's View
+menu keeps its Message View submenu among its other sections. The phone's menu also lists them
+directly. A non-default
 filter gives its toolbar button an active tint and label/help. It does not change the composer
 audience or channel-wide read policy. Read only committed visible sequences in the active window.
 Opening an inspector, reading a preview popover or watching a background window does not mark
