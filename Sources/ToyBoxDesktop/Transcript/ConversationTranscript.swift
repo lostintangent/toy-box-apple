@@ -139,6 +139,8 @@ struct ConversationTranscript: View {
                     if interaction.isArtifactViewerPresented { find.close() }
                 }
                 .onChange(of: store.messages) { if find.isPresented { prepareFind() } }
+                // The reconnecting notice drops below Find's bar while it's open.
+                .onChange(of: find.isPresented, initial: true) { interaction.isFinding = find.isPresented }
                 .task(id: find.work) {
                     guard find.isPresented, !interaction.isArtifactViewerPresented else { return }
                     prepareFind()
@@ -151,7 +153,10 @@ struct ConversationTranscript: View {
                         interaction.reveal(sequence: request.sequence)
                     }
                 }
-                .onDisappear { find.close() }
+                .onDisappear {
+                    find.close()
+                    interaction.isFinding = false
+                }
                 .task(id: store.phase.isConnected) {
                     guard store.phase.isConnected, !hasLanded else { return }
                     await land(using: proxy)

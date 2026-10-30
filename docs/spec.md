@@ -926,12 +926,16 @@ When the row appears or leaves, a reader at the end stays at the end, and a read
 keeps their anchor. Do not wrap the composer and the row in a shared `GlassEffectContainer` with
 spacing of 8 or more, because that fuses them into one shape.
 
-**Stale banner.** Replace the full-width `.bar` strip with a top `safeAreaBar` holding one glass
-capsule, centered on the rail 8 points below the toolbar. It is 32 high with 14-point horizontal
-padding and holds `wifi.exclamationmark` and "Reconnecting to server. Messages may be out of date"
-in caption, with no Retry, since the channel is already reconnecting. The full error stays in its
-help text. It fits on one line at the narrowest conversation, about 440 points beside the open
-inspector in a 1000-point window.
+**Reconnecting notice.** While the channel's stream is down, a glass capsule floats over the top of
+the transcript like the phone's pill, centered on the rail 8 points below the toolbar. It is an
+overlay, not a `safeAreaBar`, so it changes no inset and no row moves when it appears or leaves.
+It holds a small spinner beside "Reconnecting to server" in subheadline semibold over "Messages may
+be out of date" in secondary caption, with 14-point horizontal and 7-point vertical padding. There
+is no Retry, since the channel is already reconnecting. While Find is open the capsule sits 8 points
+below Find's 40-point bar instead. The full error stays in its help text and VoiceOver hint, and
+VoiceOver reads both lines as one element. It fades in and out over 0.2 seconds with a 4-point drop,
+opacity only with Reduce Motion. It fits at the narrowest conversation, about 440 points beside the
+open inspector in a 1000-point window.
 
 **Real-window acceptance.** App snapshots capture the composited window and its sheets with
 ScreenCaptureKit, so they show glass and content beneath a `safeAreaBar` as drawn. Without Screen
@@ -1296,7 +1300,7 @@ outset 6 points so the dot never moves. Help reads "Connected to http://localhos
 VoiceOver reads one button labeled "Server" with the value "localhost:3100, connected" (or
 connecting, reconnecting, can't connect). Dot colors crossfade over 0.2 seconds, instantly with
 Reduce Motion. Never pulse the dot. The footer reflects the catalog connection only. An open
-channel's own stream keeps its inline "Reconnecting to server" banner in the detail column.
+channel's own stream keeps its floating "Reconnecting to server" pill over the transcript.
 
 ### Transcript
 

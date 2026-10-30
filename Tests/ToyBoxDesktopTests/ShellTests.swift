@@ -841,6 +841,16 @@ struct ConversationRailTests {
         #expect(ChannelDetailView.badge(.finished) == Text("Done"))
         #expect(ChannelDetailView.badge(nil) == nil)
     }
+
+    /// The reconnecting notice floats over the transcript, so its offset below Find's bar is the
+    /// only thing keeping the two apart while Find is open offline.
+    @MainActor @Test func theReconnectingNoticeClearsFindsBar() {
+        let find = TranscriptFind()
+        find.present()
+        let bar = NSHostingView(rootView: TranscriptFindBar(find: find, channelName: "Studio demo", focusRequest: UUID(),
+                                                            navigate: { _ in }, close: {}, announce: { _ in }))
+        #expect(bar.fittingSize.height == ReconnectingNotice.findBarHeight)
+    }
 }
 
 @MainActor private final class RailFrames {
