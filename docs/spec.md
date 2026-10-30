@@ -1915,7 +1915,7 @@ closes it, like the sidebar. Overview has no channel-actions menu: Follow, Edit 
 Delete Channel live in the channel's Channel Actions menu. The purpose starts 12 points below
 the bar (or the column's safe content edge) at every text size, using the full content width,
 and Folder and Preview use the full width below it. All opening information stays outside cards.
-Retain the Overview accessibility label, native sheet dismissal, nested agent/task navigation
+Retain the Overview accessibility label, native sheet dismissal, nested task navigation
 and the same content in both presentations.
 Overview takes the inspector column only where the conversation keeps the Mac's 420 points beside
 it, which on the Duo is unfolded landscape (user 5143/5146). Folded and unfolded portrait use the
@@ -2045,15 +2045,15 @@ from this text rule. Muted status and countdown use `ChannelInk.secondary`, pres
 phone's opaque secondary ink and the Mac's existing semantic secondary.
 
 Both apps show the waiting check-in in the existing row, never a new metadata line. Mac keeps
-its trailing position and hover-menu replacement. Phone places the bell and duration just
-before the native chevron, in muted footnote text. Show this only for waiting presence
+its trailing position and hover-menu replacement. Phone places the bell and duration at the
+row's trailing edge, in muted footnote text. Show this only for waiting presence
 with a valid `wakeAt` on a channel that isn't stale or deleted; omit it for working, idle,
 unavailable or absent/invalid wake times. A single ToyBoxUI view owns both the countdown and its localized text, preserving
 the Mac's rounded-up remaining duration and Due behavior. Phone updates only at minute
 boundaries while its row is visible. Keep the bell/value group together and trailing even
 when phone name/status wrap at accessibility sizes. Add no row height at default text.
-Both rows speak "checks again in 8 minutes" or "check-in due". Retain the exact date in agent
-details and Mac help. The bell is decorative, not a second button. It means time until the
+Both rows speak "checks again in 8 minutes" or "check-in due". Retain the exact date in About's
+Checks again and Mac help. The bell is decorative, not a second button. It means time until the
 next check-in, unlike the task clock's elapsed time. No activity or progress is inferred.
 
 The working ellipsis pulses only while the window is key. Under Reduce Motion, and in every other
@@ -2076,6 +2076,23 @@ Remove Member…. The lead offers Reply and About only, because its identity is 
 context menu has the same items. Add Agent… ends the list in a 36-point row: a 24-point dashed
 tertiary circle with an 11-point `plus`, and the label in 13 regular secondary. It opens Add
 Member.
+
+Phone Team rows are also one button, with no chevron, and their tap and the context menu's
+About [Name] open the same About content. When the window has a regular width it's a popover
+from the row, opening toward the conversation in the landscape column and above or below the row
+in the unfolded sheet, dismissed by tapping outside or the VoiceOver escape. The window decides,
+not the Overview sheet's own compact width, because UIKit adapts the popover to the window. It's
+320 points wide with 20-point padding and bounds a long role at 210 points, scaled with body text.
+A compact window adapts it to a sheet sized to its content, with the drag indicator and a close
+button labelled "Close About [Name]". Content taller than about half the Overview it rises over
+offers the medium and large detents instead. The sheet fills its width, never bounds the role and
+scrolls as one. Below the header ("Name" over "Lead · @handle" or "@handle"), a trailing-keyed
+grid shows Status, Checks again (the time alone today, otherwise the abbreviated date and time)
+and Model: "name · provider", selectable, then "[effort] reasoning" in secondary with Edit
+Agent's labels, or "Workspace default". At accessibility sizes the header stacks, the role is
+unbounded, each key sits above its value, and the popover takes the system's width and scrolls
+as one. VoiceOver reads the header as "Name, Lead, @handle" and each fact as one element. It
+updates live and never shows private session contents.
 
 **Tasks.** Status is read-only, in a 16 x 16 cell at 14 points: pending `circle` in secondary,
 in progress `circle.lefthalf.filled` in secondary, blocked `exclamationmark.circle.fill` white

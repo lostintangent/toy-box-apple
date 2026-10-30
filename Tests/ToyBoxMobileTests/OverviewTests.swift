@@ -34,7 +34,7 @@ struct OverviewTests {
         let store = ChannelStore(id: "channel", api: api)
         let presentation = OverviewPresentation()
         let session = presentation.session(for: store)
-        session.navigationPath = [.agent("agent")]
+        session.navigationPath = [.subtasks("task")]
         session.purposeExpanded = true
         session.taskDisclosure["task"] = .init(status: "in_progress", expanded: false)
         session.routine("routine").expanded = true
@@ -44,7 +44,7 @@ struct OverviewTests {
         #expect(presentation.isCompactSheetPresented)
         presentation.move(to: .sheet)
         #expect(presentation.session(for: store) === session)
-        #expect(session.navigationPath == [.agent("agent")])
+        #expect(session.navigationPath == [.subtasks("task")])
         #expect(session.purposeExpanded)
         #expect(session.taskDisclosure["task"]?.expanded == false)
         #expect(session.routine("routine").expanded)
@@ -291,8 +291,9 @@ struct OverviewTests {
         let host = UIHostingController(rootView:
             NavigationStack {
                 OverviewList {
-                    OverviewTeamSection(store: store, session: session)
-                    OverviewTeamRow(agent: state.lead, store: store, session: session, isLead: true)
+                    OverviewTeamSection(store: store, session: session, placement: .sheet)
+                    OverviewTeamRow(agent: state.lead, store: store, session: session, isLead: true,
+                                    placement: .sheet)
                 }
                 .navigationDestination(for: OverviewRoute.self) { _ in EmptyView() }
             }
@@ -357,7 +358,7 @@ struct OverviewTests {
                 OverviewList {
                     ForEach(store.roster) { agent in
                         OverviewTeamRow(agent: agent, store: store, session: session,
-                                        isLead: agent.id == agentID)
+                                        isLead: agent.id == agentID, placement: .sheet)
                     }
                 }
                 .navigationDestination(for: OverviewRoute.self) { _ in EmptyView() }
@@ -658,15 +659,15 @@ struct OverviewTests {
             $0.identifier == "overview-channel-actions"
         })
         if placement == .sheet { try await expectToolbarClose() } else { #expect(close() == nil) }
-        session.navigationPath = [.agent("agent")]
+        session.navigationPath = [.subtasks("task")]
         let deadline = ContinuousClock.now.advanced(by: .seconds(2))
-        while navigation.isNavigationBarHidden || navigation.topViewController?.navigationItem.title != "About Agent",
+        while navigation.isNavigationBarHidden || navigation.topViewController?.navigationItem.title != "Subtasks",
               ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(5))
             host.view.layoutIfNeeded()
         }
         #expect(!navigation.isNavigationBarHidden)
-        #expect(navigation.topViewController?.navigationItem.title == "About Agent")
+        #expect(navigation.topViewController?.navigationItem.title == "Subtasks")
         guard placement == .sheet else {
             #expect(close() == nil)
             return
@@ -755,7 +756,7 @@ struct OverviewTests {
         let host = UIHostingController(rootView:
             OverviewList {
                 OverviewTeamRow(agent: .init(id: "agent", name: "Design"), store: store,
-                                session: session, isLead: true)
+                                session: session, isLead: true, placement: .sheet)
                 OverviewArtifactRow(
                     artifact: value,
                     share: nil, api: store.api, channelID: store.id)

@@ -2,6 +2,7 @@ import ChannelClient
 import ChannelKit
 import SwiftUI
 import ToyBoxUI
+import UIKit
 
 struct OverviewView: View {
     let store: ChannelStore
@@ -31,8 +32,6 @@ struct OverviewView: View {
             .navigationDestination(for: OverviewRoute.self) { route in
                 Group {
                     switch route {
-                    case .agent(let id):
-                        OverviewAgentDetails(agentID: id, store: store)
                     case .subtasks(let id):
                         OverviewSubtasksScreen(parentID: id, store: store, session: session)
                     }
@@ -92,7 +91,7 @@ private struct OverviewContent: View {
                     }
                 }
                 OverviewAboutSection(store: store, session: session)
-                OverviewTeamSection(store: store, session: session)
+                OverviewTeamSection(store: store, session: session, placement: placement)
                 OverviewTasksSection(store: store, session: session)
                 OverviewArtifactsSection(store: store, session: session)
                 OverviewRoutinesSection(store: store, session: session)
@@ -116,6 +115,8 @@ private struct OverviewContent: View {
 struct OverviewList<Content: View>: View {
     let content: Content
     @Environment(\.horizontalSizeClass) private var sizeClass
+    @ViewState private var height: CGFloat = 0
+    @ViewState private var windowSizeClass: UserInterfaceSizeClass?
 
     init(@ViewBuilder content: () -> Content) { self.content = content() }
 
@@ -132,5 +133,48 @@ struct OverviewList<Content: View>: View {
         .listSectionMargins(.horizontal, 0)
         .contentMargins(.horizontal, 0, for: .scrollContent)
         .scrollContentBackground(.hidden)
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height = $0 }
+        .background { WindowSizeClassReader { windowSizeClass = $0 }.allowsHitTesting(false).accessibilityHidden(true) }
+        .environment(\.overviewHeight, height)
+        .environment(\.overviewWindowSizeClass, windowSizeClass ?? sizeClass)
     }
+}
+
+/// UIKit adapts a popover against its window's size class. The Overview sheet in unfolded portrait
+/// reports compact while its window stays regular, so popovers from it still appear as popovers.
+private struct WindowSizeClassReader: UIViewRepresentable {
+    let update: (UserInterfaceSizeClass?) -> Void
+
+    func makeUIView(context: Context) -> Probe { Probe() }
+
+    func updateUIView(_ probe: Probe, context: Context) { probe.update = update }
+
+    final class Probe: UIView {
+        var update: (UserInterfaceSizeClass?) -> Void = { _ in }
+        private weak var observedWindow: UIWindow?
+        private var registration: (any UITraitChangeRegistration)?
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            if let registration { observedWindow?.unregisterForTraitChanges(registration) }
+            observedWindow = window
+            registration = window?.registerForTraitChanges([UITraitHorizontalSizeClass.self]) { [weak self] (window: UIWindow, _) in
+                self?.report(window)
+            }
+            if let window { report(window) }
+        }
+
+        private func report(_ window: UIWindow) {
+            let sizeClass = UserInterfaceSizeClass(window.traitCollection.horizontalSizeClass)
+            // UIKit moves the probe into its window during SwiftUI's update, so the state changes after it.
+            DispatchQueue.main.async { [weak self] in self?.update(sizeClass) }
+        }
+    }
+}
+
+extension EnvironmentValues {
+    /// The height Overview's list fills, which sizes the sheets that rise over it.
+    @Entry var overviewHeight: CGFloat = 0
+    /// The window's size class, which decides whether a popover adapts into a sheet.
+    @Entry var overviewWindowSizeClass: UserInterfaceSizeClass?
 }
