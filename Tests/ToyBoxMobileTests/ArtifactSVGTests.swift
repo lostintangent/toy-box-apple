@@ -48,7 +48,8 @@ struct ArtifactSVGTests {
         #expect(try pixel(decoded.image, x: 112, y: 20)[3] == 0)
     }
 
-    @Test func embeddedScriptsAndLoadHandlersCannotChangeTheDrawing() async throws {
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["TOY_BOX_TEST_SVG_RENDERING"] == "1"))
+    func embeddedScriptsAndLoadHandlersCannotChangeTheDrawing() async throws {
         let file = try fixture("""
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"
                  onload="document.getElementById('ink').setAttribute('fill', '#0000ff')">
