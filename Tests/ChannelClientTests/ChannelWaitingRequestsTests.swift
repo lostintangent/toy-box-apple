@@ -78,4 +78,22 @@ final class ChannelWaitingRequestsTests {
         try await eventually { requests.entries().first { $0.channel.id == "b" }?.request != nil }
         #expect(lookups.withLock { $0 } == ["b": 3])
     }
+
+    @Test func repliesReachTheStoreAndTheWaitingEntryFromBothSources() async throws {
+        let replies = ["Near the entrance", "Beside the team desks"]
+        var loaded = asked(7, in: "test", "Where should it sit?", at: "09:00")
+        loaded.replies = replies
+        var looked = asked(12, in: "a", "Ship it?", at: "11:00")
+        looked.replies = ["Yes", "Not yet"]
+        let answer = looked
+        let catalog = try await catalog([listed("test", request: 7), listed("a", request: 12, updated: "06:00")],
+                                        loaded: loaded, live: true) { _, _ in [answer] }
+        #expect(catalog.existingChannel(id: "test")?.request?.suggestedReplies == replies)
+
+        let requests = ChannelWaitingRequests(catalog: catalog)
+        requests.resolve()
+        try await eventually { requests.entries().first { $0.channel.id == "a" }?.request != nil }
+        #expect(requests.entries().first { $0.channel.id == "test" }?.request?.message.suggestedReplies == replies)
+        #expect(requests.entries().first { $0.channel.id == "a" }?.request?.message.suggestedReplies == ["Yes", "Not yet"])
+    }
 }

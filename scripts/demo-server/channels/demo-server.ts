@@ -2,13 +2,27 @@
 import http, { type ServerResponse } from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
+import { type Snapshot as FixtureSnapshot } from './types.ts';
 
 /** The exported public Channel snapshot; this fixture server treats it as plain JSON. */
 type Snapshot = Record<string, any>;
 type Resource = { type: string; content: string | Buffer };
 
 export const fixturePath = path.join(import.meta.dir, '..', '..', '..', 'Tests', 'ChannelKitTests', 'Fixtures', 'channel-snapshot.json');
-const fixture: Snapshot = JSON.parse(fs.readFileSync(fixturePath, 'utf8'));
+
+// The fixture stays byte-identical to the reference export, so the demo adds the replies its
+// library request would carry.
+export function loadDemoFixture(): FixtureSnapshot {
+  const snapshot: FixtureSnapshot = JSON.parse(fs.readFileSync(fixturePath, 'utf8'));
+  const replies = ['Near the entrance, so visitors can find it', 'Beside the team desks, for quick access',
+    'Near the entrance, with a quiet reading nook beside the team desks'];
+  for (const message of [snapshot.request, ...snapshot.messages]) {
+    if (message?.id === 'fixture-request') message.replies = replies;
+  }
+  return snapshot;
+}
+
+const fixture = loadDemoFixture();
 
 export function createDemoServer(initial: Snapshot = fixture, now = Date.now()) {
   let snapshot = structuredClone(initial);
