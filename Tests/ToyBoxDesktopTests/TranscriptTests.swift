@@ -766,6 +766,41 @@ struct TranscriptTests {
             token: token, sequence: 20, outcome: .failed("Couldn't reveal this message. Try Reveal again.")))
     }
 
+    /// A request's notification can reveal a message that arrived while the channel was away. The store
+    /// still holds what it had, so the reveal waits for the reconnect's replay instead of giving up.
+    @MainActor
+    @Test func aRevealNewerThanTheCachedHistoryWaitsForTheReconnectAndLandsOnIt() async throws {
+        let harness = try await TranscriptHarness(messages: (1...40).map(transcriptTestMessage))
+        defer { await harness.close() }
+        try await harness.reopen(replaying: [])
+        let token = harness.interaction.reveal(sequence: 41)
+        try await harness.settled()
+        #expect(harness.interaction.revealProgress?.outcome == .loading)
+        harness.push(transcriptTestMessage(41), revision: 2)
+        harness.deliver(.init(type: "resumed", presence: [:]))
+        try await harness.waitUntil { harness.interaction.revealProgress?.outcome != .loading }
+        #expect(harness.interaction.revealProgress == RevealProgress(token: token, sequence: 41, outcome: .revealed))
+        #expect(harness.visibleWindowFrames()["m41"] != nil)
+    }
+
+    /// Messages are never deleted, so a caught-up channel without the message is a bug. The reader sees
+    /// the usual landing, and the miss reports a neutral failure instead of "no longer available".
+    @MainActor
+    @Test func aRevealOfAMessageTheServerNeverSentLandsAsUsualWithoutANotice() async throws {
+        let harness = try await TranscriptHarness(messages: (1...40).map(transcriptTestMessage))
+        defer { await harness.close() }
+        try await harness.reopen(replaying: [])
+        let token = harness.interaction.reveal(sequence: 99)
+        harness.deliver(.init(type: "resumed", presence: [:]))
+        try await harness.waitUntil {
+            harness.capture.hasLanded && harness.interaction.revealProgress?.outcome != .loading
+        }
+        try await harness.settled()
+        #expect(harness.interaction.revealProgress == RevealProgress(
+            token: token, sequence: 99, outcome: .failed("Couldn't reveal this message.")))
+        #expect(abs(harness.bottomGap) < 2 && harness.isVisible("m40"))
+    }
+
     @MainActor
     @Test func closingFindAtTheBottomRestoresFollowingButKeepsReadSuspended() async throws {
         let find = TranscriptFind()

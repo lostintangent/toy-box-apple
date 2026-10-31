@@ -1,6 +1,7 @@
 import ChannelClient
 import ChannelIntelligence
 import ChannelKit
+import OSLog
 import SwiftUI
 import ToyBoxUI
 
@@ -190,7 +191,6 @@ struct ConversationView: View {
     @ViewState private var showsJumpToLatest = false
     @ViewState private var showsWorkingNow = false
     @ViewState private var highlightedSequence: Int?
-    @ViewState private var revealError: String?
     /// A reveal requested before landing, such as a request alert's, opens on its message. The
     /// rows stay hidden while it pages, so the reader never sees New first.
     @ViewState private var landsOnReveal = false
@@ -322,8 +322,6 @@ struct ConversationView: View {
         .overlay(alignment: .top) {
             if store.isLoaded, let message = store.phase.message {
                 TranscriptReconnecting(message: message)
-            } else if let revealError {
-                TranscriptRevealNotice(message: revealError) { self.revealError = nil }
             } else if landsOnReveal {
                 // The paging row is hidden with the rows, so its progress shows here instead, without
                 // the accessory's delay, since it follows Connecting's spinner.
@@ -512,6 +510,10 @@ struct ConversationView: View {
         items.map { .init(id: $0.id, order: $0.order) }
     }
 
+    #if DEBUG
+    private static let logger = Logger(subsystem: "dev.toybox.mobile", category: "Transcript")
+    #endif
+
     private func reveal(sequence: Int, token: UUID) async {
         defer {
             // Opening the conversation can cancel and restart this task, so a cancelled first
@@ -526,18 +528,21 @@ struct ConversationView: View {
             }
         }
         func target() -> TranscriptItem? { items.first { $0.messages.contains { $0.sequence == sequence } } }
-        func fail(_ message: String) {
-            revealError = message
-            interaction.finishReveal(token, .failed(message))
+        var failure: String?
+        // Messages are never deleted, so a miss shows no notice. The defer lands as usual, and a
+        // failed page keeps its own history error.
+        func miss() {
+            #if DEBUG
+            Self.logger.debug("Reveal of \(sequence) found no message: \(failure ?? "not in the caught-up history")")
+            #endif
+            interaction.finishReveal(token, .failed(failure ?? "Couldn't reveal this message."))
         }
-        revealError = nil
-        let failure = await store.loadHistory(through: sequence)
+        guard await store.catchUp(toReveal: sequence), interaction.revealRequestToken == token else { return }
+        failure = await store.loadHistory(through: sequence)
         guard !Task.isCancelled, interaction.revealRequestToken == token else { return }
-        guard store.messages.contains(where: { $0.sequence == sequence }) else {
-            return fail(failure ?? "This message is no longer available.")
-        }
+        guard store.messages.contains(where: { $0.sequence == sequence }) else { return miss() }
         if target() == nil { interaction.messageView = .all }
-        guard let item = target() else { return fail("This message is no longer available.") }
+        guard let item = target() else { return miss() }
         // A match below a collapsed message's fold would otherwise stay hidden.
         if find.isPresented { expanded.insert(item.id) }
         scroll.sync(rowIdentities)
@@ -545,7 +550,7 @@ struct ConversationView: View {
         let placement = scroll.update(.reveal(item.id))
         guard placement != nil, placement?.unavailableTarget == nil else {
             scroll.pendingReveal = nil
-            return fail("This message is no longer available.")
+            return miss()
         }
         place(placement)
         // Find's own highlight marks the current match.
@@ -804,29 +809,6 @@ private struct TranscriptReconnecting: View {
         .accessibilityHint(message)
         .padding(.top, 8)
         .transition(reduceMotion ? .opacity : .opacity.combined(with: .offset(y: -4)))
-    }
-}
-
-/// Why a reveal couldn't land. It stays until dismissed or the next reveal, like the Mac's notice.
-private struct TranscriptRevealNotice: View {
-    let message: String
-    let dismiss: () -> Void
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Label(message, systemImage: "exclamationmark.triangle")
-                .font(.footnote)
-                .lineLimit(2)
-            Button("Dismiss", action: dismiss).font(.footnote.weight(.semibold)).frame(minHeight: 44)
-        }
-        .padding(.horizontal, 14)
-        .frame(minHeight: 44)
-        .glassEffect(.regular, in: .capsule)
-        .padding(.top, 8)
-        .padding(.horizontal, 16)
-        .transition(reduceMotion ? .opacity : .opacity.combined(with: .offset(y: -4)))
-        .onAppear { AccessibilityNotification.Announcement(message).post() }
     }
 }
 

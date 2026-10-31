@@ -1,6 +1,7 @@
 import ChannelClient
 import ChannelIntelligence
 import ChannelKit
+import OSLog
 import SwiftUI
 import ToyBoxUI
 
@@ -535,6 +536,7 @@ struct ConversationTranscript: View {
             snapshot.failState(name, message: "The transcript did not finish its initial landing.")
             return
         }
+        var revealOutcome: RevealProgress.Outcome?
         switch name {
         case "transcript-find":
             prepareFind()
@@ -583,13 +585,13 @@ struct ConversationTranscript: View {
                 snapshot.failState(name, message: "The channel has no pending request.")
                 return
             }
-            await reveal(sequence: sequence, using: proxy)
+            revealOutcome = await reveal(sequence: sequence, using: proxy)
         case "transcript-attachments":
             guard let message = store.state?.messages.last(where: { $0.attachments?.isEmpty == false }) else {
                 snapshot.failState(name, message: "The channel has no message with attachments.")
                 return
             }
-            await reveal(sequence: message.sequence, using: proxy)
+            revealOutcome = await reveal(sequence: message.sequence, using: proxy)
         case "transcript-viewer":
             await openViewerSnapshot(name, using: proxy)
             return
@@ -603,7 +605,7 @@ struct ConversationTranscript: View {
             snapshot.failState(name, message: "Unknown transcript snapshot state.")
             return
         }
-        if let revealError { snapshot.failState(name, message: revealError) }
+        if case .failed(let message)? = revealOutcome { snapshot.failState(name, message: message) }
         else { snapshot.markStateReady(name) }
     }
 
@@ -868,7 +870,9 @@ struct ConversationTranscript: View {
         catchUp = made
     }
 
-    private func reveal(sequence: Int, using proxy: ScrollViewProxy) async {
+    /// Nil when the reveal was superseded.
+    @discardableResult
+    private func reveal(sequence: Int, using proxy: ScrollViewProxy) async -> RevealProgress.Outcome? {
         let token = interaction.revealRequestToken
         let findToken = find.isPresented && find.revealRequest?.sequence == sequence ? find.revealRequest?.token : nil
         catchUp?.isPinned = false
@@ -876,38 +880,53 @@ struct ConversationTranscript: View {
         revealError = nil
         pagingAnchor = nil
         defer { if interaction.revealRequestToken == token { isRevealing = false } }
+        guard await store.catchUp(toReveal: sequence), revealIsCurrent(token, findToken: findToken) else { return nil }
         let failure = await store.loadHistory(through: sequence)
-        guard revealIsCurrent(token, findToken: findToken) else { return }
+        guard revealIsCurrent(token, findToken: findToken) else { return nil }
         guard let message = store.state?.messages.first(where: { $0.sequence == sequence }) else {
-            let message = failure ?? "This message is no longer available."
-            revealError = message
-            interaction.finishReveal(token, .failed(message))
-            return
+            return await missReveal(sequence, token: token, failure: failure, using: proxy)
         }
         if !rows.contains(where: { $0.messages.contains { $0.id == message.id } }) {
             interaction.messageView = .all
         }
         if find.isPresented { expandedMessageIds.insert(message.id) }
         guard let row = rows.first(where: { $0.messages.contains { $0.id == message.id } }) else {
-            revealError = "This message is no longer available."
-            interaction.finishReveal(token, .failed("This message is no longer available."))
-            return
+            return await missReveal(sequence, token: token, failure: failure, using: proxy)
         }
         let membership = message.system?.type == "member_joined" || message.system?.type == "member_left"
         let individualSystem = message.system?.type == "artifact_shared"
             || (membership && row.messages.contains(where: { expandedMessageIds.contains($0.id) }))
         let targetID = message.isSystem && !individualSystem ? row.id : message.id
         guard let outcome = await settleReveal(targetID: targetID, rowID: row.id, token: token,
-                                               findToken: findToken, using: proxy) else { return }
+                                               findToken: findToken, using: proxy) else { return nil }
         interaction.finishReveal(token, outcome)
-        guard outcome == .revealed else { return }
+        guard outcome == .revealed else { return outcome }
         highlightedSequence = find.isPresented ? nil : sequence
         hasLanded = true
-        guard !find.isPresented else { return }
+        guard !find.isPresented else { return outcome }
         do { try await Task.sleep(for: .seconds(2)) }
-        catch { return }
+        catch { return outcome }
         if highlightedSequence == sequence { highlightedSequence = nil }
+        return outcome
     }
+
+    /// Messages are never deleted, so a caught-up channel without the target shows no notice.
+    /// The transcript lands as usual, and a failed page keeps its own history error.
+    private func missReveal(_ sequence: Int, token: UUID, failure: String?,
+                            using proxy: ScrollViewProxy) async -> RevealProgress.Outcome {
+        #if DEBUG
+        Self.logger.debug("Reveal of \(sequence) found no message: \(failure ?? "not in the caught-up history")")
+        #endif
+        let outcome = RevealProgress.Outcome.failed(failure ?? "Couldn't reveal this message.")
+        interaction.finishReveal(token, outcome)
+        isRevealing = false
+        if !hasLanded { await land(using: proxy) }
+        return outcome
+    }
+
+    #if DEBUG
+    private static let logger = Logger(subsystem: "dev.toybox.desktop", category: "Transcript")
+    #endif
 
     private func revealIsCurrent(_ token: UUID, findToken: UUID?) -> Bool {
         guard !Task.isCancelled, interaction.revealRequestToken == token,
