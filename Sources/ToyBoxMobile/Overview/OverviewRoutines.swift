@@ -49,6 +49,21 @@ struct OverviewRoutineLabel: View {
     }
 }
 
+/// List rows draw a destructive button's title red but leave its icon in the accent tint, and
+/// `.tint` doesn't reach that icon. Disabled rows keep the system's dimmed icon.
+struct OverviewDestructiveSymbol: View {
+    let systemName: String
+    @Environment(\.isEnabled) private var isEnabled
+
+    var body: some View {
+        if isEnabled {
+            Image(systemName: systemName).foregroundStyle(.red)
+        } else {
+            Image(systemName: systemName)
+        }
+    }
+}
+
 struct OverviewRoutineRow: View {
     let routine: ChannelRoutine
     let store: ChannelStore
@@ -77,7 +92,7 @@ struct OverviewRoutineRow: View {
         .listRowSeparator(contentEndsSection && !state.expanded ? .hidden : .automatic, edges: .bottom)
         .accessibilityLabel(routine.title)
         .accessibilityValue("\(scheduleLine), \(state.expanded ? "Expanded" : "Collapsed")")
-        .accessibilityHint(state.expanded ? "Hides the prompt and next run" : "Shows the prompt and next run")
+        .accessibilityHint(state.expanded ? "Hides the prompt" : "Shows the prompt")
         .accessibilityActions {
             Button(state.expanded ? "Collapse" : "Expand", action: toggle)
         }
@@ -97,30 +112,15 @@ struct OverviewRoutineRow: View {
         if state.expanded {
             Group {
                 Text(routine.prompt).textSelection(.enabled)
-                TimelineView(.everyMinute) { context in
-                    switch Result(catching: { try nextCronOccurrence(routine.schedule, from: context.date) }) {
-                    case .success(let date):
-                        LabeledContent("Next run") {
-                            Text(date.formatted(date: .abbreviated, time: .shortened))
-                                .foregroundStyle(ChannelInk.secondary)
-                        }
-                    case .failure:
-                        Text("Next run unavailable").foregroundStyle(ChannelInk.secondary)
-                    }
-                }
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(routine.schedule).font(.footnote.monospaced())
-                    Text(TimeZone.current.localizedName(for: .generic, locale: .current) ?? TimeZone.current.identifier)
-                        .font(.footnote).foregroundStyle(ChannelInk.secondary)
-                }
-                .textSelection(.enabled)
                 Button("Run Now", systemImage: "play", action: run)
                     .frame(minHeight: 44)
                     .disabled(!canRun)
-                Button("Delete Routine", systemImage: "trash", role: .destructive, action: delete)
-                    .frame(minHeight: 44)
-                    .disabled(pending || !store.phase.isConnected)
-                    .modifier(OverviewListRowBoundary(isLast: contentEndsSection))
+                Button(role: .destructive, action: delete) {
+                    Label { Text("Delete Routine") } icon: { OverviewDestructiveSymbol(systemName: "trash") }
+                }
+                .frame(minHeight: 44)
+                .disabled(pending || !store.phase.isConnected)
+                .modifier(OverviewListRowBoundary(isLast: contentEndsSection))
             }
             .padding(.leading, iconLane + 12)
         }

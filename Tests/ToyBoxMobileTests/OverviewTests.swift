@@ -730,7 +730,7 @@ struct OverviewTests {
         host.view.layoutIfNeeded()
         let list = try #require(nativeList(in: host.view))
         let count = list.numberOfItems(inSection: 0)
-        try #require(count == (expanded ? 6 : 1))
+        try #require(count == (expanded ? 4 : 1))
         try expectSeparators(
             in: list, window: window,
             visible: (0..<max(0, count - 1)).map { IndexPath(item: $0, section: 0) },
@@ -779,11 +779,11 @@ struct OverviewTests {
 
         state.expanded = true
         let deadline = ContinuousClock.now.advanced(by: .seconds(2))
-        while list.numberOfItems(inSection: 0) != 7, ContinuousClock.now < deadline {
+        while list.numberOfItems(inSection: 0) != 5, ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(5))
             host.view.layoutIfNeeded()
         }
-        try #require(list.numberOfItems(inSection: 0) == 7)
+        try #require(list.numberOfItems(inSection: 0) == 5)
         let cell = list.convert(try #require(list.layoutAttributesForItem(at: IndexPath(item: 2, section: 0))).frame,
                                 to: window)
         let prompt = try #require(MobileAutomationTree(windows: [window]).matching("Review the workshop.").first).frame
@@ -811,6 +811,17 @@ struct OverviewTests {
         let renderer = ImageRenderer(content: OverviewRowSymbol(systemName: "calendar.badge.clock", size: 22))
         let image = try #require(renderer.uiImage)
         #expect(image.size == CGSize(width: 22, height: 22))
+    }
+
+    @Test func deleteRoutineDrawsItsTrashRedUnlessDisabled() throws {
+        func redPixels(_ content: some View) throws -> Int {
+            let pixels = try Self.rgba(render(content.font(.title).environment(\.colorScheme, .light), scale: 2))
+            return stride(from: 0, to: pixels.count, by: 4).count { offset in
+                pixels[offset + 3] > 200 && pixels[offset] > 200 && pixels[offset + 1] < 90 && pixels[offset + 2] < 90
+            }
+        }
+        #expect(try redPixels(OverviewDestructiveSymbol(systemName: "trash")) > 20)
+        #expect(try redPixels(OverviewDestructiveSymbol(systemName: "trash").disabled(true)) == 0)
     }
 
     @Test func routineRowTogglesLikeATaskParentAndSpeaksItsSchedule() async throws {
@@ -854,17 +865,24 @@ struct OverviewTests {
         var collapsed = try row()
         #expect(collapsed.label == "Daily review")
         #expect(collapsed.value == "\(schedule), Collapsed")
-        #expect(collapsed.object.accessibilityHint == "Shows the prompt and next run")
+        #expect(collapsed.object.accessibilityHint == "Shows the prompt")
         #expect(collapsed.traits.contains(.button))
         #expect(collapsed.frame.height >= 44)
         let expand = try #require(collapsed.actions.first { $0.name == "Expand" })
         #expect(collapsed.perform(expand))
         #expect(state.expanded)
-        try await settle(rows: 6)
+        try await settle(rows: 4)
+        let details = MobileAutomationTree(windows: [window])
+        #expect(!details.matching("Review the workshop.").isEmpty)
+        #expect(!details.matching("Run Now").isEmpty)
+        #expect(!details.matching("Delete Routine").isEmpty)
+        #expect(!details.elements.contains { element in
+            ["Next run", "0 9 * * 1-5"].contains { element.label.contains($0) || element.value.contains($0) }
+        })
 
         let expanded = try row()
         #expect(expanded.value == "\(schedule), Expanded")
-        #expect(expanded.object.accessibilityHint == "Hides the prompt and next run")
+        #expect(expanded.object.accessibilityHint == "Hides the prompt")
         #expect(expanded.actions.contains { $0.name == "Collapse" })
         #expect(expanded.activate(in: [window]))
         #expect(!state.expanded)
