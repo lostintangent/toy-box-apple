@@ -406,7 +406,7 @@ private struct ChannelComposer: View {
                     ComposerConnectingIndicator()
                 } else {
                     Button(action: send) {
-                        Image(systemName: associatedAttempt?.canRetry == true ? "arrow.clockwise" : "arrow.up")
+                        Image(systemName: "arrow.up")
                             .font(.system(size: 13, weight: .semibold))
                             .frame(width: 28, height: 28)
                             .background(canSend ? Color.accentColor : Color(nsColor: .quaternaryLabelColor), in: Circle())
@@ -414,9 +414,8 @@ private struct ChannelComposer: View {
                     }
                     .buttonStyle(.plain)
                     .disabled(!canSend)
-                    .help(store.phase.sendUnavailableReason
-                          ?? (associatedAttempt?.canRetry == true ? "Send Again using the original message ID" : "Send message (Return)"))
-                    .accessibilityLabel(associatedAttempt?.canRetry == true ? "Send Again" : "Send message")
+                    .help(store.phase.sendUnavailableReason ?? "Send message (Return)")
+                    .accessibilityLabel("Send message")
                 }
             }
             .font(.system(size: 12))
