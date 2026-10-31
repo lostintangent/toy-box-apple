@@ -59,6 +59,22 @@ struct AutomationTests {
         override var presentedViewController: UIViewController? { activePresentation }
     }
 
+    /// Time that advances only when the run sleeps, by exactly what it asked for, then yields.
+    @MainActor private final class VirtualAutomationClock {
+        private let start = ContinuousClock.now
+        private var elapsed = Duration.zero
+        /// Called after each sleep with the new elapsed time, before the run continues.
+        var onSleep: (Duration) throws -> Void = { _ in }
+
+        var clock: MobileAutomationClock {
+            MobileAutomationClock(now: { self.start + self.elapsed }, sleep: { until in
+                self.elapsed = max(self.elapsed, self.start.duration(to: until))
+                try self.onSleep(self.elapsed)
+                await Task.yield()
+            })
+        }
+    }
+
     private final class MenuDelegate: NSObject, UIContextMenuInteractionDelegate {
         func contextMenuInteraction(_ interaction: UIContextMenuInteraction,
                                     configurationForMenuAtLocation location: CGPoint) -> UIContextMenuConfiguration? { nil }
@@ -604,19 +620,26 @@ struct AutomationTests {
         let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 440, height: 956))
         window.isHidden = false
         defer { window.isHidden = true }
-        let run = Task {
-            await MobileAutomationRun(script: script, currentTree: { MobileAutomationTree(windows: [window]) }).run()
-        }
         func published() -> Published? {
             try? JSONDecoder().decode(Published.self, from: Data(contentsOf: directory.appending(path: "status.json")))
         }
-        while published() == nil || published()?.state == "running" { try await Task.sleep(for: .milliseconds(50)) }
-        try #require(published()?.state == "ready")
-        // simctl sometimes returns ten seconds after writing the image, so the host acknowledges after the
-        // whole step timeout. The step deadline started before the pre-capture settle and has already passed.
-        try await Task.sleep(for: .seconds(2.5))
-        try Data(#"{"step":0}"#.utf8).write(to: directory.appending(path: "ack.json"), options: .atomic)
-        await run.value
+        // Time passes only when the run sleeps, so both settles and the acknowledgement land at the same
+        // virtual moments however busy the runner is.
+        let clock = VirtualAutomationClock()
+        var ready: Duration?
+        var acknowledged: Duration?
+        clock.onSleep = { elapsed in
+            if ready == nil, published()?.state == "ready" { ready = elapsed }
+            // simctl sometimes returns ten seconds after writing the image, so the host acknowledges after
+            // the whole step timeout. The step deadline started before the pre-capture settle.
+            guard acknowledged == nil, let ready, elapsed >= ready + .seconds(2.5) else { return }
+            try Data(#"{"step":0}"#.utf8).write(to: directory.appending(path: "ack.json"), options: .atomic)
+            acknowledged = elapsed
+        }
+        await MobileAutomationRun(script: script, currentTree: { MobileAutomationTree(windows: [window]) },
+                                  clock: clock.clock).run()
+        let acknowledgedAt = try #require(acknowledged)
+        #expect(acknowledgedAt > .seconds(2), "The acknowledgement arrives after the step's original deadline")
         #expect(published()?.state == "completed", "\(published()?.error ?? "")")
     }
 

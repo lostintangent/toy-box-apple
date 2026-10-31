@@ -386,3 +386,23 @@ Incident records moved from AGENTS.md on 2026-10-27, with their evidence and res
 - Retained contracts: `TransportTests.aStreamConnectsOnlyFromTheTaskReadingIt` fails on main's
   `observe` (3 requests instead of 1), and `aClosedStoreLeavesItsSessionSafeToInvalidate` closes
   and invalidates 100 stores, half of them after connecting and reconnecting.
+
+## Phone driver capture deadline
+
+- `AutomationTests.aHostAcknowledgingAfterTheStepTimeoutStillCompletesTheCapture` failed for the
+  first time on main `f2f040e`, in the iOS foundation job (124479981640) of
+  [run 41181607291](https://github.com/lostintangent/toy-box-apple/actions/runs/41181607291),
+  attempt 1: "Timed out after 2.0 seconds at step 1" after 6.501 seconds, with status `failed`.
+  The run had published `ready`, so the failure was the post-capture settle. The cause is
+  identified, so nothing was quarantined.
+- The test ran the driver on wall-clock time with a 2-second step. The pre-capture settle spends
+  part of the step deadline, the host's acknowledgement pauses it, and the post-capture settle gets
+  the remainder. Each settle needs five reads 100 ms apart on the main actor. Swift Testing runs the
+  phone suites in parallel, so a busy main actor stretched those polls until the remainder ran out.
+  A temporary probe holding the main actor in 300 ms slices reproduced the same message after 6.102
+  seconds (`t580/starvation-repro.log` in Core's session files).
+- Fixed in t580. The run measures every deadline and poll on an injected `MobileAutomationClock`,
+  live by default, and the test drives virtual time that advances only when the run sleeps,
+  acknowledging 2.5 virtual seconds after `ready`. Under the same starvation it passed. The driver's
+  contract is unchanged: a step's deadline bounds the app's own work and pauses for the host.
+- Retained contract: removing the pause fails the test deterministically in 0.1 seconds.
