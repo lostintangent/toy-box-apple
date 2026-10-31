@@ -27,6 +27,10 @@ struct TranscriptItem: Equatable, Identifiable {
         }
     }
 
+    var agentEntry: AgentRunEntry? {
+        if case .agent(_, let entry, _) = content { entry } else { nil }
+    }
+
     /// The newest sequence this item shows, which seeing it marks read.
     var sequence: Int { messages.map(\.sequence).max() ?? 0 }
 }

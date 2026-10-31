@@ -306,6 +306,8 @@ struct ConversationTranscript: View {
         let statusReactions = statusReactions
         let findHighlights = find.highlights
         let catchUp = interaction.messageView == .all ? catchUp : nil
+        let requestChoices = TranscriptRequestChoices(request: store.request, attempts: store.sendAttempts,
+                                                      isConnected: store.phase.isConnected)
         return LazyVStack(alignment: .leading, spacing: 0) {
             historyHeader
             if rows.isEmpty {
@@ -321,6 +323,7 @@ struct ConversationTranscript: View {
             ForEach(rows) { row in
                 TranscriptRowContent(row: row, context: context, statusReactions: statusReactions,
                                      highlightedSequence: highlightedSequence, catchUp: catchUp, store: store,
+                                     requestChoices: requestChoices,
                                      expandedMessageIds: expandedMessageIds,
                                      findHighlights: findHighlights,
                                      onSetExpanded: { id, expands in

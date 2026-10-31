@@ -32,6 +32,8 @@ struct TranscriptRowContent: View, @MainActor Equatable {
     /// The catch-up summary, for the row under the New divider that shows it.
     let catchUp: TranscriptCatchUp?
     let store: ChannelStore
+    /// The pending request's suggested replies, when they're in this row.
+    let requestChoices: TranscriptRequestChoices?
     /// This row's expanded messages.
     let expandedMessageIds: Set<String>
     let onSetExpanded: (String, Bool) -> Void
@@ -39,6 +41,7 @@ struct TranscriptRowContent: View, @MainActor Equatable {
 
     init(row: TranscriptRow, context: TranscriptRowContext, statusReactions: [Int: [ChannelReaction]],
          highlightedSequence: Int?, catchUp: TranscriptCatchUp?, store: ChannelStore,
+         requestChoices: TranscriptRequestChoices? = nil,
          expandedMessageIds: Set<String>, findHighlights: [Int: TranscriptFindHighlight] = [:],
          onSetExpanded: @escaping (String, Bool) -> Void) {
         let messages = row.messages
@@ -53,6 +56,7 @@ struct TranscriptRowContent: View, @MainActor Equatable {
         }
         self.catchUp = row.divider?.unread == true ? catchUp : nil
         self.store = store
+        self.requestChoices = messages.contains { $0.sequence == requestChoices?.sequence } ? requestChoices : nil
         self.expandedMessageIds = expandedMessageIds.isEmpty ? [] : expandedMessageIds.filter { id in
             messages.contains { $0.id == id }
         }
@@ -63,7 +67,7 @@ struct TranscriptRowContent: View, @MainActor Equatable {
         lhs.row == rhs.row && lhs.context == rhs.context && lhs.statusReactions == rhs.statusReactions
             && lhs.highlightedSequence == rhs.highlightedSequence && lhs.catchUp === rhs.catchUp
             && lhs.store === rhs.store && lhs.expandedMessageIds == rhs.expandedMessageIds
-            && lhs.findHighlights == rhs.findHighlights
+            && lhs.findHighlights == rhs.findHighlights && lhs.requestChoices == rhs.requestChoices
     }
 
     var body: some View {
@@ -95,7 +99,11 @@ struct TranscriptRowContent: View, @MainActor Equatable {
                                                    statusReactions: statusReactions[entry.message.sequence] ?? [],
                                                    expanded: expandedMessageIds.contains(entry.id),
                                                    findHighlight: findHighlights[entry.message.sequence],
-                                                   onSetExpanded: onSetExpanded)
+                                                   choices: requestChoices?.labels(
+                                                       for: entry.message.sequence, request: entry.request) ?? [],
+                                                   canSendChoice: requestChoices?.canSend == true,
+                                                   onSetExpanded: onSetExpanded,
+                                                   onChoose: { interaction.sendSuggestedReply($0, store: store) })
                                 .equatable()
                                 .background(highlightedSequence == entry.message.sequence
                                             ? ChannelColors.sourceHighlight : .clear,
@@ -258,7 +266,10 @@ struct TranscriptAgentMessage: View, @MainActor Equatable {
     let statusReactions: [ChannelReaction]
     let expanded: Bool
     var findHighlight: TranscriptFindHighlight?
+    var choices: [String] = []
+    var canSendChoice = false
     var onSetExpanded: (String, Bool) -> Void
+    var onChoose: (String) -> Void = { _ in }
     @Environment(\.channelTextScale) private var textScale
     @Environment(\.transcriptPointer) private var pointer
     @ViewState private var isHovered = false
@@ -271,7 +282,8 @@ struct TranscriptAgentMessage: View, @MainActor Equatable {
         lhs.entry == rhs.entry && lhs.agent == rhs.agent && lhs.agents == rhs.agents
             && lhs.api.baseURL == rhs.api.baseURL && lhs.interaction === rhs.interaction
             && lhs.statusReactions == rhs.statusReactions && lhs.expanded == rhs.expanded
-            && lhs.findHighlight == rhs.findHighlight
+            && lhs.findHighlight == rhs.findHighlight && lhs.choices == rhs.choices
+            && lhs.canSendChoice == rhs.canSendChoice
     }
 
     var body: some View {
@@ -292,14 +304,14 @@ struct TranscriptAgentMessage: View, @MainActor Equatable {
                         markdown
                     }
                     if isPending && agent.deleted != true {
-                        Button("Reply", systemImage: "arrowshape.turn.up.left") {
+                        TranscriptRequestActions(sequence: entry.message.sequence, choices: choices,
+                                                 canSend: canSendChoice,
+                                                 replyHelp: "Reply to \(agent.name)", onChoose: onChoose) {
                             interaction.reply(to: agent)
                         }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                        .font(.system(size: 11 * textScale))
-                        .help("Reply to \(agent.name)")
-                        .padding(.top, 4)
+                        .controlSize(.large)
+                        .font(.system(size: 13 * textScale))
+                        .padding(.top, 6)
                     }
                 }
                 .padding(.horizontal, 12)
