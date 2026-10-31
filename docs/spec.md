@@ -2611,18 +2611,24 @@ are out of scope.
 Reply is a `UNTextInputNotificationAction`: title "Reply", button "Send", placeholder "Reply". It
 posts in the background without activating the app or opening a window. The posted text is
 addressed exactly like the in-app Reply: prepend the requester's `@handle ` unless the reply
-already starts with an @mention. Use a fresh message ID, and retry once after 2 seconds with the
-same ID only for a transport failure. On success, mark the channel read through the reply's own
+already starts with an @mention. Post through the channel's shared `ChannelStore` background send
+with a fresh message ID, which records it in the channel's outbox before its request, and retry
+once after 2 seconds with the same ID only for a transport failure. A 409 for that ID means the
+server already has it and counts as sent. On success, mark the channel read through the reply's own
 sequence, as replying from a Messages notification does, and show nothing else. Empty or
 whitespace-only replies post nothing.
 
-When a reply can't be sent, never lose it. Save the text as that channel's draft for the
-notification's server, appending after a blank line when a draft exists, and deliver one
-notification: title the channel name, body "Your reply wasn't sent. It's saved as a draft."
-Activating it opens the channel with the composer focused. A deleted channel says "Your reply
-wasn't sent because [channel] was deleted." A notification from a server other than the current
-one never posts to the current server. It takes the same failure path, with its draft saved
-under its own server.
+When a reply can't be sent, never lose it and never post it twice. A reply that was attempted but
+not confirmed may already be on the server, so it keeps its message ID and waits in the channel's
+outbox, as on the phone. Send Again reuses that ID, and Edit follows the composer's rule for
+restoring an unsent message, so the server accepts it at most once. Leave the draft untouched and
+deliver one notification: title the channel name, body "Your reply wasn't sent. It's waiting in the
+channel so you can send it again." Activating it opens the channel with the composer focused. A
+reply that can't have been posted has no ID to keep. A deleted channel saves the text as that
+channel's draft, appending after a blank line when a draft exists, and says "Your reply wasn't sent
+because [channel] was deleted." A notification from a server other than the current one never posts
+to the current server. It saves its draft under its own server and says "Your reply wasn't sent.
+It's saved as a draft."
 
 Notifications withdraw themselves. Remove a channel's delivered request notification as soon as
 its `requestSequence` changes or clears, wherever it was answered. Remove a completion once
