@@ -12,6 +12,11 @@ struct SystemTextTests {
         #expect(text(.init(type: "artifact_shared", actor: .user, artifact: .init(
             file: .init(kind: "session", path: "plan.md"), title: "Workshop plan")))
                 == "You shared Workshop plan")
+        #expect(text(.init(type: "artifact_removed", actor: .user, artifact: .init(
+            file: .init(kind: "session", path: "plan.md"), title: "Workshop plan")))
+                == "You removed Workshop plan")
+        let agents = [ChannelAgent(id: "lead", name: "Lead")]
+        #expect(ChannelSystemText.actor(.init(type: "artifact_removed", actor: .agent("lead")), agents: agents) == "Lead")
     }
 
     @Test func groupedMembershipKeepsTheSameCountAndActionWords() throws {

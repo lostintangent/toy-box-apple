@@ -368,7 +368,7 @@ public struct ChannelSystemContent: Codable, Equatable, Sendable {
             actor = try values.decode(ChannelMessageSender.self, forKey: .actor)
             preview = try values.decodeIfPresent(ChannelPreview.self, forKey: .preview)
             previewUrl = try values.decodeIfPresent(String.self, forKey: .previewUrl)
-        case "artifact_shared":
+        case "artifact_shared", "artifact_removed":
             actor = try values.decode(ChannelMessageSender.self, forKey: .actor)
             artifact = try values.decode(ChannelArtifact.self, forKey: .artifact)
         case "routine_scheduled", "routine_edited", "routine_deleted":

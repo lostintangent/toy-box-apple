@@ -44,6 +44,7 @@ public enum ChannelSystemEventStyle {
         case "channel_directory_changed": "folder"
         case "preview_changed": "play.rectangle"
         case "artifact_shared": "doc.badge.arrow.up"
+        case "artifact_removed": "minus.circle"
         case "routine_scheduled", "routine_edited", "routine_deleted": "calendar.badge.clock"
         default: "info.circle"
         }

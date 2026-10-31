@@ -59,6 +59,8 @@ public enum ChannelSystemText {
             return phrase
         case "artifact_shared":
             return "\(actor(system, agents: agents)) shared \(system.artifact?.title ?? "")"
+        case "artifact_removed":
+            return "\(actor(system, agents: agents)) removed \(system.artifact?.title ?? "")"
         case "routine_scheduled", "routine_edited", "routine_deleted":
             return event(system.routine?.title ?? "Routine")
         default:

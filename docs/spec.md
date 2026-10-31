@@ -8,7 +8,7 @@ presentation and input surface over the same public Channel protocol that the Mi
 Reference sources (read-only):
 
 - Toy Box server and pane: `~/Desktop/toy-box/src/features/channels` (start with its `AGENTS.md`)
-- Minecraft client protocol reference: `~/Desktop/toy-box-Minecraft`
+- Contract fixtures: `Tests/ChannelKitTests/Fixtures`, originally exported from the Minecraft client
   (`docs/architecture.md`). Its `fixtures/channel-snapshot.json` is copied unchanged into
   `Tests/ChannelKitTests/Fixtures`, where the demo servers read it.
 
