@@ -16,6 +16,7 @@
 - Keep seeing Connecting while a large channel loads over a slow connection, instead of Can't Connect.
 - See Overview without a separate reconnecting note, and Quick Send without a Retry button while a channel reconnects.
 - Expand a routine in Overview to read just its prompt, without the next run date or raw schedule. Hover the schedule for its cron expression.
+- Find a notification reply that didn't send waiting in its channel with Send Again, which can never post it twice.
 
 ## iPhone 0.1.6
 
