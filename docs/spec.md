@@ -603,7 +603,9 @@ when visible content changes. Live writes rewrite an unchanged snapshot every 15
 - [ ] Disabled while disconnected, with a visible stale state. A failed send stays on its row in
       the transcript with Edit and Send Again, the draft is never restored, and it is never retried
       automatically
-- [ ] Optimistic message that the committed echo replaces
+- [ ] Optimistic message that the committed echo replaces, drawn exactly as the echo (bubble, gap and
+      day divider) so confirming changes nothing on screen. Only a send still going after 1 second
+      shows a quiet "Sending"
 
 ### Composer tray
 

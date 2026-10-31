@@ -128,7 +128,7 @@ struct TranscriptRowContent: View, @MainActor Equatable {
 }
 
 /// A divider, with the catch-up summary above the New divider for the landing that has one.
-private struct TranscriptDividerStack: View {
+struct TranscriptDividerStack: View {
     let divider: TranscriptDivider
     let catchUp: TranscriptCatchUp?
     let store: ChannelStore

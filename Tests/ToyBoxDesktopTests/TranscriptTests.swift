@@ -404,6 +404,43 @@ struct TranscriptTests {
         #expect(harness.readRequests == 0)
     }
 
+    /// Rule 4. A message on its way is drawn exactly as it will be once sent, with the same bubble and
+    /// gap, and the day divider when it's the first message today, so confirming it changes nothing on
+    /// screen. The send is held at the server until the pending message has settled.
+    @Test(arguments: [false, true]) @MainActor
+    func confirmingASendChangesNothingOnScreen(firstToday: Bool) async throws {
+        let today = Date.now.ISO8601Format()
+        let messages = (1...40).map { sequence in
+            var message = transcriptTestMessage(sequence)
+            if !firstToday { message.timestamp = today }
+            return message
+        }
+        let harness = try await TranscriptHarness(messages: messages, slowSendDelay: .seconds(3600))
+        defer { await harness.close() }
+        harness.holdSends()
+        let id = UUID().uuidString
+        let send = Task { try await harness.store.post(id: id, content: "Ship it", attachments: []) }
+        try await harness.waitUntil { harness.heldSends == 1 && abs(harness.bottomGap) < 2 }
+        try await harness.settled()
+        let attempt = try #require(harness.store.sendAttempts.first)
+        let clip = harness.scrollView.contentView
+        let pending = (height: harness.scrollView.documentView?.bounds.height, top: clip.bounds.minY,
+                       pixels: transcriptLayerPixels(of: harness.scrollView))
+
+        try harness.confirmSend(ChannelMessage(id: id, sequence: 41, timestamp: attempt.timestamp, sender: .user,
+                                               content: .text("Ship it")))
+        _ = try await send.value
+        try await harness.waitUntil { harness.store.sendAttempts.isEmpty && harness.capture.frames[id] != nil }
+        try await harness.settled()
+        #expect(harness.store.messages.last?.id == id)
+        #expect((harness.capture.frames["divider-\(id)"] != nil) == firstToday)
+        #expect(harness.scrollView.documentView?.bounds.height == pending.height)
+        #expect(clip.bounds.minY == pending.top)
+        let changed = transcriptChangedBounds(pending.pixels, transcriptLayerPixels(of: harness.scrollView),
+                                              width: Int(harness.scrollView.bounds.width))
+        #expect(changed == nil, "Confirming redrew \(String(describing: changed))")
+    }
+
     /// Thirty unread messages, each its own row, run well past one screen, so the first opens at the
     /// top. One run of five fits on the last screen, so the transcript opens at the bottom with it in
     /// view. A summary card above the first unread message then grows downward from where it's drawn.
@@ -1352,7 +1389,6 @@ struct TranscriptTests {
     }
 }
 
-
 @MainActor
 @Suite("Image viewer")
 struct ImageViewerTests {
@@ -1801,13 +1837,13 @@ struct ImageViewerLiveTextTests {
             view.layoutSubtreeIfNeeded()
             view.overlay.resetSelection()
             try await Self.until { view.overlay.text.contains(page.lines[line]) }
-            try await transcriptSettled(in: view) { Self.layerPixels(of: view) }
-            let unselected = Self.layerPixels(of: view)
+            try await transcriptSettled(in: view) { transcriptLayerPixels(of: view) }
+            let unselected = transcriptLayerPixels(of: view)
             view.overlay.selectedRanges = [try #require(view.overlay.text.range(of: page.lines[line]))]
             #expect(view.overlay.selectedText == page.lines[line])
             var highlight: CGRect?
             try await Self.until {
-                highlight = Self.changedBounds(unselected, Self.layerPixels(of: view), width: 1000)
+                highlight = transcriptChangedBounds(unselected, transcriptLayerPixels(of: view), width: 1000)
                 return highlight != nil
             }
             let drawn = try #require(highlight)
@@ -2151,37 +2187,6 @@ struct ImageViewerLiveTextTests {
         return ScreenshotPage(image: image, lines: lines, glyphBounds: glyphBounds)
     }
 
-    /// The view's layer tree rendered at one pixel per point, in rows from its top.
-    private static func layerPixels(of view: NSView) -> [UInt32] {
-        let width = Int(view.bounds.width), height = Int(view.bounds.height)
-        var pixels = [UInt32](repeating: 0, count: width * height)
-        pixels.withUnsafeMutableBytes { buffer in
-            guard let layer = view.layer, let space = CGColorSpace(name: CGColorSpace.sRGB),
-                  let context = CGContext(data: buffer.baseAddress, width: width, height: height, bitsPerComponent: 8,
-                                          bytesPerRow: width * 4, space: space,
-                                          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return }
-            if view.isFlipped {
-                context.translateBy(x: 0, y: CGFloat(height))
-                context.scaleBy(x: 1, y: -1)
-            }
-            layer.render(in: context)
-        }
-        return pixels
-    }
-
-    /// The bounds of every pixel that differs between two renders, in points from the top-left.
-    private static func changedBounds(_ before: [UInt32], _ after: [UInt32], width: Int) -> CGRect? {
-        var minX = Int.max, minY = Int.max, maxX = -1, maxY = -1
-        for pixel in 0..<min(before.count, after.count) where before[pixel] != after[pixel] {
-            let x = pixel % width, y = pixel / width
-            minX = min(minX, x)
-            maxX = max(maxX, x)
-            minY = min(minY, y)
-            maxY = max(maxY, y)
-        }
-        guard maxX >= 0 else { return nil }
-        return CGRect(x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1)
-    }
 }
 
 /// Analyzes one image on the main actor and records whether VisionKit found text in it.
@@ -2500,6 +2505,39 @@ func catchUpTestState(through latest: Int = 30, seenThrough: Int = 10) -> Channe
     })
 }
 
+/// The view's layer tree rendered at one pixel per point, in rows from its top.
+@MainActor
+func transcriptLayerPixels(of view: NSView) -> [UInt32] {
+    let width = Int(view.bounds.width), height = Int(view.bounds.height)
+    var pixels = [UInt32](repeating: 0, count: width * height)
+    pixels.withUnsafeMutableBytes { buffer in
+        guard let layer = view.layer, let space = CGColorSpace(name: CGColorSpace.sRGB),
+              let context = CGContext(data: buffer.baseAddress, width: width, height: height, bitsPerComponent: 8,
+                                      bytesPerRow: width * 4, space: space,
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return }
+        if view.isFlipped {
+            context.translateBy(x: 0, y: CGFloat(height))
+            context.scaleBy(x: 1, y: -1)
+        }
+        layer.render(in: context)
+    }
+    return pixels
+}
+
+/// The bounds of every pixel that differs between two renders, in points from the top-left.
+func transcriptChangedBounds(_ before: [UInt32], _ after: [UInt32], width: Int) -> CGRect? {
+    var minX = Int.max, minY = Int.max, maxX = -1, maxY = -1
+    for pixel in 0..<min(before.count, after.count) where before[pixel] != after[pixel] {
+        let x = pixel % width, y = pixel / width
+        minX = min(minX, x)
+        maxX = max(maxX, x)
+        minY = min(minY, y)
+        maxY = max(maxY, y)
+    }
+    guard maxX >= 0 else { return nil }
+    return CGRect(x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1)
+}
+
 func transcriptTestMessage(_ sequence: Int) -> ChannelMessage {
     ChannelMessage(id: "m\(sequence)", sequence: sequence, timestamp: "2026-10-22T12:00:00Z",
                    sender: .agent("lead"),
@@ -2545,6 +2583,7 @@ private final class TranscriptHarness {
          legacyScrollers: Bool = false,
          intelligence: any ChannelIntelligenceService = LiveChannelIntelligence.shared,
          find: TranscriptFind = TranscriptFind(), revealTimeout: Duration = .seconds(30),
+         slowSendDelay: Duration = .seconds(1),
          onTurn: (@MainActor (TranscriptHarness) -> Void)? = nil) async throws {
         let host = "transcript-\(UUID().uuidString.lowercased()).invalid"
         let latest = messages.last?.sequence ?? 0
@@ -2573,7 +2612,8 @@ private final class TranscriptHarness {
         }
         let makeView = {
             let view = NSHostingView(rootView: ConversationTranscript(store: store, find: find,
-                                                                      revealTimeout: revealTimeout)
+                                                                      revealTimeout: revealTimeout,
+                                                                      slowSendDelay: slowSendDelay)
                 .onPreferenceChange(TranscriptMessageFrames.self) { capture.frames = $0 }
                 .onPreferenceChange(TranscriptLanded.self) { capture.hasLanded = $0 }
                 .onPreferenceChange(TranscriptRestoringHistory.self) { capture.isRestoringHistory = $0 }
@@ -2797,6 +2837,24 @@ private final class TranscriptHarness {
         if let data { stream?.deliver(data) }
     }
 
+    /// Holds every send until `confirmSend(_:)` answers it with the server's copy.
+    func holdSends() {
+        TranscriptServerProtocol.fixtures.withLock { $0[host]?.holdsSends = true }
+    }
+
+    var heldSends: Int {
+        TranscriptServerProtocol.fixtures.withLock { $0[host]?.heldSends.count ?? 0 }
+    }
+
+    func confirmSend(_ message: ChannelMessage) throws {
+        let body = Data(#"{"version":1,"message":\#(String(decoding: try JSONEncoder().encode(message), as: UTF8.self))}"#.utf8)
+        let held = TranscriptServerProtocol.fixtures.withLock { fixtures in
+            defer { fixtures[host]?.heldSends = [] }
+            return fixtures[host]?.heldSends ?? []
+        }
+        for request in held { request.finish(with: body) }
+    }
+
     func releaseHistory() {
         let held = TranscriptServerProtocol.fixtures.withLock { fixtures in
             defer { fixtures[host]?.held = [] }
@@ -2816,7 +2874,8 @@ private final class TranscriptHarness {
 }
 
 /// An in-memory channel server: a snapshot stream that stays open for pushed events, history pages
-/// that can be held until released, and a 503 for every write, like an unavailable server.
+/// that can be held until released, sends that can be held until confirmed, and a 503 for every
+/// other write, like an unavailable server.
 private final class TranscriptServerProtocol: URLProtocol, @unchecked Sendable {
     struct HeldResponse: Sendable {
         var request: TranscriptServerProtocol
@@ -2829,6 +2888,8 @@ private final class TranscriptServerProtocol: URLProtocol, @unchecked Sendable {
         var holdsHistory: Bool
         var stream: TranscriptServerProtocol?
         var held: [HeldResponse] = []
+        var holdsSends = false
+        var heldSends: [TranscriptServerProtocol] = []
         var requests: [String] = []
     }
 
@@ -2859,6 +2920,7 @@ private final class TranscriptServerProtocol: URLProtocol, @unchecked Sendable {
             let encoded = String(decoding: (try? JSONEncoder().encode(messages)) ?? Data(), as: UTF8.self)
             return Data(#"{"version":1,"revision":1,"messages":\#(encoded)}"#.utf8)
         }
+        let sends = method == "POST" && url.lastPathComponent == "messages"
         enum Reply { case stream(Data), page(Data), held, unavailable, missing }
         let reply = Self.fixtures.withLock { fixtures -> Reply in
             guard var fixture = fixtures[host] else { return .missing }
@@ -2867,6 +2929,10 @@ private final class TranscriptServerProtocol: URLProtocol, @unchecked Sendable {
             if streaming {
                 fixture.stream = self
                 return .stream(fixture.snapshot)
+            }
+            if sends, fixture.holdsSends {
+                fixture.heldSends.append(self)
+                return .held
             }
             guard method == "GET", url.lastPathComponent == "messages", let page else { return .unavailable }
             guard fixture.holdsHistory else { return .page(page) }
@@ -2913,7 +2979,6 @@ private final class TranscriptServerProtocol: URLProtocol, @unchecked Sendable {
         }
     }
 }
-
 
 /// One long agent message, hovered by calling its tracking methods
 /// directly, since a test's posted moves never reach SwiftUI's hover tracking.

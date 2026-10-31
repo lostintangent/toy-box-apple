@@ -39,10 +39,13 @@ struct ConversationTranscript: View {
     @ViewState private var layoutTurns = TranscriptLayoutTurns()
     @ViewState private var find: TranscriptFind
     private let revealTimeout: Duration
+    private let slowSendDelay: Duration
 
-    init(store: ChannelStore, find: TranscriptFind = TranscriptFind(), revealTimeout: Duration = .seconds(2)) {
+    init(store: ChannelStore, find: TranscriptFind = TranscriptFind(), revealTimeout: Duration = .seconds(2),
+         slowSendDelay: Duration = .seconds(1)) {
         self.store = store
         self.revealTimeout = revealTimeout
+        self.slowSendDelay = slowSendDelay
         _find = ViewState(wrappedValue: find)
     }
 
@@ -338,8 +341,11 @@ struct ConversationTranscript: View {
                     .equatable()
                     .padding(.top, gaps[row.id] ?? TranscriptSpacing.run)
             }
+            let attemptDividers = transcriptPendingDividers(store.sendAttempts.map(\.message),
+                                                            after: rows.last?.messages.last, roster: store.roster)
             ForEach(store.sendAttempts) { attempt in
-                sendAttempt(attempt, statusReactions: statusReactions[attempt.message.sequence] ?? [])
+                sendAttempt(attempt, divider: attemptDividers[attempt.id],
+                            statusReactions: statusReactions[attempt.message.sequence] ?? [])
                     .padding(.top, TranscriptSpacing.run)
                     .id("attempt-\(attempt.id)")
             }
@@ -361,11 +367,18 @@ struct ConversationTranscript: View {
         return channelStatusReactions(agents: agents, presence: store.presence)
     }
 
+    private func sendAttempt(_ attempt: ChannelSendAttempt, divider: TranscriptDivider?,
+                             statusReactions: [ChannelReaction]) -> some View {
+        VStack(alignment: .leading, spacing: TranscriptSpacing.divider) {
+            if let divider { TranscriptDividerStack(divider: divider, catchUp: nil, store: store) }
+            sendAttempt(attempt, statusReactions: statusReactions)
+        }
+    }
+
     private func sendAttempt(_ attempt: ChannelSendAttempt, statusReactions: [ChannelReaction]) -> some View {
         VStack(alignment: .trailing, spacing: 6) {
-            TranscriptUserMessage(message: attempt.message, agents: store.roster, api: store.api,
-                                  deliveryLabel: attempt.phase.label, statusReactions: statusReactions)
-                .opacity(attempt.phase == .sending ? 0.65 : 1)
+            TranscriptAttemptMessage(attempt: attempt, agents: store.roster, api: store.api,
+                                     statusReactions: statusReactions, slowSendDelay: slowSendDelay)
             if let error = attempt.error {
                 Text(error).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
             }
@@ -1144,6 +1157,36 @@ private struct PagingAnchor: Equatable {
 private struct PagingRestoreTarget: Hashable {
     var id: String
     var oldestSequence: Int
+}
+
+/// A message on its way, drawn exactly as it will be once sent, so confirming it changes nothing on
+/// screen. Only a send still going after `slowSendDelay` says so. A failed one keeps its label.
+private struct TranscriptAttemptMessage: View {
+    let attempt: ChannelSendAttempt
+    let agents: [ChannelAgent]
+    let api: ChannelAPI
+    let statusReactions: [ChannelReaction]
+    let slowSendDelay: Duration
+    @ViewState private var isSlow = false
+
+    private var deliveryLabel: String? {
+        switch attempt.phase {
+        case .sending: isSlow ? attempt.phase.label : nil
+        case .confirmed: nil
+        case .notSent, .deliveryNotConfirmed: attempt.phase.label
+        }
+    }
+
+    var body: some View {
+        TranscriptUserMessage(message: attempt.message, agents: agents, api: api,
+                              deliveryLabel: deliveryLabel, statusReactions: statusReactions)
+            .task(id: attempt.phase) {
+                isSlow = false
+                guard attempt.phase == .sending else { return }
+                try? await Task.sleep(for: slowSendDelay)
+                if !Task.isCancelled { isSlow = true }
+            }
+    }
 }
 
 private struct TranscriptNotice<Message: View, Action: View>: View {

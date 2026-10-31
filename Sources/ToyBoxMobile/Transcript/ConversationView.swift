@@ -251,10 +251,14 @@ struct ConversationView: View {
                         .padding(.top, item.spacing)
                         .id(item.id)
                 }
+                let attemptDividers = transcriptPendingDividers(store.sendAttempts.map(\.message),
+                                                                after: items.last?.messages.last, roster: store.roster)
                 ForEach(store.sendAttempts) { attempt in
                     // The committed row takes the attempt's UUID, so keep the two identities apart.
-                    TranscriptSendAttempt(attempt: attempt, store: store, context: context)
-                        .padding(.top, TranscriptSpacing.run)
+                    TranscriptSendAttempt(attempt: attempt, divider: attemptDividers[attempt.id], store: store,
+                                          context: context)
+                        .padding(.top, items.isEmpty && attempt.id == store.sendAttempts.first?.id
+                                 ? 0 : TranscriptSpacing.run)
                         .id("attempt-\(attempt.id)")
                 }
             }
@@ -575,18 +579,42 @@ private struct TranscriptPagingAccessory: View {
     }
 }
 
+/// A message on its way, drawn exactly as it will be once sent, so confirming it changes nothing on
+/// screen. Only a send still going after a second says so. A failed one keeps its label and actions.
 private struct TranscriptSendAttempt: View {
     let attempt: ChannelSendAttempt
+    let divider: TranscriptDivider?
     let store: ChannelStore
     let context: TranscriptRowContext
     @Environment(ChannelInteraction.self) private var interaction
     @ViewState private var actionError: String?
+    @ViewState private var isSlow = false
+
+    private var deliveryLabel: String? {
+        switch attempt.phase {
+        case .sending: isSlow ? attempt.phase.label : nil
+        case .confirmed: nil
+        case .notSent, .deliveryNotConfirmed: attempt.phase.label
+        }
+    }
 
     var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if let divider { TranscriptRule(divider: divider).padding(.bottom, TranscriptSpacing.divider) }
+            message
+        }
+    }
+
+    private var message: some View {
         VStack(alignment: .trailing, spacing: 6) {
-            TranscriptUserMessage(message: attempt.message, context: context, deliveryLabel: attempt.phase.label,
+            TranscriptUserMessage(message: attempt.message, context: context, deliveryLabel: deliveryLabel,
                                   identifier: "send-\(attempt.id)")
-                .opacity(attempt.phase == .sending ? 0.65 : 1)
+                .task(id: attempt.phase) {
+                    isSlow = false
+                    guard attempt.phase == .sending else { return }
+                    try? await Task.sleep(for: .seconds(1))
+                    if !Task.isCancelled { isSlow = true }
+                }
             if let error = actionError ?? attempt.error {
                 Text(error).font(.footnote).foregroundStyle(TranscriptInk.secondary)
             }

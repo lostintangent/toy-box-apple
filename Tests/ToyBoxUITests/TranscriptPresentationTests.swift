@@ -17,6 +17,21 @@ struct TranscriptPresentationTests {
         #expect(blocks.map(\.id) == [0, 1])
     }
 
+    /// A pending message gets the day divider its sent row will have, and only that.
+    @Test func pendingMessagesPredictTheDayDividerTheirSentRowsWillHave() {
+        let roster = [ChannelAgent(id: "lead", name: "Lead")]
+        func message(_ id: String, _ timestamp: String, sender: ChannelMessageSender = .user) -> ChannelMessage {
+            ChannelMessage(id: id, sequence: 0, timestamp: timestamp, sender: sender, content: .text(id))
+        }
+        let yesterday = message("old", "2026-10-30T12:00:00Z", sender: .agent("lead"))
+        let pending = [message("first", "2026-10-31T12:00:00Z"), message("second", "2026-10-31T12:00:05Z")]
+        let dividers = transcriptPendingDividers(pending, after: yesterday, roster: roster)
+        #expect(dividers["first"]?.day != nil && dividers["first"]?.unread == false)
+        #expect(dividers["second"] == nil)
+        #expect(transcriptPendingDividers(pending, after: pending[0], roster: roster)["second"] == nil)
+        #expect(transcriptPendingDividers(pending, after: yesterday, roster: []).isEmpty)
+    }
+
     @Test func revealRejectsUnmeasuredAndPrependStaleTargets() throws {
         let viewport = TranscriptViewport(top: 1_890, width: 503, height: 380, contentHeight: 5_148)
         let stale = TranscriptMessageFrame(sequence: 2, rect: CGRect(x: 0, y: -1_800, width: 400, height: 57),
