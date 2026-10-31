@@ -49,26 +49,12 @@ struct OverviewRoutineLabel: View {
     }
 }
 
-/// List rows draw a destructive button's title red but leave its icon in the accent tint, and
-/// `.tint` doesn't reach that icon. Disabled rows keep the system's dimmed icon.
-struct OverviewDestructiveSymbol: View {
-    let systemName: String
-    @Environment(\.isEnabled) private var isEnabled
-
-    var body: some View {
-        if isEnabled {
-            Image(systemName: systemName).foregroundStyle(.red)
-        } else {
-            Image(systemName: systemName)
-        }
-    }
-}
-
 struct OverviewRoutineRow: View {
     let routine: ChannelRoutine
     let store: ChannelStore
     @Environment(AppModel.self) private var app
     @Environment(ManagementPresenter.self) private var management
+    @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
     @Bindable var state: OverviewRoutineState
     let isLast: Bool
     @ScaledMetric(relativeTo: .title2) private var iconLane = 24
@@ -77,6 +63,7 @@ struct OverviewRoutineRow: View {
     private var recovery: ChannelManagementWriteRecovery { state.recovery }
 
     private var canRun: Bool { store.phase.isConnected && !pending && !recovery.blocksWrites }
+    private var canDelete: Bool { store.phase.isConnected && !pending }
     private var schedule: String { (try? cronSummary(routine.schedule)) ?? routine.schedule }
     private var scheduleLine: String {
         ChannelRoutineRunPresentation.label(schedule: schedule, pending: pending, requestedAt: requestedAt)
@@ -95,12 +82,28 @@ struct OverviewRoutineRow: View {
         .accessibilityHint(state.expanded ? "Hides the prompt" : "Shows the prompt")
         .accessibilityActions {
             Button(state.expanded ? "Collapse" : "Expand", action: toggle)
+            Button("Run Now", action: run).disabled(!canRun)
+            Button("Delete Routine", action: delete).disabled(!canDelete)
         }
         .accessibilityIdentifier("overview-routine-\(routine.id)")
+        // As on Team rows, VoiceOver reaches these through the row's own actions instead.
+        .swipeActions(edge: .leading, allowsFullSwipe: false) {
+            if !voiceOver {
+                Button("Run Now", systemImage: "play", action: run)
+                    .tint(.accentColor)
+                    .disabled(!canRun)
+            }
+        }
+        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+            if !voiceOver {
+                Button("Delete", systemImage: "trash", role: .destructive, action: delete)
+                    .disabled(!canDelete)
+            }
+        }
         .contextMenu {
             Button("Run Now", systemImage: "play", action: run).disabled(!canRun)
             Button("Delete Routine", systemImage: "trash", role: .destructive, action: delete)
-                .disabled(pending || !store.phase.isConnected)
+                .disabled(!canDelete)
         }
         .task(id: requestedAt) {
             guard let requestedAt else { return }
@@ -110,19 +113,10 @@ struct OverviewRoutineRow: View {
             state.requestedAt = nil
         }
         if state.expanded {
-            Group {
-                Text(routine.prompt).textSelection(.enabled)
-                Button("Run Now", systemImage: "play", action: run)
-                    .frame(minHeight: 44)
-                    .disabled(!canRun)
-                Button(role: .destructive, action: delete) {
-                    Label { Text("Delete Routine") } icon: { OverviewDestructiveSymbol(systemName: "trash") }
-                }
-                .frame(minHeight: 44)
-                .disabled(pending || !store.phase.isConnected)
+            Text(routine.prompt)
+                .textSelection(.enabled)
+                .padding(.leading, iconLane + 12)
                 .modifier(OverviewListRowBoundary(isLast: contentEndsSection))
-            }
-            .padding(.leading, iconLane + 12)
         }
         if let error = recovery.error {
             ManagementError(message: error)
@@ -143,6 +137,7 @@ struct OverviewRoutineRow: View {
     private func toggle() { state.expanded.toggle() }
 
     private func delete() {
+        guard canDelete else { return }
         management.present(.deleteRoutine(channelId: store.id, routineId: routine.id))
     }
 
