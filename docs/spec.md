@@ -1640,15 +1640,17 @@ A request may offer two to four suggested replies. ChannelKit reads them through
 
 **Where choices appear.** Choices appear on the transcript's pending request, the Mac menu bar inbox, the Mac notification banner, the phone transcript and the phone Lock Screen notification. They do not appear on sidebar or menu badges (counts only), the composer's Input needed state (it opens the question, and choices stay in the transcript), the Dock menu, Spotlight, the morning digest, Control Center, Quick Send or the Siri snippet. Menu items cannot hold buttons, so those surfaces keep Reply or open the channel.
 
-**Layout.** Choices are full-width rows, one per line, in the lead's order. Labels wrap in full, and nothing is cut except the first Mac banner action, which macOS truncates. In the transcript and inbox, Reply is the last row. With no choices, Reply is the only row, so the request still looks finished. Four choices make the bubble or inbox row taller, never wider.
+**Layout.** Choices and Reply share one row when they fit, and stack full width when they do not. The one-row check is per item, not a sum. The widest label's ideal width plus 12 points of horizontal padding on each side must fit an equal share of the row, after the spacing between items is deducted (8 points in the transcript, 6 in the inbox). When it fits, the choices and Reply are equal-width capsules in one row, with Reply last. When any label does not fit, or at large text sizes, the choices stack full width, one per line, in the lead's order, with Reply last. Labels wrap in full and never truncate, except the first Mac banner action, which macOS truncates. With no choices, Reply is the only row, so the request still looks finished. A stack makes the bubble or inbox row taller, never wider. Lock Screen and banner actions are laid out by the system, so this rule does not govern them.
 
-**Mac transcript.** The choices form one stack of full-width rows inside the pending bubble, with Reply full width below them.
+**Control style.** Choices and Reply use the system's bordered button style with the capsule border shape, with no custom fill or shadow. macOS 27 and iOS 27 render that style, and its look is the reference. They sit in the content layer, so they never use Liquid Glass. The inbox Reply is the one prominent control, using the system's bordered prominent style, following the prominent-Reply rule. The phone Lock Screen card is a translucent material over the wallpaper, not a solid dark panel, and its action labels take the accent color.
 
-**Mac menu bar inbox.** Each waiting request shows its choices as full-width rows above Open and Reply, one click each. A long choice makes its row taller, and the list scrolls. A choice sends through the same path as the transcript's choices.
+**Mac transcript.** The choices and Reply follow the Layout rule inside the pending bubble. Short labels share one row, and any stack is full width.
+
+**Mac menu bar inbox.** Each waiting request shows its choices and Reply under the Layout rule at inbox width, with Reply last and prominent. Open Channel sits in its own row below. A long choice makes its row taller, and the list scrolls. A choice sends through the same path as the transcript's choices.
 
 **Mac notification banner.** Reply and the first choice show as actions, and the rest sit under Options. The banner is posted locally from the request the app already holds, so the push payload does not change for Mac. Two visible actions is a working assumption to verify on device.
 
-**Phone transcript.** Choices are full-width rows under the question inside the pending bubble, each at least 44 points tall. Long labels wrap inside their row.
+**Phone transcript.** Choices and Reply follow the Layout rule under the question inside the pending bubble. Every row is at least 44 points tall, and long labels wrap inside their row.
 
 **Phone widget.** Unchanged for this pass. The Needs You widget keeps Reply only, and Reply opens Quick Send as it does today. Choices stay in the transcript and on the Lock Screen. The widget and its extension never send in the background.
 
