@@ -1,5 +1,6 @@
+import { randomBytes } from "node:crypto";
 import { join } from "node:path";
-import { CommandFailure, command, developerEnvironment, main, root, temporary, text } from "../shared/lib/index.ts";
+import { command, main, root, temporary, text } from "../shared/lib/index.ts";
 import { mobileBundleID } from "./bundle/index.ts";
 import { mobileSigning } from "./bundle/sign.ts";
 
@@ -46,12 +47,5 @@ if (import.meta.main) await main(async () => {
     const signing = await mobileSigning(identity);
     const repo = repository || await text(["gh", "repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"]);
     await command(["gh", "auth", "status"], { quiet: true });
-    const reader = Bun.spawn(["/bin/bash", join(root, "scripts/shared/lib/read-password.sh"),
-        "Password to encrypt the Apple Distribution certificate export: "], {
-        env: developerEnvironment, stdin: "inherit", stdout: "pipe", stderr: "inherit",
-    });
-    const password = await new Response(reader.stdout).text();
-    const status = await reader.exited;
-    if (status) throw new CommandFailure(status, "Unable to read the certificate export password.");
-    await uploadTestFlightSigning(signing, appID, repo, password);
+    await uploadTestFlightSigning(signing, appID, repo, randomBytes(48).toString("base64"));
 });
