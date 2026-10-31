@@ -2,6 +2,7 @@
 
 ## iPhone 0.1.7
 
+- Share a screenshot, photo or link to a channel from the share sheet, with a note, without opening Toy Box. Channels you share to show up as suggestions.
 - See "Reconnecting to server" when a channel loses its connection. It reconnects on its own, so there's no Retry button.
 - Reconnect as soon as your network comes back or moves between Wi-Fi and cellular.
 - Keep seeing Connecting while a large channel loads over a slow connection, instead of Can't Connect.
