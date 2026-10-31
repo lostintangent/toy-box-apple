@@ -150,30 +150,6 @@ struct MenuBarInbox: View {
                     Button("Retry") { model.retryMenuBarRequest(channelID: item.id) }
                         .controlSize(.small)
                 }
-                if request.canChoose, expandedChannelID != item.id {
-                    VStack(alignment: .leading, spacing: 6) {
-                        ForEach(Array(item.replies.enumerated()), id: \.offset) { _, choice in
-                            Button { sendChoice(choice, to: item) } label: {
-                                Text(choice)
-                                    .multilineTextAlignment(.center)
-                                    .frame(maxWidth: .infinity)
-                            }
-                            .buttonStyle(.bordered)
-                            .buttonBorderShape(.capsule)
-                            .controlSize(.small)
-                            .frame(maxWidth: .infinity)
-                            .help("Send \(choice)")
-                            .accessibilityLabel("Send \(choice) in \(item.name)")
-                        }
-                    }
-                }
-                if let notice = request.state.notice {
-                    Label(notice, systemImage: request.state.symbol)
-                        .font(.system(size: 12)).foregroundStyle(.secondary)
-                    if request.state != .sent && request.state != .sending {
-                        Button("Open Channel") { open(item) }.controlSize(.small)
-                    }
-                }
                 if expandedChannelID == item.id {
                     if let replySession {
                         AuxiliaryComposer(
@@ -186,19 +162,44 @@ struct MenuBarInbox: View {
                         .id("reply-\(item.id)")
                     }
                 } else if request.canReply {
-                    Button {
-                        expandReply(to: item)
-                    } label: {
-                        Label("Reply", systemImage: "arrowshape.turn.up.left")
-                            .frame(maxWidth: .infinity)
+                    answers(request, for: item)
+                }
+                if let notice = request.state.notice {
+                    Label(notice, systemImage: request.state.symbol)
+                        .font(.system(size: 12)).foregroundStyle(.secondary)
+                    if request.state != .sent && request.state != .sending {
+                        Button("Open Channel") { open(item) }.controlSize(.small)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .buttonBorderShape(.capsule)
-                    .controlSize(.small)
-                    .frame(maxWidth: .infinity)
-                    .accessibilityLabel("Reply in \(item.name)")
                 }
             }
+        }
+    }
+
+    /// A request's choices, then Reply, in one row when they fit or stacked full width when they don't.
+    private func answers(_ request: MenuBarInboxState.Request, for item: MenuBarStatus.Item) -> some View {
+        ChoiceButtonLayout(spacing: 8) {
+            if request.canChoose {
+                ForEach(Array(item.replies.enumerated()), id: \.offset) { _, choice in
+                    Button { sendChoice(choice, to: item) } label: {
+                        Text(choice)
+                            .multilineTextAlignment(.center)
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .buttonBorderShape(.capsule)
+                    .controlSize(.small)
+                    .help("Send \(choice)")
+                    .accessibilityLabel("Send \(choice) in \(item.name)")
+                }
+            }
+            Button { expandReply(to: item) } label: {
+                Label("Reply", systemImage: "arrowshape.turn.up.left")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .buttonBorderShape(.capsule)
+            .controlSize(.small)
+            .accessibilityLabel("Reply in \(item.name)")
         }
     }
 
