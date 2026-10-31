@@ -2,6 +2,41 @@
 
 Incident records moved from AGENTS.md on 2026-10-27, with their evidence and restoration boundaries preserved. Current gates and instructions are in [AGENTS.md](../AGENTS.md#test-reliability). A passing rerun does not close an incident or restore a quarantined test.
 
+## Phone SVG rendering deadline
+
+- `ToyBoxMobileTests/ArtifactSVGTests.embeddedScriptsAndLoadHandlersCannotChangeTheDrawing` was
+  quarantined behind `TOY_BOX_TEST_SVG_RENDERING=1` on 2026-10-30. Main `88ed53f`, which changed
+  only Mac files and the changelog, failed the iOS foundation job (124423263946) in
+  [run 41162615288](https://github.com/lostintangent/toy-box-apple/actions/runs/41162615288). The
+  test caught `.invalidMessage("The SVG preview took too long to render.")` at
+  `ArtifactSVGTests.swift:51` and failed after 20.558 seconds, so `SVGImageRenderer.render`'s
+  15-second deadline expired before WebKit finished loading and exporting the PDF. The other 248
+  tests passed. The test dates to `183d7b0` (2026-10-26). None of the 20 other failed main runs since
+  then recorded an issue in either SVG rendering test, though cancelled runs may have stopped first.
+- The log rules out overlap with other tests. `Phone SVG artifacts` is `.serialized` and was the
+  process's first suite. Its sibling `aStaticExportRendersColorTransformsTransparencyAndNaturalSize`,
+  the process's first WebKit render, passed after 5.502 seconds before this test started. All 11
+  Mobile suites ran one after another: none started before the previous one finished, and their
+  durations sum to the run's 100.170 seconds. So the two renders never started WebKit at once, and
+  no other test held the main actor during the failed render.
+- The deadline covers only loading and export. The content rule list compile and `WebPage` creation
+  run before it starts, and the task group waits for the cancelled export to unwind after it fires,
+  so about 5.5 of the 20.558 seconds fall outside it. Which phase stalled, and why, isn't
+  established. Candidates include launching WebKit processes for the second nonpersistent data
+  store, recompiling the rule list on every render, and a load whose `.finished` event never arrives.
+  The script and `onload` handler shouldn't matter, since the SVG loads through `<img>`, which never
+  runs script, on a page with JavaScript disabled. That isn't proven either.
+- Intelligence owns t573: identify the cause and add deterministic regression coverage before
+  restoring. The test body, the 15-second deadline and the renderer are unchanged, with no retries or
+  sleeps. `aStaticExportRendersColorTransformsTransparencyAndNaturalSize` stays in the default gate
+  as the remaining SVG rendering coverage. It runs the same renderer, so it shares the exposure until
+  the cause is known. Script inertness has no default coverage while this test is quarantined.
+- `simctl spawn` forwards only `SIMCTL_CHILD_`-prefixed variables to the test process, so run the
+  opt-in as `SIMCTL_CHILD_TOY_BOX_TEST_SVG_RENDERING=1 SCRATCH_PATH=/tmp/tbm-<you> bun run test:mobile`.
+  On `88ed53f` plus the quarantine, the default run passed all five suites with this test as the
+  249-test Mobile suite's single opt-in skip. The prefixed run passed with no Mobile skip. That
+  verifies the gate and its delivery, not the cause of the original failure.
+
 ## Phone waiting-cue rendering
 
 - `ToyBoxMobileTests/OverviewTests.waitingCueStaysCenteredOnTheFirstLineWhileTheReasonWraps` was

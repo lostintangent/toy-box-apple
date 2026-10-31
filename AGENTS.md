@@ -266,6 +266,7 @@ comparisons and retained regression contracts are in [docs/test-history.md](docs
 | Test | Opt-in | Owner / condition for restoring merge-gate coverage |
 | --- | --- | --- |
 | `imageStripOverflowRespondsToWheelInput` | `TOY_BOX_TEST_IMAGE_STRIP_SCROLLING=1` | Composer: native wheel animation requires awake/unlocked Mac, so keep per-frame/WindowServer checks opt-in |
+| `ToyBoxMobileTests/ArtifactSVGTests.embeddedScriptsAndLoadHandlersCannotChangeTheDrawing` | `SIMCTL_CHILD_TOY_BOX_TEST_SVG_RENDERING=1 bun run test:mobile` | Intelligence, t573: identify why the second WebKit render outlasted its 15-second deadline and add deterministic regression coverage before restoring |
 
 `TransportTests.storeReconnectsFromAppliedRevisionZero` and `recoverySnapshotReplacesCachedHistory`
 are restored to the default gate with immediate/held-response delivery, not
