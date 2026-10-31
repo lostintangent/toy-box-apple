@@ -2246,7 +2246,13 @@ projects it, show the localized type ("Markdown") instead. Sort by `sharedAt` ne
 with undated items last and existing order preserved for equal dates. The tray is also
 newest-first. Clicking opens the artifact, and Space on a focused row shows Quick
 Look. The context menu offers Open, Quick Look, Show in Transcript (reveals the share event) and
-Copy Link. Markdown, HTML, SVG and image artifacts open the in-window artifact viewer below,
+Copy Link. A `…` menu on the row offers the same actions, with Remove from Channel after a divider.
+Remove from Channel is destructive and has no confirmation. It sends `removeArtifact` once and
+disables the row while the request is in flight, with a spinner and "Removing from channel". It never
+removes the row optimistically. The row leaves when the server's `artifact_removed` event arrives. A
+rejected request shows its error inline. After a 500, timeout or lost connection, the row shows that
+the removal is unconfirmed, checks the server with `reconcileManagementWrite`, and offers no new attempt
+until the check finishes. Markdown, HTML, SVG and image artifacts open the in-window artifact viewer below,
 not a reader sheet. Other types retain Quick Look and the default application. Show actual
 fetching and error states, and never open a blank success-shaped reader. Load content from the
 server resource URL, never by assuming the file is local.
@@ -2268,6 +2274,10 @@ name/status gap stays 2 points. Remove the
 the minimum-44 label, for both short and two-line titles. This replaces the earlier total-height
 target: preserve readable content and the full target rather than squeezing the row to 60.
 Grow for wrapping or larger text.
+Phone artifact rows also offer a trailing swipe labelled "Remove", with `allowsFullSwipe` off and
+hidden under VoiceOver. Its context menu and accessibility action say "Remove from Channel". Both
+use the same rules as Mac: no confirmation, one request, no optimistic removal, and unconfirmed
+results are checked before another attempt.
 This is the Artifacts section, not the separate task-artifact link whose compact 35-point
 candidate remains subject to native padded-area and neighboring-action review.
 

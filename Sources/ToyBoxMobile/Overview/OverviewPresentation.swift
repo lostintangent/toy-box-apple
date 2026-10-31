@@ -78,6 +78,7 @@ final class OverviewSession {
     var previewError: String?
     var taskDisclosure: [String: Disclosure] = [:]
     @ObservationIgnored private var routines: [String: OverviewRoutineState] = [:]
+    @ObservationIgnored private var artifacts: [String: OverviewArtifactState] = [:]
 
     init(store: ChannelStore) { self.store = store }
 
@@ -121,6 +122,13 @@ final class OverviewSession {
         routines[id] = state
         return state
     }
+
+    func artifact(_ id: String) -> OverviewArtifactState {
+        if let state = artifacts[id] { return state }
+        let state = OverviewArtifactState()
+        artifacts[id] = state
+        return state
+    }
 }
 
 @MainActor @Observable
@@ -129,4 +137,12 @@ final class OverviewRoutineState {
     var pending = false
     var requestedAt: Date?
     let recovery = ChannelManagementWriteRecovery()
+}
+
+@MainActor @Observable
+final class OverviewArtifactState {
+    var pending = false
+    let recovery = ChannelManagementWriteRecovery()
+
+    func canRemove(connected: Bool) -> Bool { connected && !pending && !recovery.blocksWrites }
 }

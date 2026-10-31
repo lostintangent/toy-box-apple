@@ -18,7 +18,7 @@ struct OverviewArtifactsSection: View {
                 let artifacts = channelArtifactsNewestFirst(store.artifacts)
                 ForEach(artifacts) { artifact in
                     OverviewArtifactRow(artifact: artifact, share: store.artifactShares[artifact.file.id],
-                                        api: store.api, channelID: store.id)
+                                        store: store, state: session.artifact(artifact.id))
                         .listRowInsets(.vertical, 6)
                         .modifier(OverviewListRowBoundary(isLast: artifact.id == artifacts.last?.id))
                 }
@@ -56,6 +56,7 @@ struct OverviewArtifactLabel: View {
     let artifact: ChannelArtifact
     let share: ChannelArtifactShare?
     var preparing = false
+    var removing = false
     @Environment(\.dynamicTypeSize) private var typeSize
     @ScaledMetric(relativeTo: .title2) private var iconSize = 22
     @ScaledMetric(relativeTo: .title2) private var iconLane = 24
@@ -75,6 +76,7 @@ struct OverviewArtifactLabel: View {
             }
             Spacer(minLength: 0)
             if preparing { ProgressView().accessibilityLabel("Preparing original file") }
+            else if removing { ProgressView().accessibilityLabel("Removing from channel") }
         }
         .frame(minHeight: 44, alignment: .leading)
         .contentShape(Rectangle())
@@ -108,26 +110,37 @@ struct OverviewRowSymbol: View {
 struct OverviewArtifactRow: View {
     let artifact: ChannelArtifact
     let share: ChannelArtifactShare?
-    let api: ChannelAPI
-    let channelID: String
+    let store: ChannelStore
+    let state: OverviewArtifactState
+    @Environment(AppModel.self) private var app
     @Environment(ChannelArtifactSession.self) private var viewer
     @Environment(ChannelInteraction.self) private var interaction
     @Environment(\.openURL) private var openURL
+    @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
     @ViewState private var original: URL?
     @ViewState private var preview: URL?
     @ViewState private var sharing: ArtifactShare?
     @ViewState private var preparing = false
     @ViewState private var error: String?
 
+    private var api: ChannelAPI { store.api }
     private var resource: URL? { artifact.url.flatMap(api.resourceURL) }
+    private var recovery: ChannelManagementWriteRecovery { state.recovery }
+    private var canRemove: Bool { state.canRemove(connected: store.phase.isConnected) }
+    private var matchingCatalog: ChannelCatalogStore? {
+        app.catalog.flatMap { $0.api.baseURL == store.api.baseURL ? $0 : nil }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Button { viewer.open(artifact) } label: {
-                OverviewArtifactLabel(artifact: artifact, share: share, preparing: preparing)
+                OverviewArtifactLabel(artifact: artifact, share: share, preparing: preparing, removing: state.pending)
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("artifact-\(artifact.id)")
+            .accessibilityActions {
+                Button("Remove from Channel", role: .destructive, action: remove).disabled(!canRemove)
+            }
             .contextMenu {
                 if let share {
                     Button("Show in Conversation", systemImage: "bubble") {
@@ -144,7 +157,7 @@ struct OverviewArtifactRow: View {
                 Button("Quick Look", systemImage: "eye") { prepare(sharing: false) }
                     .disabled(resource == nil || preparing)
                 Button("Open in Toy Box", systemImage: "arrow.up.forward.app") {
-                    guard let url = api.channelURL(channelID: channelID, files: [artifact.file]) else {
+                    guard let url = api.channelURL(channelID: store.id, files: [artifact.file]) else {
                         error = "The Toy Box editor link is unavailable."
                         return
                     }
@@ -152,11 +165,48 @@ struct OverviewArtifactRow: View {
                         if !accepted { error = "The Toy Box editor could not be opened." }
                     }
                 }
+                Divider()
+                Button("Remove from Channel", systemImage: "trash", role: .destructive, action: remove)
+                    .disabled(!canRemove)
             }
             if let error { ManagementError(message: error) }
+            if let message = recovery.error { ManagementError(message: message) }
+            if let recoveryState = recovery.state {
+                ManagementRecoveryNotice(state: recoveryState, reviewTitle: "I've Reviewed the Conversation",
+                                         onCheck: { Task { await check(catalog: matchingCatalog) } },
+                                         onReview: recovery.finishReview)
+            }
+        }
+        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+            if !voiceOver {
+                Button("Remove", systemImage: "trash", role: .destructive, action: remove).disabled(!canRemove)
+            }
         }
         .quickLookPreview($preview)
         .sheet(item: $sharing) { ArtifactShareSheet(file: $0.file) { error = $0 } }
+    }
+
+    /// Sends the removal once. The row leaves only when the stream reports it, never on this response.
+    private func remove() {
+        guard canRemove else { return }
+        state.pending = true
+        recovery.clearError()
+        let catalog = matchingCatalog
+        Task { [artifact] in
+            defer { state.pending = false }
+            do {
+                try await api.removeArtifact(channelId: store.id, artifactId: artifact.id)
+            } catch {
+                if recovery.record(error) { await check(catalog: catalog) }
+            }
+        }
+    }
+
+    private func check(catalog: ChannelCatalogStore?) async {
+        await recovery.check(catalog: catalog, channelId: store.id) { current in
+            if current.channelWasDeleted { return "The channel is no longer present on the server." }
+            return "Channel details have been refreshed. This artifact may already be removed. Review the current conversation before removing it again."
+        }
     }
 
     private func prepare(sharing: Bool) {
