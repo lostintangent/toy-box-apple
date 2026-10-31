@@ -283,8 +283,9 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
                                         serverURL: server, focusComposer: kind == Self.replyFailedCategory)
             await MainActor.run { onActivate?(activation) }
         default:
+            // A choice sends its label as written, like the web's answer(label), so no handle is added.
             if let choice = ReplyCategories.choice(for: response.actionIdentifier, replies: info["replies"] as? [String]) {
-                await reply(choice, channelID: id, channelName: name, handle: handle, serverURL: server)
+                await reply(choice, channelID: id, channelName: name, handle: nil, serverURL: server)
             }
         }
     }

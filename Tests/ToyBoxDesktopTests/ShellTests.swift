@@ -1322,15 +1322,15 @@ struct NotificationTests {
         #expect(ReplyCategories.choice(for: UNNotificationDefaultActionIdentifier, replies: replies) == nil)
     }
 
-    @Test func aChoiceSendsItsAddressedLabelOnceThroughTheOutbox() async {
+    @Test func aChoiceSendsItsLabelOnceThroughTheOutbox() async {
         var sent: [String] = []
         let reply = NotificationReply(post: { _, content in
             sent.append(content)
             return .committed(self.message(content, sequence: 31))
         }, markRead: { _ in }, pause: {})
-        let content = NotificationText.addressedReply("Yes", to: "ada-lovelace")
+        let content = NotificationText.addressedReply("Yes", to: nil)
         #expect(await reply.send(content ?? "") == .sent)
-        #expect(sent == ["@ada-lovelace Yes"])
+        #expect(sent == ["Yes"])
     }
 }
 
