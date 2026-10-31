@@ -1,13 +1,11 @@
 #!/usr/bin/env bun
-import { resolve } from "node:path";
 import { createHistoryFixture, historyChannelID, historyMessageCount, historyPageSize, writeHistoryPage }
     from "./channels/history-channel.ts";
-import { root } from "../shared/lib/index.ts";
-import { referenceFactory, type Snapshot } from "./channels/types.ts";
+import { createDemoServer, fixturePath } from "./channels/demo-server.ts";
+import { type Snapshot } from "./channels/types.ts";
 
-const reference = resolve(process.argv[2] ?? resolve(root, "../toy-box-Minecraft"));
-const createDemoServer = await referenceFactory(reference);
-const source: Snapshot = await Bun.file(resolve(reference, "fixtures/channel-snapshot.json")).json();
+if (process.argv.length > 2) throw new Error("Usage: bun run demo:history");
+const source: Snapshot = await Bun.file(fixturePath).json();
 const port = 3211;
 const now = Date.now();
 const { snapshot, history } = createHistoryFixture(source, { now, origin: `http://127.0.0.1:${port}` });
@@ -15,7 +13,7 @@ const channelID = historyChannelID;
 
 const demo = createDemoServer(snapshot, now);
 const handlers = demo.server.listeners("request");
-if (handlers.length !== 1) throw new Error("Expected the reference demo server's single HTTP handler.");
+if (handlers.length !== 1) throw new Error("Expected the demo server's single HTTP handler.");
 const originalHandler = handlers[0];
 demo.server.removeListener("request", originalHandler);
 demo.server.on("request", (request, response) => {

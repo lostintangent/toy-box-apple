@@ -7,7 +7,7 @@ import Testing
 @Suite(.timeLimit(.minutes(1)))
 struct ManagementReconciliationTests {
     enum Write: CaseIterable, Sendable {
-        case createChannel, editChannel, deleteChannel, createMember, editMember, removeMember, runRoutine, deleteRoutine
+        case createChannel, editChannel, deleteChannel, createMember, editMember, removeMember, runRoutine, deleteRoutine, removeArtifact
 
         func perform(using api: ChannelAPI) async throws {
             switch self {
@@ -23,6 +23,8 @@ struct ManagementReconciliationTests {
             case .removeMember: try await api.removeMember(channelId: "test", agentId: "member")
             case .runRoutine: try await api.runRoutine(channelId: "test", routineId: "daily")
             case .deleteRoutine: try await api.deleteRoutine(channelId: "test", routineId: "daily")
+            case .removeArtifact:
+                try await api.removeArtifact(channelId: "test", artifactId: "machine:/demo/Plan.md")
             }
         }
     }
@@ -112,17 +114,19 @@ struct ManagementReconciliationTests {
         }
     }
 
-    @Test(arguments: [Write.deleteChannel, .removeMember, .deleteRoutine])
+    @Test(arguments: [Write.deleteChannel, .removeMember, .deleteRoutine, .removeArtifact])
     @MainActor func committedDeletionWith500ReconcilesWithoutAnotherWrite(write: Write) async throws {
         var old = testState(revision: 5, messages: [testMessage(1), testMessage(2)])
         old.channel.seenThrough = 1
         old.members = [ChannelAgent(id: "member", name: "Ada", channelId: "test")]
         old.routines = [.init(id: "daily", title: "Review", schedule: "0 9 * * *", prompt: "Review")]
+        old.artifacts = [ChannelArtifact(file: .init(kind: "machine", path: "/demo/Plan.md"), title: "Plan")]
         let initial = old
         var next = old
         next.revision = 6
         if write == .removeMember { next.members = [] }
         if write == .deleteRoutine { next.routines = [] }
+        if write == .removeArtifact { next.artifacts = [] }
         let updated = next
         let committed = Mutex(false)
         let mock = MockTransport { request, _ in

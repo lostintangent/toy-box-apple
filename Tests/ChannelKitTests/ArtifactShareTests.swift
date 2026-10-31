@@ -56,6 +56,38 @@ struct ArtifactShareTests {
                 == .init(actor: nil, sharedAt: missingActor.timestamp, sequence: 6))
     }
 
+    @Test func removalDecodesActorAndArtifactLikeSharing() throws {
+        let json = #"{"type":"artifact_removed","actor":{"type":"user"},"artifact":{"file":{"kind":"machine","path":"/demo/Plan.md"},"title":"Plan"}}"#
+        let content = try JSONDecoder().decode(ChannelSystemContent.self, from: Data(json.utf8))
+        #expect(content.type == "artifact_removed")
+        #expect(content.actor == .user)
+        #expect(content.artifact?.file == WorkspaceFile(kind: "machine", path: "/demo/Plan.md"))
+        #expect(content.artifact?.title == "Plan")
+    }
+
+    @Test func removalDropsTheArtifactAndUnlinksItsTasksAtEveryDepth() throws {
+        let url = try #require(Bundle.module.url(forResource: "channel-snapshot", withExtension: "json",
+                                                subdirectory: "Fixtures"))
+        var state = try JSONDecoder().decode(ChannelState.self, from: Data(contentsOf: url))
+        let removed = WorkspaceFile(kind: "machine", path: "/demo/Interaction notes.md")
+        let kept = WorkspaceFile(kind: "session", sessionId: "pixel-designer", path: "Workshop plan.md")
+        state.artifacts = [.init(file: removed, title: "Interaction notes"), .init(file: kept, title: "Workshop plan")]
+        state.channel.tasks = [
+            ChannelTask(id: "root", title: "Root", artifactId: removed.id, children: [
+                ChannelTask(id: "child", title: "Child", artifactId: removed.id),
+                ChannelTask(id: "other", title: "Other", artifactId: kept.id)
+            ])
+        ]
+        let sequence = (state.messages.last?.sequence ?? 0) + 1
+        let message = ChannelMessage(id: "removed", sequence: sequence, timestamp: "2026-10-22T12:00:00Z",
+                                     sender: .system, content: .system(.init(type: "artifact_removed", actor: .user,
+                                                                             artifact: .init(file: removed, title: "Interaction notes"))))
+        let next = reduceChannelState(state, .init(type: "message", revision: state.revision + 1, message: message))
+        let root = try #require(next.channel.tasks.first)
+        #expect(root.artifactId == nil)
+        #expect(root.children?.map(\.artifactId) == [nil, kept.id])
+    }
+
     private func share(_ sequence: Int, artifact: ChannelArtifact, actor: ChannelMessageSender? = .agent("kit"),
                        timestamp: String = "2026-10-22T12:00:00Z") -> ChannelMessage {
         .init(id: "share-\(sequence)", sequence: sequence, timestamp: timestamp, sender: .system,

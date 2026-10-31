@@ -141,6 +141,15 @@ public func unassignChannelTasks(_ tasks: [ChannelTask], agentId: String) -> [Ch
     }
 }
 
+public func unlinkChannelTasks(_ tasks: [ChannelTask], artifactId: String) -> [ChannelTask] {
+    tasks.map { task in
+        var next = task
+        if next.artifactId == artifactId { next.artifactId = nil }
+        if let children = next.children { next.children = unlinkChannelTasks(children, artifactId: artifactId) }
+        return next
+    }
+}
+
 public func agentHandleFromName(_ name: String) -> String {
     let decomposed = name.decomposedStringWithCompatibilityMapping.unicodeScalars
         .filter { !CharacterSet.nonBaseCharacters.contains($0) }

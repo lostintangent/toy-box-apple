@@ -77,6 +77,11 @@ public func reduceChannelState(_ previous: ChannelState,
                             next.artifacts.append(artifact)
                         }
                     }
+                case "artifact_removed":
+                    if let file = content.artifact?.file {
+                        next.artifacts.removeAll { $0.id == file.id }
+                        next.channel.tasks = unlinkChannelTasks(next.channel.tasks, artifactId: file.id)
+                    }
                 case "routine_scheduled", "routine_edited":
                     if let routine = content.routine {
                         if let index = next.routines.firstIndex(where: { $0.id == routine.id }) {

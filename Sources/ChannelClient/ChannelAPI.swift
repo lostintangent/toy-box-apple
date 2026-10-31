@@ -276,6 +276,10 @@ public struct ChannelAPI: Sendable {
         try await noContent("DELETE", channelPath(channelId) + ["routines", routineId])
     }
 
+    public func removeArtifact(channelId: String, artifactId: String) async throws {
+        try await noContent("DELETE", channelPath(channelId) + ["artifacts", artifactId])
+    }
+
     public func streamRequest(channelId: String, after: Int?, timeout: TimeInterval = 35) -> URLRequest {
         let query = after.map { [URLQueryItem(name: "after", value: String($0))] } ?? []
         var request = URLRequest(url: endpoint(channelPath(channelId), query: query),
