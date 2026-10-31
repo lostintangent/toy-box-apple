@@ -461,6 +461,57 @@ struct TranscriptTests {
         try await harness.waitUntil { abs(harness.bottomGap) < 2 }
     }
 
+    /// Reopening a channel that moved far ahead replays everything it missed, one event at a time, before
+    /// `resumed`. Every pass drawn shows either the cached conversation where it was left or the landing,
+    /// on the New divider or, once read elsewhere, the end. None follows the replay on its way there.
+    @MainActor
+    @Test(.enabled(if: transcriptTimingTestsEnabled), arguments: [false, true])
+    func reopeningAChannelThatMovedFarAheadLandsInOneStep(readElsewhere: Bool) async throws {
+        let log = TranscriptReopenLog()
+        let messages = (1...90).map {
+            catchUpTestMessage($0, sender: $0.isMultiple(of: 2) ? .user : .agent("lead"))
+        }
+        let service = StubChannelIntelligence(availability: .unavailable(.deviceNotEligible))
+        let harness = try await TranscriptHarness(messages: Array(messages.prefix(30)), intelligence: service) {
+            harness in
+            guard log.isRecording else { return }
+            guard harness.rowsOpacity > 0 else { return log.hiddenTurns += 1 }
+            let shown = harness.visibleFrames().keys.compactMap { harness.capture.frames[$0]?.sequence }
+            guard let first = shown.min(), let last = shown.max() else { return }
+            log.drawn.append(.init(first: first, last: last, divider: harness.frames["divider-m31"]?.rect.minY,
+                                   bottomGap: harness.bottomGap))
+        }
+        defer { harness.close() }
+
+        var events = messages.dropFirst(30).enumerated().map { index, message in
+            ChannelObservationEvent(type: "message", revision: index + 2, message: message)
+        }
+        if readElsewhere { events.append(.init(type: "read", revision: 62, seenThrough: 90)) }
+        log.isRecording = true
+        try await harness.reopen(replaying: events + [.init(type: "resumed", presence: [:])])
+        try await harness.waitUntil { harness.capture.hasLanded }
+        try await harness.settled()
+        log.isRecording = false
+
+        if readElsewhere {
+            #expect(abs(harness.bottomGap) < 2 && harness.isVisible("m90"))
+        } else {
+            let divider = try #require(harness.frames["divider-m31"]?.rect.minY)
+            #expect(divider >= -0.5 && divider < 120, "Landed with the divider at \(divider)")
+        }
+        func landed(_ pass: TranscriptReopenLog.Pass) -> Bool {
+            if readElsewhere { return abs(pass.bottomGap) < 2 && pass.last == 90 }
+            guard let divider = pass.divider else { return false }
+            return divider >= -0.5 && divider < 120
+        }
+        let stray = log.drawn.filter { $0.last > 30 && !landed($0) }
+        #expect(stray.isEmpty, "Passes between the cached place and the landing: \(stray)")
+        let firstLanded = try #require(log.drawn.firstIndex(where: landed))
+        #expect(log.drawn[firstLanded...].allSatisfy(landed))
+        #expect(log.hiddenTurns == 0, "Rows already on screen hid for \(log.hiddenTurns) passes")
+        #expect(harness.readRequests == 0)
+    }
+
     @MainActor
     @Test(arguments: [false, true])
     func openingThreeHundredMessagesBehindUsesOnlyTheSnapshot(warm: Bool) async throws {
@@ -2368,6 +2419,20 @@ private final class TranscriptOpeningLog {
     var hiddenTurns = 0
 }
 
+private final class TranscriptReopenLog {
+    struct Pass: CustomStringConvertible {
+        var first: Int
+        var last: Int
+        var divider: CGFloat?
+        var bottomGap: CGFloat
+        var description: String { "\(first)–\(last) divider \(divider.map { "\($0)" } ?? "none") gap \(bottomGap)" }
+    }
+
+    var isRecording = false
+    var drawn: [Pass] = []
+    var hiddenTurns = 0
+}
+
 private final class StubChannelIntelligence: ChannelIntelligenceService {
     let availability: IntelligenceAvailability
     private let results: Mutex<[CatchUpResult]>
@@ -2469,6 +2534,7 @@ private final class TranscriptHarness {
     private let window: NSWindow
     private var turnObserver: CFRunLoopObserver?
     private var onTurn: (@MainActor (TranscriptHarness) -> Void)?
+    private let makeView: () -> NSView
 
     /// Lands at the bottom unless `seenThrough` leaves messages unread, in which case it lands at the first.
     /// A `resizable` transcript fills the window, so `resize(height:)` reaches it the way a live resize does.
@@ -2505,16 +2571,22 @@ private final class TranscriptHarness {
             }
             try #require(store.isLoaded && store.phase.isConnected)
         }
-        let view = NSHostingView(rootView: ConversationTranscript(store: store, find: find, revealTimeout: revealTimeout)
-            .onPreferenceChange(TranscriptMessageFrames.self) { capture.frames = $0 }
-            .onPreferenceChange(TranscriptLanded.self) { capture.hasLanded = $0 }
-            .onPreferenceChange(TranscriptRestoringHistory.self) { capture.isRestoringHistory = $0 }
-            .safeAreaBar(edge: .bottom, spacing: 0) { Color.clear.frame(height: 100) }
-            .environment(interaction)
-            .environment(ArtifactOpener())
-            .environment(\.channelIntelligence, intelligence)
-            .frame(width: resizable ? nil : 520, height: resizable ? nil : height))
-        if resizable { view.sizingOptions = [] }
+        let makeView = {
+            let view = NSHostingView(rootView: ConversationTranscript(store: store, find: find,
+                                                                      revealTimeout: revealTimeout)
+                .onPreferenceChange(TranscriptMessageFrames.self) { capture.frames = $0 }
+                .onPreferenceChange(TranscriptLanded.self) { capture.hasLanded = $0 }
+                .onPreferenceChange(TranscriptRestoringHistory.self) { capture.isRestoringHistory = $0 }
+                .safeAreaBar(edge: .bottom, spacing: 0) { Color.clear.frame(height: 100) }
+                .environment(interaction)
+                .environment(ArtifactOpener())
+                .environment(\.channelIntelligence, intelligence)
+                .frame(width: resizable ? nil : 520, height: resizable ? nil : height))
+            if resizable { view.sizingOptions = [] }
+            return view
+        }
+        let view = makeView()
+        self.makeView = makeView
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: height),
                               styleMask: [.borderless], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
@@ -2531,21 +2603,47 @@ private final class TranscriptHarness {
             turnObserver = observer
             CFRunLoopAddObserver(CFRunLoopGetMain(), observer, .commonModes)
         }
-        func findScrollView(in view: NSView) -> NSScrollView? {
-            view as? NSScrollView ?? view.subviews.lazy.compactMap(findScrollView(in:)).first
-        }
         if !warm { store.connect() }
         if legacyScrollers {
-            try await waitUntil { findScrollView(in: view) != nil }
-            try #require(findScrollView(in: view)).scrollerStyle = .legacy
+            try await waitUntil { Self.findScrollView(in: view) != nil }
+            try #require(Self.findScrollView(in: view)).scrollerStyle = .legacy
         }
-        try await waitUntil { findScrollView(in: view)?.documentView.map { $0.bounds.height > 800 } == true }
-        scrollView = try #require(findScrollView(in: view))
+        try await waitUntil { Self.findScrollView(in: view)?.documentView.map { $0.bounds.height > 800 } == true }
+        scrollView = try #require(Self.findScrollView(in: view))
         if let seenThrough, seenThrough < latest {
             try await waitUntil { capture.hasLanded }
         } else {
             try await waitUntil { capture.hasLanded && abs(self.bottomGap) < 2 }
             try await settled()
+        }
+    }
+
+    private static func findScrollView(in view: NSView) -> NSScrollView? {
+        view as? NSScrollView ?? view.subviews.lazy.compactMap(findScrollView(in:)).first
+    }
+
+    /// Leaves the channel and opens it again, as switching back to one viewed a while ago does. The store
+    /// kept its last state while disconnected, and its reconnect asks for everything after that, which the
+    /// server replays one event at a time, a display frame apart, before `resumed`.
+    func reopen(replaying events: [ChannelObservationEvent]) async throws {
+        store.disconnect()
+        let previous = TranscriptServerProtocol.fixtures.withLock { fixtures in
+            fixtures[host]?.snapshot = Data()
+            return fixtures[host]?.stream
+        }
+        capture.frames = [:]
+        capture.hasLanded = false
+        let view = makeView()
+        window.contentView = view
+        store.captureUnreadBoundary()
+        store.connect()
+        try await waitUntil { TranscriptServerProtocol.fixtures.withLock { $0[host]?.stream } !== previous }
+        try await waitUntil { Self.findScrollView(in: view)?.documentView != nil }
+        try await waitUntil { !self.capture.frames.isEmpty }
+        scrollView = try #require(Self.findScrollView(in: view))
+        for event in events {
+            deliver(event)
+            try await frame()
         }
     }
 
@@ -2690,9 +2788,13 @@ private final class TranscriptHarness {
     }
 
     func push(_ message: ChannelMessage, revision: Int) {
-        let event = try? TranscriptServerProtocol.event(.init(type: "message", revision: revision, message: message))
+        deliver(.init(type: "message", revision: revision, message: message))
+    }
+
+    func deliver(_ event: ChannelObservationEvent) {
+        let data = try? TranscriptServerProtocol.event(event)
         let stream = TranscriptServerProtocol.fixtures.withLock { $0[host]?.stream }
-        if let event { stream?.deliver(event) }
+        if let data { stream?.deliver(data) }
     }
 
     func releaseHistory() {
