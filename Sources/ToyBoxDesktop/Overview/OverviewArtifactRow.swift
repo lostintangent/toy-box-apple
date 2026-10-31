@@ -195,6 +195,8 @@ struct OverviewArtifactRow: View {
         Task { [key, artifact] in
             do {
                 try await api.removeArtifact(channelId: store.id, artifactId: artifact.id)
+            } catch ChannelAPIError.http(status: 404, message: _) {
+                // Already removed. The stream drops the row.
             } catch {
                 if recovery.record(error) { await checkCurrentState(recovery) }
             }
