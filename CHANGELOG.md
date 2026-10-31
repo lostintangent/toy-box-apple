@@ -7,6 +7,7 @@
 - Keep seeing Connecting while a large channel loads over a slow connection, instead of Can't Connect.
 - See Overview without a separate reconnecting note.
 - See Welcome's Continue button float over the screen without a band behind it.
+- See routines in Overview with a calendar icon, like artifacts. Tap one to read its prompt, swipe right to run it now or left to delete it, or press and hold for both.
 
 ## Mac 0.1.14
 
@@ -14,6 +15,7 @@
 - Reconnect as soon as your network comes back or changes, or when you switch back to Toy Box.
 - Keep seeing Connecting while a large channel loads over a slow connection, instead of Can't Connect.
 - See Overview without a separate reconnecting note, and Quick Send without a Retry button while a channel reconnects.
+- Expand a routine in Overview to read just its prompt, without the next run date or raw schedule. Hover the schedule for its cron expression.
 
 ## iPhone 0.1.6
 
