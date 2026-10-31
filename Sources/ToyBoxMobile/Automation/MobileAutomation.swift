@@ -112,6 +112,16 @@ struct MobileAutomationStep: Decodable, Equatable {
     }
 }
 
+/// The time a run measures its step deadlines and polls in. Tests substitute virtual time that
+/// advances only when the run sleeps, so a busy runner can't make a step miss its deadline.
+struct MobileAutomationClock {
+    let now: @MainActor () -> ContinuousClock.Instant
+    let sleep: @MainActor (_ until: ContinuousClock.Instant) async throws -> Void
+
+    static let live = MobileAutomationClock(now: { .now },
+                                            sleep: { try await Task.sleep(until: $0, clock: .continuous) })
+}
+
 @MainActor
 enum MobileAutomation {
     private static var started = false
@@ -383,10 +393,10 @@ struct MobileAutomationTree {
     /// geometry follow a finger drag's path, without the pan gesture or deceleration.
     static func drag(_ view: UIScrollView, _ direction: MobileAutomationStep.ScrollDirection,
                      frames: Int = 24, pause: Duration = .milliseconds(16),
-                     deadline: ContinuousClock.Instant) async throws {
+                     deadline: ContinuousClock.Instant, clock: MobileAutomationClock = .live) async throws {
         func checkDeadline() throws {
             try Task.checkCancellation()
-            guard ContinuousClock.now < deadline else { throw ScrollFailure.timedOut }
+            guard clock.now() < deadline else { throw ScrollFailure.timedOut }
         }
         try checkDeadline()
         let visible = view.bounds.inset(by: view.adjustedContentInset)
@@ -412,7 +422,7 @@ struct MobileAutomationTree {
             view.contentOffset = CGPoint(
                 x: min(maximum.x, max(minimum.x, offset.x + distance.x / CGFloat(frames))),
                 y: min(maximum.y, max(minimum.y, offset.y + distance.y / CGFloat(frames))))
-            try await Task.sleep(until: min(deadline, ContinuousClock.now.advanced(by: pause)), clock: .continuous)
+            try await clock.sleep(min(deadline, clock.now().advanced(by: pause)))
         }
         try checkDeadline()
     }
@@ -453,13 +463,16 @@ final class MobileAutomationRun {
 
     private let script: URL
     private let currentTree: @MainActor () -> MobileAutomationTree
+    private let clock: MobileAutomationClock
     private var index = 0
     private var deadline = ContinuousClock.now
     private var directory: URL { script.deletingLastPathComponent() }
 
-    init(script: URL, currentTree: @escaping @MainActor () -> MobileAutomationTree = { .current }) {
+    init(script: URL, currentTree: @escaping @MainActor () -> MobileAutomationTree = { .current },
+         clock: MobileAutomationClock = .live) {
         self.script = script
         self.currentTree = currentTree
+        self.clock = clock
     }
 
     func run() async {
@@ -468,7 +481,7 @@ final class MobileAutomationRun {
             guard !steps.isEmpty else { throw Failure("The script must contain at least one step.") }
             for (index, step) in steps.enumerated() {
                 self.index = index
-                deadline = .now + .milliseconds(Int64(step.timeout * 1_000))
+                deadline = clock.now() + .milliseconds(Int64(step.timeout * 1_000))
                 try publish("running")
                 try await perform(step)
             }
@@ -534,7 +547,7 @@ final class MobileAutomationRun {
             }
         case .drag(let direction, let target):
             let view = try await wait(timeout: step.timeout) { try currentTree().scrollView(target) }
-            try await MobileAutomationTree.drag(view, direction, deadline: deadline)
+            try await MobileAutomationTree.drag(view, direction, deadline: deadline, clock: clock)
         case .back(let ifPresent):
             let tree = try await wait(timeout: step.timeout) {
                 let tree = currentTree()
@@ -568,7 +581,7 @@ final class MobileAutomationRun {
             }
             try await settle(timeout: step.timeout)
             try Task.checkCancellation()
-            guard ContinuousClock.now < deadline else { throw Failure("Menu dismissal exceeded the step deadline.") }
+            guard clock.now() < deadline else { throw Failure("Menu dismissal exceeded the step deadline.") }
             try selection.perform(in: currentTree())
         case .posture(let posture):
             do {
@@ -597,8 +610,8 @@ final class MobileAutomationRun {
     private func hostAction(timeout: TimeInterval) async throws {
         // The host bounds its child by the step timeout from seeing "ready", then always acknowledges. Its
         // budget starts here and pauses this step's own deadline, so a slow capture can't fail the app first.
-        let ready = ContinuousClock.now
-        defer { deadline = deadline.advanced(by: ready.duration(to: .now)) }
+        let ready = clock.now()
+        defer { deadline = deadline.advanced(by: ready.duration(to: clock.now())) }
         try publish("ready")
         let budget = timeout + 5
         let url = directory.appending(path: "ack.json")
@@ -615,7 +628,7 @@ final class MobileAutomationRun {
     }
 
     private func wait<Value>(timeout: TimeInterval, until read: () throws -> Value?) async throws -> Value {
-        let deadline = min(self.deadline, ContinuousClock.now + .milliseconds(Int64(timeout * 1_000)))
+        let deadline = min(self.deadline, clock.now() + .milliseconds(Int64(timeout * 1_000)))
         guard let result = try await poll(until: deadline, read) else {
             throw Failure("Timed out after \(timeout) seconds at step \(index + 1).")
         }
@@ -627,8 +640,8 @@ final class MobileAutomationRun {
         repeat {
             try Task.checkCancellation()
             if let result = try read() { return result }
-            try await Task.sleep(for: .milliseconds(100))
-        } while ContinuousClock.now < deadline
+            try await clock.sleep(clock.now().advanced(by: .milliseconds(100)))
+        } while clock.now() < deadline
         return nil
     }
 
