@@ -68,11 +68,12 @@ export function selectMobileSigning(profiles: MobileProvisioningProfile[], ident
         });
         return selected.every(value => value !== undefined) ? [selected] : [];
     }));
-    if (!sets.length) throw new Error("No compatible app/widget/notification App Store profile set shares one Apple Distribution identity and team. "
-        + "Select three explicit iOS App Store Connect profiles with the App Group and production Push on the host. No profiles or certificates were created.");
+    if (!sets.length) throw new Error("No compatible app/widget/notification/share App Store profile set shares one Apple Distribution identity and team. "
+        + "Select four explicit iOS App Store Connect profiles with the App Group and production Push on the host. No profiles or certificates were created.");
     if (new Set(sets.map(set => set[0]!.profile.team)).size !== 1) {
-        throw new Error("Multiple signing teams match all three bundles. Select the intended profiles with "
-            + "MOBILE_PROVISIONING_PROFILE, MOBILE_WIDGET_PROVISIONING_PROFILE and MOBILE_NOTIFICATION_PROVISIONING_PROFILE.");
+        throw new Error("Multiple signing teams match all four bundles. Select the intended profiles with "
+            + "MOBILE_PROVISIONING_PROFILE, MOBILE_WIDGET_PROVISIONING_PROFILE, MOBILE_NOTIFICATION_PROVISIONING_PROFILE "
+            + "and MOBILE_SHARE_PROVISIONING_PROFILE.");
     }
     return sets.sort((a, b) => a[0]!.identity.fingerprint.localeCompare(b[0]!.identity.fingerprint))[0]!;
 }
@@ -140,6 +141,7 @@ export function mobileProfilePaths() {
         [mobileBundleID]: process.env.MOBILE_PROVISIONING_PROFILE,
         [`${mobileBundleID}.widget`]: process.env.MOBILE_WIDGET_PROVISIONING_PROFILE,
         [`${mobileBundleID}.notification`]: process.env.MOBILE_NOTIFICATION_PROVISIONING_PROFILE,
+        [`${mobileBundleID}.share`]: process.env.MOBILE_SHARE_PROVISIONING_PROFILE,
     };
 }
 

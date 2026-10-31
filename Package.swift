@@ -27,6 +27,7 @@ let package = Package(
         .executable(name: "ToyBoxMobile", targets: ["ToyBoxMobile"]),
         .executable(name: "ToyBoxMobileWidget", targets: ["ToyBoxMobileWidget"]),
         .executable(name: "ToyBoxMobileNotification", targets: ["ToyBoxMobileNotification"]),
+        .executable(name: "ToyBoxMobileShare", targets: ["ToyBoxMobileShare"]),
     ] : [
         .executable(name: "ToyBoxDesktop", targets: ["ToyBoxDesktop"]),
         .executable(name: "ToyBoxShare", targets: ["ToyBoxShare"]),
@@ -59,6 +60,12 @@ let package = Package(
             swiftSettings: [.unsafeFlags(["-application-extension"])],
             linkerSettings: [.unsafeFlags(["-Xlinker", "-e", "-Xlinker", "_NSExtensionMain"])]
                 + simulatedEntitlements("dev.toybox.mobile.notification")
+        ),
+        .executableTarget(
+            name: "ToyBoxMobileShare", dependencies: ["ChannelKit", "ChannelClient", "ToyBoxUI", "ToyBoxMobileIntegrations"],
+            swiftSettings: [.unsafeFlags(["-application-extension"])],
+            linkerSettings: [.unsafeFlags(["-Xlinker", "-e", "-Xlinker", "_NSExtensionMain"])]
+                + simulatedEntitlements("dev.toybox.mobile.share")
         ),
         .testTarget(name: "ToyBoxMobileTests", dependencies: ["ToyBoxMobile"]),
         .testTarget(name: "ToyBoxMobileIntegrationsTests", dependencies: ["ToyBoxMobileIntegrations"]),

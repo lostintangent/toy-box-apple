@@ -12,7 +12,8 @@ enum ComposerImageEncoding {
         CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary)
     }
 
-    static func passthrough(_ image: ComposerImage) -> ComposerImage? {
+    static func passthrough(_ image: ComposerImage, maximumDimension: Int = maximumDimension,
+                            maximumBytes: Int = maximumBytes) -> ComposerImage? {
         guard image.data.count <= maximumBytes, let source = source(image.data),
               CGImageSourceGetCount(source) > 0, let identifier = CGImageSourceGetType(source),
               let type = UTType(identifier as String),
@@ -32,7 +33,9 @@ enum ComposerImageEncoding {
         return CGImageSourceGetCount(source) == 0
     }
 
-    static func normalize(_ image: ComposerImage, fallback: CGImage?) throws -> ComposerImage {
+    static func normalize(_ image: ComposerImage, fallback: CGImage?,
+                          maximumDimension: Int = maximumDimension,
+                          maximumBytes: Int = maximumBytes) throws -> ComposerImage {
         var dimension = maximumDimension
         while true {
             guard let bitmap = ChannelImageDecoder.thumbnail(data: image.data, maxPixelSize: dimension)

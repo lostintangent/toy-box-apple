@@ -14,6 +14,7 @@ export const mobileExtensions = [
     { executable: "ToyBoxMobileWidget", suffix: "widget", point: "com.apple.widgetkit-extension", info: "Widget-Info.plist" },
     { executable: "ToyBoxMobileNotification", suffix: "notification", point: "com.apple.usernotifications.service",
         info: "Notification-Info.plist" },
+    { executable: "ToyBoxMobileShare", suffix: "share", point: "com.apple.share-services", info: "Share-Info.plist" },
 ] as const;
 
 export function mobileEntitlements(bundleID: string, distribution = false) {

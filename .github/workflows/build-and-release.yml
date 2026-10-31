@@ -96,13 +96,13 @@ jobs:
         with:
           bun-version: 1.4.4
       - run: bun install --frozen-lockfile --ignore-scripts
-      - name: Build the app, widget and notification extensions for iOS Simulator
+      - name: Build the app, widget, notification and share extensions for iOS Simulator
         env:
           SCRATCH_PATH: ${{ runner.temp }}/toy-box-mobile
         run: |
           bun run simulator --build-only
           app="$SCRATCH_PATH/mobile-simulator/Toy Box.app"
-          for executable in ToyBoxMobileWidget ToyBoxMobileNotification; do
+          for executable in ToyBoxMobileWidget ToyBoxMobileNotification ToyBoxMobileShare; do
             test -x "$app/PlugIns/$executable.appex/$executable"
             codesign --verify --strict "$app/PlugIns/$executable.appex"
           done
