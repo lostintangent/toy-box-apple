@@ -106,7 +106,6 @@ public final class ChannelStore {
     public private(set) var isLoadingOlder = false
     public private(set) var hasOlderMessages = true
     public private(set) var isSending = false
-    public private(set) var sendError: String?
     public private(set) var historyError: String?
     public private(set) var readError: String?
     public private(set) var sendAttempts: [ChannelSendAttempt] = []
@@ -483,7 +482,6 @@ public final class ChannelStore {
     private func transmit(_ attempt: ChannelSendAttempt,
                           requiresConnection: Bool) async throws -> ChannelSendResult {
         isSending = true
-        sendError = nil
         lastSendFailure = nil
         defer { isSending = false }
         do {
@@ -541,7 +539,6 @@ public final class ChannelStore {
 
     private func recordSendFailure(id: String, phase: ChannelSendPhase, error: String) {
         updateAttempt(id: id, phase: phase, error: error)
-        sendError = error
         lastSendFailure = .init(id: UUID().uuidString, messageId: id, phase: phase, error: error)
     }
 
@@ -556,7 +553,6 @@ public final class ChannelStore {
         guard sendAttempts.contains(where: { $0.id == id }) else { return }
         sendAttempts.removeAll { $0.id == id }
         optimisticMessageIds.remove(id)
-        sendError = nil
         saveAttemptsInBackground()
     }
 

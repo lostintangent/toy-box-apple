@@ -349,7 +349,7 @@ struct TransportTests {
         #expect(store.sendAttempts.count == 1)
         #expect(store.sendAttempts.first?.phase == .deliveryNotConfirmed)
         #expect(store.sendAttempts.first?.message.sequence == 0)
-        #expect(store.sendError?.contains("Try later.") == true)
+        #expect(store.sendAttempts.first?.error?.contains("Try later.") == true)
         #expect(mock.requests.filter { $0.httpMethod == "POST" }.count == 1)
     }
 
