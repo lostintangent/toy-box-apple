@@ -353,8 +353,8 @@ so the suite starts a WebKit web content process once instead of once per render
   Mac GitHub/Sparkle notes use the Mac entry. Phone notes are retained in the job summary/artifact;
   per-build “What to Test” stays manual until a password-authenticated Apple tool path is proven.
 - User only: `bun run setup-secrets:mobile SHA1 APP_STORE_CONNECT_APP_ID [OWNER/REPO]`.
-  It selects the same four App Store profiles as `testflight`, reads an export password
-  silently or from piped stdin, exports only that Apple Distribution identity and deletes its
+  It selects the same four App Store profiles as `testflight`, generates a random export password
+  without prompting, exports only that Apple Distribution identity and deletes its
   temporary encrypted export. It sets `MOBILE_SIGNING_CERTIFICATE`, `MOBILE_SIGNING_PASSWORD`,
   the four `MOBILE_*_PROVISIONING_PROFILE` secrets, and public `MOBILE_SIGNING_IDENTITY` /
   `MOBILE_SIGNING_CERTIFICATE_CHAIN` / `APP_STORE_CONNECT_APP_ID` variables. It never reads or replaces

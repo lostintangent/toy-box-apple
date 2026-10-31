@@ -352,11 +352,11 @@ first CI build `1.1`.
 
 The user runs `bun run setup-secrets:mobile SHA1 APP_STORE_CONNECT_APP_ID [OWNER/REPO]`.
 The shared signing selector validates the four App Store profiles and chosen Apple Distribution
-identity before export. A silent prompt or piped stdin supplies the export's encryption password,
-not the Apple Account password. Six secrets hold the encrypted certificate, its password and the
-four profiles. Public variables hold the certificate fingerprint, verified issuer chain and
-numeric app ID. The existing `NOTARY_APP_PASSWORD` is reused for uploads without reading or replacing
-it during setup.
+identity before export. The setup generates a random export encryption password, which is not the
+Apple Account password, and stores it as the `MOBILE_SIGNING_PASSWORD` secret. Six secrets hold the
+encrypted certificate, its password and the four profiles. Public variables hold the certificate
+fingerprint, verified issuer chain and numeric app ID. The existing `NOTARY_APP_PASSWORD` is reused
+for uploads without reading or replacing it during setup.
 Temporary export files are removed even on a failed secret upload.
 
 The mobile job imports its identity and exported verified issuer chain into an isolated
