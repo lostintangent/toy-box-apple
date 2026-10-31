@@ -139,8 +139,8 @@ struct TranscriptMarkdownTests {
             .environment(\.colorScheme, .light)
             .frame(width: width, height: 120, alignment: .topLeading)
             .background(.white)
-        let image = try #require(ImageRenderer(content: content).cgImage)
-        let bytes = try rgba(image)
+        let image = try ownBitmap(content)
+        let bytes = image.pixels
         func containsTableInk(at x: Int) -> Bool {
             return (0..<image.height).contains { y in
                 let offset = (y * image.width + x) * 4
@@ -161,8 +161,8 @@ struct TranscriptMarkdownTests {
             .foregroundStyle(.black)
             .environment(\.colorScheme, .light)
             .background(.white)
-        let image = try #require(ImageRenderer(content: content).cgImage)
-        let bytes = try rgba(image)
+        let image = try ownBitmap(content)
+        let bytes = image.pixels
         for x in [0, image.width - 1] {
             for y in [0, image.height - 1] {
                 let offset = (y * image.width + x) * 4
@@ -172,15 +172,31 @@ struct TranscriptMarkdownTests {
         #expect(bytes[(10 * image.width + 10) * 4] < 252)
     }
 
-    private func rgba(_ image: CGImage) throws -> [UInt8] {
-        let colorSpace = try #require(CGColorSpace(name: CGColorSpace.sRGB))
-        let context = try #require(CGContext(
-            data: nil, width: image.width, height: image.height, bitsPerComponent: 8, bytesPerRow: image.width * 4,
-            space: colorSpace, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-        ))
-        context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
-        let bytes = try #require(context.data).assumingMemoryBound(to: UInt8.self)
-        return Array(UnsafeBufferPointer(start: bytes, count: image.height * context.bytesPerRow))
+    /// Draws into the test's own bitmap at the default scale. `ImageRenderer.cgImage` returns an image-provider
+    /// CGImage that rasterizes through an IOSurface on first draw, the path that failed CI (t510 and t603).
+    /// Both callers fill an opaque white background, so a transparent pixel marks an incomplete render.
+    @MainActor
+    private func ownBitmap(_ content: some View) throws -> (width: Int, height: Int, pixels: [UInt8]) {
+        let renderer = ImageRenderer(content: content)
+        let space = try #require(CGColorSpace(name: CGColorSpace.sRGB))
+        var image: (width: Int, height: Int, pixels: [UInt8])?
+        renderer.render(rasterizationScale: 1) { size, draw in
+            let width = Int(size.width.rounded(.up))
+            let height = Int(size.height.rounded(.up))
+            var pixels = [UInt8](repeating: 0, count: width * height * 4)
+            pixels.withUnsafeMutableBytes { bytes in
+                guard let context = CGContext(
+                    data: bytes.baseAddress, width: width, height: height,
+                    bitsPerComponent: 8, bytesPerRow: width * 4, space: space,
+                    bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return }
+                draw(context)
+            }
+            image = (width, height, pixels)
+        }
+        let result = try #require(image)
+        let opaque = stride(from: 3, to: result.pixels.count, by: 4).allSatisfy { result.pixels[$0] == 255 }
+        try #require(opaque, "Incomplete render: an opaque background left transparent pixels.")
+        return result
     }
 
     @MainActor

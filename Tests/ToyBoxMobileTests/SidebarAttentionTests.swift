@@ -12,8 +12,8 @@ struct SidebarAttentionTests {
         let plain = try render(attention: nil, scheme: scheme, selected: selected)
         let unread = try render(attention: .unread, scheme: scheme, selected: selected)
         #expect(unread.width == plain.width && unread.height == plain.height)
-        let before = try pixels(plain)
-        let after = try pixels(unread)
+        let before = plain.pixels
+        let after = unread.pixels
         let changed = (0..<(unread.width * unread.height)).filter { pixel in
             let start = pixel * 4
             return before[start..<(start + 4)] != after[start..<(start + 4)]
@@ -45,8 +45,8 @@ struct SidebarAttentionTests {
         let plain = try render(attention: nil, scheme: scheme, selected: false)
         let marked = try render(attention: attention, scheme: scheme, selected: false)
         #expect(marked.width == plain.width && marked.height == plain.height)
-        let before = try pixels(plain)
-        let after = try pixels(marked)
+        let before = plain.pixels
+        let after = marked.pixels
         let changed = (0..<(marked.width * marked.height)).filter { pixel in
             let start = pixel * 4
             return before[start..<(start + 4)] != after[start..<(start + 4)]
@@ -92,7 +92,8 @@ struct SidebarAttentionTests {
             now: Date(timeIntervalSince1970: 1_793_016_000))
     }
 
-    private func render(attention: ChannelAttention?, scheme: ColorScheme, selected: Bool) throws -> CGImage {
+    private func render(attention: ChannelAttention?, scheme: ColorScheme, selected: Bool) throws
+        -> (width: Int, height: Int, pixels: [UInt8]) {
         let renderer = ImageRenderer(content: row(attention: attention)
             .frame(width: 360)
             .background(selected ? Color.blue : (scheme == .dark ? Color.black : Color.white))
@@ -100,19 +101,26 @@ struct SidebarAttentionTests {
             .environment(\.backgroundProminence, selected ? .increased : .standard)
             .dynamicTypeSize(.large))
         renderer.scale = 3
-        return try #require(renderer.uiImage?.cgImage)
-    }
-
-    private func pixels(_ image: CGImage) throws -> [UInt8] {
         let space = try #require(CGColorSpace(name: CGColorSpace.sRGB))
-        var bytes = [UInt8](repeating: 0, count: image.width * image.height * 4)
-        try bytes.withUnsafeMutableBytes { storage in
-            let context = try #require(CGContext(
-                data: storage.baseAddress, width: image.width, height: image.height,
-                bitsPerComponent: 8, bytesPerRow: image.width * 4, space: space,
-                bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue))
-            context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        var image: (width: Int, height: Int, pixels: [UInt8])?
+        renderer.render(rasterizationScale: 3) { size, draw in
+            let width = Int((size.width * 3).rounded(.up))
+            let height = Int((size.height * 3).rounded(.up))
+            var pixels = [UInt8](repeating: 0, count: width * height * 4)
+            pixels.withUnsafeMutableBytes { bytes in
+                guard let context = CGContext(
+                    data: bytes.baseAddress, width: width, height: height,
+                    bitsPerComponent: 8, bytesPerRow: width * 4, space: space,
+                    bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue
+                        | CGImageAlphaInfo.premultipliedLast.rawValue) else { return }
+                context.scaleBy(x: 3, y: 3)
+                draw(context)
+            }
+            image = (width, height, pixels)
         }
-        return bytes
+        let result = try #require(image)
+        let opaque = stride(from: 3, to: result.pixels.count, by: 4).allSatisfy { result.pixels[$0] == 255 }
+        try #require(opaque, "Incomplete render: an opaque row background left transparent pixels.")
+        return result
     }
 }

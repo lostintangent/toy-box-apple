@@ -226,23 +226,35 @@ struct OverviewPresentationTests {
         }
     }
 
+    /// Draws into the test's own bitmap. `ImageRenderer.cgImage` returns an image-provider CGImage that
+    /// rasterizes through an IOSurface on first draw, the path that failed CI (t510 and t603). Every caller
+    /// fills an opaque background, so a transparent pixel marks an incomplete render.
     @MainActor
     private func rendered(_ content: some View, scale: CGFloat = 3) throws
         -> (width: Int, height: Int, pixels: [UInt8]) {
         let renderer = ImageRenderer(content: content)
         renderer.scale = scale
-        let image = try #require(renderer.cgImage)
-        let colorSpace = try #require(CGColorSpace(name: CGColorSpace.sRGB))
-        var pixels = [UInt8](repeating: 0, count: image.width * image.height * 4)
-        try pixels.withUnsafeMutableBytes { bytes in
-            let context = try #require(CGContext(
-                data: bytes.baseAddress, width: image.width, height: image.height,
-                bitsPerComponent: 8, bytesPerRow: image.width * 4,
-                space: colorSpace, bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue
-                    | CGImageAlphaInfo.premultipliedLast.rawValue))
-            context.draw(image, in: CGRect(x: 0, y: 0, width: CGFloat(image.width), height: CGFloat(image.height)))
+        let space = try #require(CGColorSpace(name: CGColorSpace.sRGB))
+        var image: (width: Int, height: Int, pixels: [UInt8])?
+        renderer.render(rasterizationScale: scale) { size, draw in
+            let width = Int((size.width * scale).rounded(.up))
+            let height = Int((size.height * scale).rounded(.up))
+            var pixels = [UInt8](repeating: 0, count: width * height * 4)
+            pixels.withUnsafeMutableBytes { bytes in
+                guard let context = CGContext(
+                    data: bytes.baseAddress, width: width, height: height,
+                    bitsPerComponent: 8, bytesPerRow: width * 4, space: space,
+                    bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue
+                        | CGImageAlphaInfo.premultipliedLast.rawValue) else { return }
+                context.scaleBy(x: scale, y: scale)
+                draw(context)
+            }
+            image = (width, height, pixels)
         }
-        return (image.width, image.height, pixels)
+        let result = try #require(image)
+        let opaque = stride(from: 3, to: result.pixels.count, by: 4).allSatisfy { result.pixels[$0] == 255 }
+        try #require(opaque, "Incomplete render: an opaque background left transparent pixels.")
+        return result
     }
 
     private var items: [ChannelOverviewMeasuredItem] {
