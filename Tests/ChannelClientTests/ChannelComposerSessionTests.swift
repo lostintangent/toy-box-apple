@@ -53,7 +53,7 @@ struct ChannelComposerSessionTests {
     }
 
     @Test(arguments: [422, 503])
-    func aRejectedSendRestoresItsDraftAndRetryReusesTheAttemptUUID(status: Int) async throws {
+    func aRejectedSendLivesOnItsRowAndRetryReusesTheAttemptUUID(status: Int) async throws {
         let mock = MockTransport { request, count in
             guard request.httpMethod == "POST" else {
                 return try .stream([.init(type: "snapshot", state: testState())])
@@ -76,8 +76,9 @@ struct ChannelComposerSessionTests {
         #expect(attempt.content == "Send once")
         #expect(attempt.phase == (status == 422 ? .notSent : .deliveryNotConfirmed))
         #expect(attempt.canRetry)
-        #expect(draft.text == "Send once")
-        #expect(draft.sendAttemptID == attempt.id)
+        #expect(draft.text.isEmpty)
+        #expect(draft.sendAttemptID == nil)
+        #expect(session.error == nil)
         _ = try await store.retrySend(id: attempt.id)
         #expect(store.messages.contains { $0.id == attempt.id })
         #expect(try mock.requests.filter { $0.httpMethod == "POST" }.map {
