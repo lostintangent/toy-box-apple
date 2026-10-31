@@ -194,16 +194,11 @@ struct OverviewTaskNode: View {
         let title = Text(verbatim: task.title).font(.body)
             .foregroundStyle(task.status == "done" ? ChannelInk.secondary : .primary)
         guard !children.isEmpty else { return title }
-        let gap = Text(verbatim: "\u{00A0}\u{00A0}")
-        let progress: Text
-        if task.showsChildProgress {
-            let count = channelTasksProgress(children)
-            progress = Text(verbatim: "\(count.done)/\(count.total)\u{00A0}")
-                .font(.footnote.monospacedDigit()).foregroundStyle(ChannelInk.secondary)
-        } else { progress = Text(verbatim: "") }
-        return title + gap + progress
-            + Text(Image(systemName: expanded ? "chevron.down" : "chevron.right"))
-                .font(.footnote.weight(.semibold)).foregroundStyle(ChannelInk.secondary)
+        guard task.showsChildProgress else { return OverviewInlineDisclosure.line(title, expanded: expanded) }
+        let count = channelTasksProgress(children)
+        let progress = Text(verbatim: "\(count.done)/\(count.total)\u{00A0}")
+            .font(.footnote.monospacedDigit()).foregroundStyle(ChannelInk.secondary)
+        return OverviewInlineDisclosure.line(title, expanded: expanded, count: progress)
     }
 
     @ViewBuilder

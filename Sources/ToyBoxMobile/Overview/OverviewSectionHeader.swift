@@ -7,6 +7,16 @@ enum OverviewListMetrics {
     static let sectionGap: CGFloat = 24
 }
 
+/// A title with its disclosure chevron trailing inline, as task parents and routines show it.
+/// Non-breaking spaces carry the chevron with the title's last word, so it never wraps alone.
+enum OverviewInlineDisclosure {
+    static func line(_ title: Text, expanded: Bool, count: Text = Text(verbatim: "")) -> Text {
+        title + Text(verbatim: "\u{00A0}\u{00A0}") + count
+            + Text(Image(systemName: expanded ? "chevron.down" : "chevron.right"))
+                .font(.footnote.weight(.semibold)).foregroundStyle(ChannelInk.secondary)
+    }
+}
+
 struct OverviewListRowBoundary: ViewModifier {
     let isLast: Bool
 

@@ -2270,14 +2270,32 @@ disclosure trails the title inline, as for task parents: one wrapping `Text` wit
 non-breaking space and the 9-point bold secondary `chevron.right` or `chevron.down` text image,
 so "Daily review ›" never orphans its chevron. Nothing hangs in the leading inset, and the whole
 row toggles it. Expanded content is indented 38
-points to the title: the prompt in 12 regular primary, selectable, then an 11-point grid with
-trailing-aligned secondary labels, "Next run" ("Tomorrow at 9:00 AM") and "Schedule" (the cron
-expression in monospaced type and the time zone). An invalid or unavailable calculation shows
-"Next run unavailable", not a guessed date. A hover or focus `ellipsis.circle` menu and the
+points to the title: only the prompt in 12 regular primary, selectable. The schedule line
+already says when the routine runs, so the details repeat neither a next run date nor the raw
+cron expression. The schedule line's hover tooltip names the cron expression after its summary,
+or alone when it has no summary. VoiceOver hears "Shows the prompt" or "Hides the prompt" as
+the row's hint. A hover or focus `ellipsis.circle` menu and the
 context menu offer Run Now and Delete Routine…. Run disables while pending and shows "Run
 requested" in place of the schedule line for 4 seconds, never as a synthetic transcript post.
 Delete has a native confirmation that names the routine. The user does not create or edit
 routines here, matching the pane.
+
+Phone routine rows match the phone artifact rows: `calendar.badge.clock` in the same 24-point
+icon lane, primary ink and 12-point icon/text gap, so routine and artifact titles share one
+leading edge. The body title and footnote schedule line sit 4 points apart in a minimum-44 label
+with exactly 6 points of native vertical row inset, growing for wrapping or larger text, with no
+64-point minimum. The disclosure trails the title inline, as for phone task parents: one wrapping
+`Text` with the title, two non-breaking spaces and the footnote-semibold secondary
+`chevron.right` or `chevron.down`, never a stock `DisclosureGroup` or trailing accessory. The
+whole row is one plain button that toggles immediately, without a fade, and keeps its expansion
+for the Overview session. Expanded rows are indented to the title: the selectable prompt, Run
+Now and Delete Routine, whose trash icon is red like its title, as iOS draws destructive rows.
+Like the Mac, the details repeat neither a next run date nor the raw cron expression, which the
+schedule line already shows when it has no summary. The final row hides
+only the section's last separator. VoiceOver reads the title as the label, the schedule line
+then "Expanded" or "Collapsed" as the value, "Shows the prompt" or "Hides the prompt" as the
+hint, with Expand or Collapse as an action. The context menu keeps Run Now
+and Delete Routine.
 
 ### Artifact viewer
 

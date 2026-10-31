@@ -4,7 +4,7 @@ import Foundation
 import SwiftUI
 import ToyBoxUI
 
-/// A routine shares the artifact geometry, with its prompt and next run disclosed in place.
+/// A routine shares the artifact geometry, with its prompt disclosed in place.
 struct OverviewRoutineRow: View {
     private enum Focus { case row, menu }
 
@@ -76,7 +76,7 @@ struct OverviewRoutineRow: View {
                 .onKeyPress(.leftArrow) { setExpanded(false); return .handled }
                 .accessibilityLabel(routine.title)
                 .accessibilityValue("\(scheduleLine), \(expanded ? "Expanded" : "Collapsed")")
-                .accessibilityHint(expanded ? "Hides the prompt and next run" : "Shows the prompt and next run")
+                .accessibilityHint(expanded ? "Hides the prompt" : "Shows the prompt")
                 .accessibilityActions { actions }
                 OverviewRowMenu(title: "Actions for \(routine.title)", isVisible: showsMenu) { actions }
                     .focused($focus, equals: .menu)
@@ -84,13 +84,14 @@ struct OverviewRoutineRow: View {
             .onHover { isHovering = $0 }
             .contextMenu { actions }
             if expanded {
-                TimelineView(.everyMinute) { context in
-                    details(next: Result { try nextCronOccurrence(routine.schedule, from: context.date) })
-                }
-                .padding(.leading, 38)
-                .padding(.top, 2)
-                .padding(.bottom, 8)
-                .id("overview-routine-details-\(routine.id)")
+                Text(routine.prompt)
+                    .font(.system(size: 12 * textScale))
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.leading, 38)
+                    .padding(.top, 2)
+                    .padding(.bottom, 8)
+                    .id("overview-routine-details-\(routine.id)")
             }
             if let error = recovery?.error {
                 ManagementError(message: error).padding(.leading, 38).padding(.bottom, 6)
@@ -122,49 +123,6 @@ struct OverviewRoutineRow: View {
             management.present(.deleteRoutine(channelId: store.id, routineId: routine.id))
         }
         .disabled(isRunning || !store.phase.isConnected)
-    }
-
-    private func details(next: Result<Date, Error>) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(routine.prompt)
-                .font(.system(size: 12 * textScale))
-                .textSelection(.enabled)
-                .fixedSize(horizontal: false, vertical: true)
-            Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 8, verticalSpacing: 3) {
-                GridRow {
-                    Text("Next run").foregroundStyle(.secondary).gridColumnAlignment(.trailing)
-                    switch next {
-                    case .success(let date):
-                        Text(Self.nextRunFormatter.string(from: date))
-                            .help(date.formatted(date: .complete, time: .standard))
-                    case .failure(let failure):
-                        Text("Unavailable")
-                            .foregroundStyle(.secondary)
-                            .help(failure.localizedDescription)
-                            .accessibilityLabel("Next run unavailable")
-                    }
-                }
-                GridRow {
-                    Text("Schedule").foregroundStyle(.secondary)
-                    Text("\(Text(routine.schedule).font(.system(size: 11 * textScale, design: .monospaced)))\(Text(" · \(Self.timeZoneName)").foregroundStyle(.secondary))")
-                        .textSelection(.enabled)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            .font(.system(size: 11 * textScale))
-        }
-    }
-
-    private static let nextRunFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .medium
-        formatter.timeStyle = .short
-        formatter.doesRelativeDateFormatting = true
-        return formatter
-    }()
-
-    private static var timeZoneName: String {
-        TimeZone.current.localizedName(for: .generic, locale: .current) ?? TimeZone.current.identifier
     }
 
     private func setExpanded(_ value: Bool) {
