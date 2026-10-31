@@ -1632,6 +1632,32 @@ focus or activation reveals every reactor name. Do not make a reaction chip look
 the scrollable history. It has 20-point avatars, "Name is working" or "N agents are working", and status details on
 activation. Waiting belongs in the inspector, not this row.
 
+### Suggested replies
+
+A request may offer two to four suggested replies. ChannelKit reads them through `ChannelMessage.suggestedReplies`, which returns trimmed, non-empty labels of at most 80 UTF-16 units, and only on a `request: true` message. A malformed list reads as no choices, so the request still shows with Reply.
+
+**Instant send.** A tap sends the label as the user's reply at once, through the same optimistic send as Reply, with a caller-owned UUID kept in the outbox until the server confirms it. Choices leave when the user answers. A failed send stays in the outbox with Send Again, and the choices do not return. Reading a request never answers it, and choices never send in the background.
+
+**Where choices appear.** Choices appear on the transcript's pending request, the Mac menu bar inbox, the Mac notification banner, the phone transcript and the phone Lock Screen notification. They do not appear on sidebar or menu badges (counts only), the composer's Input needed state (it opens the question, and choices stay in the transcript), the Dock menu, Spotlight, the morning digest, Control Center, Quick Send or the Siri snippet. Menu items cannot hold buttons, so those surfaces keep Reply or open the channel.
+
+**Layout.** Choices are full-width rows, one per line, in the lead's order. Labels wrap in full, and nothing is cut except the first Mac banner action, which macOS truncates. In the transcript and inbox, Reply is the last row. With no choices, Reply is the only row, so the request still looks finished. Four choices make the bubble or inbox row taller, never wider.
+
+**Mac transcript.** The choices form one stack of full-width rows inside the pending bubble, with Reply full width below them.
+
+**Mac menu bar inbox.** Each waiting request shows its choices as full-width rows above Open and Reply, one click each. A long choice makes its row taller, and the list scrolls. A choice sends through the same path as the transcript's choices.
+
+**Mac notification banner.** Reply and the first choice show as actions, and the rest sit under Options. The banner is posted locally from the request the app already holds, so the push payload does not change for Mac. Two visible actions is a working assumption to verify on device.
+
+**Phone transcript.** Choices are full-width rows under the question inside the pending bubble, each at least 44 points tall. Long labels wrap inside their row.
+
+**Phone widget.** Unchanged for this pass. The Needs You widget keeps Reply only, and Reply opens Quick Send as it does today. Choices stay in the transcript and on the Lock Screen. The widget and its extension never send in the background.
+
+**Phone Lock Screen.** The push carries the replies as a top-level `replies` array of two to four labels, beside `handle` and outside `aps`, on request messages that have them. The notification service extension registers a category per request with one action per reply, then sets it as the content's `categoryIdentifier`. The actions appear only when the notification is expanded by long press, above the Reply text field. The collapsed banner shows no buttons. A choice sends through the same path as the Reply text action. If the category cannot register on device, the notification falls back to Reply only, as it does today. Core verifies registration on device before the build. Action counts are unverified.
+
+**Mac notification category.** Mac notifications also register a category per request. Core confirms that doing so does not replace the app's other categories.
+
+**Superseded options.** Reply only (P1) is now the fallback. The fixed Yes and No set (P2) is dropped. Dynamic Live Activity labels (P3) move to Release 2.
+
 ### In-channel message search
 
 Find belongs to the open channel, not the channel catalog. On Mac, Edit > Find > Find… (`Cmd-F`)
