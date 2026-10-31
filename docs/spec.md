@@ -294,9 +294,10 @@ sets the build and is required for validate/upload. Choose an unused number; App
 rejects reused numbers, including uploads from other machines. Build-only may use the source
 plist's build. There is no local counter or TestFlight lease; use your own scratch path.
 
-The user supplies an Apple Distribution identity and three explicit, unexpired App Store Connect
-profiles through the existing `MOBILE_PROVISIONING_PROFILE`, `MOBILE_WIDGET_PROVISIONING_PROFILE`
-and `MOBILE_NOTIFICATION_PROVISIONING_PROFILE` selectors. They must share a team/certificate, grant
+The user supplies an Apple Distribution identity and four explicit, unexpired App Store Connect
+profiles through the `MOBILE_PROVISIONING_PROFILE`, `MOBILE_WIDGET_PROVISIONING_PROFILE`,
+`MOBILE_NOTIFICATION_PROVISIONING_PROFILE` and `MOBILE_SHARE_PROVISIONING_PROFILE` selectors.
+They must share a team/certificate, grant
 the App Group capability, and grant production Push on
 the host. Development, ad-hoc, enterprise and wildcard profiles are rejected. Extensions embed
 their own profiles and sign before the host, whose actual signed entitlements are verified.
@@ -310,7 +311,7 @@ configured, it shows Connect to Toy Box. There is no bundle fallback.
 Every component declares the `arm64` required device capability and has the same version/build,
 `ITSAppUsesNonExemptEncryption=false` and real Xcode,
 SDK, platform and build-machine metadata. The privacy manifests declare host-local UserDefaults
-(`CA92.1`), cache file timestamps (`C617.1`) and elapsed animation timing (`35F9.1`); the two
+(`CA92.1`), cache file timestamps (`C617.1`) and elapsed animation timing (`35F9.1`); the three
 extensions declare only the timing API present in their linked shared presentation code.
 App Group state uses files, not shared UserDefaults. No disk-space API is used. See Apple's
 [required-reason policy](https://developer.apple.com/documentation/bundleresources/describing-use-of-required-reason-api).
@@ -348,10 +349,10 @@ Manual dispatch on `main` adds `--validate-only`, so it never uploads. CI uses
 first CI build `1.1`.
 
 The user runs `bun run setup-secrets:mobile SHA1 APP_STORE_CONNECT_APP_ID [OWNER/REPO]`.
-The shared signing selector validates the three App Store profiles and chosen Apple Distribution
+The shared signing selector validates the four App Store profiles and chosen Apple Distribution
 identity before export. A silent prompt or piped stdin supplies the export's encryption password,
-not the Apple Account password. Five secrets hold the encrypted certificate, its password and the
-three profiles. Public variables hold the certificate fingerprint, verified issuer chain and
+not the Apple Account password. Six secrets hold the encrypted certificate, its password and the
+four profiles. Public variables hold the certificate fingerprint, verified issuer chain and
 numeric app ID. The existing `NOTARY_APP_PASSWORD` is reused for uploads without reading or replacing
 it during setup.
 Temporary export files are removed even on a failed secret upload.
@@ -3263,6 +3264,47 @@ automatic endings say only "Following ended" and the end time. The original eigh
 is never extended. Channel deletion and server changes remove local content immediately.
 Ended follows never restart automatically, and their menu action simply becomes available again
 when the channel has live unfinished work.
+
+### Sharing to a channel on iPhone
+
+`PlugIns/ToyBoxMobileShare.appex` (`dev.toybox.mobile.share`) puts Toy Box in the system share
+sheet for up to ten images or one web link. Anything else, or an image it can't read, shows
+"Can't Share This" with the reason and Close. It reads the server the app last connected to from
+the app group's share history and never connects anywhere else. With none saved, it says "Open
+Toy Box to connect first".
+
+The app saves that server whenever it connects and records each channel the server confirms a
+send to, from the app or the extension. That history keeps the 20 most recent channels for that
+server and mirrors them as `INSendMessageIntent` donations, so the share sheet suggests them with the channel
+mark. Each donation is grouped by its server and channel, and changing servers or the catalog
+dropping a channel deletes its suggestion. A suggestion opens straight to its composer. Anything
+else opens "Choose a Channel": up to three recent channels, then the rest A to Z through
+ChannelKit's `channelChoices`, the same order as the Mac's Quick Send. Search, pull to refresh and
+"Can't Load Channels" with Retry use the native list.
+
+The composer shows the channel name with a chevron as the principal toolbar item to choose
+another channel, the images or a link tile with the page title and host, an "Add a note" field
+and the shared `AudiencePill` (ToyBoxUI). A link posts the note, a blank line and the URL, or the
+URL alone. Images go through `ComposerDraft`'s encoding at 2048 pixels and 1.5 MB each, well inside
+the server's limits, because iOS ends a share extension near 120 MB. Ten 24-megapixel photos at
+8000 pixels peaked 247 MB above the extension's baseline, and at 2048 pixels 45 MB. Sending holds
+the request about three times over, so the byte limit keeps ten images' request under 20 MB.
+
+The header stays centered on the sheet in every state. Close and the trailing control are both
+36-point circles: Send (arrow up), progress, Sent (checkmark) or Send Again (`arrow.clockwise`,
+labeled "Send Again"). The channel button keeps 68 points clear of each edge, Close's measured 56
+to 60 points plus 8, so a long name truncates instead of running under them. The header's text
+stops growing at the Large text size, with the Large Content Viewer above it.
+
+The first Send makes one attempt with its own UUID through `ChannelStore.postInBackground`, without
+a channel connection. Sending shows a progress indicator, and Sent shows a checkmark for 0.7 s
+before the sheet closes. While an attempt is in flight or unresolved, the composer is dimmed to
+50% and locked, as is the channel button. A lost connection says "You're offline." over "Nothing
+was sent." and anything else unconfirmed says "Toy Box didn't confirm this." over "Sending again
+can't post it twice." Both keep the attempt, so Send Again reuses its UUID. A refusal shows the server's
+message alone and unlocks, and the next Send is a new attempt. A deleted channel says
+"<name> no longer exists. Choose another channel." and returns to the list. Close is disabled
+while sending. Swiping down with a note asks "Discard Note" or "Keep Editing".
 
 ### Control Center and menu bar controls
 

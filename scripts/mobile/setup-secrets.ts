@@ -20,6 +20,7 @@ export async function uploadTestFlightSigning(signing: Awaited<ReturnType<typeof
             [mobileBundleID, "MOBILE_PROVISIONING_PROFILE"],
             [`${mobileBundleID}.widget`, "MOBILE_WIDGET_PROVISIONING_PROFILE"],
             [`${mobileBundleID}.notification`, "MOBILE_NOTIFICATION_PROVISIONING_PROFILE"],
+            [`${mobileBundleID}.share`, "MOBILE_SHARE_PROVISIONING_PROFILE"],
         ] as const) {
             const component = signing.find(value => value.bundleID === bundleID);
             if (!component) throw new Error(`Missing App Store profile for ${bundleID}.`);

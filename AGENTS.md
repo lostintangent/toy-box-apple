@@ -169,11 +169,12 @@ use demo servers only for write scripts. Never skip or retry actions.
   preserving plist deployment minimum and device/Simulator platform. `DTSDKName` alone is insufficient.
   Compile shared `Resources/AppIcon.icon` with the selected platform's `actool`, embedding layered
   appearances, PNG fallbacks and generated metadata. No separate phone artwork/iOS asset catalog.
-  Embed `PlugIns/ToyBoxMobileWidget.appex` (`dev.toybox.mobile.widget`) and
-  `PlugIns/ToyBoxMobileNotification.appex` (`dev.toybox.mobile.notification`) with SwiftPM
-  application-extension safety. Both enter through verified `_NSExtensionMain`, establishing context
-  before WidgetKit's generated Swift main/the service. Verify every executable's real SDK stamp.
-  Simulator capabilities link into `__TEXT,__entitlements` / `__TEXT,__ents_der`, including all three
+  Embed `PlugIns/ToyBoxMobileWidget.appex` (`dev.toybox.mobile.widget`),
+  `PlugIns/ToyBoxMobileNotification.appex` (`dev.toybox.mobile.notification`) and
+  `PlugIns/ToyBoxMobileShare.appex` (`dev.toybox.mobile.share`) with SwiftPM
+  application-extension safety. All enter through verified `_NSExtensionMain`, establishing context
+  before WidgetKit's generated Swift main/the service/the share sheet. Verify every executable's real SDK stamp.
+  Simulator capabilities link into `__TEXT,__entitlements` / `__TEXT,__ents_der`, including all four
   bundles' `group.dev.toybox.mobile`. Ad-hoc signatures have no restricted device entitlements.
   Sign Simulator extensions before host, without device profiles/credentials.
 - **On-phone checks:** install through TestFlight. Direct local device installs are retired,
@@ -183,13 +184,13 @@ use demo servers only for write scripts. Never skip or retry actions.
   ATS uses `NSAllowsArbitraryLoads` alone, not `NSAllowsLocalNetworking` (which defeats the opt-out).
   Local-network permission is separate. HTTPS retains normal certificate validation.
 - **TestFlight:** `bun run testflight [--version X.Y.Z] [--build-number N]` builds release
-  arm64, signs the three bundles with matching Apple Distribution/App Store profiles, packages an
+  arm64, signs the four bundles with matching Apple Distribution/App Store profiles, packages an
   IPA, validates and uploads. A zero altool exit means Apple accepted the upload, not that
   processing or tester availability is complete. Print its output without parsing it as one
   JSON document or polling. `--validate-only` never uploads.
   `--build-only` is unsigned and needs no profiles or credentials. All modes omit a bundled server,
   DEBUG proof code and fixtures. Use `mobile-testflight` under your own `SCRATCH_PATH`.
-- **TestFlight setup:** the user creates the App Store Connect app and three explicit App Store
+- **TestFlight setup:** the user creates the App Store Connect app and four explicit App Store
   profiles, with the same App Group capability and production Push on the app.
   Select them with the same `MOBILE_*_PROVISIONING_PROFILE` variables. Set
   `APP_STORE_CONNECT_USERNAME` and numeric `APP_STORE_CONNECT_APP_ID`. Apple tools read the password
@@ -352,10 +353,10 @@ so the suite starts a WebKit web content process once instead of once per render
   Mac GitHub/Sparkle notes use the Mac entry. Phone notes are retained in the job summary/artifact;
   per-build “What to Test” stays manual until a password-authenticated Apple tool path is proven.
 - User only: `bun run setup-secrets:mobile SHA1 APP_STORE_CONNECT_APP_ID [OWNER/REPO]`.
-  It selects the same three App Store profiles as `testflight`, reads an export password
+  It selects the same four App Store profiles as `testflight`, reads an export password
   silently or from piped stdin, exports only that Apple Distribution identity and deletes its
   temporary encrypted export. It sets `MOBILE_SIGNING_CERTIFICATE`, `MOBILE_SIGNING_PASSWORD`,
-  the three `MOBILE_*_PROVISIONING_PROFILE` secrets, and public `MOBILE_SIGNING_IDENTITY` /
+  the four `MOBILE_*_PROVISIONING_PROFILE` secrets, and public `MOBILE_SIGNING_IDENTITY` /
   `MOBILE_SIGNING_CERTIFICATE_CHAIN` / `APP_STORE_CONNECT_APP_ID` variables. It never reads or replaces
   `NOTARY_APP_PASSWORD`.
   Actions imports the identity with its verified issuer chain and the profiles only
@@ -437,7 +438,7 @@ so the suite starts a WebKit web content process once instead of once per render
 | `Sources/ToyBoxMobile/Transcript` | Transcript |
 | `Sources/ToyBoxMobile/Composer` (composer and tray) | Composer |
 | `Sources/ToyBoxMobile/Overview`, `Management` | Overview |
-| `Sources/ToyBoxMobileIntegrations/`, `Sources/ToyBoxMobileNotification/`, `Resources/Mobile/` | Core |
+| `Sources/ToyBoxMobileIntegrations/`, `Sources/ToyBoxMobileNotification/`, `Sources/ToyBoxMobileShare/`, `Resources/Mobile/` | Core |
 | `Sources/ToyBoxWidgetViews/`, `Sources/ToyBoxMobileWidget/`, `Tests/ToyBoxMobileWidgetTests/` | Overview |
 
 UI engineers may add one `Tests/ToyBoxDesktopTests/<Surface>Tests.swift` file for their own surface.

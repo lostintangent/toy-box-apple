@@ -84,6 +84,35 @@ struct SendAttemptTests {
         #expect(mock.requests.count == 2)
     }
 
+    @Test @MainActor func theCatalogHearsOnlySendsTheServerAcceptsWithTheirAttachments() async throws {
+        struct PostedImages: Decodable { var id: String; var attachments: [ChannelAttachment]? }
+        let image = ChannelAttachment(name: "Screenshot.png", mimeType: "image/png", base64: "iVBORw0K")
+        let id = UUID().uuidString
+        let mock = MockTransport { request, count in
+            let body = try JSONDecoder().decode(PostedImages.self, from: requestBody(request))
+            #expect(body.id == id)
+            #expect(body.attachments == [image])
+            guard count == 2 else { return MockResponse(status: 503, body: Data(#"{"error":"Busy"}"#.utf8)) }
+            let message = ChannelMessage(id: id, sequence: 18, timestamp: "2026-10-31T05:00:00Z",
+                                         sender: .user, content: .text("Look"), attachments: [image])
+            return try .json(MessageEnvelope(message: message), status: 201)
+        }
+        let catalog = ChannelCatalogStore(api: try mock.api())
+        var confirmed: [String] = []
+        catalog.onSendConfirmed = { confirmed.append($0) }
+        let store = catalog.channel(id: "studio")
+
+        await #expect(throws: ChannelAPIError.http(status: 503, message: "Busy")) {
+            try await store.postInBackground(id: id, content: "Look", attachments: [image])
+        }
+        #expect(confirmed.isEmpty)
+        let result = try await store.postInBackground(id: id, content: "Look", attachments: [image])
+        guard case .committed(let message) = result else { Issue.record("Expected a committed send"); return }
+        #expect(message.attachments == [image])
+        #expect(confirmed == ["studio"])
+        #expect(mock.requests.count == 2)
+    }
+
     @Test @MainActor func backgroundTransportFailureIsNotAutomaticallyRetried() async throws {
         let mock = MockTransport { _, _ in throw URLError(.networkConnectionLost) }
         let store = ChannelStore(id: "test", api: try mock.api(), sendJournal: nil)

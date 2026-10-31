@@ -433,7 +433,7 @@ struct ComposerTests {
         let lead = ChannelAgent.lead(id: "test", profile: .init(
             name: "Lead", role: "Coordinator", avatar: .init(mark: "M4 12H20", color: "#123456")
         ))
-        let image = try render(ComposerAudienceView(text: "", agents: [lead], acknowledgesRequest: false)
+        let image = try render(AudiencePill(text: "", agents: [lead], acknowledgesRequest: false)
             .environment(\.colorScheme, scheme)
             .dynamicTypeSize(size), width: 260)
         #expect(image.height >= 44)
@@ -471,7 +471,7 @@ struct ComposerTests {
         let lead = ChannelAgent.lead(id: "test", profile: .init(
             name: "Lead", role: "Coordinator", avatar: .init(mark: "M4 12H20", color: "#123456")
         ))
-        let audience = ComposerAudienceView(text: "", agents: [lead], acknowledgesRequest: true)
+        let audience = AudiencePill(text: "", agents: [lead], acknowledgesRequest: true)
         let request = ComposerRequestLabel(wraps: true).font(.footnote)
         for width: CGFloat in [220, 340, 426] {
             let context = try render(ComposerContextLayout { audience; request }

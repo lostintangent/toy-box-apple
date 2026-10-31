@@ -113,6 +113,8 @@ public final class ChannelStore {
     public private(set) var lastSendFailure: ChannelSendFailure?
     public private(set) var attemptPersistenceError: String?
     public private(set) var optimisticMessageIds: Set<String> = []
+    /// Called with the channel's ID after the server accepts each send, retries included.
+    @ObservationIgnored public var onSendConfirmed: (@MainActor (String) -> Void)?
 
     @ObservationIgnored private var observation: Task<Void, Never>?
     /// From `connect()` until `disconnect()`. Internal and unobserved, so tests check a disconnect
@@ -369,10 +371,11 @@ public final class ChannelStore {
 
     /// Persists before sending once, without starting or waiting for the channel's stream.
     @discardableResult
-    public func postInBackground(id: String, content: String) async throws -> ChannelSendResult {
+    public func postInBackground(id: String, content: String,
+                                 attachments: [ChannelAttachment] = []) async throws -> ChannelSendResult {
         let result: ChannelSendResult
         do {
-            result = try await post(id: id, content: content, attachments: [], requiresConnection: false)
+            result = try await post(id: id, content: content, attachments: attachments, requiresConnection: false)
         } catch {
             if sendAttempts.contains(where: { $0.id == id && $0.canRetry }) {
                 try await persistSendAttempts()
@@ -472,6 +475,13 @@ public final class ChannelStore {
 
     private func deliver(_ attempt: ChannelSendAttempt,
                          requiresConnection: Bool) async throws -> ChannelSendResult {
+        let result = try await transmit(attempt, requiresConnection: requiresConnection)
+        onSendConfirmed?(id)
+        return result
+    }
+
+    private func transmit(_ attempt: ChannelSendAttempt,
+                          requiresConnection: Bool) async throws -> ChannelSendResult {
         isSending = true
         sendError = nil
         lastSendFailure = nil
@@ -732,6 +742,8 @@ public final class ChannelCatalogStore {
     @ObservationIgnored private var pathWatch: Task<Void, Never>?
     @ObservationIgnored private let networkPath: NetworkPathSource
     @ObservationIgnored private var detailStores: [String: ChannelStore] = [:]
+    /// Passed to every channel's store, so one place hears each send the server accepts.
+    @ObservationIgnored public var onSendConfirmed: (@MainActor (String) -> Void)?
     @ObservationIgnored private var activePollingInterval: TimeInterval = 5
     @ObservationIgnored private var catalogGeneration = UUID()
     @ObservationIgnored private var reconcilingManagement = false
@@ -773,6 +785,7 @@ public final class ChannelCatalogStore {
     public func channel(id: String) -> ChannelStore {
         if let existing = detailStores[id] { return existing }
         let store = ChannelStore(id: id, api: api, reconnectPolicy: reconnectPolicy)
+        store.onSendConfirmed = { [weak self] in self?.onSendConfirmed?($0) }
         detailStores[id] = store
         return store
     }

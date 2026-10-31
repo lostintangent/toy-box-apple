@@ -53,6 +53,7 @@ final class AppModel {
     @ObservationIgnored private var integrationsGeneration = UUID()
     @ObservationIgnored private var resumeCatalogBaseline: Date?
     @ObservationIgnored private var widgetPublisher: MobileWidgetSnapshotPublisher?
+    @ObservationIgnored private var shareHistory: MobileShareHistory?
     @ObservationIgnored private var widgetUpdate: Task<Void, Never>?
     @ObservationIgnored private var widgetUpdateRequested = false
     @ObservationIgnored private var badgeRefresh: Date?
@@ -159,7 +160,10 @@ final class AppModel {
         resumeCatalogBaseline = nil
         if persist { defaults.set(self.serverURL, forKey: "serverURL") }
         if isForeground { catalog?.startPolling() }
-        if integrationsStarted { observeIntegrations(generation: integrationsGeneration) }
+        if integrationsStarted {
+            configureShareHistory()
+            observeIntegrations(generation: integrationsGeneration)
+        }
     }
 
     /// Streams and catalog polling last until the scene enters the background, so Control Center,
@@ -224,8 +228,26 @@ final class AppModel {
         } catch {
             integrationLogger.error("Could not prepare the Needs You widget: \(error.localizedDescription)")
         }
+        do {
+            shareHistory = try MobileShareHistory()
+        } catch {
+            integrationLogger.error("Could not prepare share suggestions: \(error.localizedDescription)")
+        }
+        configureShareHistory()
         observeIntegrations(generation: integrationsGeneration)
         await notifications.start()
+    }
+
+    /// The share extension reads the server from this history, and suggests the channels each
+    /// confirmed send went to.
+    private func configureShareHistory() {
+        guard let shareHistory, let catalog else { return }
+        let serverURL = catalog.api.baseURL.absoluteString
+        shareHistory.select(serverURL: serverURL)
+        catalog.onSendConfirmed = { [weak shareHistory, weak catalog] id in
+            guard let name = catalog?.channels.first(where: { $0.id == id })?.name else { return }
+            shareHistory?.recordSend(serverURL: serverURL, channelID: id, name: name)
+        }
     }
 
     private func observeFollowing() {
@@ -270,6 +292,7 @@ final class AppModel {
            refreshed != badgeRefresh {
             badgeRefresh = refreshed
             notifications.updateBadge(catalog.channels.filter { channelStatus($0) == .waiting }.count)
+            shareHistory?.prune(serverURL: catalog.api.baseURL.absoluteString, keeping: Set(catalog.channels.map(\.id)))
         }
         updateWidget(generation: generation)
     }

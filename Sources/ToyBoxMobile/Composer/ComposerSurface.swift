@@ -280,7 +280,7 @@ struct ComposerSurface: View {
         let layout = dynamicTypeSize.isAccessibilitySize
             ? AnyLayout(ComposerContextLayout()) : AnyLayout(HStackLayout(spacing: 4))
         return layout {
-            ComposerAudienceView(text: draft.text, agents: store.roster,
+            AudiencePill(text: draft.text, agents: store.roster,
                                  acknowledgesRequest: store.requestSequence != nil)
             if let request = store.request {
                 ComposerRequestButton(request: request, allowsPresentation: canPresentRequestPreview,

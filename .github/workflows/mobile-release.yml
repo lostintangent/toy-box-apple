@@ -62,6 +62,7 @@ jobs:
           HOST_PROFILE: ${{ secrets.MOBILE_PROVISIONING_PROFILE }}
           WIDGET_PROFILE: ${{ secrets.MOBILE_WIDGET_PROVISIONING_PROFILE }}
           NOTIFICATION_PROFILE: ${{ secrets.MOBILE_NOTIFICATION_PROVISIONING_PROFILE }}
+          SHARE_PROFILE: ${{ secrets.MOBILE_SHARE_PROVISIONING_PROFILE }}
           NOTARY_APP_PASSWORD: ${{ secrets.NOTARY_APP_PASSWORD }}
         run: |
           set +x
@@ -73,6 +74,7 @@ jobs:
           : "${HOST_PROFILE:?Missing MOBILE_PROVISIONING_PROFILE}"
           : "${WIDGET_PROFILE:?Missing MOBILE_WIDGET_PROVISIONING_PROFILE}"
           : "${NOTIFICATION_PROFILE:?Missing MOBILE_NOTIFICATION_PROVISIONING_PROFILE}"
+          : "${SHARE_PROFILE:?Missing MOBILE_SHARE_PROVISIONING_PROFILE}"
           : "${NOTARY_APP_PASSWORD:?Missing NOTARY_APP_PASSWORD}"
           : "${MOBILE_SIGNING_IDENTITY:?Missing MOBILE_SIGNING_IDENTITY repository variable}"
           : "${APP_STORE_CONNECT_APP_ID:?Missing APP_STORE_CONNECT_APP_ID repository variable}"
@@ -99,10 +101,12 @@ jobs:
           printf '%s' "$HOST_PROFILE" | base64 --decode > "$directory/app.mobileprovision"
           printf '%s' "$WIDGET_PROFILE" | base64 --decode > "$directory/widget.mobileprovision"
           printf '%s' "$NOTIFICATION_PROFILE" | base64 --decode > "$directory/notification.mobileprovision"
+          printf '%s' "$SHARE_PROFILE" | base64 --decode > "$directory/share.mobileprovision"
           {
             printf 'MOBILE_PROVISIONING_PROFILE=%s\n' "$directory/app.mobileprovision"
             printf 'MOBILE_WIDGET_PROVISIONING_PROFILE=%s\n' "$directory/widget.mobileprovision"
             printf 'MOBILE_NOTIFICATION_PROVISIONING_PROFILE=%s\n' "$directory/notification.mobileprovision"
+            printf 'MOBILE_SHARE_PROVISIONING_PROFILE=%s\n' "$directory/share.mobileprovision"
           } >> "$GITHUB_ENV"
       - name: Build and validate or upload to TestFlight
         env:
@@ -130,6 +134,7 @@ jobs:
           fi
           rm -f "$directory/identity.p12" "$directory/app.mobileprovision" \
             "$directory/widget.mobileprovision" "$directory/notification.mobileprovision" \
+            "$directory/share.mobileprovision" \
             "$directory/issuer-chain.pem" "$directory/search-list.txt" || status=$?
           if [[ -d "$directory" ]]; then rmdir "$directory" || status=$?; fi
           exit "$status"

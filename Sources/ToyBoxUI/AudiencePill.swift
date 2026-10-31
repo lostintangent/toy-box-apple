@@ -1,13 +1,20 @@
 import ChannelKit
 import SwiftUI
-import ToyBoxUI
 
-struct ComposerAudienceView: View {
+/// Who a message will notify, as the phone's composer and share sheet show it.
+public struct AudiencePill: View {
     let text: String
     let agents: [ChannelAgent]
     let acknowledgesRequest: Bool
 
-    var body: some View {
+    /// `agents` starts with the channel's lead.
+    public init(text: String, agents: [ChannelAgent], acknowledgesRequest: Bool) {
+        self.text = text
+        self.agents = agents
+        self.acknowledgesRequest = acknowledgesRequest
+    }
+
+    public var body: some View {
         if let lead = agents.first {
             let recipients = resolveChannelAudience(
                 content: text, sender: .user, lead: lead, members: Array(agents.dropFirst()),
@@ -32,7 +39,7 @@ struct ComposerAudienceView: View {
             .padding(.horizontal, 7)
             .padding(.vertical, 4)
             .frame(minHeight: 24)
-            .background(recipients.isEmpty ? Color.orange.opacity(0.1) : Color(uiColor: .secondarySystemFill),
+            .background(recipients.isEmpty ? AnyShapeStyle(Color.orange.opacity(0.1)) : AnyShapeStyle(.fill.secondary),
                         in: Capsule())
             .foregroundStyle(recipients.isEmpty ? Color.primary : ChannelInk.secondary)
             .frame(minHeight: 44)

@@ -21,6 +21,16 @@ public struct ComposerImage: Codable, Equatable, Identifiable, Sendable {
     public var attachment: ChannelAttachment {
         .init(name: name, mimeType: mimeType, base64: data.base64EncodedString())
     }
+
+    /// The image as a send carries it: unchanged when it's within the limits, otherwise a JPEG that
+    /// is. The limits are the server's 8000 pixels and 5 MB, or smaller ones, which also bound the
+    /// decode and the request for a memory-limited extension.
+    public func preparedForSending(maximumDimension: Int = .max, maximumBytes: Int = .max) throws -> ComposerImage {
+        let dimension = min(maximumDimension, ComposerImageEncoding.maximumDimension)
+        let bytes = min(maximumBytes, ComposerImageEncoding.maximumBytes)
+        return try ComposerImageEncoding.passthrough(self, maximumDimension: dimension, maximumBytes: bytes)
+            ?? ComposerImageEncoding.normalize(self, fallback: nil, maximumDimension: dimension, maximumBytes: bytes)
+    }
 }
 
 @MainActor @Observable

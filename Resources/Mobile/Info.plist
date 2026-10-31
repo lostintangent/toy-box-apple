@@ -34,6 +34,7 @@
     <key>NSUserActivityTypes</key>
     <array>
         <string>dev.toybox.desktop.channel</string>
+        <string>INSendMessageIntent</string>
     </array>
     <key>LSRequiresIPhoneOS</key>
     <true/>
