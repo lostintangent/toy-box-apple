@@ -749,7 +749,7 @@ struct OverviewTests {
             OverviewList {
                 OverviewArtifactRow(
                     artifact: .init(file: .init(kind: "machine", path: "plan.md"), title: "Daily notes"),
-                    share: nil, api: store.api, channelID: store.id)
+                    share: nil, store: store, state: OverviewArtifactState())
                     .listRowInsets(.vertical, 6)
                 OverviewRoutineRow(
                     routine: .init(id: "routine", title: "Daily review", schedule: "0 9 * * *",
@@ -937,6 +937,98 @@ struct OverviewTests {
         #expect(collapsed.value == "\(schedule), Collapsed")
     }
 
+    @MainActor @Test func artifactRemovalWaitsForTheChannelAndAnyUnconfirmedWrite() throws {
+        let state = OverviewArtifactState()
+        #expect(state.canRemove(connected: true))
+        #expect(!state.canRemove(connected: false))
+        state.pending = true
+        #expect(!state.canRemove(connected: true))
+        state.pending = false
+        // A 500 may already have removed the artifact, so the row checks the server before offering another attempt.
+        #expect(state.recovery.record(ChannelAPIError.http(status: 500, message: "Server error")))
+        #expect(!state.canRemove(connected: true))
+        #expect(state.recovery.error == ChannelManagementRecoveryState.uncertaintyMessage)
+        #expect(state.recovery.state == ChannelManagementRecoveryState.checking)
+    }
+
+    @Test func artifactRowOffersRemoveFromTheSwipeAndTheActionsOnceConnected() async throws {
+        let suite = "mobile-overview-artifact-remove-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let model = AppModel(arguments: ["--server", "https://fixture.example"], environment: [:], defaults: defaults)
+        let store = ChannelStore(id: "channel", api: try ChannelAPI(serverURL: "https://fixture.example"),
+                                 sendJournal: nil)
+        let artifact = ChannelArtifact(file: .init(kind: "machine", path: "plan.md"), title: "Daily notes")
+        let host = UIHostingController(rootView:
+            OverviewList {
+                OverviewArtifactRow(artifact: artifact, share: nil, store: store, state: OverviewArtifactState())
+                    .listRowInsets(.vertical, 6)
+            }
+            .environment(model).environment(ManagementPresenter()).environment(ChannelInteraction())
+            .environment(try artifactSession(artifacts: [])))
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 900))
+        window.rootViewController = host
+        window.isHidden = false
+        defer { window.isHidden = true }
+        host.view.layoutIfNeeded()
+        await Task.yield()
+        host.view.layoutIfNeeded()
+        func row() throws -> MobileAutomationTree.Element {
+            try #require(MobileAutomationTree(windows: [window]).matching("artifact-\(artifact.id)").first)
+        }
+
+        let state = ChannelState(
+            revision: 1,
+            channel: .init(id: "channel", name: "Team", model: .init(provider: "test", name: "test"),
+                           updatedAt: "2026-10-26T00:00:00Z"),
+            lead: .lead(id: "channel", profile: .init(name: "Agent", role: "Engineer",
+                                                    avatar: .init(mark: "M4 12H20", color: "#123456"))))
+        _ = try store.apply(.init(type: "snapshot", state: state))
+        #expect(store.phase.isConnected)
+        // SwiftUI lists the trailing swipe as an accessibility action, which VoiceOver hides, so its own
+        // "Remove" proves the swipe is there, alongside the explicit accessibility action.
+        let names = ["Remove from Channel", "Remove"]
+        let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+        while try !names.allSatisfy({ name in try row().actions.contains { $0.name == name } }),
+              ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(5))
+            host.view.layoutIfNeeded()
+        }
+        let online = try row()
+        #expect(names.allSatisfy { name in online.actions.contains { $0.name == name } },
+                "Actions: \(online.actions.map(\.name))")
+    }
+
+    @MainActor @Test func artifactRowShowsTheUnconfirmedRemovalAndItsCheck() async throws {
+        let suite = "mobile-overview-artifact-recovery-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let model = AppModel(arguments: ["--server", "https://fixture.example"], environment: [:], defaults: defaults)
+        let store = ChannelStore(id: "channel", api: try ChannelAPI(serverURL: "https://fixture.example"),
+                                 sendJournal: nil)
+        let artifact = ChannelArtifact(file: .init(kind: "machine", path: "plan.md"), title: "Daily notes")
+        let state = OverviewArtifactState()
+        state.recovery.record(ChannelAPIError.http(status: 500, message: "Server error"))
+        let host = UIHostingController(rootView:
+            OverviewList {
+                OverviewArtifactRow(artifact: artifact, share: nil, store: store, state: state)
+                    .listRowInsets(.vertical, 6)
+            }
+            .environment(model).environment(ManagementPresenter()).environment(ChannelInteraction())
+            .environment(try artifactSession(artifacts: [])))
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 900))
+        window.rootViewController = host
+        window.isHidden = false
+        defer { window.isHidden = true }
+        host.view.layoutIfNeeded()
+        await Task.yield()
+        host.view.layoutIfNeeded()
+
+        let tree = MobileAutomationTree(windows: [window])
+        #expect(!tree.matching(ChannelManagementRecoveryState.uncertaintyMessage).isEmpty)
+        #expect(state.recovery.blocksWrites)
+    }
+
     @Test(arguments: ["plan.md", "workshop.html", "shapes.svg", "reference.png", "unknown.bin"])
     func artifactSymbolsKeepTheCurrentDocumentIconsBounds(path: String) throws {
         let renderer = ImageRenderer(content: OverviewArtifactSymbol(artifact: artifact(path), size: 22))
@@ -949,6 +1041,10 @@ struct OverviewTests {
     func artifactRowsKeepSixPointInsetsAndGrowWithTitlesAndTextSize(
         size: DynamicTypeSize, title: String
     ) async throws {
+        let suite = "mobile-overview-artifact-rhythm-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let model = AppModel(arguments: ["--server", "https://fixture.example"], environment: [:], defaults: defaults)
         let store = ChannelStore(id: "channel", api: try ChannelAPI(serverURL: "https://fixture.example"))
         let session = OverviewSession(store: store)
         let viewer = try artifactSession(artifacts: [])
@@ -959,10 +1055,10 @@ struct OverviewTests {
                                 session: session, isLead: true, placement: .sheet)
                 OverviewArtifactRow(
                     artifact: value,
-                    share: nil, api: store.api, channelID: store.id)
+                    share: nil, store: store, state: OverviewArtifactState())
                     .listRowInsets(.vertical, 6)
             }
-            .environment(ManagementPresenter()).environment(ChannelInteraction()).environment(viewer)
+            .environment(model).environment(ManagementPresenter()).environment(ChannelInteraction()).environment(viewer)
             .environment(\.horizontalSizeClass, .compact).dynamicTypeSize(size))
         let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 900))
         window.rootViewController = host

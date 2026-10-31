@@ -155,7 +155,7 @@ private struct OverviewArtifactsSection: View {
                     ForEach(slots.entries(artifacts, in: store.id)) { entry in
                         let artifact = entry.item
                         OverviewArtifactRow(artifact: artifact, key: entry.key, share: shares[artifact.file.id],
-                                            agents: agents, api: store.api,
+                                            agents: agents, store: store,
                                             open: { opener.open(artifact) })
                     }
                 }
