@@ -762,19 +762,20 @@ struct ConversationTranscript: View {
     /// Hides the rows of a transcript opening on its first unread message until that message is in
     /// place, so the first frame drawn never shows the bottom or a landing on its way there.
     private var hidesOpening: Bool {
-        opening.rowID != nil && !hasLanded && !isRevealing && store.phase.isConnected
+        opening.hidesRows && !hasLanded && !isRevealing && store.phase.isConnected
     }
 
-    /// Resolved by the first body. A transcript that's already loaded opens directly on its first
-    /// unread row, which the scroll view's first layout places. One that has to connect first
-    /// opens at the bottom and lands with a jump.
+    /// Resolved by the first body with the connected conversation, so a transcript opens directly on its
+    /// first unread row, which the scroll view's layout places. One reconnecting shows what it had until
+    /// the catch-up arrives, all at once, in the same update.
     private func resolveOpening() {
-        guard !opening.isResolved else { return }
+        guard !opening.isResolved, snapshot == nil, store.isLoaded, store.phase.isConnected else { return }
         opening.isResolved = true
-        guard snapshot == nil, store.isLoaded, store.phase.isConnected else { return }
+        guard !hasLanded, !isRevealing else { return }
         opening.plan = TranscriptLanding.opening(
             unreadAfter: store.unreadAfter, oldestSequence: store.messages.first?.sequence,
             hasOlderMessages: store.hasOlderMessages, rows: rows)
+        opening.hidesRows = opening.plan != nil && frames.isEmpty
     }
 
     /// Lands on the row, moving only if it isn't in place already. A jump converges over several
@@ -1045,6 +1046,9 @@ private struct TranscriptJump: Equatable {
 private final class TranscriptOpening {
     var isResolved = false
     var plan: TranscriptLanding.Opening?
+
+    /// Until it lands, when nothing's drawn yet. Rows already on screen move in the update that resolves it.
+    var hidesRows = false
 
     var rowID: String? { plan?.rowID }
     var unreadAfter: Int? { plan?.unreadAfter }
