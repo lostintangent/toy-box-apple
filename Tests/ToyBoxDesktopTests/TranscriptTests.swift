@@ -1,5 +1,5 @@
 import AppKit
-import ChannelClient
+@testable import ChannelClient
 import ChannelIntelligence
 import ChannelKit
 import Foundation
@@ -360,7 +360,7 @@ struct TranscriptTests {
                 openingGaps.values.append(harness.bottomGap)
             }
         }
-        defer { harness.close() }
+        defer { await harness.close() }
         try #require(!openingGaps.values.isEmpty)
         #expect(openingGaps.values.allSatisfy { abs($0) < 2 }, "Opening gaps: \(openingGaps.values)")
 
@@ -434,7 +434,7 @@ struct TranscriptTests {
         }
         defer {
             service.releaseCatchUp()
-            harness.close()
+            await harness.close()
         }
         try await harness.waitUntil { !log.drawn.isEmpty }
         try await harness.settled()
@@ -481,7 +481,7 @@ struct TranscriptTests {
             log.drawn.append(.init(first: first, last: last, divider: harness.frames["divider-m31"]?.rect.minY,
                                    bottomGap: harness.bottomGap))
         }
-        defer { harness.close() }
+        defer { await harness.close() }
 
         var events = messages.dropFirst(30).enumerated().map { index, message in
             ChannelObservationEvent(type: "message", revision: index + 2, message: message)
@@ -521,7 +521,7 @@ struct TranscriptTests {
             holdsHistory: true, seenThrough: 180, warm: warm, intelligence: service)
         defer {
             service.releaseCatchUp()
-            harness.close()
+            await harness.close()
         }
         try await harness.settled()
         #expect(harness.historyRequests == 0)
@@ -539,7 +539,7 @@ struct TranscriptTests {
     @Test(.enabled(if: transcriptTimingTestsEnabled), arguments: [false, true])
     func resizingKeepsTheBottomOrTheReadersPlace(atBottom: Bool) async throws {
         let harness = try await TranscriptHarness(messages: (1...40).map(transcriptTestMessage), resizable: true)
-        defer { harness.close() }
+        defer { await harness.close() }
 
         if !atBottom {
             try await harness.scrollUp(byWheel: TranscriptHarness.wheelEventsApply) { harness.bottomGap > 400 }
@@ -583,7 +583,7 @@ struct TranscriptTests {
     func openingAndClosingFindLeaveTheReadersMessagesInPlace(atBottom: Bool) async throws {
         let find = TranscriptFind()
         let harness = try await TranscriptHarness(messages: transcriptFindTestMessages(1...90), find: find)
-        defer { harness.close() }
+        defer { await harness.close() }
         try #require(harness.visibleWindowFrames()["m90"] != nil)
         if !atBottom {
             let clip = harness.scrollView.contentView
@@ -616,7 +616,7 @@ struct TranscriptTests {
         let harness = try await TranscriptHarness(messages: messages,
                                                   history: (1...60).map(transcriptTestMessage),
                                                   holdsHistory: true, find: find)
-        defer { harness.close() }
+        defer { await harness.close() }
         if !atBottom {
             let clip = harness.scrollView.contentView
             clip.scroll(to: NSPoint(x: clip.bounds.minX, y: clip.bounds.minY - 600))
@@ -657,7 +657,7 @@ struct TranscriptTests {
     @Test func findKeepsOwnershipOfTheReadingPositionWhenMessagesArrive() async throws {
         let find = TranscriptFind()
         let harness = try await TranscriptHarness(messages: transcriptFindTestMessages(1...90), find: find)
-        defer { harness.close() }
+        defer { await harness.close() }
         harness.interaction.findInChannel()
         try await harness.waitUntil { find.isPresented && harness.findField != nil }
         try await harness.settled()
@@ -681,7 +681,7 @@ struct TranscriptTests {
     func artifactViewerSuppressesFindUntilTheTranscriptIsVisible(startsOpen: Bool) async throws {
         let find = TranscriptFind()
         let harness = try await TranscriptHarness(messages: (1...30).map(transcriptTestMessage), find: find)
-        defer { harness.close() }
+        defer { await harness.close() }
         if startsOpen {
             harness.interaction.findInChannel()
             try await harness.waitUntil { find.isPresented && harness.findField != nil }
@@ -708,7 +708,7 @@ struct TranscriptTests {
     @MainActor
     @Test func aRevealReportsRevealedOnlyOnceItsMessageIsInView() async throws {
         let harness = try await TranscriptHarness(messages: (1...90).map(transcriptTestMessage))
-        defer { harness.close() }
+        defer { await harness.close() }
         try await harness.settled()
         let token = harness.interaction.reveal(sequence: 20)
         #expect(harness.interaction.revealProgress?.outcome == .loading)
@@ -721,7 +721,7 @@ struct TranscriptTests {
     @Test func aRevealThatNeverSettlesReportsItsFailure() async throws {
         // No time to settle, so the reveal times out on its first check.
         let harness = try await TranscriptHarness(messages: (1...90).map(transcriptTestMessage), revealTimeout: .zero)
-        defer { harness.close() }
+        defer { await harness.close() }
         try await harness.settled()
         let token = harness.interaction.reveal(sequence: 20)
         try await harness.waitUntil { harness.interaction.revealProgress?.outcome != .loading }
@@ -733,7 +733,7 @@ struct TranscriptTests {
     @Test func closingFindAtTheBottomRestoresFollowingButKeepsReadSuspended() async throws {
         let find = TranscriptFind()
         let harness = try await TranscriptHarness(messages: transcriptFindTestMessages(1...90), find: find)
-        defer { harness.close() }
+        defer { await harness.close() }
         try #require(harness.visibleWindowFrames()["m90"] != nil)
         harness.interaction.findInChannel()
         try await harness.waitUntil { find.isPresented && harness.findField != nil }
@@ -756,7 +756,7 @@ struct TranscriptTests {
         let messages = memberships + transcriptFindTestMessages(9...30)
         let find = TranscriptFind()
         let harness = try await TranscriptHarness(messages: messages, find: find)
-        defer { harness.close() }
+        defer { await harness.close() }
         harness.interaction.findInChannel()
         try await harness.waitUntil { find.isPresented && harness.findField != nil }
         find.query = "joined"
@@ -792,7 +792,7 @@ struct TranscriptTests {
         let find = TranscriptFind()
         let harness = try await TranscriptHarness(messages: (61...90).map(transcriptTestMessage),
                                                   history: history, find: find)
-        defer { harness.close() }
+        defer { await harness.close() }
         harness.interaction.messageView = .yours
         harness.interaction.findInChannel()
         func searchField(in view: NSView) -> NSSearchField? {
@@ -819,7 +819,7 @@ struct TranscriptTests {
         let harness = try await TranscriptHarness(messages: (61...90).map(transcriptTestMessage),
                                                   history: (1...60).map(transcriptTestMessage),
                                                   holdsHistory: true)
-        defer { harness.close() }
+        defer { await harness.close() }
 
         let wheel = TranscriptHarness.wheelEventsApply
         for (oldest, keepsScrolling) in [(31, true), (1, false)] {
@@ -2388,7 +2388,7 @@ struct TranscriptCatchUpTests {
                                                   legacyScrollers: legacyScrollers, intelligence: service)
         defer {
             service.releaseCatchUp()
-            harness.close()
+            await harness.close()
         }
         let clip = harness.scrollView.contentView
         if legacyScrollers { #expect(harness.scrollView.scrollerStyle == .legacy) }
@@ -2805,10 +2805,10 @@ private final class TranscriptHarness {
         for response in held { response.request.finish(with: response.body) }
     }
 
-    func close() {
+    func close() async {
         if let turnObserver { CFRunLoopRemoveObserver(CFRunLoopGetMain(), turnObserver, .commonModes) }
         turnObserver = nil
-        store.disconnect()
+        await store.close()
         window.close()
         session.invalidateAndCancel()
         TranscriptServerProtocol.fixtures.withLock { _ = $0.removeValue(forKey: host) }
