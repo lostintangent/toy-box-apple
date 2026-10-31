@@ -8,6 +8,7 @@ import SwiftUI
 import ToyBoxUI
 import Synchronization
 import Testing
+import UserNotifications
 @testable import ToyBoxDesktop
 
 @Suite("Quick Send host and shortcut")
@@ -1229,6 +1230,107 @@ struct NotificationTests {
         #expect(NotificationPresentation.options(kind: "completion", isActiveChannel: false) == [.list])
         #expect(NotificationPresentation.options(kind: "request", isActiveChannel: true) == [])
         #expect(NotificationPresentation.options(kind: "replyFailed", isActiveChannel: true) == [.banner, .list, .sound])
+    }
+
+    private func requestWithReplies(_ replies: [String]?, sequence: Int = 12) -> ChannelRequestMessage {
+        let text = ChannelMessage(id: "m\(sequence)", sequence: sequence, timestamp: "2026-10-22T08:00:00Z",
+                                  sender: .init(type: "agent", agentId: "ada"), content: .text("Which door?"),
+                                  request: true, replies: replies)
+        return ChannelRequestMessage(message: text, agents: agents)
+    }
+
+    private func requestContent(_ replies: [String]?) -> UNNotificationContent {
+        ChannelNotifications.content(
+            for: .init(channel: channel("Workshop"), sequence: 12, kind: .request),
+            serverURL: "https://example.test", request: requestWithReplies(replies))
+    }
+
+    @Test(arguments: [2, 4])
+    func suggestedRepliesGetTheirOwnCategoryWithTheReplyFieldFirst(count: Int) {
+        let labels = (1...count).map { "Choice \($0)" }
+        let content = requestContent(labels)
+        let identifier = ReplyCategories.identifier(serverURL: "https://example.test", channelID: "Workshop", sequence: 12)
+        #expect(content.categoryIdentifier == identifier)
+        #expect(content.userInfo["replies"] as? [String] == labels)
+
+        let category = ReplyCategories.category(identifier: identifier, replies: labels)
+        #expect(category.actions.count == count + 1)
+        #expect(category.actions.first is UNTextInputNotificationAction)
+        #expect(category.actions.dropFirst().map(\.title) == labels)
+        #expect(category.actions.dropFirst().map(\.identifier) == (0..<count).map { "reply-choice.\($0)" })
+    }
+
+    @Test(arguments: [0, 1, 5])
+    func requestsWithoutTwoToFourRepliesKeepTheReplyFieldCategory(count: Int) {
+        let content = requestContent((0..<count).map { "Choice \($0)" })
+        #expect(content.categoryIdentifier == "request")
+        #expect(content.userInfo["replies"] == nil)
+    }
+
+    @Test func publishedCategoriesMergeWithTheStaticOnesAndOnlyPendingRequestsStay() {
+        var categories = ReplyCategories()
+        let pending = ReplyCategories.identifier(serverURL: "https://a.test", channelID: "Workshop", sequence: 12)
+        categories.register(serverURL: "https://a.test", channelID: "Workshop", sequence: 12, replies: ["Yes", "No"])
+        let published = categories.published(with: ChannelNotifications.baseCategories())
+        #expect(Set(published.map(\.identifier)) == [
+            "request", ChannelNotifications.Event.Kind.completion.rawValue, ChannelNotificationCategory.replyFailed,
+            MorningDigest.category, pending,
+        ])
+        let request = published.first { $0.identifier == "request" }
+        #expect(request?.actions.count == 1)
+        #expect(request?.actions.first is UNTextInputNotificationAction)
+    }
+
+    @Test func answeredChangedAndDeletedRequestsLeaveButOtherServersStay() {
+        var categories = ReplyCategories()
+        let server = "https://a.test"
+        for (channelID, sequence) in [("waiting", 12), ("answered", 11), ("changed", 20), ("deleted", 4)] {
+            categories.register(serverURL: server, channelID: channelID, sequence: sequence, replies: ["Yes", "No"])
+        }
+        categories.register(serverURL: "https://b.test", channelID: "elsewhere", sequence: 7, replies: ["Yes", "No"])
+        let channels = [channel("waiting", request: 12), channel("answered"), channel("changed", request: 21)]
+
+        let firstPrune = categories.prune(serverURL: server, channels: channels)
+        #expect(firstPrune)
+        #expect(Set(categories.entries.keys) == [
+            ReplyCategories.identifier(serverURL: server, channelID: "waiting", sequence: 12),
+            ReplyCategories.identifier(serverURL: "https://b.test", channelID: "elsewhere", sequence: 7),
+        ])
+        let secondPrune = categories.prune(serverURL: server, channels: channels)
+        #expect(!secondPrune)
+    }
+
+    @Test func adoptedCategoriesSurviveTheNextPublish() {
+        var before = ReplyCategories()
+        before.register(serverURL: "https://a.test", channelID: "Workshop", sequence: 12, replies: ["Yes", "No", "Later"])
+        let published = before.published(with: ChannelNotifications.baseCategories())
+
+        var after = ReplyCategories()
+        after.adopt(published.union([ReplyCategories.category(identifier: "request-replies:9:x:y", replies: ["Only"])]))
+        #expect(after.entries == before.entries)
+        #expect(Set(after.published(with: ChannelNotifications.baseCategories()).map(\.identifier))
+            == Set(published.map(\.identifier)))
+    }
+
+    @Test func choicesMapToTheirLabelsOnlyWhileInRange() {
+        let replies = ["Yes", "No"]
+        #expect(ReplyCategories.choice(for: "reply-choice.0", replies: replies) == "Yes")
+        #expect(ReplyCategories.choice(for: "reply-choice.1", replies: replies) == "No")
+        #expect(ReplyCategories.choice(for: "reply-choice.2", replies: replies) == nil)
+        #expect(ReplyCategories.choice(for: "reply-choice.x", replies: replies) == nil)
+        #expect(ReplyCategories.choice(for: "reply-choice.0", replies: nil) == nil)
+        #expect(ReplyCategories.choice(for: UNNotificationDefaultActionIdentifier, replies: replies) == nil)
+    }
+
+    @Test func aChoiceSendsItsAddressedLabelOnceThroughTheOutbox() async {
+        var sent: [String] = []
+        let reply = NotificationReply(post: { _, content in
+            sent.append(content)
+            return .committed(self.message(content, sequence: 31))
+        }, markRead: { _ in }, pause: {})
+        let content = NotificationText.addressedReply("Yes", to: "ada-lovelace")
+        #expect(await reply.send(content ?? "") == .sent)
+        #expect(sent == ["@ada-lovelace Yes"])
     }
 }
 
