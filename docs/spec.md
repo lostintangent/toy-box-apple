@@ -2288,14 +2288,19 @@ with exactly 6 points of native vertical row inset, growing for wrapping or larg
 `Text` with the title, two non-breaking spaces and the footnote-semibold secondary
 `chevron.right` or `chevron.down`, never a stock `DisclosureGroup` or trailing accessory. The
 whole row is one plain button that toggles immediately, without a fade, and keeps its expansion
-for the Overview session. Expanded rows are indented to the title: the selectable prompt, Run
-Now and Delete Routine, whose trash icon is red like its title, as iOS draws destructive rows.
-Like the Mac, the details repeat neither a next run date nor the raw cron expression, which the
-schedule line already shows when it has no summary. The final row hides
-only the section's last separator. VoiceOver reads the title as the label, the schedule line
-then "Expanded" or "Collapsed" as the value, "Shows the prompt" or "Hides the prompt" as the
-hint, with Expand or Collapse as an action. The context menu keeps Run Now
-and Delete Routine.
+for the Overview session. Expanded content is only the selectable prompt, indented to the title.
+Like the Mac, it repeats neither a next run date nor the raw cron expression, which the schedule
+line already shows when it has no summary. The final row hides only the section's last separator.
+Run Now and Delete Routine live on the row itself, as Team's actions do, never as buttons in the
+expanded content. Swiping right reveals Run Now (`play`) in the accent color, and swiping left
+reveals only a destructive Delete (`trash`), as Mail keeps its main action on the leading edge and
+Delete alone on the trailing edge. Neither fires on a full swipe, because a run can't be undone,
+and the long-press menu offers Run Now and Delete Routine. Run Now is
+unavailable while a run is pending, while disconnected or while a recovery check blocks writes.
+Delete is unavailable while a run is pending or while disconnected. VoiceOver reads the title as
+the label, the schedule line then "Expanded" or "Collapsed" as the value, "Shows the prompt" or
+"Hides the prompt" as the hint, with Expand or Collapse, Run Now and Delete Routine as actions.
+Under VoiceOver the swipe actions are hidden, so nothing is offered twice.
 
 ### Artifact viewer
 

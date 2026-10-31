@@ -730,7 +730,7 @@ struct OverviewTests {
         host.view.layoutIfNeeded()
         let list = try #require(nativeList(in: host.view))
         let count = list.numberOfItems(inSection: 0)
-        try #require(count == (expanded ? 4 : 1))
+        try #require(count == (expanded ? 2 : 1))
         try expectSeparators(
             in: list, window: window,
             visible: (0..<max(0, count - 1)).map { IndexPath(item: $0, section: 0) },
@@ -779,11 +779,11 @@ struct OverviewTests {
 
         state.expanded = true
         let deadline = ContinuousClock.now.advanced(by: .seconds(2))
-        while list.numberOfItems(inSection: 0) != 5, ContinuousClock.now < deadline {
+        while list.numberOfItems(inSection: 0) != 3, ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(5))
             host.view.layoutIfNeeded()
         }
-        try #require(list.numberOfItems(inSection: 0) == 5)
+        try #require(list.numberOfItems(inSection: 0) == 3)
         let cell = list.convert(try #require(list.layoutAttributesForItem(at: IndexPath(item: 2, section: 0))).frame,
                                 to: window)
         let prompt = try #require(MobileAutomationTree(windows: [window]).matching("Review the workshop.").first).frame
@@ -813,15 +813,60 @@ struct OverviewTests {
         #expect(image.size == CGSize(width: 22, height: 22))
     }
 
-    @Test func deleteRoutineDrawsItsTrashRedUnlessDisabled() throws {
-        func redPixels(_ content: some View) throws -> Int {
-            let pixels = try Self.rgba(render(content.font(.title).environment(\.colorScheme, .light), scale: 2))
-            return stride(from: 0, to: pixels.count, by: 4).count { offset in
-                pixels[offset + 3] > 200 && pixels[offset] > 200 && pixels[offset + 1] < 90 && pixels[offset + 2] < 90
+    @Test func routineActionsLiveOnTheRowAndWaitForAConnection() async throws {
+        let suite = "mobile-overview-routine-actions-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let model = AppModel(arguments: ["--server", "https://fixture.example"], environment: [:], defaults: defaults)
+        let store = ChannelStore(id: "channel", api: try ChannelAPI(serverURL: "https://fixture.example"),
+                                 sendJournal: nil)
+        let presenter = ManagementPresenter()
+        let host = UIHostingController(rootView:
+            OverviewList {
+                OverviewRoutineRow(
+                    routine: .init(id: "routine", title: "Daily review", schedule: "0 9 * * 1-5",
+                                   prompt: "Review the workshop."),
+                    store: store, state: OverviewRoutineState(), isLast: true)
             }
+            .environment(model).environment(presenter))
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 900))
+        window.rootViewController = host
+        window.isHidden = false
+        defer { window.isHidden = true }
+        host.view.layoutIfNeeded()
+        await Task.yield()
+        host.view.layoutIfNeeded()
+        func row() throws -> MobileAutomationTree.Element {
+            try #require(MobileAutomationTree(windows: [window]).matching("overview-routine-routine").first)
         }
-        #expect(try redPixels(OverviewDestructiveSymbol(systemName: "trash")) > 20)
-        #expect(try redPixels(OverviewDestructiveSymbol(systemName: "trash").disabled(true)) == 0)
+
+        // Before the channel connects, neither action asks for anything, whether or not it's offered.
+        let offline = try row()
+        for action in offline.actions where action.name.hasPrefix("Delete") { _ = offline.perform(action) }
+        #expect(presenter.flow == nil)
+
+        let state = ChannelState(
+            revision: 1,
+            channel: .init(id: "channel", name: "Team", model: .init(provider: "test", name: "test"),
+                           updatedAt: "2026-10-26T00:00:00Z"),
+            lead: .lead(id: "channel", profile: .init(name: "Agent", role: "Engineer",
+                                                    avatar: .init(mark: "M4 12H20", color: "#123456"))))
+        _ = try store.apply(.init(type: "snapshot", state: state))
+        // SwiftUI also lists swipe actions as accessibility actions, which is why VoiceOver hides them,
+        // so the swipe's own "Delete" proves the trailing swipe is there.
+        let names = ["Expand", "Run Now", "Delete Routine", "Delete"]
+        let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+        while try !names.allSatisfy({ name in try row().actions.contains { $0.name == name } }),
+              ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(5))
+            host.view.layoutIfNeeded()
+        }
+        let online = try row()
+        #expect(names.allSatisfy { name in online.actions.contains { $0.name == name } },
+                "Actions: \(online.actions.map(\.name))")
+        let delete = try #require(online.actions.first { $0.name == "Delete Routine" })
+        #expect(online.perform(delete))
+        #expect(presenter.flow == .deleteRoutine(channelId: "channel", routineId: "routine"))
     }
 
     @Test func routineRowTogglesLikeATaskParentAndSpeaksItsSchedule() async throws {
@@ -871,13 +916,14 @@ struct OverviewTests {
         let expand = try #require(collapsed.actions.first { $0.name == "Expand" })
         #expect(collapsed.perform(expand))
         #expect(state.expanded)
-        try await settle(rows: 4)
+        try await settle(rows: 2)
         let details = MobileAutomationTree(windows: [window])
         #expect(!details.matching("Review the workshop.").isEmpty)
-        #expect(!details.matching("Run Now").isEmpty)
-        #expect(!details.matching("Delete Routine").isEmpty)
+        // The actions stay on the row, so the expanded content is the prompt alone.
         #expect(!details.elements.contains { element in
-            ["Next run", "0 9 * * 1-5"].contains { element.label.contains($0) || element.value.contains($0) }
+            ["Run Now", "Delete", "Next run", "0 9 * * 1-5"].contains {
+                element.label.contains($0) || element.value.contains($0)
+            }
         })
 
         let expanded = try row()
