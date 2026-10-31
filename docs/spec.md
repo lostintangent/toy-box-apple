@@ -2593,7 +2593,10 @@ The Dock badge counts channels needing attention once each, not message volume. 
 categories are pending requests and unread completions, deduplicated by channel and milestone
 sequence. Ordinary chatter does not notify by default. Suppress notifications for the active key
 channel, but never hide its request marker. Activating a notification opens the right channel and,
-for a request, reveals its message. Respect system notification permission and Focus. Content,
+for a request, reveals its message. A reveal newer than the channel's loaded history waits for the
+reconnect to catch up, then lands on it. Messages are never deleted, so no reveal says a message is
+unavailable. A caught-up channel without the target lands as usual with no notice, and logs only in
+DEBUG builds. An offline channel and a failed history page keep their own notices. Respect system notification permission and Focus. Content,
 quick reply and withdrawal are under Mac features beyond the pane.
 
 ### Mac features beyond the pane (M8)
