@@ -19,14 +19,16 @@ const designReplies = [
   'Not yet',
 ];
 
-// TOY_BOX_DEMO_REPLIES=0|2|4 serves the request with that many choices; four includes an 80-unit label.
+// TOY_BOX_DEMO_REPLIES=0|2|4|short sets the request's choices. "short" is two labels that fit in
+// one row beside Reply; four includes an 80-unit label.
 function demoReplies(): string[] | undefined {
   const count = process.env.TOY_BOX_DEMO_REPLIES;
   if (count === undefined) return defaultReplies;
   if (count === '0') return undefined;
   if (count === '2') return designReplies.slice(0, 2);
   if (count === '4') return designReplies;
-  throw new Error(`TOY_BOX_DEMO_REPLIES must be 0, 2, or 4, not "${count}"`);
+  if (count === 'short') return ['Yes', 'Not yet'];
+  throw new Error(`TOY_BOX_DEMO_REPLIES must be 0, 2, 4, or short, not "${count}"`);
 }
 
 // The fixture stays byte-identical to the reference export, so the demo adds the replies its
