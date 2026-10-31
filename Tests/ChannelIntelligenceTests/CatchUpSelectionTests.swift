@@ -101,6 +101,19 @@ struct CatchUpSelectionTests {
         #expect(!lines.contains { $0.hasPrefix("[16]") || $0.hasPrefix("[17]") })
     }
 
+    @Test func removedArtifactsReadAsRemovalsInCatchUp() throws {
+        var state = try T.fixture("studio-demo")
+        let index = try #require(state.messages.firstIndex { $0.sequence == 10 })
+        let shared = try #require(state.messages[index].system)
+        state.messages[index].content = .system(ChannelSystemContent(
+            type: "artifact_removed", actor: shared.actor, artifact: shared.artifact))
+        let request = try #require(CatchUpRequest(server: T.server, state: state, unreadAfter: 8,
+                                                  minimumUnread: 1, minimumCharacters: 0))
+        let lines = request.entries.map(\.line)
+        #expect(lines.contains { $0.hasPrefix("[10] Pixel removed the file \u{201C}") })
+        #expect(!lines.contains { $0.hasPrefix("[10] Pixel shared") })
+    }
+
     @Test func eventsAndAddressedMessagesOutrankCoordination() throws {
         let state = try T.fixture("studio-demo")
         let request = try #require(CatchUpRequest(server: T.server, state: state, unreadAfter: 8,

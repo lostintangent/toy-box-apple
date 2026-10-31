@@ -110,7 +110,8 @@ struct TranscriptRowContent: View, @MainActor Equatable {
             case .system(let messages):
                 let expandsMembership = messages.count > 1 && !expandedMessageIds.isEmpty
                     && (messages.first?.system?.type == "member_joined" || messages.first?.system?.type == "member_left")
-                let individualMessages = messages.first?.system?.type == "artifact_shared" || expandsMembership
+                let individualMessages = ChannelArtifactGroup.Verb(systemType: messages.first?.system?.type) != nil
+                    || expandsMembership
                 TranscriptSystemMessages(messages: messages, channelID: context.channelID,
                                          historyStart: context.historyStart, agents: context.agents,
                                          api: context.api, findHighlights: findHighlights,

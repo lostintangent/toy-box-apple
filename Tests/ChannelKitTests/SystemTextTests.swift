@@ -32,26 +32,40 @@ struct SystemTextTests {
                 == "left the channel")
     }
 
-    @Test func groupedArtifactsReadAsOneSentenceForEitherVerb() {
+    @Test func groupedArtifactsReadAsOneSentenceForEitherVerb() throws {
         let agents = [ChannelAgent(id: "lead", name: "Lead")]
         func artifact(_ title: String) -> ChannelArtifact {
             .init(file: .init(kind: "session", path: "\(title).md"), title: title)
         }
-        func group(_ type: String, _ titles: [String], actor: ChannelMessageSender = .agent("lead")) -> [ChannelSystemContent] {
-            titles.map { ChannelSystemContent(type: type, actor: actor, artifact: artifact($0)) }
+        func group(_ type: String, _ titles: [String], actor: ChannelMessageSender = .agent("lead")) -> [ChannelMessage] {
+            titles.enumerated().map { index, title in
+                ChannelMessage(id: "\(type)-\(index)", sequence: index + 1, timestamp: "2026-10-22T12:00:00Z",
+                               sender: .system,
+                               content: .system(.init(type: type, actor: actor, artifact: artifact(title))))
+            }
         }
-        #expect(ChannelSystemText.artifactGroup(group("artifact_removed", ["A"]), agents: agents) == "Lead removed A")
-        #expect(ChannelSystemText.artifactGroup(group("artifact_removed", ["A", "B"]), agents: agents)
-                == "Lead removed A and B")
-        #expect(ChannelSystemText.artifactGroup(group("artifact_shared", ["A", "B", "C"]), agents: agents)
-                == "Lead shared A, B, and C")
-        #expect(ChannelSystemText.artifactGroup(group("artifact_removed", ["A", "B"], actor: .user), agents: agents)
-                == "You removed A and B")
-        #expect(ChannelSystemText.artifactGroup(group("artifact_removed", ["A"]) + group("artifact_shared", ["B"]),
-                                                agents: agents) == nil)
-        #expect(ChannelSystemText.artifactGroup([.init(type: "member_joined")], agents: agents) == nil)
-        #expect(ChannelSystemText.artifactGroup([], agents: agents) == nil)
+        func sentence(_ messages: [ChannelMessage]) -> String? {
+            ChannelArtifactGroup(messages, agents: agents)?.sentence
+        }
+        #expect(sentence(group("artifact_removed", ["A"])) == "Lead removed A")
+        #expect(sentence(group("artifact_removed", ["A", "B"])) == "Lead removed A and B")
+        #expect(sentence(group("artifact_shared", ["A", "B", "C"])) == "Lead shared A, B, and C")
+        #expect(sentence(group("artifact_removed", ["A", "B"], actor: .user)) == "You removed A and B")
+        #expect(sentence(group("artifact_removed", ["A"]) + group("artifact_shared", ["B"])) == nil)
+        #expect(sentence(group("member_joined", ["A"])) == nil)
+        #expect(sentence([]) == nil)
         #expect(ChannelSystemText.phrase(for: .init(type: "artifact_removed")) == "Artifact removed")
+
+        let shared = try #require(ChannelArtifactGroup(group("artifact_shared", ["A", "B", "C"]), agents: agents))
+        #expect(shared.verb == .shared && shared.actor == "Lead")
+        #expect(shared.entries.map(\.artifact.title) == ["A", "B", "C"])
+        #expect(shared.titleOffset(at: 0) == "Lead shared ".utf16.count)
+        #expect(shared.sentence.utf16.dropFirst(shared.titleOffset(at: 1)).starts(with: "B, and C".utf16))
+        #expect(shared.sentence.utf16.dropFirst(shared.titleOffset(at: 2)).starts(with: "C".utf16))
+
+        let single = group("artifact_removed", ["A"])
+        let system = try #require(single.first?.system)
+        #expect(ChannelSystemText.rendered(system, agents: agents) == sentence(single))
     }
 
     @Test func changedValuesCollapseWhitespaceAndTruncateByCharactersNotUTF16() {

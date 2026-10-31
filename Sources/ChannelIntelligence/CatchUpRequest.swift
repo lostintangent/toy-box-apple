@@ -251,6 +251,10 @@ struct CatchUpDescriber: Sendable {
             guard let artifact = system.artifact else { return nil }
             description = "\(actor) shared the file \u{201C}\(artifact.title)\u{201D}."
             priority = 4
+        case "artifact_removed":
+            guard let artifact = system.artifact else { return nil }
+            description = "\(actor) removed the file \u{201C}\(artifact.title)\u{201D}."
+            priority = 3
         case "channel_renamed":
             description = "\(actor) renamed the channel to \u{201C}\(system.name ?? "")\u{201D}."
             priority = 2

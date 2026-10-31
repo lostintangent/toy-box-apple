@@ -99,11 +99,11 @@ struct TranscriptSystemMessages: View {
                     sentence(phrase).help("Unsupported preview kind: \(preview.kind)")
                 }
             } else { sentence(phrase) }
-        case "artifact_shared":
-            TranscriptArtifactShares(icon: icon, actorName: ChannelSystemText.actor(first, agents: agents), messages: messages,
-                                     historyStart: historyStart,
-                                     findHighlights: findHighlights,
-                                     onOpen: artifactOpener.open)
+        case "artifact_shared", "artifact_removed":
+            if let group = ChannelArtifactGroup(messages, agents: agents) {
+                TranscriptArtifactGroupLine(icon: icon, group: group, historyStart: historyStart,
+                                            findHighlights: findHighlights, onOpen: artifactOpener.open)
+            } else { sentence(phrase) }
         case "routine_scheduled", "routine_edited", "routine_deleted":
             event(phrase, value: first?.routine?.title ?? "Routine").lineLimit(3)
         default:
@@ -188,67 +188,76 @@ struct TranscriptSystemMessages: View {
     }
 }
 
-struct TranscriptArtifactShares: View {
+/// One artifact group's line: the actor and verb, then each title. Shared titles are links.
+/// Removed titles stay plain text, since the file is gone and a link would open nothing.
+struct TranscriptArtifactGroupLine: View {
     var icon: Text?
-    let actorName: String
-    let messages: [ChannelMessage]
+    let group: ChannelArtifactGroup
     let historyStart: Int
     var findHighlights: [Int: TranscriptFindHighlight] = [:]
     var onOpen: (ChannelArtifact) -> Void
     @Environment(\.channelTextScale) private var textScale
 
-    private var shares: [(message: ChannelMessage, artifact: ChannelArtifact)] {
-        messages.compactMap { message in message.system?.artifact.map { (message, $0) } }
-    }
-
     var body: some View {
-        let shares = shares
         TranscriptCenteredFlow(spacing: 3 * textScale, lineSpacing: 2 * textScale) {
             actorLabel
-            ForEach(Array(shares.enumerated()), id: \.element.message.id) { index, share in
-                let joiners = transcriptListJoiners(index: index, count: shares.count)
+            ForEach(Array(group.entries.enumerated()), id: \.element.id) { index, entry in
+                let joiners = transcriptListJoiners(index: index, count: group.entries.count)
                 if let before = joiners.before { Text(before) }
                 HStack(alignment: .firstTextBaseline, spacing: 0) {
-                    Button { onOpen(share.artifact) } label: {
-                        TranscriptSystemLinkLabel(title: share.artifact.title,
-                                                  findHighlight: findHighlights[share.message.sequence],
-                                                  findText: "\(actorName) shared \(share.artifact.title)",
-                                                  findOffset: "\(actorName) shared ".utf16.count)
-                    }
-                    .transcriptSystemLink()
-                    .help(share.artifact.file.path)
+                    title(entry, at: index)
                     if let after = joiners.after { Text(after) }
                 }
-                .transcriptMessageFrame(id: share.message.id, sequence: share.message.sequence,
-                                        historyStart: historyStart)
-                .id(share.message.id)
+                .transcriptMessageFrame(id: entry.messageID, sequence: entry.sequence, historyStart: historyStart)
+                .id(entry.messageID)
             }
         }
     }
 
+    @ViewBuilder
+    private func title(_ entry: ChannelArtifactGroup.Entry, at index: Int) -> some View {
+        let highlight = findHighlights[entry.sequence]
+        let offset = group.titleOffset(at: index)
+        switch group.verb {
+        case .shared:
+            Button { onOpen(entry.artifact) } label: {
+                TranscriptSystemLinkLabel(title: entry.artifact.title, findHighlight: highlight,
+                                          findText: group.sentence, findOffset: offset)
+            }
+            .transcriptSystemLink()
+            .help(entry.artifact.file.path)
+        case .removed:
+            let ranges = highlight.map { TranscriptFindPattern($0.query).ranges(in: group.sentence) }
+            let artifactTitle = AttributedString(entry.artifact.title)
+            Text(highlight?.applying(to: artifactTitle, ranges: ranges, offset: offset) ?? artifactTitle)
+                .foregroundStyle(.primary)
+                .fontWeight(.medium)
+                .help(entry.artifact.file.path)
+        }
+    }
+
     private var actorText: Text {
-        var name = AttributedString(actorName)
+        var name = AttributedString(group.actor)
         name.foregroundColor = .primary
         name.font = .system(size: 11 * textScale, weight: .medium)
-        let label = name + AttributedString(" shared")
-        let match = messages.first { findHighlights[$0.sequence]?.isCurrent == true }
-            ?? messages.first { findHighlights[$0.sequence] != nil }
-        let highlight = match.flatMap { findHighlights[$0.sequence] }
-        let ranges = match?.system?.artifact.map {
-            TranscriptFindPattern(highlight?.query ?? "").ranges(in: "\(actorName) shared \($0.title)")
-        }
-        return Text(highlight?.applying(to: label, ranges: ranges) ?? label)
+        let label = name + AttributedString(" \(group.verb.rawValue)")
+        let match = group.entries.first { findHighlights[$0.sequence]?.isCurrent == true }
+            ?? group.entries.first { findHighlights[$0.sequence] != nil }
+        guard let highlight = match.flatMap({ findHighlights[$0.sequence] }) else { return Text(label) }
+        let ranges = TranscriptFindPattern(highlight.query).ranges(in: group.sentence)
+        return Text(highlight.applying(to: label, ranges: ranges))
     }
 
     @ViewBuilder private var actorLabel: some View {
         let actor = actorText
         if let icon {
-            Text("\(icon)  \(actor)").accessibilityRepresentation { Text("\(actorName) shared") }
+            Text("\(icon)  \(actor)").accessibilityRepresentation { Text("\(group.actor) \(group.verb.rawValue)") }
         } else {
             actor
         }
     }
 }
+
 
 /// The pane's list joiners: "A and B", and "A, B, and C" from three items on.
 func transcriptListJoiners(index: Int, count: Int) -> (before: String?, after: String?) {

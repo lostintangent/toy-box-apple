@@ -1244,13 +1244,13 @@ struct TranscriptTests {
         let capture = TranscriptLayoutCapture()
         let message = ChannelMessage(id: "share-1", sequence: 1, timestamp: "2026-10-22T12:00:00Z",
                                      sender: .init(type: "system"),
-                                     content: .system(.init(type: "artifact_shared",
+                                     content: .system(.init(type: "artifact_shared", actor: .agent("lead"),
                                                             artifact: .init(id: "artifact",
                                                                             file: .init(kind: "machine", path: "/notes.md"),
                                                                             title: "Build notes"))))
+        let group = try #require(ChannelArtifactGroup([message], agents: [ChannelAgent(id: "lead", name: "Lead")]))
         let view = NSHostingView(rootView:
-            TranscriptArtifactShares(actorName: "Lead", messages: [message], historyStart: 1,
-                                     onOpen: { _ in opened += 1 })
+            TranscriptArtifactGroupLine(group: group, historyStart: 1, onOpen: { _ in opened += 1 })
                 .font(.system(size: 11))
                 .frame(width: 300, height: 80)
                 .coordinateSpace(name: "transcript-viewport")
@@ -1349,14 +1349,15 @@ struct TranscriptTests {
         let messages = titles.enumerated().map { index, title in
             ChannelMessage(id: "share-\(index + 1)", sequence: index + 1,
                            timestamp: "2026-10-22T12:00:00Z", sender: .init(type: "system"),
-                           content: .system(.init(type: "artifact_shared",
+                           content: .system(.init(type: "artifact_shared", actor: .agent("lead"),
                                                   artifact: .init(id: "artifact-\(index)",
                                                                   file: .init(kind: "machine", path: "/notes-\(index).md"),
                                                                   title: title))))
         }
+        let group = try #require(ChannelArtifactGroup(messages, agents: [ChannelAgent(id: "lead", name: "Lead")]))
         let capture = TranscriptLayoutCapture()
         let view = NSHostingView(rootView:
-            TranscriptArtifactShares(actorName: "Lead", messages: messages, historyStart: 1, onOpen: { _ in })
+            TranscriptArtifactGroupLine(group: group, historyStart: 1, onOpen: { _ in })
                 .font(.system(size: 12))
                 .coordinateSpace(name: "transcript-viewport")
                 .onPreferenceChange(TranscriptMessageFrames.self) { capture.frames = $0 }

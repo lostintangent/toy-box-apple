@@ -77,7 +77,7 @@ struct TranscriptTests {
             system(5, "artifact_shared", actor: .agent("ada")),
             system(6, "artifact_shared", actor: .user), system(7, "artifact_shared", actor: .user),
         ], lead: lead, members: [ada])
-        #expect(rows.map { $0.messages.count } == [2, 1, 2, 1, 1])
+        #expect(rows.map { $0.messages.count } == [2, 1, 2, 2])
     }
 
     @Test func consecutiveRemovalsByOneActorGroupWithoutMixingShares() {

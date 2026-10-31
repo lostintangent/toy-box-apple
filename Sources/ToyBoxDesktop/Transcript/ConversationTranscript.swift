@@ -894,7 +894,7 @@ struct ConversationTranscript: View {
             return await missReveal(sequence, token: token, failure: failure, using: proxy)
         }
         let membership = message.system?.type == "member_joined" || message.system?.type == "member_left"
-        let individualSystem = message.system?.type == "artifact_shared"
+        let individualSystem = ChannelArtifactGroup.Verb(systemType: message.system?.type) != nil
             || (membership && row.messages.contains(where: { expandedMessageIds.contains($0.id) }))
         let targetID = message.isSystem && !individualSystem ? row.id : message.id
         guard let outcome = await settleReveal(targetID: targetID, rowID: row.id, token: token,
