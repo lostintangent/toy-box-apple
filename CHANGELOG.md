@@ -8,6 +8,7 @@
 - See Overview without a separate reconnecting note.
 - See Welcome's Continue button float over the screen without a band behind it.
 - See routines in Overview with a calendar icon, like artifacts. Tap one to read its prompt, swipe right to run it now or left to delete it, or press and hold for both.
+- Open SVG artifacts in Overview much faster after the first one.
 
 ## Mac 0.1.14
 
