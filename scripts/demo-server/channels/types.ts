@@ -1,7 +1,5 @@
 import type fixture from "../../../Tests/ChannelKitTests/Fixtures/channel-snapshot.json";
-import type { Server, ServerResponse } from "node:http";
-import { pathToFileURL } from "node:url";
-import { resolve } from "node:path";
+import type { ServerResponse } from "node:http";
 
 export type Status = { state: string; text?: string; wakeAt?: string; workingOn?: number };
 export type Agent = {
@@ -20,15 +18,7 @@ export type Snapshot = Omit<typeof fixture, "lead" | "members" | "messages" | "r
         requestSequence: number | null; completedSequence: number | null;
     };
 };
-export type Demo = { server: Server; snapshot(): Snapshot; replace(snapshot: Snapshot): void; close(): Promise<void> };
-type Factory = (snapshot?: Snapshot, now?: number) => Demo;
 export type Response = ServerResponse;
-
-export async function referenceFactory(reference: string): Promise<Factory> {
-    const module = await import(pathToFileURL(resolve(reference, "tools/demo-server.ts")).href);
-    if (typeof module.createDemoServer !== "function") throw new Error("The reference has no demo server factory.");
-    return module.createDemoServer;
-}
 
 export function remapChannel<T>(value: T, channel: string): T {
     if (value === "studio-demo") return channel as T;

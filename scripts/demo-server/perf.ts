@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 // The benchmark fixture that bun run benchmark starts for each scenario. It serves studio-demo, the
 // 480-message history-demo and the 300 long messages of scroll-demo on one port, through the
-// reference demo server imported read-only, and adds two routes the benchmark drives:
+// demo server, and adds two routes the benchmark drives:
 //
 //   POST /perf/messages?channel=ID&count=N&interval=MS
 //
@@ -13,20 +13,18 @@
 // It makes the lead and then members working until N are, adding members when the channel has
 // fewer, and the rest idle.
 //
-// What these routes stream stays out of the reference server's history, so a reconnect drops it.
+// What these routes stream stays out of the demo server's history, so a reconnect drops it.
 // Each benchmark launch starts a fresh fixture.
 //
-// Usage: bun run demo:perf [path to toy-box-Minecraft]. TOY_BOX_PERF_PORT sets the port (3292).
+// Usage: bun run demo:perf. TOY_BOX_PERF_PORT sets the port (3292).
 import http from "node:http";
-import { resolve } from "node:path";
 import { createHistoryFixture, historyChannelID, writeHistoryPage } from "./channels/history-channel.ts";
 import { createScrollFixture, scrollChannelID, writeScrollImage } from "./channels/scroll.ts";
-import { root } from "../shared/lib/index.ts";
-import { referenceFactory, type Agent, type Message, type Response, type Snapshot, type Status } from "./channels/types.ts";
+import { createDemoServer, fixturePath, type DemoServer } from "./channels/demo-server.ts";
+import { type Agent, type Message, type Response, type Snapshot, type Status } from "./channels/types.ts";
 
-const reference = resolve(process.argv[2] ?? resolve(root, "../toy-box-Minecraft"));
-const createDemoServer = await referenceFactory(reference);
-const source: Snapshot = await Bun.file(resolve(reference, "fixtures/channel-snapshot.json")).json();
+if (process.argv.length > 2) throw new Error("Usage: bun run demo:perf");
+const source: Snapshot = await Bun.file(fixturePath).json();
 const port = Number(process.env.TOY_BOX_PERF_PORT ?? 3292);
 if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("Invalid TOY_BOX_PERF_PORT.");
 const now = Date.now();
@@ -35,13 +33,13 @@ const { snapshot: historySnapshot, history } = createHistoryFixture(source, { no
 const { snapshot: scrollSnapshot, history: scrollHistory } = createScrollFixture(source, { now, origin });
 const histories: Record<string, Message[]> = { [historyChannelID]: history, [scrollChannelID]: scrollHistory };
 
-const demos: Record<string, ReturnType<typeof createDemoServer>> = {
+const demos: Record<string, DemoServer> = {
     "studio-demo": createDemoServer(source, now), [historyChannelID]: createDemoServer(historySnapshot, now),
     [scrollChannelID]: createDemoServer(scrollSnapshot, now),
 };
 const handlers = Object.fromEntries(Object.entries(demos).map(([id, demo]) => {
     const listeners = demo.server.listeners("request");
-    if (listeners.length !== 1) throw new Error("Expected the reference demo server's single HTTP handler.");
+    if (listeners.length !== 1) throw new Error("Expected the demo server's single HTTP handler.");
     return [id, listeners[0]];
 }));
 const streams = Object.fromEntries(Object.keys(demos).map(id => [id, new Set<Response>()]));

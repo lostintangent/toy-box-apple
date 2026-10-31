@@ -40,7 +40,6 @@ if (import.meta.main) await main(async () => {
         }
     }
     const build = resolve(required("SCRATCH_PATH").replace(/\/$/, "") + "-benchmark");
-    const reference = process.env.TOY_BOX_REFERENCE || resolve(root, "../toy-box-Minecraft");
     const port = process.env.TOY_BOX_PERF_PORT || "3292";
     const server = `http://127.0.0.1:${port}`;
     const name = "Toy Box Benchmark";
@@ -96,7 +95,7 @@ if (import.meta.main) await main(async () => {
                         throw new Error(deletion.stderr.toString() || "Could not reset benchmark preferences.");
                     }
                     await command(["defaults", "write", identity, "summarizeNewMessages", "-bool", values.summaries ? "YES" : "NO"]);
-                    fixture = Bun.spawn([process.execPath, join(root, "scripts/demo-server/perf.ts"), reference], {
+                    fixture = Bun.spawn([process.execPath, join(root, "scripts/demo-server/perf.ts")], {
                         env: { ...process.env, TOY_BOX_PERF_PORT: port },
                         stdout: Bun.file(join(logs, "fixture.log")), stderr: Bun.file(join(logs, "fixture.err")),
                     });

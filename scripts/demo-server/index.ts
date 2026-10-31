@@ -1,15 +1,14 @@
 #!/usr/bin/env bun
-import { resolve } from "node:path";
 import { parseArgs } from "node:util";
-import { root } from "../shared/lib/index.ts";
-import { referenceFactory, type Demo, type Snapshot } from "./channels/types.ts";
+import { createDemoServer, type DemoServer } from "./channels/demo-server.ts";
+import { type Snapshot } from "./channels/types.ts";
 import { createDemoPushRoutes } from "./channels/push-routes.ts";
 import { writeHistoryPage } from "./channels/history-channel.ts";
 
-export function installDemoCatalogRoutes(demo: Pick<Demo, "server" | "snapshot">) {
+export function installDemoCatalogRoutes(demo: Pick<DemoServer, "server" | "snapshot">) {
     const push = createDemoPushRoutes();
     const handlers = demo.server.listeners("request");
-    if (handlers.length !== 1) throw new Error("Expected the reference demo server's single HTTP handler.");
+    if (handlers.length !== 1) throw new Error("Expected the demo server's single HTTP handler.");
     const originalHandler = handlers[0];
     demo.server.removeListener("request", originalHandler);
     demo.server.on("request", (request, response) => {
@@ -52,15 +51,13 @@ export function installDemoCatalogRoutes(demo: Pick<Demo, "server" | "snapshot">
 
 if (import.meta.main) {
     const { positionals } = parseArgs({ args: process.argv.slice(2), allowPositionals: true, options: {} });
-    if (positionals.length > 1) throw new Error("Usage: bun run demo [path to toy-box-Minecraft]");
-    const reference = resolve(positionals[0] ?? resolve(root, "../toy-box-Minecraft"));
-    const createDemoServer = await referenceFactory(reference);
+    if (positionals.length) throw new Error("Usage: bun run demo");
     const port = Number(process.env.TOY_BOX_DEMO_PORT ?? 3210);
     if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("Invalid TOY_BOX_DEMO_PORT.");
     const snapshotPath = process.env.TOY_BOX_DEMO_SNAPSHOT;
     const initial: Snapshot | undefined = snapshotPath ? await Bun.file(snapshotPath).json() : undefined;
     const demo = createDemoServer(initial);
-    // The reference factory makes dates recent. Restore an exported snapshot without that adjustment.
+    // The demo server makes dates recent. Restore an exported snapshot without that adjustment.
     if (initial) demo.replace(initial);
     installDemoCatalogRoutes(demo);
     demo.server.on("error", error => { console.error(error); process.exitCode = 1; });

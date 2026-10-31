@@ -42,10 +42,10 @@ view.
     path and rejects runs without a summary, unlike bare `swift test`.
   - `SCRATCH_PATH=/tmp/tbm-<you> bun run build` builds, bundles and opens a new app instance.
 - Set the server with `TOY_BOX_SERVER_URL` or Settings. Write tests use `bun run demo` on 3210,
-  the Minecraft wrapper serving the required catalog lead profile without modifying the reference.
+  the isolated fixture server serving the required catalog lead profile.
   Read live 3100 freely, but never post or mutate there without the lead's approval of a specific
   scratch channel. Leave its current process running.
-- `bun run demo:history` imports the reference factory read-only: `history-demo` on 3211,
+- `bun run demo:history` serves `history-demo` on 3211,
   480 messages, canonical 100-message older pages and isolated read receipts. Use it for paging
   and key-window read checks without disturbing the shared 3210 screenshot baseline.
 - Integration tests are opt-in: `TOY_BOX_DEMO_URL=http://127.0.0.1:3210 bun run test`, and

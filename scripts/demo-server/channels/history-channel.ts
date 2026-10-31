@@ -1,5 +1,5 @@
-// The history-demo channel that the history and performance fixture servers serve: the
-// reference snapshot stretched to 480 messages, with the latest 100 in the snapshot and the rest in
+// The history-demo channel that the history and performance fixture servers serve: the fixture
+// snapshot stretched to 480 messages, with the latest 100 in the snapshot and the rest in
 // canonical 100-message older pages.
 import { remapChannel, type Message, type Response, type Snapshot } from "./types.ts";
 
@@ -7,10 +7,10 @@ export const historyChannelID = "history-demo";
 export const historyPageSize = 100;
 export const historyMessageCount = 480;
 
-// Builds the channel's snapshot and full history from the reference fixture's snapshot.
+// Builds the channel's snapshot and full history from the fixture snapshot.
 export function createHistoryFixture(source: Snapshot, { now, origin }: { now: number; origin: string }) {
     const snapshot = remapChannel(source, historyChannelID);
-    if (!snapshot.request) throw new Error("The history fixture requires the reference request message.");
+    if (!snapshot.request) throw new Error("The history fixture requires a request message.");
     const agents = [snapshot.lead, ...snapshot.members];
     const history = Array.from({ length: historyMessageCount }, (_, index) => {
         const sequence = index + 1;
