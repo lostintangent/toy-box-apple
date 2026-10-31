@@ -23,11 +23,28 @@ public enum ChannelSystemText {
         case "channel_directory_changed": system?.directory == nil ? "Working directory cleared" : "Working directory changed"
         case "preview_changed":
             system?.preview == nil && system?.previewUrl == nil ? "Preview cleared" : "Preview updated"
+        case "artifact_shared": "Artifact shared"
+        case "artifact_removed": "Artifact removed"
         case "routine_scheduled": "New routine scheduled"
         case "routine_edited": "Routine edited"
         case "routine_deleted": "Routine deleted"
         default: "Channel updated"
         }
+    }
+
+    /// One agent's consecutive shares or removals as one sentence: "Lead removed A and B",
+    /// "Lead shared A, B, and C". Returns nil for anything but a non-empty run of one artifact kind.
+    public static func artifactGroup(_ contents: [ChannelSystemContent], agents: [ChannelAgent]) -> String? {
+        guard let first = contents.first, contents.allSatisfy({ $0.type == first.type }) else { return nil }
+        let verb: String
+        switch first.type {
+        case "artifact_shared": verb = "shared"
+        case "artifact_removed": verb = "removed"
+        default: return nil
+        }
+        let titles = contents.compactMap { $0.artifact?.title }
+        guard !titles.isEmpty else { return nil }
+        return "\(actor(first, agents: agents)) \(verb) \(listed(titles))"
     }
 
     public static func membership(_ contents: [ChannelSystemContent]) -> (names: String, action: String)? {
@@ -70,5 +87,14 @@ public enum ChannelSystemText {
 
     private static func membershipAction(_ type: String?) -> String {
         type == "member_joined" ? "joined the channel" : "left the channel"
+    }
+
+    private static func listed(_ items: [String]) -> String {
+        switch items.count {
+        case 0: ""
+        case 1: items[0]
+        case 2: "\(items[0]) and \(items[1])"
+        default: "\(items.dropLast().joined(separator: ", ")), and \(items[items.count - 1])"
+        }
     }
 }
