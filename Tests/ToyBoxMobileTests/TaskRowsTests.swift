@@ -123,19 +123,45 @@ struct TaskRowsTests {
                     .frame(height: 44)
             }
             let whole = ChannelTaskAncestryGuide(statusWidth: 16).frame(height: 176)
-            func pixels(_ view: some View) throws -> Data {
-                let renderer = ImageRenderer(content: view
+            func pixels(_ view: some View) throws -> [UInt8] {
+                try ownBitmapPixels(view
                     .frame(width: 60)
                     .background(scheme == .dark ? Color.black : Color.white)
                     .environment(\.displayScale, scale)
                     .environment(\.colorScheme, scheme)
-                    .environment(\.layoutDirection, rightToLeft ? .rightToLeft : .leftToRight))
-                renderer.scale = scale
-                let image = try #require(renderer.uiImage?.cgImage)
-                return try #require(image.dataProvider?.data) as Data
+                    .environment(\.layoutDirection, rightToLeft ? .rightToLeft : .leftToRight), scale: scale)
             }
             #expect(try pixels(segmented) == pixels(whole))
         }
+    }
+
+    /// Draws into the test's own bitmap. `uiImage?.cgImage` returns an image-provider CGImage that rasterizes
+    /// through an IOSurface on first draw, the path that failed CI (t510 and t603). The background is opaque,
+    /// so a transparent pixel marks an incomplete render.
+    private func ownBitmapPixels(_ content: some View, scale: CGFloat) throws -> [UInt8] {
+        let renderer = ImageRenderer(content: content)
+        renderer.scale = scale
+        let space = try #require(CGColorSpace(name: CGColorSpace.sRGB))
+        var image: (width: Int, height: Int, pixels: [UInt8])?
+        renderer.render(rasterizationScale: scale) { size, draw in
+            let width = Int((size.width * scale).rounded(.up))
+            let height = Int((size.height * scale).rounded(.up))
+            var pixels = [UInt8](repeating: 0, count: width * height * 4)
+            pixels.withUnsafeMutableBytes { bytes in
+                guard let context = CGContext(
+                    data: bytes.baseAddress, width: width, height: height,
+                    bitsPerComponent: 8, bytesPerRow: width * 4, space: space,
+                    bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue
+                        | CGImageAlphaInfo.premultipliedLast.rawValue) else { return }
+                context.scaleBy(x: scale, y: scale)
+                draw(context)
+            }
+            image = (width, height, pixels)
+        }
+        let result = try #require(image)
+        let opaque = stride(from: 3, to: result.pixels.count, by: 4).allSatisfy { result.pixels[$0] == 255 }
+        try #require(opaque, "Incomplete render: an opaque background left transparent pixels.")
+        return result.pixels
     }
 
     @Test(arguments: [false, true])

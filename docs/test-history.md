@@ -127,6 +127,30 @@ Incident records moved from AGENTS.md on 2026-10-27, with their evidence and res
   `SidebarAttentionTests` still read pixels from `uiImage`. On `2439914` plus t510,
   `test:mobile` passed all five suites, with 241 Mobile tests and no Mobile opt-in skip.
 
+## Phone pixel reads from deferred renders
+
+- On 2026-10-31, main `2eccd4d` ([run 41248005229](https://github.com/lostintangent/toy-box-apple/actions/runs/41248005229))
+  failed the iOS foundation job (124675376203). `OverviewPresentationTests.sharedAncestryGuideKeepsHostRuleWeightAndFourPointEndsInBothDirections`
+  failed all six scale and direction cases at its column and row checks, lines 144 to 146. The
+  test read `renderer.cgImage`, so its pixels came from a deferred image-provider CGImage. The
+  runner logged `IOSurfaceClientSetSurfaceNotify failed e00002c7` just before the first failure, the
+  same message as the t510 incident above. The provider's IOSurface rasterization failed on the
+  runner, and the test read its pixels.
+- Every test that runs on iOS and reads pixels now draws into its own bitmap:
+  `OverviewPresentationTests` (the guide and the divider weight), `TaskRowsTests`
+  (`segmentedGuidesRenderExactlyLikeOneContinuousGuide`), `SidebarAttentionTests` and the table
+  border tests in `TranscriptMarkdownTests`. This closes the t510 note that the first two still read
+  `uiImage` pixels. Size-only reads stay on `cgImage` or `uiImage`, since layout is complete before
+  anything draws. Synchronous `UIGraphicsImageRenderer` bitmaps aren't deferred and aren't affected.
+- The helpers must set `renderer.scale` as well as call `render(rasterizationScale:)`. The latter
+  doesn't set the scale, so a renderer without it lays out at 1x. A probe of
+  `SidebarAttentionTests`' `.waiting` row showed that omission moving the trailing symbol two device
+  pixels left of the provider render, which is what the first version of the rewrite failed on.
+  Thresholds are unchanged.
+- Verified on `overview/t603-own-bitmap-pixels` with `SCRATCH_PATH=... bun run test:mobile`: all five
+  suites passed, with 256 Mobile tests and no Mobile opt-in skip. `bun run test` on Mac passed all
+  seven suites, compiling the same shared `ToyBoxUITests` helpers.
+
 ## Catalog failure grace
 
 - On 2026-10-29, every main run that finished, from t485's merge `6195ffd` (run 40813614411) through
