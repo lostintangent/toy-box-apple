@@ -20,11 +20,11 @@
 import http from "node:http";
 import { createHistoryFixture, historyChannelID, writeHistoryPage } from "./channels/history-channel.ts";
 import { createScrollFixture, scrollChannelID, writeScrollImage } from "./channels/scroll.ts";
-import { createDemoServer, fixturePath, type DemoServer } from "./channels/demo-server.ts";
+import { createDemoServer, loadDemoFixture, type DemoServer } from "./channels/demo-server.ts";
 import { type Agent, type Message, type Response, type Snapshot, type Status } from "./channels/types.ts";
 
 if (process.argv.length > 2) throw new Error("Usage: bun run demo:perf");
-const source: Snapshot = await Bun.file(fixturePath).json();
+const source: Snapshot = loadDemoFixture();
 const port = Number(process.env.TOY_BOX_PERF_PORT ?? 3292);
 if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("Invalid TOY_BOX_PERF_PORT.");
 const now = Date.now();

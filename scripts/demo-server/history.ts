@@ -1,11 +1,11 @@
 #!/usr/bin/env bun
 import { createHistoryFixture, historyChannelID, historyMessageCount, historyPageSize, writeHistoryPage }
     from "./channels/history-channel.ts";
-import { createDemoServer, fixturePath } from "./channels/demo-server.ts";
+import { createDemoServer, loadDemoFixture } from "./channels/demo-server.ts";
 import { type Snapshot } from "./channels/types.ts";
 
 if (process.argv.length > 2) throw new Error("Usage: bun run demo:history");
-const source: Snapshot = await Bun.file(fixturePath).json();
+const source: Snapshot = loadDemoFixture();
 const port = 3211;
 const now = Date.now();
 const { snapshot, history } = createHistoryFixture(source, { now, origin: `http://127.0.0.1:${port}` });
