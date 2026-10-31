@@ -10,6 +10,7 @@
 - See Welcome's Continue button float over the screen without a band behind it.
 - See routines in Overview with a calendar icon, like artifacts. Tap one to read its prompt, swipe right to run it now or left to delete it, or press and hold for both.
 - Open SVG artifacts in Overview much faster after the first one.
+- Reopen a channel that moved on and see it caught up at once, without its messages, team and tasks replaying what you missed.
 
 ## Mac 0.1.14
 
@@ -19,6 +20,7 @@
 - See Overview without a separate reconnecting note, and Quick Send without a Retry button while a channel reconnects.
 - Expand a routine in Overview to read just its prompt, without the next run date or raw schedule. Hover the schedule for its cron expression.
 - Find a notification reply that didn't send waiting in its channel with Send Again, which can never post it twice.
+- Reopen a channel that moved on and land straight on New or the latest message, without scrolling through what you missed or watching the team and tasks replay it.
 
 ## iPhone 0.1.6
 
