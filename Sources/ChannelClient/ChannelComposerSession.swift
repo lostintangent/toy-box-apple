@@ -54,21 +54,35 @@ public final class ChannelComposerSession {
         let attachments = draft.images.map(\.attachment)
         let revision = draft.revision
         let id = draft.sendAttemptID ?? UUID().uuidString
+        let replyAtSend = replySource
         draft.associateSend(id: id)
         submissionError = nil
         isSubmitting = true
         defer { isSubmitting = false }
+        var clearedRevision: UUID?
         do {
-            _ = try await store.post(id: id, content: content, attachments: attachments)
-            draft.clear(ifUnchanged: revision)
-            if !draft.hasContent { replySource = nil }
+            _ = try await store.post(id: id, content: content, attachments: attachments) { [self] in
+                clearedRevision = clearSentDraft(revision: revision)
+            }
+            _ = clearSentDraft(revision: revision)
             return true
         } catch {
-            if store.sendAttempts.first(where: { $0.id == id })?.error == nil {
+            if let clearedRevision, draft.revision == clearedRevision {
+                draft.restore(content: content, attachments: attachments, sendAttemptID: id)
+                replySource = replyAtSend
+            } else if store.sendAttempts.first(where: { $0.id == id })?.error == nil {
                 submissionError = (revision, error.localizedDescription)
             }
             return false
         }
+    }
+
+    /// Returns the revision of the cleared draft, or nil when the user has edited since the send.
+    private func clearSentDraft(revision: UUID) -> UUID? {
+        guard draft.revision == revision else { return nil }
+        draft.clear(ifUnchanged: revision)
+        if !draft.hasContent { replySource = nil }
+        return draft.revision
     }
 
     public func reconcile() {

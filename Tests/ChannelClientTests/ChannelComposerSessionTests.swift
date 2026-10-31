@@ -53,7 +53,7 @@ struct ChannelComposerSessionTests {
     }
 
     @Test(arguments: [422, 503])
-    func anExplicitRetryReusesTheUUIDAndOnlyConfirmationClearsTheDraft(status: Int) async throws {
+    func aRejectedSendRestoresItsDraftAndRetryReusesTheAttemptUUID(status: Int) async throws {
         let mock = MockTransport { request, count in
             guard request.httpMethod == "POST" else {
                 return try .stream([.init(type: "snapshot", state: testState())])
@@ -72,15 +72,88 @@ struct ChannelComposerSessionTests {
         draft.text = "Send once"
         let session = ChannelComposerSession(store: store, draft: draft)
         #expect(await !session.send())
-        let id = try #require(draft.sendAttemptID)
+        let attempt = try #require(store.sendAttempts.first)
+        #expect(attempt.content == "Send once")
+        #expect(attempt.phase == (status == 422 ? .notSent : .deliveryNotConfirmed))
+        #expect(attempt.canRetry)
         #expect(draft.text == "Send once")
-        #expect(session.attempt?.phase == (status == 422 ? .notSent : .deliveryNotConfirmed))
-        #expect(await session.send())
-        #expect(draft.text.isEmpty)
-        #expect(draft.sendAttemptID == nil)
+        #expect(draft.sendAttemptID == attempt.id)
+        _ = try await store.retrySend(id: attempt.id)
+        #expect(store.messages.contains { $0.id == attempt.id })
         #expect(try mock.requests.filter { $0.httpMethod == "POST" }.map {
             try SendAttemptTests.posted($0).id
-        } == [id, id])
+        } == [attempt.id, attempt.id])
+    }
+
+    @Test func theDraftClearsOnceTheOutboxSavesWhileTheRequestIsStillInFlight() async throws {
+        let mock = Self.heldPost()
+        let store = ChannelStore(id: "test", api: try mock.api(), sendJournal: nil)
+        store.connect()
+        defer { store.disconnect() }
+        try await eventually { store.phase.isConnected }
+        let draft = ComposerDraft(imageIsReadable: { _ in false })
+        draft.text = "Instant words"
+        let session = ChannelComposerSession(store: store, draft: draft)
+        let send = Task { await session.send() }
+        try await eventually(observing: mock) { mock.pendingResponseCount == 2 }
+        #expect(draft.text.isEmpty)
+        #expect(draft.sendAttemptID == nil)
+        let attempt = try #require(store.sendAttempts.first)
+        #expect(attempt.content == "Instant words")
+        #expect(attempt.phase == .sending)
+        #expect(session.isSubmitting)
+        mock.finishPendingResponses()
+        #expect(await send.value)
+        #expect(draft.text.isEmpty)
+        #expect(store.messages.contains { $0.id == attempt.id })
+    }
+
+    @Test func aRefusedSendKeepsItsDraftWhileAnotherSendIsInFlight() async throws {
+        let mock = Self.heldPost()
+        let store = ChannelStore(id: "test", api: try mock.api(), sendJournal: nil)
+        store.connect()
+        defer { store.disconnect() }
+        try await eventually { store.phase.isConnected }
+        let first = ComposerDraft(imageIsReadable: { _ in false })
+        first.text = "First words"
+        let firstSession = ChannelComposerSession(store: store, draft: first)
+        let send = Task { await firstSession.send() }
+        try await eventually(observing: mock) { mock.pendingResponseCount == 2 }
+        let second = ComposerDraft(imageIsReadable: { _ in false })
+        second.text = "Second words"
+        let secondSession = ChannelComposerSession(store: store, draft: second)
+        #expect(!secondSession.canSend())
+        #expect(await !secondSession.send())
+        #expect(second.text == "Second words")
+        #expect(second.sendAttemptID == nil)
+        #expect(store.sendAttempts.map(\.content) == ["First words"])
+        mock.finishPendingResponses()
+        #expect(await send.value)
+        #expect(second.text == "Second words")
+    }
+
+    @Test func aLaterFailureLeavesTheNewerDraftAloneAndTheAttemptRetryable() async throws {
+        let mock = Self.heldPost(status: 503)
+        let store = ChannelStore(id: "test", api: try mock.api(), sendJournal: nil)
+        store.connect()
+        defer { store.disconnect() }
+        try await eventually { store.phase.isConnected }
+        let draft = ComposerDraft(imageIsReadable: { _ in false })
+        draft.text = "Held words"
+        let session = ChannelComposerSession(store: store, draft: draft)
+        let send = Task { await session.send() }
+        try await eventually(observing: mock) { mock.pendingResponseCount == 2 }
+        #expect(draft.text.isEmpty)
+        draft.text = "A newer draft"
+        mock.finishPendingResponses()
+        #expect(await !send.value)
+        #expect(draft.text == "A newer draft")
+        #expect(draft.sendAttemptID == nil)
+        #expect(session.error == nil)
+        let attempt = try #require(store.sendAttempts.first)
+        #expect(attempt.content == "Held words")
+        #expect(attempt.phase == .deliveryNotConfirmed)
+        #expect(attempt.canRetry)
     }
 
     @Test func aSuspendedSendCannotSubmitTwiceOrClearANewerDraft() async throws {
@@ -170,6 +243,25 @@ struct ChannelComposerSessionTests {
             #expect(posted.content == "Original")
             #expect(attachment == image.attachment)
             #expect(bytes == image.data)
+        }
+    }
+
+    private static func heldPost(status: Int? = nil) -> MockTransport {
+        MockTransport { request, _ in
+            guard request.httpMethod == "POST" else {
+                return try .stream([.init(type: "snapshot", state: testState())])
+            }
+            if let status {
+                var response = MockResponse(status: status, body: Data(#"{"error":"Response lost"}"#.utf8))
+                response.keepOpen = true
+                return response
+            }
+            let posted = try SendAttemptTests.posted(request)
+            let message = ChannelMessage(id: posted.id, sequence: 1, timestamp: "2026-10-01T00:00:00Z",
+                                         sender: .user, content: .text(posted.content))
+            var response = try MockResponse.json(SendAttemptTests.MessageEnvelope(message: message), status: 201)
+            response.keepOpen = true
+            return response
         }
     }
 

@@ -385,10 +385,13 @@ public final class ChannelStore {
         return nil
     }
 
+    /// `onRecorded` runs once the outbox has saved the attempt, before the request starts.
     @discardableResult
     public func post(id suppliedId: String? = nil, content: String,
-                     attachments: [ChannelAttachment] = []) async throws -> ChannelSendResult {
-        try await post(id: suppliedId, content: content, attachments: attachments, requiresConnection: true)
+                     attachments: [ChannelAttachment] = [],
+                     onRecorded: (@MainActor () -> Void)? = nil) async throws -> ChannelSendResult {
+        try await post(id: suppliedId, content: content, attachments: attachments,
+                       requiresConnection: true, onRecorded: onRecorded)
     }
 
     /// Persists before sending once, without starting or waiting for the channel's stream.
@@ -412,7 +415,8 @@ public final class ChannelStore {
     }
 
     private func post(id suppliedId: String?, content: String, attachments: [ChannelAttachment],
-                      requiresConnection: Bool) async throws -> ChannelSendResult {
+                      requiresConnection: Bool,
+                      onRecorded: (@MainActor () -> Void)? = nil) async throws -> ChannelSendResult {
         try await restoreSendAttempts()
         guard !requiresConnection || (phase.isConnected && state != nil) else {
             throw ChannelAPIError.disconnected
@@ -436,7 +440,7 @@ public final class ChannelStore {
             }
             if existing.phase == .confirmed { return .alreadyAccepted(id: id) }
             guard !isSending else { throw busyError }
-            return try await retrySend(id: id, requiresConnection: requiresConnection)
+            return try await retrySend(id: id, requiresConnection: requiresConnection, onRecorded: onRecorded)
         }
         if let committed = state?.messages.first(where: { $0.id == id }) {
             guard committed.sender == .user, committed.content == .text(trimmed),
@@ -454,7 +458,7 @@ public final class ChannelStore {
             recordSendFailure(id: id, phase: .notSent, error: busyError.localizedDescription)
             throw busyError
         }
-        return try await deliver(attempt, requiresConnection: requiresConnection)
+        return try await deliver(attempt, requiresConnection: requiresConnection, onRecorded: onRecorded)
     }
 
     @discardableResult
@@ -462,7 +466,8 @@ public final class ChannelStore {
         try await retrySend(id: id, requiresConnection: true)
     }
 
-    private func retrySend(id: String, requiresConnection: Bool) async throws -> ChannelSendResult {
+    private func retrySend(id: String, requiresConnection: Bool,
+                           onRecorded: (@MainActor () -> Void)? = nil) async throws -> ChannelSendResult {
         try await restoreSendAttempts()
         guard !requiresConnection || phase.isConnected else { throw ChannelAPIError.disconnected }
         guard !isSending else { throw ChannelAPIError.invalidMessage("A message is already being sent.") }
@@ -470,7 +475,7 @@ public final class ChannelStore {
             throw ChannelAPIError.invalidMessage("This send attempt cannot be repeated.")
         }
         updateAttempt(id: id, phase: .sending, error: nil)
-        return try await deliver(attempt, requiresConnection: requiresConnection)
+        return try await deliver(attempt, requiresConnection: requiresConnection, onRecorded: onRecorded)
     }
 
     public func discardSendAttempt(id: String) async throws {
@@ -495,15 +500,15 @@ public final class ChannelStore {
         }
     }
 
-    private func deliver(_ attempt: ChannelSendAttempt,
-                         requiresConnection: Bool) async throws -> ChannelSendResult {
-        let result = try await transmit(attempt, requiresConnection: requiresConnection)
+    private func deliver(_ attempt: ChannelSendAttempt, requiresConnection: Bool,
+                         onRecorded: (@MainActor () -> Void)?) async throws -> ChannelSendResult {
+        let result = try await transmit(attempt, requiresConnection: requiresConnection, onRecorded: onRecorded)
         onSendConfirmed?(id)
         return result
     }
 
-    private func transmit(_ attempt: ChannelSendAttempt,
-                          requiresConnection: Bool) async throws -> ChannelSendResult {
+    private func transmit(_ attempt: ChannelSendAttempt, requiresConnection: Bool,
+                          onRecorded: (@MainActor () -> Void)?) async throws -> ChannelSendResult {
         isSending = true
         lastSendFailure = nil
         defer { isSending = false }
@@ -513,6 +518,7 @@ public final class ChannelStore {
             recordSendFailure(id: attempt.id, phase: .notSent, error: error.localizedDescription)
             throw error
         }
+        onRecorded?()
         if let committed = state?.messages.first(where: { $0.id == attempt.id }) {
             reconcileSend(id: attempt.id)
             return .committed(committed)
