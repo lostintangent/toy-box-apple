@@ -67,44 +67,86 @@ public extension ChannelAPI {
     }
 
     /// Notes each byte of an accepted stream in `arrivals`, before any event completes.
+    ///
+    /// The task that reads the stream opens its request, at the first event it asks for, and the
+    /// request closes when that task stops reading. So a stream nobody reads never connects, and a
+    /// reader cancelled first never touches a session its owner may since have invalidated.
     internal func observe(channelId: String, after: Int?, heartbeatTimeout: TimeInterval = 35,
                           arrivals: StreamArrivals?) -> AsyncThrowingStream<ChannelObservationEvent, any Error> {
-        AsyncThrowingStream { continuation in
-            let task = Task {
-                do {
-                    let request = streamRequest(channelId: channelId, after: after, timeout: heartbeatTimeout)
-                    let (bytes, response) = try await session.bytes(for: request)
-                    guard let http = response as? HTTPURLResponse else { throw ChannelAPIError.invalidResponse }
-                    guard (200..<300).contains(http.statusCode) else {
-                        throw ChannelAPIError.http(
-                            status: http.statusCode,
-                            message: HTTPURLResponse.localizedString(forStatusCode: http.statusCode)
-                        )
-                    }
-                    guard http.value(forHTTPHeaderField: "Content-Type")?
-                        .lowercased().hasPrefix("text/event-stream") == true else {
-                        throw ChannelAPIError.invalidResponse
-                    }
-                    var frames = SSEDecoder()
-                    let decoder = JSONDecoder()
-                    for try await byte in bytes {
-                        try Task.checkCancellation()
-                        arrivals?.received()
-                        guard let payload = try frames.consume(byte) else { continue }
-                        let event = try decoder.decode(ChannelObservationEvent.self, from: Data(payload.utf8))
-                        try validate(event)
-                        continuation.yield(event)
-                        if event.type == "deleted" { return continuation.finish() }
-                    }
-                    throw ChannelAPIError.streamEnded
-                } catch let error as URLError where error.code == .timedOut {
-                    continuation.finish(throwing: ChannelAPIError.heartbeatTimeout)
-                } catch {
-                    continuation.finish(throwing: error)
-                }
+        let reader = SSEReader(session: session,
+                               request: streamRequest(channelId: channelId, after: after, timeout: heartbeatTimeout),
+                               arrivals: arrivals)
+        return AsyncThrowingStream { try await reader.next() }
+    }
+}
+
+/// One stream's request and decoder. Only the task iterating the stream touches them, one event at a
+/// time, so they need no lock.
+private final class SSEReader: @unchecked Sendable {
+    private let session: URLSession
+    private let request: URLRequest
+    private let arrivals: StreamArrivals?
+    private var bytes: URLSession.AsyncBytes.AsyncIterator?
+    private var task: URLSessionDataTask?
+    private var frames = SSEDecoder()
+    private let decoder = JSONDecoder()
+    private var isFinished = false
+
+    init(session: URLSession, request: URLRequest, arrivals: StreamArrivals?) {
+        self.session = session
+        self.request = request
+        self.arrivals = arrivals
+    }
+
+    /// A reader that stops early releases the stream without finishing it.
+    deinit { task?.cancel() }
+
+    func next() async throws -> ChannelObservationEvent? {
+        guard !isFinished else { return nil }
+        do {
+            var iterator: URLSession.AsyncBytes.AsyncIterator
+            if let current = bytes.take() { iterator = current } else { iterator = try await open() }
+            while let byte = try await iterator.next() {
+                try Task.checkCancellation()
+                arrivals?.received()
+                guard let payload = try frames.consume(byte) else { continue }
+                let event = try decoder.decode(ChannelObservationEvent.self, from: Data(payload.utf8))
+                try validate(event)
+                if event.type == "deleted" { finish() } else { bytes = iterator }
+                return event
             }
-            continuation.onTermination = { @Sendable _ in task.cancel() }
+            throw ChannelAPIError.streamEnded
+        } catch let error as URLError where error.code == .timedOut {
+            finish()
+            throw ChannelAPIError.heartbeatTimeout
+        } catch {
+            finish()
+            throw error
         }
+    }
+
+    private func open() async throws -> URLSession.AsyncBytes.AsyncIterator {
+        try Task.checkCancellation()
+        let (bytes, response) = try await session.bytes(for: request)
+        task = bytes.task
+        guard let http = response as? HTTPURLResponse else { throw ChannelAPIError.invalidResponse }
+        guard (200..<300).contains(http.statusCode) else {
+            throw ChannelAPIError.http(
+                status: http.statusCode,
+                message: HTTPURLResponse.localizedString(forStatusCode: http.statusCode)
+            )
+        }
+        guard http.value(forHTTPHeaderField: "Content-Type")?
+            .lowercased().hasPrefix("text/event-stream") == true else {
+            throw ChannelAPIError.invalidResponse
+        }
+        return bytes.makeAsyncIterator()
+    }
+
+    private func finish() {
+        isFinished = true
+        bytes = nil
+        task?.cancel()
     }
 }
 

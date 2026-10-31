@@ -362,3 +362,27 @@ Incident records moved from AGENTS.md on 2026-10-27, with their evidence and res
   presented with an unchanged token, so only cancellation and the `!isUnavailable` guard keep the late
   response out. Dropping both fails this case (`obsolete.isCancelled`, `content == nil`) while the
   successor contract still passes (`t340-removal-mutation.log`). The helper and the opt-in are gone.
+
+## Invalidated session at stream start
+
+- Main `58c62ed` aborted the ToyBoxDesktopTests process in job 124471707054 of
+  [run 41178775043](https://github.com/lostintangent/toy-box-apple/actions/runs/41178775043), attempt 1,
+  with `NSGenericException: Task created in a session that has been invalidated`. The crash report
+  (`t578/crash/` in Core's session files) shows `NSURLSession.bytes` called on a cooperative-pool
+  thread from the producer task inside `ChannelAPI.observe`. Attempt 2 passed. The cause is
+  identified, so nothing was quarantined.
+- `NotificationTests.aReplyWhoseResponsesAreLostPostsExactlyOnce(lostResponses: 2)` finished 24 ms
+  before the crash. Its final composer send gets a 409 duplicate, so the store calls `reconnect()`,
+  and the test then invalidated its session without stopping the store. `observe` started an
+  unstructured producer task when the stream was created, cancelled only when the store's loop
+  released the stream. A producer that ran late opened its request on the invalidated session.
+- Disconnecting first wasn't enough. A temporary loop of `connect()`, `disconnect()` and
+  `invalidateAndCancel()` on unchanged main crashed with the same exception within 400 rounds.
+- Fixed in t578. `observe` now opens its request in the task that reads the stream, through the
+  stream's unfolding form, so an unread stream or a reader cancelled first never touches the
+  session, and stopping the read cancels the request. The same loop survived 2,000 rounds.
+  `ChannelStore.close()` disconnects and awaits the observation loop, so a test can invalidate its
+  session safely afterward, and the reply test now closes its store first.
+- Retained contracts: `TransportTests.aStreamConnectsOnlyFromTheTaskReadingIt` fails on main's
+  `observe` (3 requests instead of 1), and `aClosedStoreLeavesItsSessionSafeToInvalidate` closes
+  and invalidates 100 stores, half of them after connecting and reconnecting.

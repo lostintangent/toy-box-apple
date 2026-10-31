@@ -1172,6 +1172,8 @@ struct NotificationTests {
         }
         let store = ChannelStore(id: "test", api: try ChannelAPI(serverURL: "http://\(host)", session: session),
                                  sendJournal: nil)
+        // The composer's duplicate send reconnects the store, so its loop ends before the session does.
+        defer { await store.close() }
         let draft = ComposerDraft()
         let id = UUID().uuidString
 
