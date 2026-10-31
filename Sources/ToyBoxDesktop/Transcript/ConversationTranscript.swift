@@ -341,7 +341,8 @@ struct ConversationTranscript: View {
                     .equatable()
                     .padding(.top, gaps[row.id] ?? TranscriptSpacing.run)
             }
-            let attemptDividers = attemptDividers(after: rows.last?.messages.last)
+            let attemptDividers = transcriptPendingDividers(store.sendAttempts.map(\.message),
+                                                            after: rows.last?.messages.last, roster: store.roster)
             ForEach(store.sendAttempts) { attempt in
                 sendAttempt(attempt, divider: attemptDividers[attempt.id],
                             statusReactions: statusReactions[attempt.message.sequence] ?? [])
@@ -364,20 +365,6 @@ struct ConversationTranscript: View {
             return agent
         }
         return channelStatusReactions(agents: agents, presence: store.presence)
-    }
-
-    /// The day divider each attempt's row will have once it's sent, so the divider doesn't appear on confirming.
-    private func attemptDividers(after last: ChannelMessage?) -> [String: TranscriptDivider] {
-        guard let lead = store.roster.first else { return [:] }
-        var previous = last
-        var dividers: [String: TranscriptDivider] = [:]
-        for attempt in store.sendAttempts {
-            let messages = [previous, attempt.message].compactMap(\.self)
-            dividers[attempt.id] = transcriptRows(messages, lead: lead, members: Array(store.roster.dropFirst()))
-                .last?.divider
-            previous = attempt.message
-        }
-        return dividers
     }
 
     private func sendAttempt(_ attempt: ChannelSendAttempt, divider: TranscriptDivider?,

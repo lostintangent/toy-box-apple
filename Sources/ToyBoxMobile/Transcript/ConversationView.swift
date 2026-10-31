@@ -208,20 +208,6 @@ struct ConversationView: View {
     nonisolated private static let space = "transcript-content"
     private static let revealInterrupted = "Scrolling moved away before the message was revealed."
 
-    /// The day divider each attempt's row will have once it's sent, so the divider doesn't appear on confirming.
-    private func attemptDividers(after last: ChannelMessage?) -> [String: TranscriptDivider] {
-        guard let lead = store.roster.first else { return [:] }
-        var previous = last
-        var dividers: [String: TranscriptDivider] = [:]
-        for attempt in store.sendAttempts {
-            let messages = [previous, attempt.message].compactMap(\.self)
-            dividers[attempt.id] = transcriptRows(messages, lead: lead, members: Array(store.roster.dropFirst()))
-                .last?.divider
-            previous = attempt.message
-        }
-        return dividers
-    }
-
     private var items: [TranscriptItem] {
         guard let lead = store.roster.first else { return [] }
         let rows = rowBuilder.rows(store.messages, lead: lead, members: Array(store.roster.dropFirst()),
@@ -265,7 +251,8 @@ struct ConversationView: View {
                         .padding(.top, item.spacing)
                         .id(item.id)
                 }
-                let attemptDividers = attemptDividers(after: items.last?.messages.last)
+                let attemptDividers = transcriptPendingDividers(store.sendAttempts.map(\.message),
+                                                                after: items.last?.messages.last, roster: store.roster)
                 ForEach(store.sendAttempts) { attempt in
                     // The committed row takes the attempt's UUID, so keep the two identities apart.
                     TranscriptSendAttempt(attempt: attempt, divider: attemptDividers[attempt.id], store: store,
