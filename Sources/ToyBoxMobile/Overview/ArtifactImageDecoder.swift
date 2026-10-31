@@ -145,6 +145,75 @@ final class SVGDimensions: NSObject, XMLParserDelegate {
     }
 }
 
+/// Runs SVG renders one at a time on a page that outlives each render. A new web page launches a
+/// web content process, which costs seconds of CPU before it draws anything.
+@MainActor
+final class SVGPageRenderer<Page: Sendable> {
+    private let deadline: Duration
+    private let idleLifetime: Duration
+    private let makePage: () async throws -> Page
+    private var page: Page?
+    private var busy = false
+    private var waiting: [CheckedContinuation<Void, Never>] = []
+    private(set) var idleRelease: Task<Void, Never>?
+
+    init(deadline: Duration, idleLifetime: Duration, makePage: @escaping () async throws -> Page) {
+        self.deadline = deadline
+        self.idleLifetime = idleLifetime
+        self.makePage = makePage
+    }
+
+    func render(_ draw: @escaping @Sendable (Page) async throws -> Data) async throws -> Data {
+        if busy {
+            await withCheckedContinuation { waiting.append($0) }
+        } else {
+            busy = true
+        }
+        defer { finish() }
+        idleRelease?.cancel()
+        idleRelease = nil
+        try Task.checkCancellation()
+        let page: Page
+        if let current = self.page {
+            page = current
+        } else {
+            page = try await makePage()
+            self.page = page
+        }
+        do {
+            let deadline = deadline
+            let data = try await withThrowingTaskGroup { group in
+                group.addTask { try await draw(page) }
+                group.addTask {
+                    try await Task.sleep(for: deadline)
+                    throw ChannelAPIError.invalidMessage("The SVG preview took too long to render.")
+                }
+                defer { group.cancelAll() }
+                return try await group.next()!
+            }
+            // A cancelled draw may still stop its page after this, so only an undisturbed one is kept.
+            if Task.isCancelled { self.page = nil }
+            return data
+        } catch {
+            self.page = nil
+            throw error
+        }
+    }
+
+    private func finish() {
+        guard waiting.isEmpty else {
+            waiting.removeFirst().resume()
+            return
+        }
+        busy = false
+        idleRelease = Task { [weak self, idleLifetime] in
+            try? await Task.sleep(for: idleLifetime)
+            guard !Task.isCancelled else { return }
+            self?.page = nil
+        }
+    }
+}
+
 @MainActor
 private enum SVGImageRenderer {
     private struct AboutBlankOnly: WebPage.NavigationDeciding {
@@ -154,7 +223,26 @@ private enum SVGImageRenderer {
         }
     }
 
+    private static let pages = SVGPageRenderer(deadline: .seconds(15), idleLifetime: .seconds(30), makePage: makePage)
+
     static func render(_ data: Data, size: CGSize) async throws -> Data {
+        let viewport = ArtifactImageDecoder.pixelSize(size, maximum: 1024)
+        let html = """
+            <!doctype html><html><head><meta name="viewport" content="width=\(Int(viewport.width)),initial-scale=1">
+            <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src 'none'; connect-src 'none'; frame-src 'none'">
+            <style>html,body{margin:0;width:\(Int(viewport.width))px;height:\(Int(viewport.height))px;overflow:hidden;background:transparent}img{display:block;width:100%;height:100%}</style>
+            </head><body><img alt="" src="data:image/svg+xml;base64,\(data.base64EncodedString())"></body></html>
+            """
+        return try await pages.render { page in
+            try await withTaskCancellationHandler {
+                try await export(page, html: html, region: CGRect(origin: .zero, size: viewport))
+            } onCancel: {
+                Task { @MainActor in page.stopLoading() }
+            }
+        }
+    }
+
+    private static func makePage() async throws -> WebPage {
         guard let rules = try await WKContentRuleListStore.default().compileContentRuleList(
             forIdentifier: "ToyBox-StaticSVG-NoNetwork", encodedContentRuleList: """
             [{"trigger":{"url-filter":".*"},"action":{"type":"block"}},
@@ -164,29 +252,7 @@ private enum SVGImageRenderer {
         configuration.websiteDataStore = .nonPersistent()
         configuration.defaultNavigationPreferences.allowsContentJavaScript = false
         configuration.userContentController.add(rules)
-        let page = WebPage(configuration: configuration, navigationDecider: AboutBlankOnly())
-        let viewport = ArtifactImageDecoder.pixelSize(size, maximum: 1024)
-        let html = """
-            <!doctype html><html><head><meta name="viewport" content="width=\(Int(viewport.width)),initial-scale=1">
-            <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src 'none'; connect-src 'none'; frame-src 'none'">
-            <style>html,body{margin:0;width:\(Int(viewport.width))px;height:\(Int(viewport.height))px;overflow:hidden;background:transparent}img{display:block;width:100%;height:100%}</style>
-            </head><body><img alt="" src="data:image/svg+xml;base64,\(data.base64EncodedString())"></body></html>
-            """
-        return try await withThrowingTaskGroup { group in
-            group.addTask {
-                try await withTaskCancellationHandler {
-                    try await export(page, html: html, region: CGRect(origin: .zero, size: viewport))
-                } onCancel: {
-                    Task { @MainActor in page.stopLoading() }
-                }
-            }
-            group.addTask {
-                try await Task.sleep(for: .seconds(15))
-                throw ChannelAPIError.invalidMessage("The SVG preview took too long to render.")
-            }
-            defer { group.cancelAll() }
-            return try await group.next()!
-        }
+        return WebPage(configuration: configuration, navigationDecider: AboutBlankOnly())
     }
 
     private static func export(_ page: WebPage, html: String, region: CGRect) async throws -> Data {

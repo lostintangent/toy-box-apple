@@ -36,6 +36,34 @@ Incident records moved from AGENTS.md on 2026-10-27, with their evidence and res
   On `88ed53f` plus the quarantine, the default run passed all five suites with this test as the
   249-test Mobile suite's single opt-in skip. The prefixed run passed with no Mobile skip. That
   verifies the gate and its delivery, not the cause of the original failure.
+- Restored by t573 on 2026-10-30. The time goes to starting a WebKit web content process, and every
+  render started a new one because it created a new `WebPage`. A temporary probe in a local Simulator
+  Mobile process rendered an SVG repeatedly while a host watcher recorded process
+  CPU. Each render with its own page took 2.5 to 3.9 seconds. Each web content process used 1.9 to
+  2.4 seconds of CPU in its roughly three-second life, the networking and GPU processes about 0.4
+  each, and the test process stayed idle. A sample of one web content process put about 1,370 of its
+  1,451 main-thread samples under `WebProcess::unblockServicesRequiredByAccessibility`, which loads
+  WebCore's accessibility bundle through `dyld` before the page can draw. Loading, script and export
+  weren't the cost. The same probe on one reused page took 2.47 seconds for the first render, then
+  0.100, 0.152 and 0.136 seconds.
+- On CI the first launch took 5.5 seconds and the second outlasted the 15-second deadline. Why the
+  second launch took so much longer than the first on that runner wasn't measured, since a CI probe
+  would only have repeated the cost. The fix removes the second launch instead of racing it.
+- `SVGPageRenderer` now runs renders one at a time on one page. It keeps the page after a successful
+  render and releases it after 30 idle seconds, or at once after a failure, the deadline or
+  cancellation, so a late `stopLoading` can never reach a later render. Each render still loads a
+  fresh document with JavaScript disabled, the network rule list, the CSP and the same 15-second
+  deadline. Both WebKit tests now share one launch, the one the failed CI run finished in 5.5
+  seconds. The phone gets the same benefit. In a debug Simulator build, opening three SVG artifacts
+  in a row from Overview took 10.5, 3.0 and 3.2 seconds, then 4.5, 3.2 and 2.7 seconds, before the
+  fix, with 10 and 13 web content launches as each viewer also decoded its neighbors' thumbnails.
+  After it they took 4.7, 0.66 and 0.71 seconds, then 5.2, 0.74 and 0.66 seconds, and every
+  thumbnail after the first launch decoded in 0.02 to 0.2 seconds.
+- `SVGPageRendererTests` covers the contract with a fake page and no WebKit timing: renders share one
+  page until a draw fails, a draw past the deadline is cancelled and its page replaced, a second
+  render waits for the first to finish, and an idle page is released unless another render arrives
+  first. With the gate removed, the default `bun run test:mobile` passed all five suites, including
+  253 Mobile tests with no Mobile opt-in skip.
 
 ## Phone waiting-cue rendering
 
