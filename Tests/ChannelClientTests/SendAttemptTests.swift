@@ -418,7 +418,7 @@ struct SendAttemptTests {
         #expect(first.messageId == id)
         #expect(first.phase == .notSent)
         #expect(first.error == store.attemptPersistenceError)
-        #expect(first.error == store.sendError)
+        #expect(store.sendAttempts.first { $0.id == id }?.error == first.error)
         await #expect(throws: (any Error).self) { try await store.retrySend(id: id) }
         let retry = try #require(store.lastSendFailure)
         #expect(retry.id != first.id)
