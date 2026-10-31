@@ -386,7 +386,7 @@ No actual key rotation or credential setup is performed by agents.
 | Request | Use |
 | --- | --- |
 | `GET /api/v1/channels` | Catalog `{version, channels, members, lead, working}` for the sidebar. `lead` is the profile every channel's lead shares, under the channel's ID, and is always present. `working` lists running agent IDs (added for this app) |
-| `GET /api/v1/channels/:id` (SSE) | `snapshot`, then live events. With `after`/`Last-Event-ID`: replay, then `resumed` with full presence. `presence` is sparse and merges. `deleted` is terminal |
+| `GET /api/v1/channels/:id` (SSE) | `snapshot`, then live events. With `after`/`Last-Event-ID`: replay, then `resumed` with full presence. The store holds the replay and publishes it with `resumed` as one change, so a reopened channel never redraws what it missed event by event. A drop mid-replay publishes nothing, and the retry asks again after the published revision. `presence` is sparse and merges. `deleted` is terminal |
 | `GET /api/v1/channels/:id/messages?before=N` | Older page of up to 100 messages `{version, revision, messages}` |
 | `POST /api/v1/channels/:id/messages` | `{id, content, attachments?}` with a client UUID. 201 returns the message. 409 means a duplicate. Never auto-retry |
 | `POST /api/v1/channels/:id/read` | `{sequence}` monotonic read, which acknowledges completion but never a request |

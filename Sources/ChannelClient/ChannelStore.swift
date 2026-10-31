@@ -130,6 +130,10 @@ public final class ChannelStore {
     /// The stream received bytes during the current grace, so the grace waits another round instead
     /// of failing. Internal and observed, so tests can wait for an arrival.
     private(set) var isArriving = false
+    /// What a stream opened after the published revision has replayed so far, held until `resumed`
+    /// so a channel that moved far ahead catches up in one change instead of replaying on screen.
+    /// Nil unless a resume is under way. Internal and observed, so tests can wait for held events.
+    private(set) var heldReplay: [ChannelObservationEvent]?
     @ObservationIgnored private var arrivals: StreamArrivals?
     @ObservationIgnored private let sleep: @Sendable (TimeInterval) async throws -> Void
     @ObservationIgnored private var capturedUnread = false
@@ -172,8 +176,7 @@ public final class ChannelStore {
         // Retry keeps a failure on screen until the stream connects.
         if phase.message == nil { startGrace(token: token) }
         let restore = attemptsRestored ? nil : restoreSendAttemptsConcurrently()
-        var first: AsyncThrowingStream<ChannelObservationEvent, any Error>? =
-            api.observe(channelId: id, after: state?.revision, arrivals: arrivals)
+        var first: AsyncThrowingStream<ChannelObservationEvent, any Error>? = openStream()
         observation = Task.detached(priority: Task.currentPriority) { [weak self] in
             // Events reconcile restored send attempts, so they wait for the restore.
             await restore?.value
@@ -217,12 +220,20 @@ public final class ChannelStore {
         }
         lastFailure = error.localizedDescription
         isBackingOff = true
+        // The next attempt replays everything after the published revision again.
+        heldReplay = nil
         return reconnectPolicy.delay(attempt: attempt)
     }
 
     private func reopen(token: UUID) -> AsyncThrowingStream<ChannelObservationEvent, any Error>? {
         guard !Task.isCancelled, generation == token else { return nil }
         isBackingOff = false
+        return openStream()
+    }
+
+    /// Asks for everything after the published revision, or a snapshot when nothing is published.
+    private func openStream() -> AsyncThrowingStream<ChannelObservationEvent, any Error> {
+        heldReplay = state == nil ? nil : []
         return api.observe(channelId: id, after: state?.revision, arrivals: arrivals)
     }
 
@@ -295,6 +306,7 @@ public final class ChannelStore {
         isBackingOff = false
         observation?.cancel()
         observation = nil
+        heldReplay = nil
         stopGrace()
     }
 
@@ -663,12 +675,14 @@ public final class ChannelStore {
 
     func apply(_ event: ChannelObservationEvent) throws -> Bool {
         if event.type == "deleted" {
+            heldReplay = nil
             stopGrace()
             phase = .deleted
             observation = nil
             return true
         }
         if event.type == "snapshot", let snapshot = event.state {
+            heldReplay = nil
             state = snapshot
             historyGeneration = UUID()
             acknowledgedRead = snapshot.channel.seenThrough
@@ -677,10 +691,17 @@ public final class ChannelStore {
                 reconcileSend(id: attempt.id)
             }
             hasOlderMessages = (snapshot.messages.first?.sequence ?? 1) > 1
+        } else if event.type != "resumed", heldReplay != nil {
+            heldReplay?.append(event)
+            return false
         } else if let previous = state {
-            state = reduceChannelState(previous, event)
-            if let message = event.message, event.revision != nil {
-                reconcileSend(id: message.id)
+            // `resumed` publishes the held replay with it, so each slice changes once.
+            var events = heldReplay ?? []
+            events.append(event)
+            heldReplay = nil
+            state = events.reduce(previous, reduceChannelState)
+            for event in events {
+                if let message = event.message, event.revision != nil { reconcileSend(id: message.id) }
             }
         } else { throw ChannelAPIError.invalidEvent("pre-snapshot \(event.type)") }
         if event.type == "snapshot" || event.type == "resumed" {
