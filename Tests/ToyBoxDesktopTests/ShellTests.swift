@@ -1565,6 +1565,42 @@ struct MenuBarExtraTests {
         #expect(inbox.requests[0].canReply)
     }
 
+    @Test func choicesShowWhileTheRequestWaitsAndNeedNoRequester() {
+        let item = MenuBarStatus.Item(id: "one", name: "One", subtitle: "", sequence: 12, quote: "Ship it?",
+                                      replies: ["Yes", "No"])
+        var inbox = MenuBarInboxState(status: .init(waiting: [item]))
+        #expect(inbox.requests[0].canChoose)
+        #expect(!inbox.requests[0].canReply)
+        inbox.record("one", .sending)
+        #expect(!inbox.requests[0].canChoose)
+        #expect(inbox.requests[0].state.notice == "Sending reply…")
+        inbox.confirmed("one")
+        #expect(!inbox.requests[0].canChoose)
+        #expect(inbox.requests[0].state.notice == "Reply sent")
+    }
+
+    @Test func aSendingOrUnsentChoiceStaysUntilTheNextOpening() {
+        let item = MenuBarStatus.Item(id: "one", name: "One", subtitle: "", agent: ada, sequence: 12, quote: "Ship it?",
+                                      replies: ["Yes", "No"])
+        var inbox = MenuBarInboxState(status: .init(waiting: [item]))
+        inbox.record("one", .sending)
+        inbox.update(.init())
+        #expect(inbox.requests.map(\.state) == [.sending])
+        inbox.record("one", .notSent)
+        inbox.update(.init(waiting: [item]))
+        #expect(inbox.requests.map(\.state) == [.notSent])
+        #expect(inbox.requests[0].item == item)
+        #expect(inbox.requests[0].state.notice == "Reply not sent. Open the channel to send it again.")
+        #expect(MenuBarInboxState(status: .init()).requests.isEmpty)
+    }
+
+    @Test func aRequestWithoutSuggestedRepliesOffersNoChoices() {
+        let item = MenuBarStatus.Item(id: "one", name: "One", subtitle: "", agent: ada, sequence: 12, quote: "Ship it?")
+        let inbox = MenuBarInboxState(status: .init(waiting: [item]))
+        #expect(inbox.requests[0].canReply)
+        #expect(!inbox.requests[0].canChoose)
+    }
+
     @Test func aShortRequestTakesItsLinesAndALongOneScrollsWithinTheCap() throws {
         func scrollView(for quote: String) throws -> NSScrollView {
             let host = NSHostingView(rootView: MenuBarInboxRequestText(quote: quote, presentationID: UUID())

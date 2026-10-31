@@ -38,6 +38,8 @@ struct MenuBarStatus: Equatable {
         var quote: String? = nil
         var requestedAt: Date? = nil
         var agents: [ChannelAgent] = []
+        /// The request's suggested replies, in the lead's order.
+        var replies: [String] = []
     }
 
     struct Section: Equatable {
@@ -80,7 +82,7 @@ struct MenuBarStatus: Equatable {
             return Item(id: entry.channel.id, name: entry.channel.name,
                         subtitle: requester.map { NotificationText.subtitle(requester: $0.name) } ?? NotificationText.needsReply,
                         agent: requester, sequence: entry.sequence, quote: entry.request?.quote,
-                        requestedAt: entry.requestedAt)
+                        requestedAt: entry.requestedAt, replies: entry.request?.message.suggestedReplies ?? [])
         }
         let waitingIDs = Set(waiting.map(\.id))
         working = inputs.filter { !waitingIDs.contains($0.channel.id) && !$0.working.isEmpty }

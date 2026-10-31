@@ -150,10 +150,27 @@ struct MenuBarInbox: View {
                     Button("Retry") { model.retryMenuBarRequest(channelID: item.id) }
                         .controlSize(.small)
                 }
+                if request.canChoose, expandedChannelID != item.id {
+                    VStack(alignment: .leading, spacing: 6) {
+                        ForEach(Array(item.replies.enumerated()), id: \.offset) { _, choice in
+                            Button { sendChoice(choice, to: item) } label: {
+                                Text(choice)
+                                    .multilineTextAlignment(.center)
+                                    .frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.bordered)
+                            .buttonBorderShape(.capsule)
+                            .controlSize(.small)
+                            .frame(maxWidth: .infinity)
+                            .help("Send \(choice)")
+                            .accessibilityLabel("Send \(choice) in \(item.name)")
+                        }
+                    }
+                }
                 if let notice = request.state.notice {
-                    Label(notice, systemImage: request.state == .sent ? "checkmark.circle" : "info.circle")
+                    Label(notice, systemImage: request.state.symbol)
                         .font(.system(size: 12)).foregroundStyle(.secondary)
-                    if request.state != .sent {
+                    if request.state != .sent && request.state != .sending {
                         Button("Open Channel") { open(item) }.controlSize(.small)
                     }
                 }
@@ -173,10 +190,12 @@ struct MenuBarInbox: View {
                         expandReply(to: item)
                     } label: {
                         Label("Reply", systemImage: "arrowshape.turn.up.left")
+                            .frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(.plain)
-                    .font(.system(size: 12, weight: .medium))
-                    .frame(minHeight: 28)
+                    .buttonStyle(.borderedProminent)
+                    .buttonBorderShape(.capsule)
+                    .controlSize(.small)
+                    .frame(maxWidth: .infinity)
                     .accessibilityLabel("Reply in \(item.name)")
                 }
             }
@@ -308,6 +327,22 @@ struct MenuBarInbox: View {
         inbox.confirmed(item.id)
         if confirmation.opensChannel {
             closeThen { model.activate(channelID: item.id, sequence: confirmation.sequence) }
+        }
+    }
+
+    /// Sends a choice the way a notification's choice does: its label, through the channel's outbox,
+    /// so a failure waits there for Open Channel instead of retrying from the menu.
+    private func sendChoice(_ choice: String, to item: MenuBarStatus.Item) {
+        guard let catalog = model.catalog, catalog.channels.contains(where: { $0.id == item.id }),
+              let content = NotificationText.addressedReply(choice, to: nil) else {
+            inbox.record(item.id, .notSent)
+            return
+        }
+        inbox.record(item.id, .sending)
+        let reply = NotificationReply(store: catalog.channel(id: item.id))
+        Task {
+            let outcome = await reply.send(content)
+            inbox.record(item.id, outcome == .sent ? .sent : .notSent)
         }
     }
 

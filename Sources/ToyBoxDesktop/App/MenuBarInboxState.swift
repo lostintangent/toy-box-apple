@@ -3,14 +3,25 @@ import Foundation
 /// An open inbox keeps its request order and answered rows until the next opening.
 struct MenuBarInboxState: Equatable {
     enum RequestState: Equatable {
-        case waiting, answered, newerRequest, sent
+        case waiting, answered, newerRequest, sending, sent, notSent
 
         var notice: String? {
             switch self {
             case .waiting: nil
             case .answered: "This request was answered elsewhere"
             case .newerRequest: "A newer request is waiting"
+            case .sending: "Sending reply…"
             case .sent: "Reply sent"
+            case .notSent: "Reply not sent. Open the channel to send it again."
+            }
+        }
+
+        var symbol: String {
+            switch self {
+            case .sent: "checkmark.circle"
+            case .notSent: "exclamationmark.circle"
+            case .sending: "paperplane"
+            case .waiting, .answered, .newerRequest: "info.circle"
             }
         }
     }
@@ -20,6 +31,7 @@ struct MenuBarInboxState: Equatable {
         var state: RequestState = .waiting
         var id: String { item.id }
         var canReply: Bool { state == .waiting && item.quote != nil && item.agent != nil && item.sequence != nil }
+        var canChoose: Bool { state == .waiting && !item.replies.isEmpty }
     }
 
     private(set) var requests: [Request] = []
@@ -31,7 +43,10 @@ struct MenuBarInboxState: Equatable {
     mutating func update(_ status: MenuBarStatus) {
         let current = Dictionary(status.waiting.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         for index in requests.indices {
-            guard requests[index].state != .sent else { continue }
+            switch requests[index].state {
+            case .sent, .sending, .notSent: continue
+            case .waiting, .answered, .newerRequest: break
+            }
             let previous = requests[index].item
             guard let item = current[previous.id] else {
                 requests[index].state = .answered
@@ -49,7 +64,12 @@ struct MenuBarInboxState: Equatable {
     }
 
     mutating func confirmed(_ channelID: String) {
+        record(channelID, .sent)
+    }
+
+    /// Sets a request's row state. A row that's sending or not sent keeps it until the next opening.
+    mutating func record(_ channelID: String, _ state: RequestState) {
         guard let index = requests.firstIndex(where: { $0.id == channelID }) else { return }
-        requests[index].state = .sent
+        requests[index].state = state
     }
 }
