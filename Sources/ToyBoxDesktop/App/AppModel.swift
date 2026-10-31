@@ -81,9 +81,9 @@ final class AppModel {
             self.activate(channelID: activation.channelID, sequence: activation.sequence,
                           focusComposer: activation.focusComposer)
         }
-        notifications.api = { [weak self] serverURL in
+        notifications.store = { [weak self] serverURL, channelID in
             guard let self, self.serverURL == serverURL else { return nil }
-            return self.api
+            return self.catalog?.channel(id: channelID)
         }
         notifications.resolveRequest = { [weak self] channel, sequence in
             try? await self?.waitingRequests?.message(channelID: channel.id, sequence: sequence)

@@ -8,6 +8,8 @@ import UserNotifications
 final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
     nonisolated static let replyAction = ChannelNotificationCategory.reply
     nonisolated static let replyFailedCategory = ChannelNotificationCategory.replyFailed
+    /// An attempted reply that wasn't confirmed, waiting in the channel's outbox.
+    static let waitingBody = "Your reply wasn't sent. It's waiting in the channel so you can send it again."
     /// How long a request waits for its text before it's delivered without it.
     static let contentDeadline: Duration = .seconds(3)
 
@@ -23,8 +25,8 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
     @ObservationIgnored var onActivate: ((Activation) -> Void)?
     /// Finds a request's message, from an open channel's state or else its history.
     @ObservationIgnored var resolveRequest: ((Channel, Int) async -> ChannelRequestMessage?)?
-    /// The API for a server, only while it's the current one.
-    @ObservationIgnored var api: ((String) -> ChannelAPI?)?
+    /// A channel's shared store on a server, only while it's the current one.
+    @ObservationIgnored var store: ((_ serverURL: String, _ channelID: String) -> ChannelStore?)?
     @ObservationIgnored private var policy = Policy()
     @ObservationIgnored private var current: Current?
     @ObservationIgnored private var withdrawn: Current?
@@ -190,23 +192,27 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
     }
 
     /// Posts a reply typed into a notification without bringing the app forward. A reply that
-    /// can't be sent is never lost: it becomes the channel's draft on its own server.
+    /// can't be sent is never lost. One the app attempted waits in the channel under its message ID,
+    /// like the phone's, so sending it again can't post it twice. One for a deleted channel or
+    /// another server was never posted, so it becomes the channel's draft on its own server.
     func reply(_ text: String, channelID: String, channelName: String, handle: String?, serverURL: String) async {
         guard let content = NotificationText.addressedReply(text, to: handle) else { return }
+        let store = store?(serverURL, channelID)
         var outcome = NotificationReply.Outcome.failed
-        if let api = api?(serverURL) {
-            outcome = await NotificationReply(
-                post: { id, content in try await api.post(channelId: channelID, id: id, content: content) },
-                markRead: { sequence in _ = try await api.markRead(channelId: channelID, sequence: sequence) }
-            ).send(content)
-        }
+        if let store { outcome = await NotificationReply(store: store).send(content) }
         guard outcome != .sent, let server = URL(string: serverURL) else { return }
-        let draft = ComposerDraft.shared(serverURL: server, channelID: channelID)
-        draft.text = NotificationText.draft(draft.text, adding: content)
+        let body: String
+        if store != nil, outcome == .failed {
+            body = Self.waitingBody
+        } else {
+            let draft = ComposerDraft.shared(serverURL: server, channelID: channelID)
+            draft.text = NotificationText.draft(draft.text, adding: content)
+            body = outcome == .deleted ? NotificationText.deletedBody(channel: channelName) : NotificationText.unsentBody
+        }
 
         let notice = UNMutableNotificationContent()
         notice.title = channelName
-        notice.body = outcome == .deleted ? NotificationText.deletedBody(channel: channelName) : NotificationText.unsentBody
+        notice.body = body
         notice.sound = .default
         notice.categoryIdentifier = Self.replyFailedCategory
         notice.threadIdentifier = "\(serverURL):\(channelID)"

@@ -1129,7 +1129,7 @@ struct NotificationTests {
 
     @Test func sentRepliesMarkTheChannelReadThroughThemselves() async {
         var read: [Int] = []
-        let reply = NotificationReply(post: { id, content in self.message(content, sequence: 31) },
+        let reply = NotificationReply(post: { id, content in .committed(self.message(content, sequence: 31)) },
                                       markRead: { read.append($0) }, pause: {})
         #expect(await reply.send("@ada Ship it") == .sent)
         #expect(read == [31])
@@ -1143,19 +1143,66 @@ struct NotificationTests {
             return NotificationReply(post: { id, content in
                 ids.append(id)
                 if !remaining.isEmpty { throw remaining.removeFirst() }
-                return self.message(content, sequence: 31)
+                return .committed(self.message(content, sequence: 31))
             }, markRead: { _ in }, pause: { pauses += 1 })
         }
 
         #expect(await reply([URLError(.timedOut)]).send("Hi", id: "a") == .sent)
         #expect(ids == ["a", "a"] && pauses == 1)
-        #expect(await reply([URLError(.timedOut), ChannelAPIError.duplicateMessage]).send("Hi", id: "b") == .sent)
         #expect(await reply([URLError(.timedOut), URLError(.notConnectedToInternet)]).send("Hi", id: "c") == .failed)
         ids = []
         pauses = 0
         #expect(await reply([ChannelAPIError.http(status: 500, message: "Down")]).send("Hi", id: "d") == .failed)
         #expect(await reply([ChannelAPIError.http(status: 404, message: "Gone")]).send("Hi", id: "e") == .deleted)
         #expect(ids == ["d", "e"] && pauses == 0)
+    }
+
+    /// The server commits the reply but its responses are lost. The retry or a later Send reuses the
+    /// reply's message ID, so the server accepts it once and never posts a second copy.
+    @Test(arguments: [1, 2])
+    func aReplyWhoseResponsesAreLostPostsExactlyOnce(lostResponses: Int) async throws {
+        let host = UUID().uuidString.lowercased() + ".invalid"
+        ReplyServerProtocol.servers.withLock { $0[host] = .init(lostResponses: lostResponses) }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [ReplyServerProtocol.self]
+        let session = URLSession(configuration: configuration)
+        defer {
+            session.invalidateAndCancel()
+            ReplyServerProtocol.servers.withLock { _ = $0.removeValue(forKey: host) }
+        }
+        let store = ChannelStore(id: "test", api: try ChannelAPI(serverURL: "http://\(host)", session: session),
+                                 sendJournal: nil)
+        let draft = ComposerDraft()
+        let id = UUID().uuidString
+
+        let outcome = await NotificationReply(store: store, pause: {}).send("@lead Ship it", id: id)
+
+        func server() -> ReplyServerProtocol.Server { ReplyServerProtocol.servers.withLock { $0[host] ?? .init() } }
+        #expect(server().posts == [id, id])
+        #expect(server().messages == [id])
+        if lostResponses == 1 {
+            #expect(outcome == .sent)
+            #expect(store.sendAttempts.allSatisfy { $0.phase == .confirmed })
+            return
+        }
+        #expect(outcome == .failed)
+        let attempt = try #require(store.sendAttempts.first)
+        #expect(attempt.id == id)
+        #expect(attempt.content == "@lead Ship it")
+        #expect(attempt.phase == .deliveryNotConfirmed)
+        #expect(!draft.hasContent)
+
+        let channel = Channel(id: "test", name: "Test", model: .init(provider: "test", name: "test"),
+                              updatedAt: "2026-10-24T00:00:00Z")
+        _ = try store.apply(.init(type: "snapshot", state: .init(revision: 1, channel: channel, lead: .lead(id: "lead"))))
+        let composer = ChannelComposerSession(store: store, draft: draft)
+        #expect(composer.edit(attempt))
+        #expect(draft.sendAttemptID == id)
+        #expect(await composer.send())
+        #expect(server().posts == [id, id, id])
+        #expect(server().messages == [id])
+        #expect(store.sendAttempts.allSatisfy { $0.phase == .confirmed })
+        #expect(!draft.hasContent)
     }
 
     @Test func notificationsWithdrawOnceTheyStopBeingTrue() {
@@ -1181,6 +1228,77 @@ struct NotificationTests {
         #expect(NotificationPresentation.options(kind: "request", isActiveChannel: true) == [])
         #expect(NotificationPresentation.options(kind: "replyFailed", isActiveChannel: true) == [.banner, .list, .sound])
     }
+}
+
+/// A server that commits each new message ID once, answers a repeated one with 409 like the real
+/// server, and loses its first responses after committing.
+private final class ReplyServerProtocol: URLProtocol, @unchecked Sendable {
+    struct Server: Sendable {
+        var lostResponses = 0
+        var posts: [String] = []
+        var messages: [String] = []
+    }
+    private struct Posted: Decodable {
+        let id: String
+        let content: String
+    }
+    private struct Envelope: Encodable {
+        let version = 1
+        let message: ChannelMessage
+    }
+    static let servers = Mutex<[String: Server]>([:])
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        do {
+            let url = try #require(request.url)
+            let host = try #require(url.host)
+            guard request.httpMethod == "POST", url.path == "/api/v1/channels/test/messages" else {
+                throw URLError(.cannotConnectToHost)
+            }
+            let post = try JSONDecoder().decode(Posted.self, from: body())
+            let (lost, duplicate) = try Self.servers.withLock { servers in
+                var server = try #require(servers[host])
+                server.posts.append(post.id)
+                let duplicate = server.messages.contains(post.id)
+                if !duplicate { server.messages.append(post.id) }
+                let lost = server.lostResponses > 0
+                if lost { server.lostResponses -= 1 }
+                servers[host] = server
+                return (lost, duplicate)
+            }
+            if lost { throw URLError(.timedOut) }
+            let message = ChannelMessage(id: post.id, sequence: 7, timestamp: "2026-10-24T00:00:00Z",
+                                         sender: .user, content: .text(post.content))
+            let data = duplicate ? Data(#"{"error":"Duplicate"}"#.utf8) : try JSONEncoder().encode(Envelope(message: message))
+            let response = try #require(HTTPURLResponse(url: url, statusCode: duplicate ? 409 : 201,
+                                                       httpVersion: "HTTP/1.1",
+                                                       headerFields: ["Content-Type": "application/json"]))
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: data)
+            client?.urlProtocolDidFinishLoading(self)
+        } catch { client?.urlProtocol(self, didFailWithError: error) }
+    }
+
+    private func body() throws -> Data {
+        if let data = request.httpBody { return data }
+        let stream = try #require(request.httpBodyStream)
+        stream.open()
+        defer { stream.close() }
+        var data = Data()
+        var buffer = [UInt8](repeating: 0, count: 4096)
+        while stream.hasBytesAvailable {
+            let count = stream.read(&buffer, maxLength: buffer.count)
+            guard count >= 0 else { throw ChannelAPIError.invalidResponse }
+            if count == 0 { break }
+            data.append(contentsOf: buffer.prefix(count))
+        }
+        return data
+    }
+
+    override func stopLoading() {}
 }
 
 @MainActor

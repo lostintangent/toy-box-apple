@@ -5,13 +5,15 @@ import UserNotifications
 
 typealias NotificationText = ChannelKit.NotificationText
 
-/// Posts a reply from a notification. A transport failure retries once with the same message ID,
-/// so the server can tell a lost response from a second message.
+/// Posts a reply from a notification through the channel's outbox, like the phone's. A transport
+/// failure retries once with the same message ID, so the server can tell a lost response from a
+/// second message. A reply that still fails waits in the channel under that ID, so sending it again
+/// can never post it twice.
 @MainActor
 struct NotificationReply {
     enum Outcome: Equatable { case sent, failed, deleted }
 
-    var post: (_ id: String, _ content: String) async throws -> ChannelMessage
+    var post: (_ id: String, _ content: String) async throws -> ChannelSendResult
     var markRead: (_ sequence: Int) async throws -> Void
     var pause: () async -> Void = { try? await Task.sleep(for: .seconds(2)) }
 
@@ -19,10 +21,9 @@ struct NotificationReply {
         var retried = false
         while true {
             do {
-                let message = try await post(id, content)
-                try? await markRead(message.sequence)
-                return .sent
-            } catch ChannelAPIError.duplicateMessage where retried {
+                if case .committed(let message) = try await post(id, content) {
+                    try? await markRead(message.sequence)
+                }
                 return .sent
             } catch ChannelAPIError.http(status: 404, message: _) {
                 return .deleted
@@ -33,6 +34,14 @@ struct NotificationReply {
                 return .failed
             }
         }
+    }
+}
+
+extension NotificationReply {
+    init(store: ChannelStore, pause: @escaping () async -> Void = { try? await Task.sleep(for: .seconds(2)) }) {
+        self.init(post: { id, content in try await store.postInBackground(id: id, content: content) },
+                  markRead: { sequence in _ = try await store.api.markRead(channelId: store.id, sequence: sequence) },
+                  pause: pause)
     }
 }
 
