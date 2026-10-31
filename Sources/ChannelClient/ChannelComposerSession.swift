@@ -58,17 +58,25 @@ public final class ChannelComposerSession {
         submissionError = nil
         isSubmitting = true
         defer { isSubmitting = false }
+        var recorded = false
         do {
-            _ = try await store.post(id: id, content: content, attachments: attachments)
-            draft.clear(ifUnchanged: revision)
-            if !draft.hasContent { replySource = nil }
+            _ = try await store.post(id: id, content: content, attachments: attachments) { [self] in
+                recorded = true
+                clearSentDraft(revision: revision)
+            }
+            clearSentDraft(revision: revision)
             return true
         } catch {
-            if store.sendAttempts.first(where: { $0.id == id })?.error == nil {
+            if !recorded, store.sendAttempts.first(where: { $0.id == id })?.error == nil {
                 submissionError = (revision, error.localizedDescription)
             }
             return false
         }
+    }
+
+    private func clearSentDraft(revision: UUID) {
+        draft.clear(ifUnchanged: revision)
+        if !draft.hasContent { replySource = nil }
     }
 
     public func reconcile() {

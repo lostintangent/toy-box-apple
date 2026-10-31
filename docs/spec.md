@@ -600,8 +600,9 @@ when visible content changes. Live writes rewrite an unchanged snapshot every 15
 - [ ] A per-channel draft that persists across launches
 - [ ] An "Input needed" control while a request is pending: hovering previews the question and
       clicking reveals it, paging back if needed
-- [ ] Disabled while disconnected, with a visible stale state. Failed sends stay in the draft with
-      an error and are never retried automatically
+- [ ] Disabled while disconnected, with a visible stale state. A failed send stays on its row in
+      the transcript with Edit and Send Again, the draft is never restored, and it is never retried
+      automatically
 - [ ] Optimistic message that the committed echo replaces
 
 ### Composer tray
