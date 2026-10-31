@@ -58,7 +58,7 @@ struct ComposerSurface: View {
     private var hasNotices: Bool {
         draft.error != nil || composer.error != nil || store.attemptPersistenceError != nil
             || draft.text.utf16.count > 12_000 || session.isLoadingImages
-            || store.phase.isUnavailable || composer.attempt?.canRetry == true
+            || store.phase.isUnavailable
             || dictation.notice != nil
     }
 
@@ -310,11 +310,10 @@ struct ComposerSurface: View {
     private var sendButton: some View {
         Button(action: send) {
             Group {
-                if session.isFinalizingDictation || composer.isSubmitting || composer.attempt?.phase == .sending
-                    || isConnecting {
+                if session.isFinalizingDictation || isConnecting {
                     ProgressView().frame(width: 32, height: 32)
                 } else {
-                    Image(systemName: composer.attempt?.canRetry == true ? "arrow.clockwise" : "arrow.up")
+                    Image(systemName: "arrow.up")
                         .font(.system(size: 17, weight: .medium))
                         .frame(width: 32, height: 32)
                         .background(session.canSend ? Color.accentColor : Color(uiColor: .quaternaryLabel),
@@ -327,7 +326,7 @@ struct ComposerSurface: View {
         .buttonStyle(.plain)
         .disabled(!session.canSend || scenePhase != .active)
         .keyboardShortcut(.return, modifiers: .command)
-        .accessibilityLabel(isConnecting ? "Connecting" : composer.attempt?.canRetry == true ? "Send Again" : "Send message")
+        .accessibilityLabel(isConnecting ? "Connecting" : "Send message")
         .accessibilityShowsLargeContentViewer()
     }
 
@@ -350,11 +349,6 @@ struct ComposerSurface: View {
             }
             if store.phase == .deleted {
                 Label("This channel was deleted. Copy your draft somewhere safe.", systemImage: "trash")
-            }
-            if let attempt = composer.attempt, attempt.canRetry {
-                Label(attempt.phase == .notSent ? "\(attempt.phase.label). \(attempt.error ?? "Try sending again.")"
-                      : "\(attempt.phase.label). It may have arrived.", systemImage: "exclamationmark.circle")
-                Button("Edit") { editor.focus() }
             }
         }
         .font(.footnote)
