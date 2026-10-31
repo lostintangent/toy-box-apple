@@ -10,14 +10,34 @@ type Resource = { type: string; content: string | Buffer };
 
 export const fixturePath = path.join(import.meta.dir, '..', '..', '..', 'Tests', 'ChannelKitTests', 'Fixtures', 'channel-snapshot.json');
 
+const defaultReplies = ['Near the entrance, so visitors can find it', 'Beside the team desks, for quick access',
+  'Near the entrance, with a quiet reading nook beside the team desks'];
+const designReplies = [
+  'Confirm the review, but keep read receipts open until paging finishes',
+  'Hold the publish until the notarization ticket is stapled and QA signs off',
+  'Ship the Mac build to GitHub Releases now and post the notes in the team channel',
+  'Not yet',
+];
+
+// TOY_BOX_DEMO_REPLIES=0|2|4 serves the request with that many choices; four includes an 80-unit label.
+function demoReplies(): string[] | undefined {
+  const count = process.env.TOY_BOX_DEMO_REPLIES;
+  if (count === undefined) return defaultReplies;
+  if (count === '0') return undefined;
+  if (count === '2') return designReplies.slice(0, 2);
+  if (count === '4') return designReplies;
+  throw new Error(`TOY_BOX_DEMO_REPLIES must be 0, 2, or 4, not "${count}"`);
+}
+
 // The fixture stays byte-identical to the reference export, so the demo adds the replies its
 // library request would carry.
 export function loadDemoFixture(): FixtureSnapshot {
   const snapshot: FixtureSnapshot = JSON.parse(fs.readFileSync(fixturePath, 'utf8'));
-  const replies = ['Near the entrance, so visitors can find it', 'Beside the team desks, for quick access',
-    'Near the entrance, with a quiet reading nook beside the team desks'];
+  const replies = demoReplies();
   for (const message of [snapshot.request, ...snapshot.messages]) {
-    if (message?.id === 'fixture-request') message.replies = replies;
+    if (message?.id !== 'fixture-request') continue;
+    if (replies) message.replies = replies;
+    else delete message.replies;
   }
   return snapshot;
 }
