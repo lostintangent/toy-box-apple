@@ -212,6 +212,47 @@ struct TransportTests {
         try await eventually(observing: mock) { mock.stops == 1 }
     }
 
+    @Test func aStreamConnectsOnlyFromTheTaskReadingIt() async throws {
+        let initial = testState()
+        let mock = MockTransport { _, _ in try .stream([.init(type: "snapshot", state: initial)]) }
+        let api = try mock.api()
+        let unread = api.observe(channelId: "test")
+        let cancelledFirst = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            var events = api.observe(channelId: "test").makeAsyncIterator()
+            return try await events.next()
+        }
+        let nothing = try await cancelledFirst.value
+        #expect(nothing == nil)
+        for try await event in api.observe(channelId: "test") {
+            #expect(event.type == "snapshot")
+            break
+        }
+        #expect(mock.requests.count == 1, "Neither the unread stream nor the cancelled reader connects")
+        withExtendedLifetime(unread) {}
+        try await eventually(observing: mock) { mock.stops == 1 }
+    }
+
+    /// Creating a request on an invalidated session crashes the process. A store's own loop opens
+    /// every stream request, so once `close()` returns its session can be invalidated, whether the
+    /// loop was still starting or had connected and reconnected.
+    @Test @MainActor func aClosedStoreLeavesItsSessionSafeToInvalidate() async throws {
+        let initial = testState()
+        let mock = MockTransport { _, _ in try .stream([.init(type: "snapshot", state: initial)]) }
+        for round in 0..<100 {
+            let api = try mock.api()
+            let store = ChannelStore(id: "test", api: api, sendJournal: nil)
+            store.connect()
+            if round.isMultiple(of: 2) {
+                try await eventually { store.phase.isConnected }
+                store.reconnect()
+            }
+            await store.close()
+            #expect(!store.isTrying)
+            api.session.invalidateAndCancel()
+        }
+    }
+
     @Test @MainActor func historyMergesWithoutReplacingNewerMessagesOrCursor() async throws {
         let initial = testState(revision: 10, messages: [testMessage(100)])
         let mock = MockTransport { request, _ in

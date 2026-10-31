@@ -120,7 +120,9 @@ couldn't be opened is Handoff's `missing`.
 - **Channel stream:** `connect()` starts the stream and keeps retrying until `disconnect()`, and
   does nothing while already trying. `disconnect()` stops trying and leaves `connecting` unless
   deleted. Nothing waits on that phase change. `reconnect()` serves Can't Connect's Retry. One
-  observation loop opens the stream, receives each event and backs off after an error. The grace
+  observation loop opens the stream, receives each event and backs off after an error. Reading a
+  stream opens its request in the reading task, so only that loop ever connects: a stream it never
+  reads, or reads only after a disconnect, sends nothing. The grace
   runs only while that loop is trying and the phase is `connecting`. A grace with stream bytes in
   it waits another round, so a large snapshot on a slow link reads Connecting while it arrives, and
   failure follows the first full grace in which nothing arrived. The server's heartbeat keeps the

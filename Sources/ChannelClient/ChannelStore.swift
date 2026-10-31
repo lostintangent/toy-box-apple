@@ -178,15 +178,17 @@ public final class ChannelStore {
         let restore = attemptsRestored ? nil : restoreSendAttemptsConcurrently()
         var first: AsyncThrowingStream<ChannelObservationEvent, any Error>? = openStream()
         observation = Task.detached(priority: Task.currentPriority) { [weak self] in
-            // Events reconcile restored send attempts, so they wait for the restore.
-            await restore?.value
-            // Each stream lives only inside `do`, so leaving it for any reason closes the request.
+            // Reading a stream opens its request, so only this loop ever connects, and each stream
+            // lives only inside `do`, so leaving it for any reason closes the request.
+            var restoring = restore
             var next = first.take()
             var attempt = 0
             while true {
                 do {
                     guard let events = next.take() else { return }
                     for try await event in events {
+                        // Events reconcile restored send attempts, so the first waits for the restore.
+                        await restoring.take()?.value
                         guard try await self?.receive(event, token: token) == true else { return }
                         if event.type == "snapshot" || event.type == "resumed" { attempt = 0 }
                     }
@@ -279,6 +281,15 @@ public final class ChannelStore {
     public func disconnect() {
         stopTrying()
         if phase != .deleted { phase = .connecting }
+    }
+
+    /// Disconnects and returns once the observation loop has ended. Only that loop opens stream
+    /// requests, so afterward the store opens none on its own. Tests close a store this way before
+    /// invalidating its session, since creating a request on an invalidated session crashes.
+    func close() async {
+        let loop = observation
+        disconnect()
+        await loop?.value
     }
 
     /// Tries again at once. A failed channel stays `.failed` until the stream connects.
