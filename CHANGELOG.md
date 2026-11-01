@@ -11,6 +11,7 @@
 
 - The Message View button turns blue while Your Messages is on, like the Mac, so you can tell at a glance that the transcript is filtered.
 - Settings uses the rounded gear symbol, matching the Mac.
+- New Channel, Add Agent and their edit sheets use the system close X and blue checkmark, placed by iOS, so they look and sit like every other modern iPhone sheet.
 
 ## Mac 0.1.17
 
