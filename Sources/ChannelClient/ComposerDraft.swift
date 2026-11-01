@@ -167,7 +167,7 @@ public final class ComposerDraft {
         images.contains { failedImageIDs.contains($0.id) || !imageIsReadable($0.data) }
     }
     public var isLoadingImages: Bool { loadingImageCount > 0 }
-    public var isOverLimit: Bool { text.utf16.count > 12_000 }
+    public var isOverLimit: Bool { text.utf16.count > ChannelMessage.maxLength }
 
     public func isSendable(hasAdditionalContent: @autoclosure () -> Bool = false,
                            isLoadingAdditionalImages: @autoclosure () -> Bool = false) -> Bool {
