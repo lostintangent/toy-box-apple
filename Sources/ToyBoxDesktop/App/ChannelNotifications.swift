@@ -14,8 +14,7 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
     static let contentDeadline: Duration = .seconds(3)
 
     struct Activation: Equatable {
-        var channelID: String
-        var sequence: Int?
+        var channel: ChannelNotification.Activation
         var serverURL: String
         var focusComposer = false
     }
@@ -184,15 +183,15 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
                 Self.delivered(identifier: $0.request.identifier, userInfo: $0.request.content.userInfo)
             }
             guard let current = self.current else { return }
-            let stale = NotificationWithdrawal.stale(delivered, channels: current.channels,
-                                                     scope: current.serverURL,
-                                                     activeChannelID: current.activeChannelID)
+            let stale = ChannelNotification.stale(delivered, channels: current.channels,
+                                                  scope: current.serverURL,
+                                                  activeChannelID: current.activeChannelID)
             if !stale.isEmpty { center.removeDeliveredNotifications(withIdentifiers: stale) }
         }
     }
 
     /// Digests are never withdrawn, so they never reach the stale check.
-    nonisolated static func delivered(identifier: String, userInfo: [AnyHashable: Any]) -> NotificationWithdrawal.Delivered? {
+    nonisolated static func delivered(identifier: String, userInfo: [AnyHashable: Any]) -> ChannelNotification? {
         guard let server = userInfo["serverURL"] as? String, let channelID = userInfo["channelID"] as? String,
               let kind = userInfo["kind"] as? String, kind != MorningDigest.category else { return nil }
         return .init(identifier: identifier, scope: server, channelID: channelID,
@@ -259,8 +258,10 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
             let text = (response as? UNTextInputNotificationResponse)?.userText ?? ""
             await reply(text, channelID: id, channelName: name, handle: handle, serverURL: server)
         case UNNotificationDefaultActionIdentifier:
-            let activation = Activation(channelID: id, sequence: kind == Event.Kind.request.rawValue ? sequence : nil,
-                                        serverURL: server, focusComposer: kind == Self.replyFailedCategory)
+            let activation = Activation(
+                channel: .init(channelID: id, kind: kind.flatMap(ChannelPushPayload.Kind.init(rawValue:)),
+                               sequence: sequence),
+                serverURL: server, focusComposer: kind == Self.replyFailedCategory)
             await MainActor.run { onActivate?(activation) }
         default:
             // A choice sends its label as written, like the web's answer(label), so no handle is added.

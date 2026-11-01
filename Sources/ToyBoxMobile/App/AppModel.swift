@@ -74,7 +74,7 @@ final class AppModel {
             await self.following.registrationCreated(registration)
         }
         self.notifications.onActivate = { [weak self] activation in
-            await self?.openChannel(id: activation.channelID, sequence: activation.sequence,
+            await self?.openChannel(id: activation.channel.channelID, sequence: activation.channel.sequence,
                                     expectedServer: activation.serverURL)
         }
         self.notifications.onReply = { [weak self] payload, text, handle in

@@ -904,7 +904,7 @@ struct ShellTests {
                     seenThrough: 30, completedSequence: 30, requestSequence: 40, updatedAt: ""),
             Channel(id: "open", name: "Open", model: .init(provider: "test", name: "test"), updatedAt: "")
         ]
-        let records: [NotificationWithdrawal.Delivered] = [
+        let records: [ChannelNotification] = [
             .init(identifier: "answered", payload: .init(kind: .request, channelID: "first", sequence: 20, registrationID: "now")),
             .init(identifier: "waiting", payload: .init(kind: .request, channelID: "first", sequence: 40, registrationID: "now")),
             .init(identifier: "seen", payload: .init(kind: .completion, channelID: "first", sequence: 30, registrationID: "now")),
@@ -913,7 +913,7 @@ struct ShellTests {
             .init(identifier: "deleted", payload: .init(kind: .request, channelID: "gone", sequence: 1, registrationID: "now")),
             .init(identifier: "foreign", payload: .init(kind: .request, channelID: "first", sequence: 1, registrationID: "old")),
         ]
-        #expect(NotificationWithdrawal.stale(records, channels: channels, scope: "now", activeChannelID: "open")
+        #expect(ChannelNotification.stale(records, channels: channels, scope: "now", activeChannelID: "open")
                 == ["answered", "seen", "open", "deleted"])
     }
 

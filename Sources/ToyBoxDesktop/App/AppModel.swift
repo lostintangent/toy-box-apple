@@ -78,7 +78,7 @@ final class AppModel {
         if !launchOptions.isSnapshot { launchChannelID = launchChannel.channelID(serverURL: self.serverURL) }
         notifications.onActivate = { [weak self] activation in
             guard let self, self.serverURL == activation.serverURL else { return }
-            self.activate(channelID: activation.channelID, sequence: activation.sequence,
+            self.activate(channelID: activation.channel.channelID, sequence: activation.channel.sequence,
                           focusComposer: activation.focusComposer)
         }
         notifications.store = { [weak self] serverURL, channelID in
