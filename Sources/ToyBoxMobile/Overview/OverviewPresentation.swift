@@ -75,7 +75,8 @@ final class OverviewPresentation {
 @MainActor @Observable
 final class OverviewSession {
     struct Disclosure {
-        let status: String
+        /// The default the toggle was made against. A change to the default re-derives the disclosure.
+        let expandedByDefault: Bool
         var expanded: Bool
     }
 
@@ -114,8 +115,9 @@ final class OverviewSession {
         @MainActor func visit(_ tasks: [ChannelTask]) {
             for task in tasks {
                 ids.insert(task.id)
-                if taskDisclosure[task.id]?.status != task.status {
-                    taskDisclosure[task.id] = Disclosure(status: task.status, expanded: task.isExpandedByDefault)
+                if taskDisclosure[task.id]?.expandedByDefault != task.isExpandedByDefault {
+                    taskDisclosure[task.id] = Disclosure(expandedByDefault: task.isExpandedByDefault,
+                                                         expanded: task.isExpandedByDefault)
                 }
                 visit(task.children ?? [])
             }

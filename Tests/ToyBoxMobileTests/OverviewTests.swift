@@ -38,7 +38,7 @@ struct OverviewTests {
         let session = presentation.session(for: store)
         session.navigationPath = [.subtasks("task")]
         session.purposeExpanded = true
-        session.taskDisclosure["task"] = .init(status: "in_progress", expanded: false)
+        session.taskDisclosure["task"] = .init(expandedByDefault: true, expanded: false)
         session.routine("routine").expanded = true
         session.routine("routine").pending = true
         presentation.compactSheetDidAppear()
@@ -159,12 +159,13 @@ struct OverviewTests {
             ])
         ]
         session.reconcileTasks(tasks)
-        session.taskDisclosure["child"] = .init(status: "in_progress", expanded: false)
-        session.taskDisclosure["parent"] = .init(status: "in_progress", expanded: false)
+        session.taskDisclosure["child"] = .init(expandedByDefault: true, expanded: false)
+        session.taskDisclosure["parent"] = .init(expandedByDefault: true, expanded: false)
         session.reconcileTasks(tasks)
-        session.taskDisclosure["parent"] = .init(status: "in_progress", expanded: true)
+        session.taskDisclosure["parent"] = .init(expandedByDefault: true, expanded: true)
         #expect(session.taskDisclosure["child"]?.expanded == false)
         tasks[0].status = "done"
+        tasks[0].children?[0].status = "done"
         session.reconcileTasks(tasks)
         #expect(session.taskDisclosure["parent"]?.expanded == false)
         #expect(session.taskDisclosure["child"]?.expanded == false)

@@ -305,10 +305,12 @@ struct ManagementTests {
         let ink = try #require(siblings.minX(where: TaskListRender.isInk))
         #expect(ink >= rail - 1, "Nothing may hang left of the status column, found ink at \(ink)")
 
+        // Work in progress under the nested parent expands both parents, so every nested row renders.
         let depth = try TaskListRender([
             .init(id: "parent", title: "Parent task", children: [
                 .init(id: "nested-parent", title: "Nested parent", status: "blocked", children: [
-                    .init(id: "grandchild", title: "Nested leaf", status: "done")
+                    .init(id: "grandchild", title: "Nested leaf", status: "done"),
+                    .init(id: "active-grandchild", title: "Active leaf", status: "in_progress")
                 ])
             ])
         ], width: width)

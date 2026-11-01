@@ -128,8 +128,8 @@ struct OverviewTaskRow: View {
             }
         }
         .accessibilityElement(children: .contain)
-        // A status change re-derives the disclosure, replacing any manual toggle, as the pane does.
-        .onChange(of: task.status) {
+        // A parent gaining or losing in-progress work re-derives its disclosure, replacing any manual toggle.
+        .onChange(of: task.isExpandedByDefault) {
             let expanded = task.isExpandedByDefault
             guard expanded != isExpanded else { return }
             withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) { disclosure[key] = expanded }
