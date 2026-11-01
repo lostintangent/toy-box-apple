@@ -670,15 +670,15 @@ final class ImageViewer {
 
     /// Links the cached file under the attachment's name, so Share, drag-out and Preview see it.
     nonisolated static func export(_ file: URL, named name: String, replacing: Bool = false) -> URL? {
-        var filename = name.replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ":", with: "-")
+        var filename = name.replacing("/", with: "-").replacing(":", with: "-")
         if (filename as NSString).pathExtension.isEmpty, !file.pathExtension.isEmpty, file.pathExtension != "data" {
             filename += ".\(file.pathExtension)"
         }
         let manager = FileManager.default
         let directory = manager.temporaryDirectory
-            .appendingPathComponent("ToyBoxDesktop-Exports", isDirectory: true)
-            .appendingPathComponent(file.deletingPathExtension().lastPathComponent, isDirectory: true)
-        let destination = directory.appendingPathComponent(filename)
+            .appending(path: "ToyBoxDesktop-Exports", directoryHint: .isDirectory)
+            .appending(path: file.deletingPathExtension().lastPathComponent, directoryHint: .isDirectory)
+        let destination = directory.appending(path: filename)
         if replacing { try? manager.removeItem(at: destination) }
         if manager.fileExists(atPath: destination.path) { return destination }
         do {

@@ -102,12 +102,12 @@ struct TranscriptGalleryOriginal: Equatable {
     /// rather than the cache's digest.
     nonisolated static func export(_ file: URL, named name: String) throws -> URL {
         let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("ToyBox-Images", isDirectory: true)
-            .appendingPathComponent(file.deletingPathExtension().lastPathComponent, isDirectory: true)
+            .appending(path: "ToyBox-Images", directoryHint: .isDirectory)
+            .appending(path: file.deletingPathExtension().lastPathComponent, directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        var filename = name.replacingOccurrences(of: "/", with: "-")
+        var filename = name.replacing("/", with: "-")
         if (filename as NSString).pathExtension.isEmpty { filename += ".\(file.pathExtension)" }
-        let destination = directory.appendingPathComponent(filename)
+        let destination = directory.appending(path: filename)
         try? FileManager.default.removeItem(at: destination)
         do { try FileManager.default.linkItem(at: file, to: destination) }
         catch { try FileManager.default.copyItem(at: file, to: destination) }
