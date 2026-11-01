@@ -2373,19 +2373,19 @@ struct TranscriptCatchUpTests {
     }
 
     @Test func imagesAreDescribedOnlyForVoiceOverAndOnlyOnce() async throws {
-        let descriptions = TranscriptImageDescriptions()
+        let descriptions = TranscriptImageDescriptionSession()
         let service = StubChannelIntelligence(descriptions: ["chart": "A chart of weekly signups rising."])
-        #expect(!TranscriptImageDescriptions.isActive(voiceOver: false, isOn: true, using: service))
-        #expect(TranscriptImageDescriptions.isActive(voiceOver: true, isOn: true, using: service))
-        #expect(!TranscriptImageDescriptions.isActive(voiceOver: true, isOn: false, using: service))
-        #expect(!TranscriptImageDescriptions.isActive(
+        #expect(!TranscriptImageDescriptionSession.isActive(voiceOver: false, isOn: true, using: service))
+        #expect(TranscriptImageDescriptionSession.isActive(voiceOver: true, isOn: true, using: service))
+        #expect(!TranscriptImageDescriptionSession.isActive(voiceOver: true, isOn: false, using: service))
+        #expect(!TranscriptImageDescriptionSession.isActive(
             voiceOver: true, isOn: true, using: StubChannelIntelligence(availability: .unavailable(.deviceNotEligible))))
 
         let request = describedImage("chart")
         #expect(descriptions.text(for: request) == nil)
-        #expect(TranscriptImageDescriptions.value(descriptions.text(for: request)) == "")
+        #expect(TranscriptImageDescriptionSession.value(descriptions.text(for: request)) == "")
         await descriptions.describe(request, using: service)
-        #expect(TranscriptImageDescriptions.value(descriptions.text(for: request))
+        #expect(TranscriptImageDescriptionSession.value(descriptions.text(for: request))
                 == "Generated description: A chart of weekly signups rising.")
         // The viewer asks for the same image at a higher priority and finds it described.
         let focused = describedImage("chart", priority: .focused)
@@ -2400,7 +2400,7 @@ struct TranscriptCatchUpTests {
     }
 
     @Test func aDescriptionGivenUpWhenItsTileScrollsAwayIsAskedForAgain() async throws {
-        let descriptions = TranscriptImageDescriptions()
+        let descriptions = TranscriptImageDescriptionSession()
         let slow = StubChannelIntelligence(delay: .seconds(30), descriptions: ["chart": "A chart."])
         let request = describedImage("chart")
         let task = Task { await descriptions.describe(request, using: slow) }
