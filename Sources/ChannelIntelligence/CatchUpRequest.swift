@@ -189,15 +189,6 @@ struct CatchUpDescriber: Sendable {
     let agents: [ChannelAgent]
     let leadId: String
 
-    init(agents: [ChannelAgent], leadId: String) {
-        self.agents = agents
-        self.leadId = leadId
-    }
-
-    init(state: ChannelState) {
-        self.init(agents: state.agents, leadId: state.lead.id)
-    }
-
     func name(_ sender: ChannelMessageSender?) -> String {
         guard let sender else { return "Someone" }
         switch sender.type {
@@ -271,6 +262,12 @@ struct CatchUpDescriber: Sendable {
         }
         return CatchUpEntry(sequence: sequence, speaker: nil, addressees: [],
                             text: description.truncated(), priority: priority)
+    }
+}
+
+extension CatchUpDescriber {
+    init(state: ChannelState) {
+        self.init(agents: state.agents, leadId: state.lead.id)
     }
 }
 
