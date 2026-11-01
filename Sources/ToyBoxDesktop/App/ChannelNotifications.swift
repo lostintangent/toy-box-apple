@@ -31,6 +31,8 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
     @ObservationIgnored private var current: Current?
     @ObservationIgnored private var withdrawn: Current?
     @ObservationIgnored private let center = UNUserNotificationCenter.current()
+    @ObservationIgnored private var replyCategories = ReplyCategories()
+    @ObservationIgnored private var categorySeeding: Task<Void, Never>?
 
     /// What the catalog last said, which decides what's delivered and what's withdrawn.
     private struct Current {
@@ -52,16 +54,28 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
     override init() {
         super.init()
         center.delegate = self
-        let reply = UNTextInputNotificationAction(identifier: Self.replyAction, title: "Reply", options: [],
-                                                  textInputButtonTitle: "Send", textInputPlaceholder: "Reply")
-        center.setNotificationCategories([
-            UNNotificationCategory(identifier: Event.Kind.request.rawValue, actions: [reply], intentIdentifiers: [],
+        categorySeeding = Task {
+            replyCategories.adopt(await center.notificationCategories())
+            center.setNotificationCategories(replyCategories.published(with: Self.baseCategories()))
+        }
+    }
+
+    static func baseCategories() -> Set<UNNotificationCategory> {
+        [
+            UNNotificationCategory(identifier: Event.Kind.request.rawValue, actions: [ReplyCategories.textReply()],
+                                   intentIdentifiers: [],
                                    hiddenPreviewsBodyPlaceholder: NotificationText.requestPlaceholder),
             UNNotificationCategory(identifier: Event.Kind.completion.rawValue, actions: [], intentIdentifiers: [],
                                    hiddenPreviewsBodyPlaceholder: NotificationText.completionPlaceholder),
             UNNotificationCategory(identifier: Self.replyFailedCategory, actions: [], intentIdentifiers: []),
             UNNotificationCategory(identifier: MorningDigest.category, actions: [], intentIdentifiers: []),
-        ])
+        ]
+    }
+
+    /// Each call publishes the whole set, so the last one always carries the latest registrations.
+    private func publishCategories() async {
+        await categorySeeding?.value
+        center.setNotificationCategories(replyCategories.published(with: Self.baseCategories()))
     }
 
     func refreshAuthorization() async {
@@ -92,6 +106,9 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
             requests: UserDefaults.standard.object(forKey: "requestNotifications") as? Bool != false,
             completions: UserDefaults.standard.bool(forKey: "completionNotifications")
         )
+        if replyCategories.prune(serverURL: serverURL, channels: channels) {
+            Task { await publishCategories() }
+        }
         for event in events {
             deliver(event, serverURL: serverURL)
         }
@@ -101,6 +118,11 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
     private func deliver(_ event: Event, serverURL: String) {
         Task {
             let request = event.kind == .request ? await resolve(event) : nil
+            if let replies = request?.message.suggestedReplies, !replies.isEmpty {
+                replyCategories.register(serverURL: serverURL, channelID: event.channel.id,
+                                         sequence: event.sequence, replies: replies)
+                await publishCategories()
+            }
             await add(UNNotificationRequest(
                 identifier: "\(serverURL):\(event.channel.id):\(event.kind.rawValue):\(event.sequence)",
                 content: Self.content(for: event, serverURL: serverURL, request: request), trigger: nil))
@@ -124,6 +146,12 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
                 content.body = NotificationText.requestBody(request.message, agents: request.agents)
                 if let requester = request.requester {
                     info["handle"] = agentHandleFromName(requester.name)
+                }
+                let replies = request.message.suggestedReplies
+                if !replies.isEmpty {
+                    content.categoryIdentifier = ReplyCategories.identifier(
+                        serverURL: serverURL, channelID: event.channel.id, sequence: event.sequence)
+                    info["replies"] = replies
                 }
             } else {
                 content.body = NotificationText.waitingBody
@@ -255,7 +283,10 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
                                         serverURL: server, focusComposer: kind == Self.replyFailedCategory)
             await MainActor.run { onActivate?(activation) }
         default:
-            break
+            // A choice sends its label as written, like the web's answer(label), so no handle is added.
+            if let choice = ReplyCategories.choice(for: response.actionIdentifier, replies: info["replies"] as? [String]) {
+                await reply(choice, channelID: id, channelName: name, handle: nil, serverURL: server)
+            }
         }
     }
 
