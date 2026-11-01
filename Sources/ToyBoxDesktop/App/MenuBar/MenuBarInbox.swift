@@ -7,7 +7,7 @@ import ToyBoxUI
 struct MenuBarInbox: View {
     @Environment(AppModel.self) private var model
     @Environment(\.openSettings) private var openSettings
-    @ViewState private var inbox = MenuBarInboxState()
+    @ViewState private var inbox = MenuBarInboxRequests()
     @ViewState private var isPresented = false
     @ViewState private var presentationID = UUID()
     @ViewState private var expandedChannelID: String?
@@ -123,7 +123,7 @@ struct MenuBarInbox: View {
         }
     }
 
-    private func requestRow(_ request: MenuBarInboxState.Request) -> some View {
+    private func requestRow(_ request: MenuBarInboxRequests.Request) -> some View {
         let item = request.item
         return VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 10) {
@@ -284,7 +284,7 @@ struct MenuBarInbox: View {
         if visible {
             collapseReply()
             replyError = nil
-            inbox = MenuBarInboxState(status: model.menuBarStatus)
+            inbox = MenuBarInboxRequests(status: model.menuBarStatus)
             presentationID = UUID()
         } else {
             releaseReplyConnection()

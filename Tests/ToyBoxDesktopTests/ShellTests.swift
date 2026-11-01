@@ -1471,7 +1471,7 @@ struct MenuBarExtraTests {
             waiting(channel("one", request: 12), request("First?")),
             waiting(channel("two", request: 13), request("Second?", sequence: 13)),
         ], [], unreachableHost: nil)
-        var inbox = MenuBarInboxState(status: first)
+        var inbox = MenuBarInboxRequests(status: first)
         let next = MenuBarStatus(waiting: [
             .init(id: "new", name: "New", subtitle: "Needs your reply", agent: ada, sequence: 14, quote: "New?"),
             first.waiting[1],
@@ -1481,12 +1481,12 @@ struct MenuBarExtraTests {
         #expect(inbox.requests[0].state == .answered)
         #expect(!inbox.requests[0].canReply)
         #expect(inbox.requests[1].canReply)
-        #expect(MenuBarInboxState(status: next).requests.map(\.id) == ["new", "two"])
+        #expect(MenuBarInboxRequests(status: next).requests.map(\.id) == ["new", "two"])
     }
 
     @Test func aChangedRequestKeepsTheOriginalQuoteAndDisablesItsReply() {
         let item = MenuBarStatus.Item(id: "one", name: "One", subtitle: "", agent: ada, sequence: 12, quote: "First?")
-        var inbox = MenuBarInboxState(status: .init(waiting: [item]))
+        var inbox = MenuBarInboxRequests(status: .init(waiting: [item]))
         var newer = item
         newer.sequence = 20
         newer.quote = "Different question?"
@@ -1498,19 +1498,19 @@ struct MenuBarExtraTests {
 
     @Test func aConfirmedReplyStaysSentUntilTheNextOpening() {
         let item = MenuBarStatus.Item(id: "one", name: "One", subtitle: "", agent: ada, sequence: 12, quote: "First?")
-        var inbox = MenuBarInboxState(status: .init(waiting: [item]))
+        var inbox = MenuBarInboxRequests(status: .init(waiting: [item]))
         inbox.record("one", .sent)
         inbox.update(.init(waiting: [item]))
         #expect(inbox.requests[0].state == .sent)
         #expect(!inbox.requests[0].canReply)
         inbox.update(.init())
         #expect(inbox.requests[0].state == .sent)
-        #expect(MenuBarInboxState(status: .init()).requests.isEmpty)
+        #expect(MenuBarInboxRequests(status: .init()).requests.isEmpty)
     }
 
     @Test func previewArrivalEnablesReplyWithoutInventingARequester() {
         var item = MenuBarStatus.Item(id: "one", name: "One", subtitle: "", sequence: 12)
-        var inbox = MenuBarInboxState(status: .init(waiting: [item]))
+        var inbox = MenuBarInboxRequests(status: .init(waiting: [item]))
         #expect(!inbox.requests[0].canReply)
         item.quote = "Question?"
         inbox.update(.init(waiting: [item]))
@@ -1523,7 +1523,7 @@ struct MenuBarExtraTests {
     @Test func choicesShowWhileTheRequestWaitsAndNeedNoRequester() {
         let item = MenuBarStatus.Item(id: "one", name: "One", subtitle: "", sequence: 12, quote: "Ship it?",
                                       replies: ["Yes", "No"])
-        var inbox = MenuBarInboxState(status: .init(waiting: [item]))
+        var inbox = MenuBarInboxRequests(status: .init(waiting: [item]))
         #expect(inbox.requests[0].canChoose)
         #expect(!inbox.requests[0].canReply)
         inbox.record("one", .sending)
@@ -1537,7 +1537,7 @@ struct MenuBarExtraTests {
     @Test func aSendingOrUnsentChoiceStaysUntilTheNextOpening() {
         let item = MenuBarStatus.Item(id: "one", name: "One", subtitle: "", agent: ada, sequence: 12, quote: "Ship it?",
                                       replies: ["Yes", "No"])
-        var inbox = MenuBarInboxState(status: .init(waiting: [item]))
+        var inbox = MenuBarInboxRequests(status: .init(waiting: [item]))
         inbox.record("one", .sending)
         inbox.update(.init())
         #expect(inbox.requests.map(\.state) == [.sending])
@@ -1546,12 +1546,12 @@ struct MenuBarExtraTests {
         #expect(inbox.requests.map(\.state) == [.notSent])
         #expect(inbox.requests[0].item == item)
         #expect(inbox.requests[0].state.notice == "Reply not sent. Open the channel to send it again.")
-        #expect(MenuBarInboxState(status: .init()).requests.isEmpty)
+        #expect(MenuBarInboxRequests(status: .init()).requests.isEmpty)
     }
 
     @Test func aRequestWithoutSuggestedRepliesOffersNoChoices() {
         let item = MenuBarStatus.Item(id: "one", name: "One", subtitle: "", agent: ada, sequence: 12, quote: "Ship it?")
-        let inbox = MenuBarInboxState(status: .init(waiting: [item]))
+        let inbox = MenuBarInboxRequests(status: .init(waiting: [item]))
         #expect(inbox.requests[0].canReply)
         #expect(!inbox.requests[0].canChoose)
     }
@@ -1559,7 +1559,7 @@ struct MenuBarExtraTests {
     @Test func aChoiceInTheOutboxLeavesTheRowForGood() {
         let item = MenuBarStatus.Item(id: "one", name: "One", subtitle: "", agent: ada, sequence: 12, quote: "Ship it?",
                                       replies: ["Yes", "No"])
-        let request = MenuBarInboxState(status: .init(waiting: [item])).requests[0]
+        let request = MenuBarInboxRequests(status: .init(waiting: [item])).requests[0]
         func attempt(_ content: String, phase: ChannelSendPhase) -> ChannelSendAttempt {
             ChannelSendAttempt(id: UUID().uuidString, content: content, attachments: [],
                                timestamp: "2026-10-25T12:00:00Z", phase: phase)
