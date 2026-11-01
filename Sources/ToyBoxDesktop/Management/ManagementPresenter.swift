@@ -48,8 +48,6 @@ private struct ManagementSheet: View {
     let presenter: ManagementPresenter
     @ViewState private var store: ChannelStore?
 
-    private var channelId: String? { flow.channelId }
-
     var body: some View {
         Group {
             if let api = app.api {
@@ -86,8 +84,8 @@ private struct ManagementSheet: View {
                 .frame(width: 480)
             }
         }
-        .task(id: "\(app.serverURL)|\(channelId ?? "")") {
-            guard let id = channelId, let api = app.api else { return }
+        .task(id: "\(app.serverURL)|\(flow.channelId ?? "")") {
+            guard let id = flow.channelId, let api = app.api else { return }
             if let store { app.release(store) }
             let connection = app.catalog?.channel(id: id) ?? ChannelStore(id: id, api: api)
             store = connection
