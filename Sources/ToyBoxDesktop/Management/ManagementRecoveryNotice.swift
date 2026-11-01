@@ -11,7 +11,7 @@ struct ManagementRecoveryNotice: View {
         VStack(alignment: .leading, spacing: 8) {
             switch state {
             case .checking:
-                ProgressView("Checking current server state")
+                ProgressView("Checking current server state…")
                     .controlSize(.small)
             case .checkFailed(let message):
                 ManagementError(message: "Current state could not be checked. \(message)")

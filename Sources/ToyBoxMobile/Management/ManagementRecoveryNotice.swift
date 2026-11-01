@@ -28,10 +28,10 @@ struct ManagementRecoveryNotice: View {
         VStack(alignment: .leading, spacing: 8) {
             switch state {
             case .checking:
-                ProgressView("Checking current server values…")
+                ProgressView("Checking current server state…")
             case .checkFailed(let message):
-                Text(message).font(.footnote)
-                Button("Check Current Server Values", action: onCheck).frame(minHeight: 44)
+                Text("Current state could not be checked. \(message)").font(.footnote)
+                Button("Check Current State", action: onCheck).frame(minHeight: 44)
             case .reconciled(let message):
                 Text(message).font(.footnote)
                 if let reviewTitle { Button(reviewTitle, action: onReview).frame(minHeight: 44) }

@@ -206,13 +206,13 @@ private struct ArtifactWebPage: View {
     let content: ArtifactContent
     let opener: ArtifactOpener
     let bottomInset: CGFloat
-    @ViewState private var renderer: ArtifactWebContent
+    @ViewState private var renderer: ArtifactWebRenderer
 
     init(content: ArtifactContent, opener: ArtifactOpener, bottomInset: CGFloat) {
         self.content = content
         self.opener = opener
         self.bottomInset = bottomInset
-        _renderer = ViewState(initialValue: ArtifactWebContent())
+        _renderer = ViewState(initialValue: ArtifactWebRenderer())
     }
 
     var body: some View {
@@ -257,7 +257,7 @@ private struct ArtifactWebPage: View {
 }
 
 private struct ArtifactWebView: NSViewRepresentable {
-    let renderer: ArtifactWebContent
+    let renderer: ArtifactWebRenderer
     let obscuredInsets: EdgeInsets
     let bottomInset: CGFloat
 

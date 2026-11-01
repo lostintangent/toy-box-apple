@@ -135,7 +135,7 @@ struct ArtifactViewerTests {
         let fixture = try ArtifactHTTPFixture()
         try await fixture.start()
         defer { fixture.stop() }
-        let web = ArtifactWebContent(openURL: { _ in
+        let web = ArtifactWebRenderer(openURL: { _ in
             Issue.record("The fixture must not open a browser.")
             return false
         })
@@ -215,7 +215,7 @@ struct ArtifactViewerTests {
         try await fixture.start()
         defer { fixture.stop() }
         var opened: [URL] = []
-        let web = ArtifactWebContent(openURL: { opened.append($0); return true })
+        let web = ArtifactWebRenderer(openURL: { opened.append($0); return true })
         defer { web.stop() }
         web.webView.frame = NSRect(x: 0, y: 0, width: 640, height: 400)
         #expect(web.webView.configuration.userContentController.userScripts.isEmpty)
@@ -349,7 +349,7 @@ struct ArtifactViewerTests {
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 640, height: 400),
                               styleMask: [], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
-        let web = ArtifactWebContent()
+        let web = ArtifactWebRenderer()
         window.contentView = web.webView
         defer { window.contentView = nil; window.close() }
         #expect(window.makeFirstResponder(web.webView))
@@ -574,7 +574,7 @@ struct ArtifactViewerTests {
         try await fixture.start()
         defer { fixture.stop() }
         let destination = fixture.url("/api/serve/test/next.html")
-        let web = ArtifactWebContent(openURL: { _ in
+        let web = ArtifactWebRenderer(openURL: { _ in
             Issue.record("The fixture must not open a browser.")
             return false
         })

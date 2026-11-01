@@ -2,8 +2,6 @@ import AppKit
 import ToyBoxUI
 import WebKit
 
-typealias ArtifactWebContent = ArtifactWebRenderer
-
 extension ArtifactWebRenderer {
     convenience init(openURL: @escaping (URL) -> Bool = { NSWorkspace.shared.open($0) }) {
         self.init(presentation: MacArtifactWebPresentation(openURL: openURL))
