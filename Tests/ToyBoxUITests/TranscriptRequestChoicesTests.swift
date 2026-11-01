@@ -146,6 +146,24 @@ struct ChoiceFlowLayoutTests {
         #expect(try height([long, "Not yet"]) > line * 2 + 6)
     }
 
+    @Test func aWrappedChoiceFillsTheRowAndAShortOneKeepsItsLabelWidth() throws {
+        func width(_ replies: [String]) throws -> Int {
+            let request = ChannelMessage(id: "m1", sequence: 1, timestamp: "2026-10-22T12:00:00Z",
+                                         sender: .agent("channel"), content: .text("?"), request: true,
+                                         replies: replies)
+            let choices = TranscriptRequestChoices(request: request, attempts: [], isConnected: true)
+            let renderer = ImageRenderer(content: TranscriptRequestActions(
+                .flow, sequence: 1, choices: choices, replyHelp: "", onChoose: { _ in }, onReply: {})
+                .controlSize(.small).font(.system(size: 11)))
+            renderer.proposedSize = ProposedViewSize(width: 300, height: nil)
+            renderer.scale = 1
+            return try #require(renderer.cgImage).width
+        }
+        let long = "Ship the Mac build to GitHub Releases now and post the notes in the team channel"
+        #expect(try width([long, "Not yet"]) == 300)
+        #expect(try width(["Yes", "Not yet"]) < 200)
+    }
+
     private func buttons(_ widths: [CGFloat]) -> some View {
         ForEach(Array(widths.enumerated()), id: \.offset) { _, width in
             Color.clear.frame(width: width, height: 20)
