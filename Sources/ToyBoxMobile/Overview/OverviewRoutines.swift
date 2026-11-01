@@ -5,7 +5,7 @@ import ToyBoxUI
 
 struct OverviewRoutinesSection: View {
     let store: ChannelStore
-    let session: OverviewSession
+    let session: ChannelOverview
 
     var body: some View {
         OverviewSectionRows(summary: .routines(store.routines.count), section: .routines, session: session) {
@@ -55,7 +55,7 @@ struct OverviewRoutineRow: View {
     @Environment(AppModel.self) private var app
     @Environment(ManagementPresenter.self) private var management
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
-    @Bindable var state: OverviewRoutineState
+    @Bindable var state: ChannelOverview.Routine
     let isLast: Bool
     @ScaledMetric(relativeTo: .title2) private var iconLane = 24
     private var pending: Bool { state.pending }
@@ -64,7 +64,7 @@ struct OverviewRoutineRow: View {
 
     private var canRun: Bool { store.phase.isConnected && !pending && !recovery.blocksWrites }
     private var canDelete: Bool { store.phase.isConnected && !pending }
-    private var schedule: String { (try? cronSummary(routine.schedule)) ?? routine.schedule }
+    private var schedule: String { RoutineScheduleSummary.text(for: routine.schedule) }
     private var scheduleLine: String {
         ChannelRoutineRunPresentation.label(schedule: schedule, pending: pending, requestedAt: requestedAt)
     }

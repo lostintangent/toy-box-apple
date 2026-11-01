@@ -12,7 +12,7 @@ final class ArtifactReaderState {
     var isPreparingOriginal = false
     var imageRevision = 0
     @ObservationIgnored var markdownOffsets: [String: CGFloat] = [:]
-    @ObservationIgnored var webReadingStates: [String: ArtifactWebReadingState] = [:]
+    @ObservationIgnored var webReadingStates: [String: ArtifactWebRenderer.Reading] = [:]
     @ObservationIgnored weak var webRenderer: ArtifactWebRenderer?
     @ObservationIgnored weak var imageView: ArtifactImageScrollView?
     @ObservationIgnored private(set) var originalTask: Task<Void, Never>?

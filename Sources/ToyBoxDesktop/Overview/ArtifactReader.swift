@@ -22,7 +22,7 @@ final class ArtifactOpener {
     @ObservationIgnored weak var nativeImageView: ArtifactImageScrollView?
     @ObservationIgnored var webView: WKWebView?
     @ObservationIgnored weak var webRenderer: ArtifactWebRenderer?
-    @ObservationIgnored var webReadingStates: [String: ArtifactWebReadingState] = [:]
+    @ObservationIgnored var webReadingStates: [String: ArtifactWebRenderer.Reading] = [:]
     @ObservationIgnored var scrollOffsets: [String: CGFloat] = [:]
 
     var artifact: ChannelArtifact? { session.artifact }

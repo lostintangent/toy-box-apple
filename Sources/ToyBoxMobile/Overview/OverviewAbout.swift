@@ -6,7 +6,7 @@ import UIKit
 
 struct OverviewAboutSection: View {
     let store: ChannelStore
-    @Bindable var session: OverviewSession
+    @Bindable var session: ChannelOverview
     @Environment(\.openURL) private var openURL
 
     /// Whether the headerless opening has a purpose, folder or preview to show. Without one it is

@@ -11,7 +11,7 @@ struct ChannelScreen: View {
     @Environment(ManagementPresenter.self) private var management
     @Environment(ChannelArtifactSession.self) private var artifacts
     @Environment(TranscriptGalleryPresenter.self) private var gallery
-    @Environment(OverviewPresentation.self) private var overview
+    @Environment(Overview.self) private var overview
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.usesVerticalToolbar) private var usesVerticalToolbar
     @ViewState private var keyboardIsVisible = false

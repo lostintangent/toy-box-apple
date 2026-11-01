@@ -10,7 +10,7 @@ enum OverviewTaskMetrics {
 
 struct OverviewTasksSection: View {
     let store: ChannelStore
-    let session: OverviewSession
+    let session: ChannelOverview
 
     var body: some View {
         let progress = channelTasksProgress(store.tasks)
@@ -32,7 +32,7 @@ struct OverviewTasksSection: View {
 struct OverviewSubtasksScreen: View {
     let parentID: String
     let store: ChannelStore
-    let session: OverviewSession
+    let session: ChannelOverview
 
     var body: some View {
         Group {
@@ -88,7 +88,7 @@ struct OverviewTaskReadingLayout {
 struct OverviewTaskNode: View {
     let task: ChannelTask
     let store: ChannelStore
-    let session: OverviewSession
+    let session: ChannelOverview
     let depth: Int
     let layout: OverviewTaskReadingLayout
     @Environment(ChannelArtifactSession.self) private var viewer

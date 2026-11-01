@@ -5,12 +5,6 @@ import Observation
 import WebKit
 
 @MainActor
-public struct ArtifactWebReadingState {
-    public let document: URL
-    public let position: Task<CGPoint, any Error>
-}
-
-@MainActor
 /// Dialog methods return false without completing when native presentation is unavailable.
 public protocol ArtifactWebPresenting: AnyObject {
     func openInBrowser(_ url: URL, completion: @escaping @MainActor @Sendable (Bool) -> Void)
@@ -64,6 +58,11 @@ private final class ArtifactRootDocument: NSObject, WKURLSchemeHandler {
 
 @MainActor @Observable
 public final class ArtifactWebRenderer: NSObject, WKNavigationDelegate, WKUIDelegate {
+    @MainActor
+    public struct Reading {
+        public let document: URL
+        public let position: Task<CGPoint, any Error>
+    }
     private static let readingWorld = WKContentWorld.world(name: "ToyBoxArtifactReadingState")
     public let webView: WKWebView
     public private(set) var isLoading = false
@@ -91,7 +90,7 @@ public final class ArtifactWebRenderer: NSObject, WKNavigationDelegate, WKUIDele
         webView.uiDelegate = self
     }
 
-    public var readingState: ArtifactWebReadingState? {
+    public var readingState: Reading? {
         guard !isLoading, let url = rootDocument.url, let current = webView.url,
               rootDocument.contains(current) else { return nil }
         let position = Task { @MainActor [webView] in
@@ -101,11 +100,11 @@ public final class ArtifactWebRenderer: NSObject, WKNavigationDelegate, WKUIDele
                   x.isFinite, y.isFinite else { throw ArtifactWebError.invalidReadingState }
             return CGPoint(x: x, y: y)
         }
-        return ArtifactWebReadingState(document: url, position: position)
+        return Reading(document: url, position: position)
     }
 
     public func load(_ content: String, directory: URL, server: URL, resource: URL? = nil,
-                     state: ArtifactWebReadingState? = nil) async {
+                     state: Reading? = nil) async {
         let token = UUID()
         generation = token
         error = nil

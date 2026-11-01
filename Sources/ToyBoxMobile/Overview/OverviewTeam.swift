@@ -6,7 +6,7 @@ import UIKit
 
 struct OverviewTeamSection: View {
     let store: ChannelStore
-    let session: OverviewSession
+    let session: ChannelOverview
     let placement: OverviewPlacement
     @Environment(ManagementPresenter.self) private var management
     @Environment(\.dynamicTypeSize) private var typeSize
@@ -50,7 +50,7 @@ struct OverviewTeamSection: View {
 struct OverviewTeamRow: View {
     let agent: ChannelAgent
     let store: ChannelStore
-    let session: OverviewSession
+    let session: ChannelOverview
     let isLead: Bool
     let placement: OverviewPlacement
     @Environment(ManagementPresenter.self) private var management

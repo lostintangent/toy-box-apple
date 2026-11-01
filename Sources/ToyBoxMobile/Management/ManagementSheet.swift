@@ -11,14 +11,6 @@ struct ManagementSheet: View {
     @Environment(ManagementSessions.self) private var sessions
     @ViewState private var store: ChannelStore?
 
-    private var channelID: String? {
-        switch flow {
-        case .newChannel: nil
-        case .editChannel(let id), .deleteChannel(let id), .addMember(let id, _),
-             .editMember(let id, _), .removeMember(let id, _), .deleteRoutine(let id, _): id
-        }
-    }
-
     var body: some View {
         NavigationStack {
             Group {
@@ -61,9 +53,9 @@ struct ManagementSheet: View {
             .listSectionSpacing(24)
             .navigationBarTitleDisplayMode(.inline)
         }
-        .task(id: channelID) {
-            guard let channelID, let catalog = app.catalog else { return }
-            let connection = catalog.channel(id: channelID)
+        .task(id: flow.channelId) {
+            guard let channelId = flow.channelId, let catalog = app.catalog else { return }
+            let connection = catalog.channel(id: channelId)
             store = connection
             app.hold(connection)
         }

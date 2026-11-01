@@ -6,9 +6,9 @@ import UIKit
 
 struct OverviewView: View {
     let store: ChannelStore
-    @Bindable var session: OverviewSession
+    @Bindable var session: ChannelOverview
     let placement: OverviewPlacement
-    @Environment(OverviewPresentation.self) private var presentation
+    @Environment(Overview.self) private var presentation
     @Environment(ChannelInteraction.self) private var interaction
     @Environment(ManagementPresenter.self) private var management
 
@@ -72,9 +72,9 @@ struct OverviewView: View {
 
 private struct OverviewContent: View {
     let store: ChannelStore
-    @Bindable var session: OverviewSession
+    @Bindable var session: ChannelOverview
     let placement: OverviewPlacement
-    @Environment(OverviewPresentation.self) private var presentation
+    @Environment(Overview.self) private var presentation
     @Environment(ChannelInteraction.self) private var interaction
 
     var body: some View {
@@ -149,7 +149,7 @@ private struct LeadingVerticalBarBehavior: ViewModifier {
     @Environment(\.toolbarVerticalEdge) private var verticalEdge
 
     func body(content: Content) -> some View {
-        if OverviewSheetBar.keepsHorizontalBar(placement: placement, hasLeadingVerticalBar: verticalEdge == .leading) {
+        if placement.keepsHorizontalBar(hasLeadingVerticalBar: verticalEdge == .leading) {
             content.toolbarVerticalBehavior(.disabled)
         } else {
             content

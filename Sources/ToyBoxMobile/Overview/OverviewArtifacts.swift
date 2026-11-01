@@ -7,7 +7,7 @@ import UIKit
 
 struct OverviewArtifactsSection: View {
     let store: ChannelStore
-    let session: OverviewSession
+    let session: ChannelOverview
 
     var body: some View {
         OverviewSectionRows(summary: .artifacts(store.artifacts.count), section: .artifacts, session: session) {
@@ -111,7 +111,7 @@ struct OverviewArtifactRow: View {
     let artifact: ChannelArtifact
     let share: ChannelArtifactShare?
     let store: ChannelStore
-    let state: OverviewArtifactState
+    let state: ChannelOverview.Artifact
     @Environment(AppModel.self) private var app
     @Environment(ChannelArtifactSession.self) private var viewer
     @Environment(ChannelInteraction.self) private var interaction

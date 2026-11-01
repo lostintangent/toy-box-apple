@@ -15,13 +15,11 @@ enum OverviewPlacement: Equatable {
     init(sceneWidth: CGFloat, sizeClass: UserInterfaceSizeClass?) {
         self = sizeClass == .regular && sceneWidth >= Self.columnWidth + 420 ? .inspector : .sheet
     }
-}
 
-enum OverviewSheetBar {
     /// Folded landscape stands the sheet's bar items in a leading vertical bar, which would move the
     /// close over the list. The sheet keeps its bar horizontal there, so the close stays trailing.
-    static func keepsHorizontalBar(placement: OverviewPlacement, hasLeadingVerticalBar: Bool) -> Bool {
-        placement == .sheet && hasLeadingVerticalBar
+    func keepsHorizontalBar(hasLeadingVerticalBar: Bool) -> Bool {
+        self == .sheet && hasLeadingVerticalBar
     }
 }
 
@@ -34,15 +32,15 @@ enum OverviewSection: Hashable {
 }
 
 @MainActor @Observable
-final class OverviewPresentation {
+final class Overview {
     var placement = OverviewPlacement.sheet
     private(set) var isCompactSheetPresented = false
-    @ObservationIgnored private var sessions: [ObjectIdentifier: OverviewSession] = [:]
+    @ObservationIgnored private var sessions: [ObjectIdentifier: ChannelOverview] = [:]
 
-    func session(for store: ChannelStore) -> OverviewSession {
+    func session(for store: ChannelStore) -> ChannelOverview {
         let key = ObjectIdentifier(store)
         if let session = sessions[key] { return session }
-        let session = OverviewSession(store: store)
+        let session = ChannelOverview(store: store)
         sessions[key] = session
         return session
     }
@@ -73,11 +71,27 @@ final class OverviewPresentation {
 }
 
 @MainActor @Observable
-final class OverviewSession {
+final class ChannelOverview {
     struct Disclosure {
         /// The default the toggle was made against. A change to the default re-derives the disclosure.
         let expandedByDefault: Bool
         var expanded: Bool
+    }
+
+    @MainActor @Observable
+    final class Routine {
+        var expanded = false
+        var pending = false
+        var requestedAt: Date?
+        let recovery = ChannelManagementWriteRecovery()
+    }
+
+    @MainActor @Observable
+    final class Artifact {
+        var pending = false
+        let recovery = ChannelManagementWriteRecovery()
+
+        func canRemove(connected: Bool) -> Bool { connected && !pending && !recovery.blocksWrites }
     }
 
     let store: ChannelStore
@@ -87,8 +101,8 @@ final class OverviewSession {
     var previewError: String?
     var taskDisclosure: [String: Disclosure] = [:]
     var showsOnlyInProgressTasks = false
-    @ObservationIgnored private var routines: [String: OverviewRoutineState] = [:]
-    @ObservationIgnored private var artifacts: [String: OverviewArtifactState] = [:]
+    @ObservationIgnored private var routines: [String: Routine] = [:]
+    @ObservationIgnored private var artifacts: [String: Artifact] = [:]
 
     init(store: ChannelStore) { self.store = store }
 
@@ -127,33 +141,17 @@ final class OverviewSession {
         taskDisclosure = taskDisclosure.filter { ids.contains($0.key) }
     }
 
-    func routine(_ id: String) -> OverviewRoutineState {
+    func routine(_ id: String) -> Routine {
         if let state = routines[id] { return state }
-        let state = OverviewRoutineState()
+        let state = Routine()
         routines[id] = state
         return state
     }
 
-    func artifact(_ id: String) -> OverviewArtifactState {
+    func artifact(_ id: String) -> Artifact {
         if let state = artifacts[id] { return state }
-        let state = OverviewArtifactState()
+        let state = Artifact()
         artifacts[id] = state
         return state
     }
-}
-
-@MainActor @Observable
-final class OverviewRoutineState {
-    var expanded = false
-    var pending = false
-    var requestedAt: Date?
-    let recovery = ChannelManagementWriteRecovery()
-}
-
-@MainActor @Observable
-final class OverviewArtifactState {
-    var pending = false
-    let recovery = ChannelManagementWriteRecovery()
-
-    func canRemove(connected: Bool) -> Bool { connected && !pending && !recovery.blocksWrites }
 }

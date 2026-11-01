@@ -88,7 +88,7 @@ final class ChannelFollowController {
         }
     }
 
-    func state(for store: ChannelStore) -> ChannelFollowAction.State {
+    func state(for store: ChannelStore) -> ChannelFollowAction.Status {
         if starting.contains(store.id) { return .starting }
         if entries[store.id] != nil { return .following }
         guard catalog?.api.baseURL == store.api.baseURL else { return .unavailable(nil) }

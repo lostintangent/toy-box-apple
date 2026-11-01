@@ -808,7 +808,7 @@ struct ShellTests {
                     lead: .init(id: store.id, name: "Lead")
                 )))
             }
-            @MainActor func waitFor(_ state: ChannelFollowAction.State, for store: ChannelStore) async {
+            @MainActor func waitFor(_ state: ChannelFollowAction.Status, for store: ChannelStore) async {
                 for await current in Observations({ following.state(for: store) }) {
                     if current == state { return }
                 }
@@ -1264,7 +1264,7 @@ struct ShellTests {
 
     @Test(arguments: [false, true])
     func aReaderWaitsForActualCompactOverviewDismissalNotJustTheClosedIntent(imageReader: Bool) {
-        let overview = OverviewPresentation()
+        let overview = Overview()
         overview.compactSheetDidAppear()
         func visibility(requested: Bool = true, overviewRequested: Bool) -> ChannelReaderVisibility {
             ChannelReaderVisibility(artifactRequested: requested && !imageReader,

@@ -609,13 +609,6 @@ struct ManagementTests {
         }
     }
 
-    @Test func routineSchedulesUseReadableSummariesAndKeepUnknownSyntax() throws {
-        let weekdays = try cronSummary("0 9 * * 1-5")
-        #expect(RoutineScheduleSummary.text(for: "0 9 * * 1-5") == weekdays)
-        #expect(RoutineScheduleSummary.text(for: "H 9 * * *") == "H 9 * * *")
-        #expect(RoutineScheduleSummary.text(for: "not a schedule") == "not a schedule")
-    }
-
     @Test func theTeamKeepsTheLeadFirstAndSortsMembersLikeFinder() {
         let roster = [ChannelAgent(id: "lead", name: "Zed"), ChannelAgent(id: "b", name: "agent 10"),
                       ChannelAgent(id: "a", name: "Agent 2"), ChannelAgent(id: "c", name: "Ada")]
@@ -701,7 +694,7 @@ struct ManagementTests {
         var edges: [CGFloat] = []
         for segment in view.segments {
             #expect(segment.frame.minY == 0 && segment.frame.height == view.bounds.height)
-            #expect(segment.opacity == OverviewEllipsisPulseView.rest)
+            #expect(segment.opacity == ChannelEllipsisPulseMask.rest)
             let fade = try #require(segment.animation(forKey: "fade") as? CABasicAnimation)
             #expect(fade.fromValue as? Float == 1 && fade.toValue as? Float == 0.25)
             #expect(fade.duration == 0.3125)

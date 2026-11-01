@@ -19,6 +19,14 @@ struct OverviewPresentationTests {
         }
     }
 
+    @MainActor
+    @Test func routineSchedulesUseReadableSummariesAndKeepUnknownSyntax() throws {
+        let weekdays = try cronSummary("0 9 * * 1-5")
+        #expect(RoutineScheduleSummary.text(for: "0 9 * * 1-5") == weekdays)
+        #expect(RoutineScheduleSummary.text(for: "H 9 * * *") == "H 9 * * *")
+        #expect(RoutineScheduleSummary.text(for: "not a schedule") == "not a schedule")
+    }
+
     @Test func countsKeepKnownZeroUnavailableAndNaturalSingularPluralDistinct() {
         let empty = ChannelOverviewSummary.tasks(channelTasksProgress([]))
         #expect(empty.count == "0" && empty.spoken == "Tasks, no tasks")

@@ -178,7 +178,7 @@ struct ConversationView: View {
     @Environment(AppModel.self) private var model
     @Environment(ManagementPresenter.self) private var management
     @Environment(ChannelInteraction.self) private var interaction
-    @Environment(OverviewPresentation.self) private var overviewPresentation
+    @Environment(Overview.self) private var overviewPresentation
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.channelIntelligence) private var intelligence

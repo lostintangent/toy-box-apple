@@ -13,10 +13,10 @@ import UIKit
 @MainActor
 struct OverviewTests {
     @Test func bothFollowMenusUseTheSameLabelsAndEnabledStates() {
-        let available = ChannelFollowAction.State.available
-        let unavailable = ChannelFollowAction.State.unavailable(.noTasksInProgress)
-        let starting = ChannelFollowAction.State.starting
-        let following = ChannelFollowAction.State.following
+        let available = ChannelFollowAction.Status.available
+        let unavailable = ChannelFollowAction.Status.unavailable(.noTasksInProgress)
+        let starting = ChannelFollowAction.Status.starting
+        let following = ChannelFollowAction.Status.following
         #expect(available.title == "Follow This Channel")
         #expect(unavailable.title == available.title)
         #expect(unavailable.reason == .noTasksInProgress)
@@ -34,7 +34,7 @@ struct OverviewTests {
     @Test func presentationChangesKeepTheSameOverviewState() throws {
         let api = try ChannelAPI(serverURL: "https://fixture.example")
         let store = ChannelStore(id: "channel", api: api)
-        let presentation = OverviewPresentation()
+        let presentation = Overview()
         let session = presentation.session(for: store)
         session.navigationPath = [.subtasks("task")]
         session.purposeExpanded = true
@@ -64,14 +64,14 @@ struct OverviewTests {
     }
 
     @Test func onlyTheSheetKeepsItsBarHorizontalWhenTheSystemStandsItOnTheLeadingEdge() {
-        #expect(OverviewSheetBar.keepsHorizontalBar(placement: .sheet, hasLeadingVerticalBar: true))
-        #expect(!OverviewSheetBar.keepsHorizontalBar(placement: .sheet, hasLeadingVerticalBar: false))
-        #expect(!OverviewSheetBar.keepsHorizontalBar(placement: .inspector, hasLeadingVerticalBar: true))
-        #expect(!OverviewSheetBar.keepsHorizontalBar(placement: .inspector, hasLeadingVerticalBar: false))
+        #expect(OverviewPlacement.sheet.keepsHorizontalBar(hasLeadingVerticalBar: true))
+        #expect(!OverviewPlacement.sheet.keepsHorizontalBar(hasLeadingVerticalBar: false))
+        #expect(!OverviewPlacement.inspector.keepsHorizontalBar(hasLeadingVerticalBar: true))
+        #expect(!OverviewPlacement.inspector.keepsHorizontalBar(hasLeadingVerticalBar: false))
     }
 
     @Test func theColumnIgnoresReflowWritesAndShowsOnlyAnUncoveredRequestedOverview() {
-        let presentation = OverviewPresentation()
+        let presentation = Overview()
         let interaction = ChannelInteraction(isInspectorPresented: true)
         let column = presentation.columnBinding(for: interaction)
         #expect(!column.wrappedValue)
@@ -91,7 +91,7 @@ struct OverviewTests {
     }
 
     @Test func compactCoverageEndsOnDismissalAndObsoleteDismissalKeepsTheRequestedReplacementCovered() {
-        let presentation = OverviewPresentation()
+        let presentation = Overview()
         presentation.compactSheetDidAppear()
         presentation.move(to: .inspector)
         #expect(presentation.isCompactSheetPresented)
@@ -150,7 +150,7 @@ struct OverviewTests {
 
     @Test func closingParentsAndMovingPresentationRetainChildChoicesRoutesAndScopedOffsets() throws {
         let store = ChannelStore(id: "channel", api: try ChannelAPI(serverURL: "https://fixture.example"))
-        let session = OverviewSession(store: store)
+        let session = ChannelOverview(store: store)
         var tasks: [ChannelTask] = [
             .init(id: "parent", title: "Parent", status: "in_progress", children: [
                 .init(id: "child", title: "Child", status: "in_progress", children: [
@@ -176,8 +176,8 @@ struct OverviewTests {
         session.navigationPath = [.subtasks("parent"), .subtasks("child")]
         session.expandedSections[.team] = false
         #expect(!session.isExpanded(.team))
-        #expect(OverviewSession.task("leaf", in: tasks)?.title == "Leaf")
-        #expect(OverviewSession.task("deleted", in: tasks) == nil)
+        #expect(ChannelOverview.task("leaf", in: tasks)?.title == "Leaf")
+        #expect(ChannelOverview.task("deleted", in: tasks) == nil)
         session.expandedSections[.tasks] = false
         session.prepareForTaskReveal()
         #expect(session.navigationPath.isEmpty && session.isExpanded(.tasks))
@@ -297,7 +297,7 @@ struct OverviewTests {
             lead: .lead(id: "channel", profile: .init(name: "Agent", role: "Engineer",
                                                     avatar: .init(mark: "M4 12H20", color: "#123456"))))
         _ = try store.apply(.init(type: "snapshot", state: state))
-        let session = OverviewSession(store: store)
+        let session = ChannelOverview(store: store)
         let host = UIHostingController(rootView:
             NavigationStack {
                 OverviewList {
@@ -360,7 +360,7 @@ struct OverviewTests {
         state.presence = [agentID: .init(state: "waiting", text: reason, wakeAt: wake),
                           "member": .init(state: "waiting", text: reason)]
         _ = try store.apply(.init(type: "snapshot", state: state))
-        let session = OverviewSession(store: store)
+        let session = ChannelOverview(store: store)
         let interaction = ChannelInteraction()
         interaction.isInspectorPresented = true
         let host = UIHostingController(rootView:
@@ -426,7 +426,7 @@ struct OverviewTests {
     @Test(arguments: [false, true])
     func plainOverviewSeparatesSectionsWithStrongerHeadingsAndDeliberateGaps(expanded: Bool) async throws {
         let store = ChannelStore(id: "channel", api: try ChannelAPI(serverURL: "https://fixture.example"))
-        let session = OverviewSession(store: store)
+        let session = ChannelOverview(store: store)
         session.expandedSections[.team] = expanded
         session.expandedSections[.tasks] = expanded
         let host = UIHostingController(rootView:
@@ -487,11 +487,11 @@ struct OverviewTests {
             lead: .lead(id: "channel", profile: .init(name: "Lead", role: "Coordinator",
                                                     avatar: .init(mark: "M4 12H20", color: "#123456")))
         )))
-        let session = OverviewSession(store: store)
+        let session = ChannelOverview(store: store)
         session.expandedSections[.team] = teamExpanded
         let host = UIHostingController(rootView:
             OverviewView(store: store, session: session, placement: .sheet)
-                .environment(OverviewPresentation()).environment(ChannelInteraction())
+                .environment(Overview()).environment(ChannelInteraction())
                 .environment(ChannelFollowController())
                 .environment(ManagementPresenter()).environment(try artifactSession(artifacts: []))
                 .environment(\.horizontalSizeClass, .compact).dynamicTypeSize(size))
@@ -533,8 +533,8 @@ struct OverviewTests {
         )))
         #expect(!OverviewAboutSection.hasContent(store.details))
         let host = UIHostingController(rootView:
-            OverviewView(store: store, session: OverviewSession(store: store), placement: .sheet)
-                .environment(OverviewPresentation()).environment(ChannelInteraction())
+            OverviewView(store: store, session: ChannelOverview(store: store), placement: .sheet)
+                .environment(Overview()).environment(ChannelInteraction())
                 .environment(ChannelFollowController())
                 .environment(ManagementPresenter()).environment(try artifactSession(artifacts: []))
                 .environment(\.horizontalSizeClass, .compact))
@@ -570,8 +570,8 @@ struct OverviewTests {
                                                     avatar: .init(mark: "M4 12H20", color: "#123456")))
         )))
         let host = UIHostingController(rootView:
-            OverviewView(store: store, session: OverviewSession(store: store), placement: .sheet)
-                .environment(OverviewPresentation()).environment(ChannelInteraction())
+            OverviewView(store: store, session: ChannelOverview(store: store), placement: .sheet)
+                .environment(Overview()).environment(ChannelInteraction())
                 .environment(ChannelFollowController())
                 .environment(ManagementPresenter()).environment(try artifactSession(artifacts: []))
                 .environment(\.horizontalSizeClass, .compact)
@@ -613,11 +613,11 @@ struct OverviewTests {
     @Test(arguments: [OverviewPlacement.sheet, .inspector])
     func onlyTheSheetCarriesASystemCloseOnEveryPage(placement: OverviewPlacement) async throws {
         let store = ChannelStore(id: "channel", api: try ChannelAPI(serverURL: "https://fixture.example"))
-        let session = OverviewSession(store: store)
+        let session = ChannelOverview(store: store)
         let interaction = ChannelInteraction(isInspectorPresented: true)
         let host = UIHostingController(rootView:
             OverviewView(store: store, session: session, placement: placement)
-                .environment(OverviewPresentation())
+                .environment(Overview())
                 .environment(interaction)
                 .environment(ManagementPresenter())
                 .environment(ChannelFollowController())
@@ -688,7 +688,7 @@ struct OverviewTests {
 
     @Test func listRowsKeepTheSeparatorBetweenRowsButNotBelowTheLastRow() async throws {
         let store = ChannelStore(id: "channel", api: try ChannelAPI(serverURL: "https://fixture.example"))
-        let session = OverviewSession(store: store)
+        let session = ChannelOverview(store: store)
         let host = UIHostingController(rootView:
             OverviewList {
                 OverviewSectionRows(summary: .artifacts(2), section: .artifacts, session: session,
@@ -719,7 +719,7 @@ struct OverviewTests {
         defer { defaults.removePersistentDomain(forName: suite) }
         let model = AppModel(arguments: ["--server", "https://fixture.example"], environment: [:], defaults: defaults)
         let store = ChannelStore(id: "channel", api: try ChannelAPI(serverURL: "https://fixture.example"))
-        let state = OverviewRoutineState()
+        let state = ChannelOverview.Routine()
         state.expanded = expanded
         let host = UIHostingController(rootView:
             OverviewList {
@@ -754,12 +754,12 @@ struct OverviewTests {
         defer { defaults.removePersistentDomain(forName: suite) }
         let model = AppModel(arguments: ["--server", "https://fixture.example"], environment: [:], defaults: defaults)
         let store = ChannelStore(id: "channel", api: try ChannelAPI(serverURL: "https://fixture.example"))
-        let state = OverviewRoutineState()
+        let state = ChannelOverview.Routine()
         let host = UIHostingController(rootView:
             OverviewList {
                 OverviewArtifactRow(
                     artifact: .init(file: .init(kind: "machine", path: "plan.md"), title: "Daily notes"),
-                    share: nil, store: store, state: OverviewArtifactState())
+                    share: nil, store: store, state: ChannelOverview.Artifact())
                     .listRowInsets(.vertical, 6)
                 OverviewRoutineRow(
                     routine: .init(id: "routine", title: "Daily review", schedule: "0 9 * * *",
@@ -836,7 +836,7 @@ struct OverviewTests {
                 OverviewRoutineRow(
                     routine: .init(id: "routine", title: "Daily review", schedule: "0 9 * * 1-5",
                                    prompt: "Review the workshop."),
-                    store: store, state: OverviewRoutineState(), isLast: true)
+                    store: store, state: ChannelOverview.Routine(), isLast: true)
             }
             .environment(model).environment(presenter))
         let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 900))
@@ -885,7 +885,7 @@ struct OverviewTests {
         defer { defaults.removePersistentDomain(forName: suite) }
         let model = AppModel(arguments: ["--server", "https://fixture.example"], environment: [:], defaults: defaults)
         let store = ChannelStore(id: "channel", api: try ChannelAPI(serverURL: "https://fixture.example"))
-        let state = OverviewRoutineState()
+        let state = ChannelOverview.Routine()
         let host = UIHostingController(rootView:
             OverviewList {
                 OverviewRoutineRow(
@@ -948,7 +948,7 @@ struct OverviewTests {
     }
 
     @MainActor @Test func artifactRemovalWaitsForTheChannelAndAnyUnconfirmedWrite() throws {
-        let state = OverviewArtifactState()
+            let state = ChannelOverview.Artifact()
         #expect(state.canRemove(connected: true))
         #expect(!state.canRemove(connected: false))
         state.pending = true
@@ -971,7 +971,7 @@ struct OverviewTests {
         let artifact = ChannelArtifact(file: .init(kind: "machine", path: "plan.md"), title: "Daily notes")
         let host = UIHostingController(rootView:
             OverviewList {
-                OverviewArtifactRow(artifact: artifact, share: nil, store: store, state: OverviewArtifactState())
+                OverviewArtifactRow(artifact: artifact, share: nil, store: store, state: ChannelOverview.Artifact())
                     .listRowInsets(.vertical, 6)
             }
             .environment(model).environment(ManagementPresenter()).environment(ChannelInteraction())
@@ -1017,7 +1017,7 @@ struct OverviewTests {
         let store = ChannelStore(id: "channel", api: try ChannelAPI(serverURL: "https://fixture.example"),
                                  sendJournal: nil)
         let artifact = ChannelArtifact(file: .init(kind: "machine", path: "plan.md"), title: "Daily notes")
-        let state = OverviewArtifactState()
+        let state = ChannelOverview.Artifact()
         state.recovery.record(ChannelAPIError.http(status: 500, message: "Server error"))
         let host = UIHostingController(rootView:
             OverviewList {
@@ -1056,7 +1056,7 @@ struct OverviewTests {
         defer { defaults.removePersistentDomain(forName: suite) }
         let model = AppModel(arguments: ["--server", "https://fixture.example"], environment: [:], defaults: defaults)
         let store = ChannelStore(id: "channel", api: try ChannelAPI(serverURL: "https://fixture.example"))
-        let session = OverviewSession(store: store)
+        let session = ChannelOverview(store: store)
         let viewer = try artifactSession(artifacts: [])
         let value = ChannelArtifact(file: .init(kind: "machine", path: "plan.md"), title: title)
         let host = UIHostingController(rootView:
@@ -1065,7 +1065,7 @@ struct OverviewTests {
                                 session: session, isLead: true, placement: .sheet)
                 OverviewArtifactRow(
                     artifact: value,
-                    share: nil, store: store, state: OverviewArtifactState())
+                    share: nil, store: store, state: ChannelOverview.Artifact())
                     .listRowInsets(.vertical, 6)
             }
             .environment(model).environment(ManagementPresenter()).environment(ChannelInteraction()).environment(viewer)
@@ -1114,7 +1114,7 @@ struct OverviewTests {
 
     @Test func taskRevealScrollsToTheNativeSectionInsteadOfOnlyExpandingIt() async throws {
         let store = ChannelStore(id: "channel", api: try ChannelAPI(serverURL: "https://fixture.example"))
-        let session = OverviewSession(store: store)
+        let session = ChannelOverview(store: store)
         session.expandedSections[.tasks] = false
         let host = UIHostingController(rootView:
             ScrollViewReader { proxy in
@@ -1181,10 +1181,10 @@ struct OverviewTests {
             ]),
             .init(id: "other", title: "Other", status: "done"),
         ])
-        let session = OverviewSession(store: store)
+        let session = ChannelOverview(store: store)
         let host = UIHostingController(rootView:
             OverviewView(store: store, session: session, placement: .sheet)
-                .environment(OverviewPresentation()).environment(ChannelInteraction())
+                .environment(Overview()).environment(ChannelInteraction())
                 .environment(ChannelFollowController())
                 .environment(ManagementPresenter()).environment(try artifactSession(artifacts: []))
                 .environment(\.horizontalSizeClass, .compact).dynamicTypeSize(.large))
@@ -1270,7 +1270,7 @@ struct OverviewTests {
 
     @Test func linkedArtifactAddsNoMoreRowHeightThanAnOrdinaryMetadataLine() throws {
         let store = ChannelStore(id: "channel", api: try ChannelAPI(serverURL: "https://fixture.example"))
-        let session = OverviewSession(store: store)
+        let session = ChannelOverview(store: store)
         let viewer = try artifactSession(artifacts: [])
         let layout = OverviewTaskReadingLayout(
             contentWidth: 220, statusWidth: 16, titleGap: 6, ownerWidth: 20,

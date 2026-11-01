@@ -128,11 +128,11 @@ struct OverviewAgentRow: View {
         Button("About \(agent.name)") { about[key] = true }
         if !isLead {
             Divider()
-            Button("Edit Member…") {
+            Button("Edit Agent…") {
                 management.present(.editMember(channelId: channelId, agentId: agent.id))
             }
             .disabled(!isConnected)
-            Button("Remove Member…", role: .destructive) {
+            Button("Remove Agent…", role: .destructive) {
                 management.present(.removeMember(channelId: channelId, agentId: agent.id))
             }
             .disabled(!isConnected)
@@ -237,7 +237,7 @@ struct OverviewAgentAbout: View {
     }
 }
 
-/// Ends the Team list: a dashed circle and secondary label that opens Add Member.
+/// Ends the Team list: a dashed circle and secondary label that opens Add Agent.
 private struct OverviewAddAgentRow: View {
     @Environment(\.channelTextScale) private var textScale
     let isConnected: Bool
