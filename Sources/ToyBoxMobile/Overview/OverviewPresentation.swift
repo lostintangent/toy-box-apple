@@ -86,6 +86,7 @@ final class OverviewSession {
     var purposeExpanded = false
     var previewError: String?
     var taskDisclosure: [String: Disclosure] = [:]
+    var showsOnlyInProgressTasks = false
     @ObservationIgnored private var routines: [String: OverviewRoutineState] = [:]
     @ObservationIgnored private var artifacts: [String: OverviewArtifactState] = [:]
 
