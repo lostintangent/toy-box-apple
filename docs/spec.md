@@ -2315,8 +2315,11 @@ name/status gap stays 2 points. Remove the
 the minimum-44 label, for both short and two-line titles. This replaces the earlier total-height
 target: preserve readable content and the full target rather than squeezing the row to 60.
 Grow for wrapping or larger text.
-Phone artifact rows also offer a trailing swipe labelled "Remove", with `allowsFullSwipe` off and
-hidden under VoiceOver. Its context menu and accessibility action say "Remove from Channel". Both
+Phone artifact rows also offer a trailing swipe labelled "Remove", hidden under VoiceOver. Swiping
+all the way across removes the artifact without tapping the button, like Mail. Team and Routines
+swipes keep full swipe off. The row stays in place with its "Removing from channel" spinner until
+the server's event arrives, so a full swipe must not animate it away and bring it back.
+Its context menu and accessibility action say "Remove from Channel". All three
 use the same rules as Mac: no confirmation, one request, no optimistic removal, and unconfirmed
 results are checked before another attempt.
 This is the Artifacts section, not the separate task-artifact link whose compact 35-point
