@@ -3283,9 +3283,14 @@ margins remain system-owned, with no custom largest-text layout.
 
 ### Following a channel on iPhone
 
-Channel Actions offers "Follow This Channel" after Find and before Open in Toy Box. Overview Actions
-offers the same action before its Edit/Delete section. Both use one app-scoped controller,
-show "Starting…" during registration and "Stop Following" while active. Starting requires a
+Channel Actions offers "Follow This Channel" after Find and before Open in Toy Box. When following
+can't start, the item is disabled under a native section header that names the reason: "Channel was
+deleted", "Channel can't be reached", "No tasks in progress" or "Push notifications couldn't be set
+up". The first blocking condition in that order supplies the reason. An offline channel with no other
+blocker stays a plain disabled item. iOS menus don't render two-line Label subtitles, so the header
+carries the reason and the item's VoiceOver label repeats it. Notification permission never gates
+following, so it is never a reason. The item uses one app-scoped controller, shows "Starting…" during
+registration and "Stop Following" while active. Starting requires a
 live snapshot with unfinished direct-root tasks, measured by `channelTasksProgress`. Stop
 stays available offline and immediately removes the local Activity without confirmation or
 changing the team's work. A failed start tears down its partial Activity and shows only the

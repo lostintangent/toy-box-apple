@@ -14,11 +14,13 @@ import UIKit
 struct OverviewTests {
     @Test func bothFollowMenusUseTheSameLabelsAndEnabledStates() {
         let available = ChannelFollowAction.State.available
-        let unavailable = ChannelFollowAction.State.unavailable
+        let unavailable = ChannelFollowAction.State.unavailable(.noTasksInProgress)
         let starting = ChannelFollowAction.State.starting
         let following = ChannelFollowAction.State.following
         #expect(available.title == "Follow This Channel")
         #expect(unavailable.title == available.title)
+        #expect(unavailable.reason == .noTasksInProgress)
+        #expect(available.reason == nil)
         #expect(available.systemImage == "dot.radiowaves.left.and.right")
         #expect(available.isEnabled)
         #expect(!unavailable.isEnabled)
@@ -1586,7 +1588,7 @@ struct ChannelFollowTests {
         fixture.controller.stop(channelID: fixture.store.id)
         await fixture.wait { !activity.endings.isEmpty && fixture.completedUnregistrations == 1 }
         #expect(activity.endings == [content])
-        #expect(fixture.controller.state(for: fixture.store) == .unavailable)
+        #expect(fixture.controller.state(for: fixture.store) == .unavailable(nil))
         #expect(fixture.requests.map(\.method) == ["PUT", "DELETE"])
         #expect(!fixture.controller.startFailed)
     }
@@ -1687,7 +1689,7 @@ struct ChannelFollowTests {
         let fixture = try FollowFixture()
         defer { fixture.close() }
         fixture.configure(ready: false)
-        #expect(fixture.controller.state(for: fixture.store) == .unavailable)
+        #expect(fixture.controller.state(for: fixture.store) == .unavailable(nil))
         await fixture.controller.follow(fixture.store)
         #expect(fixture.activities.isEmpty && fixture.requests.isEmpty)
         fixture.configure()
@@ -1695,12 +1697,57 @@ struct ChannelFollowTests {
         try fixture.apply(tasks: [.init(id: "root", title: "Done", status: "done", children: [
             .init(id: "child", title: "Still pending")
         ])])
-        #expect(fixture.controller.state(for: fixture.store) == .unavailable)
+        #expect(fixture.controller.state(for: fixture.store) == .unavailable(.noTasksInProgress))
         try fixture.apply(tasks: [])
-        #expect(fixture.controller.state(for: fixture.store) == .unavailable)
+        #expect(fixture.controller.state(for: fixture.store) == .unavailable(.noTasksInProgress))
         try fixture.apply()
         fixture.store.disconnect()
-        #expect(fixture.controller.state(for: fixture.store) == .unavailable)
+        #expect(fixture.controller.state(for: fixture.store) == .unavailable(nil))
+    }
+
+    @Test func pushSetupFailureIsTheReasonOnlyWhileTasksAreOpen() throws {
+        let fixture = try FollowFixture()
+        defer { fixture.close() }
+        fixture.configure(ready: false, registrationError: "Registration failed")
+        #expect(fixture.controller.state(for: fixture.store) == .unavailable(.pushNotSetUp))
+        try fixture.apply(tasks: [])
+        #expect(fixture.controller.state(for: fixture.store) == .unavailable(.noTasksInProgress))
+        try fixture.apply()
+        fixture.configure()
+        #expect(fixture.controller.state(for: fixture.store) == .available)
+    }
+
+    @Test func deletedChannelsExplainWhyFollowIsOff() throws {
+        let fixture = try FollowFixture()
+        defer { fixture.close() }
+        _ = try fixture.store.apply(.init(type: "deleted"))
+        #expect(fixture.controller.state(for: fixture.store) == .unavailable(.deleted))
+    }
+
+    @Test func anUnreachableChannelExplainsWhyFollowIsOff() async throws {
+        let fixture = try FollowFixture()
+        defer { fixture.close() }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [FollowUnreachableProtocol.self]
+        let api = try ChannelAPI(serverURL: "https://\(fixture.suite).invalid",
+                                 session: URLSession(configuration: configuration))
+        let unreachable = ChannelStore(id: "channel", api: api,
+                                       reconnectPolicy: .init(initialDelay: 60, maximumDelay: 60, grace: 3),
+                                       sendJournal: nil, sleep: { _ in })
+        defer { unreachable.disconnect() }
+        unreachable.connect()
+        await fixture.wait { unreachable.phase.isUnavailable }
+        #expect(fixture.controller.state(for: unreachable) == .unavailable(.unreachable))
+    }
+
+    @Test func aLaunchGapAndAnotherServerHaveNoReason() throws {
+        let fixture = try FollowFixture()
+        defer { fixture.close() }
+        #expect(fixture.controller.state(for: fixture.catalog.channel(id: "launching")) == .unavailable(nil))
+        let otherCatalog = ChannelCatalogStore(api: try ChannelAPI(serverURL: "https://other-\(fixture.suite).invalid"))
+        let other = otherCatalog.channel(id: "channel")
+        try fixture.apply(to: other)
+        #expect(fixture.controller.state(for: other) == .unavailable(nil))
     }
 
     @Test(arguments: [false, true])
@@ -1730,7 +1777,7 @@ struct ChannelFollowTests {
         activity.deactivate(ending: ending)
         await fixture.wait { fixture.completedUnregistrations == 1 }
         #expect(activity.endings.isEmpty)
-        #expect(fixture.controller.state(for: fixture.store) == .unavailable)
+        #expect(fixture.controller.state(for: fixture.store) == .unavailable(.noTasksInProgress))
         try fixture.apply()
         #expect(fixture.controller.state(for: fixture.store) == .available)
         #expect(fixture.activities.count == 1)
@@ -1799,6 +1846,17 @@ struct ChannelFollowTests {
     }
 }
 
+private final class FollowUnreachableProtocol: URLProtocol, @unchecked Sendable {
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        client?.urlProtocol(self, didFailWithError: URLError(.cannotConnectToHost))
+    }
+
+    override func stopLoading() {}
+}
+
 @MainActor @Observable
 private final class FollowFixture {
     struct Write {
@@ -1853,9 +1911,10 @@ private final class FollowFixture {
                                        })
     }
 
-    func configure(ready: Bool = true) {
+    func configure(ready: Bool = true, registrationError: String? = nil) {
         controller.configure(
-            registration: registration, isRegistrationReady: ready, catalog: catalog
+            registration: registration, isRegistrationReady: ready, catalog: catalog,
+            registrationError: registrationError
         )
     }
 
