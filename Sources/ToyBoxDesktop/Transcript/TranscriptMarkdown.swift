@@ -20,7 +20,7 @@ struct TranscriptMarkdown: View {
     var body: some View {
         ToyBoxUI.TranscriptMarkdown(
             content: content, agents: agents, baseURL: baseURL, selectable: selectable,
-            findHighlight: findHighlight?.shared, bodySize: bodySize, codeSize: codeSize, lineSpacing: lineSpacing,
+            findHighlight: findHighlight, bodySize: bodySize, codeSize: codeSize, lineSpacing: lineSpacing,
             textScale: textScale,
             copyCode: TranscriptClipboard.copy,
             mentionInk: TranscriptMentionInk(surface: surface, isDark: colorScheme == .dark,
@@ -112,30 +112,6 @@ extension TranscriptRGB {
         guard let color = color.usingColorSpace(.sRGB) else { return nil }
         self.init(red: color.redComponent, green: color.greenComponent, blue: color.blueComponent,
                   alpha: color.alphaComponent)
-    }
-}
-
-func transcriptInlineMarkdown(_ text: String, agents: [ChannelAgent], textScale: CGFloat = 1,
-                              fontSize: CGFloat = 14, codeSize: CGFloat = 12,
-                              mentions: TranscriptMentionInk = .init()) -> AttributedString {
-    ToyBoxUI.transcriptInlineMarkdown(text, agents: agents, textScale: textScale,
-                                      fontSize: fontSize, codeSize: codeSize, mentionInk: mentions.color)
-}
-
-struct TranscriptMarkdownHighlights {
-    let highlight: TranscriptFindHighlight
-    let shared: ToyBoxUI.TranscriptMarkdownHighlights
-
-    init(blocks: [MarkdownBlock], highlight: TranscriptFindHighlight) {
-        self.highlight = highlight
-        shared = .init(blocks: blocks, highlight: highlight.shared)
-    }
-
-    var document: TranscriptMarkdownText { shared.document }
-    var ranges: [Range<Int>] { shared.ranges }
-
-    func applying(to value: AttributedString, fragment: TranscriptMarkdownText.Fragment) -> AttributedString {
-        shared.applying(to: value, fragment: fragment)
     }
 }
 

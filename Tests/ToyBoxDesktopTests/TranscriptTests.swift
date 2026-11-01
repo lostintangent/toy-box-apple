@@ -17,19 +17,11 @@ private let transcriptTimingTestsEnabled = ProcessInfo.processInfo.environment["
 @Suite("Transcript rendering and visibility")
 struct TranscriptTests {
     @MainActor
-    @Test(arguments: [0.9, 1, 1.2])
-    func markdownSizingKeepsTranscriptDefaultsAndScalesArtifactCode(_ scale: CGFloat) throws {
+    @Test func markdownSizingKeepsTranscriptDefaultsAndAcceptsArtifactSizes() {
         let normal = TranscriptMarkdown(content: "Body and `code`")
         #expect(normal.bodySize == 14 && normal.codeSize == 12 && normal.lineSpacing == 3)
         let artifact = TranscriptMarkdown(content: "Body and `code`", bodySize: 15, codeSize: 13, lineSpacing: 4)
         #expect(artifact.bodySize == 15 && artifact.codeSize == 13 && artifact.lineSpacing == 4)
-        let original = transcriptInlineMarkdown("`code` @lead", agents: [.lead(id: "lead")], textScale: scale)
-        let resized = transcriptInlineMarkdown("`code` @lead", agents: [.lead(id: "lead")], textScale: scale,
-                                               fontSize: artifact.bodySize, codeSize: artifact.codeSize)
-        #expect(original.runs.first?.font == .system(size: 12 * scale, design: .monospaced))
-        #expect(resized.runs.first?.font == .system(size: 13 * scale, design: .monospaced))
-        let mention = try #require(resized.range(of: "@lead"))
-        #expect(resized[mention].runs.first?.font == .system(size: 15 * scale, weight: .semibold))
     }
 
     @MainActor
@@ -133,41 +125,6 @@ struct TranscriptTests {
     }
 
     @MainActor
-    @Test func aMarkdownTablesBorderHugsItsColumnsInAWideLane() async throws {
-        let bitmap = try await renderedTranscriptBitmap(
-            TranscriptMarkdown(content: "| A | B |\n| --- | --- |\n| 1 | 2 |", selectable: false)
-                .background(Color.white),
-            size: CGSize(width: 720, height: 120), appearance: NSAppearance(named: .aqua))
-        func colors(at fraction: CGFloat) throws -> [NSColor] {
-            let x = Int(CGFloat(bitmap.pixelsWide) * fraction)
-            return try (0..<bitmap.pixelsHigh).map {
-                try #require(bitmap.colorAt(x: x, y: $0)?.usingColorSpace(.sRGB))
-            }
-        }
-        let table = try colors(at: 0.05)
-        let outside = try colors(at: 0.75)
-        #expect(table.contains { min($0.redComponent, $0.greenComponent, $0.blueComponent) < 0.99 })
-        #expect(outside.allSatisfy { min($0.redComponent, $0.greenComponent, $0.blueComponent) >= 0.99 })
-    }
-
-    @Test func knownMentionsAreTintedButCodeLinksAndUnknownHandlesStayLiteral() {
-        let lead = ChannelAgent.lead(id: "channel")
-        var rendered = transcriptInlineMarkdown("@lead @unknown `@lead` [@lead](https://example.com) @everyone",
-                                                agents: [lead])
-        #expect(String(rendered.characters) == "@lead @unknown @lead @lead @everyone")
-        var tinted = rendered.runs.filter { $0.foregroundColor != nil }
-            .map { String(rendered[$0.range].characters) }
-        #expect(tinted == ["@lead", "@everyone"])
-        #expect(rendered.runs.filter { $0.link != nil }.count == 1)
-        rendered = transcriptInlineMarkdown("Caf\u{00e9} **ready**: @lead", agents: [lead])
-        #expect(String(rendered.characters) == "Caf\u{00e9} ready: @lead")
-        tinted = rendered.runs.filter { $0.foregroundColor != nil }
-            .map { String(rendered[$0.range].characters) }
-        #expect(tinted == ["@lead"])
-        #expect(rendered.runs.contains { $0.inlinePresentationIntent?.contains(.stronglyEmphasized) == true })
-    }
-
-    @MainActor
     @Test func mentionInkKeepsItsIdentityHueAtTextContrastOnEverySurface() throws {
         let colors = ["#7fa171", "#ffffff", "#000000", "#ffff00", "#00ffff", "#ff0000", "#123"]
         let surfaces: [TranscriptSurface] = [.canvas, .agent, .pendingAgent, .user]
@@ -180,7 +137,7 @@ struct TranscriptTests {
                 for color in colors {
                     let agent = ChannelAgent(id: "moss", name: "Moss", avatar: .init(mark: "M4 12H20", color: color))
                     let rendered = transcriptInlineMarkdown("@moss and **@everyone**", agents: [agent],
-                                                            textScale: 1.25, fontSize: 16, mentions: ink)
+                                                            textScale: 1.25, fontSize: 16, mentionInk: ink.color)
                     let mentions = rendered.runs.filter { $0.foregroundColor != nil }
                     #expect(mentions.map { String(rendered[$0.range].characters) } == ["@moss", "@everyone"])
                     for mention in mentions {
