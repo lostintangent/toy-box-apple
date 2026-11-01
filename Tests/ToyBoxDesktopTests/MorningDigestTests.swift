@@ -73,10 +73,7 @@ struct MorningDigestTests {
         #expect(content.userInfo["channelID"] as? String == "a")
         #expect(content.userInfo["serverURL"] as? String == "https://example.test")
         #expect(content.categoryIdentifier == MorningDigest.category)
-        #expect(NotificationWithdrawal.stale([
-            .init(identifier: "digest", serverURL: "https://example.test", channelID: "a",
-                  kind: MorningDigest.category, sequence: 0),
-        ], channels: [], serverURL: "https://example.test", activeChannelID: "a").isEmpty)
+        #expect(ChannelNotifications.delivered(identifier: "digest", userInfo: content.userInfo) == nil)
     }
 
     @Test func serverAndPreferenceChangesDuringGenerationCancelDelivery() async throws {

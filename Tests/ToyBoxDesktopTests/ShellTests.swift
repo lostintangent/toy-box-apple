@@ -1210,8 +1210,8 @@ struct NotificationTests {
 
     @Test func notificationsWithdrawOnceTheyStopBeingTrue() {
         func delivered(_ channel: String, _ kind: String, _ sequence: Int, server: String = "s") -> NotificationWithdrawal.Delivered {
-            .init(identifier: "\(server):\(channel):\(kind):\(sequence)", serverURL: server, channelID: channel,
-                  kind: kind, sequence: sequence)
+            .init(identifier: "\(server):\(channel):\(kind):\(sequence)", scope: server, channelID: channel,
+                  kind: ChannelPushPayload.Kind(rawValue: kind), sequence: sequence)
         }
         let items = [delivered("answered", "request", 11), delivered("waiting", "request", 12),
                      delivered("seen", "completion", 9), delivered("unseen", "completion", 15),
@@ -1220,7 +1220,7 @@ struct NotificationTests {
                      delivered("answered", "request", 11, server: "other")]
         let channels = [channel("answered"), channel("waiting", request: 12), channel("seen"),
                         channel("unseen"), channel("active")]
-        #expect(Set(NotificationWithdrawal.stale(items, channels: channels, serverURL: "s", activeChannelID: "active"))
+        #expect(Set(NotificationWithdrawal.stale(items, channels: channels, scope: "s", activeChannelID: "active"))
             == ["s:answered:request:11", "s:seen:completion:9", "s:active:completion:15",
                 "s:active:replyFailed:0", "s:deleted:request:4"])
     }

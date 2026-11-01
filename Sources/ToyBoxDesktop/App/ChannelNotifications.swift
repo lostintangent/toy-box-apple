@@ -180,22 +180,23 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
         guard let current, force || !current.withdrawsLike(withdrawn) else { return }
         withdrawn = current
         Task {
-            let delivered = await center.deliveredNotifications().compactMap(Self.delivered)
+            let delivered = await center.deliveredNotifications().compactMap {
+                Self.delivered(identifier: $0.request.identifier, userInfo: $0.request.content.userInfo)
+            }
             guard let current = self.current else { return }
             let stale = NotificationWithdrawal.stale(delivered, channels: current.channels,
-                                                     serverURL: current.serverURL,
+                                                     scope: current.serverURL,
                                                      activeChannelID: current.activeChannelID)
             if !stale.isEmpty { center.removeDeliveredNotifications(withIdentifiers: stale) }
         }
     }
 
-    private nonisolated static func delivered(_ notification: UNNotification) -> NotificationWithdrawal.Delivered? {
-        let request = notification.request
-        let info = request.content.userInfo
-        guard let server = info["serverURL"] as? String, let channelID = info["channelID"] as? String,
-              let kind = info["kind"] as? String else { return nil }
-        return .init(identifier: request.identifier, serverURL: server, channelID: channelID, kind: kind,
-                     sequence: info["sequence"] as? Int ?? 0)
+    /// Digests are never withdrawn, so they never reach the stale check.
+    nonisolated static func delivered(identifier: String, userInfo: [AnyHashable: Any]) -> NotificationWithdrawal.Delivered? {
+        guard let server = userInfo["serverURL"] as? String, let channelID = userInfo["channelID"] as? String,
+              let kind = userInfo["kind"] as? String, kind != MorningDigest.category else { return nil }
+        return .init(identifier: identifier, scope: server, channelID: channelID,
+                     kind: ChannelPushPayload.Kind(rawValue: kind), sequence: userInfo["sequence"] as? Int ?? 0)
     }
 
     /// Posts a reply typed into a notification without bringing the app forward. A reply that
