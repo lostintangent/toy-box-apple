@@ -447,7 +447,6 @@ struct Grounding: Sendable {
         "our", "ours", "us",
     ]
 
-    // Swift's Regex isn't Sendable. These immutable literals opt out of the static check.
     /// "in msg 480", "(message 12)" or "seq 530": prompt numbering that means nothing to a reader.
     nonisolated(unsafe) static let messageReference =
         /\s*\(?\b(?:in |see |per |from )?(?:msgs?|messages?|seq|sequence)\.?\s*#?\d+(?:\s*(?:,|and|&)\s*#?\d+)*\)?/
