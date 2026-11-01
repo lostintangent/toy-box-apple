@@ -285,7 +285,6 @@ public struct ChannelAPI: Sendable {
         var request = URLRequest(url: endpoint(channelPath(channelId), query: query),
                                  cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: timeout)
         request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
-        if let after { request.setValue(String(after), forHTTPHeaderField: "Last-Event-ID") }
         return request
     }
 

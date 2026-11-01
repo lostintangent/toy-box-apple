@@ -129,7 +129,6 @@ struct TransportTests {
         try await eventually(observing: mock) { mock.requests.count == 2 && store.phase.isConnected }
         #expect(mock.requests[0].url?.query == nil)
         #expect(mock.requests[1].url?.query == "after=0")
-        #expect(mock.requests[1].value(forHTTPHeaderField: "Last-Event-ID") == "0")
         #expect(store.state?.presence["test"]?.state == "working")
     }
 
@@ -181,7 +180,7 @@ struct TransportTests {
             #expect(mock.sendPendingBody(try MockResponse.stream([.init(type: "snapshot", state: recovered)]).body) == 1)
         }
         try await eventually { store.state?.revision == 100 && store.phase.isConnected }
-        #expect(mock.requests[1].value(forHTTPHeaderField: "Last-Event-ID") == "5")
+        #expect(mock.requests[1].url?.query == "after=5")
         #expect(store.state?.messages.map(\.sequence) == [100])
     }
 

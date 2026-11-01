@@ -87,7 +87,6 @@ struct ManagementReconciliationTests {
         let result = try await mock.api().snapshot(channelId: "test")
         #expect(result == snapshot)
         #expect(mock.requests.first?.url?.query == nil)
-        #expect(mock.requests.first?.value(forHTTPHeaderField: "Last-Event-ID") == nil)
         try await eventually(observing: mock) { mock.stops == 1 }
     }
 
@@ -168,7 +167,6 @@ struct ManagementReconciliationTests {
             try await eventually { detail.phase.isConnected }
             let snapshots = mock.requests.filter { $0.url?.path == "/api/v1/channels/test" && $0.url?.query == nil }
             #expect(snapshots.count == 2)
-            #expect(snapshots.allSatisfy { $0.value(forHTTPHeaderField: "Last-Event-ID") == nil })
         }
         #expect(mock.requests.filter { $0.httpMethod == "DELETE" }.count == 1)
         #expect(catalog.phase.message == nil)
