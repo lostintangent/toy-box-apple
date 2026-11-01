@@ -456,9 +456,10 @@ Edit only files you own. Ask the owner for anything else in the channel.
 A handoff states what you verified, what you didn't, and what still needs a real device, server
 or signing key.
 
-Show the user a picture before building anything they will see. Within about 10 minutes the owner
-or Designer posts a mockup or quick screenshot, and building continues after the user's nod. A prose
-spec alone is not agreement. If a visible task passes 30 minutes with nothing shown, post what exists.
+Show the user a picture before building anything they will see. Within about 10 minutes the owner,
+Designer or Lead posts a mockup, often a quick edit of a real screenshot, and building starts after
+the user's nod. A prose spec alone is not agreement. If a visible task passes 30 minutes with nothing
+shown, post what exists. If a small change starts growing, stop and show what exists.
 
 Scale validation to the change. A symbol, constant or spacing change needs a build, the touched
 suite and one capture of the result, not a light/dark and size matrix. Save full passes for
