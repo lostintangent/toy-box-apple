@@ -75,13 +75,6 @@ public struct CatchUpRequest: Sendable, Hashable {
         }
     }
 
-    init(key: Key, entries: [CatchUpEntry], request: CatchUpEntry?, participants: Set<String>) {
-        self.key = key
-        unreadFromOthers = entries.filter { $0.speaker != nil }.count
-        let lines = CatchUpSelection.Lines(entries: entries, request: request, participants: participants)
-        selection = CatchUpSelection { lines }
-    }
-
     public static func == (lhs: CatchUpRequest, rhs: CatchUpRequest) -> Bool {
         lhs.key == rhs.key
     }
