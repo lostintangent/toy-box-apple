@@ -451,7 +451,15 @@ Incident records moved from AGENTS.md on 2026-10-27, with their evidence and res
   limit did not bound that wait, so a wait needs its own deadline.
 - The cause is not established. Unmeasured candidates include WebKit delaying the `postMessage`
   probe, the content process launch, and the `fetch` of `/api/v1/channels` or the `pixel.svg` image
-  load never settling. No step was instrumented.
+  load never settling.
+- t607 instruments the probe without changing its assertions or waits. A pass-through navigation
+  delegate records each callback WebKit reached: start, commit, finish, fail, failed provisional
+  navigation and content process termination. The page posts progress marks after its API fetch,
+  alias fetch and image load, and those marks go to a separate array, so the probe's result is
+  unchanged. On a miss the test prints the trace, the marks, the renderer and web view state, and the
+  fixture's requests before it rethrows. One instrumented run finished in 0.58 seconds. Three full Mac
+  runs with the opt-in passed at load of about 330 to 390, and the probe finished in 0.8 to 1.5
+  seconds. No miss occurred, so the test stays quarantined and the cause is still not established.
 - Restoration needs the stalled step identified, with deterministic regression coverage. Restore it
   without loosening the assertions or adding retries. `arrivalsKeepTheSelectedIdentityAndRemovalDoesNotSubstituteANeighbor`,
   `sameDocumentTOCLinksAndHashChangesStayInsideTheSandbox` and `HTMLUnderlapsTheBarsAndRestoresItsReadingPosition`
