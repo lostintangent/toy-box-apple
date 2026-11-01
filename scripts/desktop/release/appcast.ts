@@ -39,7 +39,8 @@ export async function generateAppcast(tag: string, repository = root) {
     async function signingTool(name: string, args: string[]) {
         await command([join(tools, "bin", name), "--ed-key-file", keyFile, ...args], { input });
     }
-    const notes = archive.replace(/\.zip$/, ".txt");
+    // Sparkle renders a .md notes file as Markdown and shows any other extension as plain text.
+    const notes = archive.replace(/\.zip$/, ".md");
     await Bun.write(notes, noteContents);
     await signingTool("generate_appcast", ["--download-url-prefix", prefix, "--embed-release-notes",
         "--maximum-deltas", "0", "--link", repositoryURL, "-o", join(output, "appcast.xml"), output]);
