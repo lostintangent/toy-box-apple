@@ -6,6 +6,8 @@
 - Press and hold a request notification to send one of its suggested replies from the Lock Screen, or type your own with Reply.
 - Remove an artifact from a channel in Overview. Its file stays where it is.
 - See one line when someone shares or removes several artifacts in a row.
+- Tap an artifact's title where it was shared or removed to open it. Press and hold the line for its details.
+- See a request's header wrap at the largest text sizes, so the request stays clear of the toolbar.
 - Reply puts just the author's mention in the composer, and the separate Mention action is gone.
 - See why Follow This Channel is unavailable, right in its menu.
 - Keep typing while a message sends, and see it drawn exactly as it will look once sent.
@@ -16,6 +18,7 @@
 - Answer a request with one click. Its suggested replies show inside the request, in the menu bar inbox and on its notification, and choosing one sends it at once.
 - Remove an artifact from a channel in Overview. Its file stays where it is.
 - See one line when someone shares or removes several artifacts in a row.
+- Open a removed artifact from its title in the conversation, like a shared one.
 - Reply puts just the author's mention in the composer with the caret after it, and the separate Mention action is gone.
 - Keep typing while a message sends, and see it drawn exactly as it will look once sent.
 - Open a message from a notification while its channel catches up, without an unavailable error.
