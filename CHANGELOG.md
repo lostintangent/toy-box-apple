@@ -6,6 +6,7 @@
 
 - Swiping an artifact's row all the way left in Overview now removes it from the channel, so clearing out artifacts takes one gesture instead of a swipe and a tap.
 - Parent tasks now start collapsed unless work is in progress under them, and every parent shows its subtask count, so the task list leads with what's moving and a folded parent still says how much it holds.
+- A filter button in the Tasks header shows only work in progress, like the web, while each task still shows its full count.
 
 ### Bugs/Polish
 
@@ -19,6 +20,7 @@
 ### Features
 
 - Parent tasks now start collapsed unless work is in progress under them, and every parent shows its subtask count, so the task list leads with what's moving and a folded parent still says how much it holds.
+- A filter button in the Tasks header shows only work in progress, like the web, while each task still shows its full count.
 
 ### Bugs/Polish
 
