@@ -1,7 +1,7 @@
 import SwiftUI
 import ToyBoxUI
 
-/// The one sheet language for New Channel, Edit Channel, Add Agent and Edit Member: a 40-point
+/// The one sheet language for New Channel, Edit Channel, Add Agent and Edit Agent: a 40-point
 /// identity mark over a grouped form, with notices and trailing buttons below it.
 struct ManagementSheetLayout<Mark: View, Fields: View, Notices: View, Buttons: View>: View {
     static var width: CGFloat { 480 }

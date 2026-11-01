@@ -409,7 +409,7 @@ Management routes (added to Toy Box for this app, documented in its Channels `AG
 | `DELETE /api/v1/channels/:id` | Delete the channel (204). The stream then sends `deleted` |
 | `POST /api/v1/channels/:id/members` | Create a member `{name, role?, model?}`. 201 `{version, member}` |
 | `PATCH /api/v1/channels/:id/members/:agentId` | Edit `{name?, role?, model?}`. Returns `{version, member}`. `model: null` clears the explicit override and is always allowed, even when the workspace default uses another provider. It never changes an established session's provider or history: a compatible default is followed, otherwise the existing provider's model is retained. After clearing, the returned member and its event omit `model`. Only an explicit model from another provider returns 422 |
-| `GET /api/v1/channels/:id/members/:agentId/models` | `{version, provider, models, defaultModel}` for the Edit Member picker: models limited to the member's provider (session, else configured, else unrestricted when null). `defaultModel: null` means no compatible workspace default exists. It describes a model choice, not permission, so clearing the override stays available even when `models` is empty |
+| `GET /api/v1/channels/:id/members/:agentId/models` | `{version, provider, models, defaultModel}` for the Edit Agent picker: models limited to the member's provider (session, else configured, else unrestricted when null). `defaultModel: null` means no compatible workspace default exists. It describes a model choice, not permission, so clearing the override stays available even when `models` is empty |
 | `DELETE /api/v1/channels/:id/members/:agentId` | Remove a member (204) |
 | `POST /api/v1/channels/:id/routines/:routineId/run` | Run a routine now (204) |
 | `DELETE /api/v1/channels/:id/routines/:routineId` | Delete a routine (204) |
@@ -1784,7 +1784,7 @@ and Settings use native `Button(role: .close)`. iOS supplies the X. Place it at
 `.topBarTrailing` with an explicit accessible close label, never `.confirmationAction`, which iOS
 draws as blue prominent glass. No custom circle or fill. Settings changes remain applied on closing.
 
-New Channel, Edit Channel, Add Agent, Edit Member and the delete confirmation have no text
+New Channel, Edit Channel, Add Agent, Edit Agent and the delete confirmation have no text
 Cancel. They close with the same system `Button(role: .close)` X at `.cancellationAction`, which
 discards the draft exactly as Cancel did, labeled "Cancel". Create, Add and Save are
 `Button(role: .confirm)` at `.confirmationAction`: iOS draws the blue glass checkmark, the same
@@ -2156,11 +2156,11 @@ every text scale.
 There are no rings around Team avatars. The row is one button that opens the member's About popover
 (name, full role, status and model) anchored to the avatar, never private session contents. On
 hover or keyboard focus, a borderless 14-point `ellipsis.circle` menu in secondary, with a 28 x 28
-target, replaces the trailing countdown. It offers Reply to [Name], About [Name], Edit Member… and
-Remove Member…. The lead offers Reply and About only, because its identity is intrinsic. The
+target, replaces the trailing countdown. It offers Reply to [Name], About [Name], Edit Agent… and
+Remove Agent…. The lead offers Reply and About only, because its identity is intrinsic. The
 context menu has the same items. Add Agent… ends the list in a 36-point row: a 24-point dashed
 tertiary circle with an 11-point `plus`, and the label in 13 regular secondary. It opens Add
-Member.
+Agent.
 
 Phone Team rows are also one button, with no chevron, and their tap and the context menu's
 About [Name] open the same About content. When the window has a regular width it's a popover
@@ -2519,7 +2519,7 @@ confirm is the system checkmark (see Phone sheet semantics). Role's height, the 
 validation, focus, cancellation and write recovery are unchanged. The Mac sheets keep their
 subtitles, role prompt and Add Agent button.
 
-New Channel, Edit Channel, Add Agent and Edit Member share one sheet language:
+New Channel, Edit Channel, Add Agent and Edit Agent share one sheet language:
 
 - **Size.** 480 wide. The sheet fits its content, with no empty band above the buttons and no
   inner scroll view until it reaches the window's height. Initial focus is Name.
@@ -2527,7 +2527,7 @@ New Channel, Edit Channel, Add Agent and Edit Member share one sheet language:
   over one 12-point secondary line when the sheet has a subtitle. Edit Channel has only its
   title, vertically centered beside the mark with no empty subtitle line. No divider follows
   the header. Channel sheets use the
-  sidebar's cyan `#` mark at 40 points (19-point semibold glyph). Edit Member uses the member's
+  sidebar's cyan `#` mark at 40 points (19-point semibold glyph). Edit Agent uses the agent's
   own avatar at 40 points. Add Agent uses a 40-point dashed circle with a plus, matching Team's Add
   Agent row.
 - **Body.** One `.formStyle(.grouped)` form. Section 1 is identity: Name as a native text field
@@ -2565,7 +2565,7 @@ Copy:
 | New Channel | The lead starts right away and adds specialists as needed. | Purpose prompt: "What should this team work toward? The lead reads this first." Directory prompt "Optional", footer: "A folder on the server. Leave it empty for a discussion-only channel." | Cancel, Create Channel |
 | Edit Channel | None | Directory is a read-only row, middle-truncated and selectable. Footer: "Only the lead can change the directory. Model changes apply the next time the lead works." | Cancel, Save |
 | Add Agent | Joins {channel} and starts onboarding right away. | Identity: "Mentioned as @handle. Names are unique in this channel." (live). Role prompt: "What this agent owns and how it works, including any persona." | Cancel, Add Agent |
-| Edit Member | Member of {channel} | Identity as Add Agent. Model: "Model changes apply the next time {name} works. Its history is kept." | Remove from Channel… (leading, destructive), Cancel, Save |
+| Edit Agent | Member of {channel} | Identity as Add Agent. Model: "Model changes apply the next time {name} works. Its history is kept." | Remove from Channel… (leading, destructive), Cancel, Save |
 
 Names affect mentions, so the identity footer always shows the resulting handle. Preserve server
 validation for unique handles and role requirements. The lead cannot be edited through the member

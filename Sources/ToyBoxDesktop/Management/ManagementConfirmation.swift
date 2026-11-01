@@ -24,7 +24,7 @@ struct ManagementConfirmation: View {
     private var title: String {
         switch flow {
         case .deleteChannel: "Delete \(channel.name)?"
-        case .removeMember: "Remove \(member?.name ?? "member")?"
+        case .removeMember: "Remove \(member?.name ?? "agent")?"
         case .deleteRoutine: "Delete \(routine?.title ?? "routine")?"
         default: "Unavailable Action"
         }
@@ -43,7 +43,7 @@ struct ManagementConfirmation: View {
     private var buttonTitle: String {
         switch flow {
         case .deleteChannel: "Delete Channel"
-        case .removeMember: "Remove Member"
+        case .removeMember: "Remove Agent"
         case .deleteRoutine: "Delete Routine"
         default: "Delete"
         }
