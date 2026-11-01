@@ -3,8 +3,6 @@ import ChannelKit
 import Foundation
 import SwiftUI
 
-private typealias ViewState = SwiftUI.State
-
 /// The suggested replies a transcript offers inside its pending request. Both apps decide with this,
 /// so the choices show and leave the same way on the Mac and the phone.
 public struct TranscriptRequestChoices: Equatable, Sendable {

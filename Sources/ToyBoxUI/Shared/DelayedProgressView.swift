@@ -1,7 +1,5 @@
 import SwiftUI
 
-private typealias ViewState = SwiftUI.State
-
 /// A native progress indicator that waits 300 ms before it appears, so quick work never flashes
 /// one. Show it while work is pending. It holds its place from the start, so nothing moves when it
 /// appears. Pass `since` when the work began before this view did, such as in a rebuilt row.

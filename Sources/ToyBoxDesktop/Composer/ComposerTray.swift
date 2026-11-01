@@ -1,6 +1,7 @@
 import ChannelClient
 import ChannelKit
 import SwiftUI
+import ToyBoxUI
 
 /// Artifacts, tasks and the preview above the composer input, with its own hairline. It reads only
 /// those slices of the store, so the input doesn't redraw when they change. A switch updates it in

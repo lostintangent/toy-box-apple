@@ -1,5 +1,6 @@
 import ChannelClient
 import SwiftUI
+import ToyBoxUI
 
 struct ComposerImageStrip: View {
     let draft: ComposerDraft

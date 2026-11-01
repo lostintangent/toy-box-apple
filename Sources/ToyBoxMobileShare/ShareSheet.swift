@@ -3,8 +3,6 @@ import SwiftUI
 import ToyBoxMobileIntegrations
 import ToyBoxUI
 
-private typealias ViewState = SwiftUI.State
-
 struct ShareSheet: View {
     @Bindable var session: MobileShareSession
     let close: () -> Void
