@@ -64,7 +64,7 @@ struct OverviewRoutineRow: View {
 
     private var canRun: Bool { store.phase.isConnected && !pending && !recovery.blocksWrites }
     private var canDelete: Bool { store.phase.isConnected && !pending }
-    private var schedule: String { (try? cronSummary(routine.schedule)) ?? routine.schedule }
+    private var schedule: String { RoutineScheduleSummary.text(for: routine.schedule) }
     private var scheduleLine: String {
         ChannelRoutineRunPresentation.label(schedule: schedule, pending: pending, requestedAt: requestedAt)
     }

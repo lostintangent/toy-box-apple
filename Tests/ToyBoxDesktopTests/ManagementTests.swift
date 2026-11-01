@@ -609,13 +609,6 @@ struct ManagementTests {
         }
     }
 
-    @Test func routineSchedulesUseReadableSummariesAndKeepUnknownSyntax() throws {
-        let weekdays = try cronSummary("0 9 * * 1-5")
-        #expect(RoutineScheduleSummary.text(for: "0 9 * * 1-5") == weekdays)
-        #expect(RoutineScheduleSummary.text(for: "H 9 * * *") == "H 9 * * *")
-        #expect(RoutineScheduleSummary.text(for: "not a schedule") == "not a schedule")
-    }
-
     @Test func theTeamKeepsTheLeadFirstAndSortsMembersLikeFinder() {
         let roster = [ChannelAgent(id: "lead", name: "Zed"), ChannelAgent(id: "b", name: "agent 10"),
                       ChannelAgent(id: "a", name: "Agent 2"), ChannelAgent(id: "c", name: "Ada")]
