@@ -122,7 +122,7 @@ struct ComposerSurface: View {
         }
         .onChange(of: interaction.replyRequest?.token) { _, _ in
             guard let reply = interaction.replyRequest else { return }
-            session.reply(to: reply.agent, sequence: reply.sequence)
+            session.reply(to: reply.agent)
         }
         .onChange(of: interaction.editSendAttemptRequest?.token) { _, _ in
             guard let id = interaction.editSendAttemptRequest?.id,
@@ -171,7 +171,7 @@ struct ComposerSurface: View {
                     accessories
                     context.padding(.horizontal, 8)
                 }
-            } else if hasNotices || composer.replySource != nil || !draft.images.isEmpty {
+            } else if hasNotices || !draft.images.isEmpty {
                 ViewThatFits(in: .vertical) {
                     accessories
                     ScrollView { accessories }
@@ -189,9 +189,8 @@ struct ComposerSurface: View {
                     text: Bindable(draft).text, editor: editor, completionIsVisible: !choices.isEmpty,
                     onSend: send, onCompletionKey: handleCompletionKey,
                     onPasteImages: { providers in for provider in providers { draft.attachProvider(provider) } },
-                    onEscape: composer.replySource == nil && dictation.phase == .idle ? nil : {
-                        if dictation.phase != .idle { Task { await dictation.stop(.escape) } }
-                        else { composer.replySource = nil }
+                    onEscape: dictation.phase == .idle ? nil : {
+                        Task { await dictation.stop(.escape) }
                     },
                     dictation: dictation
                 )
@@ -217,23 +216,6 @@ struct ComposerSurface: View {
     private var accessories: some View {
         VStack(spacing: 0) {
             if hasNotices { notices.padding(.vertical, 8) }
-            if let source = composer.replySource {
-                HStack(spacing: 4) {
-                    Button { interaction.reveal(sequence: source.sequence) } label: {
-                        Label("Replying to \(source.name)", systemImage: "arrowshape.turn.up.left")
-                            .foregroundStyle(Color.primary)
-                            .lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    Button { composer.replySource = nil } label: {
-                        Image(systemName: "xmark").foregroundStyle(Color.primary).frame(width: 44, height: 44)
-                    }
-                    .accessibilityLabel("Dismiss reply context")
-                }
-                .font(.footnote)
-                .buttonStyle(.borderless)
-                .frame(minHeight: 44)
-                .padding(.leading, 12)
-            }
             if !draft.images.isEmpty {
                 ComposerImageStrip(draft: draft) { id in
                     preparePresentation()

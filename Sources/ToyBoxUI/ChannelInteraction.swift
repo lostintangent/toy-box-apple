@@ -15,7 +15,7 @@ public final class ChannelInteraction {
     public var isRequestPreviewPresented: Bool { requestPreviewCoverage != nil }
 
     /// The composer consumes these. `token` changes on every request so repeats still fire.
-    public private(set) var replyRequest: (agent: ChannelAgent, sequence: Int?, token: UUID)?
+    public private(set) var replyRequest: (agent: ChannelAgent, token: UUID)?
     public private(set) var composerFocusRequest = UUID()
     public private(set) var pendingComposerFocusRequest: UUID?
     public var hasDraft = false
@@ -40,9 +40,9 @@ public final class ChannelInteraction {
         self.isInspectorPresented = isInspectorPresented
     }
 
-    public func reply(to agent: ChannelAgent, sequence: Int? = nil) {
+    public func reply(to agent: ChannelAgent) {
         guard agent.deleted != true else { return }
-        replyRequest = (agent, sequence, UUID())
+        replyRequest = (agent, UUID())
     }
 
     public func focusComposer() {

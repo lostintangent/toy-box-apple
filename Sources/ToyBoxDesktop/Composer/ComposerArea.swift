@@ -205,7 +205,7 @@ private struct ChannelComposer: View {
         .onChange(of: interaction.replyRequest?.token) { _, _ in
             guard let reply = interaction.replyRequest else { return }
             dictation.commitNow()
-            session.reply(to: reply.agent, sequence: reply.sequence)
+            session.reply(to: reply.agent)
             focusRequest = UUID()
         }
         .onChange(of: interaction.editSendAttemptRequest?.token) { _, _ in

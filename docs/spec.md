@@ -587,7 +587,7 @@ when visible content changes. Live writes rewrite an unchanged snapshot every 15
 - [ ] Landing on the first unread row or the end, following the user's own post, and paging older
       history while scrolled to the top
 - [ ] Reading advances `read` as messages become visible (active observation only)
-- [ ] Copy message, plus reply and mention actions that edit the draft
+- [ ] Copy message, plus a reply action that inserts the agent's `@handle` into the draft
 - [ ] Removed agents display as "Deleted agent"
 
 ### Composer

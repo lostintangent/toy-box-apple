@@ -50,7 +50,7 @@ final class ComposerSession {
         return await composer.send()
     }
 
-    func reply(to agent: ChannelAgent, sequence: Int?) {
+    func reply(to agent: ChannelAgent) {
         dictation.commitNow()
         let insertion: (String) -> Bool = { [editor, draft] prefix in
             if editor.textView != nil { return editor.replace(NSRange(location: 0, length: 0), with: prefix) }
@@ -58,7 +58,7 @@ final class ComposerSession {
             editor.selection = NSRange(location: prefix.utf16.count, length: 0)
             return true
         }
-        if composer.reply(to: agent, sequence: sequence, insertingPrefix: insertion) { editor.focus() }
+        if composer.reply(to: agent, insertingPrefix: insertion) { editor.focus() }
     }
 
     func edit(_ attempt: ChannelSendAttempt) {

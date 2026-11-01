@@ -350,7 +350,6 @@ struct TranscriptAgentMessage: View, @MainActor Equatable {
                 Button("Reply to \(agent.name)", systemImage: "arrowshape.turn.up.left") {
                     interaction.reply(to: agent)
                 }
-                Button("Mention \(agent.name)", systemImage: "at") { interaction.reply(to: agent) }
             }
             Button("Copy Message", systemImage: "doc.on.doc") {
                 TranscriptClipboard.copy(entry.message.text)
