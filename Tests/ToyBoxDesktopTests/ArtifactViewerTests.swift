@@ -142,6 +142,8 @@ struct ArtifactViewerTests {
         defer { web.stop() }
         let probe = ArtifactWebProbe()
         probe.attach(to: web.webView)
+        let trace = ArtifactNavigationTrace(target: web)
+        web.webView.navigationDelegate = trace
         let directory = fixture.url("/api/serve/test/documents/")
         let api = fixture.url("/api/v1/channels").absoluteString
         let alias = fixture.url("/api/v1/channels", host: "localhost").absoluteString
@@ -155,21 +157,41 @@ struct ArtifactViewerTests {
             <!doctype html><html><head><base href="https://wrong.invalid/"></head><body>
             <script>
             (async () => {
+                const mark = name => parent.postMessage({progress:name, ms:Math.round(performance.now())}, "*");
+                mark("start");
                 const result = {scripts:true, parentAccess:false, cookieReadable:false, base:document.baseURI};
                 try { result.parentAccess = parent !== self && !!parent.document; } catch {}
                 try { result.cookie = document.cookie; result.cookieReadable = true; } catch {}
                 result.api = await fetch("\(api)", {credentials:"include"}).then(() => true, () => false);
+                mark("api");
                 result.aliasAPI = await fetch("\(alias)").then(() => true, () => false);
+                mark("alias");
                 const image = new Image();
                 const loaded = new Promise(resolve => { image.onload=()=>resolve(true); image.onerror=()=>resolve(false); });
                 image.src = "pixel.svg";
                 document.body.append(image);
                 result.relativeImage = await loaded;
+                mark("image");
                 parent.postMessage(result, "*");
             })();
             </script></body></html>
             """, directory: directory, server: fixture.url("/"))
-        try await wait { !probe.values.isEmpty || web.error != nil }
+        do {
+            try await wait { !probe.values.isEmpty || web.error != nil }
+        } catch {
+            let requests = fixture.requests.withLock { $0.map(\.path) }
+            print("""
+                HTML origin probe missed its deadline.
+                Navigation delegate callbacks: \(trace.events)
+                Page progress: \(probe.progress)
+                Probe results received: \(probe.values.count)
+                Renderer isLoading: \(web.isLoading), error: \(web.error ?? "none")
+                WebView isLoading: \(web.webView.isLoading), url: \(web.webView.url?.absoluteString ?? "nil"), \
+                estimatedProgress: \(web.webView.estimatedProgress)
+                Fixture requests: \(requests)
+                """)
+            throw error
+        }
         #expect(web.error == nil)
         let received = try #require(probe.values.first)
         #expect(received["origin"] as? String == "null")
@@ -756,6 +778,7 @@ private final class ArtifactSandboxResponseProbe: NSObject, WKURLSchemeHandler {
 @MainActor
 private final class ArtifactWebProbe: NSObject, WKScriptMessageHandler {
     var values: [[String: Any]] = []
+    private(set) var progress: [String] = []
 
     func attach(to webView: WKWebView) {
         let controller = webView.configuration.userContentController
@@ -769,8 +792,62 @@ private final class ArtifactWebProbe: NSObject, WKScriptMessageHandler {
 
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         #expect(message.frameInfo.isMainFrame)
-        if let body = message.body as? [String: Any] { values.append(body) }
-        else { Issue.record("The WebKit fixture sent an invalid result.") }
+        if let body = message.body as? [String: Any] {
+            if let mark = body["result"] as? [String: Any], let step = mark["progress"] as? String {
+                progress.append("\(step)@\(mark["ms"] ?? "?")ms")
+            }
+            else { values.append(body) }
+        } else { Issue.record("The WebKit fixture sent an invalid result.") }
+    }
+}
+
+/// Passes every navigation callback through to the renderer and records which ones WebKit reached.
+@MainActor
+private final class ArtifactNavigationTrace: NSObject, WKNavigationDelegate {
+    private let target: any WKNavigationDelegate
+    private(set) var events: [String] = []
+
+    init(target: any WKNavigationDelegate) {
+        self.target = target
+    }
+
+    override func responds(to aSelector: Selector!) -> Bool {
+        super.responds(to: aSelector) || target.responds(to: aSelector)
+    }
+
+    override func forwardingTarget(for aSelector: Selector!) -> Any? {
+        target
+    }
+
+    func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+        events.append("start")
+        target.webView?(webView, didStartProvisionalNavigation: navigation)
+    }
+
+    func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+        events.append("commit")
+        target.webView?(webView, didCommit: navigation)
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        events.append("finish")
+        target.webView?(webView, didFinish: navigation)
+    }
+
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: any Error) {
+        events.append("fail: \(error.localizedDescription)")
+        target.webView?(webView, didFail: navigation, withError: error)
+    }
+
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!,
+                 withError error: any Error) {
+        events.append("failProvisional: \(error.localizedDescription)")
+        target.webView?(webView, didFailProvisionalNavigation: navigation, withError: error)
+    }
+
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        events.append("webContentProcessDidTerminate")
+        target.webViewWebContentProcessDidTerminate?(webView)
     }
 }
 
