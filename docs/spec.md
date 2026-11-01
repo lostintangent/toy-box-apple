@@ -1471,7 +1471,8 @@ Toy Box's blue: a 1-point system blue rule at 70% across the full lane, and "New
 semibold blue 6 points after its trailing end. When a day change and the unread boundary
 coincide, they share one line, the day label, the blue rule and New, read as "Today, New
 messages". Adding the rule leaves the Mac's spacing above and below day dividers unchanged.
-The phone centers its label between two rules instead. Capture the unread boundary only after snapshot or replay completes, and never move it as
+The phone uses the same leading layout in caption semibold, with a hairline rule, 12 points
+above and 10 below. Capture the unread boundary only after snapshot or replay completes, and never move it as
 the user reads. A reopened store that disconnected while the channel was closed waits for its
 reconnect, rather than capturing from the state it cached. This boundary is not an extra synthetic
 message. Reference renders of day labels, the New divider, system rows and both request states:
