@@ -564,7 +564,7 @@ struct ConversationTranscript: View {
     }
 
     func showsStart(of row: TranscriptRow) -> Bool {
-        guard let top = transcriptFrameIDs(of: row).compactMap({ frames[$0]?.rect.minY }).min() else { return false }
+        guard let top = row.frameIDs.compactMap({ frames[$0]?.rect.minY }).min() else { return false }
         return top >= -0.5 && top < min(120, viewport.height / 2)
     }
 
@@ -945,8 +945,9 @@ struct TranscriptRestoringHistory: PreferenceKey {
 }
 
 /// The keys a row's messages measure their frames under.
-func transcriptFrameIDs(of row: TranscriptRow) -> [String] {
-    row.messages.map(\.id) + [row.id, "system-group-\(row.id)"]
+extension TranscriptRow {
+    /// The IDs whose frames the transcript tracks for this row: its messages, the row and its system group.
+    var frameIDs: [String] { messages.map(\.id) + [id, "system-group-\(id)"] }
 }
 
 /// Scroll geometry changes on every frame of a scroll. Kept out of SwiftUI's tracking, it lets a

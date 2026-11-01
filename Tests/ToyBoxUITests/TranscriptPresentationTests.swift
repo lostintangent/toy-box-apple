@@ -18,6 +18,15 @@ struct TranscriptPresentationTests {
     }
 
     /// A pending message gets the day divider its sent row will have, and only that.
+    @Test func systemEventsLeadWithTheirOwnSymbolAndUnknownOnesWithInfo() {
+        #expect(ChannelSystemEventStyle.symbol(for: "tasks_completed") == "checkmark.circle.fill")
+        for scheme in [ColorScheme.light, .dark] {
+            #expect(ChannelSystemEventStyle.symbolColor(for: "tasks_completed", in: scheme)
+                    == ChannelTaskColors.changes(in: scheme).added)
+        }
+        #expect(ChannelSystemEventStyle.symbol(for: "a_future_event") == "info.circle")
+    }
+
     @Test func imageSubtitlesReadTheDayTimeAndOnlyCountSeveralImages() throws {
         var calendar = Calendar(identifier: .gregorian)
         calendar.locale = Locale(identifier: "en_US")
@@ -145,17 +154,15 @@ struct TranscriptPresentationTests {
     }
 
     @Test func messageAccessibilityIncludesIdentityWithoutDependingOnAVisibleHeader() {
-        let label = transcriptMessageAccessibilityLabel(
-            author: "Moss", timestamp: "2026-10-22T12:00:00Z", addressee: "Lead", request: .pending)
+        let message = transcriptTestMessage(1)
+        let label = message.accessibilityLabel(author: "Moss", addressee: "Lead", request: .pending)
         #expect(label.hasPrefix("Moss, "))
         #expect(label.contains("To Lead"))
         #expect(label.hasSuffix("Needs your reply"))
-        let replied = transcriptMessageAccessibilityLabel(
-            author: "Deleted agent", timestamp: "2026-10-22T12:00:00Z", request: .acknowledged)
+        let replied = message.accessibilityLabel(author: "Deleted agent", request: .acknowledged)
         #expect(replied.hasPrefix("Deleted agent, "))
         #expect(replied.hasSuffix("Replied"))
-        let attempt = transcriptMessageAccessibilityLabel(
-            author: "You", timestamp: "2026-10-22T12:00:00Z", delivery: "Not sent")
+        let attempt = message.accessibilityLabel(author: "You", delivery: "Not sent")
         #expect(attempt.hasPrefix("You, "))
         #expect(attempt.hasSuffix("Not sent"))
     }

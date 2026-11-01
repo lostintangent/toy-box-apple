@@ -32,7 +32,7 @@ extension ConversationTranscript {
             do { try await Task.sleep(for: .milliseconds(300)) }
             catch { return }
             guard landed, showsStart(of: first) else {
-                let top = transcriptFrameIDs(of: first).compactMap { frames[$0]?.rect.minY }.min()
+                let top = first.frameIDs.compactMap { frames[$0]?.rect.minY }.min()
                 snapshot.failState(name, message: "The first row's top is at \(String(describing: top)) "
                                    + "with a \(viewport.bottomGap)-point bottom gap.")
                 return

@@ -188,7 +188,7 @@ private struct TranscriptRule: View {
         }
         .frame(minHeight: 16 * textScale)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(transcriptDividerAccessibilityLabel(divider))
+        .accessibilityLabel(divider.accessibilityLabel())
         .accessibilityAddTraits(divider.day == nil ? [] : .isHeader)
     }
 }
@@ -253,8 +253,7 @@ struct TranscriptUserMessage: View {
             Button("Copy Message", systemImage: "doc.on.doc") { TranscriptClipboard.copy(message.text) }
         }
         .accessibilityElement(children: .contain)
-        .accessibilityLabel(transcriptMessageAccessibilityLabel(
-            author: "You", timestamp: message.timestamp, delivery: deliveryLabel))
+        .accessibilityLabel(message.accessibilityLabel(author: "You", delivery: deliveryLabel))
         .accessibilityAction(named: "Copy Message") { TranscriptClipboard.copy(message.text) }
     }
 }
@@ -348,9 +347,8 @@ struct TranscriptAgentMessage: View, @MainActor Equatable {
         .focused($isFocused)
         .focusEffectDisabled()
         .accessibilityElement(children: .contain)
-        .accessibilityLabel(transcriptMessageAccessibilityLabel(
-            author: agent.name, timestamp: entry.message.timestamp,
-            addressee: entry.addressee, request: entry.request))
+        .accessibilityLabel(entry.message.accessibilityLabel(
+            author: agent.name, addressee: entry.addressee, request: entry.request))
         .accessibilityActions {
             if agent.deleted != true {
                 Button("Reply") { interaction.reply(to: agent) }

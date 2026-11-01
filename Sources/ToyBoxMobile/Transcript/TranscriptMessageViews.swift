@@ -106,7 +106,7 @@ struct TranscriptRule: View {
         }
         .padding(.vertical, 10)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(transcriptDividerAccessibilityLabel(divider))
+        .accessibilityLabel(divider.accessibilityLabel())
         .accessibilityAddTraits(divider.day == nil ? [] : .isHeader)
     }
 }
@@ -156,8 +156,7 @@ struct TranscriptUserMessage: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier(identifier ?? "message-\(message.sequence)")
-        .accessibilityLabel(transcriptMessageAccessibilityLabel(
-            author: "You", timestamp: message.timestamp, delivery: deliveryLabel))
+        .accessibilityLabel(message.accessibilityLabel(author: "You", delivery: deliveryLabel))
         .accessibilityAction(named: "Copy Message") { UIPasteboard.general.string = message.text }
         .sheet(isPresented: $selectsText) { TranscriptSelectTextSheet(text: message.text) }
     }
@@ -252,9 +251,8 @@ struct TranscriptAgentMessage: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("message-\(entry.message.sequence)")
-        .accessibilityLabel(transcriptMessageAccessibilityLabel(
-            author: agent.name, timestamp: entry.message.timestamp,
-            addressee: entry.addressee, request: entry.request))
+        .accessibilityLabel(entry.message.accessibilityLabel(
+            author: agent.name, addressee: entry.addressee, request: entry.request))
         .accessibilityActions {
             if agent.deleted != true {
                 Button("Reply") { interaction.reply(to: agent) }

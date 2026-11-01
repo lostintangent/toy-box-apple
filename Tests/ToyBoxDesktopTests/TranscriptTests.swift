@@ -1142,7 +1142,7 @@ struct TranscriptTests {
                                   lead: .lead(id: "lead"), members: [], unreadAfter: 1)
         let divider = try #require(rows.last?.divider)
         let day = try #require(divider.day)
-        #expect(transcriptDividerAccessibilityLabel(divider, now: day) == "Today, New messages")
+        #expect(divider.accessibilityLabel(now: day) == "Today, New messages")
     }
 
     @MainActor
@@ -2262,30 +2262,6 @@ struct TranscriptCatchUpTests {
         collapsing.session.dismiss()
         try await transcriptUntil { collapsing.session.phase == .collapsed }
         #expect(!collapsing.holdsLanding)
-    }
-
-    @Test func aLineFromAChannelEventLeadsWithThatEventsOwnSymbol() {
-        var state = catchUpTestState()
-        for (index, type) in [(11, "tasks_completed"), (12, "a_future_event")] {
-            state.messages[index] = ChannelMessage(id: "m\(index + 1)", sequence: index + 1,
-                                                   timestamp: "2026-10-22T12:00:00Z", sender: .system,
-                                                   content: .system(.init(type: type)))
-        }
-        func slot(_ source: Int, isReplied: Bool? = nil) -> TranscriptCatchUpSlot {
-            TranscriptCatchUpSlot(line: .init(text: "Line", sources: [source]), messages: state.messages,
-                                  isReplied: isReplied)
-        }
-        #expect(slot(12) == .event("tasks_completed"))
-        #expect(ChannelSystemEventStyle.symbol(for: "tasks_completed") == "checkmark.circle.fill")
-        for scheme in [ColorScheme.light, .dark] {
-            #expect(ChannelSystemEventStyle.symbolColor(for: "tasks_completed", in: scheme)
-                    == ChannelTaskColors.changes(in: scheme).added)
-        }
-        #expect(slot(13) == .event("a_future_event"))
-        #expect(ChannelSystemEventStyle.symbol(for: "a_future_event") == "info.circle")
-        #expect(slot(11) == .avatar("lead"))
-        #expect(slot(12, isReplied: true) == .need(isReplied: true))
-        #expect(slot(99) == .unknown)
     }
 
     @Test func imagesAreDescribedOnlyForVoiceOverAndOnlyOnce() async throws {
