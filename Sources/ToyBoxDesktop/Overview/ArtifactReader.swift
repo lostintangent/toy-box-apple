@@ -21,7 +21,7 @@ final class ArtifactOpener {
     @ObservationIgnored weak var window: NSWindow?
     @ObservationIgnored weak var nativeImageView: ArtifactImageScrollView?
     @ObservationIgnored var webView: WKWebView?
-    @ObservationIgnored weak var webRenderer: ArtifactWebContent?
+    @ObservationIgnored weak var webRenderer: ArtifactWebRenderer?
     @ObservationIgnored var webReadingStates: [String: ArtifactWebReadingState] = [:]
     @ObservationIgnored var scrollOffsets: [String: CGFloat] = [:]
 
