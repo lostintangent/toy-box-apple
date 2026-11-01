@@ -16,6 +16,8 @@ const contentSizeCategories = {
     accessibilityExtraExtraLarge: "UICTContentSizeCategoryAccessibilityXXL",
     accessibilityExtraExtraExtraLarge: "UICTContentSizeCategoryAccessibilityXXXL",
 };
+// The iPhone Duo's folded LCD, used when simctl cannot determine a default screen.
+const defaultScreenshotDisplay = "1";
 type Appearance = "light" | "dark";
 function mobileLaunchOptions(contentSize?: string, appearance?: string): {
     contentSize: string | undefined; appearance: Appearance | undefined; arguments: string[];
@@ -89,7 +91,7 @@ if (import.meta.main) await main(async () => {
         const capture = async () => {
             if (!values.screenshot) return;
             const result = await runMobileSimulatorCommand(["io", simulator.udid, "screenshot",
-                ...(values.display ? [`--display=${values.display}`] : []), values.screenshot],
+                `--display=${values.display ?? defaultScreenshotDisplay}`, values.screenshot],
                 mobileEnvironment, AbortSignal.timeout(15_000));
             if (result.exitCode) throw new Error(`Simulator capture failed: ${result.stderr.trim()}`);
         };

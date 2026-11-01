@@ -94,8 +94,8 @@ view.
   without saving Settings.
 - **Capture:** `bun run simulator --screenshot <file.png>` uses the same lock.
   `--hold --screenshot <file.png>` captures the current pose at lease end, before shutdown.
-  `--displays` lists native IDs, and `--display <ID>` selects a screenshot display, including Duo's
-  secondary display. Wait for visible drawing before ending the lease, not merely a launch PID.
+  `--displays` lists native IDs. `--display <ID>` selects a screenshot display, including Duo's
+  secondary display, and otherwise captures display `1`, the folded LCD. Wait for visible drawing before ending the lease, not merely a launch PID.
 - **Content size:** `--content-size <category>` uses UIKit's process-only preferred-category argument:
   `extraSmall`, `small`, `medium`, `large`, `extraLarge`, `extraExtraLarge`, `extraExtraExtraLarge`,
   `accessibilityMedium`, `accessibilityLarge`, `accessibilityExtraLarge`,
