@@ -82,9 +82,9 @@ private struct TranscriptAttachment: View {
 
     /// Asked for as the tile appears, while VoiceOver is running.
     private var descriptionRequest: AltTextRequest? {
-        guard isImage, TranscriptImageDescriptions.isActive(voiceOver: voiceOver, isOn: describesImages, using: intelligence)
-        else { return nil }
-        return TranscriptImageDescriptions.request(for: attachment, api: api, file: localURL, priority: .visible)
+        guard isImage, TranscriptImageDescriptionSession.isActive(voiceOver: voiceOver, isOn: describesImages,
+                                                                  using: intelligence) else { return nil }
+        return TranscriptImageDescriptionSession.request(for: attachment, api: api, file: localURL, priority: .visible)
     }
     private var fileType: UTType? { attachment.contentType }
     private var isImage: Bool { fileType?.conforms(to: .image) == true }
@@ -213,12 +213,12 @@ private struct TranscriptAttachment: View {
             isAccessibilityFocused = true
         }
         .accessibilityLabel("View \(name)")
-        .accessibilityValue(thumbnail == nil ? "Loading"
-                            : TranscriptImageDescriptions.value(TranscriptImageDescriptions.shared.text(for: descriptionRequest)))
+        .accessibilityValue(thumbnail == nil ? "Loading" : TranscriptImageDescriptionSession.value(
+            TranscriptImageDescriptionSession.shared.text(for: descriptionRequest)))
         .help("View \(name)")
         .task(id: descriptionRequest) {
             guard let descriptionRequest else { return }
-            await TranscriptImageDescriptions.shared.describe(descriptionRequest, using: intelligence)
+            await TranscriptImageDescriptionSession.shared.describe(descriptionRequest, using: intelligence)
         }
     }
 
