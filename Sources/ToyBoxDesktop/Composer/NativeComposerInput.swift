@@ -34,6 +34,12 @@ struct NativeComposerInput: NSViewRepresentable {
         }
     }
 
+    /// Places the caret once after text the user didn't type, such as Reply's handle. Each id applies once.
+    struct CaretRequest: Equatable {
+        let id: UUID
+        let location: Int
+    }
+
     @Binding var text: String
     /// The draft being edited. When it changes, such as on a channel switch, the same text view
     /// takes the new draft's text with a fresh caret and undo history.
@@ -42,6 +48,7 @@ struct NativeComposerInput: NSViewRepresentable {
     @Binding var dragging: Bool
     var fontSize: CGFloat
     var focusRequest: UUID
+    var caretRequest: CaretRequest? = nil
     var agents: [ChannelAgent]
     var onSend: () -> Void
     var onFiles: ([URL]) -> Void
@@ -117,6 +124,7 @@ struct NativeComposerInput: NSViewRepresentable {
         } else {
             coordinator.synchronizeModelText(text)
         }
+        coordinator.placeCaret(for: caretRequest)
         if coordinator.lastFocusRequest != focusRequest {
             coordinator.lastFocusRequest = focusRequest
             DispatchQueue.main.async { [weak input] in
@@ -173,6 +181,7 @@ struct NativeComposerInput: NSViewRepresentable {
         var parent: NativeComposerInput
         weak var input: ComposerTextView?
         var lastFocusRequest: UUID
+        var lastCaretRequest: UUID?
         var snapshotState: String?
         var isCompletionVisible: Bool { popover?.isShown == true }
         private(set) var document: ObjectIdentifier?
@@ -205,6 +214,7 @@ struct NativeComposerInput: NSViewRepresentable {
         init(parent: NativeComposerInput) {
             self.parent = parent
             lastFocusRequest = parent.focusRequest
+            lastCaretRequest = parent.caretRequest?.id
             lastModelText = parent.text
             document = parent.document
             super.init()
@@ -275,6 +285,12 @@ struct NativeComposerInput: NSViewRepresentable {
             input.setSelectedRange(NSRange(location: location,
                                            length: min(selection.length, text.utf16.count - location)))
             isApplyingModelText = false
+        }
+
+        func placeCaret(for request: CaretRequest?) {
+            guard let input, let request, request.id != lastCaretRequest else { return }
+            lastCaretRequest = request.id
+            input.setSelectedRange(NSRange(location: min(request.location, input.string.utf16.count), length: 0))
         }
 
         func textDidChange(_ notification: Notification) {
