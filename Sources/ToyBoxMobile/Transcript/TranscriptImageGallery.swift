@@ -264,16 +264,16 @@ struct TranscriptImageGallery: View {
     }
 
     /// Reduce Motion keeps the page change but makes it an opacity-only crossfade.
-    static func pageAnimation(reduceMotion: Bool) -> Animation {
+    private var pageAnimation: Animation {
         reduceMotion ? .easeInOut(duration: 0.2) : .smooth(duration: 0.3)
     }
 
     private func move(_ offset: Int) {
-        withAnimation(Self.pageAnimation(reduceMotion: reduceMotion)) { presenter.move(by: offset) }
+        withAnimation(pageAnimation) { presenter.move(by: offset) }
     }
 
     private func select(_ index: Int) {
-        withAnimation(Self.pageAnimation(reduceMotion: reduceMotion)) { presenter.select(index) }
+        withAnimation(pageAnimation) { presenter.select(index) }
     }
 
     /// Escape clears a Live Text selection before it closes the gallery.

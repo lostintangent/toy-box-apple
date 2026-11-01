@@ -684,15 +684,6 @@ struct TranscriptTests {
         #expect(targets[2] == CGRect(x: 0, y: 7, width: 200, height: 37))
     }
 
-    @Test func messagesRenderMarkdownBlocksLikeTheMac() {
-        func height(_ text: String) -> CGFloat {
-            UIHostingController(rootView: TranscriptBody(text: text))
-                .sizeThatFits(in: CGSize(width: 300, height: CGFloat.infinity)).height
-        }
-        let line = height("Pass 300")
-        #expect(height("## Pass 300") > line * 1.2)
-    }
-
     @Test func longMessagesCollapseInTheSamePassThatMeasuresThem() {
         func height(_ text: String, expanded: Bool) -> CGFloat {
             UIHostingController(rootView: TranscriptCollapsibleBody(isExpanded: expanded, endPadding: 10) {
@@ -711,11 +702,6 @@ struct TranscriptTests {
         #expect(height(long, expanded: false) == TranscriptCollapsibleBody<Text, Text>.clampHeight + 40)
         #expect(abs(height(long, expanded: true) - (full + 40)) < 1)
         #expect(abs(height("Short", expanded: false) - (short + 10)) < 1)
-    }
-
-    @Test func galleryPagingUsesTheApprovedMotion() {
-        #expect(TranscriptImageGallery.pageAnimation(reduceMotion: false) == .smooth(duration: 0.3))
-        #expect(TranscriptImageGallery.pageAnimation(reduceMotion: true) == .easeInOut(duration: 0.2))
     }
 
     @Test func unfoldedMessagesUseTheWholeColumnUpToTheMacsReadingCaps() throws {

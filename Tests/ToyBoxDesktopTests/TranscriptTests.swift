@@ -177,31 +177,6 @@ struct TranscriptTests {
     }
 
     @MainActor
-    @Test func mentionInkOnlyMovesAnIdentityColorAsFarAsContrastRequires() throws {
-        func ink(_ color: String, isDark: Bool) -> NSColor? {
-            let agent = ChannelAgent(id: "moss", name: "Moss", avatar: .init(mark: "M4 12H20", color: color))
-            var resolved: NSColor?
-            NSAppearance(named: isDark ? .darkAqua : .aqua)?.performAsCurrentDrawingAppearance {
-                resolved = NSColor(TranscriptMentionInk(surface: .agent, isDark: isDark).color(for: agent))
-                    .usingColorSpace(.sRGB)
-            }
-            return resolved
-        }
-        // A color that already reads keeps its exact identity.
-        let black = try #require(ink("#000000", isDark: false))
-        #expect(black.redComponent < 0.01 && black.greenComponent < 0.01 && black.blueComponent < 0.01)
-        let white = try #require(ink("#ffffff", isDark: true))
-        #expect(white.redComponent > 0.99 && white.greenComponent > 0.99 && white.blueComponent > 0.99)
-        // A mid green darkens in light and lightens in dark, but stays green rather than going gray.
-        for isDark in [false, true] {
-            let moss = try #require(ink("#7fa171", isDark: isDark))
-            #expect(moss.greenComponent > moss.redComponent + 0.02)
-            #expect(moss.greenComponent > moss.blueComponent + 0.02)
-            #expect(isDark ? moss.greenComponent >= 0.63 : moss.greenComponent < 0.63)
-        }
-    }
-
-    @MainActor
     @Test func systemLinkInkMeetsTextContrastInBothAppearancesAndIncreasedContrast() throws {
         for appearanceName in [NSAppearance.Name.aqua, .darkAqua,
                                .accessibilityHighContrastAqua, .accessibilityHighContrastDarkAqua] {

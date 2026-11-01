@@ -140,7 +140,7 @@ struct TranscriptUserMessage: View {
                                    surface: .user, findHighlight: findHighlight)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 10)
-                        .transcriptBubble(.user)
+                        .transcriptBubble(.user, cornerStyle: .continuous, canvasIsBlack: true)
                         .contentShape(.contextMenuPreview, .rect(cornerRadius: 12, style: .continuous))
                         .contextMenu {
                             TranscriptMessageMenu(text: message.text, selectsText: $selectsText)
@@ -228,7 +228,7 @@ struct TranscriptAgentMessage: View {
                         }
                     }
                         .padding(.horizontal, 12)
-                        .transcriptBubble(surface)
+                        .transcriptBubble(surface, cornerStyle: .continuous, canvasIsBlack: true)
                         .transcriptWidthCap(TranscriptWidthCap.agentSurface * textScale)
                         .contentShape(.contextMenuPreview, .rect(cornerRadius: 12, style: .continuous))
                         .contextMenu {
@@ -559,37 +559,6 @@ struct TranscriptReactionChip: View {
             .frame(minWidth: 280, minHeight: CGFloat(min(reactors.count, 6)) * 44 + 56)
             .presentationDetents([.medium, .large])
         }
-    }
-}
-
-extension View {
-    /// Fills a bubble with its shared surface and, under Increase Contrast, outlines it with the Mac's edge.
-    func transcriptBubble(_ surface: TranscriptSurface) -> some View {
-        modifier(TranscriptBubble(surface: surface))
-    }
-}
-
-private struct TranscriptBubble: ViewModifier {
-    let surface: TranscriptSurface
-    @Environment(\.colorScheme) private var colorScheme
-    @Environment(\.colorSchemeContrast) private var contrast
-
-    func body(content: Content) -> some View {
-        let shape = RoundedRectangle(cornerRadius: 12, style: .continuous)
-        content
-            .background {
-                ZStack {
-                    let fills = surface.fills(isDark: colorScheme == .dark, canvasIsBlack: true)
-                    ForEach(Array(fills.enumerated()), id: \.offset) {
-                        shape.fill($0.element)
-                    }
-                }
-            }
-            .overlay {
-                if contrast == .increased, let edge = surface.increasedContrastEdge {
-                    shape.strokeBorder(edge, lineWidth: 1)
-                }
-            }
     }
 }
 

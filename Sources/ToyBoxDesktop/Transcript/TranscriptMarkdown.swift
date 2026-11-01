@@ -29,37 +29,6 @@ struct TranscriptMarkdown: View {
     }
 }
 
-extension View {
-    /// Draws a message bubble for `surface` behind the content: its fills and, under Increase
-    /// Contrast, its edge.
-    func transcriptBubble(_ surface: TranscriptSurface) -> some View {
-        modifier(TranscriptBubble(surface: surface))
-    }
-}
-
-private struct TranscriptBubble: ViewModifier {
-    let surface: TranscriptSurface
-    @Environment(\.colorScheme) private var colorScheme
-    @Environment(\.colorSchemeContrast) private var contrast
-
-    func body(content: Content) -> some View {
-        let shape = RoundedRectangle(cornerRadius: 12)
-        content
-            .background {
-                ZStack {
-                    ForEach(Array(surface.fills(isDark: colorScheme == .dark).enumerated()), id: \.offset) {
-                        shape.fill($0.element)
-                    }
-                }
-            }
-            .overlay {
-                if contrast == .increased, let edge = surface.increasedContrastEdge {
-                    shape.strokeBorder(edge, lineWidth: 1)
-                }
-            }
-    }
-}
-
 private struct TranscriptSurfaceKey: EnvironmentKey {
     static let defaultValue = TranscriptSurface.canvas
 }
@@ -75,8 +44,6 @@ struct TranscriptMentionInk: Equatable {
     var surface = TranscriptSurface.canvas
     var isDark = false
     var isContrastIncreased = false
-
-    var minimumContrast: Double { isContrastIncreased ? 7 : 4.5 }
 
     func color(for agent: ChannelAgent?) -> Color {
         let identity = agent?.avatar.flatMap { Color(hex: $0.color) } ?? .accentColor
