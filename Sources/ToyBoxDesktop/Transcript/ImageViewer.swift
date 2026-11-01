@@ -899,7 +899,7 @@ private struct ImageViewerStage: View {
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(viewer.accessibilityLabel)
             .accessibilityValue(isCurrent && viewer.items[position]?.image != nil
-                                ? TranscriptImageDescriptions.value(TranscriptImageDescriptions.shared.text(
+                                ? TranscriptImageDescriptionSession.value(TranscriptImageDescriptionSession.shared.text(
                                     for: descriptionRequest(position))) : "")
             .accessibilityAddTraits(.isImage)
             .accessibilityAction(named: "Next") { viewer.showNext() }
@@ -914,16 +914,16 @@ private struct ImageViewerStage: View {
             .accessibilityHidden(!isCurrent)
             .task(id: isCurrent ? descriptionRequest(position) : nil) {
                 guard isCurrent, let request = descriptionRequest(position) else { return }
-                await TranscriptImageDescriptions.shared.describe(request, using: intelligence)
+                await TranscriptImageDescriptionSession.shared.describe(request, using: intelligence)
             }
     }
 
     /// The current image goes ahead of tiles in the description queue.
     private func descriptionRequest(_ position: Int) -> AltTextRequest? {
-        guard TranscriptImageDescriptions.isActive(voiceOver: voiceOver, isOn: describesImages, using: intelligence)
-        else { return nil }
-        return TranscriptImageDescriptions.request(for: session.images[position], api: session.api,
-                                                   file: viewer.items[position]?.file, priority: .focused)
+        guard TranscriptImageDescriptionSession.isActive(voiceOver: voiceOver, isOn: describesImages,
+                                                         using: intelligence) else { return nil }
+        return TranscriptImageDescriptionSession.request(for: session.images[position], api: session.api,
+                                                         file: viewer.items[position]?.file, priority: .focused)
     }
 
     @ViewBuilder
