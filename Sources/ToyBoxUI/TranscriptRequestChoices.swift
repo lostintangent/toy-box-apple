@@ -46,21 +46,13 @@ extension ChannelInteraction {
     }
 }
 
-/// A pending request's answers inside its bubble: its suggested replies in the lead's order, then Reply.
-/// Long labels wrap in full, so the bubble grows taller, never wider. Without replies, Reply alone still
-/// ends the request. The host picks the control size and font. A chosen reply leaves at once, before its
-/// send reaches the outbox, so a second tap can't send it twice.
+/// A pending request's answers inside its bubble: its suggested replies in the lead's order, then Reply
+/// with its arrow, as small bordered buttons at their natural widths that wrap onto the next line like
+/// words. Long labels wrap in full, so the bubble grows taller, never wider. Without replies, Reply alone
+/// still ends the request. The host picks the spacing, control size and font. A chosen reply leaves at
+/// once, before its send reaches the outbox, so a second tap can't send it twice.
 public struct TranscriptRequestActions: View {
-    /// How the buttons share the bubble's width.
-    public enum Arrangement: Sendable {
-        /// The phone's alert rule: bordered capsules in one row of equal shares or a full-width stack.
-        case alert
-        /// The Mac's: today's bordered Reply with its arrow, after choices at their natural widths that
-        /// wrap onto the next line like words.
-        case flow
-    }
-
-    let arrangement: Arrangement
+    let spacing: CGFloat
     let sequence: Int
     let choices: TranscriptRequestChoices?
     let replyHelp: String
@@ -69,9 +61,9 @@ public struct TranscriptRequestActions: View {
     @ViewState private var chosen = false
 
     /// `sequence` is the pending request's own message, which shows `choices` only when they're its own.
-    public init(_ arrangement: Arrangement = .alert, sequence: Int, choices: TranscriptRequestChoices?,
-                replyHelp: String, onChoose: @escaping (String) -> Void, onReply: @escaping () -> Void) {
-        self.arrangement = arrangement
+    public init(spacing: CGFloat, sequence: Int, choices: TranscriptRequestChoices?, replyHelp: String,
+                onChoose: @escaping (String) -> Void, onReply: @escaping () -> Void) {
+        self.spacing = spacing
         self.sequence = sequence
         self.choices = choices
         self.replyHelp = replyHelp
@@ -80,104 +72,54 @@ public struct TranscriptRequestActions: View {
     }
 
     public var body: some View {
-        let layout = arrangement == .flow ? AnyLayout(ChoiceFlowLayout(spacing: 6))
-            : AnyLayout(ChoiceButtonLayout(spacing: 8))
-        layout {
+        ChoiceFlowLayout(spacing: spacing) {
             if !chosen {
                 ForEach(Array((choices?.labels(for: sequence) ?? []).enumerated()), id: \.offset) { index, label in
                     Button {
                         chosen = true
                         onChoose(label)
                     } label: {
-                        row(label)
+                        // A Mac bordered button keeps one line unless told otherwise, and would truncate. A
+                        // label that wraps fills the row, rather than stopping at its widest line.
+                        Text(label).lineLimit(nil).multilineTextAlignment(.center).frame(maxWidth: .infinity)
                     }
                     .disabled(choices?.canSend != true)
                     .help("Send \u{201C}\(label)\u{201D}")
                     .accessibilityHint("Sends this reply")
                     .accessibilityIdentifier("reply-\(sequence)-\(index + 1)")
+                    .modifier(TouchTarget())
                 }
             }
             Button(action: onReply) {
-                if arrangement == .flow {
-                    Label("Reply", systemImage: "arrowshape.turn.up.left")
-                } else {
-                    row("Reply")
-                }
+                Label("Reply", systemImage: "arrowshape.turn.up.left")
             }
             .help(replyHelp)
             .accessibilityIdentifier("reply-\(sequence)")
+            .modifier(TouchTarget())
         }
         .buttonStyle(.bordered)
-        .buttonBorderShape(arrangement == .alert ? .capsule : .automatic)
-    }
-
-    @ViewBuilder private func row(_ label: String) -> some View {
-        if arrangement == .flow {
-            // A Mac bordered button keeps one line unless told otherwise, and would truncate. A
-            // label that wraps fills the row, rather than stopping at its widest line.
-            Text(label).lineLimit(nil).multilineTextAlignment(.center).frame(maxWidth: .infinity)
-        } else {
-            Text(label)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: .infinity)
-        }
+        #if os(iOS)
+        // iOS draws a bordered label in the accent color, which sets blue on the orange wash. The Mac's
+        // is already primary.
+        .tint(.primary)
+        #endif
     }
 }
 
-/// Answer buttons laid out like an alert's. They share one row of equal widths when the widest
-/// button's one-line width, times the count plus spacing, fits. Otherwise each takes the full width
-/// on its own line, where a long label wraps rather than truncating in a narrow share.
-public struct ChoiceButtonLayout: Layout {
-    let spacing: CGFloat
-
-    public init(spacing: CGFloat) {
-        self.spacing = spacing
+/// A small phone button still answers a 44-point touch, without its pill looking any taller.
+private struct TouchTarget: ViewModifier {
+    func body(content: Content) -> some View {
+        #if os(iOS)
+        content.contentShape(.interaction, MinimumTouchShape())
+        #else
+        content
+        #endif
     }
+}
 
-    public func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let ideal = subviews.map { $0.sizeThatFits(.unspecified) }
-        let row = rowWidth(ideal)
-        guard let width = proposal.width, width.isFinite else {
-            return CGSize(width: row, height: ideal.map(\.height).max() ?? 0)
-        }
-        if row <= width {
-            let share = shareWidth(width, count: subviews.count)
-            let heights = subviews.map { $0.sizeThatFits(.init(width: share, height: nil)).height }
-            return CGSize(width: width, height: heights.max() ?? 0)
-        }
-        let heights = subviews.map { $0.sizeThatFits(.init(width: width, height: nil)).height }
-        return CGSize(width: width, height: heights.reduce(0, +) + gaps(subviews.count))
-    }
-
-    public func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews,
-                              cache: inout ()) {
-        let ideal = subviews.map { $0.sizeThatFits(.unspecified) }
-        if rowWidth(ideal) <= bounds.width {
-            let share = shareWidth(bounds.width, count: subviews.count)
-            for (index, subview) in subviews.enumerated() {
-                subview.place(at: CGPoint(x: bounds.minX + CGFloat(index) * (share + spacing), y: bounds.minY),
-                              proposal: .init(width: share, height: bounds.height))
-            }
-        } else {
-            var y = bounds.minY
-            for subview in subviews {
-                let height = subview.sizeThatFits(.init(width: bounds.width, height: nil)).height
-                subview.place(at: CGPoint(x: bounds.minX, y: y), proposal: .init(width: bounds.width, height: height))
-                y += height + spacing
-            }
-        }
-    }
-
-    private func rowWidth(_ ideal: [CGSize]) -> CGFloat {
-        (ideal.map(\.width).max() ?? 0) * CGFloat(ideal.count) + gaps(ideal.count)
-    }
-
-    private func shareWidth(_ width: CGFloat, count: Int) -> CGFloat {
-        count == 0 ? 0 : (width - gaps(count)) / CGFloat(count)
-    }
-
-    private func gaps(_ count: Int) -> CGFloat {
-        spacing * CGFloat(max(count - 1, 0))
+private struct MinimumTouchShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        Path(rect.insetBy(dx: min(0, (rect.width - 44) / 2), dy: min(0, (rect.height - 44) / 2)))
     }
 }
 

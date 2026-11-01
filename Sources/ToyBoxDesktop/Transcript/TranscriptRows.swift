@@ -300,7 +300,7 @@ struct TranscriptAgentMessage: View, @MainActor Equatable {
                         markdown
                     }
                     if isPending && agent.deleted != true {
-                        TranscriptRequestActions(.flow, sequence: entry.message.sequence, choices: choices,
+                        TranscriptRequestActions(spacing: 6, sequence: entry.message.sequence, choices: choices,
                                                  replyHelp: "Reply to \(agent.name)", onChoose: onChoose) {
                             interaction.reply(to: agent)
                         }
