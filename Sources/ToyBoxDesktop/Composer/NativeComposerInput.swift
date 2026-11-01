@@ -209,6 +209,8 @@ struct NativeComposerInput: NSViewRepresentable {
             let attributes: [NSAttributedString.Key: Any]
             /// The shown words, or the original selection before any words arrive.
             var span: NSRange
+
+            var anchor: DictationAnchor { DictationAnchor(base: base, replaced: replaced) }
         }
 
         init(parent: NativeComposerInput) {
@@ -617,14 +619,13 @@ extension NativeComposerInput.Coordinator: DictationTextTarget {
 
     func showDictation(_ transcript: DictationTranscript) {
         guard let input, let storage = input.textStorage, var session = dictationSession else { return }
-        let (previous, next) = Self.neighbors(of: session)
         let visible = transcript.visible
         let display = NSMutableAttributedString()
         var trailingLength = 0
         if visible.isEmpty {
             display.append(NSAttributedString(string: session.replacedText, attributes: session.attributes))
         } else {
-            let (leading, trailing) = DictationTranscript.padding(for: visible, after: previous, before: next)
+            let (leading, trailing) = session.anchor.padding(for: visible)
             var tentative = session.attributes
             tentative[.foregroundColor] = NSColor.secondaryLabelColor
             display.append(NSAttributedString(string: leading + transcript.finalized, attributes: session.attributes))
@@ -649,7 +650,7 @@ extension NativeComposerInput.Coordinator: DictationTextTarget {
             input.setSelectedRange(selection)
         }
         input.typingAttributes = session.attributes
-        let model = Self.dictatedText(session, finalized: transcript.finalized)
+        let model = session.anchor.draft(with: transcript.finalized)
         if model != lastModelText {
             lastModelText = model
             parent.text = model
@@ -663,7 +664,7 @@ extension NativeComposerInput.Coordinator: DictationTextTarget {
         guard let session = dictationSession else { return }
         dictationSession = nil
         guard let input, let storage = input.textStorage else {
-            parent.text = Self.dictatedText(session, finalized: finalized)
+            parent.text = session.anchor.draft(with: finalized)
             return
         }
         let selection = input.selectedRange()
@@ -672,8 +673,7 @@ extension NativeComposerInput.Coordinator: DictationTextTarget {
                                   with: NSAttributedString(string: session.replacedText, attributes: session.attributes))
         isApplyingDictation = false
         input.typingAttributes = session.attributes
-        let (previous, next) = Self.neighbors(of: session)
-        let (leading, trailing) = DictationTranscript.padding(for: finalized, after: previous, before: next)
+        let (leading, trailing) = session.anchor.padding(for: finalized)
         let words = finalized.isEmpty ? session.replacedText : leading + finalized + trailing
         if !finalized.isEmpty {
             // One undo step for the whole session. A top-level group keeps a key typed in this same
@@ -722,23 +722,6 @@ extension NativeComposerInput.Coordinator: DictationTextTarget {
         isApplyingDictation = false
         input?.typingAttributes = session.attributes
         if let dictation = parent.dictation { Task { dictation.commitNow() } }
-    }
-
-    private static func neighbors(of session: DictationSession) -> (Character?, Character?) {
-        let base = session.base as NSString
-        let start = session.replaced.location
-        let end = NSMaxRange(session.replaced)
-        let previous = start > 0 ? base.substring(with: base.rangeOfComposedCharacterSequence(at: start - 1)).first : nil
-        let next = end < base.length ? base.substring(with: base.rangeOfComposedCharacterSequence(at: end)).first : nil
-        return (previous, next)
-    }
-
-    /// The draft with the finalized words in place of the original selection.
-    private static func dictatedText(_ session: DictationSession, finalized: String) -> String {
-        guard !finalized.isEmpty else { return session.base }
-        let (previous, next) = neighbors(of: session)
-        let (leading, trailing) = DictationTranscript.padding(for: finalized, after: previous, before: next)
-        return (session.base as NSString).replacingCharacters(in: session.replaced, with: leading + finalized + trailing)
     }
 }
 
