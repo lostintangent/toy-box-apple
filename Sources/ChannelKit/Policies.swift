@@ -44,14 +44,10 @@ public func channelTasksProgress(_ tasks: [ChannelTask]) -> TaskProgress {
     TaskProgress(done: tasks.filter { $0.status == "done" }.count, total: tasks.count)
 }
 
-/// The tasks holding work in progress, with each kept task's children pruned to those that hold it too.
+/// The tasks at one level that hold work in progress, each whole, so its counts, diff and timing
+/// still describe every child. Callers apply this to each level of the tree.
 public func channelTasksHoldingWorkInProgress(_ tasks: [ChannelTask]) -> [ChannelTask] {
-    tasks.filter(\.holdsWorkInProgress).map { task in
-        var next = task
-        let children = channelTasksHoldingWorkInProgress(task.children ?? [])
-        next.children = children.isEmpty ? nil : children
-        return next
-    }
+    tasks.filter(\.holdsWorkInProgress)
 }
 
 public struct ChannelTrayProjection: Equatable, Sendable {

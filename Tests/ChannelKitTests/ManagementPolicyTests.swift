@@ -72,23 +72,28 @@ struct ManagementPolicyTests {
         #expect(!finished.holdsWorkInProgress && !finished.isExpandedByDefault)
     }
 
-    @Test func theWorkInProgressFilterKeepsMatchingTasksAndTheirMatchingChildren() {
+    @Test func theWorkInProgressFilterKeepsEachKeptTaskWhole() {
         let tasks: [ChannelTask] = [
             .init(id: "a", title: "A", status: "blocked", children: [
                 .init(id: "b", title: "B", children: [
                     .init(id: "c", title: "C", status: "in_progress"),
-                    .init(id: "d", title: "D"),
+                    .init(id: "d", title: "D", diff: .init(added: 4, removed: 1)),
                 ]),
-                .init(id: "e", title: "E", status: "done"),
+                .init(id: "e", title: "E", status: "done", diff: .init(added: 2, removed: 0)),
             ]),
             .init(id: "f", title: "F", status: "done", children: [.init(id: "g", title: "G")]),
             .init(id: "h", title: "H", children: [.init(id: "i", title: "I", status: "in_progress")]),
+            .init(id: "j", title: "J", status: "in_progress", children: [.init(id: "k", title: "K")]),
         ]
-        let filtered = channelTasksHoldingWorkInProgress(tasks)
-        #expect(filtered.map(\.id) == ["a", "h"])
-        #expect(filtered[0].children?.map(\.id) == ["b"])
-        #expect(filtered[0].children?[0].children?.map(\.id) == ["c"])
-        #expect(filtered[0].children?[0].children?[0].children == nil)
-        #expect(filtered[1].children?.map(\.id) == ["i"])
+        let roots = channelTasksHoldingWorkInProgress(tasks)
+        #expect(roots.map(\.id) == ["a", "h", "j"])
+        #expect(roots[0] == tasks[0])
+        #expect(channelTasksDiff([roots[0]]) == .init(added: 6, removed: 1))
+        #expect(channelTasksHoldingWorkInProgress(roots[0].children ?? []).map(\.id) == ["b"])
+        #expect(channelTasksHoldingWorkInProgress(roots[0].children?[0].children ?? []).map(\.id) == ["c"])
+        #expect(channelTasksHoldingWorkInProgress(roots[1].children ?? []).map(\.id) == ["i"])
+        #expect(channelTasksHoldingWorkInProgress(roots[2].children ?? []).isEmpty)
+        #expect(roots[2].showsChildProgress)
+        #expect(channelTasksHoldingWorkInProgress([tasks[1]]).isEmpty)
     }
 }
