@@ -161,7 +161,7 @@ struct CatchUpSessionTests {
     }
 
     @Test func duplicateRunCallsNeverStartASecondGeneration() async throws {
-        let service = HeldSessionSummaryService()
+        let service = ScriptedIntelligence(holding: true)
         let session = try #require(make())
         let first = Task { await session.run(using: service) }
         await service.waitForCalls(1)
@@ -173,7 +173,7 @@ struct CatchUpSessionTests {
     }
 
     @Test func dismissingAnInFlightGenerationNeverPublishesOrCachesItsLateResult() async throws {
-        let service = HeldSessionSummaryService()
+        let service = ScriptedIntelligence(holding: true)
         let session = try #require(make())
         let run = Task { await session.run(using: service) }
         await service.waitForCalls(1)
@@ -187,7 +187,7 @@ struct CatchUpSessionTests {
     }
 
     @Test func callerCancellationReturnsWithoutWaitingForACancellationInsensitiveService() async throws {
-        let service = HeldSessionSummaryService()
+        let service = ScriptedIntelligence(holding: true)
         let session = try #require(make())
         let first = Task { await session.run(using: service) }
         await service.waitForCalls(1)
@@ -206,7 +206,7 @@ struct CatchUpSessionTests {
     }
 
     @Test func timeoutDoesNotWaitForANoncooperativeModelOrCacheALateAnswer() async throws {
-        let service = HeldSessionSummaryService()
+        let service = ScriptedIntelligence(holding: true)
         let session = try #require(make(timeout: .zero))
         await session.run(using: service)
         #expect(session.phase == .collapsed)
@@ -222,7 +222,7 @@ struct CatchUpSessionTests {
         let session = try #require(make(timeout: .zero))
         let previous = try #require(session.summary)
         session.update(from: summarySessionState(through: 36), server: server)
-        let service = HeldSessionSummaryService()
+        let service = ScriptedIntelligence(holding: true)
         await session.run(using: service)
         #expect(session.phase == .ready(previous))
         #expect(session.request.through == 30)
@@ -269,38 +269,6 @@ struct CatchUpSessionTests {
         #expect(TranscriptCatchUpSlot(line: .init(text: "Line", sources: [99]),
                                      messages: messages, isReplied: nil) == .unknown)
     }
-}
-
-private actor HeldSessionSummaryService: ChannelIntelligenceService {
-    nonisolated let availability: IntelligenceAvailability = .available
-    private var requests: [CheckedContinuation<CatchUpResult, Never>?] = []
-    private var waiters: [(Int, CheckedContinuation<Void, Never>)] = []
-    private var automaticResult: CatchUpResult?
-    var count: Int { requests.count }
-
-    func catchUp(_ request: CatchUpRequest) async -> CatchUpResult {
-        if let automaticResult { return automaticResult }
-        return await withCheckedContinuation { continuation in
-            requests.append(continuation)
-            let ready = waiters.filter { $0.0 <= requests.count }
-            waiters.removeAll { $0.0 <= requests.count }
-            for (_, waiter) in ready { waiter.resume() }
-        }
-    }
-    func waitForCalls(_ count: Int) async {
-        if requests.count >= count { return }
-        await withCheckedContinuation { waiters.append((count, $0)) }
-    }
-    func answer(_ index: Int, with result: CatchUpResult) {
-        let continuation = requests[index]
-        requests[index] = nil
-        continuation?.resume(returning: result)
-    }
-    func answerAll(with result: CatchUpResult) {
-        automaticResult = result
-        for index in requests.indices { answer(index, with: result) }
-    }
-    func altText(_ request: AltTextRequest) async -> AltText? { nil }
 }
 
 private func summarySessionResult(through: Int = 30) -> CatchUp {

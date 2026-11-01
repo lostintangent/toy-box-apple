@@ -41,26 +41,69 @@ enum TestChannel {
 }
 
 /// Answers catch-ups in turn, then keeps the last result (declining when there are none), and answers
-/// alt text with `text`. `count` tallies every model call.
+/// alt text with `text`. `count` tallies every model call. A `holding` service suspends each call until
+/// the test answers it, so tests can interleave cancellation, timeouts and late answers.
 actor ScriptedIntelligence: ChannelIntelligenceService {
     nonisolated let availability: IntelligenceAvailability
     private var results: [CatchUpResult]
     private let text: String?
+    private let holding: Bool
+    private var catchUps: [CheckedContinuation<CatchUpResult, Never>?] = []
+    private var altTexts: [CheckedContinuation<AltText?, Never>?] = []
+    private var waiters: [(calls: Int, continuation: CheckedContinuation<Void, Never>)] = []
     private(set) var count = 0
 
-    init(availability: IntelligenceAvailability = .available, results: [CatchUpResult] = [], text: String? = nil) {
+    init(availability: IntelligenceAvailability = .available, results: [CatchUpResult] = [], text: String? = nil,
+         holding: Bool = false) {
         self.availability = availability
         self.results = results
         self.text = text
+        self.holding = holding
     }
 
     func catchUp(_ request: CatchUpRequest) async -> CatchUpResult {
         count += 1
-        return results.count > 1 ? results.removeFirst() : results.first ?? .declined
+        guard holding else { return results.count > 1 ? results.removeFirst() : results.first ?? .declined }
+        return await withCheckedContinuation { continuation in
+            catchUps.append(continuation)
+            resumeWaiters()
+        }
     }
 
     func altText(_ request: AltTextRequest) async -> AltText? {
         count += 1
-        return text.map(AltText.init)
+        guard holding else { return text.map(AltText.init) }
+        return await withCheckedContinuation { continuation in
+            altTexts.append(continuation)
+            resumeWaiters()
+        }
+    }
+
+    func waitForCalls(_ calls: Int) async {
+        if count >= calls { return }
+        await withCheckedContinuation { waiters.append((calls, $0)) }
+    }
+
+    func answer(_ index: Int, with result: CatchUpResult) {
+        let continuation = catchUps[index]
+        catchUps[index] = nil
+        continuation?.resume(returning: result)
+    }
+
+    func answerAll(with result: CatchUpResult) {
+        for index in catchUps.indices { answer(index, with: result) }
+    }
+
+    func answerAltText(_ result: String?) {
+        for index in altTexts.indices {
+            altTexts[index]?.resume(returning: result.map(AltText.init))
+            altTexts[index] = nil
+        }
+    }
+
+    private func resumeWaiters() {
+        let ready = waiters.filter { $0.calls <= count }
+        waiters.removeAll { $0.calls <= count }
+        for waiter in ready { waiter.continuation.resume() }
     }
 }
