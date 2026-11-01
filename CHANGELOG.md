@@ -1,5 +1,9 @@
 # Changelog
 
+## iPhone 0.1.10
+
+- Remove an artifact from a channel by swiping its Overview row all the way to the left.
+
 ## iPhone 0.1.9
 
 - See a request's suggested replies and Reply as small buttons at their natural widths, matching the Mac, instead of full-width blue buttons.
