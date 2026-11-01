@@ -66,4 +66,25 @@ struct RequestRepliesTests {
         #expect(statement.suggestedReplies.isEmpty)
         #expect(try message(replies: ["Yes", "No"], request: nil).suggestedReplies.isEmpty)
     }
+
+    @Test func choiceActionsSendTheirTrimmedLabelByIndex() {
+        let replies = [" Near the entrance ", "Beside the team desks"]
+        #expect(SuggestedReplies.label(forAction: SuggestedReplies.actionIdentifier(0), replies: replies)
+            == "Near the entrance")
+        #expect(SuggestedReplies.label(forAction: SuggestedReplies.actionIdentifier(1), replies: replies)
+            == "Beside the team desks")
+    }
+
+    @Test func choicesRejectNonCanonicalIndexes() {
+        let replies = ["Yes", "No"]
+        for action in ["reply-choice.01", "reply-choice.+1", "reply-choice.-0", "reply-choice.", "reply-choice.1 "] {
+            #expect(SuggestedReplies.label(forAction: action, replies: replies) == nil, "\(action)")
+        }
+    }
+
+    @Test func choicesNeedTheSameValidLabelsAsTheCategory() {
+        #expect(SuggestedReplies.label(forAction: "reply-choice.0", replies: ["Only one"]) == nil)
+        #expect(SuggestedReplies.label(forAction: "reply-choice.0", replies: nil) == nil)
+        #expect(SuggestedReplies.label(forAction: "reply-choice.0", replies: ["Yes", " "]) == nil)
+    }
 }

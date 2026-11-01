@@ -1249,11 +1249,11 @@ struct NotificationTests {
     func suggestedRepliesGetTheirOwnCategoryWithTheReplyFieldFirst(count: Int) {
         let labels = (1...count).map { "Choice \($0)" }
         let content = requestContent(labels)
-        let identifier = ReplyCategories.identifier(serverURL: "https://example.test", channelID: "Workshop", sequence: 12)
-        #expect(content.categoryIdentifier == identifier)
+        #expect(content.categoryIdentifier == ReplyCategories.identifier(labels: labels))
         #expect(content.userInfo["replies"] as? [String] == labels)
 
-        let category = ReplyCategories.category(identifier: identifier, replies: labels)
+        let category = ReplyCategories.category(labels: labels)
+        #expect(category.identifier == content.categoryIdentifier)
         #expect(category.actions.count == count + 1)
         #expect(category.actions.first is UNTextInputNotificationAction)
         #expect(category.actions.dropFirst().map(\.title) == labels)
@@ -1267,59 +1267,14 @@ struct NotificationTests {
         #expect(content.userInfo["replies"] == nil)
     }
 
-    @Test func publishedCategoriesMergeWithTheStaticOnesAndOnlyPendingRequestsStay() {
-        var categories = ReplyCategories()
-        let pending = ReplyCategories.identifier(serverURL: "https://a.test", channelID: "Workshop", sequence: 12)
-        categories.register(serverURL: "https://a.test", channelID: "Workshop", sequence: 12, replies: ["Yes", "No"])
-        let published = categories.published(with: ChannelNotifications.baseCategories())
-        #expect(Set(published.map(\.identifier)) == [
-            "request", ChannelNotifications.Event.Kind.completion.rawValue, ChannelNotificationCategory.replyFailed,
-            MorningDigest.category, pending,
-        ])
-        let request = published.first { $0.identifier == "request" }
-        #expect(request?.actions.count == 1)
-        #expect(request?.actions.first is UNTextInputNotificationAction)
-    }
-
-    @Test func answeredChangedAndDeletedRequestsLeaveButOtherServersStay() {
-        var categories = ReplyCategories()
-        let server = "https://a.test"
-        for (channelID, sequence) in [("waiting", 12), ("answered", 11), ("changed", 20), ("deleted", 4)] {
-            categories.register(serverURL: server, channelID: channelID, sequence: sequence, replies: ["Yes", "No"])
-        }
-        categories.register(serverURL: "https://b.test", channelID: "elsewhere", sequence: 7, replies: ["Yes", "No"])
-        let channels = [channel("waiting", request: 12), channel("answered"), channel("changed", request: 21)]
-
-        let firstPrune = categories.prune(serverURL: server, channels: channels)
-        #expect(firstPrune)
-        #expect(Set(categories.entries.keys) == [
-            ReplyCategories.identifier(serverURL: server, channelID: "waiting", sequence: 12),
-            ReplyCategories.identifier(serverURL: "https://b.test", channelID: "elsewhere", sequence: 7),
-        ])
-        let secondPrune = categories.prune(serverURL: server, channels: channels)
-        #expect(!secondPrune)
-    }
-
-    @Test func adoptedCategoriesSurviveTheNextPublish() {
-        var before = ReplyCategories()
-        before.register(serverURL: "https://a.test", channelID: "Workshop", sequence: 12, replies: ["Yes", "No", "Later"])
-        let published = before.published(with: ChannelNotifications.baseCategories())
-
-        var after = ReplyCategories()
-        after.adopt(published.union([ReplyCategories.category(identifier: "request-replies:9:x:y", replies: ["Only"])]))
-        #expect(after.entries == before.entries)
-        #expect(Set(after.published(with: ChannelNotifications.baseCategories()).map(\.identifier))
-            == Set(published.map(\.identifier)))
-    }
-
     @Test func choicesMapToTheirLabelsOnlyWhileInRange() {
         let replies = ["Yes", "No"]
-        #expect(ReplyCategories.choice(for: "reply-choice.0", replies: replies) == "Yes")
-        #expect(ReplyCategories.choice(for: "reply-choice.1", replies: replies) == "No")
-        #expect(ReplyCategories.choice(for: "reply-choice.2", replies: replies) == nil)
-        #expect(ReplyCategories.choice(for: "reply-choice.x", replies: replies) == nil)
-        #expect(ReplyCategories.choice(for: "reply-choice.0", replies: nil) == nil)
-        #expect(ReplyCategories.choice(for: UNNotificationDefaultActionIdentifier, replies: replies) == nil)
+        #expect(SuggestedReplies.label(forAction: "reply-choice.0", replies: replies) == "Yes")
+        #expect(SuggestedReplies.label(forAction: "reply-choice.1", replies: replies) == "No")
+        #expect(SuggestedReplies.label(forAction: "reply-choice.2", replies: replies) == nil)
+        #expect(SuggestedReplies.label(forAction: "reply-choice.x", replies: replies) == nil)
+        #expect(SuggestedReplies.label(forAction: "reply-choice.0", replies: nil) == nil)
+        #expect(SuggestedReplies.label(forAction: UNNotificationDefaultActionIdentifier, replies: replies) == nil)
     }
 
     @Test func aChoiceSendsItsLabelOnceThroughTheOutbox() async {

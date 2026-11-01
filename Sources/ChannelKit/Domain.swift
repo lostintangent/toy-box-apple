@@ -428,11 +428,7 @@ public struct ChannelMessage: Codable, Equatable, Identifiable, Sendable {
     /// A request's answers the server accepts: 2 to 4 labels, each non-empty and at most 80 UTF-16
     /// units. Anything else reads as no replies, so a malformed list never hides the request itself.
     public var suggestedReplies: [String] {
-        guard request == true, let replies else { return [] }
-        let labels = replies.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-        guard (2...4).contains(labels.count),
-              labels.allSatisfy({ !$0.isEmpty && $0.utf16.count <= 80 }) else { return [] }
-        return labels
+        request == true ? SuggestedReplies.labels(replies) : []
     }
 
     public var text: String {

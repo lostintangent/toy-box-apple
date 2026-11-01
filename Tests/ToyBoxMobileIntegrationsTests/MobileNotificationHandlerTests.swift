@@ -1,12 +1,33 @@
+import ChannelClient
 import ChannelKit
 import Foundation
 import Testing
 import UserNotifications
 @testable import ToyBoxMobileIntegrations
 
+@MainActor
+private final class FakeReplyCenter {
+    var categories: Set<UNNotificationCategory> = []
+    var writes = 0
+    private let acceptsWrites: Bool
+
+    init(acceptsWrites: Bool = true) {
+        self.acceptsWrites = acceptsWrites
+    }
+
+    func publisher() -> ReplyCategoryPublisher {
+        ReplyCategoryPublisher(base: ReplyCategories.baseCategories(),
+            read: { (categories: self.categories, delivered: Set<String>()) },
+            write: { categories in
+                self.writes += 1
+                if self.acceptsWrites { self.categories = categories }
+            })
+    }
+}
+
 struct MobileNotificationHandlerTests {
     @Test(arguments: [ChannelPushPayload.Kind.request, .completion])
-    @MainActor func displayReadyAlertsReturnUnchangedAndReloadWidgetsBeforeDelivery(kind: ChannelPushPayload.Kind) throws {
+    @MainActor func displayReadyAlertsReturnUnchangedAndReloadWidgetsBeforeDelivery(kind: ChannelPushPayload.Kind) async throws {
         let directory = Self.directory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let registration = try MobilePushRegistrationStore(directory: directory)
@@ -14,7 +35,7 @@ struct MobileNotificationHandlerTests {
         let original = Self.content(kind: kind, registration: registration)
         var events: [String] = []
         let handler = MobileNotificationHandler(directory: directory, reloadWidgets: { events.append("reload") })
-        let delivered = handler.process(original)
+        let delivered = await handler.process(original)
         events.append("delivered")
         #expect(events == ["reload", "delivered"])
         #expect(delivered === original)
@@ -26,7 +47,7 @@ struct MobileNotificationHandlerTests {
     }
 
     @Test(arguments: ["missing", "different", "malformed"])
-    @MainActor func invalidRegistrationsDisableActionsAndBadgeChangesWithoutReloadingWidgets(failure: String) throws {
+    @MainActor func invalidRegistrationsDisableActionsAndBadgeChangesWithoutReloadingWidgets(failure: String) async throws {
         let directory = Self.directory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let registration = MobilePushRegistration(serverURL: "https://server.test", registrationID: UUID().uuidString)
@@ -37,7 +58,7 @@ struct MobileNotificationHandlerTests {
         if failure == "malformed" { original.userInfo["kind"] = "unknown" }
         let handler = MobileNotificationHandler(directory: directory,
             reloadWidgets: { Issue.record("Invalid routing must not reload widgets.") })
-        let delivered = handler.process(original)
+        let delivered = await handler.process(original)
         let expected = try #require(original.mutableCopy() as? UNMutableNotificationContent)
         expected.categoryIdentifier = ""
         expected.badge = nil
@@ -46,12 +67,63 @@ struct MobileNotificationHandlerTests {
         #expect(original.badge == 2)
     }
 
+    @Test @MainActor func requestsWithSuggestedRepliesPublishTheirCategoryBeforeReturningIt() async throws {
+        let directory = Self.directory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let registration = try MobilePushRegistrationStore(directory: directory)
+            .select(serverURL: "https://unreachable.example.test")
+        let original = Self.content(registration: registration, replies: ["Yes", "No"])
+        let center = FakeReplyCenter()
+        let handler = MobileNotificationHandler(directory: directory, reloadWidgets: {},
+                                                replyCategories: center.publisher())
+        let delivered = await handler.process(original)
+        let identifier = ReplyCategories.identifier(labels: ["Yes", "No"])
+        #expect(delivered.categoryIdentifier == identifier)
+        #expect(delivered.badge == 2)
+        #expect(delivered.userInfo["replies"] as? [String] == ["Yes", "No"])
+        #expect(original.categoryIdentifier == "request")
+        #expect(center.categories.map(\.identifier).contains(identifier))
+    }
+
+    @Test @MainActor func requestsWithoutTwoToFourUsableRepliesKeepOnlyTheReplyField() async throws {
+        let directory = Self.directory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let registration = try MobilePushRegistrationStore(directory: directory)
+            .select(serverURL: "https://unreachable.example.test")
+        let center = FakeReplyCenter()
+        let handler = MobileNotificationHandler(directory: directory, reloadWidgets: {},
+                                                replyCategories: center.publisher())
+        let invalid: [[String]?] = [nil, ["Only one"], ["A", "B", "C", "D", "E"], ["Yes", " "]]
+        for replies in invalid {
+            let original = Self.content(registration: registration, replies: replies)
+            let delivered = await handler.process(original)
+            #expect(delivered === original)
+            #expect(delivered.categoryIdentifier == "request")
+        }
+        #expect(center.writes == 0)
+    }
+
+    @Test @MainActor func repliesThatDoNotRegisterFallBackToTheReplyField() async throws {
+        let directory = Self.directory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let registration = try MobilePushRegistrationStore(directory: directory)
+            .select(serverURL: "https://unreachable.example.test")
+        let original = Self.content(registration: registration, replies: ["Yes", "No"])
+        let center = FakeReplyCenter(acceptsWrites: false)
+        let handler = MobileNotificationHandler(directory: directory, reloadWidgets: {},
+                                                replyCategories: center.publisher())
+        let delivered = await handler.process(original)
+        #expect(delivered === original)
+        #expect(delivered.categoryIdentifier == "request")
+    }
+
     private static func directory() -> URL {
         FileManager.default.temporaryDirectory.appendingPathComponent("tbm-notification-\(UUID())")
     }
 
     private static func content(kind: ChannelPushPayload.Kind = .request,
-                                registration: MobilePushRegistration) -> UNMutableNotificationContent {
+                                registration: MobilePushRegistration,
+                                replies: [String]? = nil) -> UNMutableNotificationContent {
         let content = UNMutableNotificationContent()
         content.title = "Studio"
         content.body = kind == .request ? "Which door should we ship?" : "Completed \u{201C}Ship the door\u{201D}"
@@ -61,6 +133,7 @@ struct MobileNotificationHandlerTests {
         content.badge = 2
         content.userInfo = ["kind": kind.rawValue, "channelID": "studio", "sequence": 15,
                             "registrationID": registration.registrationID, "handle": "lead", "extra": "untouched"]
+        if let replies { content.userInfo["replies"] = replies }
         return content
     }
 }
