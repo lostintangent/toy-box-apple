@@ -357,6 +357,8 @@ so the suite starts a WebKit web content process once instead of once per render
   A bullet names what changed and why: "The transcript's day dividers now draw a horizontal rule,
   so they stand out from the messages around them." Each platform's notes stand on their own,
   never described by comparison to the web or the other app.
+- The merge that lands a user-facing change adds its bullet to that platform's next unreleased
+  entry, creating the entry if the newest one has shipped. A release is then only a tag.
 - User only: `bun run setup-secrets:mobile SHA1 APP_STORE_CONNECT_APP_ID [OWNER/REPO]`.
   It selects the same four App Store profiles as `testflight`, generates a random export password
   without prompting, exports only that Apple Distribution identity and deletes its
@@ -449,6 +451,9 @@ so the suite starts a WebKit web content process once instead of once per render
 UI engineers may add one `Tests/ToyBoxDesktopTests/<Surface>Tests.swift` file for their own surface.
 
 Edit only files you own. Ask the owner for anything else in the channel.
+
+A handoff states what you verified, what you didn't, and what still needs a real device, server
+or signing key.
 
 ## Seams between surfaces
 
