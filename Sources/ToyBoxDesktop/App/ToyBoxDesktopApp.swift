@@ -22,9 +22,10 @@ struct ToyBoxDesktopApp: App {
             let options = try LaunchOptions.parse(Array(ProcessInfo.processInfo.arguments.dropFirst()),
                                                  environment: ProcessInfo.processInfo.environment)
             AppPreferencesMigration.run(isSnapshot: options.isSnapshot)
-            AppDelegate.isSnapshot = options.isSnapshot
-            AppDelegate.launchedInBackground = NSRunningApplication.current.activationPolicy == .prohibited
-            AppDelegate.detectLoginLaunch()
+            let delegate = _appDelegate.wrappedValue
+            delegate.isSnapshot = options.isSnapshot
+            delegate.launchedInBackground = NSRunningApplication.current.activationPolicy == .prohibited
+            delegate.detectLoginLaunch()
             if options.isSnapshot || options.quickSendValidation != nil {
                 var arguments = UserDefaults.standard.volatileDomain(forName: UserDefaults.argumentDomain)
                 if options.isSnapshot { arguments["ApplePersistenceIgnoreState"] = true }
@@ -37,14 +38,14 @@ struct ToyBoxDesktopApp: App {
             model.quickSend.setContent(
                 QuickSendView(lastUsedChannel: { model.lastUsedChannelID }).environment(model)
             )
-            AppDelegate.quickSendIntake = model.quickSend.isEnabled ? QuickSendIntake { prefill in
+            delegate.quickSendIntake = model.quickSend.isEnabled ? QuickSendIntake { prefill in
                 guard model.quickSend.isEnabled else { throw QuickSendIntake.IntakeError.unavailable }
                 model.quickSend.present(prefill: prefill)
             } : nil
             ChannelIntentsContext.register(model)
-            ToyBoxControlsContext.register(model)
-            AppDelegate.widgetURLHandler = { try model.openWidgetURL($0) }
-            AppDelegate.dockMenuProvider = { model.makeDockMenu() }
+            ToyBoxControlsContext.register(model, delegate: delegate)
+            delegate.widgetURLHandler = { try model.openWidgetURL($0) }
+            delegate.dockMenuProvider = { model.makeDockMenu() }
             _model = ViewState(wrappedValue: model)
         } catch {
             FileHandle.standardError.write(Data("Invalid launch arguments: \(error.localizedDescription)\n".utf8))
@@ -60,7 +61,7 @@ struct ToyBoxDesktopApp: App {
         .defaultSize(width: CGFloat(model.launchOptions.width), height: CGFloat(model.launchOptions.height))
         // Wait for the open-application event before deciding whether to open a first window.
         .defaultLaunchBehavior(.suppressed)
-        .restorationBehavior(model.launchOptions.isSnapshot || AppDelegate.launchedAtLogin ? .disabled : .automatic)
+        .restorationBehavior(model.launchOptions.isSnapshot || appDelegate.launchedAtLogin ? .disabled : .automatic)
         .windowStyle(.automatic)
         .commands { ChannelCommands(model: model) }
         .onChange(of: scenePhase, initial: true) { _, phase in
@@ -101,18 +102,18 @@ struct ToyBoxDesktopApp: App {
         guard appDelegate.didFinishLaunching else { return }
         if !model.launchOptions.isSnapshot, phase != .background { appDelegate.comeForward() }
         if phase == .active, !model.launchOptions.isSnapshot, !appDelegate.isInBackground,
-           !AppDelegate.launchedAtLogin || NSApp.windows.contains(where: { $0.isVisible && $0.canBecomeMain }) {
+           !appDelegate.launchedAtLogin || NSApp.windows.contains(where: { $0.isVisible && $0.canBecomeMain }) {
             Task { await model.authorizeImportedNotificationsIfNeeded() }
         }
         guard !AppLoginLaunch.suppressesStartupWindow(
-            login: AppDelegate.launchedAtLogin, backgroundIntent: AppDelegate.launchedInBackground
+            login: appDelegate.launchedAtLogin, backgroundIntent: appDelegate.launchedInBackground
         ) else { return }
         guard !didCheckStartupWindow || phase == .active else { return }
         didCheckStartupWindow = true
         DispatchQueue.main.async {
             if AppLoginLaunch.shouldOpenStartupWindow(
-                login: AppDelegate.launchedAtLogin, backgroundIntent: AppDelegate.launchedInBackground,
-                receivedContent: AppDelegate.receivedOpenEvent || AppDelegate.quickSendIntake?.hasReceivedContent == true,
+                login: appDelegate.launchedAtLogin, backgroundIntent: appDelegate.launchedInBackground,
+                receivedContent: appDelegate.receivedOpenEvent || appDelegate.quickSendIntake?.hasReceivedContent == true,
                 hasMainWindow: NSApp.windows.contains(where: { ($0.isVisible || $0.isMiniaturized) && $0.canBecomeMain })
             ) {
                 openWindow(id: "channels")
@@ -141,23 +142,23 @@ struct ChannelWindowValue: Codable, Hashable {
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    static var isSnapshot = false
+    var isSnapshot = false
     /// Siri and Shortcuts launch the app with activation prohibited to run a background intent,
     /// such as Catch Me Up or Send Message. Until something brings it forward, it opens no window
     /// and stays out of the Dock, so the system quits it once the intent finishes.
-    static var launchedInBackground = false
-    static var launchedAtLogin = false
-    static var receivedOpenEvent = false
-    static var quickSendIntake: QuickSendIntake?
-    static var widgetURLHandler: ((URL) throws -> Bool)?
-    static var dockMenuProvider: (() -> NSMenu)?
+    var launchedInBackground = false
+    private(set) var launchedAtLogin = false
+    var receivedOpenEvent = false
+    var quickSendIntake: QuickSendIntake?
+    var widgetURLHandler: ((URL) throws -> Bool)?
+    var dockMenuProvider: (() -> NSMenu)?
     private var cameForward = false
-    var isInBackground: Bool { Self.launchedInBackground && !Self.launchedAtLogin && !cameForward }
+    var isInBackground: Bool { launchedInBackground && !launchedAtLogin && !cameForward }
     var openChannelWindow: (() -> Void)?
     var openStartupWindow: (() -> Void)?
     private(set) var didFinishLaunching = false
 
-    static func detectLoginLaunch() {
+    func detectLoginLaunch() {
         guard !isSnapshot, AppLoginLaunch.isLoginEvent(NSAppleEventManager.shared().currentAppleEvent) else { return }
         launchedAtLogin = true
         var arguments = UserDefaults.standard.volatileDomain(forName: UserDefaults.argumentDomain)
@@ -166,34 +167,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillFinishLaunching(_ notification: Notification) {
-        Self.detectLoginLaunch()
+        detectLoginLaunch()
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        Self.detectLoginLaunch()
+        detectLoginLaunch()
         // An accessory app stays out of the Dock but can still be activated, so a reopen, the menu
         // bar extra or a notification can bring it forward.
         NSApplication.shared.setActivationPolicy(AppLoginLaunch.activationPolicy(
-            login: Self.launchedAtLogin, backgroundIntent: isInBackground))
-        NSApplication.shared.servicesProvider = Self.quickSendIntake
+            login: launchedAtLogin, backgroundIntent: isInBackground))
+        NSApplication.shared.servicesProvider = quickSendIntake
         didFinishLaunching = true
         DispatchQueue.main.async { self.openStartupWindow?() }
     }
 
     func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
-        Self.dockMenuProvider?()
+        dockMenuProvider?()
     }
 
     func applicationShouldOpenUntitledFile(_ sender: NSApplication) -> Bool {
-        Self.detectLoginLaunch()
-        return !AppLoginLaunch.suppressesStartupWindow(login: Self.launchedAtLogin, backgroundIntent: Self.launchedInBackground)
-            && !Self.receivedOpenEvent && Self.quickSendIntake?.hasReceivedContent != true
+        detectLoginLaunch()
+        return !AppLoginLaunch.suppressesStartupWindow(login: launchedAtLogin, backgroundIntent: launchedInBackground)
+            && !receivedOpenEvent && quickSendIntake?.hasReceivedContent != true
     }
 
     func application(_ sender: NSApplication, openFiles filenames: [String]) {
-        Self.receivedOpenEvent = true
+        receivedOpenEvent = true
         do {
-            guard let intake = Self.quickSendIntake else { throw QuickSendIntake.IntakeError.unavailable }
+            guard let intake = quickSendIntake else { throw QuickSendIntake.IntakeError.unavailable }
             try intake.openFiles(filenames)
             sender.reply(toOpenOrPrint: .success)
         } catch {
@@ -203,11 +204,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {
-        Self.receivedOpenEvent = true
+        receivedOpenEvent = true
         for url in urls {
             do {
-                if try Self.widgetURLHandler?(url) == true { continue }
-                guard let intake = Self.quickSendIntake else { throw QuickSendIntake.IntakeError.unavailable }
+                if try widgetURLHandler?(url) == true { continue }
+                guard let intake = quickSendIntake else { throw QuickSendIntake.IntakeError.unavailable }
                 try intake.openSharedURL(url)
             } catch {
                 application.presentError(error)
@@ -238,11 +239,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldSaveSecureApplicationState(_ app: NSApplication) -> Bool {
-        !Self.isSnapshot
+        !isSnapshot
     }
 
     func applicationShouldRestoreSecureApplicationState(_ app: NSApplication) -> Bool {
-        Self.detectLoginLaunch()
-        return !Self.isSnapshot && !Self.launchedAtLogin
+        detectLoginLaunch()
+        return !isSnapshot && !launchedAtLogin
     }
 }

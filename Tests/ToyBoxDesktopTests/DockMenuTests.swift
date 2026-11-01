@@ -190,12 +190,11 @@ struct DockMenuTests {
     }
 
     @Test func theApplicationDelegateReturnsTheInjectedNativeMenu() {
-        let saved = AppDelegate.dockMenuProvider
-        defer { AppDelegate.dockMenuProvider = saved }
+        let delegate = AppDelegate()
         let menu = NSMenu(title: "Injected Dock menu")
-        AppDelegate.dockMenuProvider = { menu }
-        #expect(AppDelegate().applicationDockMenu(NSApplication.shared) === menu)
-        AppDelegate.dockMenuProvider = nil
-        #expect(AppDelegate().applicationDockMenu(NSApplication.shared) == nil)
+        delegate.dockMenuProvider = { menu }
+        #expect(delegate.applicationDockMenu(NSApplication.shared) === menu)
+        delegate.dockMenuProvider = nil
+        #expect(delegate.applicationDockMenu(NSApplication.shared) == nil)
     }
 }
