@@ -101,7 +101,7 @@ extension ConversationTranscript {
         }
         await reveal(sequence: message.sequence, using: proxy)
         let images = (message.attachments ?? []).filter(\.isImage)
-        viewer.open(images: images, at: min(1, images.count - 1), source: ImageViewer.Source(message: message, agents: state.agents),
+        viewer.open(images: images, at: min(1, images.count - 1), source: TranscriptImageSource(message: message, agents: state.agents),
                     api: store.api)
         let loaded = await waitForSnapshotLayout {
             viewer.items[viewer.index]?.image != nil || viewer.items[viewer.index]?.failure != nil

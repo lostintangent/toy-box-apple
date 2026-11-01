@@ -1390,22 +1390,6 @@ struct ImageViewerTests {
     private static let screenshot = CGSize(width: 800, height: 600)
     private static let photo = CGSize(width: 2400, height: 1800)
 
-    @Test func subtitlesReadTheDayTimeAndPosition() throws {
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.locale = Locale(identifier: "en_US")
-        calendar.timeZone = try #require(TimeZone(identifier: "UTC"))
-        let dates = ISO8601DateFormatter()
-        let now = try #require(dates.date(from: "2026-10-22T20:00:00Z"))
-        func subtitle(_ sent: String?, _ index: Int, _ count: Int) -> String {
-            ImageViewer.subtitle(sentAt: sent.flatMap(dates.date(from:)), index: index, count: count,
-                                 now: now, calendar: calendar)
-                .replacingOccurrences(of: "\u{202F}", with: " ")
-        }
-        #expect(subtitle("2026-10-22T17:23:00Z", 1, 4) == "Today at 5:23 PM · 2 of 4")
-        #expect(subtitle("2026-10-21T09:05:00Z", 0, 1) == "Yesterday at 9:05 AM")
-        #expect(subtitle(nil, 2, 3) == "3 of 3")
-    }
-
     @Test func imagesFitBelowTheToolbarAndNeverUpscale() throws {
         let viewer = try openViewer([Self.screenshot, Self.photo])
         defer { viewer.close(animated: false) }
@@ -1521,7 +1505,7 @@ struct ImageViewerTests {
         let images = try (0..<2).map { _ in
             ChannelAttachment(mimeType: "image/png", base64: try solidPNG(width: 800, height: 600))
         }
-        let source = ImageViewer.Source(messageID: "m1", sender: "Lead", timestamp: "2026-10-22T17:23:00Z")
+        let source = TranscriptImageSource(messageID: "m1", sender: "Lead", timestamp: "2026-10-22T17:23:00Z")
         let api = try ChannelAPI(serverURL: "http://localhost:3210")
         viewer.open(images: images, at: 1, source: source, api: api, thumbnails: frames)
         viewer.layout = layout
@@ -1977,7 +1961,7 @@ struct ImageViewerLiveTextTests {
 
     // MARK: Helpers
 
-    private static let source = ImageViewer.Source(messageID: "m1", sender: "Lead", timestamp: "2026-10-22T17:23:00Z")
+    private static let source = TranscriptImageSource(messageID: "m1", sender: "Lead", timestamp: "2026-10-22T17:23:00Z")
 
     private static func api() throws -> ChannelAPI { try ChannelAPI(serverURL: "http://localhost:3210") }
 

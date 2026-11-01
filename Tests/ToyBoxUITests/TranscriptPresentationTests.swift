@@ -18,6 +18,22 @@ struct TranscriptPresentationTests {
     }
 
     /// A pending message gets the day divider its sent row will have, and only that.
+    @Test func imageSubtitlesReadTheDayTimeAndOnlyCountSeveralImages() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.locale = Locale(identifier: "en_US")
+        calendar.timeZone = try #require(TimeZone(identifier: "UTC"))
+        let now = try #require(ChannelDates.date("2026-10-22T20:00:00Z"))
+        func subtitle(_ sent: String, _ index: Int, _ count: Int) -> String {
+            TranscriptImageSource(messageID: "m1", sender: "Lead", timestamp: sent)
+                .subtitle(index: index, count: count, now: now, calendar: calendar)
+                .replacingOccurrences(of: "\u{202F}", with: " ")
+        }
+        #expect(subtitle("2026-10-22T17:23:00Z", 1, 4) == "Today at 5:23 PM · 2 of 4")
+        #expect(subtitle("2026-10-22T17:23:00Z", 0, 1) == "Today at 5:23 PM")
+        #expect(subtitle("2026-10-21T09:05:00Z", 0, 1) == "Yesterday at 9:05 AM")
+        #expect(subtitle("", 2, 3) == "3 of 3")
+    }
+
     @Test func pendingMessagesPredictTheDayDividerTheirSentRowsWillHave() {
         let roster = [ChannelAgent(id: "lead", name: "Lead")]
         func message(_ id: String, _ timestamp: String, sender: ChannelMessageSender = .user) -> ChannelMessage {

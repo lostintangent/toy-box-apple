@@ -230,7 +230,7 @@ struct TranscriptUserMessage: View {
                 }
                 if let attachments = message.attachments, !attachments.isEmpty {
                     TranscriptAttachments(attachments: attachments, api: api, alignment: .trailing,
-                                          source: ImageViewer.Source(message: message, agents: agents))
+                                          source: TranscriptImageSource(message: message, agents: agents))
                 }
                 TranscriptReactions(message: message, agents: agents, statusReactions: statusReactions)
             }
@@ -324,7 +324,7 @@ struct TranscriptAgentMessage: View, @MainActor Equatable {
             }
             if let attachments = entry.message.attachments, !attachments.isEmpty {
                 TranscriptAttachments(attachments: attachments, api: api,
-                                      source: ImageViewer.Source(message: entry.message, agents: agents))
+                                      source: TranscriptImageSource(message: entry.message, agents: agents))
             }
             TranscriptReactions(message: entry.message, agents: agents, statusReactions: statusReactions)
         }

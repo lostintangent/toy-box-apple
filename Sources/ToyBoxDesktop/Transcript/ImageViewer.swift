@@ -14,32 +14,9 @@ import VisionKit
 /// and close commands through it. One viewer serves one window.
 @MainActor @Observable
 final class ImageViewer {
-    /// The message whose images the viewer pages through.
-    struct Source: Equatable, Sendable {
-        var messageID: String
-        var sender: String
-        var timestamp: String
-
-        init(messageID: String, sender: String, timestamp: String) {
-            self.messageID = messageID
-            self.sender = sender
-            self.timestamp = timestamp
-        }
-
-        init(message: ChannelMessage, agents: [ChannelAgent]) {
-            let sender = switch message.sender.type {
-            case "user": "You"
-            case "agent": agents.first { $0.id == message.sender.agentId }?.name ?? "Agent"
-            default: "Toy Box"
-            }
-            self.init(messageID: message.id, sender: sender, timestamp: message.timestamp)
-        }
-    }
-
     /// What the viewing toolbar shows: the sender as its title and a preformatted subtitle.
     struct Presentation: Equatable {
         var sender: String
-        var sentAt: Date?
         /// The zero-based position of the presented image among the message's images.
         var index: Int
         var count: Int
@@ -50,7 +27,7 @@ final class ImageViewer {
 
     struct Session: Identifiable {
         let id = UUID()
-        let source: Source
+        let source: TranscriptImageSource
         let images: [ChannelAttachment]
         let names: [String]
         let api: ChannelAPI
@@ -145,35 +122,21 @@ final class ImageViewer {
 
     var presentation: Presentation? {
         guard let session, !isClosing, session.images.indices.contains(index) else { return nil }
-        let sentAt = ChannelDates.date(session.source.timestamp)
-        return Presentation(sender: session.source.sender, sentAt: sentAt, index: index,
-                            count: session.images.count, filename: session.names[index],
-                            subtitle: Self.subtitle(sentAt: sentAt, index: index, count: session.images.count))
-    }
-
-    nonisolated static func subtitle(sentAt: Date?, index: Int, count: Int, now: Date = .now,
-                                     calendar: Calendar = .current) -> String {
-        var parts: [String] = []
-        if let sentAt {
-            let time = Date.FormatStyle(date: .omitted, time: .shortened, locale: calendar.locale ?? .current,
-                                        calendar: calendar, timeZone: calendar.timeZone)
-            parts.append("\(transcriptDayLabel(sentAt, now: now, calendar: calendar)) at \(sentAt.formatted(time))")
-        }
-        if count > 1 { parts.append("\(index + 1) of \(count)") }
-        return parts.joined(separator: " · ")
+        return Presentation(sender: session.source.sender, index: index, count: session.images.count,
+                            filename: session.names[index],
+                            subtitle: session.source.subtitle(index: index, count: session.images.count))
     }
 
     /// The accessibility label of the presented image, such as "Image 2 of 4 from Lead, plan.png".
     var accessibilityLabel: String {
         guard let session, session.images.indices.contains(index) else { return "Image" }
-        let position = session.images.count > 1 ? " \(index + 1) of \(session.images.count)" : ""
-        let filename = session.images[index].filename.map { ", \($0)" } ?? ""
-        return "Image\(position) from \(session.source.sender)\(filename)"
+        return session.source.accessibilityLabel(for: session.images[index], index: index,
+                                                 count: session.images.count)
     }
 
     // MARK: Opening, paging and closing
 
-    func open(images: [ChannelAttachment], at index: Int, source: Source, api: ChannelAPI,
+    func open(images: [ChannelAttachment], at index: Int, source: TranscriptImageSource, api: ChannelAPI,
               thumbnails: ImageViewerThumbnailFrames? = nil) {
         guard images.indices.contains(index) else { return }
         cancelLoads()
