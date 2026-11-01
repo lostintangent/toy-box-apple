@@ -25,9 +25,9 @@ public struct TranscriptRequestChoices: Equatable, Sendable {
         canSend = isConnected
     }
 
-    /// The labels for a transcript entry, only while it's this pending request.
-    public func labels(for sequence: Int, request: ChannelRequestState?) -> [String] {
-        sequence == self.sequence && request == .pending ? labels : []
+    /// The labels for a transcript entry, only when it's this request.
+    public func labels(for sequence: Int) -> [String] {
+        sequence == self.sequence ? labels : []
     }
 }
 
@@ -58,19 +58,18 @@ public struct TranscriptRequestActions: View {
 
     let arrangement: Arrangement
     let sequence: Int
-    let choices: [String]
-    let canSend: Bool
+    let choices: TranscriptRequestChoices?
     let replyHelp: String
     let onChoose: (String) -> Void
     let onReply: () -> Void
     @ViewState private var chosen = false
 
-    public init(_ arrangement: Arrangement = .alert, sequence: Int, choices: [String], canSend: Bool,
+    /// `sequence` is the pending request's own message, which shows `choices` only when they're its own.
+    public init(_ arrangement: Arrangement = .alert, sequence: Int, choices: TranscriptRequestChoices?,
                 replyHelp: String, onChoose: @escaping (String) -> Void, onReply: @escaping () -> Void) {
         self.arrangement = arrangement
         self.sequence = sequence
         self.choices = choices
-        self.canSend = canSend
         self.replyHelp = replyHelp
         self.onChoose = onChoose
         self.onReply = onReply
@@ -81,14 +80,14 @@ public struct TranscriptRequestActions: View {
             : AnyLayout(ChoiceButtonLayout(spacing: 8))
         layout {
             if !chosen {
-                ForEach(Array(choices.enumerated()), id: \.offset) { index, label in
+                ForEach(Array((choices?.labels(for: sequence) ?? []).enumerated()), id: \.offset) { index, label in
                     Button {
                         chosen = true
                         onChoose(label)
                     } label: {
                         row(label)
                     }
-                    .disabled(!canSend)
+                    .disabled(choices?.canSend != true)
                     .help("Send \u{201C}\(label)\u{201D}")
                     .accessibilityHint("Sends this reply")
                     .accessibilityIdentifier("reply-\(sequence)-\(index + 1)")

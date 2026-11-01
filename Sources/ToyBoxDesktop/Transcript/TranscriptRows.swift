@@ -99,9 +99,7 @@ struct TranscriptRowContent: View, @MainActor Equatable {
                                                    statusReactions: statusReactions[entry.message.sequence] ?? [],
                                                    expanded: expandedMessageIds.contains(entry.id),
                                                    findHighlight: findHighlights[entry.message.sequence],
-                                                   choices: requestChoices?.labels(
-                                                       for: entry.message.sequence, request: entry.request) ?? [],
-                                                   canSendChoice: requestChoices?.canSend == true,
+                                                   choices: requestChoices,
                                                    onSetExpanded: onSetExpanded,
                                                    onChoose: { interaction.sendSuggestedReply($0, store: store) })
                                 .equatable()
@@ -266,8 +264,7 @@ struct TranscriptAgentMessage: View, @MainActor Equatable {
     let statusReactions: [ChannelReaction]
     let expanded: Bool
     var findHighlight: TranscriptFindHighlight?
-    var choices: [String] = []
-    var canSendChoice = false
+    var choices: TranscriptRequestChoices?
     var onSetExpanded: (String, Bool) -> Void
     var onChoose: (String) -> Void = { _ in }
     @Environment(\.channelTextScale) private var textScale
@@ -283,7 +280,6 @@ struct TranscriptAgentMessage: View, @MainActor Equatable {
             && lhs.api.baseURL == rhs.api.baseURL && lhs.interaction === rhs.interaction
             && lhs.statusReactions == rhs.statusReactions && lhs.expanded == rhs.expanded
             && lhs.findHighlight == rhs.findHighlight && lhs.choices == rhs.choices
-            && lhs.canSendChoice == rhs.canSendChoice
     }
 
     var body: some View {
@@ -305,7 +301,6 @@ struct TranscriptAgentMessage: View, @MainActor Equatable {
                     }
                     if isPending && agent.deleted != true {
                         TranscriptRequestActions(.flow, sequence: entry.message.sequence, choices: choices,
-                                                 canSend: canSendChoice,
                                                  replyHelp: "Reply to \(agent.name)", onChoose: onChoose) {
                             interaction.reply(to: agent)
                         }

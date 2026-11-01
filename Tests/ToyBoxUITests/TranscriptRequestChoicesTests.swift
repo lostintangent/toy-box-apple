@@ -11,14 +11,14 @@ struct TranscriptRequestChoicesTests {
     @Test func aPendingRequestOffersItsRepliesInTheLeadsOrder() throws {
         let choices = try #require(TranscriptRequestChoices(request: request(replies: replies), attempts: [],
                                                             isConnected: true))
-        #expect(choices.labels(for: 15, request: .pending) == replies)
+        #expect(choices.labels(for: 15) == replies)
         #expect(choices.canSend)
     }
 
     @Test func choicesWaitForTheConnectionToSend() throws {
         let choices = try #require(TranscriptRequestChoices(request: request(replies: replies), attempts: [],
                                                             isConnected: false))
-        #expect(choices.labels(for: 15, request: .pending) == replies)
+        #expect(choices.labels(for: 15) == replies)
         #expect(!choices.canSend)
     }
 
@@ -29,12 +29,10 @@ struct TranscriptRequestChoicesTests {
                                          isConnected: true) == nil)
     }
 
-    @Test func onlyThePendingRequestsOwnEntryShowsThem() throws {
+    @Test func onlyTheRequestsOwnEntryShowsThem() throws {
         let choices = try #require(TranscriptRequestChoices(request: request(replies: replies), attempts: [],
                                                             isConnected: true))
-        #expect(choices.labels(for: 15, request: .acknowledged).isEmpty)
-        #expect(choices.labels(for: 15, request: nil).isEmpty)
-        #expect(choices.labels(for: 14, request: .pending).isEmpty)
+        #expect(choices.labels(for: 14).isEmpty)
     }
 
     @Test(arguments: [ChannelSendPhase.sending, .notSent, .deliveryNotConfirmed, .confirmed])
@@ -130,16 +128,20 @@ struct ChoiceFlowLayoutTests {
     }
 
     @Test func aLongChoiceWrapsInsideItsOwnSmallBorderedButton() throws {
-        func height(_ choices: [String]) throws -> Int {
+        func height(_ replies: [String]?) throws -> Int {
+            let request = ChannelMessage(id: "m1", sequence: 1, timestamp: "2026-10-22T12:00:00Z",
+                                         sender: .agent("channel"), content: .text("?"), request: true,
+                                         replies: replies)
+            let choices = TranscriptRequestChoices(request: request, attempts: [], isConnected: true)
             let renderer = ImageRenderer(content: TranscriptRequestActions(
-                .flow, sequence: 1, choices: choices, canSend: true, replyHelp: "", onChoose: { _ in }, onReply: {})
+                .flow, sequence: 1, choices: choices, replyHelp: "", onChoose: { _ in }, onReply: {})
                 .controlSize(.small).font(.system(size: 11)).frame(width: 300, alignment: .leading))
             renderer.scale = 1
             return try #require(renderer.cgImage).height
         }
-        let line = try height(["Yes"])
-        // One line of buttons, then the long choice alone on two lines above a line with Not yet and Reply.
+        let line = try height(nil)
         #expect(try height(["Yes", "Not yet"]) == line)
+        // The long choice alone on two lines, above a line with Not yet and Reply.
         let long = "Ship the Mac build to GitHub Releases now and post the notes in the team channel"
         #expect(try height([long, "Not yet"]) > line * 2 + 6)
     }

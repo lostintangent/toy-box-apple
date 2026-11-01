@@ -24,8 +24,7 @@ struct TranscriptItemView: View, @MainActor Equatable {
     /// The landing's summary, which only the New divider's item draws above itself.
     var catchUp: (session: TranscriptCatchUpSession, store: ChannelStore)?
     /// The pending request's suggested replies, when it's this item.
-    var choices: [String] = []
-    var canSendChoice = false
+    var choices: TranscriptRequestChoices?
     var onChoose: (String) -> Void = { _ in }
     var setExpanded: (Bool) -> Void = { _ in }
     @AppStorage(TranscriptIntelligenceSettings.summarizesNewMessages) private var summarizes = true
@@ -35,7 +34,7 @@ struct TranscriptItemView: View, @MainActor Equatable {
         lhs.item == rhs.item && lhs.context == rhs.context && lhs.statusReactions == rhs.statusReactions
             && lhs.isHighlighted == rhs.isHighlighted && lhs.isExpanded == rhs.isExpanded
             && lhs.findHighlight == rhs.findHighlight && lhs.catchUp?.session === rhs.catchUp?.session
-            && lhs.choices == rhs.choices && lhs.canSendChoice == rhs.canSendChoice
+            && lhs.choices == rhs.choices
     }
 
     var body: some View {
@@ -71,7 +70,7 @@ struct TranscriptItemView: View, @MainActor Equatable {
                                    context: context,
                                    statusReactions: statusReactions[entry.message.sequence] ?? [],
                                    isExpanded: isExpanded, findHighlight: findHighlight,
-                                   choices: choices, canSendChoice: canSendChoice, onChoose: onChoose,
+                                   choices: choices, onChoose: onChoose,
                                    setExpanded: setExpanded)
         case .system(let messages):
             TranscriptSystemMessages(messages: messages, agents: context.agents, findHighlight: findHighlight)
@@ -169,8 +168,7 @@ struct TranscriptAgentMessage: View {
     let statusReactions: [ChannelReaction]
     var isExpanded = false
     var findHighlight: TranscriptFindHighlight?
-    var choices: [String] = []
-    var canSendChoice = false
+    var choices: TranscriptRequestChoices?
     var onChoose: (String) -> Void = { _ in }
     var setExpanded: (Bool) -> Void = { _ in }
     @Environment(ChannelInteraction.self) private var interaction
@@ -219,9 +217,8 @@ struct TranscriptAgentMessage: View {
                         }
                         if entry.request == .pending && agent.deleted != true {
                             TranscriptRequestActions(sequence: entry.message.sequence, choices: choices,
-                                                     canSend: canSendChoice,
                                                      replyHelp: "Reply to \(agent.name)", onChoose: onChoose) {
-                                interaction.reply(to: agent, sequence: entry.message.sequence)
+                                interaction.reply(to: agent)
                             }
                             .controlSize(.large)
                             .padding(.bottom, 12)

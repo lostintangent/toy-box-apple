@@ -240,11 +240,8 @@ struct ConversationView: View {
                                        findHighlight: item.messages.lazy.compactMap { findMatches[$0.sequence] }.first
                                            .map { TranscriptFindHighlight.phone(query: find.query, isCurrent: $0) },
                                        catchUp: item.divider?.unread == true ? card : nil,
-                                       choices: requestChoices.map { choices in
-                                           item.agentEntry.map { choices.labels(for: $0.message.sequence,
-                                                                                 request: $0.request) } ?? []
-                                       } ?? [],
-                                       canSendChoice: requestChoices?.canSend == true,
+                                       choices: item.messages.contains { $0.sequence == requestChoices?.sequence }
+                                           ? requestChoices : nil,
                                        onChoose: { interaction.sendSuggestedReply($0, store: store) }) { expands in
                         // Keep the tapped message's top where it is, or bring it back when it collapses.
                         place(scroll.update(.toggledExpansion(item.id, expanded: expands)))
