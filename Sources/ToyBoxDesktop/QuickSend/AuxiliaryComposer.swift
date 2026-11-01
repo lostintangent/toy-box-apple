@@ -37,12 +37,8 @@ struct AuxiliaryComposer: View {
     private var canEdit: Bool { !session.isReadOnly && session.confirmation == nil }
     private var isConnecting: Bool { store.phase == .connecting }
     private var canSend: Bool {
-        !finalizing && (session.canSend || (dictation.hasWords && !store.isSending && channelCanSend(
-            isConnected: store.phase.isConnected, isSending: false, isSubmitting: false,
-            hasContent: !session.requestChanged,
-            isLoadingImages: draft.isLoadingImages, hasUnreadableImage: draft.hasUnreadableImage,
-            textUTF16Count: draft.text.utf16.count
-        )))
+        !finalizing && (session.canSend || (dictation.hasWords && store.phase.isConnected && !store.isSending
+            && !session.requestChanged && draft.isSendable(hasAdditionalContent: true)))
     }
 
     var body: some View {
@@ -213,7 +209,7 @@ struct AuxiliaryComposer: View {
             if let error = store.attemptPersistenceError { Text(error).foregroundStyle(.primary) }
             if let error = session.error, session.deliveryNotice == nil { Text(error).foregroundStyle(.primary) }
             if let notice = dictation.notice { Text(notice.text) }
-            if draft.text.utf16.count > 12_000 { Text("Messages are limited to 12,000 characters.") }
+            if draft.isOverLimit { Text("Messages are limited to 12,000 characters.") }
             if store.phase.isUnavailable {
                 HStack(alignment: .firstTextBaseline) {
                     Text(connectionText)

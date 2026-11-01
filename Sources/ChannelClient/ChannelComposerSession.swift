@@ -31,9 +31,8 @@ public final class ChannelComposerSession {
         // Connection comes first, so an offline session never observes what would block it.
         guard store.phase.isConnected, !isBlocked() else { return false }
         return !store.isSending && !isSubmitting
-            && (draft.hasContent || hasAdditionalContent())
-            && !(draft.isLoadingImages || isLoadingAdditionalImages())
-            && !draft.hasUnreadableImage && draft.text.utf16.count <= 12_000
+            && draft.isSendable(hasAdditionalContent: hasAdditionalContent(),
+                                isLoadingAdditionalImages: isLoadingAdditionalImages())
             && attempt?.phase != .confirmed
     }
 

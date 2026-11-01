@@ -57,7 +57,7 @@ struct ComposerSurface: View {
     }
     private var hasNotices: Bool {
         draft.error != nil || composer.error != nil || store.attemptPersistenceError != nil
-            || draft.text.utf16.count > 12_000 || session.isLoadingImages
+            || draft.isOverLimit || session.isLoadingImages
             || store.phase.isUnavailable
             || dictation.notice != nil
     }
@@ -320,7 +320,7 @@ struct ComposerSurface: View {
             }
             if let error = composer.error { notice(error) }
             if let error = store.attemptPersistenceError { notice(error) }
-            if draft.text.utf16.count > 12_000 { notice("Messages are limited to 12,000 characters.") }
+            if draft.isOverLimit { notice("Messages are limited to 12,000 characters.") }
             if session.isLoadingImages { Label("Reading images", systemImage: "photo") }
             if let notice = dictation.notice {
                 switch notice {
