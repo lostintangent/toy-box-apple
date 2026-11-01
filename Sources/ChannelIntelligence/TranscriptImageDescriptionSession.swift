@@ -1,3 +1,5 @@
+import ChannelClient
+import ChannelKit
 import Foundation
 import Observation
 
@@ -31,5 +33,15 @@ public final class TranscriptImageDescriptionSession {
     /// The accessibility value for a loaded image, empty until its description is ready.
     public static func value(_ text: String?) -> String {
         text.map { "Generated description: \($0)" } ?? ""
+    }
+}
+
+extension TranscriptImageDescriptionSession {
+    /// Images are identified by their attachment cache digest, so a description outlives the file.
+    public static func request(for attachment: ChannelAttachment, api: ChannelAPI, file: URL?,
+                               priority: AltTextRequest.Priority) -> AltTextRequest? {
+        guard let file, let digest = ChannelAttachmentCache.destination(for: attachment, api: api)?
+            .deletingPathExtension().lastPathComponent else { return nil }
+        return AltTextRequest(server: api.baseURL, digest: digest, fileURL: file, priority: priority)
     }
 }
