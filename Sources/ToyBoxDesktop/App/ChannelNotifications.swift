@@ -183,7 +183,7 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
                 Self.delivered(identifier: $0.request.identifier, userInfo: $0.request.content.userInfo)
             }
             guard let current = self.current else { return }
-            let stale = ChannelNotification.stale(delivered, channels: current.channels,
+            let stale = ChannelNotification.Delivered.stale(delivered, channels: current.channels,
                                                   scope: current.serverURL,
                                                   activeChannelID: current.activeChannelID)
             if !stale.isEmpty { center.removeDeliveredNotifications(withIdentifiers: stale) }
@@ -191,7 +191,7 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
     }
 
     /// Digests are never withdrawn, so they never reach the stale check.
-    nonisolated static func delivered(identifier: String, userInfo: [AnyHashable: Any]) -> ChannelNotification? {
+    nonisolated static func delivered(identifier: String, userInfo: [AnyHashable: Any]) -> ChannelNotification.Delivered? {
         guard let server = userInfo["serverURL"] as? String, let channelID = userInfo["channelID"] as? String,
               let kind = userInfo["kind"] as? String, kind != MorningDigest.category else { return nil }
         return .init(identifier: identifier, scope: server, channelID: channelID,

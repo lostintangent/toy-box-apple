@@ -1209,7 +1209,7 @@ struct NotificationTests {
     }
 
     @Test func notificationsWithdrawOnceTheyStopBeingTrue() {
-        func delivered(_ channel: String, _ kind: String, _ sequence: Int, server: String = "s") -> ChannelNotification {
+        func delivered(_ channel: String, _ kind: String, _ sequence: Int, server: String = "s") -> ChannelNotification.Delivered {
             .init(identifier: "\(server):\(channel):\(kind):\(sequence)", scope: server, channelID: channel,
                   kind: ChannelPushPayload.Kind(rawValue: kind), sequence: sequence)
         }
@@ -1220,7 +1220,7 @@ struct NotificationTests {
                      delivered("answered", "request", 11, server: "other")]
         let channels = [channel("answered"), channel("waiting", request: 12), channel("seen"),
                         channel("unseen"), channel("active")]
-        #expect(Set(ChannelNotification.stale(items, channels: channels, scope: "s", activeChannelID: "active"))
+        #expect(Set(ChannelNotification.Delivered.stale(items, channels: channels, scope: "s", activeChannelID: "active"))
             == ["s:answered:request:11", "s:seen:completion:9", "s:active:completion:15",
                 "s:active:replyFailed:0", "s:deleted:request:4"])
     }

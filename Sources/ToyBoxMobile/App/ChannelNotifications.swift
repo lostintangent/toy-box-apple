@@ -268,12 +268,12 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
         self.channels = channels
         self.activeChannelID = activeChannelID
         guard withdraw, let registrationID = currentRegistration?.registrationID else { return }
-        let delivered = await center.deliveredNotifications().compactMap { notification -> ChannelNotification? in
+        let delivered = await center.deliveredNotifications().compactMap { notification -> ChannelNotification.Delivered? in
             guard let payload = try? ChannelPushPayload(userInfo: notification.request.content.userInfo) else { return nil }
-            return ChannelNotification(identifier: notification.request.identifier, payload: payload)
+            return ChannelNotification.Delivered(identifier: notification.request.identifier, payload: payload)
         }
         guard currentRegistration?.registrationID == registrationID else { return }
-        let stale = ChannelNotification.stale(delivered, channels: self.channels, scope: registrationID,
+        let stale = ChannelNotification.Delivered.stale(delivered, channels: self.channels, scope: registrationID,
                                               activeChannelID: self.activeChannelID)
         if !stale.isEmpty { center.removeDeliveredNotifications(withIdentifiers: stale) }
     }
