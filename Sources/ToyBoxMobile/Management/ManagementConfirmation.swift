@@ -100,7 +100,9 @@ struct ManagementConfirmation: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
-                Button("Cancel", role: .close) { sessions.cancel(session, presenter: presenter) }.disabled(deleting)
+                Button(role: .close) { sessions.cancel(session, presenter: presenter) }
+                    .accessibilityLabel("Cancel")
+                    .disabled(deleting)
             }
         }
         .interactiveDismissDisabled(deleting)

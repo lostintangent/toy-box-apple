@@ -103,7 +103,9 @@ struct MemberEditor: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
-                Button("Cancel", role: .close) { sessions.cancel(session, presenter: presenter) }.disabled(saving)
+                Button(role: .close) { sessions.cancel(session, presenter: presenter) }
+                    .accessibilityLabel("Cancel")
+                    .disabled(saving)
             }
             ToolbarItem(placement: .confirmationAction) {
                 ManagementConfirmButton(label: Self.submitTitle(adding: member == nil, saving: saving),

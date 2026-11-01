@@ -49,7 +49,8 @@ struct ManagementSheet: View {
                             } else {
                                 ProgressView("Loading current channel")
                             }
-                            Button("Cancel", role: .cancel) { presenter.flow = nil }
+                            Button(role: .close) { presenter.flow = nil }
+                                .accessibilityLabel("Cancel")
                         }
                         .padding()
                     }
@@ -128,14 +129,16 @@ struct ManagementConfirmButton: View {
     let action: () -> Void
 
     var body: some View {
-        Button(role: .confirm, action: action) {
-            if let pendingSince {
+        if let pendingSince {
+            Button(role: .confirm, action: action) {
                 DelayedProgressView(since: pendingSince).controlSize(.small)
-            } else {
-                Text(label)
             }
+            .accessibilityLabel(label)
+            .accessibilityIdentifier(identifier)
+        } else {
+            Button(role: .confirm, action: action)
+                .accessibilityLabel(label)
+                .accessibilityIdentifier(identifier)
         }
-        .accessibilityLabel(label)
-        .accessibilityIdentifier(identifier)
     }
 }
