@@ -12,7 +12,7 @@ struct TranscriptAttachments: View {
     let api: ChannelAPI
     let alignment: UnitPoint
     /// The message the images belong to, which the gallery names.
-    let source: TranscriptGalleryPresenter.Source
+    let source: TranscriptImageSource
     @Environment(TranscriptGalleryPresenter.self) private var gallery: TranscriptGalleryPresenter?
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
 

@@ -15,7 +15,7 @@ struct TranscriptAttachments: View {
     let api: ChannelAPI
     var alignment: UnitPoint = .leading
     /// The message the image viewer pages through when one of these images opens.
-    var source: ImageViewer.Source?
+    var source: TranscriptImageSource?
     @Environment(ImageViewer.self) private var viewer: ImageViewer?
     @ViewState private var thumbnailFrames = ImageViewerThumbnailFrames()
 
@@ -49,7 +49,7 @@ struct TranscriptAttachments: View {
 
 /// How an image tile opens the viewer: its position among its message's images.
 struct TranscriptAttachmentViewing {
-    let source: ImageViewer.Source
+    let source: TranscriptImageSource
     let images: [ChannelAttachment]
     let imageIndex: Int
     let frames: ImageViewerThumbnailFrames

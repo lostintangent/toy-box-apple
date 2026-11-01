@@ -32,7 +32,7 @@ extension ConversationTranscript {
             do { try await Task.sleep(for: .milliseconds(300)) }
             catch { return }
             guard landed, showsStart(of: first) else {
-                let top = transcriptFrameIDs(of: first).compactMap { frames[$0]?.rect.minY }.min()
+                let top = first.frameIDs.compactMap { frames[$0]?.rect.minY }.min()
                 snapshot.failState(name, message: "The first row's top is at \(String(describing: top)) "
                                    + "with a \(viewport.bottomGap)-point bottom gap.")
                 return
@@ -101,7 +101,7 @@ extension ConversationTranscript {
         }
         await reveal(sequence: message.sequence, using: proxy)
         let images = (message.attachments ?? []).filter(\.isImage)
-        viewer.open(images: images, at: min(1, images.count - 1), source: ImageViewer.Source(message: message, agents: state.agents),
+        viewer.open(images: images, at: min(1, images.count - 1), source: TranscriptImageSource(message: message, agents: state.agents),
                     api: store.api)
         let loaded = await waitForSnapshotLayout {
             viewer.items[viewer.index]?.image != nil || viewer.items[viewer.index]?.failure != nil

@@ -5,7 +5,7 @@ import SwiftUI
 import ToyBoxUI
 
 /// Everything a row needs from its channel, compared cheaply so unchanged rows skip their bodies.
-struct TranscriptRowContext: Equatable {
+struct TranscriptRowChannel: Equatable {
     let agents: [ChannelAgent]
     let api: ChannelAPI
 
@@ -16,7 +16,7 @@ struct TranscriptRowContext: Equatable {
 
 struct TranscriptItemView: View, @MainActor Equatable {
     let item: TranscriptItem
-    let context: TranscriptRowContext
+    let channel: TranscriptRowChannel
     let statusReactions: [Int: [ChannelReaction]]
     let isHighlighted: Bool
     var isExpanded = false
@@ -31,7 +31,7 @@ struct TranscriptItemView: View, @MainActor Equatable {
     @AccessibilityFocusState private var focusesDivider: Bool
 
     static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.item == rhs.item && lhs.context == rhs.context && lhs.statusReactions == rhs.statusReactions
+        lhs.item == rhs.item && lhs.channel == rhs.channel && lhs.statusReactions == rhs.statusReactions
             && lhs.isHighlighted == rhs.isHighlighted && lhs.isExpanded == rhs.isExpanded
             && lhs.findHighlight == rhs.findHighlight && lhs.catchUp?.session === rhs.catchUp?.session
             && lhs.choices == rhs.choices
@@ -62,18 +62,18 @@ struct TranscriptItemView: View, @MainActor Equatable {
     private var content: some View {
         switch item.content {
         case .user(let message):
-            TranscriptUserMessage(message: message, context: context,
+            TranscriptUserMessage(message: message, channel: channel,
                                   statusReactions: statusReactions[message.sequence] ?? [],
                                   findHighlight: findHighlight)
         case .agent(let agentId, let entry, _):
-            TranscriptAgentMessage(entry: entry, agent: channelAgentIdentity(context.agents, id: agentId),
-                                   context: context,
+            TranscriptAgentMessage(entry: entry, agent: channelAgentIdentity(channel.agents, id: agentId),
+                                   channel: channel,
                                    statusReactions: statusReactions[entry.message.sequence] ?? [],
                                    isExpanded: isExpanded, findHighlight: findHighlight,
                                    choices: choices, onChoose: onChoose,
                                    setExpanded: setExpanded)
         case .system(let messages):
-            TranscriptSystemMessages(messages: messages, agents: context.agents, findHighlight: findHighlight)
+            TranscriptSystemMessages(messages: messages, agents: channel.agents, findHighlight: findHighlight)
         }
     }
 }
@@ -106,14 +106,14 @@ struct TranscriptRule: View {
         }
         .padding(.vertical, 10)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(transcriptDividerAccessibilityLabel(divider))
+        .accessibilityLabel(divider.accessibilityLabel())
         .accessibilityAddTraits(divider.day == nil ? [] : .isHeader)
     }
 }
 
 struct TranscriptUserMessage: View {
     let message: ChannelMessage
-    let context: TranscriptRowContext
+    let channel: TranscriptRowChannel
     var deliveryLabel: String?
     var statusReactions: [ChannelReaction] = []
     /// Unsent attempts all have sequence 0, so they pass their own `send-<attempt id>`.
@@ -136,28 +136,27 @@ struct TranscriptUserMessage: View {
                 .font(.footnote)
                 .accessibilityHidden(true)
                 if !message.text.isEmpty {
-                    TranscriptBody(text: message.text, agents: context.agents, baseURL: context.api.baseURL,
+                    TranscriptBody(text: message.text, agents: channel.agents, baseURL: channel.api.baseURL,
                                    surface: .user, findHighlight: findHighlight)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 10)
-                        .transcriptBubble(.user)
+                        .transcriptBubble(.user, cornerStyle: .continuous, canvasIsBlack: true)
                         .contentShape(.contextMenuPreview, .rect(cornerRadius: 12, style: .continuous))
                         .contextMenu {
                             TranscriptMessageMenu(text: message.text, selectsText: $selectsText)
                         }
                 }
                 if let attachments = message.attachments, !attachments.isEmpty {
-                    TranscriptAttachments(attachments: attachments, api: context.api, alignment: .trailing,
+                    TranscriptAttachments(attachments: attachments, api: channel.api, alignment: .trailing,
                                           source: .init(messageID: message.id, sender: "You",
                                                         timestamp: message.timestamp))
                 }
-                TranscriptReactions(message: message, agents: context.agents, statusReactions: statusReactions)
+                TranscriptReactions(message: message, agents: channel.agents, statusReactions: statusReactions)
             }
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier(identifier ?? "message-\(message.sequence)")
-        .accessibilityLabel(transcriptMessageAccessibilityLabel(
-            author: "You", timestamp: message.timestamp, delivery: deliveryLabel))
+        .accessibilityLabel(message.accessibilityLabel(author: "You", delivery: deliveryLabel))
         .accessibilityAction(named: "Copy Message") { UIPasteboard.general.string = message.text }
         .sheet(isPresented: $selectsText) { TranscriptSelectTextSheet(text: message.text) }
     }
@@ -166,7 +165,7 @@ struct TranscriptUserMessage: View {
 struct TranscriptAgentMessage: View {
     let entry: AgentRunEntry
     let agent: ChannelAgent
-    let context: TranscriptRowContext
+    let channel: TranscriptRowChannel
     let statusReactions: [ChannelReaction]
     var isExpanded = false
     var findHighlight: TranscriptFindHighlight?
@@ -197,7 +196,7 @@ struct TranscriptAgentMessage: View {
                             // Show More is the bubble's footer, so it replaces the bottom padding. Its 44pt
                             // target reaches below the bubble rather than up into the body's links.
                             TranscriptCollapsibleBody(isExpanded: isExpanded, endPadding: 10) {
-                                TranscriptBody(text: entry.body, agents: context.agents, baseURL: context.api.baseURL,
+                                TranscriptBody(text: entry.body, agents: channel.agents, baseURL: channel.api.baseURL,
                                                surface: surface, findHighlight: findHighlight)
                             } toggle: {
                                 Button { setExpanded(!isExpanded) } label: {
@@ -213,7 +212,7 @@ struct TranscriptAgentMessage: View {
                             }
                             .padding(.top, 10)
                         } else {
-                            TranscriptBody(text: entry.body, agents: context.agents, baseURL: context.api.baseURL,
+                            TranscriptBody(text: entry.body, agents: channel.agents, baseURL: channel.api.baseURL,
                                                surface: surface, findHighlight: findHighlight)
                                 .padding(.vertical, 10)
                         }
@@ -228,7 +227,7 @@ struct TranscriptAgentMessage: View {
                         }
                     }
                         .padding(.horizontal, 12)
-                        .transcriptBubble(surface)
+                        .transcriptBubble(surface, cornerStyle: .continuous, canvasIsBlack: true)
                         .transcriptWidthCap(TranscriptWidthCap.agentSurface * textScale)
                         .contentShape(.contextMenuPreview, .rect(cornerRadius: 12, style: .continuous))
                         .contextMenu {
@@ -241,20 +240,19 @@ struct TranscriptAgentMessage: View {
                         }
                 }
                 if let attachments = entry.message.attachments, !attachments.isEmpty {
-                    TranscriptAttachments(attachments: attachments, api: context.api, alignment: .leading,
+                    TranscriptAttachments(attachments: attachments, api: channel.api, alignment: .leading,
                                           source: .init(messageID: entry.message.id, sender: agent.name,
                                                         timestamp: entry.message.timestamp))
                 }
-                TranscriptReactions(message: entry.message, agents: context.agents,
+                TranscriptReactions(message: entry.message, agents: channel.agents,
                                     statusReactions: statusReactions)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("message-\(entry.message.sequence)")
-        .accessibilityLabel(transcriptMessageAccessibilityLabel(
-            author: agent.name, timestamp: entry.message.timestamp,
-            addressee: entry.addressee, request: entry.request))
+        .accessibilityLabel(entry.message.accessibilityLabel(
+            author: agent.name, addressee: entry.addressee, request: entry.request))
         .accessibilityActions {
             if agent.deleted != true {
                 Button("Reply") { interaction.reply(to: agent) }
@@ -559,37 +557,6 @@ struct TranscriptReactionChip: View {
             .frame(minWidth: 280, minHeight: CGFloat(min(reactors.count, 6)) * 44 + 56)
             .presentationDetents([.medium, .large])
         }
-    }
-}
-
-extension View {
-    /// Fills a bubble with its shared surface and, under Increase Contrast, outlines it with the Mac's edge.
-    func transcriptBubble(_ surface: TranscriptSurface) -> some View {
-        modifier(TranscriptBubble(surface: surface))
-    }
-}
-
-private struct TranscriptBubble: ViewModifier {
-    let surface: TranscriptSurface
-    @Environment(\.colorScheme) private var colorScheme
-    @Environment(\.colorSchemeContrast) private var contrast
-
-    func body(content: Content) -> some View {
-        let shape = RoundedRectangle(cornerRadius: 12, style: .continuous)
-        content
-            .background {
-                ZStack {
-                    let fills = surface.fills(isDark: colorScheme == .dark, canvasIsBlack: true)
-                    ForEach(Array(fills.enumerated()), id: \.offset) {
-                        shape.fill($0.element)
-                    }
-                }
-            }
-            .overlay {
-                if contrast == .increased, let edge = surface.increasedContrastEdge {
-                    shape.strokeBorder(edge, lineWidth: 1)
-                }
-            }
     }
 }
 

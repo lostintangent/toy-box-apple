@@ -12,15 +12,9 @@ import VisionKit
 /// `TranscriptImageGallery` over the conversation while `session` is set.
 @MainActor @Observable
 final class TranscriptGalleryPresenter {
-    struct Source: Equatable {
-        var messageID: String
-        var sender: String
-        var timestamp: String
-    }
-
     struct Session: Identifiable {
         let id = UUID()
-        let source: Source
+        let source: TranscriptImageSource
         let images: [ChannelAttachment]
         let api: ChannelAPI
         fileprivate(set) var index: Int
@@ -37,7 +31,7 @@ final class TranscriptGalleryPresenter {
     init() {}
 
     /// Opens the message's images at the tapped one. The gallery never wraps.
-    func open(images: [ChannelAttachment], at index: Int, source: Source, api: ChannelAPI) {
+    func open(images: [ChannelAttachment], at index: Int, source: TranscriptImageSource, api: ChannelAPI) {
         guard !images.isEmpty else { return }
         session = Session(source: source, images: images, api: api, index: min(max(0, index), images.count - 1))
     }
@@ -67,28 +61,9 @@ final class TranscriptGalleryPresenter {
         return type.conforms(to: .image) && !type.conforms(to: .svg)
     }
 
-    /// "Today at 5:23 PM · 2 of 4", without the position for a single image.
-    static func subtitle(sentAt: Date?, index: Int, count: Int, now: Date = .now,
-                         calendar: Calendar = .current) -> String {
-        let parts = subtitleParts(sentAt: sentAt, index: index, count: count, now: now, calendar: calendar)
-        return [parts.sent, parts.position].compactMap(\.self).joined(separator: " · ")
-    }
-
-    static func subtitleParts(sentAt: Date?, index: Int, count: Int, now: Date = .now,
-                              calendar: Calendar = .current) -> (sent: String?, position: String?) {
-        let sent = sentAt.map { sentAt in
-            let time = Date.FormatStyle(date: .omitted, time: .shortened, locale: calendar.locale ?? .current,
-                                        calendar: calendar, timeZone: calendar.timeZone)
-            return "\(transcriptDayLabel(sentAt, now: now, calendar: calendar)) at \(sentAt.formatted(time))"
-        }
-        return (sent, count > 1 ? "\(index + 1) of \(count)" : nil)
-    }
-
     /// "Image 2 of 4 from Lead, plan.png".
     static func accessibilityLabel(_ session: Session) -> String {
-        let position = session.images.count > 1 ? " \(session.index + 1) of \(session.images.count)" : ""
-        let filename = session.image.filename.map { ", \($0)" } ?? ""
-        return "Image\(position) from \(session.source.sender)\(filename)"
+        session.source.accessibilityLabel(for: session.image, index: session.index, count: session.images.count)
     }
 
     func descriptionRequest(for page: Session, file: URL?, voiceOver: Bool, isOn: Bool,
@@ -127,12 +102,12 @@ struct TranscriptGalleryOriginal: Equatable {
     /// rather than the cache's digest.
     nonisolated static func export(_ file: URL, named name: String) throws -> URL {
         let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("ToyBox-Images", isDirectory: true)
-            .appendingPathComponent(file.deletingPathExtension().lastPathComponent, isDirectory: true)
+            .appending(path: "ToyBox-Images", directoryHint: .isDirectory)
+            .appending(path: file.deletingPathExtension().lastPathComponent, directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        var filename = name.replacingOccurrences(of: "/", with: "-")
+        var filename = name.replacing("/", with: "-")
         if (filename as NSString).pathExtension.isEmpty { filename += ".\(file.pathExtension)" }
-        let destination = directory.appendingPathComponent(filename)
+        let destination = directory.appending(path: filename)
         try? FileManager.default.removeItem(at: destination)
         do { try FileManager.default.linkItem(at: file, to: destination) }
         catch { try FileManager.default.copyItem(at: file, to: destination) }
@@ -240,11 +215,8 @@ struct TranscriptImageGallery: View {
                 .labelStyle(.iconOnly)
         }
         ToolbarItem(placement: .principal) {
-            let sentAt = ChannelDates.date(session.source.timestamp)
-            let subtitle = TranscriptGalleryPresenter.subtitle(sentAt: sentAt, index: session.index,
-                                                               count: session.images.count)
-            let parts = TranscriptGalleryPresenter.subtitleParts(sentAt: sentAt, index: session.index,
-                                                                 count: session.images.count)
+            let subtitle = session.source.subtitle(index: session.index, count: session.images.count)
+            let parts = session.source.subtitleParts(index: session.index, count: session.images.count)
             VStack(spacing: 2) {
                 Text(session.source.sender).font(.headline).lineLimit(1)
                 // Only the time truncates, so the position stays readable at large text sizes.
@@ -292,16 +264,16 @@ struct TranscriptImageGallery: View {
     }
 
     /// Reduce Motion keeps the page change but makes it an opacity-only crossfade.
-    static func pageAnimation(reduceMotion: Bool) -> Animation {
+    private var pageAnimation: Animation {
         reduceMotion ? .easeInOut(duration: 0.2) : .smooth(duration: 0.3)
     }
 
     private func move(_ offset: Int) {
-        withAnimation(Self.pageAnimation(reduceMotion: reduceMotion)) { presenter.move(by: offset) }
+        withAnimation(pageAnimation) { presenter.move(by: offset) }
     }
 
     private func select(_ index: Int) {
-        withAnimation(Self.pageAnimation(reduceMotion: reduceMotion)) { presenter.select(index) }
+        withAnimation(pageAnimation) { presenter.select(index) }
     }
 
     /// Escape clears a Live Text selection before it closes the gallery.

@@ -18,6 +18,31 @@ struct TranscriptPresentationTests {
     }
 
     /// A pending message gets the day divider its sent row will have, and only that.
+    @Test func systemEventsLeadWithTheirOwnSymbolAndUnknownOnesWithInfo() {
+        #expect(ChannelSystemEventStyle.symbol(for: "tasks_completed") == "checkmark.circle.fill")
+        for scheme in [ColorScheme.light, .dark] {
+            #expect(ChannelSystemEventStyle.symbolColor(for: "tasks_completed", in: scheme)
+                    == ChannelTaskColors.changes(in: scheme).added)
+        }
+        #expect(ChannelSystemEventStyle.symbol(for: "a_future_event") == "info.circle")
+    }
+
+    @Test func imageSubtitlesReadTheDayTimeAndOnlyCountSeveralImages() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.locale = Locale(identifier: "en_US")
+        calendar.timeZone = try #require(TimeZone(identifier: "UTC"))
+        let now = try #require(ChannelDates.date("2026-10-22T20:00:00Z"))
+        func subtitle(_ sent: String, _ index: Int, _ count: Int) -> String {
+            TranscriptImageSource(messageID: "m1", sender: "Lead", timestamp: sent)
+                .subtitle(index: index, count: count, now: now, calendar: calendar)
+                .replacingOccurrences(of: "\u{202F}", with: " ")
+        }
+        #expect(subtitle("2026-10-22T17:23:00Z", 1, 4) == "Today at 5:23 PM · 2 of 4")
+        #expect(subtitle("2026-10-22T17:23:00Z", 0, 1) == "Today at 5:23 PM")
+        #expect(subtitle("2026-10-21T09:05:00Z", 0, 1) == "Yesterday at 9:05 AM")
+        #expect(subtitle("", 2, 3) == "3 of 3")
+    }
+
     @Test func pendingMessagesPredictTheDayDividerTheirSentRowsWillHave() {
         let roster = [ChannelAgent(id: "lead", name: "Lead")]
         func message(_ id: String, _ timestamp: String, sender: ChannelMessageSender = .user) -> ChannelMessage {
@@ -129,17 +154,15 @@ struct TranscriptPresentationTests {
     }
 
     @Test func messageAccessibilityIncludesIdentityWithoutDependingOnAVisibleHeader() {
-        let label = transcriptMessageAccessibilityLabel(
-            author: "Moss", timestamp: "2026-10-22T12:00:00Z", addressee: "Lead", request: .pending)
+        let message = transcriptTestMessage(1)
+        let label = message.accessibilityLabel(author: "Moss", addressee: "Lead", request: .pending)
         #expect(label.hasPrefix("Moss, "))
         #expect(label.contains("To Lead"))
         #expect(label.hasSuffix("Needs your reply"))
-        let replied = transcriptMessageAccessibilityLabel(
-            author: "Deleted agent", timestamp: "2026-10-22T12:00:00Z", request: .acknowledged)
+        let replied = message.accessibilityLabel(author: "Deleted agent", request: .acknowledged)
         #expect(replied.hasPrefix("Deleted agent, "))
         #expect(replied.hasSuffix("Replied"))
-        let attempt = transcriptMessageAccessibilityLabel(
-            author: "You", timestamp: "2026-10-22T12:00:00Z", delivery: "Not sent")
+        let attempt = message.accessibilityLabel(author: "You", delivery: "Not sent")
         #expect(attempt.hasPrefix("You, "))
         #expect(attempt.hasSuffix("Not sent"))
     }

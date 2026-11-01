@@ -509,7 +509,7 @@ struct TranscriptTests {
 
         let gallery = TranscriptGalleryPresenter()
         let api = try ChannelAPI(serverURL: "http://127.0.0.1:3210")
-        let source = TranscriptGalleryPresenter.Source(messageID: "m1", sender: "Lead",
+        let source = TranscriptImageSource(messageID: "m1", sender: "Lead",
                                                        timestamp: "2026-10-25T12:00:00Z")
         gallery.open(images: images, at: 7, source: source, api: api)
         #expect(gallery.session?.index == 2)
@@ -528,21 +528,6 @@ struct TranscriptTests {
         #expect(gallery.session == nil)
         gallery.open(images: [], at: 0, source: source, api: api)
         #expect(gallery.session == nil)
-    }
-
-    @Test func theGallerySubtitleCountsOnlySeveralImages() throws {
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = try #require(TimeZone(identifier: "UTC"))
-        calendar.locale = Locale(identifier: "en_US")
-        let sent = try #require(ChannelDates.date("2026-10-25T17:23:00Z"))
-        let now = try #require(ChannelDates.date("2026-10-25T20:00:00Z"))
-        func subtitle(_ index: Int, _ count: Int) -> String {
-            TranscriptGalleryPresenter.subtitle(sentAt: sent, index: index, count: count, now: now, calendar: calendar)
-                .replacingOccurrences(of: "\u{202F}", with: " ")
-        }
-        #expect(subtitle(1, 4) == "Today at 5:23 PM · 2 of 4")
-        #expect(subtitle(0, 1) == "Today at 5:23 PM")
-        #expect(TranscriptGalleryPresenter.subtitle(sentAt: nil, index: 2, count: 3) == "3 of 3")
     }
 
     @Test func transcriptMetadataInkClearsTextContrastOnItsBackgroundsInBothAppearances() {
@@ -699,15 +684,6 @@ struct TranscriptTests {
         #expect(targets[2] == CGRect(x: 0, y: 7, width: 200, height: 37))
     }
 
-    @Test func messagesRenderMarkdownBlocksLikeTheMac() {
-        func height(_ text: String) -> CGFloat {
-            UIHostingController(rootView: TranscriptBody(text: text))
-                .sizeThatFits(in: CGSize(width: 300, height: CGFloat.infinity)).height
-        }
-        let line = height("Pass 300")
-        #expect(height("## Pass 300") > line * 1.2)
-    }
-
     @Test func longMessagesCollapseInTheSamePassThatMeasuresThem() {
         func height(_ text: String, expanded: Bool) -> CGFloat {
             UIHostingController(rootView: TranscriptCollapsibleBody(isExpanded: expanded, endPadding: 10) {
@@ -726,11 +702,6 @@ struct TranscriptTests {
         #expect(height(long, expanded: false) == TranscriptCollapsibleBody<Text, Text>.clampHeight + 40)
         #expect(abs(height(long, expanded: true) - (full + 40)) < 1)
         #expect(abs(height("Short", expanded: false) - (short + 10)) < 1)
-    }
-
-    @Test func galleryPagingUsesTheApprovedMotion() {
-        #expect(TranscriptImageGallery.pageAnimation(reduceMotion: false) == .smooth(duration: 0.3))
-        #expect(TranscriptImageGallery.pageAnimation(reduceMotion: true) == .easeInOut(duration: 0.2))
     }
 
     @Test func unfoldedMessagesUseTheWholeColumnUpToTheMacsReadingCaps() throws {
@@ -783,7 +754,7 @@ struct TranscriptTests {
                                       calendar: Calendar(identifier: .gregorian))
             guard case .agent(_, let entries) = rows[0].content else { return .infinity }
             let view = TranscriptAgentMessage(entry: entries[0], agent: lead,
-                                              context: TranscriptRowContext(agents: [lead], api: api),
+                                              channel: TranscriptRowChannel(agents: [lead], api: api),
                                               statusReactions: [])
                 .environment(ChannelInteraction()).dynamicTypeSize(size)
             return UIHostingController(rootView: view)

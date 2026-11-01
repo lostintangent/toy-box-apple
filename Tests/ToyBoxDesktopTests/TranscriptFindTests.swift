@@ -45,8 +45,8 @@ struct TranscriptFindTests {
     @Test func decorationPreservesMarkdownLinksCodeMentionsAndUnmatchedAttributes() throws {
         let agents = [ChannelAgent.lead(id: "lead")]
         let source = "**Caf\u{00e9}** [CAFE](https://hidden.example) `cafe` @lead and plain."
-        let plain = transcriptInlineMarkdown(source, agents: agents)
-        let decorated = TranscriptFindHighlight(query: "cafe", isCurrent: true).applying(to: plain)
+        let plain = transcriptInlineMarkdown(source, agents: agents, mentionInk: TranscriptMentionInk().color)
+        let decorated = TranscriptFindHighlight.mac(query: "cafe", isCurrent: true).applying(to: plain)
         #expect(String(decorated.characters) == String(plain.characters))
         #expect(highlighted(decorated) == ["Caf\u{00e9}", "CAFE", "cafe"])
         #expect(decorated.runs.contains { $0.inlinePresentationIntent?.contains(.stronglyEmphasized) == true })
@@ -68,23 +68,24 @@ struct TranscriptFindTests {
         #expect(TranscriptFind.renderedText(message(1, source), agents: []) == stream.text)
 
         let crossBlock = TranscriptMarkdownHighlights(blocks: blocks,
-            highlight: .init(query: "cafe\nready", isCurrent: true))
+            highlight: .mac(query: "cafe\nready", isCurrent: true))
         #expect(highlighted(crossBlock.applying(to: AttributedString("Caf\u{00e9}"), fragment: .init(block: 0)))
                 == ["Caf\u{00e9}"])
-        #expect(highlighted(crossBlock.applying(to: transcriptInlineMarkdown("**ready** now", agents: []),
+        let ready = transcriptInlineMarkdown("**ready** now", agents: [], mentionInk: TranscriptMentionInk().color)
+        #expect(highlighted(crossBlock.applying(to: ready,
                                                fragment: .init(block: 1))) == ["ready"])
         let crossCell = TranscriptMarkdownHighlights(blocks: blocks,
-            highlight: .init(query: "cafe  ready", isCurrent: false))
+            highlight: .mac(query: "cafe  ready", isCurrent: false))
         #expect(highlighted(crossCell.applying(to: AttributedString("caf\u{00e9}"),
                                               fragment: .init(block: 3, row: 1, column: 0))) == ["caf\u{00e9}"])
         #expect(highlighted(crossCell.applying(to: AttributedString("ready"),
                                               fragment: .init(block: 3, row: 1, column: 1))) == ["ready"])
         let code = TranscriptMarkdownHighlights(blocks: blocks,
-            highlight: .init(query: "**literal**", isCurrent: true))
+            highlight: .mac(query: "**literal**", isCurrent: true))
         #expect(highlighted(code.applying(to: AttributedString("  **literal** cafe"),
                                          fragment: .init(block: 2))) == ["**literal**"])
         let marker = TranscriptMarkdownHighlights(blocks: blocks,
-            highlight: .init(query: "2. cafe", isCurrent: true))
+            highlight: .mac(query: "2. cafe", isCurrent: true))
         #expect(highlighted(marker.applying(to: AttributedString("2."), fragment: .init(block: 4))) == ["2."])
         #expect(highlighted(marker.applying(to: AttributedString("cafe ready"),
                                            fragment: .init(block: 4, column: 1))) == ["cafe"])
@@ -94,7 +95,7 @@ struct TranscriptFindTests {
         for appearance in [NSAppearance.Name.aqua, .darkAqua] {
             try #require(NSAppearance(named: appearance)).performAsCurrentDrawingAppearance {
                 for isCurrent in [false, true] {
-                    let decorated = TranscriptFindHighlight(query: "hit", isCurrent: isCurrent)
+                    let decorated = TranscriptFindHighlight.mac(query: "hit", isCurrent: isCurrent)
                         .applying(to: AttributedString("hit"))
                     guard let run = decorated.runs.first, let fill = run.backgroundColor,
                           let background = TranscriptRGB(NSColor.textBackgroundColor),
@@ -117,11 +118,11 @@ struct TranscriptFindTests {
         let rows = transcriptRows(messages, lead: agent, members: [])
         let api = try ChannelAPI(serverURL: "https://find.invalid")
         let store = ChannelStore(id: "find", api: api, sendJournal: nil)
-        let context = TranscriptRowContext(agents: [agent], channelID: "find", historyStart: 1, api: api)
+        let channel = TranscriptRowChannel(agents: [agent], id: "find", historyStart: 1, api: api)
         func content(_ row: TranscriptRow, query: String) -> TranscriptRowContent {
-            .init(row: row, context: context, statusReactions: [:], highlightedSequence: nil, catchUp: nil,
+            .init(row: row, channel: channel, statusReactions: [:], highlightedSequence: nil, catchUp: nil,
                   store: store, expandedMessageIds: [],
-                  findHighlights: [1: .init(query: query, isCurrent: true)], onSetExpanded: { _, _ in })
+                  findHighlights: [1: .mac(query: query, isCurrent: true)], onSetExpanded: { _, _ in })
         }
         let run = try #require(rows.first)
         let user = try #require(rows.last)
@@ -137,7 +138,7 @@ struct TranscriptFindTests {
         func child(_ entry: AgentRunEntry, query: String) -> TranscriptAgentMessage {
             .init(entry: entry, agent: agent, agents: [agent], api: api, interaction: interaction,
                   statusReactions: [], expanded: false,
-                  findHighlight: entry.message.sequence == 1 ? .init(query: query, isCurrent: true) : nil,
+                  findHighlight: entry.message.sequence == 1 ? .mac(query: query, isCurrent: true) : nil,
                   onSetExpanded: { _, _ in })
         }
         #expect(child(entries[0], query: "hit") != child(entries[0], query: "hi"))

@@ -6,15 +6,15 @@ import ToyBoxUI
 
 /// What every row draws from the channel. It leaves out the statuses, presence and messages that
 /// change on nearly every update, so a row redraws only when something it shows does.
-struct TranscriptRowContext: Equatable {
+struct TranscriptRowChannel: Equatable {
     /// Identities only, as the store's roster carries them.
     var agents: [ChannelAgent]
-    var channelID: String
+    var id: String
     var historyStart: Int
     var api: ChannelAPI
 
     static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.agents == rhs.agents && lhs.channelID == rhs.channelID && lhs.historyStart == rhs.historyStart
+        lhs.agents == rhs.agents && lhs.id == rhs.id && lhs.historyStart == rhs.historyStart
             && lhs.api.baseURL == rhs.api.baseURL
     }
 }
@@ -23,7 +23,7 @@ struct TranscriptRowContext: Equatable {
 /// skip their bodies, and its actions are ignored since they only call back into the transcript.
 struct TranscriptRowContent: View, @MainActor Equatable {
     let row: TranscriptRow
-    let context: TranscriptRowContext
+    let channel: TranscriptRowChannel
     /// The looking and working reactions on this row's messages, by sequence.
     let statusReactions: [Int: [ChannelReaction]]
     /// The highlighted sequence, when it's one of this row's messages.
@@ -39,14 +39,14 @@ struct TranscriptRowContent: View, @MainActor Equatable {
     let onSetExpanded: (String, Bool) -> Void
     @Environment(ChannelInteraction.self) private var interaction
 
-    init(row: TranscriptRow, context: TranscriptRowContext, statusReactions: [Int: [ChannelReaction]],
+    init(row: TranscriptRow, channel: TranscriptRowChannel, statusReactions: [Int: [ChannelReaction]],
          highlightedSequence: Int?, catchUp: TranscriptCatchUp?, store: ChannelStore,
          requestChoices: TranscriptRequestChoices? = nil,
          expandedMessageIds: Set<String>, findHighlights: [Int: TranscriptFindHighlight] = [:],
          onSetExpanded: @escaping (String, Bool) -> Void) {
         let messages = row.messages
         self.row = row
-        self.context = context
+        self.channel = channel
         self.statusReactions = statusReactions.isEmpty ? [:] : messages.reduce(into: [:]) { reactions, message in
             reactions[message.sequence] = statusReactions[message.sequence]
         }
@@ -64,7 +64,7 @@ struct TranscriptRowContent: View, @MainActor Equatable {
     }
 
     static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.row == rhs.row && lhs.context == rhs.context && lhs.statusReactions == rhs.statusReactions
+        lhs.row == rhs.row && lhs.channel == rhs.channel && lhs.statusReactions == rhs.statusReactions
             && lhs.highlightedSequence == rhs.highlightedSequence && lhs.catchUp === rhs.catchUp
             && lhs.store === rhs.store && lhs.expandedMessageIds == rhs.expandedMessageIds
             && lhs.findHighlights == rhs.findHighlights && lhs.requestChoices == rhs.requestChoices
@@ -75,27 +75,27 @@ struct TranscriptRowContent: View, @MainActor Equatable {
             if let divider = row.divider {
                 // A frame, so a card starting in the viewport keeps the reader's place and grows downward.
                 TranscriptDividerStack(divider: divider, catchUp: catchUp, store: store)
-                    .transcriptMessageFrame(id: "divider-\(row.id)", sequence: 0, historyStart: context.historyStart)
+                    .transcriptMessageFrame(id: "divider-\(row.id)", sequence: 0, historyStart: channel.historyStart)
             }
             switch row.content {
             case .user(let message):
-                TranscriptUserMessage(message: message, agents: context.agents, api: context.api,
+                TranscriptUserMessage(message: message, agents: channel.agents, api: channel.api,
                                       statusReactions: statusReactions[message.sequence] ?? [],
                                       findHighlight: findHighlights[message.sequence])
                     .background(highlightedSequence == message.sequence
                                 ? ChannelColors.sourceHighlight : .clear,
                                 in: RoundedRectangle(cornerRadius: 12))
                     .transcriptMessageFrame(id: message.id, sequence: message.sequence,
-                                            historyStart: context.historyStart)
+                                            historyStart: channel.historyStart)
                     .id(message.id)
             case .agent(let agentId, let entries):
-                let agent = channelAgentIdentity(context.agents, id: agentId)
+                let agent = channelAgentIdentity(channel.agents, id: agentId)
                 HStack(alignment: .top, spacing: 12) {
                     AgentAvatarView(agent: agent, size: 32)
                     VStack(alignment: .leading, spacing: TranscriptSpacing.entry) {
                         ForEach(entries) { entry in
-                            TranscriptAgentMessage(entry: entry, agent: agent, agents: context.agents,
-                                                   api: context.api, interaction: interaction,
+                            TranscriptAgentMessage(entry: entry, agent: agent, agents: channel.agents,
+                                                   api: channel.api, interaction: interaction,
                                                    statusReactions: statusReactions[entry.message.sequence] ?? [],
                                                    expanded: expandedMessageIds.contains(entry.id),
                                                    findHighlight: findHighlights[entry.message.sequence],
@@ -107,7 +107,7 @@ struct TranscriptRowContent: View, @MainActor Equatable {
                                             ? ChannelColors.sourceHighlight : .clear,
                                             in: RoundedRectangle(cornerRadius: 12))
                                 .transcriptMessageFrame(id: entry.message.id, sequence: entry.message.sequence,
-                                                        historyStart: context.historyStart)
+                                                        historyStart: channel.historyStart)
                                 .id(entry.message.id)
                         }
                     }
@@ -118,16 +118,16 @@ struct TranscriptRowContent: View, @MainActor Equatable {
                     && (messages.first?.system?.type == "member_joined" || messages.first?.system?.type == "member_left")
                 let individualMessages = ChannelArtifactGroup.Verb(systemType: messages.first?.system?.type) != nil
                     || expandsMembership
-                TranscriptSystemMessages(messages: messages, channelID: context.channelID,
-                                         historyStart: context.historyStart, agents: context.agents,
-                                         api: context.api, findHighlights: findHighlights,
+                TranscriptSystemMessages(messages: messages, channelID: channel.id,
+                                         historyStart: channel.historyStart, agents: channel.agents,
+                                         api: channel.api, findHighlights: findHighlights,
                                          expandsMembership: expandsMembership)
                     .background(messages.contains { $0.sequence == highlightedSequence }
                                 ? ChannelColors.sourceHighlight : .clear,
                                 in: RoundedRectangle(cornerRadius: 6))
                     .transcriptMessageFrame(id: individualMessages ? "system-group-\(row.id)" : row.id,
                                             sequence: individualMessages ? 0 : messages.map(\.sequence).max() ?? 0,
-                                            historyStart: context.historyStart)
+                                            historyStart: channel.historyStart)
                     .id(row.id)
             }
         }
@@ -188,7 +188,7 @@ private struct TranscriptRule: View {
         }
         .frame(minHeight: 16 * textScale)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(transcriptDividerAccessibilityLabel(divider))
+        .accessibilityLabel(divider.accessibilityLabel())
         .accessibilityAddTraits(divider.day == nil ? [] : .isHeader)
     }
 }
@@ -230,7 +230,7 @@ struct TranscriptUserMessage: View {
                 }
                 if let attachments = message.attachments, !attachments.isEmpty {
                     TranscriptAttachments(attachments: attachments, api: api, alignment: .trailing,
-                                          source: ImageViewer.Source(message: message, agents: agents))
+                                          source: TranscriptImageSource(message: message, agents: agents))
                 }
                 TranscriptReactions(message: message, agents: agents, statusReactions: statusReactions)
             }
@@ -253,8 +253,7 @@ struct TranscriptUserMessage: View {
             Button("Copy Message", systemImage: "doc.on.doc") { TranscriptClipboard.copy(message.text) }
         }
         .accessibilityElement(children: .contain)
-        .accessibilityLabel(transcriptMessageAccessibilityLabel(
-            author: "You", timestamp: message.timestamp, delivery: deliveryLabel))
+        .accessibilityLabel(message.accessibilityLabel(author: "You", delivery: deliveryLabel))
         .accessibilityAction(named: "Copy Message") { TranscriptClipboard.copy(message.text) }
     }
 }
@@ -324,7 +323,7 @@ struct TranscriptAgentMessage: View, @MainActor Equatable {
             }
             if let attachments = entry.message.attachments, !attachments.isEmpty {
                 TranscriptAttachments(attachments: attachments, api: api,
-                                      source: ImageViewer.Source(message: entry.message, agents: agents))
+                                      source: TranscriptImageSource(message: entry.message, agents: agents))
             }
             TranscriptReactions(message: entry.message, agents: agents, statusReactions: statusReactions)
         }
@@ -348,9 +347,8 @@ struct TranscriptAgentMessage: View, @MainActor Equatable {
         .focused($isFocused)
         .focusEffectDisabled()
         .accessibilityElement(children: .contain)
-        .accessibilityLabel(transcriptMessageAccessibilityLabel(
-            author: agent.name, timestamp: entry.message.timestamp,
-            addressee: entry.addressee, request: entry.request))
+        .accessibilityLabel(entry.message.accessibilityLabel(
+            author: agent.name, addressee: entry.addressee, request: entry.request))
         .accessibilityActions {
             if agent.deleted != true {
                 Button("Reply") { interaction.reply(to: agent) }

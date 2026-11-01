@@ -17,19 +17,11 @@ private let transcriptTimingTestsEnabled = ProcessInfo.processInfo.environment["
 @Suite("Transcript rendering and visibility")
 struct TranscriptTests {
     @MainActor
-    @Test(arguments: [0.9, 1, 1.2])
-    func markdownSizingKeepsTranscriptDefaultsAndScalesArtifactCode(_ scale: CGFloat) throws {
+    @Test func markdownSizingKeepsTranscriptDefaultsAndAcceptsArtifactSizes() {
         let normal = TranscriptMarkdown(content: "Body and `code`")
         #expect(normal.bodySize == 14 && normal.codeSize == 12 && normal.lineSpacing == 3)
         let artifact = TranscriptMarkdown(content: "Body and `code`", bodySize: 15, codeSize: 13, lineSpacing: 4)
         #expect(artifact.bodySize == 15 && artifact.codeSize == 13 && artifact.lineSpacing == 4)
-        let original = transcriptInlineMarkdown("`code` @lead", agents: [.lead(id: "lead")], textScale: scale)
-        let resized = transcriptInlineMarkdown("`code` @lead", agents: [.lead(id: "lead")], textScale: scale,
-                                               fontSize: artifact.bodySize, codeSize: artifact.codeSize)
-        #expect(original.runs.first?.font == .system(size: 12 * scale, design: .monospaced))
-        #expect(resized.runs.first?.font == .system(size: 13 * scale, design: .monospaced))
-        let mention = try #require(resized.range(of: "@lead"))
-        #expect(resized[mention].runs.first?.font == .system(size: 15 * scale, weight: .semibold))
     }
 
     @MainActor
@@ -133,41 +125,6 @@ struct TranscriptTests {
     }
 
     @MainActor
-    @Test func aMarkdownTablesBorderHugsItsColumnsInAWideLane() async throws {
-        let bitmap = try await renderedTranscriptBitmap(
-            TranscriptMarkdown(content: "| A | B |\n| --- | --- |\n| 1 | 2 |", selectable: false)
-                .background(Color.white),
-            size: CGSize(width: 720, height: 120), appearance: NSAppearance(named: .aqua))
-        func colors(at fraction: CGFloat) throws -> [NSColor] {
-            let x = Int(CGFloat(bitmap.pixelsWide) * fraction)
-            return try (0..<bitmap.pixelsHigh).map {
-                try #require(bitmap.colorAt(x: x, y: $0)?.usingColorSpace(.sRGB))
-            }
-        }
-        let table = try colors(at: 0.05)
-        let outside = try colors(at: 0.75)
-        #expect(table.contains { min($0.redComponent, $0.greenComponent, $0.blueComponent) < 0.99 })
-        #expect(outside.allSatisfy { min($0.redComponent, $0.greenComponent, $0.blueComponent) >= 0.99 })
-    }
-
-    @Test func knownMentionsAreTintedButCodeLinksAndUnknownHandlesStayLiteral() {
-        let lead = ChannelAgent.lead(id: "channel")
-        var rendered = transcriptInlineMarkdown("@lead @unknown `@lead` [@lead](https://example.com) @everyone",
-                                                agents: [lead])
-        #expect(String(rendered.characters) == "@lead @unknown @lead @lead @everyone")
-        var tinted = rendered.runs.filter { $0.foregroundColor != nil }
-            .map { String(rendered[$0.range].characters) }
-        #expect(tinted == ["@lead", "@everyone"])
-        #expect(rendered.runs.filter { $0.link != nil }.count == 1)
-        rendered = transcriptInlineMarkdown("Caf\u{00e9} **ready**: @lead", agents: [lead])
-        #expect(String(rendered.characters) == "Caf\u{00e9} ready: @lead")
-        tinted = rendered.runs.filter { $0.foregroundColor != nil }
-            .map { String(rendered[$0.range].characters) }
-        #expect(tinted == ["@lead"])
-        #expect(rendered.runs.contains { $0.inlinePresentationIntent?.contains(.stronglyEmphasized) == true })
-    }
-
-    @MainActor
     @Test func mentionInkKeepsItsIdentityHueAtTextContrastOnEverySurface() throws {
         let colors = ["#7fa171", "#ffffff", "#000000", "#ffff00", "#00ffff", "#ff0000", "#123"]
         let surfaces: [TranscriptSurface] = [.canvas, .agent, .pendingAgent, .user]
@@ -180,7 +137,7 @@ struct TranscriptTests {
                 for color in colors {
                     let agent = ChannelAgent(id: "moss", name: "Moss", avatar: .init(mark: "M4 12H20", color: color))
                     let rendered = transcriptInlineMarkdown("@moss and **@everyone**", agents: [agent],
-                                                            textScale: 1.25, fontSize: 16, mentions: ink)
+                                                            textScale: 1.25, fontSize: 16, mentionInk: ink.color)
                     let mentions = rendered.runs.filter { $0.foregroundColor != nil }
                     #expect(mentions.map { String(rendered[$0.range].characters) } == ["@moss", "@everyone"])
                     for mention in mentions {
@@ -216,31 +173,6 @@ struct TranscriptTests {
                     }
                 }
             }
-        }
-    }
-
-    @MainActor
-    @Test func mentionInkOnlyMovesAnIdentityColorAsFarAsContrastRequires() throws {
-        func ink(_ color: String, isDark: Bool) -> NSColor? {
-            let agent = ChannelAgent(id: "moss", name: "Moss", avatar: .init(mark: "M4 12H20", color: color))
-            var resolved: NSColor?
-            NSAppearance(named: isDark ? .darkAqua : .aqua)?.performAsCurrentDrawingAppearance {
-                resolved = NSColor(TranscriptMentionInk(surface: .agent, isDark: isDark).color(for: agent))
-                    .usingColorSpace(.sRGB)
-            }
-            return resolved
-        }
-        // A color that already reads keeps its exact identity.
-        let black = try #require(ink("#000000", isDark: false))
-        #expect(black.redComponent < 0.01 && black.greenComponent < 0.01 && black.blueComponent < 0.01)
-        let white = try #require(ink("#ffffff", isDark: true))
-        #expect(white.redComponent > 0.99 && white.greenComponent > 0.99 && white.blueComponent > 0.99)
-        // A mid green darkens in light and lightens in dark, but stays green rather than going gray.
-        for isDark in [false, true] {
-            let moss = try #require(ink("#7fa171", isDark: isDark))
-            #expect(moss.greenComponent > moss.redComponent + 0.02)
-            #expect(moss.greenComponent > moss.blueComponent + 0.02)
-            #expect(isDark ? moss.greenComponent >= 0.63 : moss.greenComponent < 0.63)
         }
     }
 
@@ -1210,7 +1142,7 @@ struct TranscriptTests {
                                   lead: .lead(id: "lead"), members: [], unreadAfter: 1)
         let divider = try #require(rows.last?.divider)
         let day = try #require(divider.day)
-        #expect(transcriptDividerAccessibilityLabel(divider, now: day) == "Today, New messages")
+        #expect(divider.accessibilityLabel(now: day) == "Today, New messages")
     }
 
     @MainActor
@@ -1433,22 +1365,6 @@ struct ImageViewerTests {
     private static let screenshot = CGSize(width: 800, height: 600)
     private static let photo = CGSize(width: 2400, height: 1800)
 
-    @Test func subtitlesReadTheDayTimeAndPosition() throws {
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.locale = Locale(identifier: "en_US")
-        calendar.timeZone = try #require(TimeZone(identifier: "UTC"))
-        let dates = ISO8601DateFormatter()
-        let now = try #require(dates.date(from: "2026-10-22T20:00:00Z"))
-        func subtitle(_ sent: String?, _ index: Int, _ count: Int) -> String {
-            ImageViewer.subtitle(sentAt: sent.flatMap(dates.date(from:)), index: index, count: count,
-                                 now: now, calendar: calendar)
-                .replacingOccurrences(of: "\u{202F}", with: " ")
-        }
-        #expect(subtitle("2026-10-22T17:23:00Z", 1, 4) == "Today at 5:23 PM · 2 of 4")
-        #expect(subtitle("2026-10-21T09:05:00Z", 0, 1) == "Yesterday at 9:05 AM")
-        #expect(subtitle(nil, 2, 3) == "3 of 3")
-    }
-
     @Test func imagesFitBelowTheToolbarAndNeverUpscale() throws {
         let viewer = try openViewer([Self.screenshot, Self.photo])
         defer { viewer.close(animated: false) }
@@ -1564,7 +1480,7 @@ struct ImageViewerTests {
         let images = try (0..<2).map { _ in
             ChannelAttachment(mimeType: "image/png", base64: try solidPNG(width: 800, height: 600))
         }
-        let source = ImageViewer.Source(messageID: "m1", sender: "Lead", timestamp: "2026-10-22T17:23:00Z")
+        let source = TranscriptImageSource(messageID: "m1", sender: "Lead", timestamp: "2026-10-22T17:23:00Z")
         let api = try ChannelAPI(serverURL: "http://localhost:3210")
         viewer.open(images: images, at: 1, source: source, api: api, thumbnails: frames)
         viewer.layout = layout
@@ -2020,7 +1936,7 @@ struct ImageViewerLiveTextTests {
 
     // MARK: Helpers
 
-    private static let source = ImageViewer.Source(messageID: "m1", sender: "Lead", timestamp: "2026-10-22T17:23:00Z")
+    private static let source = TranscriptImageSource(messageID: "m1", sender: "Lead", timestamp: "2026-10-22T17:23:00Z")
 
     private static func api() throws -> ChannelAPI { try ChannelAPI(serverURL: "http://localhost:3210") }
 
@@ -2346,30 +2262,6 @@ struct TranscriptCatchUpTests {
         collapsing.session.dismiss()
         try await transcriptUntil { collapsing.session.phase == .collapsed }
         #expect(!collapsing.holdsLanding)
-    }
-
-    @Test func aLineFromAChannelEventLeadsWithThatEventsOwnSymbol() {
-        var state = catchUpTestState()
-        for (index, type) in [(11, "tasks_completed"), (12, "a_future_event")] {
-            state.messages[index] = ChannelMessage(id: "m\(index + 1)", sequence: index + 1,
-                                                   timestamp: "2026-10-22T12:00:00Z", sender: .system,
-                                                   content: .system(.init(type: type)))
-        }
-        func slot(_ source: Int, isReplied: Bool? = nil) -> TranscriptCatchUpSlot {
-            TranscriptCatchUpSlot(line: .init(text: "Line", sources: [source]), messages: state.messages,
-                                  isReplied: isReplied)
-        }
-        #expect(slot(12) == .event("tasks_completed"))
-        #expect(ChannelSystemEventStyle.symbol(for: "tasks_completed") == "checkmark.circle.fill")
-        for scheme in [ColorScheme.light, .dark] {
-            #expect(ChannelSystemEventStyle.symbolColor(for: "tasks_completed", in: scheme)
-                    == ChannelTaskColors.changes(in: scheme).added)
-        }
-        #expect(slot(13) == .event("a_future_event"))
-        #expect(ChannelSystemEventStyle.symbol(for: "a_future_event") == "info.circle")
-        #expect(slot(11) == .avatar("lead"))
-        #expect(slot(12, isReplied: true) == .need(isReplied: true))
-        #expect(slot(99) == .unknown)
     }
 
     @Test func imagesAreDescribedOnlyForVoiceOverAndOnlyOnce() async throws {
@@ -3034,9 +2926,9 @@ private final class HoveredMessage {
                                      content: .text(String(repeating: "A paragraph long enough to wrap. ", count: 6)
                                          + "\n\nA second paragraph."))
         let row = try #require(transcriptRows([message], lead: lead, members: []).last)
-        let context = TranscriptRowContext(agents: [lead], channelID: "selection", historyStart: 1, api: store.api)
+        let channel = TranscriptRowChannel(agents: [lead], id: "selection", historyStart: 1, api: store.api)
         host = NSHostingView(rootView:
-            TranscriptRowContent(row: row, context: context, statusReactions: [:], highlightedSequence: nil,
+            TranscriptRowContent(row: row, channel: channel, statusReactions: [:], highlightedSequence: nil,
                                  catchUp: nil, store: store, expandedMessageIds: [], onSetExpanded: { _, _ in })
                 .padding(20)
                 .frame(width: 600, height: 300, alignment: .topLeading)

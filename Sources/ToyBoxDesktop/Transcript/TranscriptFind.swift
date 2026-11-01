@@ -10,23 +10,15 @@ extension TranscriptFind {
     var highlights: [Int: TranscriptFindHighlight] {
         guard isPresented else { return [:] }
         return Dictionary(uniqueKeysWithValues: matches.map {
-            ($0.sequence, TranscriptFindHighlight(query: query, isCurrent: $0.sequence == selectedSequence))
+            ($0.sequence, .mac(query: query, isCurrent: $0.sequence == selectedSequence))
         })
     }
 }
 
-struct TranscriptFindHighlight: Equatable {
-    let query: String
-    let isCurrent: Bool
-
-    var shared: ToyBoxUI.TranscriptFindHighlight {
+extension TranscriptFindHighlight {
+    static func mac(query: String, isCurrent: Bool) -> TranscriptFindHighlight {
         .init(query: query, isCurrent: isCurrent, background: Color(nsColor: .findHighlightColor),
               foreground: Color(nsColor: .black))
-    }
-
-    func applying(to value: AttributedString, ranges: [Range<Int>]? = nil,
-                  offset: Int = 0) -> AttributedString {
-        shared.applying(to: value, ranges: ranges, offset: offset)
     }
 }
 

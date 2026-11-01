@@ -301,7 +301,7 @@ struct ConversationTranscript: View {
     private func conversationRows(proxy: ScrollViewProxy) -> some View {
         let rows = rows
         let gaps = transcriptRowGaps(rows)
-        let context = TranscriptRowContext(agents: store.roster, channelID: store.id,
+        let channel = TranscriptRowChannel(agents: store.roster, id: store.id,
                                            historyStart: store.messages.first?.sequence ?? 0, api: store.api)
         let statusReactions = statusReactions
         let findHighlights = find.highlights
@@ -321,7 +321,7 @@ struct ConversationTranscript: View {
                     .padding(.vertical, 40)
             }
             ForEach(rows) { row in
-                TranscriptRowContent(row: row, context: context, statusReactions: statusReactions,
+                TranscriptRowContent(row: row, channel: channel, statusReactions: statusReactions,
                                      highlightedSequence: highlightedSequence, catchUp: catchUp, store: store,
                                      requestChoices: requestChoices,
                                      expandedMessageIds: expandedMessageIds,
@@ -381,8 +381,10 @@ struct ConversationTranscript: View {
 
     private func sendAttempt(_ attempt: ChannelSendAttempt, statusReactions: [ChannelReaction]) -> some View {
         VStack(alignment: .trailing, spacing: 6) {
-            TranscriptAttemptMessage(attempt: attempt, agents: store.roster, api: store.api,
-                                     statusReactions: statusReactions, slowSendDelay: slowSendDelay)
+            TranscriptDeliveryLabel(phase: attempt.phase, slowAfter: slowSendDelay) { label in
+                TranscriptUserMessage(message: attempt.message, agents: store.roster, api: store.api,
+                                      deliveryLabel: label, statusReactions: statusReactions)
+            }
             if let error = attempt.error {
                 Text(error).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
             }
@@ -562,7 +564,7 @@ struct ConversationTranscript: View {
     }
 
     func showsStart(of row: TranscriptRow) -> Bool {
-        guard let top = transcriptFrameIDs(of: row).compactMap({ frames[$0]?.rect.minY }).min() else { return false }
+        guard let top = row.frameIDs.compactMap({ frames[$0]?.rect.minY }).min() else { return false }
         return top >= -0.5 && top < min(120, viewport.height / 2)
     }
 
@@ -943,8 +945,9 @@ struct TranscriptRestoringHistory: PreferenceKey {
 }
 
 /// The keys a row's messages measure their frames under.
-func transcriptFrameIDs(of row: TranscriptRow) -> [String] {
-    row.messages.map(\.id) + [row.id, "system-group-\(row.id)"]
+extension TranscriptRow {
+    /// The IDs whose frames the transcript tracks for this row: its messages, the row and its system group.
+    var frameIDs: [String] { messages.map(\.id) + [id, "system-group-\(id)"] }
 }
 
 /// Scroll geometry changes on every frame of a scroll. Kept out of SwiftUI's tracking, it lets a
@@ -968,36 +971,6 @@ struct PagingAnchor: Equatable {
 private struct PagingRestoreTarget: Hashable {
     var id: String
     var oldestSequence: Int
-}
-
-/// A message on its way, drawn exactly as it will be once sent, so confirming it changes nothing on
-/// screen. Only a send still going after `slowSendDelay` says so. A failed one keeps its label.
-private struct TranscriptAttemptMessage: View {
-    let attempt: ChannelSendAttempt
-    let agents: [ChannelAgent]
-    let api: ChannelAPI
-    let statusReactions: [ChannelReaction]
-    let slowSendDelay: Duration
-    @ViewState private var isSlow = false
-
-    private var deliveryLabel: String? {
-        switch attempt.phase {
-        case .sending: isSlow ? attempt.phase.label : nil
-        case .confirmed: nil
-        case .notSent, .deliveryNotConfirmed: attempt.phase.label
-        }
-    }
-
-    var body: some View {
-        TranscriptUserMessage(message: attempt.message, agents: agents, api: api,
-                              deliveryLabel: deliveryLabel, statusReactions: statusReactions)
-            .task(id: attempt.phase) {
-                isSlow = false
-                guard attempt.phase == .sending else { return }
-                try? await Task.sleep(for: slowSendDelay)
-                if !Task.isCancelled { isSlow = true }
-            }
-    }
 }
 
 private struct TranscriptNotice<Message: View, Action: View>: View {

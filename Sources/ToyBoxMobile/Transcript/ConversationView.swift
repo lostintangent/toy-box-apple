@@ -218,7 +218,7 @@ struct ConversationView: View {
 
     var body: some View {
         let items = items
-        let context = TranscriptRowContext(agents: store.roster, api: store.api)
+        let channel = TranscriptRowChannel(agents: store.roster, api: store.api)
         let statusReactions = statusReactions
         let card = interaction.messageView == .all ? catchUp.map { (session: $0, store: store) } : nil
         let requestChoices = TranscriptRequestChoices(request: store.request, attempts: store.sendAttempts,
@@ -234,7 +234,7 @@ struct ConversationView: View {
                     }
                 }
                 ForEach(items) { item in
-                    TranscriptItemView(item: item, context: context, statusReactions: statusReactions,
+                    TranscriptItemView(item: item, channel: channel, statusReactions: statusReactions,
                                        isHighlighted: item.messages.contains { $0.sequence == highlightedSequence },
                                        isExpanded: expanded.contains(item.id),
                                        findHighlight: item.messages.lazy.compactMap { findMatches[$0.sequence] }.first
@@ -261,7 +261,7 @@ struct ConversationView: View {
                 ForEach(store.sendAttempts) { attempt in
                     // The committed row takes the attempt's UUID, so keep the two identities apart.
                     TranscriptSendAttempt(attempt: attempt, divider: attemptDividers[attempt.id], store: store,
-                                          context: context)
+                                          channel: channel)
                         .padding(.top, items.isEmpty && attempt.id == store.sendAttempts.first?.id
                                  ? 0 : TranscriptSpacing.above(attemptDividers[attempt.id]))
                         .id("attempt-\(attempt.id)")
@@ -335,7 +335,7 @@ struct ConversationView: View {
         }
         .overlay {
             if store.phase != .deleted {
-                TranscriptState(store: store, isEmpty: items.isEmpty && store.sendAttempts.isEmpty) {
+                TranscriptPlaceholder(store: store, isEmpty: items.isEmpty && store.sendAttempts.isEmpty) {
                     Task { await store.loadOlder() }
                 }
             }
@@ -590,23 +590,14 @@ private struct TranscriptPagingAccessory: View {
 }
 
 /// A message on its way, drawn exactly as it will be once sent, so confirming it changes nothing on
-/// screen. Only a send still going after a second says so. A failed one keeps its label and actions.
+/// screen. A failed one keeps its label and actions.
 private struct TranscriptSendAttempt: View {
     let attempt: ChannelSendAttempt
     let divider: TranscriptDivider?
     let store: ChannelStore
-    let context: TranscriptRowContext
+    let channel: TranscriptRowChannel
     @Environment(ChannelInteraction.self) private var interaction
     @ViewState private var actionError: String?
-    @ViewState private var isSlow = false
-
-    private var deliveryLabel: String? {
-        switch attempt.phase {
-        case .sending: isSlow ? attempt.phase.label : nil
-        case .confirmed: nil
-        case .notSent, .deliveryNotConfirmed: attempt.phase.label
-        }
-    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -617,14 +608,10 @@ private struct TranscriptSendAttempt: View {
 
     private var message: some View {
         VStack(alignment: .trailing, spacing: 6) {
-            TranscriptUserMessage(message: attempt.message, context: context, deliveryLabel: deliveryLabel,
-                                  identifier: "send-\(attempt.id)")
-                .task(id: attempt.phase) {
-                    isSlow = false
-                    guard attempt.phase == .sending else { return }
-                    try? await Task.sleep(for: .seconds(1))
-                    if !Task.isCancelled { isSlow = true }
-                }
+            TranscriptDeliveryLabel(phase: attempt.phase) { label in
+                TranscriptUserMessage(message: attempt.message, channel: channel, deliveryLabel: label,
+                                      identifier: "send-\(attempt.id)")
+            }
             if let error = actionError ?? attempt.error {
                 Text(error).font(.footnote).foregroundStyle(TranscriptInk.secondary)
             }
@@ -817,8 +804,9 @@ private struct TranscriptReconnecting: View {
     }
 }
 
-/// Whole-conversation states. They never cover loaded history.
-private struct TranscriptState: View {
+/// What the conversation shows in place of its messages while it loads, can't connect or is empty.
+/// It never covers loaded history.
+private struct TranscriptPlaceholder: View {
     let store: ChannelStore
     let isEmpty: Bool
     let loadOlder: () -> Void
