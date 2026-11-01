@@ -125,18 +125,14 @@ private struct OverviewTasksSection: View {
         let progress = channelTasksProgress(tasks)
         let diff = channelTasksDiff(tasks)
         OverviewSection(id: .tasks, summary: .tasks(progress),
-                        accessibilityDetail: diff.map(ChannelOverviewTaskDiff.spoken), collapsed: $collapsed) {
-            // One trailing view keeps the header's facts in their slot. The filter stays with Tasks, so
-            // an empty channel shows neither.
-            if !tasks.isEmpty {
-                HStack(spacing: 8) {
-                    if let diff {
-                        ChannelOverviewTaskDiff(diff: diff)
-                            .font(.system(size: 11 * textScale))
-                            .accessibilityHidden(true)
-                    }
-                    OverviewInProgressFilter(isOn: $showsOnlyInProgress)
-                }
+                        accessibilityDetail: diff.map(ChannelOverviewTaskDiff.spoken),
+                        filter: tasks.isEmpty ? nil : $showsOnlyInProgress,
+                        collapsed: $collapsed) {
+            // The filter sits after the count it changes. The diff keeps the trailing facts slot.
+            if let diff {
+                ChannelOverviewTaskDiff(diff: diff)
+                    .font(.system(size: 11 * textScale))
+                    .accessibilityHidden(true)
             }
         } content: {
             OverviewTaskList(tasks: tasks, agents: store.roster, artifacts: store.artifacts,

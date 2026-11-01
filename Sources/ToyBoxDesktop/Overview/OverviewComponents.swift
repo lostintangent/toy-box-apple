@@ -117,6 +117,8 @@ struct OverviewSection<Trailing: View, Content: View>: View {
     let id: OverviewSectionID
     let summary: ChannelOverviewSummary
     var accessibilityDetail: String?
+    /// The in-progress filter, placed right after the count it changes. Nil when the section has none.
+    var filter: Binding<Bool>?
     @Binding var collapsed: Set<OverviewSectionID>
     @ViewBuilder var trailing: () -> Trailing
     @ViewBuilder var content: () -> Content
@@ -136,11 +138,16 @@ struct OverviewSection<Trailing: View, Content: View>: View {
                     .foregroundStyle(Color(nsColor: .labelColor))
                     .allowsHitTesting(false)
                     .accessibilityHidden(true)
-                Text(summary.count)
-                    .font(.system(size: 13 * textScale).monospacedDigit())
-                    .foregroundStyle(ChannelOverviewInk.secondary(in: scheme))
-                    .allowsHitTesting(false)
-                    .accessibilityHidden(true)
+                HStack(alignment: .firstTextBaseline, spacing: ChannelOverviewHeaderLayout.nameCountGap) {
+                    Text(summary.count)
+                        .font(.system(size: 13 * textScale).monospacedDigit())
+                        .foregroundStyle(ChannelOverviewInk.secondary(in: scheme))
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                    if let filter {
+                        OverviewInProgressFilter(isOn: filter)
+                    }
+                }
                 trailing()
                 Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
                     .font(.system(size: 10 * textScale, weight: .semibold))
@@ -197,13 +204,17 @@ struct OverviewInProgressFilter: View {
         Button {
             isOn.toggle()
         } label: {
+            // Leading-aligned, so the glyph sits the count's gap away from the digits and the target
+            // extends into the empty space after it.
             Image(systemName: "line.3.horizontal.decrease")
                 .font(.system(size: 11 * textScale, weight: .medium))
-                .foregroundStyle(isOn ? Color.accentColor : ChannelOverviewInk.secondary(in: scheme))
-                .frame(width: 24 * textScale, height: 24 * textScale)
+                .foregroundStyle(isOn ? Color.blue : ChannelOverviewInk.secondary(in: scheme))
+                .frame(width: 24 * textScale, height: 24 * textScale, alignment: .leading)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        // Centers the glyph on the count's digits: half their 13-point height above the baseline.
+        .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4.6 * textScale }
         .help("Show Only In-Progress Tasks")
         .accessibilityLabel("Show Only In-Progress Tasks")
         .accessibilityValue(isOn ? "On" : "Off")

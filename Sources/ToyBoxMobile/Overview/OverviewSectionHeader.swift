@@ -74,6 +74,8 @@ struct OverviewSectionHeader: View {
     @ScaledMetric(relativeTo: .footnote) private var disclosureSize = 11
     @ScaledMetric(relativeTo: .footnote) private var disclosureLane = 16
     @ScaledMetric(relativeTo: .footnote) private var filterSize = 15
+    /// Half the footnote digits' height, so a centered glyph lines up with the count's digits.
+    @ScaledMetric(relativeTo: .footnote) private var digitsHalfHeight: CGFloat = 4.6
 
     var body: some View {
         ChannelOverviewHeaderLayout(stacksLeading: typeSize.isAccessibilitySize, direction: direction) {
@@ -82,22 +84,21 @@ struct OverviewSectionHeader: View {
                 .foregroundStyle(Color(uiColor: .label))
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)
-            Text(summary.count)
-                .font(.footnote.weight(.regular))
-                .monospacedDigit()
-                .foregroundStyle(ChannelOverviewInk.secondary(in: scheme))
-                .allowsHitTesting(false)
-                .accessibilityHidden(true)
+            HStack(alignment: .firstTextBaseline, spacing: ChannelOverviewHeaderLayout.nameCountGap) {
+                Text(summary.count)
+                    .font(.footnote.weight(.regular))
+                    .monospacedDigit()
+                    .foregroundStyle(ChannelOverviewInk.secondary(in: scheme))
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+                if let filter { filterButton(filter) }
+            }
             if let diff {
                 ChannelOverviewTaskDiff(diff: diff).font(.footnote)
                     .allowsHitTesting(false)
                     .accessibilityHidden(true)
             }
-            HStack(spacing: 0) {
-                if let filter { filterButton(filter) }
-                disclosure
-            }
-            .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 8 }
+            disclosure
         }
         .frame(minHeight: 44)
         .textCase(nil)
@@ -118,6 +119,7 @@ struct OverviewSectionHeader: View {
             .font(.system(size: disclosureSize, weight: .semibold))
             .foregroundStyle(ChannelOverviewInk.secondary(in: scheme))
             .frame(width: disclosureLane, height: disclosureLane)
+            .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + digitsHalfHeight }
             .allowsHitTesting(false)
             .accessibilityHidden(true)
     }
@@ -128,13 +130,15 @@ struct OverviewSectionHeader: View {
                 isOn.wrappedValue.toggle()
             }
         } label: {
+            // Leading-aligned, so the glyph sits the count's gap away from the digits.
             Image(systemName: "line.3.horizontal.decrease")
                 .font(.system(size: filterSize, weight: .medium))
-                .foregroundStyle(isOn.wrappedValue ? Color.accentColor : ChannelOverviewInk.secondary(in: scheme))
-                .frame(width: 44, height: 44)
+                .foregroundStyle(isOn.wrappedValue ? Color.blue : ChannelOverviewInk.secondary(in: scheme))
+                .frame(width: 44, height: 44, alignment: .leading)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + digitsHalfHeight }
         .accessibilityLabel("Show Only In-Progress Tasks")
         .accessibilityValue(isOn.wrappedValue ? "On" : "Off")
         .accessibilityAddTraits(.isToggle)
