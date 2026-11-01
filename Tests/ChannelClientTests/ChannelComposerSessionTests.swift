@@ -92,6 +92,58 @@ struct ChannelComposerSessionTests {
         } == [attempt.id, attempt.id])
     }
 
+    @Test func aKeptSubmitReturnsTheCommittedMessageAndClearsOnlyWhenTheCallerConfirms() async throws {
+        let mock = MockTransport { request, _ in
+            guard request.httpMethod == "POST" else {
+                return try .stream([.init(type: "snapshot", state: testState())])
+            }
+            let posted = try SendAttemptTests.posted(request)
+            let message = ChannelMessage(id: posted.id, sequence: 1, timestamp: "2026-10-01T00:00:00Z",
+                                         sender: .user, content: .text(posted.content))
+            return try .json(SendAttemptTests.MessageEnvelope(message: message), status: 201)
+        }
+        let store = ChannelStore(id: "test", api: try mock.api(), sendJournal: nil)
+        store.connect()
+        defer { store.disconnect() }
+        try await eventually { store.phase.isConnected }
+        let draft = ComposerDraft(imageIsReadable: { _ in false })
+        draft.text = "Kept words"
+        let session = ChannelComposerSession(store: store, draft: draft, keepsDraftUntilConfirmed: true)
+        let result = try #require(await session.submit())
+        guard case .committed(let message) = result else {
+            Issue.record("Expected a committed result, got \(result)")
+            return
+        }
+        #expect(message.id == draft.sendAttemptID)
+        #expect(draft.text == "Kept words")
+        session.reconcile()
+        #expect(draft.text.isEmpty)
+        #expect(draft.sendAttemptID == nil)
+    }
+
+    @Test func aKeptSubmitThatIsRejectedLeavesItsDraftAndAttemptForRetry() async throws {
+        let mock = MockTransport { request, _ in
+            guard request.httpMethod == "POST" else {
+                return try .stream([.init(type: "snapshot", state: testState())])
+            }
+            return MockResponse(status: 422, body: Data(#"{"error":"Rejected"}"#.utf8))
+        }
+        let store = ChannelStore(id: "test", api: try mock.api(), sendJournal: nil)
+        store.connect()
+        defer { store.disconnect() }
+        try await eventually { store.phase.isConnected }
+        let draft = ComposerDraft(imageIsReadable: { _ in false })
+        draft.text = "Rejected words"
+        let session = ChannelComposerSession(store: store, draft: draft, keepsDraftUntilConfirmed: true)
+        #expect(await session.submit() == nil)
+        let attempt = try #require(store.sendAttempts.first)
+        #expect(attempt.phase == .notSent)
+        #expect(attempt.canRetry)
+        #expect(draft.text == "Rejected words")
+        #expect(draft.sendAttemptID == attempt.id)
+        #expect(session.error == nil)
+    }
+
     @Test func theDraftClearsOnceTheOutboxSavesWhileTheRequestIsStillInFlight() async throws {
         let mock = Self.heldPost()
         let store = ChannelStore(id: "test", api: try mock.api(), sendJournal: nil)

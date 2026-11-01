@@ -12,38 +12,38 @@ final class AuxiliaryComposerSession {
         let opensChannel: Bool
     }
 
+    /// The attempt this session sent, and the draft revision it was sent from.
     private struct Submission {
         let id: String
         let revision: UUID
-        let content: String
-        let attachments: [ChannelAttachment]
-        var opensChannel: Bool
     }
 
-    let store: ChannelStore
-    let draft: ComposerDraft
+    private let composer: ChannelComposerSession
     let requestSequence: Int?
-    private(set) var isSubmitting = false
     private(set) var confirmation: Confirmation?
     private(set) var error: String?
     private(set) var editedUnconfirmedMessage = false
     private var submission: Submission?
+    private var opensChannel = false
     private var requestInvalidated = false
     private var replacementRequestSequence: Int?
     @ObservationIgnored var prepareForExternalEdit: (@MainActor () -> Void)?
     @ObservationIgnored private var observation = UUID()
     @ObservationIgnored private var presentedConfirmationID: String?
 
+    var store: ChannelStore { composer.store }
+    var draft: ComposerDraft { composer.draft }
+    var isSubmitting: Bool { composer.isSubmitting }
+
     init(store: ChannelStore, scope: ComposerDraft.Scope, requester: ChannelAgent? = nil,
          draft: ComposerDraft? = nil) {
-        self.store = store
-        self.draft = draft ?? .shared(serverURL: store.api.baseURL, channelID: store.id, scope: scope)
+        let draft = draft ?? .shared(serverURL: store.api.baseURL, channelID: store.id, scope: scope)
+        composer = ChannelComposerSession(store: store, draft: draft, keepsDraftUntilConfirmed: true)
         if case .inboxReply(let sequence) = scope { requestSequence = sequence }
         else { requestSequence = nil }
         if let requester { seedRequesterIfNew(requester) }
-        if let id = self.draft.sendAttemptID {
-            submission = .init(id: id, revision: self.draft.revision, content: self.draft.text,
-                               attachments: self.draft.images.map(\.attachment), opensChannel: false)
+        if let id = draft.sendAttemptID {
+            submission = Submission(id: id, revision: draft.revision)
             observeDelivery()
         }
     }
@@ -77,14 +77,7 @@ final class AuxiliaryComposerSession {
 
     var isReadOnly: Bool { submission != nil && draft.sendAttemptID == submission?.id }
 
-    var canSend: Bool {
-        channelCanSend(
-            isConnected: store.phase.isConnected, isSending: store.isSending, isSubmitting: isSubmitting,
-            hasContent: !requestChanged && confirmation == nil && draft.hasContent,
-            isLoadingImages: draft.isLoadingImages, hasUnreadableImage: draft.hasUnreadableImage,
-            textUTF16Count: draft.text.utf16.count
-        )
-    }
+    var canSend: Bool { composer.canSend(isBlocked: requestChanged || confirmation != nil) }
 
     var isUnconfirmed: Bool {
         isReadOnly && !isSubmitting && confirmation == nil && attempt?.phase != .sending
@@ -103,28 +96,21 @@ final class AuxiliaryComposerSession {
                 : "This message cannot be sent yet. Check the connection and attachments."
             return
         }
-        let previous = submission.flatMap { draft.sendAttemptID == $0.id ? $0 : nil }
-        let next = previous ?? Submission(
-            id: draft.sendAttemptID ?? UUID().uuidString, revision: draft.revision,
-            content: draft.text, attachments: draft.images.map(\.attachment), opensChannel: opensChannel
-        )
-        submission = next
-        submission?.opensChannel = opensChannel
-        draft.associateSend(id: next.id)
+        let id = draft.sendAttemptID ?? UUID().uuidString
+        if submission?.id != id { submission = Submission(id: id, revision: draft.revision) }
+        draft.associateSend(id: id)
+        self.opensChannel = opensChannel
         error = nil
-        isSubmitting = true
         observeDelivery()
-        defer { isSubmitting = false }
-        do {
-            let result = try await store.post(id: next.id, content: next.content, attachments: next.attachments)
-            switch result {
-            case .committed(let message): confirm(id: next.id, sequence: message.sequence)
-            case .alreadyAccepted(let id): confirm(id: id, sequence: nil)
+        guard let result = await composer.submit() else {
+            if confirmation == nil, submission?.id == id {
+                error = attempt == nil ? composer.error.map { "Not sent. \($0)" } : nil
             }
-        } catch {
-            if confirmation == nil, submission?.id == next.id {
-                self.error = self.attempt == nil ? "Not sent. \(error.localizedDescription)" : nil
-            }
+            return
+        }
+        switch result {
+        case .committed(let message): confirm(id: id, sequence: message.sequence)
+        case .alreadyAccepted(let acceptedID): confirm(id: acceptedID, sequence: nil)
         }
     }
 
@@ -138,7 +124,7 @@ final class AuxiliaryComposerSession {
         observation = UUID()
     }
 
-    func cancelOpenOnConfirmation() { submission?.opensChannel = false }
+    func cancelOpenOnConfirmation() { opensChannel = false }
 
     func takeConfirmationPresentation() -> Confirmation? {
         guard let confirmation, presentedConfirmationID != confirmation.id else { return nil }
@@ -166,7 +152,7 @@ final class AuxiliaryComposerSession {
     private func confirm(id: String, sequence: Int?) {
         guard let submission, submission.id == id, draft.sendAttemptID == id, confirmation == nil else { return }
         draft.clear(ifUnchanged: submission.revision)
-        confirmation = .init(id: id, sequence: sequence, opensChannel: submission.opensChannel)
+        confirmation = .init(id: id, sequence: sequence, opensChannel: opensChannel)
         observation = UUID()
     }
 

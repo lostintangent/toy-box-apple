@@ -186,10 +186,9 @@ private struct ChannelComposer: View {
         return "Message the team, or @mention an agent"
     }
 
-    private var isOverLimit: Bool { draft.text.utf16.count > 12_000 }
     private var hasNotices: Bool {
         draft.error != nil || store.attemptPersistenceError != nil || submissionError != nil
-            || explainsDeletion || isOverLimit || dictation.notice != nil
+            || explainsDeletion || draft.isOverLimit || dictation.notice != nil
     }
 
     var body: some View {
@@ -350,7 +349,7 @@ private struct ChannelComposer: View {
             if explainsDeletion {
                 deletionNotice
             }
-            if isOverLimit {
+            if draft.isOverLimit {
                 composerError("Messages are limited to 12,000 characters.")
             }
         }
