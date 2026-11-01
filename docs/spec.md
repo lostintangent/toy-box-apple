@@ -1558,11 +1558,11 @@ toolbar menu, the View menu commands and, on the phone, the Channel Actions sect
 menu lists the two choices directly with an inline picker and no header, while the menu bar's View
 menu keeps its Message View submenu among its other sections. The phone's menu also lists them
 directly. A non-default
-filter gives its toolbar button an active tint and label/help. On the Mac that's the blue glyph.
-On the phone, a standalone Message View item becomes tinted glass while Your Messages is on: the
-accent fills its own capsule and the glyph turns white (`.buttonStyle(.glassProminent)`), the
-iOS idiom for a toolbar control that's on. Its accessibility value is
-"Your Messages". Where Message View sits in Channel Actions, the "Your Messages" subtitle
+filter gives its toolbar button an active tint and label/help. On both apps that's the accent
+glyph: a standalone phone Message View item tints its glyph while Your Messages is on and keeps
+its neutral glass. A toolbar `Menu` takes no prominent glass fill, even with `.menuStyle(.button)`
+and `.glassProminent`, and a Button with a popover would trade the one-tap menu for a cosmetic
+fill. Its accessibility value is "Your Messages". Where Message View sits in Channel Actions, the "Your Messages" subtitle
 carries the state and ••• stays untinted. It does not change the composer
 audience or channel-wide read policy. Read only committed visible sequences in the active window.
 Opening an inspector, reading a preview popover or watching a background window does not mark
