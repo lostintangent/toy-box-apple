@@ -39,7 +39,7 @@ let package = Package(
     targets: [
         .target(name: "ChannelKit"),
         .target(name: "ChannelClient", dependencies: ["ChannelKit"]),
-        .target(name: "ChannelIntelligence", dependencies: ["ChannelKit"]),
+        .target(name: "ChannelIntelligence", dependencies: ["ChannelKit", "ChannelClient"]),
         .target(name: "ToyBoxUI", dependencies: ["ChannelKit", "ChannelClient"]),
         .target(name: "ToyBoxWidgetViews", dependencies: ["ChannelKit"],
                 swiftSettings: [.unsafeFlags(["-application-extension"])]),
