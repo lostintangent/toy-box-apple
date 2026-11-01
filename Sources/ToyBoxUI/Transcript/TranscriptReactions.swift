@@ -1,6 +1,38 @@
 import ChannelKit
 import SwiftUI
 
+/// One message's reactions, grouped by kind in first-seen order.
+public struct ChannelReactionGroup: Equatable {
+    public let reaction: String
+    public let agents: [ChannelAgent]
+
+    /// The kind's emoji and the words VoiceOver and the reactors list use for it.
+    public var presentation: (emoji: String, label: String) {
+        switch reaction {
+        case "looking": ("\u{1f440}", "Looking")
+        case "working": ("\u{1f3c3}", "In progress")
+        case "done": ("\u{2705}", "Done")
+        case "agree": ("\u{1f44d}", "Agreed")
+        case "celebrate": ("\u{1f389}", "Celebrated")
+        case "love": ("\u{2764}\u{fe0f}", "Loved this")
+        case "laugh": ("\u{1f602}", "Laughed")
+        default: ("\u{2022}", reaction)
+        }
+    }
+
+    /// A message's own reactions plus the looking and working reactions agents' statuses put on it.
+    public static func groups(for message: ChannelMessage, agents: [ChannelAgent],
+                              statusReactions: [ChannelReaction] = []) -> [ChannelReactionGroup] {
+        var order: [String] = []
+        var grouped: [String: [ChannelAgent]] = [:]
+        for entry in channelMessageReactions(message, status: [message.sequence: statusReactions]) {
+            if grouped[entry.reaction] == nil { order.append(entry.reaction) }
+            grouped[entry.reaction, default: []].append(channelAgentIdentity(agents, id: entry.agentId))
+        }
+        return order.map { ChannelReactionGroup(reaction: $0, agents: grouped[$0] ?? []) }
+    }
+}
+
 /// A reaction's visible pill on both apps: the emoji, up to three reactor avatars and "+N" for the
 /// rest, on a soft capsule with a hairline border. Each app wraps it in its own button, hit target
 /// and reactor list, and sizes it for its platform.
