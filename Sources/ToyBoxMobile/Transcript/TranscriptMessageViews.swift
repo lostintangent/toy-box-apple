@@ -288,7 +288,6 @@ struct TranscriptAgentMessage: View {
                 Image(systemName: request == .pending ? "questionmark.bubble.fill" : "checkmark")
                     .foregroundStyle(request == .pending ? Color.orange : TranscriptInk.secondary)
             }
-            .fixedSize()
         }
     }
 }

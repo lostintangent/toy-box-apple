@@ -1417,7 +1417,9 @@ like the actionable bubbles in Messages. A later committed user message removes 
 button, and the historical header shows a secondary `checkmark` and "Replied". Neither reading
 nor an optimistic send clears a request. Requests never pulse. Increase Contrast adds a 1-point
 orange border to pending bubbles only. VoiceOver reads "Needs your reply" with the message and
-exposes Reply as an action.
+exposes Reply as an action. On the phone, a header too wide for one line stacks, and its "Needs
+your reply" or "Replied" wraps like the name, so at the largest text sizes the header never widens
+the bubble past its column.
 Reply and Copy Message appear on hover or keyboard focus and in the context menu. As with AppKit's
 tracking areas, a message that slides under a still pointer, as when the transcript follows a new
 message or scrolls, shows them once the pointer moves. Reply prepends the agent's mention once,

@@ -771,6 +771,33 @@ struct TranscriptTests {
         }
     }
 
+    @Test func aMessageStaysInsideItsColumnAtEveryTextSize() throws {
+        let api = try ChannelAPI(serverURL: "https://column-\(UUID().uuidString.lowercased()).invalid")
+        let question = "Where should the shared library sit? Reply with your preference and any constraints."
+        func width(_ text: String, request: Bool, answered: Bool = false, size: DynamicTypeSize) -> CGFloat {
+            let ask = ChannelMessage(id: "m1", sequence: 1, timestamp: "2026-10-25T12:00:00Z",
+                                     sender: .agent("lead"), content: .text(text), request: request)
+            let answer = ChannelMessage(id: "m2", sequence: 2, timestamp: "2026-10-25T12:01:00Z",
+                                        sender: .user, content: .text("Near the entrance"))
+            let rows = transcriptRows(answered ? [ask, answer] : [ask], lead: lead, members: [],
+                                      calendar: Calendar(identifier: .gregorian))
+            guard case .agent(_, let entries) = rows[0].content else { return .infinity }
+            let view = TranscriptAgentMessage(entry: entries[0], agent: lead,
+                                              context: TranscriptRowContext(agents: [lead], api: api),
+                                              statusReactions: [])
+                .environment(ChannelInteraction()).dynamicTypeSize(size)
+            return UIHostingController(rootView: view)
+                .sizeThatFits(in: CGSize(width: 300, height: CGFloat.greatestFiniteMagnitude)).width
+        }
+        // The folded Duo's column is about 300 points beside the toolbar. "Needs your reply" alone is
+        // wider than that at the largest size, and a long word must break inside the bubble.
+        for size in [DynamicTypeSize.large, .xxxLarge, .accessibility3, .accessibility5] {
+            #expect(width(question, request: true, size: size) <= 300, "\(size) pending")
+            #expect(width(question, request: true, answered: true, size: size) <= 300, "\(size) replied")
+            #expect(width("Supercalifragilisticexpialidocious", request: false, size: size) <= 300, "\(size) word")
+        }
+    }
+
     @Test func attachmentsShareOneRowThatScrollsSideways() throws {
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
