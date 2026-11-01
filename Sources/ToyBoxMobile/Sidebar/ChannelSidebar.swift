@@ -105,7 +105,7 @@ struct ChannelSidebar: View {
                     .disabled(!canCreate)
             }
             ToolbarItem(placement: .bottomBar) {
-                Button("Settings", systemImage: "gear") { showsSettings = true }
+                Button("Settings", systemImage: "gearshape") { showsSettings = true }
             }
             ToolbarSpacer(.flexible, placement: .bottomBar)
             DefaultToolbarItem(kind: .search, placement: .bottomBar)

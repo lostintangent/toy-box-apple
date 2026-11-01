@@ -152,7 +152,19 @@ struct ChannelScreen: View {
         }
     }
 
+    /// A standalone Message View item uses the accent while Your Messages is on.
+    @ViewBuilder
     private var messageView: some View {
+        if interaction.messageView == .yours {
+            messageViewMenu
+                .tint(.accentColor)
+                .accessibilityValue("Your Messages")
+        } else {
+            messageViewMenu
+        }
+    }
+
+    private var messageViewMenu: some View {
         Menu("Message View", systemImage: "line.3.horizontal.decrease") {
             messageViewPicker
         }
