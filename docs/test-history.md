@@ -437,6 +437,9 @@ Incident records moved from AGENTS.md on 2026-10-27, with their evidence and res
   behind `TOY_BOX_TEST_ARTIFACT_HTML_ORIGIN_PROBE=1` in t605. Owner: Overview. Its assertions and its
   15-second `wait(until:)` are unchanged. Unquarantined, it passed in 0.449 seconds, and the default
   run skips it with its reason.
+- First seen by Shell in a local full Mac run for t598 on the shared Mac, under ordinary multi-agent
+  load, failing at the same `#require` (`ArtifactViewerTests.swift:705`). It has not failed in CI, so
+  no CI run is cited.
 - Under ten CPU-burner loops on the shared Mac, load about 630 to 770, two of three full Mac runs on
   `ab4af66` failed at the test's `wait(until:)` `#require` (`ArtifactViewerTests.swift:705`). The
   probe message never arrived, and `web.error` was nil. In the first of those runs, three other
@@ -452,4 +455,8 @@ Incident records moved from AGENTS.md on 2026-10-27, with their evidence and res
 - Restoration needs the stalled step identified, with deterministic regression coverage. Restore it
   without loosening the assertions or adding retries. `arrivalsKeepTheSelectedIdentityAndRemovalDoesNotSubstituteANeighbor`,
   `sameDocumentTOCLinksAndHashChangesStayInsideTheSandbox` and `HTMLUnderlapsTheBarsAndRestoresItsReadingPosition`
-  use the same 15-second wait and stay in the default gate pending the lead's scope decision.
+  use the same 15-second wait and stay in the default gate. They failed only under the artificial
+  burner load, alongside unrelated suites, which isn't evidence of a defect. Quarantine one only if it
+  fails in CI or a full run without artificial load.
+- Synthetic CPU burners are no longer used on the shared Mac. They starve every agent's builds and
+  the simulator.
