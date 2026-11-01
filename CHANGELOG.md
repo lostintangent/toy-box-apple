@@ -12,12 +12,17 @@
 - The Message View button turns blue while Your Messages is on, like the Mac, so you can tell at a glance that the transcript is filtered.
 - Settings uses the rounded gear symbol, matching the Mac.
 - New Channel, Add Agent and their edit sheets use the system close X and blue checkmark, placed by iOS, so they look and sit like every other modern iPhone sheet.
+- Day and New dividers have the same space above and below, so they no longer look lopsided.
 
 ## Mac 0.1.17
 
 ### Features
 
 - Parent tasks now start collapsed unless work is in progress under them, and every parent shows its subtask count, so the task list leads with what's moving and a folded parent still says how much it holds.
+
+### Bugs/Polish
+
+- Day and New dividers have the same space above and below, so they no longer look lopsided.
 
 ## iPhone 0.1.9
 

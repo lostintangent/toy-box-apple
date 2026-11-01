@@ -2876,7 +2876,7 @@ count. Both numbers are parameters.
 
 | Part | Specification |
 | --- | --- |
-| Placement | Scroll content, not a message or glass. Directly above the New divider, and above a coinciding day label, with 12 points to the divider and the conversation-run gap (20) above it |
+| Placement | Scroll content, not a message or glass. Directly above the New divider, and above a coinciding day label, with 12 points to the divider and the divider gap (16) above it, matching the space around the divider |
 | Width and shape | Leading edge on the avatars' leading edge, trailing edge at min(lane, 804), the widest agent bubble's trailing edge. 12-point continuous corners. Fill primary at 3% in light and 5% in dark, with a 1-point inner hairline at 10% light, 14% dark and 40% under Increase Contrast. Padding 12 horizontal and 10 vertical |
 | Header | 18 high. `text.line.3.summary` in 12-point medium secondary, 6 points, then "Summary of 42 new messages" in 12-point semibold secondary, counting messages from others. Trailing Dismiss: `xmark`, 10-point semibold tertiary, 28 x 28 hit area, help "Dismiss Summary" |
 | Lines | 8 points below the header, 2 apart, each 3 points of vertical padding. A 16-point leading slot, 8 points, then 13-point primary text, wrapping up to 3 lines and then truncating, with the full line in help. The slot holds the 16-point avatar of the sender of the line's first source. When that source is a channel event, it holds the event row's own symbol and color at 13 points instead, such as the green `checkmark.circle.fill` of All tasks completed, never a generic `info.circle`. Text scales with Text Size |
