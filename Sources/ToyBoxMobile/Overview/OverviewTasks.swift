@@ -280,10 +280,3 @@ struct OverviewTaskMetadata: View {
             .font(.footnote)
     }
 }
-
-struct OverviewTaskDiff: View {
-    let diff: DiffStats
-    var body: some View {
-        ChannelOverviewTaskDiff(diff: diff).font(.footnote)
-    }
-}

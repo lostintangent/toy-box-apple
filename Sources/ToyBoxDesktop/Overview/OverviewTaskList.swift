@@ -302,7 +302,7 @@ struct OverviewTaskRow: View {
         if let progress {
             parts.append("\(progress.done) of \(progress.total) subtasks done")
         }
-        if let diff { parts.append(OverviewTaskDiff.spoken(diff)) }
+        if let diff { parts.append(ChannelOverviewTaskDiff.spoken(diff)) }
         if let owner { parts.append("owner \(owner.name)") }
         if let linkedArtifact {
             parts.append(linkedArtifact.artifact.map { "artifact \($0.title)" } ?? "artifact unavailable")
@@ -339,35 +339,5 @@ struct OverviewTaskStatusIcon: View {
         ChannelTaskStatusSymbol(status: status)
             .font(.system(size: 14 * textScale))
             .frame(width: OverviewTaskRow.statusSize, height: OverviewTaskRow.statusSize)
-    }
-}
-
-/// "+1.5K −114" in the adaptive change tokens. A measured zero still reads "+0 −0".
-struct OverviewTaskDiff: View {
-    @Environment(\.channelTextScale) private var textScale
-    @Environment(\.colorScheme) private var colorScheme
-    let diff: DiffStats
-
-    var body: some View {
-        let colors = ChannelTaskColors.changes(in: colorScheme)
-        HStack(spacing: 4) {
-            Text("+\(Self.compact(diff.added))").foregroundStyle(colors.added)
-            Text("\u{2212}\(Self.compact(diff.removed))").foregroundStyle(colors.removed)
-        }
-        .font(.system(size: 11 * textScale, weight: .medium).monospacedDigit())
-        .fixedSize()
-        .help(Self.spoken(diff).prefix(1).uppercased() + Self.spoken(diff).dropFirst())
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Self.spoken(diff))
-    }
-
-    static func spoken(_ diff: DiffStats) -> String {
-        let added = diff.added.formatted()
-        let removed = diff.removed.formatted()
-        return "\(added) \(diff.added == 1 ? "addition" : "additions"), \(removed) \(diff.removed == 1 ? "deletion" : "deletions")"
-    }
-
-    static func compact(_ count: Int) -> String {
-        count.formatted(.number.notation(.compactName).precision(.fractionLength(0...1)))
     }
 }

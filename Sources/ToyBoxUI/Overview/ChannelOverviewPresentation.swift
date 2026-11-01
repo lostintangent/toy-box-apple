@@ -263,8 +263,8 @@ package struct ChannelOverviewTaskDiff: View {
     }
 
     package static func spoken(_ diff: DiffStats) -> String {
-        "\(diff.added) \(diff.added == 1 ? "addition" : "additions"), "
-            + "\(diff.removed) \(diff.removed == 1 ? "deletion" : "deletions")"
+        "\(diff.added.formatted()) \(diff.added == 1 ? "addition" : "additions"), "
+            + "\(diff.removed.formatted()) \(diff.removed == 1 ? "deletion" : "deletions")"
     }
 }
 
