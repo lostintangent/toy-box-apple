@@ -1,5 +1,18 @@
 # Changelog
 
+## iPhone 0.1.11
+
+### Bugs/Polish
+
+- The Tasks filter button now sits right after the count it filters, centered on the count, and turns system blue when it's on.
+- Section header chevrons line up with the count beside the title.
+
+## Mac 0.1.18
+
+### Bugs/Polish
+
+- The Tasks filter button now sits right after the count it filters, centered on the count, and turns system blue when it's on.
+
 ## iPhone 0.1.10
 
 ### Features
