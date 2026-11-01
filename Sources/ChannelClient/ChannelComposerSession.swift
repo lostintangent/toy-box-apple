@@ -4,16 +4,10 @@ import Observation
 
 @MainActor @Observable
 public final class ChannelComposerSession {
-    public struct ReplySource {
-        public let name: String
-        public let sequence: Int
-    }
-
     public static let appendExplanation = "Your newer draft will not be replaced. Appending preserves both messages. Sending edited text creates a new message, and an earlier unconfirmed send may already have arrived."
 
     public let store: ChannelStore
     public let draft: ComposerDraft
-    public var replySource: ReplySource?
     public var pendingEdit: ChannelSendAttempt?
     public private(set) var isSubmitting = false
     private var submissionError: (revision: UUID, message: String)?
@@ -76,28 +70,22 @@ public final class ChannelComposerSession {
 
     private func clearSentDraft(revision: UUID) {
         draft.clear(ifUnchanged: revision)
-        if !draft.hasContent { replySource = nil }
     }
 
     public func reconcile() {
         guard isConfirmed else { return }
         draft.clear(ifUnchanged: draft.revision)
-        replySource = nil
         submissionError = nil
     }
 
     @discardableResult
-    public func reply(to agent: ChannelAgent, sequence: Int? = nil,
-                      insertingPrefix: ((String) -> Bool)? = nil) -> Bool {
+    public func reply(to agent: ChannelAgent, insertingPrefix: ((String) -> Bool)? = nil) -> Bool {
         let prefix = "@\(agentHandleFromName(agent.name)) "
-        if !draft.text.hasPrefix(prefix) {
-            if let insertingPrefix {
-                guard insertingPrefix(prefix) else { return false }
-            } else {
-                draft.text = prefix + draft.text
-            }
+        guard !draft.text.hasPrefix(prefix) else { return true }
+        if let insertingPrefix {
+            return insertingPrefix(prefix)
         }
-        if let sequence { replySource = .init(name: agent.name, sequence: sequence) }
+        draft.text = prefix + draft.text
         return true
     }
 

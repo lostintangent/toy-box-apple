@@ -4,16 +4,15 @@ import ToyBoxUI
 
 @MainActor
 struct ChannelInteractionTests {
-    @Test func hostsChooseInspectorVisibilityAndReplyKeepsItsSource() {
+    @Test func hostsChooseInspectorVisibilityAndReplyRequestsAreFresh() {
         let phone = ChannelInteraction(isInspectorPresented: false)
         #expect(!phone.isInspectorPresented)
         #expect(ChannelInteraction().isInspectorPresented)
         let agent = ChannelAgent(id: "ada", name: "Ada")
-        phone.reply(to: agent, sequence: 42)
-        #expect(phone.replyRequest?.sequence == 42)
-        let token = phone.replyRequest?.token
         phone.reply(to: agent)
-        #expect(phone.replyRequest?.sequence == nil)
+        let token = phone.replyRequest?.token
+        #expect(token != nil)
+        phone.reply(to: agent)
         #expect(phone.replyRequest?.token != token)
         #expect(phone.replyRequest?.agent == agent)
     }

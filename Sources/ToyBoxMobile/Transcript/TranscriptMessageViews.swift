@@ -215,9 +215,6 @@ struct TranscriptAgentMessage: View {
                         .contextMenu {
                             if agent.deleted != true {
                                 Button("Reply", systemImage: "arrowshape.turn.up.left") {
-                                    interaction.reply(to: agent, sequence: entry.message.sequence)
-                                }
-                                Button("Mention \(agent.name)", systemImage: "at") {
                                     interaction.reply(to: agent)
                                 }
                             }
@@ -241,7 +238,7 @@ struct TranscriptAgentMessage: View {
             addressee: entry.addressee, request: entry.request))
         .accessibilityActions {
             if agent.deleted != true {
-                Button("Reply") { interaction.reply(to: agent, sequence: entry.message.sequence) }
+                Button("Reply") { interaction.reply(to: agent) }
             }
             Button("Copy Message") { UIPasteboard.general.string = entry.message.text }
         }

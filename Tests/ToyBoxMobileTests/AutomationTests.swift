@@ -107,14 +107,14 @@ struct AutomationTests {
             [{"tap":"Studio demo"},{"type":"Hello"},{"wait":"Needs you","timeout":20},
              {"screenshot":"reply","display":"3"},{"back":true},{"fold":false},
              {"action":"Reply","on":"message-12"},{"back":true,"ifPresent":true},
-             {"wait":"Replying to Lead","absent":true},{"scroll":"down","on":"overview-form"},
+             {"wait":"@Lead","absent":true},{"scroll":"down","on":"overview-form"},
              {"drag":"up","on":"conversation-transcript"},{"posture":"folded"},{"posture":"unfolded","timeout":60},
              {"menuAction":"Edit Channel"}]
             """.utf8))
         #expect(steps.map(\.action) == [.tap("Studio demo"), .type("Hello"), .wait("Needs you", absent: false),
                                        .screenshot("reply", "3"), .back(ifPresent: false), .fold(false),
                                        .customAction("Reply", on: "message-12"), .back(ifPresent: true),
-                                       .wait("Replying to Lead", absent: true), .scroll(.down, on: "overview-form"),
+                                       .wait("@Lead", absent: true), .scroll(.down, on: "overview-form"),
                                        .drag(.up, on: "conversation-transcript"), .posture(.folded), .posture(.unfolded),
                                        .menuAction("Edit Channel")])
         #expect(steps[0].timeout == 12 && steps[2].timeout == 20)

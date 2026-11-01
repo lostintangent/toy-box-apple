@@ -8,18 +8,25 @@ import UniformTypeIdentifiers
 @MainActor
 @Suite(.timeLimit(.minutes(1)))
 struct ChannelComposerSessionTests {
-    @Test func replyContextUsesTheSourceAndAnOldEchoCannotClearNewerWords() throws {
+    @Test func replyInsertsTheHandleOnceAndKeepsTheDraft() throws {
         let draft = ComposerDraft(imageIsReadable: { _ in false })
         draft.text = "Keep these words"
         let store = ChannelStore(id: "test", api: try ChannelAPI(serverURL: "http://localhost:3210"),
                                  sendJournal: nil)
         let session = ChannelComposerSession(store: store, draft: draft)
         let agent = ChannelAgent(id: "ada", name: "Ada Lovelace")
-        session.reply(to: agent, sequence: 8)
+        #expect(session.reply(to: agent))
         #expect(draft.text == "@ada-lovelace Keep these words")
-        #expect(session.replySource?.sequence == 8)
-        session.reply(to: agent)
+        #expect(session.reply(to: agent))
         #expect(draft.text == "@ada-lovelace Keep these words")
+    }
+
+    @Test func aSentReplyKeepsNewerWordsAndAnOldEchoCannotClearThem() throws {
+        let draft = ComposerDraft(imageIsReadable: { _ in false })
+        draft.text = "@ada-lovelace Keep these words"
+        let store = ChannelStore(id: "test", api: try ChannelAPI(serverURL: "http://localhost:3210"),
+                                 sendJournal: nil)
+        let session = ChannelComposerSession(store: store, draft: draft)
         draft.associateSend(id: "original")
         draft.text = "A newer draft"
         _ = try store.apply(.init(type: "snapshot", state: testState(
@@ -27,7 +34,6 @@ struct ChannelComposerSessionTests {
         )))
         session.reconcile()
         #expect(draft.text == "A newer draft")
-        #expect(session.replySource?.sequence == 8)
         store.disconnect()
         #expect(!session.canSend(hasAdditionalContent: true))
     }
