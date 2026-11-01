@@ -31,7 +31,7 @@ final class WidgetSnapshotPublisher {
             guard let directory = directory ?? FileManager.default.containerURL(
                 forSecurityApplicationGroupIdentifier: NeedsYouSnapshot.appGroup
             ) else { throw WidgetSnapshotError.unavailableGroup }
-            let file = directory.appendingPathComponent(NeedsYouSnapshot.fileName)
+            let file = directory.appending(path: NeedsYouSnapshot.fileName)
             if !loadedPrevious {
                 loadedPrevious = true
                 do {
