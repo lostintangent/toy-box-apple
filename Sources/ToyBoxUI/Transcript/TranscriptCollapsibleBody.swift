@@ -1,7 +1,5 @@
 import SwiftUI
 
-private typealias ViewState = SwiftUI.State
-
 /// A long message clamped to a fixed height with a fade and a Show More toggle, decided in the same
 /// layout pass that measures it. Measuring first and clamping on the next pass would change the
 /// row's height after a lazy stack placed it, moving whatever the reader is looking at.

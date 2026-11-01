@@ -1,7 +1,5 @@
 import SwiftUI
 
-private typealias ViewState = SwiftUI.State
-
 /// What Find's one status slot shows: nothing for an empty query, then blank, a spinner while
 /// older history is still being searched, and a result only once the search is complete.
 public enum TranscriptFindStatus: Equatable {

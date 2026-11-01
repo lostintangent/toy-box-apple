@@ -33,7 +33,6 @@ struct SSETests {
         #expect(api.resourceURL("javascript:alert(1)") == nil)
         #expect(api.resourceURL("//untrusted.example/file") == nil)
         let request = api.streamRequest(channelId: "test", after: 0)
-        #expect(request.value(forHTTPHeaderField: "Last-Event-ID") == "0")
         #expect(request.url?.query == "after=0")
         #expect(api.streamRequest(channelId: "test", after: nil).url?.query == nil)
     }

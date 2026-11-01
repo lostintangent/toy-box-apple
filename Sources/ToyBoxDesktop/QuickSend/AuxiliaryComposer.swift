@@ -2,6 +2,7 @@ import AppKit
 import ChannelClient
 import ChannelKit
 import SwiftUI
+import ToyBoxUI
 import UniformTypeIdentifiers
 
 /// Shared editing surface for Quick Send and a single expanded inbox request.

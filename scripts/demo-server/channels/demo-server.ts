@@ -92,8 +92,7 @@ export function createDemoServer(initial: Snapshot = fixture, now = Date.now()) 
   };
   const resumed = () => ({ type: 'resumed', presence: snapshot.presence });
   const send = (client: ServerResponse, event: Snapshot) => {
-    const revision = event.type === 'snapshot' ? event.state.revision : event.revision;
-    client.write(`${revision === undefined ? '' : `id: ${revision}\n`}data: ${JSON.stringify(event)}\n\n`);
+    client.write(`data: ${JSON.stringify(event)}\n\n`);
   };
   const publish = (event: Snapshot) => {
     if ('revision' in event) {
@@ -124,7 +123,7 @@ export function createDemoServer(initial: Snapshot = fixture, now = Date.now()) 
     }
     if (request.method === 'GET' && pathname === channelPath) {
       response.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' });
-      const cursor = (request.headers['last-event-id'] as string | undefined) ?? url.searchParams.get('after');
+      const cursor = url.searchParams.get('after');
       const after = cursor == null ? NaN : Number(cursor);
       const valid = Number.isSafeInteger(after) && after >= 0;
       const replay = valid ? replayHistory.filter(({ revision }) => revision > after && revision <= snapshot.revision) : [];

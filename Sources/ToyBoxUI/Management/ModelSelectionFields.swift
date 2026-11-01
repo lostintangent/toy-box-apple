@@ -2,8 +2,6 @@ import ChannelClient
 import ChannelKit
 import SwiftUI
 
-private typealias ViewState = SwiftUI.State
-
 /// The model section of a management sheet: the model, its Reasoning and Context options when the
 /// chosen model offers them, any rows the sheet adds, and a footer that explains the catalog.
 public struct ModelSelectionFields<ExtraRows: View>: View {

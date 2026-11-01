@@ -2,8 +2,6 @@ import ChannelClient
 import SwiftUI
 import ToyBoxUI
 
-typealias ViewState<Value> = SwiftUI.State<Value>
-
 @main
 struct ToyBoxMobileApp: App {
     @UIApplicationDelegateAdaptor(MobileAppDelegate.self) private var appDelegate

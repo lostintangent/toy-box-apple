@@ -1,5 +1,47 @@
 import Foundation
 
+public struct ChannelObservationEvent: Codable, Equatable, Sendable {
+    public var type: String
+    public var revision: Int?
+    public var state: ChannelState?
+    public var presence: [String: ChannelAgentPresence]?
+    public var channelId: String?
+    public var message: ChannelMessage?
+    public var sequence: Int?
+    public var agentId: String?
+    public var reaction: String?
+    public var tasks: [ChannelTask]?
+    public var model: ModelConfiguration?
+    public var updatedAt: String?
+    public var seenThrough: Int?
+    public var member: ChannelMember?
+    public var status: ChannelAgentStatus?
+
+    public init(type: String, revision: Int? = nil, state: ChannelState? = nil,
+                presence: [String: ChannelAgentPresence]? = nil, channelId: String? = nil,
+                message: ChannelMessage? = nil, sequence: Int? = nil, agentId: String? = nil,
+                reaction: String? = nil, tasks: [ChannelTask]? = nil,
+                model: ModelConfiguration? = nil, updatedAt: String? = nil,
+                seenThrough: Int? = nil, member: ChannelMember? = nil,
+                status: ChannelAgentStatus? = nil) {
+        self.type = type
+        self.revision = revision
+        self.state = state
+        self.presence = presence
+        self.channelId = channelId
+        self.message = message
+        self.sequence = sequence
+        self.agentId = agentId
+        self.reaction = reaction
+        self.tasks = tasks
+        self.model = model
+        self.updatedAt = updatedAt
+        self.seenThrough = seenThrough
+        self.member = member
+        self.status = status
+    }
+}
+
 public func reduceChannelState(_ previous: ChannelState,
                                _ event: ChannelObservationEvent) -> ChannelState {
     if event.type == "snapshot", let snapshot = event.state { return snapshot }

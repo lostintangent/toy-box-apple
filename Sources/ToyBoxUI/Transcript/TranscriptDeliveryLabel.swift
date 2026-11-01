@@ -1,8 +1,6 @@
 import ChannelClient
 import SwiftUI
 
-private typealias ViewState = SwiftUI.State
-
 /// A pending send's delivery label for its row. A quick send shows none, so confirming it changes
 /// nothing on screen. Only a send still going after `slowAfter` says so, and a failed one keeps its label.
 public struct TranscriptDeliveryLabel<Content: View>: View {

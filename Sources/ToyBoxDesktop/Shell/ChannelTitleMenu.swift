@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import ToyBoxUI
 
 /// The detail toolbar's title as a menu, like a document title in Pages, Keynote and Numbers.
 /// SwiftUI only draws `toolbarTitleMenu` for document windows, so this stands in for the window
