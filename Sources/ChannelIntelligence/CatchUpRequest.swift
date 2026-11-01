@@ -64,7 +64,7 @@ public struct CatchUpRequest: Sendable, Hashable {
 
         let pendingSequence = state.channel.requestSequence
         let candidates = unread.filter { $0.sender.type != "user" && $0.sequence != pendingSequence }
-        let pending = catchUpPendingRequest(in: state)
+        let pending = pendingSequence.flatMap { ChannelWaitingRequest.message(at: $0, in: state) }
         let describer = CatchUpDescriber(agents: state.agents, leadId: state.lead.id)
         let through = max(state.messages.last?.sequence ?? unreadAfter, unreadAfter)
         key = Key(server: intelligenceServerKey(server), channelId: state.channel.id,
@@ -124,7 +124,7 @@ extension CatchUpSelection.Lines {
         var entries: [CatchUpEntry] = []
         for message in candidates.reversed() {
             guard let entry = describer.entry(message) else { continue }
-            guard seen.insert(catchUpFingerprint(entry.text)).inserted else { continue }
+            guard seen.insert(entry.text.fingerprint).inserted else { continue }
             entries.append(entry)
             if entries.count == CatchUpEntry.maximumCandidates { break }
         }
@@ -224,7 +224,7 @@ struct CatchUpDescriber: Sendable {
             : mentions.handles.compactMap { handle in
                 agents.first { agentHandleFromName($0.name) == handle }?.name
             }
-        var text = catchUpPlainText(withoutLeadingMentions(message.text, agents: agents), agents: agents)
+        var text = withoutLeadingMentions(message.text, agents: agents).plainProse(agents: agents)
         let images = message.attachments?.count ?? 0
         if images > 0 { text += images == 1 ? " (attached an image)" : " (attached \(images) images)" }
         guard !text.isEmpty else { return nil }
@@ -236,7 +236,7 @@ struct CatchUpDescriber: Sendable {
         if message.request == true { priority += 2 }
         if images > 0 { priority += 1 }
         return CatchUpEntry(sequence: message.sequence, speaker: name(message.sender),
-                            addressees: addressees, text: catchUpCondensed(text, limit: limit), priority: priority)
+                            addressees: addressees, text: text.condensed(limit: limit), priority: priority)
     }
 
     private func event(_ sequence: Int, _ system: ChannelSystemContent) -> CatchUpEntry? {
@@ -277,56 +277,59 @@ struct CatchUpDescriber: Sendable {
             return nil
         }
         return CatchUpEntry(sequence: sequence, speaker: nil, addressees: [],
-                            text: catchUpTruncated(description), priority: priority)
+                            text: description.truncated(), priority: priority)
     }
 }
 
-/// Markdown and mentions reduced to readable prose on one line. A mention reads as the agent's name,
-/// or "everyone" for nil, unless `mention` writes it another way.
-func catchUpPlainText(_ markdown: String, agents: [ChannelAgent],
-                      mention: (ChannelAgent?) -> String = { $0?.name ?? "everyone" }) -> String {
-    var text = markdown
-    text = text.replacing(/```[\s\S]*?(```|$)/, with: " (code) ")
-    text = text.replacing(/!\[([^\]]*)\]\([^)]*\)/, with: { $0.1.isEmpty ? "" : " (image: \($0.1)) " })
-    text = text.replacing(/\[([^\]]+)\]\([^)]*\)/, with: { String($0.1) })
-    text = text.replacing(/`([^`]*)`/, with: { String($0.1) })
-    text = text.replacing(/(\*\*|__|~~)/, with: "")
-    text = text.replacing(/(?m)^\s{0,3}(#{1,6}|>)\s*/, with: "")
-    text = text.replacing(/(?m)^\s*([-*+]|\d+[.)])\s+/, with: "; ")
-    text = text.replacing(/(^|[^a-zA-Z0-9-])@([a-zA-Z0-9][a-zA-Z0-9-]*)/, with: { match in
-        let handle = match.2.lowercased()
-        if handle == "everyone" { return String(match.1) + mention(nil) }
-        guard let agent = agents.first(where: { agentHandleFromName($0.name) == handle }) else {
-            return String(match.0)
-        }
-        return String(match.1) + mention(agent)
-    })
-    text = text.replacing(/\s+/, with: " ")
-    text = text.replacing(/^[;\s]+/, with: "")
-    text = text.replacing(/\s+;/, with: ";")
-    return text.trimmingCharacters(in: .whitespacesAndNewlines)
-}
+extension String {
+    /// Markdown and mentions reduced to readable prose on one line. A mention reads as the agent's name,
+    /// or "everyone" for nil, unless `mention` writes it another way.
+    func plainProse(agents: [ChannelAgent],
+                    mention: (ChannelAgent?) -> String = { $0?.name ?? "everyone" }) -> String {
+        var text = self
+        text = text.replacing(/```[\s\S]*?(```|$)/, with: " (code) ")
+        text = text.replacing(/!\[([^\]]*)\]\([^)]*\)/, with: { $0.1.isEmpty ? "" : " (image: \($0.1)) " })
+        text = text.replacing(/\[([^\]]+)\]\([^)]*\)/, with: { String($0.1) })
+        text = text.replacing(/`([^`]*)`/, with: { String($0.1) })
+        text = text.replacing(/(\*\*|__|~~)/, with: "")
+        text = text.replacing(/(?m)^\s{0,3}(#{1,6}|>)\s*/, with: "")
+        text = text.replacing(/(?m)^\s*([-*+]|\d+[.)])\s+/, with: "; ")
+        text = text.replacing(/(^|[^a-zA-Z0-9-])@([a-zA-Z0-9][a-zA-Z0-9-]*)/, with: { match in
+            let handle = match.2.lowercased()
+            if handle == "everyone" { return String(match.1) + mention(nil) }
+            guard let agent = agents.first(where: { agentHandleFromName($0.name) == handle }) else {
+                return String(match.0)
+            }
+            return String(match.1) + mention(agent)
+        })
+        text = text.replacing(/\s+/, with: " ")
+        text = text.replacing(/^[;\s]+/, with: "")
+        text = text.replacing(/\s+;/, with: ";")
+        return text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
 
-func catchUpTruncated(_ text: String, limit: Int = CatchUpEntry.maximumCharacters) -> String {
-    guard text.count > limit else { return text }
-    let prefix = text.prefix(limit)
-    let cut = prefix.lastIndex(of: " ").map { prefix[..<$0] } ?? prefix
-    return cut.trimmingCharacters(in: CharacterSet(charactersIn: " ,;:")) + "\u{2026}"
-}
+    /// The text cut at a word boundary with an ellipsis when it's longer than `limit` characters.
+    func truncated(limit: Int = CatchUpEntry.maximumCharacters) -> String {
+        guard count > limit else { return self }
+        let prefix = self.prefix(limit)
+        let cut = prefix.lastIndex(of: " ").map { prefix[..<$0] } ?? prefix
+        return cut.trimmingCharacters(in: CharacterSet(charactersIn: " ,;:")) + "\u{2026}"
+    }
 
-/// Up to `limit` characters of `text`. Long text keeps its opening quarter and its ending, joined by
-/// an ellipsis, since a message's ask or conclusion usually comes last.
-func catchUpCondensed(_ text: String, limit: Int) -> String {
-    guard text.count > limit, limit >= 200 else { return catchUpTruncated(text, limit: limit) }
-    let head = catchUpTruncated(text, limit: limit / 4)
-    var tail = String(text.suffix(limit - limit / 4 - 3))
-    if let space = tail.firstIndex(where: \.isWhitespace) { tail = String(tail[space...]) }
-    return head + " " + tail.trimmingCharacters(in: .whitespacesAndNewlines)
-}
+    /// Up to `limit` characters. Long text keeps its opening quarter and its ending, joined by an
+    /// ellipsis, since a message's ask or conclusion usually comes last.
+    func condensed(limit: Int) -> String {
+        guard count > limit, limit >= 200 else { return truncated(limit: limit) }
+        let head = truncated(limit: limit / 4)
+        var tail = String(suffix(limit - limit / 4 - 3))
+        if let space = tail.firstIndex(where: \.isWhitespace) { tail = String(tail[space...]) }
+        return head + " " + tail.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
 
-/// Two messages with this fingerprint say the same thing, ignoring case, numbers and spacing.
-func catchUpFingerprint(_ text: String) -> String {
-    text.lowercased()
-        .replacing(/\d+/, with: "#")
-        .replacing(/\s+/, with: " ")
+    /// Two messages with the same fingerprint say the same thing, ignoring case, numbers and spacing.
+    var fingerprint: String {
+        lowercased()
+            .replacing(/\d+/, with: "#")
+            .replacing(/\s+/, with: " ")
+    }
 }

@@ -66,7 +66,7 @@ struct CatchUpSelectionTests {
     @Test func repeatedTextCollapsesToItsLatestCopy() throws {
         let state = try T.fixture("history-demo")
         let request = try #require(CatchUpRequest(server: T.server, state: state, unreadAfter: 450))
-        let fingerprints = request.entries.map { catchUpFingerprint($0.text) }
+        let fingerprints = request.entries.map { $0.text.fingerprint }
         #expect(Set(fingerprints).count == fingerprints.count)
         #expect(request.entries.count < 10)
         #expect(request.entries.contains { $0.sequence == 479 })
@@ -125,7 +125,7 @@ struct CatchUpSelectionTests {
 
     @Test func markdownBecomesOneLineOfProse() {
         let agents = [ChannelAgent(id: "ada", name: "Ada")]
-        let text = catchUpPlainText("""
+        let text = """
             ## Done
             **Shipped** `ChannelStore` and [the spec](https://example.com), cc @ada.
             - one
@@ -133,13 +133,13 @@ struct CatchUpSelectionTests {
             ```swift
             let x = 1
             ```
-            """, agents: agents)
+            """.plainProse(agents: agents)
         #expect(text == "Done Shipped ChannelStore and the spec, cc Ada.; one; two (code)")
     }
 
     @Test func longTextTruncatesAtAWord() {
         let text = String(repeating: "word ", count: 100)
-        let truncated = catchUpTruncated(text, limit: 23)
+        let truncated = text.truncated(limit: 23)
         #expect(truncated == "word word word word\u{2026}")
     }
 

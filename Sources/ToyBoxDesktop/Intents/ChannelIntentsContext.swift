@@ -215,18 +215,7 @@ final class ChannelIntentsContext {
 
     /// The model's catch-up, shared with the transcript's card through the service's cache.
     private func summarize(_ request: CatchUpRequest) async -> CatchUp? {
-        let service = intelligence
-        let timeout = catchUpTimeout
-        return await withTaskGroup(of: CatchUpResult?.self) { group in
-            group.addTask { await service.catchUp(request) }
-            group.addTask {
-                try? await Task.sleep(for: timeout)
-                return nil
-            }
-            let first = await group.next() ?? nil
-            group.cancelAll()
-            return first?.catchUp
-        }
+        await intelligence.catchUp(request, within: catchUpTimeout)
     }
 
     /// New messages from agents in a channel that isn't open, from one page of history.

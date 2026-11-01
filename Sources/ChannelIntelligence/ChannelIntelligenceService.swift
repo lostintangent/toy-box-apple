@@ -10,6 +10,22 @@ public protocol ChannelIntelligenceService: Sendable {
     func altText(_ request: AltTextRequest) async -> AltText?
 }
 
+extension ChannelIntelligenceService {
+    /// The catch-up, or nil when the model is unsure, unavailable or still working after `timeout`.
+    public func catchUp(_ request: CatchUpRequest, within timeout: Duration) async -> CatchUp? {
+        await withTaskGroup(of: CatchUp?.self) { group in
+            group.addTask { await self.catchUp(request).catchUp }
+            group.addTask {
+                try? await Task.sleep(for: timeout)
+                return nil
+            }
+            let first = await group.next() ?? nil
+            group.cancelAll()
+            return first
+        }
+    }
+}
+
 public enum IntelligenceUnavailableReason: Sendable, Hashable {
     case deviceNotEligible
     case appleIntelligenceNotEnabled

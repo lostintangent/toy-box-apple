@@ -48,7 +48,7 @@ struct CatchUpSessionTests {
     }
 
     @Test func cachedResultsAreReadyOnTheFirstFrameAndDoNotGenerateAgain() async throws {
-        let service = SessionSummaryService(results: [.ready(summarySessionResult())])
+        let service = ScriptedIntelligence(results: [.ready(summarySessionResult())])
         let first = try #require(make())
         await first.run(using: service)
         let expected = TranscriptCatchUpSession.Summary(catchUp: summarySessionResult(), count: 20)
@@ -62,7 +62,7 @@ struct CatchUpSessionTests {
     }
 
     @Test func aCachedUpdateIsReadySynchronouslyWithoutAnotherGeneration() async throws {
-        let service = SessionSummaryService(results: [
+        let service = ScriptedIntelligence(results: [
             .ready(summarySessionResult()), .ready(summarySessionResult(through: 36)),
         ])
         let session = try #require(make())
@@ -94,13 +94,13 @@ struct CatchUpSessionTests {
         #expect(TranscriptCatchUpSession.make(
             server: otherServer, state: summarySessionState(), unreadAfter: 10, view: .all,
             boundaryIsLoaded: true, availability: .available, isOn: true) != nil)
-        await session.run(using: SessionSummaryService(results: [.ready(summarySessionResult())]))
+        await session.run(using: ScriptedIntelligence(results: [.ready(summarySessionResult())]))
         #expect(session.summary == nil)
     }
 
     @Test func aDismissedReadySummaryCannotStartAnotherUpdateBeforeItsFade() async throws {
         let session = try #require(make())
-        await session.run(using: SessionSummaryService(results: [.ready(summarySessionResult())]))
+        await session.run(using: ScriptedIntelligence(results: [.ready(summarySessionResult())]))
         session.dismiss()
         session.update(from: summarySessionState(through: 36), server: server)
         #expect(session.generation == nil)
@@ -111,7 +111,7 @@ struct CatchUpSessionTests {
     @Test(arguments: [CatchUpResult.nothingNew, .declined, .unavailable(.modelNotReady)])
     func initialNonresultsFadeAndCollapseWithoutCaching(result: CatchUpResult) async throws {
         let session = try #require(make())
-        await session.run(using: SessionSummaryService(results: [result]))
+        await session.run(using: ScriptedIntelligence(results: [result]))
         #expect(session.phase == .collapsed)
         #expect(session.isFading)
         #expect(make()?.phase == .loading)
@@ -119,7 +119,7 @@ struct CatchUpSessionTests {
 
     @Test func updateRequiresFourNewAgentMessagesAndPreservesItsOriginalScope() async throws {
         let session = try #require(make())
-        await session.run(using: SessionSummaryService(results: [.ready(summarySessionResult())]))
+        await session.run(using: ScriptedIntelligence(results: [.ready(summarySessionResult())]))
         let first = session.phase
         let summary = try #require(session.summary)
         #expect(summary.newerMessageCount(in: summarySessionState(through: 33).messages) == nil)
@@ -138,7 +138,7 @@ struct CatchUpSessionTests {
 
     @Test(arguments: [CatchUpResult.declined, .nothingNew, .unavailable(.modelNotReady)])
     func aFailedUpdateRestoresBothSummaryAndCoverageAndCanRetry(result: CatchUpResult) async throws {
-        let service = SessionSummaryService(results: [
+        let service = ScriptedIntelligence(results: [
             .ready(summarySessionResult()), result, .ready(summarySessionResult(through: 36)),
         ])
         let session = try #require(make())
@@ -218,7 +218,7 @@ struct CatchUpSessionTests {
 
     @Test func aTimedOutUpdateKeepsItsOldResultAndCoverageDespiteALateAnswer() async throws {
         let first = try #require(make())
-        await first.run(using: SessionSummaryService(results: [.ready(summarySessionResult())]))
+        await first.run(using: ScriptedIntelligence(results: [.ready(summarySessionResult())]))
         let session = try #require(make(timeout: .zero))
         let previous = try #require(session.summary)
         session.update(from: summarySessionState(through: 36), server: server)
@@ -232,7 +232,7 @@ struct CatchUpSessionTests {
     }
 
     @Test func successfulCoverageAndCacheKeysKeepServerChannelBoundaryAndSequenceDistinct() async throws {
-        let service = SessionSummaryService(results: [.ready(summarySessionResult())])
+        let service = ScriptedIntelligence(results: [.ready(summarySessionResult())])
         let session = try #require(make())
         await session.run(using: service)
         #expect(make(summarySessionState(channel: "another"))?.phase == .loading)
@@ -246,7 +246,7 @@ struct CatchUpSessionTests {
     }
 
     @Test func theSummaryMemoEvictsItsOldestEntryAfterThirtyTwoResults() async throws {
-        let service = SessionSummaryService(results: [.ready(summarySessionResult())])
+        let service = ScriptedIntelligence(results: [.ready(summarySessionResult())])
         for index in 0...32 {
             let session = try #require(make(summarySessionState(channel: "memo-\(index)")))
             await session.run(using: service)
@@ -269,19 +269,6 @@ struct CatchUpSessionTests {
         #expect(TranscriptCatchUpSlot(line: .init(text: "Line", sources: [99]),
                                      messages: messages, isReplied: nil) == .unknown)
     }
-}
-
-private actor SessionSummaryService: ChannelIntelligenceService {
-    nonisolated let availability: IntelligenceAvailability = .available
-    private var results: [CatchUpResult]
-    private(set) var count = 0
-
-    init(results: [CatchUpResult]) { self.results = results }
-    func catchUp(_ request: CatchUpRequest) async -> CatchUpResult {
-        count += 1
-        return results.count > 1 ? results.removeFirst() : results.first ?? .declined
-    }
-    func altText(_ request: AltTextRequest) async -> AltText? { nil }
 }
 
 private actor HeldSessionSummaryService: ChannelIntelligenceService {

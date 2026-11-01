@@ -189,13 +189,13 @@ extension CatchUpDraft {
         let speaker = request.speaker ?? "Someone"
         let text: String
         if let question = sentences.last(where: { $0.hasSuffix("?") }) {
-            text = "\(speaker) asked: \u{201C}\(catchUpTruncated(question, limit: 120))\u{201D}"
+            text = "\(speaker) asked: \u{201C}\(question.truncated(limit: 120))\u{201D}"
         } else {
             let addressed = sentences.last { sentence in
                 Grounding.tokens(sentence).contains { ["you", "your"].contains($0.lowercased()) }
             }
             let quote = addressed ?? sentences.last ?? request.text
-            text = "\(speaker) is waiting: \u{201C}\(catchUpTruncated(quote, limit: 120))\u{201D}"
+            text = "\(speaker) is waiting: \u{201C}\(quote.truncated(limit: 120))\u{201D}"
         }
         return CatchUp.Line(text: text, sources: [request.sequence])
     }
