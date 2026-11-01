@@ -128,33 +128,42 @@ struct OverviewSection<Trailing: View, Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Divider().padding(.vertical, 2)
-            Button(action: toggle) {
-                ChannelOverviewHeaderLayout(direction: direction) {
-                    Text(summary.title)
-                        .font(.system(size: 13 * textScale, weight: .semibold))
-                        .foregroundStyle(Color(nsColor: .labelColor))
-                    Text(summary.count)
-                        .font(.system(size: 13 * textScale).monospacedDigit())
-                        .foregroundStyle(ChannelOverviewInk.secondary(in: scheme))
-                    trailing()
-                    Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
-                        .font(.system(size: 10 * textScale, weight: .semibold))
-                        .foregroundStyle(ChannelOverviewInk.secondary(in: scheme))
-                        .frame(width: 16 * textScale, height: 16 * textScale)
-                        .opacity(isCollapsed || isHovering || isFocused ? 1 : 0)
-                        .accessibilityHidden(true)
-                }
-                .frame(minHeight: 28)
-                .contentShape(Rectangle())
+            // The trailing controls are siblings of the heading button, never nested in it, so pressing
+            // one of them never toggles the section. The heading's text passes its hits to the button.
+            ChannelOverviewHeaderLayout(direction: direction) {
+                Text(summary.title)
+                    .font(.system(size: 13 * textScale, weight: .semibold))
+                    .foregroundStyle(Color(nsColor: .labelColor))
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+                Text(summary.count)
+                    .font(.system(size: 13 * textScale).monospacedDigit())
+                    .foregroundStyle(ChannelOverviewInk.secondary(in: scheme))
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+                trailing()
+                Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
+                    .font(.system(size: 10 * textScale, weight: .semibold))
+                    .foregroundStyle(ChannelOverviewInk.secondary(in: scheme))
+                    .frame(width: 16 * textScale, height: 16 * textScale)
+                    .opacity(isCollapsed || isHovering || isFocused ? 1 : 0)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
             }
-            .buttonStyle(.plain)
-            .focused($isFocused)
+            .frame(minHeight: 28)
+            .background {
+                Button(action: toggle) {
+                    Color.clear.contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .focused($isFocused)
+                .help(isCollapsed ? "Show \(id.title)" : "Hide \(id.title)")
+                .accessibilityLabel([summary.spoken, accessibilityDetail].compactMap { $0 }.joined(separator: ", "))
+                .accessibilityValue(isCollapsed ? "Collapsed" : "Expanded")
+                .accessibilityAddTraits(.isHeader)
+            }
             .onHover { isHovering = $0 }
             .padding(.top, 8)
-            .help(isCollapsed ? "Show \(id.title)" : "Hide \(id.title)")
-            .accessibilityLabel([summary.spoken, accessibilityDetail].compactMap { $0 }.joined(separator: ", "))
-            .accessibilityValue(isCollapsed ? "Collapsed" : "Expanded")
-            .accessibilityAddTraits(.isHeader)
             if !isCollapsed {
                 content().padding(.top, 4)
             }
@@ -174,6 +183,31 @@ extension OverviewSection where Trailing == EmptyView {
          collapsed: Binding<Set<OverviewSectionID>>, @ViewBuilder content: @escaping () -> Content) {
         self.init(id: id, summary: summary, accessibilityDetail: accessibilityDetail, collapsed: collapsed,
                   trailing: { EmptyView() }, content: content)
+    }
+}
+
+/// The Tasks header's filter toggle. It sits beside the heading button rather than inside it, so
+/// pressing it never collapses the section.
+struct OverviewInProgressFilter: View {
+    @Environment(\.channelTextScale) private var textScale
+    @Environment(\.colorScheme) private var scheme
+    @Binding var isOn: Bool
+
+    var body: some View {
+        Button {
+            isOn.toggle()
+        } label: {
+            Image(systemName: "line.3.horizontal.decrease")
+                .font(.system(size: 11 * textScale, weight: .medium))
+                .foregroundStyle(isOn ? Color.accentColor : ChannelOverviewInk.secondary(in: scheme))
+                .frame(width: 24 * textScale, height: 24 * textScale)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("Show Only In-Progress Tasks")
+        .accessibilityLabel("Show Only In-Progress Tasks")
+        .accessibilityValue(isOn ? "On" : "Off")
+        .accessibilityAddTraits(.isToggle)
     }
 }
 
@@ -238,15 +272,17 @@ struct OverviewRowMenu<Items: View>: View {
 /// an optional count such as "3/4", then the chevron, as one wrapping text. Non-breaking spaces
 /// carry the chevron with the title's last word, so it never wraps onto a line of its own.
 enum OverviewInlineDisclosure {
-    static func line(_ title: Text, isExpanded: Bool, count: String? = nil, textScale: CGFloat) -> Text {
+    static func line(_ title: Text, isExpanded: Bool, count: String? = nil, showsChevron: Bool = true,
+                     textScale: CGFloat) -> Text {
         let gap = Text(verbatim: "\u{00A0}\u{00A0}").font(.system(size: 13 * textScale))
         let chevron = Text(Image(systemName: isExpanded ? "chevron.down" : "chevron.right"))
             .font(.system(size: 9 * textScale, weight: .bold))
             .foregroundStyle(.secondary)
-        guard let count else { return title + gap + chevron }
-        let counted = Text(verbatim: "\(count)\u{00A0}")
+        guard let count else { return showsChevron ? title + gap + chevron : title }
+        let counted = Text(verbatim: showsChevron ? "\(count)\u{00A0}" : count)
             .font(.system(size: 11 * textScale).monospacedDigit())
             .foregroundStyle(.secondary)
+        guard showsChevron else { return title + gap + counted }
         return title + gap + counted + chevron
     }
 }

@@ -14,10 +14,13 @@ struct OverviewTasksSection: View {
 
     var body: some View {
         let progress = channelTasksProgress(store.tasks)
+        let filter: Binding<Bool>? = store.tasks.isEmpty ? nil : Bindable(session).showsOnlyInProgressTasks
         OverviewSectionRows(summary: .tasks(progress), section: .tasks, session: session,
-                            diff: channelTasksDiff(store.tasks)) {
+                            diff: channelTasksDiff(store.tasks), filter: filter) {
             if store.tasks.isEmpty {
                 Text("No tasks yet").foregroundStyle(ChannelInk.secondary)
+            } else if session.showsOnlyInProgressTasks, channelTasksHoldingWorkInProgress(store.tasks).isEmpty {
+                Text("No tasks in progress").foregroundStyle(ChannelInk.secondary)
             } else {
                 OverviewTaskRows(tasks: store.tasks, store: store, session: session)
                     .listRowInsets(.vertical, 0)
@@ -92,6 +95,9 @@ struct OverviewTaskNode: View {
     @ViewState private var isVisible = false
 
     private var children: [ChannelTask] { task.children ?? [] }
+    private var visibleChildren: [ChannelTask] {
+        OverviewTaskListRow.visibleChildren(of: task, showsOnlyInProgress: session.showsOnlyInProgressTasks)
+    }
     private var expanded: Bool {
         OverviewTaskListRow.isExpanded(task, disclosure: session.taskDisclosure)
     }
@@ -135,7 +141,7 @@ struct OverviewTaskNode: View {
         VStack(alignment: .leading, spacing: 0) {
             if layout.accessibility {
                 HStack {
-                    if children.isEmpty {
+                    if visibleChildren.isEmpty {
                         status
                         Spacer(minLength: 8)
                     } else {
@@ -149,7 +155,7 @@ struct OverviewTaskNode: View {
                 }
                 .frame(minHeight: 44)
             }
-            if children.isEmpty {
+            if visibleChildren.isEmpty {
                 heading(timing: timing)
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel(spoken(timing: timing))
@@ -194,11 +200,18 @@ struct OverviewTaskNode: View {
         let title = Text(verbatim: task.title).font(.body)
             .foregroundStyle(task.status == "done" ? ChannelInk.secondary : .primary)
         guard !children.isEmpty else { return title }
-        guard task.showsChildProgress else { return OverviewInlineDisclosure.line(title, expanded: expanded) }
+        let progress: Text? = task.showsChildProgress ? progressCount : nil
+        guard !visibleChildren.isEmpty else {
+            guard let progress else { return title }
+            return title + Text(verbatim: "\u{00A0}\u{00A0}") + progress
+        }
+        return OverviewInlineDisclosure.line(title, expanded: expanded, count: progress ?? Text(verbatim: ""))
+    }
+
+    private var progressCount: Text {
         let count = channelTasksProgress(children)
-        let progress = Text(verbatim: "\(count.done)/\(count.total)\u{00A0}")
+        return Text(verbatim: "\(count.done)/\(count.total)\u{00A0}")
             .font(.footnote.monospacedDigit()).foregroundStyle(ChannelInk.secondary)
-        return OverviewInlineDisclosure.line(title, expanded: expanded, count: progress)
     }
 
     @ViewBuilder

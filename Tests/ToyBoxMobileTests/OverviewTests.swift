@@ -1163,6 +1163,63 @@ struct OverviewTests {
         #expect(abs(top) < 0.5, "Tasks must land at the viewport top, not just exist below it: \(top)")
     }
 
+    @Test func inProgressFilterHidesDoneBranchesAndExplainsWhenNothingHoldsWork() async throws {
+        let store = ChannelStore(id: "channel", api: try ChannelAPI(serverURL: "https://fixture.example"),
+                                 sendJournal: nil)
+        func applyTasks(_ tasks: [ChannelTask]) throws {
+            _ = try store.apply(.init(type: "snapshot", state: .init(
+                revision: (store.state?.revision ?? 0) + 1,
+                channel: .init(id: "channel", name: "Workshop", model: .init(provider: "test", name: "test"),
+                               tasks: tasks, updatedAt: "2026-10-26T00:00:00Z"),
+                lead: .init(id: "channel", name: "Lead")
+            )))
+        }
+        try applyTasks([
+            .init(id: "root", title: "Root", status: "in_progress", children: [
+                .init(id: "child", title: "Child", status: "in_progress"),
+                .init(id: "sibling", title: "Sibling"),
+            ]),
+            .init(id: "other", title: "Other", status: "done"),
+        ])
+        let session = OverviewSession(store: store)
+        let host = UIHostingController(rootView:
+            OverviewView(store: store, session: session, placement: .sheet)
+                .environment(OverviewPresentation()).environment(ChannelInteraction())
+                .environment(ChannelFollowController())
+                .environment(ManagementPresenter()).environment(try artifactSession(artifacts: []))
+                .environment(\.horizontalSizeClass, .compact).dynamicTypeSize(.large))
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 466, height: 1600))
+        window.rootViewController = host
+        window.isHidden = false
+        defer { window.isHidden = true }
+        host.view.layoutIfNeeded()
+        await Task.yield()
+        host.view.layoutIfNeeded()
+
+        func elements() -> [MobileAutomationTree.Element] { MobileAutomationTree(windows: [window]).elements }
+        let filter = try #require(elements().first { $0.identifier == "overview-tasks-in-progress-filter" })
+        #expect(filter.label == "Show Only In-Progress Tasks" && filter.value == "Off")
+        #expect(elements().contains { $0.identifier == "overview-task-other" })
+
+        session.showsOnlyInProgressTasks = true
+        await Task.yield()
+        host.view.layoutIfNeeded()
+        let shown = Set(elements().map(\.identifier))
+        #expect(shown.contains("overview-task-root") && shown.contains("overview-task-child"))
+        #expect(!shown.contains("overview-task-other") && !shown.contains("overview-task-sibling"))
+        #expect(elements().first { $0.identifier == "overview-tasks-in-progress-filter" }?.value == "On")
+
+        try applyTasks([.init(id: "other", title: "Other", status: "done")])
+        await Task.yield()
+        host.view.layoutIfNeeded()
+        #expect(elements().contains { $0.label == "No tasks in progress" })
+
+        try applyTasks([])
+        await Task.yield()
+        host.view.layoutIfNeeded()
+        #expect(!elements().contains { $0.identifier == "overview-tasks-in-progress-filter" })
+    }
+
     @Test(arguments: [ColorScheme.light, .dark], [true, false])
     func artifactActionUsesOnlyNormalInsetsAndKeepsItsEnabledInkUnderLinkTint(
         scheme: ColorScheme, enabled: Bool

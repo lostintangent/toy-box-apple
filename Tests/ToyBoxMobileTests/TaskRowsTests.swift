@@ -78,6 +78,49 @@ struct TaskRowsTests {
         #expect(row.subtasksTitle == (count == 1 ? "View 1 subtask" : "View 2 subtasks"))
     }
 
+    @Test func inProgressFilterKeepsOnlyWorkInProgressBranchesAndTheirKeptChildren() {
+        let rows = project(tree, showsOnlyInProgress: true)
+        #expect(rows.map(\.id) == [.task("root"), .task("child")])
+        #expect(rows.map(\.depth) == [0, 1])
+        #expect(rows.map(\.endsRoot) == [false, true])
+        #expect(rows[1].guides == [.init(depth: 0, isFirst: true, isLast: true)])
+        #expect(project(tree).count == 5)
+    }
+
+    @Test func inProgressFilterLeavesDisclosureAloneAndKeepsCollapsedParentsCollapsed() {
+        let collapsed: [String: OverviewSession.Disclosure] = ["root": .init(expandedByDefault: true, expanded: false)]
+        #expect(project(tree, disclosure: collapsed, showsOnlyInProgress: true).map(\.id) == [.task("root")])
+        #expect(project(tree, disclosure: collapsed).map(\.id) == [.task("root"), .task("other")])
+    }
+
+    @Test func inProgressFilterCountsOnlyKeptSubtasksInTheScopedLink() throws {
+        let parent = ChannelTask(id: "parent", title: "Parent", status: "in_progress", children: [
+            .init(id: "active", title: "Active", status: "in_progress"),
+            .init(id: "queued", title: "Queued"),
+            .init(id: "later", title: "Later"),
+        ])
+        let kept = try #require(project([parent], accessibility: true, showsOnlyInProgress: true).first { $0.isSubtasks })
+        #expect(kept.subtasksTitle == "View 1 subtask")
+        let full = try #require(project([parent], accessibility: true).first { $0.isSubtasks })
+        #expect(full.subtasksTitle == "View 3 subtasks")
+    }
+
+    @Test func aKeptParentWithNoKeptChildrenIsALeafWithNoSubtasksLink() {
+        let parent = ChannelTask(id: "parent", title: "Parent", status: "in_progress", children: [
+            .init(id: "first", title: "First", status: "done"),
+            .init(id: "second", title: "Second", status: "done"),
+        ])
+        #expect(OverviewTaskListRow.visibleChildren(of: parent, showsOnlyInProgress: true).isEmpty)
+        #expect(OverviewTaskListRow.visibleChildren(of: parent, showsOnlyInProgress: false).count == 2)
+        #expect(project([parent], accessibility: true, showsOnlyInProgress: true).map(\.id) == [.task("parent")])
+        #expect(project([parent], showsOnlyInProgress: true).map(\.id) == [.task("parent")])
+    }
+
+    @Test func inProgressFilterShowsNoRowsWhenNothingHoldsWork() {
+        #expect(project([tree[1]], showsOnlyInProgress: true).isEmpty)
+        #expect(project([], showsOnlyInProgress: true).isEmpty)
+    }
+
     @Test func guideSegmentsClearOnlyTheWholeChildGroupsEnds() {
         let rows = project(tree)
         #expect(rows[0].guides.isEmpty)
@@ -459,9 +502,10 @@ struct TaskRowsTests {
 
     private func project(
         _ tasks: [ChannelTask], disclosure: [String: OverviewSession.Disclosure] = [:],
-        width: CGFloat = 600, accessibility: Bool = false
+        width: CGFloat = 600, accessibility: Bool = false, showsOnlyInProgress: Bool = false
     ) -> [OverviewTaskListRow] {
-        OverviewTaskListRow.visibleRows(tasks: tasks, disclosure: disclosure) { root in
+        OverviewTaskListRow.visibleRows(tasks: tasks, disclosure: disclosure,
+                                        showsOnlyInProgress: showsOnlyInProgress) { root in
             .init(contentWidth: width, statusWidth: 16, titleGap: 6, ownerWidth: 20,
                   scaledReadingWidth: accessibility ? 640 : 192,
                   accessibility: accessibility, rootHasOwner: root.ownerId != nil)

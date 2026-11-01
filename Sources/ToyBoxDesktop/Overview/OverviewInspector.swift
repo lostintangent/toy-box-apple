@@ -115,6 +115,7 @@ private struct OverviewTeamSection: View {
 
 private struct OverviewTasksSection: View {
     @Environment(\.channelTextScale) private var textScale
+    @SceneStorage("overviewTasksInProgressOnly") private var showsOnlyInProgress = false
     let store: ChannelStore
     @Binding var collapsed: Set<OverviewSectionID>
     let onArtifactOpen: (ChannelArtifact) -> Void
@@ -125,14 +126,22 @@ private struct OverviewTasksSection: View {
         let diff = channelTasksDiff(tasks)
         OverviewSection(id: .tasks, summary: .tasks(progress),
                         accessibilityDetail: diff.map(ChannelOverviewTaskDiff.spoken), collapsed: $collapsed) {
-            if let diff {
-                ChannelOverviewTaskDiff(diff: diff)
-                    .font(.system(size: 11 * textScale))
-                    .accessibilityHidden(true)
+            // One trailing view keeps the header's facts in their slot. The filter stays with Tasks, so
+            // an empty channel shows neither.
+            if !tasks.isEmpty {
+                HStack(spacing: 8) {
+                    if let diff {
+                        ChannelOverviewTaskDiff(diff: diff)
+                            .font(.system(size: 11 * textScale))
+                            .accessibilityHidden(true)
+                    }
+                    OverviewInProgressFilter(isOn: $showsOnlyInProgress)
+                }
             }
         } content: {
             OverviewTaskList(tasks: tasks, agents: store.roster, artifacts: store.artifacts,
-                             channelId: store.id, onArtifactOpen: onArtifactOpen)
+                             channelId: store.id, showsOnlyInProgress: showsOnlyInProgress,
+                             onArtifactOpen: onArtifactOpen)
         }
     }
 }

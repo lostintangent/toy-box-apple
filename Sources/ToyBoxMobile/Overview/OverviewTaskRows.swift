@@ -22,13 +22,22 @@ struct OverviewTaskListRow: Identifiable {
     let depth: Int
     let layout: OverviewTaskReadingLayout
     var isSubtasks = false
+    var subtaskCount: Int?
     var guides: [Guide] = []
     var endsRoot = false
 
     var id: ID { isSubtasks ? .subtasks(task.id) : .task(task.id) }
     var subtasksTitle: String {
-        let count = task.children?.count ?? 0
+        let count = subtaskCount ?? task.children?.count ?? 0
         return "View \(count) \(count == 1 ? "subtask" : "subtasks")"
+    }
+
+    static func filtered(_ tasks: [ChannelTask], showsOnlyInProgress: Bool) -> [ChannelTask] {
+        showsOnlyInProgress ? channelTasksHoldingWorkInProgress(tasks) : tasks
+    }
+
+    static func visibleChildren(of task: ChannelTask, showsOnlyInProgress: Bool) -> [ChannelTask] {
+        filtered(task.children ?? [], showsOnlyInProgress: showsOnlyInProgress)
     }
 
     static func isExpanded(_ task: ChannelTask, disclosure: [String: OverviewSession.Disclosure]) -> Bool {
@@ -40,15 +49,16 @@ struct OverviewTaskListRow: Identifiable {
 
     static func visibleRows(
         tasks: [ChannelTask], disclosure: [String: OverviewSession.Disclosure],
+        showsOnlyInProgress: Bool = false,
         layout: (ChannelTask) -> OverviewTaskReadingLayout
     ) -> [Self] {
         var rows: [Self] = []
         func append(_ task: ChannelTask, depth: Int, layout: OverviewTaskReadingLayout) {
             rows.append(.init(task: task, depth: depth, layout: layout))
-            let children = task.children ?? []
+            let children = visibleChildren(of: task, showsOnlyInProgress: showsOnlyInProgress)
             guard !children.isEmpty, isExpanded(task, disclosure: disclosure) else { return }
             guard layout.canInlineChildren(ofDepth: depth, haveOwner: children.contains { $0.ownerId != nil }) else {
-                rows.append(.init(task: task, depth: depth, layout: layout, isSubtasks: true))
+                rows.append(.init(task: task, depth: depth, layout: layout, isSubtasks: true, subtaskCount: children.count))
                 return
             }
             let first = rows.count
@@ -58,7 +68,7 @@ struct OverviewTaskListRow: Identifiable {
                 rows[index].guides.append(.init(depth: depth, isFirst: index == first, isLast: index == last))
             }
         }
-        for task in tasks {
+        for task in filtered(tasks, showsOnlyInProgress: showsOnlyInProgress) {
             append(task, depth: 0, layout: layout(task))
             rows[rows.count - 1].endsRoot = true
         }
@@ -78,7 +88,10 @@ struct OverviewTaskRows: View {
     @ViewState private var width: CGFloat = 0
 
     var body: some View {
-        let rows = OverviewTaskListRow.visibleRows(tasks: tasks, disclosure: session.taskDisclosure) { root in
+        let rows = OverviewTaskListRow.visibleRows(
+            tasks: tasks, disclosure: session.taskDisclosure,
+            showsOnlyInProgress: session.showsOnlyInProgressTasks
+        ) { root in
             OverviewTaskReadingLayout(
                 contentWidth: width, statusWidth: min(24, statusWidth), titleGap: min(8, titleGap),
                 ownerWidth: min(28, ownerWidth), scaledReadingWidth: readingWidth,

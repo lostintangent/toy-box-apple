@@ -378,6 +378,114 @@ struct ManagementTests {
         try await host.waitForDisclosure(expanded: true)
     }
 
+    @Test func hidingAParentKeepsItsManualDisclosureWhenTheFilterReturns() async throws {
+        let tasks = TaskStatusHost.Tasks()
+        tasks.status = "done"
+        let host = TaskWindow(TaskStatusHost(tasks: tasks)
+            .environment(\.overviewTaskFocusInteractions, .automatic))
+        defer { host.window.close() }
+        let right = String(UnicodeScalar(UInt16(NSRightArrowFunctionKey))!)
+        try await host.waitForDisclosure(expanded: false)
+        try host.press("\t", keyCode: 48)
+        try host.press(right, keyCode: 124)
+        try await host.waitForDisclosure(expanded: true)
+
+        tasks.showsOnlyInProgress = true
+        try await host.waitForNoStatusIcons()
+        tasks.showsOnlyInProgress = false
+        try await host.waitForDisclosure(expanded: true)
+    }
+
+    @Test func aHiddenParentRederivesItsDisclosureWhenItsDefaultChanges() async throws {
+        let tasks = TaskStatusHost.Tasks()
+        let host = TaskWindow(TaskStatusHost(tasks: tasks)
+            .environment(\.overviewTaskFocusInteractions, .automatic))
+        defer { host.window.close() }
+        let left = String(UnicodeScalar(UInt16(NSLeftArrowFunctionKey))!)
+        try await host.waitForDisclosure(expanded: true)
+        try host.press("\t", keyCode: 48)
+        try host.press(left, keyCode: 123)
+        try await host.waitForDisclosure(expanded: false)
+
+        tasks.showsOnlyInProgress = true
+        tasks.status = "done"
+        try await host.waitForNoStatusIcons()
+        tasks.showsOnlyInProgress = false
+        try await host.waitForDisclosure(expanded: false)
+        tasks.status = "in_progress"
+        try await host.waitForDisclosure(expanded: true)
+    }
+
+    @Test func aManualDisclosureDropsWhenItsParentsDefaultChanges() {
+        let slots = OverviewSlots()
+        func rows(_ status: String) -> [OverviewSlots.Entry<ChannelTask>] {
+            slots.entries([.init(id: "parent", title: "Parent task", status: status, children: [
+                .init(id: "child", title: "Child task", status: "blocked")
+            ])], in: "tasks")
+        }
+        let disclosure = OverviewTaskDisclosure()
+        let active = rows("in_progress")
+        let key = active[0].key
+        let activeTask = active[0].item
+        #expect(disclosure.isExpanded(key, task: activeTask))
+
+        disclosure.set(false, key, task: activeTask)
+        disclosure.reconcile(active)
+        #expect(!disclosure.isExpanded(key, task: activeTask))
+
+        // The parent finishes while hidden, so its default flips. Reconciling must drop the manual
+        // toggle, or it would apply again when the parent returns to in progress.
+        let done = rows("done")
+        disclosure.reconcile(done)
+        #expect(!disclosure.isExpanded(key, task: done[0].item))
+        disclosure.reconcile(active)
+        #expect(disclosure.isExpanded(key, task: activeTask))
+    }
+
+    @Test func aNestedManualDisclosureSurvivesReconcileWhileItsDefaultHolds() throws {
+        let slots = OverviewSlots()
+        let tree: [ChannelTask] = [.init(id: "parent", title: "Parent task", status: "in_progress", children: [
+            .init(id: "nested", title: "Nested parent", status: "blocked", children: [
+                .init(id: "grandchild", title: "Nested leaf", status: "done")
+            ])
+        ])]
+        let rows = slots.entries(tree, in: "tasks")
+        let nested = try #require(rows[0].item.children?.first)
+        let nestedKey = "\(rows[0].key)/\(nested.id)"
+        let disclosure = OverviewTaskDisclosure()
+        #expect(!disclosure.isExpanded(nestedKey, task: nested))
+
+        disclosure.set(true, nestedKey, task: nested)
+        disclosure.reconcile(rows)
+        #expect(disclosure.isExpanded(nestedKey, task: nested))
+    }
+
+    @Test func resetReturnsEveryDisclosureToItsDefault() {
+        let slots = OverviewSlots()
+        let tree: [ChannelTask] = [.init(id: "parent", title: "Parent task", status: "done", children: [
+            .init(id: "child", title: "Child task", status: "blocked")
+        ])]
+        let rows = slots.entries(tree, in: "tasks")
+        let disclosure = OverviewTaskDisclosure()
+        disclosure.set(true, rows[0].key, task: rows[0].item)
+        #expect(disclosure.isExpanded(rows[0].key, task: rows[0].item))
+        disclosure.reset()
+        #expect(!disclosure.isExpanded(rows[0].key, task: rows[0].item))
+    }
+
+    @Test func theInProgressFilterKeepsOnlyTasksHoldingWorkAtEachLevel() {
+        let leaf: ChannelTask = .init(id: "leaf", title: "Leaf", status: "done")
+        let activeLeaf: ChannelTask = .init(id: "active", title: "Active", status: "in_progress")
+        let holdingParent: ChannelTask = .init(id: "holding", title: "Holding", status: "done", children: [activeLeaf])
+        let idleParent: ChannelTask = .init(id: "idle", title: "Idle", status: "done", children: [leaf])
+        #expect(OverviewTaskList.keeps(leaf, showsOnlyInProgress: false))
+        #expect(OverviewTaskList.keeps(idleParent, showsOnlyInProgress: false))
+        #expect(!OverviewTaskList.keeps(leaf, showsOnlyInProgress: true))
+        #expect(!OverviewTaskList.keeps(idleParent, showsOnlyInProgress: true))
+        #expect(OverviewTaskList.keeps(holdingParent, showsOnlyInProgress: true))
+        #expect(OverviewTaskList.keeps(activeLeaf, showsOnlyInProgress: true))
+    }
+
     @Test func slotsFollowAnItemWithinAVisitAndGoByPositionAcrossVisits() {
         struct Item: Identifiable { let id: String }
         func items(_ ids: String...) -> [Item] { ids.map(Item.init) }
@@ -551,7 +659,9 @@ struct ManagementTests {
     struct TaskStatusHost: View {
         @Observable final class Tasks {
             var status = "in_progress"
+            var childStatus = "blocked"
             var channelId = "tasks"
+            var showsOnlyInProgress = false
         }
 
         let tasks: Tasks
@@ -560,10 +670,10 @@ struct ManagementTests {
             var channel = Channel(id: tasks.channelId, name: "Tasks", model: .init(provider: "test", name: "test"),
                                   latestSequence: 1, seenThrough: 1, updatedAt: "2026-10-22T08:00:00Z")
             channel.tasks = [.init(id: "parent", title: "Parent task", status: tasks.status, children: [
-                .init(id: "child", title: "Blocked child", status: "blocked")
+                .init(id: "child", title: "Child task", status: tasks.childStatus)
             ])]
             return OverviewTaskList(state: ChannelState(revision: 1, channel: channel, lead: .lead(id: channel.id)),
-                                    onArtifactOpen: { _ in })
+                                    showsOnlyInProgress: tasks.showsOnlyInProgress, onArtifactOpen: { _ in })
                 .frame(width: 280, height: 120, alignment: .topLeading)
                 .background(Color.white)
                 .environment(\.colorScheme, .light)
@@ -679,6 +789,23 @@ struct ManagementTests {
                     }
                 }
                 return hasParent && !expanded
+            }
+        }
+
+        /// Waits until no status icon is drawn, so a hidden parent and its expanded children are both gone.
+        func waitForNoStatusIcons(sourceLocation: SourceLocation = #_sourceLocation) async throws {
+            try await waitUntil(sourceLocation: sourceLocation) {
+                guard let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return false }
+                view.cacheDisplay(in: view.bounds, to: bitmap)
+                guard let image = bitmap.cgImage else { return false }
+                let pixels = try RenderedPixels(image)
+                for y in stride(from: 0, to: pixels.pixelsHigh, by: 2) {
+                    for x in stride(from: 0, to: pixels.pixelsWide, by: 2) {
+                        let color = pixels.colorAt(x: x, y: y)
+                        if TaskListRender.isRed(color) || TaskListRender.isGreen(color) { return false }
+                    }
+                }
+                return true
             }
         }
 
