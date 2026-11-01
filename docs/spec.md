@@ -1041,7 +1041,7 @@ visible conversation actively acknowledges reading. Restoring a window must not 
 silently mark its unseen content as read.
 
 **Phone channel search, user 3501 and Lead 3503.** Use the native bottom-bar search item beside
-Settings in the channel-list column, folded and unfolded. While the split view is collapsed, as
+Settings (`gearshape`, the Mac's gear) in the channel-list column, folded and unfolded. While the split view is collapsed, as
 on a folded Duo, `.searchToolbarBehavior(.minimize)` shows it as a Search button that expands into
 the bottom field, because a full field makes UIKit cancel the first pull to refresh after Back
 (t520). The unfolded overlay sidebar keeps the full field, since UIKit places the minimized button
@@ -1471,11 +1471,11 @@ Toy Box's blue: a 1-point system blue rule at 70% across the full lane, and "New
 semibold blue 6 points after its trailing end. When a day change and the unread boundary
 coincide, they share one line, the day label, the blue rule and New, read as "Today, New
 messages". A divider has equal space above and below it, on both platforms and whether it
-shows a day, New or both. On the Mac that's the 20-point run gap above its 16-point line and
-20 points below it, before the row it introduces.
+shows a day, New or both. On the Mac that's 16 points above its 16-point line and 16 below it,
+before the row it introduces.
 The phone uses the same leading layout in caption semibold: 8 points from the label to a hairline
 rule. When unread, the rule and "New" turn blue, with "New" 6 points after the rule's trailing end.
-It adds 12 points of its own on each side, so 32 points sit above the line and 32 below. Capture the unread boundary only after snapshot or replay completes, and never move it as
+It has 26 points above the line and 26 below. Capture the unread boundary only after snapshot or replay completes, and never move it as
 the user reads. A reopened store that disconnected while the channel was closed waits for its
 reconnect, rather than capturing from the state it cached. This boundary is not an extra synthetic
 message. Reference renders of day labels, the New divider, system rows and both request states:
