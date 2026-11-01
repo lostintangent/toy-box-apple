@@ -20,10 +20,10 @@ struct TaskRowsTests {
         #expect(rows.map(\.task) == [tree[0], children[0], grandchild, children[1], tree[1]])
     }
 
-    @Test func closingAParentRetainsDescendantChoicesAndStatusChangesUseSharedDefaults() {
+    @Test func closingAParentRetainsDescendantChoicesAndOnlyDefaultChangesReDerive() {
         let disclosure: [String: OverviewSession.Disclosure] = [
-            "root": .init(status: "in_progress", expanded: false),
-            "child": .init(status: "in_progress", expanded: false),
+            "root": .init(expandedByDefault: true, expanded: false),
+            "child": .init(expandedByDefault: true, expanded: false),
         ]
         let closed = project(tree, disclosure: disclosure)
         #expect(closed.map(\.id) == [.task("root"), .task("other")])
@@ -32,19 +32,23 @@ struct TaskRowsTests {
         reopened["root"]?.expanded = true
         #expect(project(tree, disclosure: reopened).map(\.id)
                 == [.task("root"), .task("child"), .task("sibling"), .task("other")])
-        var changed = tree
-        changed[0].status = "done"
-        #expect(project(changed, disclosure: reopened).map(\.id) == [.task("root"), .task("other")])
-        changed[0].status = "blocked"
-        #expect(project(changed, disclosure: disclosure).map(\.id)
-                == [.task("root"), .task("child"), .task("sibling"), .task("other")])
+        var blocked = tree
+        blocked[0].status = "blocked"
+        #expect(blocked[0].isExpandedByDefault)
+        #expect(project(blocked, disclosure: disclosure).map(\.id) == [.task("root"), .task("other")])
+        var done = tree
+        done[0].status = "done"
+        // Work in progress anywhere below keeps a parent expanded, so the subtree must finish too.
+        done[0].children?[0].status = "done"
+        #expect(!done[0].isExpandedByDefault)
+        #expect(project(done, disclosure: reopened).map(\.id) == [.task("root"), .task("other")])
         #expect(disclosure["child"]?.expanded == false)
     }
 
     @Test(arguments: [263.99, 264, 264.01])
     func theActualReadingFloorControlsInlineRowsWithoutADeviceThreshold(width: CGFloat) {
         let child = ChannelTask(id: "child", title: "Child", ownerId: "owner")
-        let parent = ChannelTask(id: "root", title: "Root", ownerId: "owner", children: [child])
+        let parent = ChannelTask(id: "root", title: "Root", status: "in_progress", ownerId: "owner", children: [child])
         let rows = project([parent], width: width)
         if width < 264 {
             #expect(rows.map(\.id) == [.task("root"), .subtasks("root")])
@@ -68,7 +72,7 @@ struct TaskRowsTests {
 
     @Test(arguments: [1, 2])
     func scopedTitlesUseTheRightSubtaskPlural(count: Int) throws {
-        let parent = ChannelTask(id: "parent", title: "Parent", children:
+        let parent = ChannelTask(id: "parent", title: "Parent", status: "in_progress", children:
             (0..<count).map { .init(id: "child-\($0)", title: "Child") })
         let row = try #require(project([parent], accessibility: true).first { $0.isSubtasks })
         #expect(row.subtasksTitle == (count == 1 ? "View 1 subtask" : "View 2 subtasks"))
@@ -91,7 +95,7 @@ struct TaskRowsTests {
         let child = ChannelTask(id: "child", title: "Child", ownerId: "owner", artifactId: "artifact",
                                 diff: .init(added: 1522, removed: 114),
                                 startedAt: "2026-10-26T01:00:00Z", checkInAt: "2026-10-26T02:00:00Z")
-        let parent = ChannelTask(id: "root", title: "Root", children: [child])
+        let parent = ChannelTask(id: "root", title: "Root", status: "in_progress", children: [child])
         let rows = project([parent, .init(id: "owned", title: "Owned", ownerId: "owner")])
         #expect(rows[0].layout.rootHasOwner == false && rows[1].layout.rootHasOwner == false)
         #expect(rows[2].layout.rootHasOwner)
@@ -101,7 +105,7 @@ struct TaskRowsTests {
 
     @Test func aHundredSixLevelTreesKeepEveryTaskAndItsStableIdentity() {
         func task(root: Int, depth: Int) -> ChannelTask {
-            .init(id: "\(root)-\(depth)", title: String(repeating: "Task title ", count: 11),
+            .init(id: "\(root)-\(depth)", title: String(repeating: "Task title ", count: 11), status: "in_progress",
                   children: depth < 5 ? [task(root: root, depth: depth + 1)] : nil)
         }
         let rows = project((0..<100).map { task(root: $0, depth: 0) })
@@ -359,6 +363,7 @@ struct TaskRowsTests {
         if change.isStatusDriven {
             state.revision += 1
             tasks[0].status = "done"
+            tasks[0].children?[0].status = "done"
             state.channel.tasks = channelTasks(tasks)
             _ = try store.apply(.init(type: "snapshot", state: state))
         } else {
@@ -373,7 +378,7 @@ struct TaskRowsTests {
         }
         let transaction = try #require(record.entries.first { !$0.expanded })
         #expect(session.taskDisclosure["root"]?.expanded == false)
-        #expect(session.taskDisclosure["root"]?.status == (change.isStatusDriven ? "done" : "in_progress"))
+        #expect(session.taskDisclosure["root"]?.expandedByDefault == !change.isStatusDriven)
         #expect(transaction.animation == nil)
     }
 
@@ -430,11 +435,11 @@ struct TaskRowsTests {
         let leaf = try #require(elements.first { $0.identifier == "overview-task-other" })
         #expect(parent.traits.contains(.button) && parent.value == "Expanded")
         #expect(leaf.traits.contains(.staticText) && !leaf.traits.contains(.button))
-        session.taskDisclosure["root"] = .init(status: "in_progress", expanded: false)
+        session.taskDisclosure["root"] = .init(expandedByDefault: true, expanded: false)
         await Task.yield()
         host.view.layoutIfNeeded()
         #expect(list.numberOfItems(inSection: 0) == 2)
-        session.taskDisclosure["root"] = .init(status: "in_progress", expanded: true)
+        session.taskDisclosure["root"] = .init(expandedByDefault: true, expanded: true)
         await Task.yield()
         host.view.layoutIfNeeded()
         #expect(list.numberOfItems(inSection: 0) == visibleCount)

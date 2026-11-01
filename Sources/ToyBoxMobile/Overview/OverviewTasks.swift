@@ -216,7 +216,7 @@ struct OverviewTaskNode: View {
     }
 
     private func toggle() {
-        session.taskDisclosure[task.id] = .init(status: task.status, expanded: !expanded)
+        session.taskDisclosure[task.id] = .init(expandedByDefault: task.isExpandedByDefault, expanded: !expanded)
     }
 
     private func spoken(timing: ChannelTaskTiming?) -> String {

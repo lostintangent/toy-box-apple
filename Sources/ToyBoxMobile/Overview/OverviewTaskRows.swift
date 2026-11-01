@@ -32,7 +32,7 @@ struct OverviewTaskListRow: Identifiable {
     }
 
     static func isExpanded(_ task: ChannelTask, disclosure: [String: OverviewSession.Disclosure]) -> Bool {
-        guard let saved = disclosure[task.id], saved.status == task.status else {
+        guard let saved = disclosure[task.id], saved.expandedByDefault == task.isExpandedByDefault else {
             return task.isExpandedByDefault
         }
         return saved.expanded
