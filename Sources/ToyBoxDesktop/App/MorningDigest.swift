@@ -194,16 +194,7 @@ extension MorningDigest {
                let request = CatchUpRequest(server: api.baseURL, state: state,
                                             unreadAfter: (state.messages.first?.sequence ?? 1) - 1,
                                             scope: .dailyDigest) {
-                summary = await withTaskGroup(of: CatchUp?.self) { group in
-                    group.addTask { await intelligence.catchUp(request).catchUp }
-                    group.addTask {
-                        try? await Task.sleep(for: .seconds(15))
-                        return nil
-                    }
-                    let result = await group.next() ?? nil
-                    group.cancelAll()
-                    return result
-                }
+                summary = await intelligence.catchUp(request, within: .seconds(15))
             }
             if let line = line(state, summary: summary) { lines.append(line) }
         }

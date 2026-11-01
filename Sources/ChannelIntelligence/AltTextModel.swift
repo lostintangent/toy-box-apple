@@ -111,7 +111,7 @@ struct AltTextGeneration: Sendable {
         outcome.recognition = ContinuousClock.now - reading
         do {
             let session = LanguageModelSession(model: model, instructions: Instructions(AltTextPrompt.instructions))
-            let prompt = AltTextPrompt.prompt(recognizedText: catchUpTruncated(recognized, limit: AltTextPrompt.maximumRecognizedCharacters))
+            let prompt = AltTextPrompt.prompt(recognizedText: recognized.truncated(limit: AltTextPrompt.maximumRecognizedCharacters))
             let response = try await session.respond(
                 generating: AltTextContent.self,
                 options: GenerationOptions(samplingMode: .greedy, maximumResponseTokens: 120)

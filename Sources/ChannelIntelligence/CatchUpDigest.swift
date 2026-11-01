@@ -40,9 +40,9 @@ public struct CatchUpDigest: Sendable, Hashable {
     public let isComplete: Bool
 
     public init(state: ChannelState, unreadAfter: Int?, limit: Int = CatchUpDigest.defaultLimit) {
-        let pending = catchUpPendingRequest(in: state)
+        let pending = state.channel.requestSequence.flatMap { ChannelWaitingRequest.message(at: $0, in: state) }
         // A request's ask is usually at its end, so a long one keeps both ends like the model's.
-        request = pending.flatMap { Message($0, state: state) { catchUpCondensed($0, limit: limit) } }
+        request = pending.flatMap { Message($0, state: state) { $0.condensed(limit: limit) } }
         guard let unreadAfter else {
             unread = []
             isComplete = true
@@ -50,7 +50,7 @@ public struct CatchUpDigest: Sendable, Hashable {
         }
         unread = state.messages.compactMap { message in
             guard message.sequence > unreadAfter, message.sequence != pending?.sequence else { return nil }
-            return Message(message, state: state) { catchUpTruncated($0, limit: limit) }
+            return Message(message, state: state) { $0.truncated(limit: limit) }
         }
         let oldest = state.messages.first?.sequence ?? unreadAfter + 1
         isComplete = oldest <= unreadAfter + 1
@@ -68,24 +68,16 @@ private extension CatchUpDigest.Message {
         guard !message.isSystem, message.sender.type == "agent" else { return nil }
         let agents = state.agents
         let body = withoutLeadingMentions(message.text, agents: agents)
-        let text = shorten(catchUpPlainText(body, agents: agents))
+        let text = shorten(body.plainProse(agents: agents))
         let images = message.attachments?.count ?? 0
         guard !text.isEmpty || images > 0 else { return nil }
         var mentioned: [String] = []
-        let written = shorten(catchUpPlainText(body, agents: agents) { agent in
+        let written = shorten(body.plainProse(agents: agents) { agent in
             guard let agent else { return "@everyone" }
             if !mentioned.contains(agent.id) { mentioned.append(agent.id) }
             return "@" + agent.name
         })
         self.init(sequence: message.sequence, speaker: CatchUpDescriber(state: state).name(message.sender),
                   text: text, written: written, mentioned: mentioned, images: images)
-    }
-}
-
-/// The message a channel is waiting on you to answer, if it's loaded.
-func catchUpPendingRequest(in state: ChannelState) -> ChannelMessage? {
-    state.channel.requestSequence.flatMap { sequence in
-        state.request?.sequence == sequence ? state.request
-            : state.messages.first { $0.sequence == sequence }
     }
 }
