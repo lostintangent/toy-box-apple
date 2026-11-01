@@ -459,6 +459,11 @@ Scale validation to the change. A symbol, constant or spacing change needs a bui
 suite and one capture of the result, not a light/dark and size matrix. Save full passes for
 behavior, layout or concurrency changes, and leave the rest to the release build.
 
+Validate in Dark at the default text size, which is how the user runs both apps. Add Light only
+when a change touches color values, materials or contrast. Skip larger text sizes unless the
+change is about text sizing itself. Both appearances and every size must still work, so never
+hard-code a color or size that would break them.
+
 ## Seams between surfaces
 
 - `AppModel` (environment): server URL, `ChannelCatalogStore` and its `ChannelAPI`.

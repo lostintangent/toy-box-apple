@@ -958,9 +958,10 @@ open inspector in a 1000-point window.
 ScreenCaptureKit, so they show glass and content beneath a `safeAreaBar` as drawn. Without Screen
 Recording they warn and fall back to `cacheDisplay`, which leaves both blank, and those captures
 cannot judge this section. Judge this section only in a real window on the stamped build,
-captured with ScreenCaptureKit or Computer Use, in light and dark, active and inactive, with the
-inspector open and closed, scrolled to the top and mid-history, and with Reduce Transparency
-and Increase Contrast. Confirm that the sidebar runs flush and full height, that the
+captured with ScreenCaptureKit or Computer Use, in Dark, active and inactive, with the
+inspector open and closed, and scrolled to the top and mid-history. Add Light, Reduce
+Transparency and Increase Contrast when a change touches colors or materials. Confirm that the
+sidebar runs flush and full height, that the
 only rule under the toolbar is the system's own edge, that no inspector row runs under the
 toolbar controls, that message text beneath the composer
 never competes with typed text, and that the activity capsule and composer read as two related
@@ -3100,7 +3101,8 @@ grows to fit General rather than scrolling.
 Owners: Shell owns notifications, the menu bar extra and Settings (t94, t95). Intelligence owns the
 model layer (t96), Siri and Shortcuts (t126) and Spotlight (t166). Transcript owns the catch-up
 card, descriptions in tiles and the viewer, and Live Text (t93, t97). Designer reviews each one in
-real-window captures, in light and dark, with VoiceOver and with Reduce Motion.
+real-window captures in Dark, with VoiceOver and with Reduce Motion, adding Light when a change
+touches colors.
 
 ### Open at Login
 
@@ -3522,8 +3524,10 @@ are no explicit animated transcript scrolls. These source checks do not substitu
 spoken screen-reader or runtime preference-switching check. Owner fixes and remaining runtime
 evidence are tracked by channel tasks t21 and t26.
 
-Before calling the UI complete, inspect the running app in light and dark at 1280 x 840 and the
-760 x 560 minimum. Exercise a long purpose/name, no members, many members, removed agent, nested
+Before calling the UI complete, inspect the running app in Dark at the default text size at
+1280 x 840 and the 760 x 560 minimum. Add Light only when a change touches colors, and larger
+text sizes only when it touches text sizing. Exercise a long purpose/name, no members, many
+members, removed agent, nested
 tasks, zero diffs, missing task artifact, attachments, request outside the loaded page, both
 filters, offline/reconnect and terminal deletion against a scratch/fixture channel. Verify first
 unread anchoring, no scroll jumps on paging or new reactions, selection and text-copy behavior,
