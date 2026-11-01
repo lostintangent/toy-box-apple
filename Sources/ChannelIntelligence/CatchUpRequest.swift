@@ -255,7 +255,7 @@ struct CatchUpDescriber: Sendable {
             description = "\(actor) changed the preview."
         case "routine_scheduled", "routine_edited", "routine_deleted":
             guard let routine = system.routine else { return nil }
-            let verb = system.type.replacingOccurrences(of: "routine_", with: "")
+            let verb = system.type.replacing("routine_", with: "")
             description = "The routine \u{201C}\(routine.title)\u{201D} was \(verb)."
         default:
             return nil
