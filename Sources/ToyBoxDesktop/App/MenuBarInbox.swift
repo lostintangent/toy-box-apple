@@ -169,7 +169,9 @@ struct MenuBarInbox: View {
                         .id("reply-\(item.id)")
                     }
                 } else if request.canReply {
-                    if request.canChoose { choices(item) }
+                    let attempts = model.catalog?.existingChannel(id: item.id)?.sendAttempts ?? []
+                    let labels = request.choices(attempts: attempts)
+                    if !labels.isEmpty { choices(item, labels: labels) }
                     Button {
                         expandReply(to: item)
                     } label: {
@@ -185,9 +187,9 @@ struct MenuBarInbox: View {
     }
 
     /// A request's suggested replies as small bordered choices above Reply.
-    private func choices(_ item: MenuBarStatus.Item) -> some View {
+    private func choices(_ item: MenuBarStatus.Item, labels: [String]) -> some View {
         ChoiceFlowLayout(spacing: 6) {
-            ForEach(Array(item.replies.enumerated()), id: \.offset) { _, choice in
+            ForEach(Array(labels.enumerated()), id: \.offset) { _, choice in
                 Button { sendChoice(choice, to: item) } label: {
                     Text(choice).lineLimit(nil)
                 }
@@ -321,7 +323,7 @@ struct MenuBarInbox: View {
 
     private func confirmedReply(_ confirmation: AuxiliaryComposerSession.Confirmation, to item: MenuBarStatus.Item) {
         guard let replySession, model.serverURL == replySession.store.api.baseURL.absoluteString else { return }
-        inbox.confirmed(item.id)
+        inbox.record(item.id, .sent)
         if confirmation.opensChannel {
             closeThen { model.activate(channelID: item.id, sequence: confirmation.sequence) }
         }

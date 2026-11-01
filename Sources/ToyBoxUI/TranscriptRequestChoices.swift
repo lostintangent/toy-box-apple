@@ -13,14 +13,18 @@ public struct TranscriptRequestChoices: Equatable, Sendable {
     /// Sending needs a connected channel, so the choices wait for it like the composer does.
     public let canSend: Bool
 
-    /// None without a request or its suggested replies, or once the outbox holds one of them in any
-    /// phase. That answer leaves for good: a failed send keeps Send Again in the outbox, so the choices
-    /// don't come back with it. A committed answer makes the transcript's request acknowledged instead.
     public init?(request: ChannelMessage?, attempts: [ChannelSendAttempt], isConnected: Bool) {
         guard let request else { return nil }
-        let labels = request.suggestedReplies
+        self.init(sequence: request.sequence, labels: request.suggestedReplies, attempts: attempts,
+                  isConnected: isConnected)
+    }
+
+    /// None without labels, or once the outbox holds one of them in any phase. That answer leaves for
+    /// good: a failed send keeps Send Again in the outbox, so the choices don't come back with it. A
+    /// committed answer makes the transcript's request acknowledged instead.
+    public init?(sequence: Int, labels: [String], attempts: [ChannelSendAttempt], isConnected: Bool) {
         guard !labels.isEmpty, !attempts.contains(where: { labels.contains($0.content) }) else { return nil }
-        sequence = request.sequence
+        self.sequence = sequence
         self.labels = labels
         canSend = isConnected
     }

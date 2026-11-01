@@ -1,4 +1,6 @@
+import ChannelClient
 import Foundation
+import ToyBoxUI
 
 /// An open inbox keeps its request order and answered rows until the next opening.
 struct MenuBarInboxState: Equatable {
@@ -32,6 +34,14 @@ struct MenuBarInboxState: Equatable {
         var id: String { item.id }
         var canReply: Bool { state == .waiting && item.quote != nil && item.agent != nil && item.sequence != nil }
         var canChoose: Bool { state == .waiting && !item.replies.isEmpty }
+
+        /// The choices this row still offers. The outbox takes a choice off the row for good, as the
+        /// transcript does. The inbox sends in the background, so a disconnected channel doesn't disable them.
+        func choices(attempts: [ChannelSendAttempt]) -> [String] {
+            guard canChoose, let sequence = item.sequence else { return [] }
+            return TranscriptRequestChoices(sequence: sequence, labels: item.replies, attempts: attempts,
+                                            isConnected: true)?.labels ?? []
+        }
     }
 
     private(set) var requests: [Request] = []
@@ -61,10 +71,6 @@ struct MenuBarInboxState: Equatable {
         }
         let retained = Set(requests.map(\.id))
         requests += status.waiting.filter { !retained.contains($0.id) }.map { Request(item: $0) }
-    }
-
-    mutating func confirmed(_ channelID: String) {
-        record(channelID, .sent)
     }
 
     /// Sets a request's row state. A row that's sending or not sent keeps it until the next opening.
