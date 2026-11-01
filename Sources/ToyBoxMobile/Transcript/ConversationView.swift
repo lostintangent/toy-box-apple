@@ -590,7 +590,7 @@ private struct TranscriptPagingAccessory: View {
 }
 
 /// A message on its way, drawn exactly as it will be once sent, so confirming it changes nothing on
-/// screen. Only a send still going after a second says so. A failed one keeps its label and actions.
+/// screen. A failed one keeps its label and actions.
 private struct TranscriptSendAttempt: View {
     let attempt: ChannelSendAttempt
     let divider: TranscriptDivider?
@@ -598,15 +598,6 @@ private struct TranscriptSendAttempt: View {
     let context: TranscriptRowContext
     @Environment(ChannelInteraction.self) private var interaction
     @ViewState private var actionError: String?
-    @ViewState private var isSlow = false
-
-    private var deliveryLabel: String? {
-        switch attempt.phase {
-        case .sending: isSlow ? attempt.phase.label : nil
-        case .confirmed: nil
-        case .notSent, .deliveryNotConfirmed: attempt.phase.label
-        }
-    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -617,14 +608,10 @@ private struct TranscriptSendAttempt: View {
 
     private var message: some View {
         VStack(alignment: .trailing, spacing: 6) {
-            TranscriptUserMessage(message: attempt.message, context: context, deliveryLabel: deliveryLabel,
-                                  identifier: "send-\(attempt.id)")
-                .task(id: attempt.phase) {
-                    isSlow = false
-                    guard attempt.phase == .sending else { return }
-                    try? await Task.sleep(for: .seconds(1))
-                    if !Task.isCancelled { isSlow = true }
-                }
+            TranscriptDeliveryLabel(phase: attempt.phase) { label in
+                TranscriptUserMessage(message: attempt.message, context: context, deliveryLabel: label,
+                                      identifier: "send-\(attempt.id)")
+            }
             if let error = actionError ?? attempt.error {
                 Text(error).font(.footnote).foregroundStyle(TranscriptInk.secondary)
             }

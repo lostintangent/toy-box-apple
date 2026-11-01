@@ -381,8 +381,10 @@ struct ConversationTranscript: View {
 
     private func sendAttempt(_ attempt: ChannelSendAttempt, statusReactions: [ChannelReaction]) -> some View {
         VStack(alignment: .trailing, spacing: 6) {
-            TranscriptAttemptMessage(attempt: attempt, agents: store.roster, api: store.api,
-                                     statusReactions: statusReactions, slowSendDelay: slowSendDelay)
+            TranscriptDeliveryLabel(phase: attempt.phase, slowAfter: slowSendDelay) { label in
+                TranscriptUserMessage(message: attempt.message, agents: store.roster, api: store.api,
+                                      deliveryLabel: label, statusReactions: statusReactions)
+            }
             if let error = attempt.error {
                 Text(error).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
             }
@@ -968,36 +970,6 @@ struct PagingAnchor: Equatable {
 private struct PagingRestoreTarget: Hashable {
     var id: String
     var oldestSequence: Int
-}
-
-/// A message on its way, drawn exactly as it will be once sent, so confirming it changes nothing on
-/// screen. Only a send still going after `slowSendDelay` says so. A failed one keeps its label.
-private struct TranscriptAttemptMessage: View {
-    let attempt: ChannelSendAttempt
-    let agents: [ChannelAgent]
-    let api: ChannelAPI
-    let statusReactions: [ChannelReaction]
-    let slowSendDelay: Duration
-    @ViewState private var isSlow = false
-
-    private var deliveryLabel: String? {
-        switch attempt.phase {
-        case .sending: isSlow ? attempt.phase.label : nil
-        case .confirmed: nil
-        case .notSent, .deliveryNotConfirmed: attempt.phase.label
-        }
-    }
-
-    var body: some View {
-        TranscriptUserMessage(message: attempt.message, agents: agents, api: api,
-                              deliveryLabel: deliveryLabel, statusReactions: statusReactions)
-            .task(id: attempt.phase) {
-                isSlow = false
-                guard attempt.phase == .sending else { return }
-                try? await Task.sleep(for: slowSendDelay)
-                if !Task.isCancelled { isSlow = true }
-            }
-    }
 }
 
 private struct TranscriptNotice<Message: View, Action: View>: View {
