@@ -113,8 +113,9 @@ public struct TranscriptRequestActions: View {
 
     @ViewBuilder private func row(_ label: String) -> some View {
         if arrangement == .flow {
-            // A Mac bordered button keeps one line unless told otherwise, and would truncate.
-            Text(label).lineLimit(nil)
+            // A Mac bordered button keeps one line unless told otherwise, and would truncate. A
+            // label that wraps fills the row, rather than stopping at its widest line.
+            Text(label).lineLimit(nil).multilineTextAlignment(.center).frame(maxWidth: .infinity)
         } else {
             Text(label)
                 .multilineTextAlignment(.center)
