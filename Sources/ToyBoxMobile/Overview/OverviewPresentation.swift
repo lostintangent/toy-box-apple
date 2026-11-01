@@ -17,6 +17,14 @@ enum OverviewPlacement: Equatable {
     }
 }
 
+enum OverviewSheetBar {
+    /// Folded landscape stands the sheet's bar items in a leading vertical bar, which would move the
+    /// close over the list. The sheet keeps its bar horizontal there, so the close stays trailing.
+    static func keepsHorizontalBar(placement: OverviewPlacement, hasLeadingVerticalBar: Bool) -> Bool {
+        placement == .sheet && hasLeadingVerticalBar
+    }
+}
+
 enum OverviewRoute: Hashable {
     case subtasks(String)
 }

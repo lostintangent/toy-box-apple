@@ -29,6 +29,7 @@ struct OverviewView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar(placement == .sheet ? .visible : .hidden, for: .navigationBar)
             .toolbar { closeItem }
+            .modifier(SheetBarBehavior(placement: placement))
             .navigationDestination(for: OverviewRoute.self) { route in
                 Group {
                     switch route {
@@ -39,6 +40,7 @@ struct OverviewView: View {
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar(.visible, for: .navigationBar)
                 .toolbar { closeItem }
+                .modifier(SheetBarBehavior(placement: placement))
             }
         }
         .sheet(item: Binding(
@@ -125,6 +127,33 @@ struct OverviewList<Content: View>: View {
         .background { WindowSizeClassReader { windowSizeClass = $0 }.allowsHitTesting(false).accessibilityHidden(true) }
         .environment(\.overviewHeight, height)
         .environment(\.overviewWindowSizeClass, windowSizeClass ?? sizeClass)
+    }
+}
+
+/// iOS 27.0 has no vertical-bar API, so the sheet's bar only needs the override where it exists.
+private struct SheetBarBehavior: ViewModifier {
+    let placement: OverviewPlacement
+
+    func body(content: Content) -> some View {
+        if #available(iOS 27.1, *) {
+            content.modifier(LeadingVerticalBarBehavior(placement: placement))
+        } else {
+            content
+        }
+    }
+}
+
+@available(iOS 27.1, *)
+private struct LeadingVerticalBarBehavior: ViewModifier {
+    let placement: OverviewPlacement
+    @Environment(\.toolbarVerticalEdge) private var verticalEdge
+
+    func body(content: Content) -> some View {
+        if OverviewSheetBar.keepsHorizontalBar(placement: placement, hasLeadingVerticalBar: verticalEdge == .leading) {
+            content.toolbarVerticalBehavior(.disabled)
+        } else {
+            content
+        }
     }
 }
 
