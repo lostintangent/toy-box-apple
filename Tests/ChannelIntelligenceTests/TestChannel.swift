@@ -20,6 +20,17 @@ enum TestChannel {
         return state
     }
 
+    /// The studio demo as a catch-up request, optionally trimmed to the messages through `requestSequence`.
+    static func studioCatchUp(requestSequence: Int? = nil) throws -> CatchUpRequest {
+        var state = try fixture("studio-demo")
+        if let requestSequence {
+            state.messages.removeAll { $0.sequence > requestSequence }
+            state.channel.requestSequence = requestSequence
+        }
+        return try #require(CatchUpRequest(server: server, state: state, unreadAfter: 8,
+                                           minimumUnread: 1, minimumCharacters: 0))
+    }
+
     static func message(_ sequence: Int, from sender: String = "studio-demo", _ text: String,
                         request: Bool? = nil, images: Int = 0) -> ChannelMessage {
         ChannelMessage(id: "m\(sequence)", sequence: sequence, timestamp: "2026-10-22T10:00:00.000Z",

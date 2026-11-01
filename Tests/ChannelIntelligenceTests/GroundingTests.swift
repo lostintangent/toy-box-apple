@@ -96,18 +96,8 @@ struct GroundingTests {
 struct CatchUpAssemblyTests {
     typealias T = TestChannel
 
-    func studio(requestSequence: Int? = nil) throws -> CatchUpRequest {
-        var state = try T.fixture("studio-demo")
-        if let requestSequence {
-            state.messages.removeAll { $0.sequence > requestSequence }
-            state.channel.requestSequence = requestSequence
-        }
-        return try #require(CatchUpRequest(server: T.server, state: state, unreadAfter: 8,
-                                           minimumUnread: 1, minimumCharacters: 0))
-    }
-
     @Test func groundedChangesSurviveInPriorityOrder() throws {
-        let request = try studio()
+        let request = try T.studioCatchUp()
         let prompt = CatchUpPrompt(entries: request.entries, request: request.request)
         let draft = CatchUpDraft(needsYou: nil, changes: [
             .init(summary: "Lead changed the preview.", sources: [14]),
@@ -130,7 +120,7 @@ struct CatchUpAssemblyTests {
     }
 
     @Test func nothingGroundedMeansNothingNew() throws {
-        let request = try studio()
+        let request = try T.studioCatchUp()
         let prompt = CatchUpPrompt(entries: request.entries, request: nil)
         let draft = CatchUpDraft(needsYou: nil, changes: [.init(summary: "Moss shipped the release.", sources: [12])])
         #expect(draft.assembled(prompt: prompt, request: request).result == .nothingNew)
@@ -138,7 +128,7 @@ struct CatchUpAssemblyTests {
     }
 
     @Test func needsYouIsGroundedInTheRequest() throws {
-        let request = try studio(requestSequence: 15)
+        let request = try T.studioCatchUp(requestSequence: 15)
         let prompt = CatchUpPrompt(entries: request.entries, request: request.request)
         let draft = CatchUpDraft(needsYou: "Lead is waiting for you to choose where the shared library should sit.",
                                  changes: [.init(summary: "Lead asked where the shared library should sit.", sources: [15])])
@@ -148,7 +138,7 @@ struct CatchUpAssemblyTests {
     }
 
     @Test func ungroundedNeedsYouFallsBackToTheQuestion() throws {
-        let request = try studio(requestSequence: 15)
+        let request = try T.studioCatchUp(requestSequence: 15)
         let prompt = CatchUpPrompt(entries: request.entries, request: request.request)
         let draft = CatchUpDraft(needsYou: "Lead needs you to approve the 2.0 launch budget.", changes: [])
         let catchUp = try #require(draft.assembled(prompt: prompt, request: request).result.catchUp)
@@ -162,11 +152,7 @@ struct CatchUpBudgetTests {
     typealias T = TestChannel
 
     func request() throws -> CatchUpRequest {
-        var state = try T.fixture("studio-demo")
-        state.messages.removeAll { $0.sequence > 15 }
-        state.channel.requestSequence = 15
-        return try #require(CatchUpRequest(server: T.server, state: state, unreadAfter: 8,
-                                           minimumUnread: 1, minimumCharacters: 0))
+        try T.studioCatchUp(requestSequence: 15)
     }
 
     @Test func everythingFitsWhenThereIsRoom() async throws {
