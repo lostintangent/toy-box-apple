@@ -301,7 +301,7 @@ struct ConversationTranscript: View {
     private func conversationRows(proxy: ScrollViewProxy) -> some View {
         let rows = rows
         let gaps = transcriptRowGaps(rows)
-        let context = TranscriptRowContext(agents: store.roster, channelID: store.id,
+        let channel = TranscriptRowChannel(agents: store.roster, id: store.id,
                                            historyStart: store.messages.first?.sequence ?? 0, api: store.api)
         let statusReactions = statusReactions
         let findHighlights = find.highlights
@@ -321,7 +321,7 @@ struct ConversationTranscript: View {
                     .padding(.vertical, 40)
             }
             ForEach(rows) { row in
-                TranscriptRowContent(row: row, context: context, statusReactions: statusReactions,
+                TranscriptRowContent(row: row, channel: channel, statusReactions: statusReactions,
                                      highlightedSequence: highlightedSequence, catchUp: catchUp, store: store,
                                      requestChoices: requestChoices,
                                      expandedMessageIds: expandedMessageIds,

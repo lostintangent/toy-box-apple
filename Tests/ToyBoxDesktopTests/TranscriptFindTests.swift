@@ -118,9 +118,9 @@ struct TranscriptFindTests {
         let rows = transcriptRows(messages, lead: agent, members: [])
         let api = try ChannelAPI(serverURL: "https://find.invalid")
         let store = ChannelStore(id: "find", api: api, sendJournal: nil)
-        let context = TranscriptRowContext(agents: [agent], channelID: "find", historyStart: 1, api: api)
+        let channel = TranscriptRowChannel(agents: [agent], id: "find", historyStart: 1, api: api)
         func content(_ row: TranscriptRow, query: String) -> TranscriptRowContent {
-            .init(row: row, context: context, statusReactions: [:], highlightedSequence: nil, catchUp: nil,
+            .init(row: row, channel: channel, statusReactions: [:], highlightedSequence: nil, catchUp: nil,
                   store: store, expandedMessageIds: [],
                   findHighlights: [1: .mac(query: query, isCurrent: true)], onSetExpanded: { _, _ in })
         }

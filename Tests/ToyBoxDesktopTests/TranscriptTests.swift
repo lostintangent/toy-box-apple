@@ -2926,9 +2926,9 @@ private final class HoveredMessage {
                                      content: .text(String(repeating: "A paragraph long enough to wrap. ", count: 6)
                                          + "\n\nA second paragraph."))
         let row = try #require(transcriptRows([message], lead: lead, members: []).last)
-        let context = TranscriptRowContext(agents: [lead], channelID: "selection", historyStart: 1, api: store.api)
+        let channel = TranscriptRowChannel(agents: [lead], id: "selection", historyStart: 1, api: store.api)
         host = NSHostingView(rootView:
-            TranscriptRowContent(row: row, context: context, statusReactions: [:], highlightedSequence: nil,
+            TranscriptRowContent(row: row, channel: channel, statusReactions: [:], highlightedSequence: nil,
                                  catchUp: nil, store: store, expandedMessageIds: [], onSetExpanded: { _, _ in })
                 .padding(20)
                 .frame(width: 600, height: 300, alignment: .topLeading)

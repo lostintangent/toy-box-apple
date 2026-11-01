@@ -754,7 +754,7 @@ struct TranscriptTests {
                                       calendar: Calendar(identifier: .gregorian))
             guard case .agent(_, let entries) = rows[0].content else { return .infinity }
             let view = TranscriptAgentMessage(entry: entries[0], agent: lead,
-                                              context: TranscriptRowContext(agents: [lead], api: api),
+                                              channel: TranscriptRowChannel(agents: [lead], api: api),
                                               statusReactions: [])
                 .environment(ChannelInteraction()).dynamicTypeSize(size)
             return UIHostingController(rootView: view)
