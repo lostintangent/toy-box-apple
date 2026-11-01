@@ -1,5 +1,15 @@
 # Changelog
 
+## iPhone 0.1.9
+
+- See a request's suggested replies and Reply as small buttons at their natural widths, matching the Mac, instead of full-width blue buttons.
+- See day labels on the leading edge with a line after them, like the Mac and web. When the day and New meet, they share one line.
+- See a little less space under each day label.
+
+## Mac 0.1.16
+
+- See a line after each day label, like the web. When the day and New meet, they share one line instead of stacking.
+
 ## iPhone 0.1.8
 
 - Answer a request with one tap. Its suggested replies show inside the request, and tapping one sends it at once.
