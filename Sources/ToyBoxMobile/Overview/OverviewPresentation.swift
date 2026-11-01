@@ -15,13 +15,11 @@ enum OverviewPlacement: Equatable {
     init(sceneWidth: CGFloat, sizeClass: UserInterfaceSizeClass?) {
         self = sizeClass == .regular && sceneWidth >= Self.columnWidth + 420 ? .inspector : .sheet
     }
-}
 
-enum OverviewSheetBar {
     /// Folded landscape stands the sheet's bar items in a leading vertical bar, which would move the
     /// close over the list. The sheet keeps its bar horizontal there, so the close stays trailing.
-    static func keepsHorizontalBar(placement: OverviewPlacement, hasLeadingVerticalBar: Bool) -> Bool {
-        placement == .sheet && hasLeadingVerticalBar
+    func keepsHorizontalBar(hasLeadingVerticalBar: Bool) -> Bool {
+        self == .sheet && hasLeadingVerticalBar
     }
 }
 

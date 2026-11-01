@@ -64,10 +64,10 @@ struct OverviewTests {
     }
 
     @Test func onlyTheSheetKeepsItsBarHorizontalWhenTheSystemStandsItOnTheLeadingEdge() {
-        #expect(OverviewSheetBar.keepsHorizontalBar(placement: .sheet, hasLeadingVerticalBar: true))
-        #expect(!OverviewSheetBar.keepsHorizontalBar(placement: .sheet, hasLeadingVerticalBar: false))
-        #expect(!OverviewSheetBar.keepsHorizontalBar(placement: .inspector, hasLeadingVerticalBar: true))
-        #expect(!OverviewSheetBar.keepsHorizontalBar(placement: .inspector, hasLeadingVerticalBar: false))
+        #expect(OverviewPlacement.sheet.keepsHorizontalBar(hasLeadingVerticalBar: true))
+        #expect(!OverviewPlacement.sheet.keepsHorizontalBar(hasLeadingVerticalBar: false))
+        #expect(!OverviewPlacement.inspector.keepsHorizontalBar(hasLeadingVerticalBar: true))
+        #expect(!OverviewPlacement.inspector.keepsHorizontalBar(hasLeadingVerticalBar: false))
     }
 
     @Test func theColumnIgnoresReflowWritesAndShowsOnlyAnUncoveredRequestedOverview() {

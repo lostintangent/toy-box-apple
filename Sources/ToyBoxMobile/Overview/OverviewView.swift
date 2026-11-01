@@ -149,7 +149,7 @@ private struct LeadingVerticalBarBehavior: ViewModifier {
     @Environment(\.toolbarVerticalEdge) private var verticalEdge
 
     func body(content: Content) -> some View {
-        if OverviewSheetBar.keepsHorizontalBar(placement: placement, hasLeadingVerticalBar: verticalEdge == .leading) {
+        if placement.keepsHorizontalBar(hasLeadingVerticalBar: verticalEdge == .leading) {
             content.toolbarVerticalBehavior(.disabled)
         } else {
             content
