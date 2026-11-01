@@ -208,7 +208,7 @@ struct CatchUpDescriber: Sendable {
             : mentions.handles.compactMap { handle in
                 agents.first { agentHandleFromName($0.name) == handle }?.name
             }
-        var text = withoutLeadingMentions(message.text, agents: agents).plainProse(agents: agents)
+        var text = message.text.plainProse(agents: agents)
         let images = message.attachments?.count ?? 0
         if images > 0 { text += images == 1 ? " (attached an image)" : " (attached \(images) images)" }
         guard !text.isEmpty else { return nil }
@@ -272,11 +272,11 @@ extension CatchUpDescriber {
 }
 
 extension String {
-    /// Markdown and mentions reduced to readable prose on one line. A mention reads as the agent's name,
-    /// or "everyone" for nil, unless `mention` writes it another way.
+    /// Leading mentions dropped, then markdown and mentions reduced to readable prose on one line. A
+    /// mention reads as the agent's name, or "everyone" for nil, unless `mention` writes it another way.
     func plainProse(agents: [ChannelAgent],
                     mention: (ChannelAgent?) -> String = { $0?.name ?? "everyone" }) -> String {
-        var text = self
+        var text = withoutLeadingMentions(self, agents: agents)
         text = text.replacing(/```[\s\S]*?(```|$)/, with: " (code) ")
         text = text.replacing(/!\[([^\]]*)\]\([^)]*\)/, with: { $0.1.isEmpty ? "" : " (image: \($0.1)) " })
         text = text.replacing(/\[([^\]]+)\]\([^)]*\)/, with: { String($0.1) })
