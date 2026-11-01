@@ -455,6 +455,10 @@ Edit only files you own. Ask the owner for anything else in the channel.
 A handoff states what you verified, what you didn't, and what still needs a real device, server
 or signing key.
 
+Scale validation to the change. A symbol, constant or spacing change needs a build, the touched
+suite and one capture of the result, not a light/dark and size matrix. Save full passes for
+behavior, layout or concurrency changes, and leave the rest to the release build.
+
 ## Seams between surfaces
 
 - `AppModel` (environment): server URL, `ChannelCatalogStore` and its `ChannelAPI`.
