@@ -16,7 +16,7 @@ public func channelCanSend(isConnected: Bool, isSending: @autoclosure () -> Bool
                            isLoadingImages: @autoclosure () -> Bool, hasUnreadableImage: @autoclosure () -> Bool,
                            textUTF16Count: @autoclosure () -> Int) -> Bool {
     isConnected && !isSending() && !isSubmitting() && hasContent() && !isLoadingImages()
-        && !hasUnreadableImage() && textUTF16Count() <= 12_000
+        && !hasUnreadableImage() && textUTF16Count() <= ChannelMessage.maxLength
 }
 
 public func channelPurposePreview(_ text: String?) -> String? {

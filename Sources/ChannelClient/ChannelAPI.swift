@@ -217,7 +217,7 @@ public struct ChannelAPI: Sendable {
         guard !trimmed.isEmpty || !attachments.isEmpty else {
             throw ChannelAPIError.invalidMessage("A message or attachment is required.")
         }
-        guard trimmed.utf16.count <= 12_000 else {
+        guard trimmed.utf16.count <= ChannelMessage.maxLength else {
             throw ChannelAPIError.invalidMessage("Messages are limited to 12,000 characters.")
         }
         let body = PostInput(id: id, content: trimmed, attachments: attachments.isEmpty ? nil : attachments)

@@ -12,6 +12,9 @@ public struct ChannelMessage: Codable, Equatable, Identifiable, Sendable {
     /// The lead's suggested answers to a request. Read them through `suggestedReplies`.
     public var replies: [String]?
 
+    /// The longest text the server accepts in one message, counted in UTF-16 units.
+    public static let maxLength = 12_000
+
     public init(id: String, sequence: Int, timestamp: String, sender: ChannelMessageSender,
                 content: ChannelMessageContent, request: Bool? = nil,
                 attachments: [ChannelAttachment]? = nil, reactions: [ChannelReaction]? = nil,
