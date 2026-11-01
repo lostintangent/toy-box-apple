@@ -186,23 +186,11 @@ struct RootView: View {
         }
     }
 
-    @ViewBuilder
     private var handoffContent: some View {
-        if handoff.phase == .opening {
-            ProgressView("Opening channel…")
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else {
-            ContentUnavailableView {
-                Label("Channel unavailable", systemImage: "bubble.left.and.bubble.right")
-            } description: {
-                Text("This channel isn't available.")
-            } actions: {
-                Button("Show Channels") {
-                    handoff.cancel()
-                    preferredCompactColumn = .sidebar
-                    columnVisibility = .all
-                }
-            }
+        ChannelHandoffContent(phase: handoff.phase) {
+            handoff.cancel()
+            preferredCompactColumn = .sidebar
+            columnVisibility = .all
         }
     }
 
