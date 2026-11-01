@@ -64,6 +64,7 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
     @ObservationIgnored private var configuredAPI: ChannelAPI?
     @ObservationIgnored private var channels: [Channel] = []
     @ObservationIgnored private var activeChannelID: String?
+    @ObservationIgnored private let replyCategories = ReplyCategoryPublisher()
 
     init(defaults: UserDefaults = .standard,
          registration: MobileNotificationRegistration? = nil,
@@ -132,19 +133,7 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
         guard !installedDelegate else { return }
         installedDelegate = true
         center.delegate = self
-        let reply = UNTextInputNotificationAction(
-            identifier: ChannelNotificationCategory.reply, title: "Reply", options: [],
-            textInputButtonTitle: "Send", textInputPlaceholder: "Reply")
-        center.setNotificationCategories([
-            UNNotificationCategory(identifier: ChannelNotificationCategory.request, actions: [reply],
-                                   intentIdentifiers: [],
-                                   hiddenPreviewsBodyPlaceholder: NotificationText.requestPlaceholder),
-            UNNotificationCategory(identifier: ChannelNotificationCategory.completion, actions: [],
-                                   intentIdentifiers: [],
-                                   hiddenPreviewsBodyPlaceholder: NotificationText.completionPlaceholder),
-            UNNotificationCategory(identifier: ChannelNotificationCategory.replyFailed, actions: [],
-                                   intentIdentifiers: []),
-        ])
+        Task { await replyCategories.publish() }
         prepareRegistration()
     }
 
@@ -320,22 +309,14 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
     }
 
     func receive(_ payload: ChannelPushPayload, action: String, text: String?, handle: String?,
-                 identifier: String) async {
+                 replies: [String]? = nil, identifier: String) async {
+        if let label = SuggestedReplies.label(forAction: action, replies: replies) {
+            await sendReply(payload, text: label, handle: nil, identifier: identifier)
+            return
+        }
         switch action {
         case ChannelNotificationCategory.reply:
-            guard let text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-            guard isCurrent(payload), let onReply else {
-                await replyWasNotSent()
-                return
-            }
-            switch await onReply(payload, text, handle) {
-            case .sent:
-                center.removeDeliveredNotifications(withIdentifiers: [identifier])
-            case .failed:
-                break
-            case .notSent:
-                await replyWasNotSent()
-            }
+            await sendReply(payload, text: text, handle: handle, identifier: identifier)
         case UNNotificationDefaultActionIdentifier:
             guard isCurrent(payload), let currentRegistration else {
                 Self.logger.info("Ignored an alert from a previous notification registration.")
@@ -346,6 +327,23 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
                 serverURL: currentRegistration.serverURL))
         default:
             break
+        }
+    }
+
+    private func sendReply(_ payload: ChannelPushPayload, text: String?, handle: String?,
+                           identifier: String) async {
+        guard let text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        guard isCurrent(payload), let onReply else {
+            await replyWasNotSent()
+            return
+        }
+        switch await onReply(payload, text, handle) {
+        case .sent:
+            center.removeDeliveredNotifications(withIdentifiers: [identifier])
+        case .failed:
+            break
+        case .notSent:
+            await replyWasNotSent()
         }
     }
 
@@ -385,11 +383,12 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
         let action = response.actionIdentifier
         let text = (response as? UNTextInputNotificationResponse)?.userText
         let handle = content.userInfo["handle"] as? String
+        let replies = content.userInfo["replies"] as? [String]
         let identifier = response.notification.request.identifier
         Self.completeOnMainActor({
             do {
                 await self.receive(try payload.get(), action: action, text: text,
-                                   handle: handle, identifier: identifier)
+                                   handle: handle, replies: replies, identifier: identifier)
             } catch {
                 Self.logger.info("Ignored an alert without current channel routing: \(error.localizedDescription)")
             }

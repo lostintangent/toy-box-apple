@@ -12,7 +12,7 @@ final class NotificationService: UNNotificationServiceExtension, @unchecked Send
         logger.notice("Notification service received a request.")
         let delivery = NotificationDelivery(request, contentHandler)
         Task { @MainActor in
-            delivery.call(MobileNotificationHandler().process(delivery.request.content))
+            delivery.call(await MobileNotificationHandler().process(delivery.request.content))
         }
     }
 }

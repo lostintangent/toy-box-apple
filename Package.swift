@@ -68,7 +68,8 @@ let package = Package(
                 + simulatedEntitlements("dev.toybox.mobile.share")
         ),
         .testTarget(name: "ToyBoxMobileTests", dependencies: ["ToyBoxMobile"]),
-        .testTarget(name: "ToyBoxMobileIntegrationsTests", dependencies: ["ToyBoxMobileIntegrations"]),
+        .testTarget(name: "ToyBoxMobileIntegrationsTests",
+                    dependencies: ["ChannelClient", "ChannelKit", "ToyBoxMobileIntegrations"]),
         .testTarget(name: "ToyBoxMobileWidgetTests", dependencies: ["ToyBoxMobileWidget"]),
     ] : [
         .target(name: "ToyBoxControlIntents", swiftSettings: [.unsafeFlags(["-application-extension"])]),
