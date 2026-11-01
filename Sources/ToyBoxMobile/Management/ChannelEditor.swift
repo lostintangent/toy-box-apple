@@ -89,15 +89,14 @@ struct ChannelEditor: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
-                Button("Cancel", role: .cancel) { sessions.cancel(session, presenter: presenter) }.disabled(saving)
+                Button(role: .close) { sessions.cancel(session, presenter: presenter) }
+                    .accessibilityLabel("Cancel")
+                    .disabled(saving)
             }
             ToolbarItem(placement: .confirmationAction) {
-                Button(action: submit) {
-                    ManagementActionLabel(
-                        title: saving ? (channel == nil ? "Creating…" : "Saving…") : channel == nil ? "Create" : "Save",
-                        pendingSince: session.pendingSince)
-                }
-                .accessibilityIdentifier("channel-submit")
+                ManagementConfirmButton(
+                    label: saving ? (channel == nil ? "Creating…" : "Saving…") : channel == nil ? "Create Channel" : "Save",
+                    pendingSince: session.pendingSince, identifier: "channel-submit", action: submit)
                 .keyboardShortcut(.return, modifiers: .command)
                 .disabled(!canSave)
             }

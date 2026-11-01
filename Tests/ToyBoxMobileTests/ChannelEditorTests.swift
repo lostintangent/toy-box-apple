@@ -128,7 +128,7 @@ struct ChannelEditorTests {
     #endif
 
     @Test func memberConfirmationsUseShortVerbs() {
-        #expect(MemberEditor.submitTitle(adding: true, saving: false) == "Add")
+        #expect(MemberEditor.submitTitle(adding: true, saving: false) == "Add Agent")
         #expect(MemberEditor.submitTitle(adding: true, saving: true) == "Adding…")
         #expect(MemberEditor.submitTitle(adding: false, saving: false) == "Save")
         #expect(MemberEditor.submitTitle(adding: false, saving: true) == "Saving…")
