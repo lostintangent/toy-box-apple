@@ -350,7 +350,7 @@ struct ConversationTranscript: View {
             ForEach(store.sendAttempts) { attempt in
                 sendAttempt(attempt, divider: attemptDividers[attempt.id],
                             statusReactions: statusReactions[attempt.message.sequence] ?? [])
-                    .padding(.top, TranscriptSpacing.run)
+                    .padding(.top, TranscriptSpacing.above(attemptDividers[attempt.id]))
                     .id("attempt-\(attempt.id)")
             }
             Color.clear.frame(height: 16).id("transcript-end")

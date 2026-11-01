@@ -104,8 +104,7 @@ struct TranscriptRule: View {
                     .padding(.leading, 6)
             }
         }
-        .padding(.top, 12)
-        .padding(.bottom, 10)
+        .padding(.vertical, 10)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(transcriptDividerAccessibilityLabel(divider))
         .accessibilityAddTraits(divider.day == nil ? [] : .isHeader)

@@ -1197,7 +1197,7 @@ struct TranscriptTests {
         ], lead: .lead(id: "lead"), members: [])
         try #require(rows.count == 7)
         #expect(rows[3].divider?.day != nil)
-        #expect(rows.dropFirst().map { transcriptRowGaps(rows)[$0.id] } == [20, 4, 20, 4, 20, 20])
+        #expect(rows.dropFirst().map { transcriptRowGaps(rows)[$0.id] } == [20, 4, 16, 4, 20, 20])
     }
 
     @Test func coincidingDayAndUnreadDividersReadAsOneHeader() throws {

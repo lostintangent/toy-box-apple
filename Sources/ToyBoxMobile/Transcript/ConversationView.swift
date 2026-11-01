@@ -263,7 +263,7 @@ struct ConversationView: View {
                     TranscriptSendAttempt(attempt: attempt, divider: attemptDividers[attempt.id], store: store,
                                           context: context)
                         .padding(.top, items.isEmpty && attempt.id == store.sendAttempts.first?.id
-                                 ? 0 : TranscriptSpacing.run)
+                                 ? 0 : TranscriptSpacing.above(attemptDividers[attempt.id]))
                         .id("attempt-\(attempt.id)")
                 }
             }
