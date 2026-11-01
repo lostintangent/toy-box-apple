@@ -46,7 +46,7 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
 
     @ObservationIgnored var onRegistrationCreated: ((MobilePushRegistration) async -> Void)?
     @ObservationIgnored var onActivate: ((Activation) async -> Void)?
-    @ObservationIgnored var onReply: ((ChannelPushPayload, String, String?) async -> ComposerNotificationReply.Outcome)?
+    @ObservationIgnored var onReply: ((ChannelPushPayload, String, String?) async -> ComposerSession.NotificationReplyOutcome)?
     private var center: UNUserNotificationCenter { .current() }
     nonisolated private static let logger = Logger(subsystem: "dev.toybox.mobile", category: "Notifications")
     @ObservationIgnored private let defaults: UserDefaults

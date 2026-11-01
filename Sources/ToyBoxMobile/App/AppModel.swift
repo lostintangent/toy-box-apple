@@ -79,7 +79,7 @@ final class AppModel {
         }
         self.notifications.onReply = { [weak self] payload, text, handle in
             guard let self, self.notifications.isCurrent(payload), let catalog else { return .notSent }
-            let result = await ComposerNotificationReply.send(
+            let result = await ComposerSession.sendNotificationReply(
                 text, to: handle, store: catalog.channel(id: payload.channelID),
                 isCurrentRegistration: { [weak self] in
                     self?.catalog === catalog && self?.notifications.isCurrent(payload) == true

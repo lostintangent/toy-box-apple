@@ -26,7 +26,7 @@ struct ComposerTests {
 
         #expect(fixture.store.state == nil)
         #expect(!fixture.store.phase.isConnected)
-        let result = await ComposerNotificationReply.send(
+        let result = await ComposerSession.sendNotificationReply(
             text, to: "lead", store: fixture.store, id: id, isCurrentRegistration: { true })
 
         #expect(result == .sent)
@@ -46,7 +46,7 @@ struct ComposerTests {
         draft.text = "Keep my newer draft"
         let composer = ChannelComposerSession(store: fixture.store, draft: draft)
 
-        let result = await ComposerNotificationReply.send(
+        let result = await ComposerSession.sendNotificationReply(
             "Please proceed.", to: "lead", store: fixture.store, id: id, isCurrentRegistration: { true })
 
         #expect(result == .failed(id: id))
@@ -73,7 +73,7 @@ struct ComposerTests {
         let id = UUID().uuidString
         let draft = ComposerDraft(imageIsReadable: { _ in false })
         let composer = ChannelComposerSession(store: fixture.store, draft: draft)
-        let result = await ComposerNotificationReply.send(
+        let result = await ComposerSession.sendNotificationReply(
             "Proceed.", to: "lead", store: fixture.store, id: id, isCurrentRegistration: { true })
         #expect(result == .failed(id: id))
 
@@ -93,7 +93,7 @@ struct ComposerTests {
         let fixture = try replyFixture(.unconfirmed, journal: journal)
         defer { fixture.close() }
         let id = UUID().uuidString
-        let result = await ComposerNotificationReply.send(
+        let result = await ComposerSession.sendNotificationReply(
             "Proceed.", to: "lead", store: fixture.store, id: id, isCurrentRegistration: { true })
         #expect(result == .failed(id: id))
 
@@ -117,7 +117,7 @@ struct ComposerTests {
         draft.text = "Keep this"
         let revision = draft.revision
 
-        let result = await ComposerNotificationReply.send(
+        let result = await ComposerSession.sendNotificationReply(
             "Proceed.", to: "lead", store: fixture.store, isCurrentRegistration: { deleted })
 
         #expect(result == .notSent)
@@ -130,7 +130,7 @@ struct ComposerTests {
     @Test func aDeletedChannelResponseUsesThePlainNotSentOutcome() async throws {
         let fixture = try replyFixture(.deleted)
         defer { fixture.close() }
-        let result = await ComposerNotificationReply.send(
+        let result = await ComposerSession.sendNotificationReply(
             "Proceed.", to: "lead", store: fixture.store, isCurrentRegistration: { true })
         #expect(result == .notSent)
         #expect(fixture.posts.count == 1)
@@ -139,7 +139,7 @@ struct ComposerTests {
     @Test func anAlreadyAcceptedNotificationReplyDoesNotMakeASecondPost() async throws {
         let fixture = try replyFixture(.duplicate)
         defer { fixture.close() }
-        let result = await ComposerNotificationReply.send(
+        let result = await ComposerSession.sendNotificationReply(
             "Proceed.", to: "lead", store: fixture.store, isCurrentRegistration: { true })
         #expect(result == .sent)
         #expect(fixture.posts.count == 1)
