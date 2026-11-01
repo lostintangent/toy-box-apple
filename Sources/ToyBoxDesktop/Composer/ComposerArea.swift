@@ -148,6 +148,7 @@ private struct ChannelComposer: View {
     @ViewState private var isDragging = false
     @ViewState private var showPicker = false
     @ViewState private var focusRequest = UUID()
+    @ViewState private var caretRequest: NativeComposerInput.CaretRequest?
     @ViewState private var requestPreview = false
     @ViewState private var requestHoverTask: Task<Void, Never>?
     @ViewState private var showAppendConfirmation = false
@@ -205,7 +206,10 @@ private struct ChannelComposer: View {
         .onChange(of: interaction.replyRequest?.token) { _, _ in
             guard let reply = interaction.replyRequest else { return }
             dictation.commitNow()
+            let before = draft.text.utf16.count
             session.reply(to: reply.agent)
+            let inserted = draft.text.utf16.count - before
+            if inserted > 0 { caretRequest = .init(id: UUID(), location: inserted) }
             focusRequest = UUID()
         }
         .onChange(of: interaction.editSendAttemptRequest?.token) { _, _ in
@@ -377,7 +381,7 @@ private struct ChannelComposer: View {
                 }
                 NativeComposerInput(text: Bindable(draft).text, document: draftID, height: $inputHeight,
                                     dragging: $isDragging, fontSize: 14 * textScale,
-                                    focusRequest: focusRequest,
+                                    focusRequest: focusRequest, caretRequest: caretRequest,
                                     agents: store.roster,
                                     onSend: send, onFiles: draft.attachFiles, onImage: draft.append,
                                     onError: { draft.error = $0 },

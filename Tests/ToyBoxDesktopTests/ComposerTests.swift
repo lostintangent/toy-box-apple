@@ -854,6 +854,34 @@ struct ComposerTests {
         #expect(draft.text == beforePrefill + "\n\nShared selection")
     }
 
+    @Test func replyPlacesTheCaretAfterTheHandleWhereverTheCaretWas() throws {
+        let store = ChannelStore(id: "test", api: try ChannelAPI(serverURL: "http://localhost:3210"),
+                                 sendJournal: nil)
+        let agent = ChannelAgent(id: "ada", name: "Ada Lovelace")
+        for caret in [2, "Hi there".utf16.count] {
+            let draft = ComposerDraft()
+            draft.text = "Hi there"
+            let parent = NativeComposerInput(
+                text: .init(get: { draft.text }, set: { draft.text = $0 }), height: .constant(44),
+                dragging: .constant(false), fontSize: 14, focusRequest: UUID(),
+                agents: [], onSend: {}, onFiles: { _ in }, onImage: { _ in },
+                onError: { _ in }, agentManagement: .disabled
+            )
+            let coordinator = parent.makeCoordinator()
+            let input = ComposerTextView()
+            coordinator.input = input
+            input.string = draft.text
+            coordinator.synchronizeModelText(draft.text)
+            input.setSelectedRange(NSRange(location: caret, length: 0))
+            let before = draft.text.utf16.count
+            #expect(ChannelComposerSession(store: store, draft: draft).reply(to: agent))
+            coordinator.synchronizeModelText(draft.text)
+            coordinator.placeCaret(for: .init(id: UUID(), location: draft.text.utf16.count - before))
+            #expect(input.string == "@ada-lovelace Hi there")
+            #expect(input.selectedRange() == NSRange(location: "@ada-lovelace ".utf16.count, length: 0))
+        }
+    }
+
     @Test func sendFailureAnnouncementsUseFreshEventsForRepeatedSameMessageFailures() {
         var announcements = ComposerFailureAnnouncements()
         let uncertain = ComposerFailureFeedback(id: "first-failure-event",

@@ -1421,7 +1421,8 @@ exposes Reply as an action.
 Reply and Copy Message appear on hover or keyboard focus and in the context menu. As with AppKit's
 tracking areas, a message that slides under a still pointer, as when the transcript follows a new
 message or scrolls, shows them once the pointer moves. Reply prepends the agent's mention once,
-preserves the draft and focuses the composer. Deleted agents cannot be replied to. Your own
+preserves the draft, focuses the composer and leaves the caret after the mention. Deleted agents
+cannot be replied to. Your own
 messages expose Copy Message as an accessibility action, as well as in their context menu. Keep
 message selection, link selection and context menus usable independently.
 
