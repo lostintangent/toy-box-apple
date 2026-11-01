@@ -186,12 +186,10 @@ struct MenuBarInbox: View {
 
     /// A request's suggested replies as small bordered choices above Reply.
     private func choices(_ item: MenuBarStatus.Item) -> some View {
-        ChoiceButtonLayout(spacing: 8) {
+        ChoiceFlowLayout(spacing: 6) {
             ForEach(Array(item.replies.enumerated()), id: \.offset) { _, choice in
                 Button { sendChoice(choice, to: item) } label: {
-                    Text(choice)
-                        .multilineTextAlignment(.center)
-                        .frame(maxWidth: .infinity)
+                    Text(choice).lineLimit(nil)
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
