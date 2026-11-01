@@ -44,6 +44,16 @@ public func channelTasksProgress(_ tasks: [ChannelTask]) -> TaskProgress {
     TaskProgress(done: tasks.filter { $0.status == "done" }.count, total: tasks.count)
 }
 
+/// The tasks holding work in progress, with each kept task's children pruned to those that hold it too.
+public func channelTasksHoldingWorkInProgress(_ tasks: [ChannelTask]) -> [ChannelTask] {
+    tasks.filter(\.holdsWorkInProgress).map { task in
+        var next = task
+        let children = channelTasksHoldingWorkInProgress(task.children ?? [])
+        next.children = children.isEmpty ? nil : children
+        return next
+    }
+}
+
 public struct ChannelTrayProjection: Equatable, Sendable {
     public let artifacts: [ChannelArtifact]
     public let taskProgress: TaskProgress
@@ -59,11 +69,15 @@ public struct ChannelTrayProjection: Equatable, Sendable {
 }
 
 extension ChannelTask {
-    public var isExpandedByDefault: Bool { status != "done" }
-
-    public var showsChildProgress: Bool {
-        children?.isEmpty == false && status != "pending" && status != "done"
+    /// Whether this task or any descendant is in progress.
+    public var holdsWorkInProgress: Bool {
+        status == "in_progress" || (children ?? []).contains { $0.holdsWorkInProgress }
     }
+
+    /// Parents start collapsed unless work is in progress under them.
+    public var isExpandedByDefault: Bool { holdsWorkInProgress }
+
+    public var showsChildProgress: Bool { children?.isEmpty == false }
 
     public var statusDescription: String {
         switch status {

@@ -46,16 +46,49 @@ struct ManagementPolicyTests {
     }
 
     @Test func taskStatusDeterminesInitialDisclosureAndSubtaskProgress() {
-        func task(_ status: String, hasChildren: Bool = true) -> ChannelTask {
+        func task(_ status: String, childStatus: String = "pending", hasChildren: Bool = true) -> ChannelTask {
             .init(id: "task", title: "Task", status: status,
-                  children: hasChildren ? [.init(id: "child", title: "Child")] : nil)
+                  children: hasChildren ? [.init(id: "child", title: "Child", status: childStatus)] : nil)
         }
-        #expect(!task("done").isExpandedByDefault)
-        for status in ["pending", "in_progress", "blocked"] { #expect(task(status).isExpandedByDefault) }
-        for status in ["in_progress", "blocked"] { #expect(task(status).showsChildProgress) }
-        for status in ["pending", "done"] { #expect(!task(status).showsChildProgress) }
+        for status in ["pending", "blocked", "done"] { #expect(!task(status).isExpandedByDefault) }
+        #expect(task("in_progress").isExpandedByDefault)
+        for status in ["pending", "blocked", "done"] {
+            #expect(task(status, childStatus: "in_progress").isExpandedByDefault)
+        }
+        for status in ["pending", "in_progress", "blocked", "done"] { #expect(task(status).showsChildProgress) }
         #expect(!task("in_progress", hasChildren: false).showsChildProgress)
-        #expect(task("future").isExpandedByDefault && task("future").showsChildProgress)
+        #expect(!task("done", hasChildren: false).showsChildProgress)
+        #expect(!task("future").isExpandedByDefault && task("future").showsChildProgress)
         #expect(task("future").statusDescription == "pending")
+    }
+
+    @Test func workInProgressAnywhereBelowAParentExpandsIt() {
+        let parent = ChannelTask(id: "a", title: "A", status: "blocked", children: [
+            .init(id: "b", title: "B", children: [.init(id: "c", title: "C", status: "in_progress")]),
+        ])
+        #expect(parent.holdsWorkInProgress && parent.isExpandedByDefault)
+        #expect(parent.children?.first?.isExpandedByDefault == true)
+        let finished = ChannelTask(id: "f", title: "F", status: "done", children: [.init(id: "g", title: "G")])
+        #expect(!finished.holdsWorkInProgress && !finished.isExpandedByDefault)
+    }
+
+    @Test func theWorkInProgressFilterKeepsMatchingTasksAndTheirMatchingChildren() {
+        let tasks: [ChannelTask] = [
+            .init(id: "a", title: "A", status: "blocked", children: [
+                .init(id: "b", title: "B", children: [
+                    .init(id: "c", title: "C", status: "in_progress"),
+                    .init(id: "d", title: "D"),
+                ]),
+                .init(id: "e", title: "E", status: "done"),
+            ]),
+            .init(id: "f", title: "F", status: "done", children: [.init(id: "g", title: "G")]),
+            .init(id: "h", title: "H", children: [.init(id: "i", title: "I", status: "in_progress")]),
+        ]
+        let filtered = channelTasksHoldingWorkInProgress(tasks)
+        #expect(filtered.map(\.id) == ["a", "h"])
+        #expect(filtered[0].children?.map(\.id) == ["b"])
+        #expect(filtered[0].children?[0].children?.map(\.id) == ["c"])
+        #expect(filtered[0].children?[0].children?[0].children == nil)
+        #expect(filtered[1].children?.map(\.id) == ["i"])
     }
 }
