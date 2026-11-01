@@ -353,6 +353,10 @@ so the suite starts a WebKit web content process once instead of once per render
   or empty entries fail before release builds. `bun run release-notes TAG [OUTPUT.md]` extracts one.
   Mac GitHub/Sparkle notes use the Mac entry. Phone notes are retained in the job summary/artifact;
   per-build “What to Test” stays manual until a password-authenticated Apple tool path is proven.
+- Each entry groups its bullets under `### Features` and `### Bugs/Polish`, omitting an empty one.
+  A bullet names what changed and why: "The transcript's day dividers now draw a horizontal rule,
+  so they stand out from the messages around them." Each platform's notes stand on their own,
+  never described by comparison to the web or the other app.
 - User only: `bun run setup-secrets:mobile SHA1 APP_STORE_CONNECT_APP_ID [OWNER/REPO]`.
   It selects the same four App Store profiles as `testflight`, generates a random export password
   without prompting, exports only that Apple Distribution identity and deletes its

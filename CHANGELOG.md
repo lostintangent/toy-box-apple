@@ -2,7 +2,9 @@
 
 ## iPhone 0.1.10
 
-- Remove an artifact from a channel by swiping its Overview row all the way to the left.
+### Features
+
+- Swiping an artifact's row all the way left in Overview now removes it from the channel, so clearing out artifacts takes one gesture instead of a swipe and a tap.
 
 ## iPhone 0.1.9
 
