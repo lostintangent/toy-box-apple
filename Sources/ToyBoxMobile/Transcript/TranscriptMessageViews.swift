@@ -78,34 +78,37 @@ struct TranscriptItemView: View, @MainActor Equatable {
     }
 }
 
-/// Day and New share one divider, so "Today · New" reads as one line when they coincide.
+/// The day label leads a hairline across the rest of the row. At the unread boundary the rule turns
+/// blue with New after it, so a day and New share one line, like the Mac.
 struct TranscriptRule: View {
     let divider: TranscriptDivider
     @Environment(\.displayScale) private var displayScale
 
     var body: some View {
-        HStack(spacing: 8) {
-            line
-            Text(label)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(divider.unread ? Color.blue : TranscriptInk.secondary)
-            line
+        HStack(spacing: 0) {
+            if let day = divider.day {
+                Text(transcriptDayLabel(day))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(TranscriptInk.secondary)
+                    .layoutPriority(1)
+                    .padding(.trailing, 8)
+            }
+            Rectangle()
+                .fill(divider.unread ? AnyShapeStyle(ChannelColors.newRule) : AnyShapeStyle(.separator))
+                .frame(height: 1 / displayScale)
+            if divider.unread {
+                Text("New")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.blue)
+                    .layoutPriority(1)
+                    .padding(.leading, 6)
+            }
         }
-        .padding(.vertical, 12)
+        .padding(.top, 12)
+        .padding(.bottom, 10)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(transcriptDividerAccessibilityLabel(divider))
         .accessibilityAddTraits(divider.day == nil ? [] : .isHeader)
-    }
-
-    private var label: String {
-        [divider.day.map { transcriptDayLabel($0) }, divider.unread ? "New" : nil]
-            .compactMap { $0 }.joined(separator: " · ")
-    }
-
-    private var line: some View {
-        Rectangle()
-            .fill(divider.unread ? AnyShapeStyle(ChannelColors.newRule) : AnyShapeStyle(.separator))
-            .frame(height: 1 / displayScale)
     }
 }
 
