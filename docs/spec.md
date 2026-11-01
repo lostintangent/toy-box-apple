@@ -1118,7 +1118,7 @@ details and unmatched-audience warnings. Non-text status symbols need at least 3
 | Sidebar detail and timestamps | 11, regular | Secondary, tabular digits for time/counts |
 | Message body and composer | 14, regular | Approximately 20 line height. Never compress line height to fit |
 | Message author | 12, semibold | Timestamp and addressee 11, regular |
-| Day divider and system rows | 11, semibold / 11, regular | Centered, secondary, values in primary medium |
+| Day divider and system rows | 11, semibold / 11, regular | Secondary. Day labels lead their rule, system rows are centered, values in primary medium |
 | Inspector section heading | 13, semibold | Count follows 6 points later in 13 regular readable secondary. No capsule, no forced uppercase |
 | Inspector body | 13, regular | Approximately 18 line height |
 | Inspector status and detail lines | 11, regular | Secondary, tabular digits for counts and countdowns |
@@ -1462,14 +1462,15 @@ with the object replacement character (U+FFFC) or the two spaces that follow the
 | Routine scheduled / edited / deleted | `calendar.badge.clock` | Title, with full schedule and prompt in help/details |
 | Unknown future kind | `info.circle` | "Channel updated", timestamp and available textual description |
 
-Day dividers are centered labels with no rule, as in Messages: 11 semibold secondary, centered on
-the full lane, 16 high, with the header trait. Labels are "Today", "Yesterday", the weekday
+Day dividers follow the web: the day label in 11 semibold secondary on the leading edge, 16 high,
+with the header trait, then a 1-point separator rule across the rest of the lane, 8 points after
+the label. Labels are "Today", "Yesterday", the weekday
 within the past six days, "Saturday, October 18" this year and "Saturday, October 18, 2025"
 otherwise, from localized date templates. Day dividers are not sticky. The New divider keeps
 Toy Box's blue: a 1-point system blue rule at 70% across the full lane, and "New" in 11
 semibold blue 6 points after its trailing end. When a day change and the unread boundary
-coincide, the day label sits 6 points above the New rule as one divider, read as "Today, New
-messages". Capture the unread boundary only after snapshot or replay completes, and never move it as
+coincide, they share one line, the day label, the blue rule and New, read as "Today, New
+messages". The phone centers its label between two rules instead. Capture the unread boundary only after snapshot or replay completes, and never move it as
 the user reads. A reopened store that disconnected while the channel was closed waits for its
 reconnect, rather than capturing from the state it cached. This boundary is not an extra synthetic
 message. Reference renders of day labels, the New divider, system rows and both request states:
