@@ -236,13 +236,15 @@ enum CatchUpAnswer {
     /// What leads a line, as the transcript's card draws it: the first source's sender, or that
     /// event's own symbol.
     static func slot(for sequence: Int?, in state: ChannelState) -> CatchUpCard.Line.Slot {
-        let source = state.messages.first { $0.sequence == sequence }
-        if let agentId = source?.sender.agentId {
+        switch TranscriptCatchUpSlot(sequence: sequence, messages: state.messages, isReplied: nil) {
+        case .avatar(let agentId):
             let agent = channelAgentIdentity(state.agents, id: agentId)
             return .agent(ChannelAgent(id: agent.id, name: agent.name, avatar: agent.avatar, deleted: agent.deleted))
+        case .event(let type):
+            return .event(type)
+        case .need, .unknown:
+            return .info
         }
-        if let event = source?.system { return .event(event.type) }
-        return .info
     }
 
     private static func isCompleted(_ channel: Channel, unreadAfter: Int?) -> Bool {

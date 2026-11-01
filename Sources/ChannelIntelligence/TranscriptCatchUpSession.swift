@@ -202,8 +202,13 @@ public enum TranscriptCatchUpSlot: Sendable, Equatable {
     case unknown
 
     public init(line: CatchUp.Line, messages: [ChannelMessage], isReplied: Bool?) {
+        self.init(sequence: line.sources.first, messages: messages, isReplied: isReplied)
+    }
+
+    /// `sequence` is the line's first source. A line with no source, or one that isn't in `messages`, is unknown.
+    public init(sequence: Int?, messages: [ChannelMessage], isReplied: Bool?) {
         if let isReplied { self = .need(isReplied: isReplied); return }
-        let source = messages.first { $0.sequence == line.sources.first }
+        let source = messages.first { $0.sequence == sequence }
         if let agentId = source?.sender.agentId { self = .avatar(agentId) }
         else if let event = source?.system { self = .event(event.type) }
         else { self = .unknown }

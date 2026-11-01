@@ -10,7 +10,7 @@ struct ImageDescriptionSessionTests {
     private func request(_ digest: String = "chart", server: URL? = nil,
                          file: String = "/fixture/image.png",
                          priority: AltTextRequest.Priority = .visible) -> AltTextRequest {
-        AltTextRequest(server: server ?? self.server, digest: digest, fileURL: URL(fileURLWithPath: file),
+        AltTextRequest(server: server ?? self.server, digest: digest, fileURL: URL(filePath: file),
                        priority: priority)
     }
 
@@ -92,11 +92,11 @@ struct ImageDescriptionSessionTests {
 
     @Test func aCancelledTileDoesNotPublishOrMemoizeALateAnswerAndCanRetry() async {
         let descriptions = TranscriptImageDescriptionSession()
-        let service = HeldDescriptionSessionService()
+        let service = ScriptedIntelligence(holding: true)
         let tile = Task { await descriptions.describe(request(), using: service) }
-        await service.waitForCall()
+        await service.waitForCalls(1)
         tile.cancel()
-        await service.answer("The cancelled description.")
+        await service.answerAltText("The cancelled description.")
         await tile.value
         #expect(descriptions.text(for: request()) == nil)
         let focused = ScriptedIntelligence(text: "A chart.")
@@ -107,39 +107,15 @@ struct ImageDescriptionSessionTests {
 
     @Test func aCancelledNilResultDoesNotPreventAReturningTileFromTryingAgain() async {
         let descriptions = TranscriptImageDescriptionSession()
-        let service = HeldDescriptionSessionService()
+        let service = ScriptedIntelligence(holding: true)
         let tile = Task { await descriptions.describe(request(), using: service) }
-        await service.waitForCall()
+        await service.waitForCalls(1)
         tile.cancel()
-        await service.answer(nil)
+        await service.answerAltText(nil)
         await tile.value
         let retry = ScriptedIntelligence(text: "A chart.")
         await descriptions.describe(request(), using: retry)
         #expect(await retry.count == 1)
         #expect(descriptions.text(for: request()) == "A chart.")
-    }
-}
-
-private actor HeldDescriptionSessionService: ChannelIntelligenceService {
-    nonisolated let availability: IntelligenceAvailability = .available
-    private var continuation: CheckedContinuation<AltText?, Never>?
-    private var waiters: [CheckedContinuation<Void, Never>] = []
-
-    func catchUp(_ request: CatchUpRequest) async -> CatchUpResult { .declined }
-    func altText(_ request: AltTextRequest) async -> AltText? {
-        await withCheckedContinuation { continuation in
-            self.continuation = continuation
-            for waiter in waiters { waiter.resume() }
-            waiters.removeAll()
-        }
-    }
-    func waitForCall() async {
-        if continuation != nil { return }
-        await withCheckedContinuation { waiters.append($0) }
-    }
-    func answer(_ text: String?) {
-        let continuation = continuation
-        self.continuation = nil
-        continuation?.resume(returning: text.map(AltText.init))
     }
 }

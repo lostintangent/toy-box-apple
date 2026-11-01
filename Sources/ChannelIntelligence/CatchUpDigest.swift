@@ -67,12 +67,11 @@ private extension CatchUpDigest.Message {
     init?(_ message: ChannelMessage, state: ChannelState, shorten: (String) -> String) {
         guard !message.isSystem, message.sender.type == "agent" else { return nil }
         let agents = state.agents
-        let body = withoutLeadingMentions(message.text, agents: agents)
-        let text = shorten(body.plainProse(agents: agents))
+        let text = shorten(message.text.plainProse(agents: agents))
         let images = message.attachments?.count ?? 0
         guard !text.isEmpty || images > 0 else { return nil }
         var mentioned: [String] = []
-        let written = shorten(body.plainProse(agents: agents) { agent in
+        let written = shorten(message.text.plainProse(agents: agents) { agent in
             guard let agent else { return "@everyone" }
             if !mentioned.contains(agent.id) { mentioned.append(agent.id) }
             return "@" + agent.name

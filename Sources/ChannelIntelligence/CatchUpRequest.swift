@@ -75,13 +75,6 @@ public struct CatchUpRequest: Sendable, Hashable {
         }
     }
 
-    init(key: Key, entries: [CatchUpEntry], request: CatchUpEntry?, participants: Set<String>) {
-        self.key = key
-        unreadFromOthers = entries.filter { $0.speaker != nil }.count
-        let lines = CatchUpSelection.Lines(entries: entries, request: request, participants: participants)
-        selection = CatchUpSelection { lines }
-    }
-
     public static func == (lhs: CatchUpRequest, rhs: CatchUpRequest) -> Bool {
         lhs.key == rhs.key
     }
@@ -196,15 +189,6 @@ struct CatchUpDescriber: Sendable {
     let agents: [ChannelAgent]
     let leadId: String
 
-    init(agents: [ChannelAgent], leadId: String) {
-        self.agents = agents
-        self.leadId = leadId
-    }
-
-    init(state: ChannelState) {
-        self.init(agents: state.agents, leadId: state.lead.id)
-    }
-
     func name(_ sender: ChannelMessageSender?) -> String {
         guard let sender else { return "Someone" }
         switch sender.type {
@@ -224,7 +208,7 @@ struct CatchUpDescriber: Sendable {
             : mentions.handles.compactMap { handle in
                 agents.first { agentHandleFromName($0.name) == handle }?.name
             }
-        var text = withoutLeadingMentions(message.text, agents: agents).plainProse(agents: agents)
+        var text = message.text.plainProse(agents: agents)
         let images = message.attachments?.count ?? 0
         if images > 0 { text += images == 1 ? " (attached an image)" : " (attached \(images) images)" }
         guard !text.isEmpty else { return nil }
@@ -271,7 +255,7 @@ struct CatchUpDescriber: Sendable {
             description = "\(actor) changed the preview."
         case "routine_scheduled", "routine_edited", "routine_deleted":
             guard let routine = system.routine else { return nil }
-            let verb = system.type.replacingOccurrences(of: "routine_", with: "")
+            let verb = system.type.replacing("routine_", with: "")
             description = "The routine \u{201C}\(routine.title)\u{201D} was \(verb)."
         default:
             return nil
@@ -281,12 +265,18 @@ struct CatchUpDescriber: Sendable {
     }
 }
 
+extension CatchUpDescriber {
+    init(state: ChannelState) {
+        self.init(agents: state.agents, leadId: state.lead.id)
+    }
+}
+
 extension String {
-    /// Markdown and mentions reduced to readable prose on one line. A mention reads as the agent's name,
-    /// or "everyone" for nil, unless `mention` writes it another way.
+    /// Leading mentions dropped, then markdown and mentions reduced to readable prose on one line. A
+    /// mention reads as the agent's name, or "everyone" for nil, unless `mention` writes it another way.
     func plainProse(agents: [ChannelAgent],
                     mention: (ChannelAgent?) -> String = { $0?.name ?? "everyone" }) -> String {
-        var text = self
+        var text = withoutLeadingMentions(self, agents: agents)
         text = text.replacing(/```[\s\S]*?(```|$)/, with: " (code) ")
         text = text.replacing(/!\[([^\]]*)\]\([^)]*\)/, with: { $0.1.isEmpty ? "" : " (image: \($0.1)) " })
         text = text.replacing(/\[([^\]]+)\]\([^)]*\)/, with: { String($0.1) })
