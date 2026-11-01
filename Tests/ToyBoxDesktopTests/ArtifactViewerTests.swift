@@ -128,7 +128,10 @@ struct ArtifactViewerTests {
         #expect(opener.actionError == nil)
     }
 
-    @Test func HTMLKeepsAnOpaqueOriginAndCanLoadOnlyTheServersFileResources() async throws {
+    // Quarantined after the probe missed the settle deadline under CPU saturation (t605). Owner: Overview.
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["TOY_BOX_TEST_ARTIFACT_HTML_ORIGIN_PROBE"] == "1",
+                   "Quarantined pending cause identification (t605). Opt in with TOY_BOX_TEST_ARTIFACT_HTML_ORIGIN_PROBE=1."))
+    func HTMLKeepsAnOpaqueOriginAndCanLoadOnlyTheServersFileResources() async throws {
         let fixture = try ArtifactHTTPFixture()
         try await fixture.start()
         defer { fixture.stop() }

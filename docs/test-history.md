@@ -430,3 +430,26 @@ Incident records moved from AGENTS.md on 2026-10-27, with their evidence and res
   acknowledging 2.5 virtual seconds after `ready`. Under the same starvation it passed. The driver's
   contract is unchanged: a step's deadline bounds the app's own work and pauses for the host.
 - Retained contract: removing the pause fails the test deterministically in 0.1 seconds.
+
+## Artifact HTML origin probe
+
+- `ArtifactViewerTests.HTMLKeepsAnOpaqueOriginAndCanLoadOnlyTheServersFileResources` is quarantined
+  behind `TOY_BOX_TEST_ARTIFACT_HTML_ORIGIN_PROBE=1` in t605. Owner: Overview. Its assertions and its
+  15-second `wait(until:)` are unchanged. Unquarantined, it passed in 0.449 seconds, and the default
+  run skips it with its reason.
+- Under ten CPU-burner loops on the shared Mac, load about 630 to 770, two of three full Mac runs on
+  `ab4af66` failed at the test's `wait(until:)` `#require` (`ArtifactViewerTests.swift:705`). The
+  probe message never arrived, and `web.error` was nil. In the first of those runs, three other
+  Artifact viewer tests also failed at that helper, and many unrelated suites hit the 60-second time
+  limit. An unstressed full run passed in 4.1 seconds.
+- A replacement that waited for the probe with no clock hung the whole suite. Under the same load,
+  the 12-minute watchdog in `scripts/desktop/test.ts` fired while the test was still waiting, and its
+  sample showed the wait parked after 12 minutes. The replacement was reverted. The Swift Testing time
+  limit did not bound that wait, so a wait needs its own deadline.
+- The cause is not established. Unmeasured candidates include WebKit delaying the `postMessage`
+  probe, the content process launch, and the `fetch` of `/api/v1/channels` or the `pixel.svg` image
+  load never settling. No step was instrumented.
+- Restoration needs the stalled step identified, with deterministic regression coverage. Restore it
+  without loosening the assertions or adding retries. `arrivalsKeepTheSelectedIdentityAndRemovalDoesNotSubstituteANeighbor`,
+  `sameDocumentTOCLinksAndHashChangesStayInsideTheSandbox` and `HTMLUnderlapsTheBarsAndRestoresItsReadingPosition`
+  use the same 15-second wait and stay in the default gate pending the lead's scope decision.
