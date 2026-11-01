@@ -188,8 +188,8 @@ struct TranscriptSystemMessages: View {
     }
 }
 
-/// One artifact group's line: the actor and verb, then each title. Shared titles are links.
-/// Removed titles stay plain text, since the file is gone and a link would open nothing.
+/// One artifact group's line: the actor and verb, then each title as a link. A removed title
+/// still opens, since its file stays on disk.
 struct TranscriptArtifactGroupLine: View {
     var icon: Text?
     let group: ChannelArtifactGroup
@@ -214,26 +214,13 @@ struct TranscriptArtifactGroupLine: View {
         }
     }
 
-    @ViewBuilder
     private func title(_ entry: ChannelArtifactGroup.Entry, at index: Int) -> some View {
-        let highlight = findHighlights[entry.sequence]
-        let offset = group.titleOffset(at: index)
-        switch group.verb {
-        case .shared:
-            Button { onOpen(entry.artifact) } label: {
-                TranscriptSystemLinkLabel(title: entry.artifact.title, findHighlight: highlight,
-                                          findText: group.sentence, findOffset: offset)
-            }
-            .transcriptSystemLink()
-            .help(entry.artifact.file.path)
-        case .removed:
-            let ranges = highlight.map { TranscriptFindPattern($0.query).ranges(in: group.sentence) }
-            let artifactTitle = AttributedString(entry.artifact.title)
-            Text(highlight?.applying(to: artifactTitle, ranges: ranges, offset: offset) ?? artifactTitle)
-                .foregroundStyle(.primary)
-                .fontWeight(.medium)
-                .help(entry.artifact.file.path)
+        Button { onOpen(entry.artifact) } label: {
+            TranscriptSystemLinkLabel(title: entry.artifact.title, findHighlight: findHighlights[entry.sequence],
+                                      findText: group.sentence, findOffset: group.titleOffset(at: index))
         }
+        .transcriptSystemLink()
+        .help(entry.artifact.file.path)
     }
 
     private var actorText: Text {

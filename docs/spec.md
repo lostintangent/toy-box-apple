@@ -1436,9 +1436,9 @@ link keeps a 28-point hit target. Help shows the full local date and time and an
 Matching membership events and one actor's consecutive artifact shares or removals merge only
 where the canonical projection does. A merged artifact line is one sentence, "Pixel shared A, B,
 and C", built once in ChannelKit for display, Find and catch-up. Find matches within each title.
-Removed titles are plain primary text at medium weight with the file path in help, not links,
-because the artifact no longer belongs to the channel. The web's removed title still reveals the
-file, which stays on disk, so this is a known difference tracked for a later release.
+Removed titles are links too and open the artifact like the web, since its file stays on disk.
+On iPhone each title is a link in the row's one `Text`, and the event's details move to the
+row's context menu.
 Keep a sentence on one line when it fits, and never force a two-line card.
 Keep event phrases regular and secondary, with names, routine titles and other values in
 primary ink at medium weight. The weight change replaces a separating colon. Artifact titles
@@ -1456,7 +1456,7 @@ with the object replacement character (U+FFFC) or the two spaces that follow the
 | Directory changed | `folder` | Path truncates in the middle, preserving final components |
 | Preview changed | `play.rectangle` | Link to the typed preview, or "Preview cleared" |
 | Artifact shared | `doc.badge.arrow.up` | Sharer's identity and individually actionable artifact titles |
-| Artifact removed | `minus.circle` | Remover's identity and plain artifact titles, each with its path on help |
+| Artifact removed | `minus.circle` | Remover's identity and individually actionable artifact titles, each with its path on help |
 | Routine scheduled / edited / deleted | `calendar.badge.clock` | Title, with full schedule and prompt in help/details |
 | Unknown future kind | `info.circle` | "Channel updated", timestamp and available textual description |
 

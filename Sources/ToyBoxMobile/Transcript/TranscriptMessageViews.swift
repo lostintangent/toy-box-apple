@@ -408,26 +408,61 @@ struct TranscriptSystemMessages: View {
 
     @ViewState private var showsDetails = false
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(ChannelArtifactSession.self) private var artifactViewer: ChannelArtifactSession?
 
     var body: some View {
-        let type = messages.first?.system?.type
-        Button { showsDetails = true } label: {
-            let symbol = Text(Image(systemName: ChannelSystemEventStyle.symbol(for: type)))
-                .foregroundStyle(ChannelSystemEventStyle.symbolColor(for: type, in: colorScheme))
-            let label = Text(findHighlight?.applying(to: AttributedString(text)) ?? AttributedString(text))
-            Text("\(symbol) \(label)")
-                .font(.footnote)
-                .foregroundStyle(TranscriptInk.secondary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: .infinity, minHeight: 44)
-                .contentShape(.rect)
+        Group {
+            if let group = ChannelArtifactGroup(messages, agents: agents) {
+                // Each title opens its artifact like the Mac's links, even once removed, since its
+                // file stays on disk. Details move to the context menu.
+                line(linking: group)
+                    .environment(\.openURL, OpenURLAction { url in
+                        guard let index = Int(url.lastPathComponent), group.entries.indices.contains(index)
+                        else { return .discarded }
+                        artifactViewer?.open(group.entries[index].artifact)
+                        return .handled
+                    })
+                    .accessibilityLabel(text)
+                    .accessibilityActions {
+                        ForEach(Array(group.entries.enumerated()), id: \.offset) { _, entry in
+                            Button("Open \(entry.artifact.title)") { artifactViewer?.open(entry.artifact) }
+                        }
+                        Button("Show Details") { showsDetails = true }
+                    }
+                    .contextMenu { Button("Show Details", systemImage: "info.circle") { showsDetails = true } }
+            } else {
+                Button { showsDetails = true } label: { line() }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(text)
+                    .accessibilityHint("Shows details")
+            }
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel(text)
-        .accessibilityHint("Shows details")
         .sheet(isPresented: $showsDetails) {
             TranscriptSystemDetails(messages: messages, agents: agents)
         }
+    }
+
+    private func line(linking group: ChannelArtifactGroup? = nil) -> some View {
+        let type = messages.first?.system?.type
+        let symbol = Text(Image(systemName: ChannelSystemEventStyle.symbol(for: type)))
+            .foregroundStyle(ChannelSystemEventStyle.symbolColor(for: type, in: colorScheme))
+        var sentence = findHighlight?.applying(to: AttributedString(text)) ?? AttributedString(text)
+        if let group {
+            for (index, entry) in group.entries.enumerated() {
+                let utf16 = group.sentence.utf16
+                let start = utf16.index(utf16.startIndex, offsetBy: group.titleOffset(at: index))
+                let end = utf16.index(start, offsetBy: entry.artifact.title.utf16.count)
+                if let range = Range(start..<end, in: sentence) {
+                    sentence[range].link = URL(string: "toybox-artifact:/\(index)")
+                }
+            }
+        }
+        return Text("\(symbol) \(Text(sentence))")
+            .font(.footnote)
+            .foregroundStyle(TranscriptInk.secondary)
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: .infinity, minHeight: 44)
+            .contentShape(.rect)
     }
 
     private var text: String {
