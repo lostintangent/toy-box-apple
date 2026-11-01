@@ -1209,9 +1209,9 @@ struct NotificationTests {
     }
 
     @Test func notificationsWithdrawOnceTheyStopBeingTrue() {
-        func delivered(_ channel: String, _ kind: String, _ sequence: Int, server: String = "s") -> NotificationWithdrawal.Delivered {
-            .init(identifier: "\(server):\(channel):\(kind):\(sequence)", serverURL: server, channelID: channel,
-                  kind: kind, sequence: sequence)
+        func delivered(_ channel: String, _ kind: String, _ sequence: Int, server: String = "s") -> ChannelNotification.Delivered {
+            .init(identifier: "\(server):\(channel):\(kind):\(sequence)", scope: server, channelID: channel,
+                  kind: ChannelPushPayload.Kind(rawValue: kind), sequence: sequence)
         }
         let items = [delivered("answered", "request", 11), delivered("waiting", "request", 12),
                      delivered("seen", "completion", 9), delivered("unseen", "completion", 15),
@@ -1220,7 +1220,7 @@ struct NotificationTests {
                      delivered("answered", "request", 11, server: "other")]
         let channels = [channel("answered"), channel("waiting", request: 12), channel("seen"),
                         channel("unseen"), channel("active")]
-        #expect(Set(NotificationWithdrawal.stale(items, channels: channels, serverURL: "s", activeChannelID: "active"))
+        #expect(Set(ChannelNotification.Delivered.stale(items, channels: channels, scope: "s", activeChannelID: "active"))
             == ["s:answered:request:11", "s:seen:completion:9", "s:active:completion:15",
                 "s:active:replyFailed:0", "s:deleted:request:4"])
     }
@@ -1471,7 +1471,7 @@ struct MenuBarExtraTests {
             waiting(channel("one", request: 12), request("First?")),
             waiting(channel("two", request: 13), request("Second?", sequence: 13)),
         ], [], unreachableHost: nil)
-        var inbox = MenuBarInboxState(status: first)
+        var inbox = MenuBarInboxRequests(status: first)
         let next = MenuBarStatus(waiting: [
             .init(id: "new", name: "New", subtitle: "Needs your reply", agent: ada, sequence: 14, quote: "New?"),
             first.waiting[1],
@@ -1481,12 +1481,12 @@ struct MenuBarExtraTests {
         #expect(inbox.requests[0].state == .answered)
         #expect(!inbox.requests[0].canReply)
         #expect(inbox.requests[1].canReply)
-        #expect(MenuBarInboxState(status: next).requests.map(\.id) == ["new", "two"])
+        #expect(MenuBarInboxRequests(status: next).requests.map(\.id) == ["new", "two"])
     }
 
     @Test func aChangedRequestKeepsTheOriginalQuoteAndDisablesItsReply() {
         let item = MenuBarStatus.Item(id: "one", name: "One", subtitle: "", agent: ada, sequence: 12, quote: "First?")
-        var inbox = MenuBarInboxState(status: .init(waiting: [item]))
+        var inbox = MenuBarInboxRequests(status: .init(waiting: [item]))
         var newer = item
         newer.sequence = 20
         newer.quote = "Different question?"
@@ -1498,19 +1498,19 @@ struct MenuBarExtraTests {
 
     @Test func aConfirmedReplyStaysSentUntilTheNextOpening() {
         let item = MenuBarStatus.Item(id: "one", name: "One", subtitle: "", agent: ada, sequence: 12, quote: "First?")
-        var inbox = MenuBarInboxState(status: .init(waiting: [item]))
+        var inbox = MenuBarInboxRequests(status: .init(waiting: [item]))
         inbox.record("one", .sent)
         inbox.update(.init(waiting: [item]))
         #expect(inbox.requests[0].state == .sent)
         #expect(!inbox.requests[0].canReply)
         inbox.update(.init())
         #expect(inbox.requests[0].state == .sent)
-        #expect(MenuBarInboxState(status: .init()).requests.isEmpty)
+        #expect(MenuBarInboxRequests(status: .init()).requests.isEmpty)
     }
 
     @Test func previewArrivalEnablesReplyWithoutInventingARequester() {
         var item = MenuBarStatus.Item(id: "one", name: "One", subtitle: "", sequence: 12)
-        var inbox = MenuBarInboxState(status: .init(waiting: [item]))
+        var inbox = MenuBarInboxRequests(status: .init(waiting: [item]))
         #expect(!inbox.requests[0].canReply)
         item.quote = "Question?"
         inbox.update(.init(waiting: [item]))
@@ -1523,7 +1523,7 @@ struct MenuBarExtraTests {
     @Test func choicesShowWhileTheRequestWaitsAndNeedNoRequester() {
         let item = MenuBarStatus.Item(id: "one", name: "One", subtitle: "", sequence: 12, quote: "Ship it?",
                                       replies: ["Yes", "No"])
-        var inbox = MenuBarInboxState(status: .init(waiting: [item]))
+        var inbox = MenuBarInboxRequests(status: .init(waiting: [item]))
         #expect(inbox.requests[0].canChoose)
         #expect(!inbox.requests[0].canReply)
         inbox.record("one", .sending)
@@ -1537,7 +1537,7 @@ struct MenuBarExtraTests {
     @Test func aSendingOrUnsentChoiceStaysUntilTheNextOpening() {
         let item = MenuBarStatus.Item(id: "one", name: "One", subtitle: "", agent: ada, sequence: 12, quote: "Ship it?",
                                       replies: ["Yes", "No"])
-        var inbox = MenuBarInboxState(status: .init(waiting: [item]))
+        var inbox = MenuBarInboxRequests(status: .init(waiting: [item]))
         inbox.record("one", .sending)
         inbox.update(.init())
         #expect(inbox.requests.map(\.state) == [.sending])
@@ -1546,12 +1546,12 @@ struct MenuBarExtraTests {
         #expect(inbox.requests.map(\.state) == [.notSent])
         #expect(inbox.requests[0].item == item)
         #expect(inbox.requests[0].state.notice == "Reply not sent. Open the channel to send it again.")
-        #expect(MenuBarInboxState(status: .init()).requests.isEmpty)
+        #expect(MenuBarInboxRequests(status: .init()).requests.isEmpty)
     }
 
     @Test func aRequestWithoutSuggestedRepliesOffersNoChoices() {
         let item = MenuBarStatus.Item(id: "one", name: "One", subtitle: "", agent: ada, sequence: 12, quote: "Ship it?")
-        let inbox = MenuBarInboxState(status: .init(waiting: [item]))
+        let inbox = MenuBarInboxRequests(status: .init(waiting: [item]))
         #expect(inbox.requests[0].canReply)
         #expect(!inbox.requests[0].canChoose)
     }
@@ -1559,7 +1559,7 @@ struct MenuBarExtraTests {
     @Test func aChoiceInTheOutboxLeavesTheRowForGood() {
         let item = MenuBarStatus.Item(id: "one", name: "One", subtitle: "", agent: ada, sequence: 12, quote: "Ship it?",
                                       replies: ["Yes", "No"])
-        let request = MenuBarInboxState(status: .init(waiting: [item])).requests[0]
+        let request = MenuBarInboxRequests(status: .init(waiting: [item])).requests[0]
         func attempt(_ content: String, phase: ChannelSendPhase) -> ChannelSendAttempt {
             ChannelSendAttempt(id: UUID().uuidString, content: content, attachments: [],
                                timestamp: "2026-10-25T12:00:00Z", phase: phase)
@@ -1679,154 +1679,6 @@ struct MenuBarExtraTests {
         #expect(SettingsView.unavailableText(.modelNotReady) == "Apple Intelligence is getting ready. Try again later.")
         #expect(SettingsView.unavailableText(.unsupportedLanguage)
             == "Apple Intelligence doesn't support your Mac's language yet.")
-    }
-}
-
-@Suite("App identity preferences")
-final class AppPreferencesMigrationTests {
-    private let sourceDomain = "legacy-preferences-\(UUID().uuidString)"
-    private let destinationDomain = "desktop-preferences-\(UUID().uuidString)"
-    private var defaults: UserDefaults { UserDefaults(suiteName: destinationDomain)! }
-
-    deinit {
-        defaults.removePersistentDomain(forName: sourceDomain)
-        defaults.removePersistentDomain(forName: destinationDomain)
-    }
-
-    private func migrate(bundleIdentifier: String? = AppPreferencesMigration.bundleIdentifier,
-                         isSnapshot: Bool = false) {
-        AppPreferencesMigration.run(
-            isSnapshot: isSnapshot, bundleIdentifier: bundleIdentifier, defaults: defaults,
-            sourceDomain: sourceDomain, destinationDomain: destinationDomain
-        )
-    }
-
-    @Test func theFirstLaunchImportsEveryPersistentAppSetting() {
-        let source: [String: Any] = [
-            AppConfiguration.serverURLKey: "https://legacy.example/toy-box",
-            LaunchChannel.key: ["https://legacy.example/toy-box": "studio"],
-            "appearance": "dark", "textScale": 1.25, MenuBarVisibility.key: "never",
-            "notificationsEnabled": true, "requestNotifications": false,
-            "completionNotifications": false, TranscriptIntelligenceSettings.summarizesNewMessages: false,
-            TranscriptIntelligenceSettings.describesImages: true,
-        ]
-        defaults.setPersistentDomain(source, forName: sourceDomain)
-        migrate()
-        let imported = defaults.persistentDomain(forName: destinationDomain) ?? [:]
-        var expected = source
-        expected[AppPreferencesMigration.completionKey] = true
-        expected[AppPreferencesMigration.notificationOptInKey] = true
-        #expect(NSDictionary(dictionary: imported).isEqual(to: expected))
-        #expect(defaults.bool(forKey: AppPreferencesMigration.completionKey))
-        #expect(LaunchChannel(defaults: defaults).channelID(serverURL: "https://legacy.example/toy-box") == "studio")
-        #expect(NSDictionary(dictionary: source).isEqual(to: defaults.persistentDomain(forName: sourceDomain) ?? [:]))
-    }
-
-    @Test func existingDestinationKeysAlwaysWinIncludingFalseAndEmptyValues() {
-        defaults.setPersistentDomain([
-            "serverURL": "https://legacy.example", "appearance": "dark",
-            "notificationsEnabled": true, "textScale": 1.25,
-            LaunchChannel.key: ["https://legacy.example": "old"],
-        ], forName: sourceDomain)
-        let destination: [String: Any] = [
-            "serverURL": "", "notificationsEnabled": false, "textScale": 0.0,
-            LaunchChannel.key: ["https://new.example": "new"],
-        ]
-        defaults.setPersistentDomain(destination, forName: destinationDomain)
-        migrate()
-        let imported = defaults.persistentDomain(forName: destinationDomain) ?? [:]
-        var expected = destination
-        expected["appearance"] = "dark"
-        expected[AppPreferencesMigration.completionKey] = true
-        #expect(NSDictionary(dictionary: imported).isEqual(to: expected))
-    }
-
-    @Test func registeredDefaultsDoNotHideLegacySettings() {
-        defaults.register(defaults: ["registeredMigrationSetting": "fallback"])
-        defaults.setPersistentDomain(["registeredMigrationSetting": "legacy"], forName: sourceDomain)
-        migrate()
-        #expect(defaults.string(forKey: "registeredMigrationSetting") == "legacy")
-    }
-
-    @Test func aCompletedImportNeverRunsAgainEvenWhenAnImportedKeyIsRemoved() {
-        defaults.setPersistentDomain(["appearance": "dark"], forName: sourceDomain)
-        migrate()
-        defaults.removeObject(forKey: "appearance")
-        defaults.setPersistentDomain(["appearance": "light", "textScale": 2.0], forName: sourceDomain)
-        migrate()
-        #expect(defaults.object(forKey: "appearance") == nil)
-        #expect(defaults.object(forKey: "textScale") == nil)
-    }
-
-    @Test func anAbsentLegacyDomainStillCompletesTheOneTimeImport() {
-        migrate()
-        #expect(defaults.bool(forKey: AppPreferencesMigration.completionKey))
-        defaults.setPersistentDomain(["appearance": "dark"], forName: sourceDomain)
-        migrate()
-        #expect(defaults.object(forKey: "appearance") == nil)
-    }
-
-    @Test(arguments: [
-        String?.none, AppPreferencesMigration.legacyDomain,
-        AppPreferencesMigration.bundleIdentifier + ".test",
-        AppPreferencesMigration.bundleIdentifier + ".benchmark",
-        AppPreferencesMigration.bundleIdentifier + ".updatetest",
-    ])
-    func otherBundleIdentitiesNeverReadOrMarkTheMigration(_ bundleIdentifier: String?) {
-        defaults.setPersistentDomain(["appearance": "dark"], forName: sourceDomain)
-        migrate(bundleIdentifier: bundleIdentifier)
-        #expect(defaults.persistentDomain(forName: destinationDomain) == nil)
-    }
-
-    @Test func snapshotsLeaveMigrationPendingForTheFirstOrdinaryLaunch() {
-        defaults.setPersistentDomain(["appearance": "dark"], forName: sourceDomain)
-        migrate(isSnapshot: true)
-        #expect(defaults.persistentDomain(forName: destinationDomain) == nil)
-        migrate()
-        #expect(defaults.string(forKey: "appearance") == "dark")
-    }
-
-    @Test(arguments: [Bool?.none, false, true])
-    func onlyAnImportedNotificationOptInIsConsumedOnce(_ enabled: Bool?) {
-        var source: [String: Any] = [:]
-        if let enabled { source["notificationsEnabled"] = enabled }
-        defaults.setPersistentDomain(source, forName: sourceDomain)
-        migrate()
-        #expect(takeNotificationOptIn() == (enabled == true))
-        #expect(!takeNotificationOptIn())
-    }
-
-    @Test(arguments: [false, true])
-    func existingNotificationPreferencesDoNotPrompt(_ enabled: Bool) {
-        defaults.setPersistentDomain(["notificationsEnabled": true], forName: sourceDomain)
-        defaults.set(enabled, forKey: "notificationsEnabled")
-        migrate()
-        #expect(!takeNotificationOptIn())
-        #expect(defaults.bool(forKey: "notificationsEnabled") == enabled)
-    }
-
-    @Test func aBackgroundImportWaitsForTheRealAppWithoutBeingConsumedByTestsOrSnapshots() {
-        defaults.setPersistentDomain(["notificationsEnabled": true], forName: sourceDomain)
-        migrate()
-        #expect(!takeNotificationOptIn(isSnapshot: true))
-        #expect(!takeNotificationOptIn(bundleIdentifier: AppPreferencesMigration.bundleIdentifier + ".test"))
-        #expect(takeNotificationOptIn())
-        #expect(!takeNotificationOptIn())
-    }
-
-    @Test func turningNotificationsOffBeforeTheFirstActiveWindowCancelsThePrompt() {
-        defaults.setPersistentDomain(["notificationsEnabled": true], forName: sourceDomain)
-        migrate()
-        defaults.set(false, forKey: "notificationsEnabled")
-        #expect(!takeNotificationOptIn())
-        #expect(defaults.object(forKey: AppPreferencesMigration.notificationOptInKey) == nil)
-    }
-
-    private func takeNotificationOptIn(bundleIdentifier: String? = AppPreferencesMigration.bundleIdentifier,
-                                      isSnapshot: Bool = false) -> Bool {
-        AppPreferencesMigration.takeNotificationOptIn(
-            isSnapshot: isSnapshot, bundleIdentifier: bundleIdentifier, defaults: defaults
-        )
     }
 }
 

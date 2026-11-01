@@ -21,7 +21,6 @@ struct ToyBoxDesktopApp: App {
         do {
             let options = try LaunchOptions.parse(Array(ProcessInfo.processInfo.arguments.dropFirst()),
                                                  environment: ProcessInfo.processInfo.environment)
-            AppPreferencesMigration.run(isSnapshot: options.isSnapshot)
             let delegate = _appDelegate.wrappedValue
             delegate.isSnapshot = options.isSnapshot
             delegate.launchedInBackground = NSRunningApplication.current.activationPolicy == .prohibited
@@ -101,10 +100,6 @@ struct ToyBoxDesktopApp: App {
     private func updateStartupWindow(phase: ScenePhase) {
         guard appDelegate.didFinishLaunching else { return }
         if !model.launchOptions.isSnapshot, phase != .background { appDelegate.comeForward() }
-        if phase == .active, !model.launchOptions.isSnapshot, !appDelegate.isInBackground,
-           !appDelegate.launchedAtLogin || NSApp.windows.contains(where: { $0.isVisible && $0.canBecomeMain }) {
-            Task { await model.authorizeImportedNotificationsIfNeeded() }
-        }
         guard !AppLoginLaunch.suppressesStartupWindow(
             login: appDelegate.launchedAtLogin, backgroundIntent: appDelegate.launchedInBackground
         ) else { return }

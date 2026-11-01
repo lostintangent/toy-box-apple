@@ -37,9 +37,11 @@ struct SettingsView: View {
         }
         .onDisappear { connection.cancel() }
         .onChange(of: connection.address) { _, _ in configurationFailure = nil }
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-            intelligenceAvailability = intelligence.availability
-            model.openAtLogin.refresh()
+        .task {
+            for await _ in NotificationCenter.default.notifications(named: NSApplication.didBecomeActiveNotification) {
+                intelligenceAvailability = intelligence.availability
+                model.openAtLogin.refresh()
+            }
         }
         .task {
             await model.notifications.refreshAuthorization()

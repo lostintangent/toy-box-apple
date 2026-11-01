@@ -173,23 +173,10 @@ struct RootView: View {
         .onContinueUserActivity(ChannelHandoff.activityType, perform: continueHandoff)
     }
 
-    @ViewBuilder
     private var handoffContent: some View {
-        if handoff.phase == .opening {
-            ProgressView("Opening channel…")
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else {
-            ContentUnavailableView {
-                Label("Channel unavailable", systemImage: "bubble.left.and.bubble.right")
-            } description: {
-                Text("This channel isn't available.")
-            } actions: {
-                Button("Show Channels") {
-                    handoff.cancel()
-                    columnVisibility = .all
-                }
-                .keyboardShortcut(.defaultAction)
-            }
+        ChannelHandoffContent(phase: handoff.phase) {
+            handoff.cancel()
+            columnVisibility = .all
         }
     }
 

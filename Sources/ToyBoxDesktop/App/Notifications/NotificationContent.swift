@@ -45,36 +45,6 @@ extension NotificationReply {
     }
 }
 
-/// Which delivered notifications no longer say something true.
-enum NotificationWithdrawal {
-    struct Delivered: Equatable {
-        var identifier: String
-        var serverURL: String
-        var channelID: String
-        var kind: String
-        var sequence: Int
-    }
-
-    /// A request goes once its `requestSequence` changes or clears, a completion once it's been
-    /// seen, and everything once its channel is active in a key window. Another server's
-    /// notifications stay until that server is current again.
-    static func stale(_ delivered: [Delivered], channels: [Channel], serverURL: String,
-                      activeChannelID: String?) -> [String] {
-        let byID = Dictionary(channels.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        return delivered.filter { item in
-            if item.kind == MorningDigest.category { return false }
-            guard item.serverURL == serverURL else { return false }
-            if item.channelID == activeChannelID { return true }
-            guard let channel = byID[item.channelID] else { return item.kind == ChannelNotifications.Event.Kind.request.rawValue }
-            switch ChannelNotifications.Event.Kind(rawValue: item.kind) {
-            case .request: return channel.requestSequence != item.sequence
-            case .completion: return channel.seenThrough >= item.sequence
-            case nil: return false
-            }
-        }.map(\.identifier)
-    }
-}
-
 /// Requests from other channels arrive as banners while the app is active. Completions go
 /// straight to Notification Center, since the sidebar already shows them. The active key
 /// channel never notifies, except to say a reply from a notification wasn't sent.

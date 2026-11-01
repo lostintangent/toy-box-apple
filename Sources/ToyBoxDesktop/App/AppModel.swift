@@ -78,7 +78,7 @@ final class AppModel {
         if !launchOptions.isSnapshot { launchChannelID = launchChannel.channelID(serverURL: self.serverURL) }
         notifications.onActivate = { [weak self] activation in
             guard let self, self.serverURL == activation.serverURL else { return }
-            self.activate(channelID: activation.channelID, sequence: activation.sequence,
+            self.activate(channelID: activation.channel.channelID, sequence: activation.channel.sequence,
                           focusComposer: activation.focusComposer)
         }
         notifications.store = { [weak self] serverURL, channelID in
@@ -126,18 +126,6 @@ final class AppModel {
 
     isolated deinit {
         for token in applicationObservers { NotificationCenter.default.removeObserver(token) }
-    }
-
-    func authorizeImportedNotificationsIfNeeded() async {
-        guard AppPreferencesMigration.takeNotificationOptIn(isSnapshot: launchOptions.isSnapshot) else { return }
-        await notifications.refreshAuthorization()
-        if notifications.authorization == .notDetermined {
-            if !(await notifications.enable()) {
-                UserDefaults.standard.set(false, forKey: "notificationsEnabled")
-            }
-        } else if notifications.authorization == .denied {
-            UserDefaults.standard.set(false, forKey: "notificationsEnabled")
-        }
     }
 
     var api: ChannelAPI? { catalog?.api }

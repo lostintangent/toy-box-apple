@@ -11,14 +11,8 @@ import UserNotifications
 @MainActor @Observable
 final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
     struct Activation: Equatable {
-        var channelID: String
-        var sequence: Int?
+        var channel: ChannelNotification.Activation
         var serverURL: String
-    }
-
-    struct Delivered: Equatable {
-        let identifier: String
-        let payload: ChannelPushPayload
     }
 
     private(set) var authorization: UNAuthorizationStatus = .notDetermined
@@ -274,29 +268,14 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
         self.channels = channels
         self.activeChannelID = activeChannelID
         guard withdraw, let registrationID = currentRegistration?.registrationID else { return }
-        let delivered = await center.deliveredNotifications().compactMap { notification -> Delivered? in
+        let delivered = await center.deliveredNotifications().compactMap { notification -> ChannelNotification.Delivered? in
             guard let payload = try? ChannelPushPayload(userInfo: notification.request.content.userInfo) else { return nil }
-            return Delivered(identifier: notification.request.identifier, payload: payload)
+            return ChannelNotification.Delivered(identifier: notification.request.identifier, payload: payload)
         }
         guard currentRegistration?.registrationID == registrationID else { return }
-        let stale = Self.stale(delivered, channels: self.channels, registrationID: registrationID,
-                               activeChannelID: self.activeChannelID)
+        let stale = ChannelNotification.Delivered.stale(delivered, channels: self.channels, scope: registrationID,
+                                              activeChannelID: self.activeChannelID)
         if !stale.isEmpty { center.removeDeliveredNotifications(withIdentifiers: stale) }
-    }
-
-    static func stale(_ delivered: [Delivered], channels: [Channel], registrationID: String,
-                      activeChannelID: String?) -> [String] {
-        let byID = Dictionary(channels.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        return delivered.filter { item in
-            let payload = item.payload
-            guard payload.registrationID == registrationID else { return false }
-            if payload.channelID == activeChannelID { return true }
-            guard let channel = byID[payload.channelID] else { return payload.kind == .request }
-            switch payload.kind {
-            case .request: return channel.requestSequence != payload.sequence
-            case .completion: return channel.seenThrough >= payload.sequence
-            }
-        }.map(\.identifier)
     }
 
     func presentation(for payload: ChannelPushPayload?, category: String,
@@ -323,7 +302,7 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
                 return
             }
             await onActivate?(Activation(
-                channelID: payload.channelID, sequence: payload.kind == .request ? payload.sequence : nil,
+                channel: .init(channelID: payload.channelID, kind: payload.kind, sequence: payload.sequence),
                 serverURL: currentRegistration.serverURL))
         default:
             break
