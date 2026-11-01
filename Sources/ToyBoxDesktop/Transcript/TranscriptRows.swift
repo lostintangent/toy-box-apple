@@ -304,14 +304,14 @@ struct TranscriptAgentMessage: View, @MainActor Equatable {
                         markdown
                     }
                     if isPending && agent.deleted != true {
-                        TranscriptRequestActions(sequence: entry.message.sequence, choices: choices,
+                        TranscriptRequestActions(.flow, sequence: entry.message.sequence, choices: choices,
                                                  canSend: canSendChoice,
                                                  replyHelp: "Reply to \(agent.name)", onChoose: onChoose) {
                             interaction.reply(to: agent)
                         }
-                        .controlSize(.large)
-                        .font(.system(size: 13 * textScale))
-                        .padding(.top, 6)
+                        .controlSize(.small)
+                        .font(.system(size: 11 * textScale))
+                        .padding(.top, 4)
                     }
                 }
                 .padding(.horizontal, 12)

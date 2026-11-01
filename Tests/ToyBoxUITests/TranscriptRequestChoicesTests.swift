@@ -99,3 +99,61 @@ struct ChoiceButtonLayoutTests {
         return try #require(renderer.cgImage).height
     }
 }
+
+@MainActor
+struct ChoiceFlowLayoutTests {
+    @Test func buttonsKeepTheirNaturalWidthsOnOneLineWhenTheyFit() throws {
+        // 60 + 6 + 30 + 6 + 50 is 152, so three fit a 152-point line.
+        #expect(try height(of: [60, 30, 50], width: 152) == 20)
+        let ideal = ImageRenderer(content: ChoiceFlowLayout(spacing: 6) { buttons([60, 30, 50]) })
+        ideal.scale = 1
+        #expect(try #require(ideal.cgImage).width == 152)
+    }
+
+    @Test func aButtonThatDoesNotFitStartsTheNextLine() throws {
+        #expect(try height(of: [60, 30, 50], width: 151) == 46)
+        #expect(try height(of: [300, 30, 50], width: 320) == 46)
+        #expect(try height(of: [300, 300, 30], width: 320) == 72)
+    }
+
+    @Test func aLabelWiderThanTheLineWrapsAtFullWidth() throws {
+        let long = String(repeating: "Ship the build now ", count: 4)
+        let renderer = ImageRenderer(content: ChoiceFlowLayout(spacing: 6) {
+            Text(long)
+            Text("Reply")
+        }.font(.system(size: 13)).frame(width: 200, alignment: .leading))
+        renderer.scale = 1
+        let lineHeight = try #require(ImageRenderer(content: Text("Yes").font(.system(size: 13))).cgImage).height
+        let image = try #require(renderer.cgImage)
+        #expect(image.width == 200)
+        #expect(image.height > lineHeight * 3)
+    }
+
+    @Test func aLongChoiceWrapsInsideItsOwnSmallBorderedButton() throws {
+        func height(_ choices: [String]) throws -> Int {
+            let renderer = ImageRenderer(content: TranscriptRequestActions(
+                .flow, sequence: 1, choices: choices, canSend: true, replyHelp: "", onChoose: { _ in }, onReply: {})
+                .controlSize(.small).font(.system(size: 11)).frame(width: 300, alignment: .leading))
+            renderer.scale = 1
+            return try #require(renderer.cgImage).height
+        }
+        let line = try height(["Yes"])
+        // One line of buttons, then the long choice alone on two lines above a line with Not yet and Reply.
+        #expect(try height(["Yes", "Not yet"]) == line)
+        let long = "Ship the Mac build to GitHub Releases now and post the notes in the team channel"
+        #expect(try height([long, "Not yet"]) > line * 2 + 6)
+    }
+
+    private func buttons(_ widths: [CGFloat]) -> some View {
+        ForEach(Array(widths.enumerated()), id: \.offset) { _, width in
+            Color.clear.frame(width: width, height: 20)
+        }
+    }
+
+    private func height(of widths: [CGFloat], width: CGFloat) throws -> Int {
+        let renderer = ImageRenderer(content: ChoiceFlowLayout(spacing: 6) { buttons(widths) }
+            .frame(width: width, alignment: .leading))
+        renderer.scale = 1
+        return try #require(renderer.cgImage).height
+    }
+}
