@@ -177,9 +177,12 @@ struct OverviewArtifactRow: View {
                                          onReview: recovery.finishReview)
             }
         }
-        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
             if !voiceOver {
-                Button("Remove", systemImage: "trash", role: .destructive, action: remove).disabled(!canRemove)
+                // Not `.destructive`: that role collapses the row before the server's event arrives.
+                Button("Remove", systemImage: "trash", action: remove)
+                    .tint(.red)
+                    .disabled(!canRemove)
             }
         }
         .quickLookPreview($preview)
