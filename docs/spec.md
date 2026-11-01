@@ -1470,10 +1470,12 @@ otherwise, from localized date templates. Day dividers are not sticky. The New d
 Toy Box's blue: a 1-point system blue rule at 70% across the full lane, and "New" in 11
 semibold blue 6 points after its trailing end. When a day change and the unread boundary
 coincide, they share one line, the day label, the blue rule and New, read as "Today, New
-messages". Adding the rule leaves the Mac's spacing above and below day dividers unchanged.
+messages". A divider has equal space above and below it, on both platforms and whether it
+shows a day, New or both. On the Mac that's the 20-point run gap above its 16-point line and
+20 points below it, before the row it introduces.
 The phone uses the same leading layout in caption semibold: 8 points from the label to a hairline
 rule. When unread, the rule and "New" turn blue, with "New" 6 points after the rule's trailing end.
-It keeps 12 points above and 10 below. Capture the unread boundary only after snapshot or replay completes, and never move it as
+It adds 12 points of its own on each side, so 32 points sit above the line and 32 below. Capture the unread boundary only after snapshot or replay completes, and never move it as
 the user reads. A reopened store that disconnected while the channel was closed waits for its
 reconnect, rather than capturing from the state it cached. This boundary is not an extra synthetic
 message. Reference renders of day labels, the New divider, system rows and both request states:
@@ -1555,7 +1557,12 @@ toolbar menu, the View menu commands and, on the phone, the Channel Actions sect
 menu lists the two choices directly with an inline picker and no header, while the menu bar's View
 menu keeps its Message View submenu among its other sections. The phone's menu also lists them
 directly. A non-default
-filter gives its toolbar button an active tint and label/help. It does not change the composer
+filter gives its toolbar button an active tint and label/help. On the Mac that's the blue glyph.
+On the phone, a standalone Message View item becomes tinted glass while Your Messages is on: the
+accent fills its own capsule and the glyph turns white (`.buttonStyle(.glassProminent)`), the
+iOS idiom for a toolbar control that's on. Its accessibility value is
+"Your Messages". Where Message View sits in Channel Actions, the "Your Messages" subtitle
+carries the state and ••• stays untinted. It does not change the composer
 audience or channel-wide read policy. Read only committed visible sequences in the active window.
 Opening an inspector, reading a preview popover or watching a background window does not mark
 unseen messages read.
@@ -1774,9 +1781,20 @@ Contrast/Reduce Transparency behavior. Reduce Motion uses the reveal path's nonm
 Working Now, Select Text, reactors, system-message details, Overview in both presentations,
 and Settings use native `Button(role: .close)`. iOS supplies the X. Place it at
 `.topBarTrailing` with an explicit accessible close label, never `.confirmationAction`, which iOS
-draws as blue prominent glass. No custom circle or fill. Settings changes remain applied on closing. Save and Create remain
-genuine confirmation actions. Mac keeps Done. Swipe dismissal, focus/draft restoration and
-read blocking are unchanged.
+draws as blue prominent glass. No custom circle or fill. Settings changes remain applied on closing.
+
+New Channel, Edit Channel, Add Agent, Edit Member and the delete confirmation have no text
+Cancel. They close with the same system `Button(role: .close)` X at `.cancellationAction`, which
+discards the draft exactly as Cancel did, labeled "Cancel". Create, Add and Save are
+`Button(role: .confirm)` at `.confirmationAction`: iOS draws the blue glass checkmark, the same
+prominent treatment as Send. Their accessibility labels stay "Create Channel", "Add Agent" and
+"Save", and while a write is pending the checkmark gives way to the small delayed spinner, with
+the label becoming "Creating…", "Adding…" or "Saving…". The confirm stays disabled until the
+form can save. Never hand-place, restyle or regroup these items. The system places both, so
+where it reports a trailing vertical bar, as on the folded Duo, they join that column the way
+Settings' close does. Where it reports a leading vertical bar, keep the bar horizontal as
+Overview does, so neither covers the form. Mac keeps its text buttons. Swipe dismissal,
+focus/draft restoration and read blocking are unchanged.
 
 ### Composer and tray
 
@@ -2215,13 +2233,15 @@ when the title fits. The whole parent row is the click target, so the chevron ne
 separate hit area. Done parents drop the count, because their children are all done. Pending
 parents omit it too. Leaf rows have neither.
 
-A parent's disclosure derives from its status, exactly as the pane's checklist: a done parent
-starts collapsed and every other parent starts expanded, so finished work folds down to its
-title, chevron and diff while open work stays visible. When a parent's status changes, its
-disclosure re-derives from the new status. A parent that becomes done collapses with the
-0.18-second ease-in-out disclosure animation (instant under Reduce Motion), and a reopened
-parent expands. A user's toggle holds until that parent's next status change. The same rule
-applies in the Composer's Tasks popover, which shares these rows.
+A parent's disclosure follows its work in progress: a parent starts expanded only while it or
+any descendant is in progress. Every other parent, pending, blocked or done, starts collapsed to
+its title, chevron and facts, so the list leads with what's moving. ChannelKit owns this test,
+the same one the in-progress filter uses. When a parent gains or loses work in progress, its
+disclosure re-derives: it expands or collapses with the 0.18-second ease-in-out disclosure
+animation (instant under Reduce Motion). A user's toggle holds until that parent's next such
+change, not merely its next status change. This departs from the pane, which collapses only
+done parents. The same rule applies on the phone and in the Composer's Tasks popover, which
+shares these rows.
 
 Rows have 5 points of vertical padding. The first line is the title (13 regular, wrapping, done
 titles in secondary, never struck through) with the owner's 16-point avatar at the trailing
@@ -2468,7 +2488,7 @@ has a visible "Name" label with "Required" as the field prompt, and the unlabele
 "What is this agent's role in the channel?". Neither Add Agent nor Edit Agent shows a note above
 the form, so the onboarding and "Member of" lines stay Mac-only. The identity footer still reads
 "Names are unique in this channel.", led by the live handle once there's a name. Add Agent's
-button is Add, and Adding… while it saves. Edit Agent keeps Save. Role's height, the model,
+confirm is the system checkmark (see Phone sheet semantics). Role's height, the model,
 validation, focus, cancellation and write recovery are unchanged. The Mac sheets keep their
 subtitles, role prompt and Add Agent button.
 
