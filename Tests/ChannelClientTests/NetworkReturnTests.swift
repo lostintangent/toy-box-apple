@@ -142,7 +142,7 @@ struct NetworkReturnTests {
             arriving.disconnect()
         }
         try await eventually { waiting.phase.message == unavailable }
-        try await eventually(observing: mock) { requests(mock, "/api/v1/channels/arriving") == 1 }
+        try await eventually(observing: mock) { mock.pendingCount(for: "/api/v1/channels/arriving") == 1 }
 
         catalog.setActive(false)
         catalog.setActive(true)
@@ -174,7 +174,7 @@ struct NetworkReturnTests {
         let store = catalog.channel(id: "test")
         store.connect()
         defer { store.disconnect() }
-        try await eventually(observing: mock) { requests(mock, "/api/v1/channels/test") == 2 }
+        try await eventually(observing: mock) { mock.pendingCount(for: "/api/v1/channels/test") == 1 }
 
         catalog.setActive(false)
         catalog.setActive(true)

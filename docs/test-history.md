@@ -166,6 +166,17 @@ Incident records moved from AGENTS.md on 2026-10-27, with their evidence and res
   test now also checks that the first failure stays quiet and that two consecutive failures past
   the grace report. It passes with the same 700 ms delay.
 
+## Network return held-response race
+
+- On main with Intelligence, `NetworkReturnTests.aRetryUnderWayAfterABackoffKeepsGoingWhenTheAppComesBack`
+  failed the mobile ChannelClient step: `sendPendingBody` returned 0, then the one-minute suite limit
+  fired. `MockTransport` records a request before `MockURLProtocol` holds its response. A test that
+  waited for the request count could resume before the response was held, so there was nothing to
+  release.
+- Adding a 50 ms delay before `hold` reproduced the failure locally. Fixed rather than quarantined:
+  both waits now observe the held response for their own path through `pendingCount(for:)`, and the
+  test passes with the same delay. No retry or timing assertion was added.
+
 ## Phone audience-capsule rendering
 
 - `ToyBoxMobileTests/ComposerTests.audienceCapsuleIsSeparateFromIts44PointRowAndGrowsWithText`

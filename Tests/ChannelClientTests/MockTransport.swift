@@ -41,6 +41,10 @@ final class MockTransport: Sendable {
     var requests: [URLRequest] { state.withLock { $0.requests } }
     var stops: Int { state.withLock { $0.stops } }
     var pendingResponseCount: Int { state.withLock { $0.pending.count } }
+
+    func pendingCount(for path: String) -> Int {
+        state.withLock { state in state.pending.values.filter { $0.request.url?.path == path }.count }
+    }
     var changeObserverCount: Int { state.withLock { $0.observers.count } }
 
     func observeChanges(_ continuation: AsyncStream<Void>.Continuation) -> UUID {
