@@ -1544,7 +1544,7 @@ struct MenuBarExtraTests {
     @Test func aConfirmedReplyStaysSentUntilTheNextOpening() {
         let item = MenuBarStatus.Item(id: "one", name: "One", subtitle: "", agent: ada, sequence: 12, quote: "First?")
         var inbox = MenuBarInboxState(status: .init(waiting: [item]))
-        inbox.confirmed("one")
+        inbox.record("one", .sent)
         inbox.update(.init(waiting: [item]))
         #expect(inbox.requests[0].state == .sent)
         #expect(!inbox.requests[0].canReply)
@@ -1563,6 +1563,56 @@ struct MenuBarExtraTests {
         item.agent = ada
         inbox.update(.init(waiting: [item]))
         #expect(inbox.requests[0].canReply)
+    }
+
+    @Test func choicesShowWhileTheRequestWaitsAndNeedNoRequester() {
+        let item = MenuBarStatus.Item(id: "one", name: "One", subtitle: "", sequence: 12, quote: "Ship it?",
+                                      replies: ["Yes", "No"])
+        var inbox = MenuBarInboxState(status: .init(waiting: [item]))
+        #expect(inbox.requests[0].canChoose)
+        #expect(!inbox.requests[0].canReply)
+        inbox.record("one", .sending)
+        #expect(!inbox.requests[0].canChoose)
+        #expect(inbox.requests[0].state.notice == "Sending reply…")
+        inbox.record("one", .sent)
+        #expect(!inbox.requests[0].canChoose)
+        #expect(inbox.requests[0].state.notice == "Reply sent")
+    }
+
+    @Test func aSendingOrUnsentChoiceStaysUntilTheNextOpening() {
+        let item = MenuBarStatus.Item(id: "one", name: "One", subtitle: "", agent: ada, sequence: 12, quote: "Ship it?",
+                                      replies: ["Yes", "No"])
+        var inbox = MenuBarInboxState(status: .init(waiting: [item]))
+        inbox.record("one", .sending)
+        inbox.update(.init())
+        #expect(inbox.requests.map(\.state) == [.sending])
+        inbox.record("one", .notSent)
+        inbox.update(.init(waiting: [item]))
+        #expect(inbox.requests.map(\.state) == [.notSent])
+        #expect(inbox.requests[0].item == item)
+        #expect(inbox.requests[0].state.notice == "Reply not sent. Open the channel to send it again.")
+        #expect(MenuBarInboxState(status: .init()).requests.isEmpty)
+    }
+
+    @Test func aRequestWithoutSuggestedRepliesOffersNoChoices() {
+        let item = MenuBarStatus.Item(id: "one", name: "One", subtitle: "", agent: ada, sequence: 12, quote: "Ship it?")
+        let inbox = MenuBarInboxState(status: .init(waiting: [item]))
+        #expect(inbox.requests[0].canReply)
+        #expect(!inbox.requests[0].canChoose)
+    }
+
+    @Test func aChoiceInTheOutboxLeavesTheRowForGood() {
+        let item = MenuBarStatus.Item(id: "one", name: "One", subtitle: "", agent: ada, sequence: 12, quote: "Ship it?",
+                                      replies: ["Yes", "No"])
+        let request = MenuBarInboxState(status: .init(waiting: [item])).requests[0]
+        func attempt(_ content: String, phase: ChannelSendPhase) -> ChannelSendAttempt {
+            ChannelSendAttempt(id: UUID().uuidString, content: content, attachments: [],
+                               timestamp: "2026-10-25T12:00:00Z", phase: phase)
+        }
+        #expect(request.choices(attempts: []) == ["Yes", "No"])
+        #expect(request.choices(attempts: [attempt("Maybe", phase: .confirmed)]) == ["Yes", "No"])
+        #expect(request.choices(attempts: [attempt("Yes", phase: .notSent)]) == [])
+        #expect(request.choices(attempts: [attempt("No", phase: .confirmed)]) == [])
     }
 
     @Test func aShortRequestTakesItsLinesAndALongOneScrollsWithinTheCap() throws {
