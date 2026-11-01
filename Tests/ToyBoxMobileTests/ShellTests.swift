@@ -815,7 +815,7 @@ struct ShellTests {
             }
             let first = try #require(model.catalog?.channel(id: "first"))
             try prepare(first)
-            #expect(following.state(for: first) == .unavailable)
+            #expect(following.state(for: first) == .unavailable(nil))
             await model.startIntegrations()
             await withCheckedContinuation { continuation in
                 began = { continuation.resume() }
@@ -823,7 +823,7 @@ struct ShellTests {
             }
             #expect(notifications.currentRegistration == registration.current)
             #expect(!notifications.isRegistrationReady)
-            #expect(following.state(for: first) == .unavailable)
+            #expect(following.state(for: first) == .unavailable(nil))
             #expect(!notifications.isEnabled)
             try #require(response).resume(returning: false)
             await registration.waitUntilIdle()
@@ -836,10 +836,10 @@ struct ShellTests {
             let second = try #require(model.catalog?.channel(id: "first"))
             try prepare(second)
             await waitFor(.available, for: second)
-            #expect(following.state(for: first) == .unavailable)
+            #expect(following.state(for: first) == .unavailable(nil))
 
             try registration.select(api: firstAPI)
-            await waitFor(.unavailable, for: second)
+            await waitFor(.unavailable(nil), for: second)
             try registration.select(api: secondAPI)
             await waitFor(.available, for: second)
             #expect(!notifications.isEnabled)

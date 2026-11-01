@@ -254,6 +254,7 @@ final class AppModel {
         withObservationTracking {
             _ = notifications.currentRegistration
             _ = notifications.isRegistrationReady
+            _ = notifications.registrationError
             _ = catalog
         } onChange: { [weak self] in
             Task { @MainActor in self?.observeFollowing() }
@@ -264,7 +265,7 @@ final class AppModel {
     private func configureFollowing() {
         following.configure(
             registration: notifications.currentRegistration, isRegistrationReady: notifications.isRegistrationReady,
-            catalog: catalog
+            catalog: catalog, registrationError: notifications.registrationError
         )
     }
 

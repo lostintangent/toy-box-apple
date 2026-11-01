@@ -17,6 +17,7 @@ final class ChannelFollowController {
     @ObservationIgnored private let unregisterActivity: @MainActor (ChannelStore, String) async throws -> Void
     private var registration: MobilePushRegistration?
     private var isRegistrationReady = false
+    private var registrationError: String?
     private var catalog: ChannelCatalogStore?
     @ObservationIgnored private var writes: [String: Task<Void, Error>] = [:]
     @ObservationIgnored private let logger = Logger(subsystem: "dev.toybox.mobile", category: "Follow")
@@ -58,7 +59,9 @@ final class ChannelFollowController {
         self.unregisterActivity = unregisterActivity
     }
 
-    func configure(registration: MobilePushRegistration?, isRegistrationReady: Bool, catalog: ChannelCatalogStore?) {
+    func configure(registration: MobilePushRegistration?, isRegistrationReady: Bool, catalog: ChannelCatalogStore?,
+                   registrationError: String? = nil) {
+        self.registrationError = registrationError
         let changed = self.registration != registration || self.catalog !== catalog
         let becameReady = isRegistrationReady && (!self.isRegistrationReady || changed)
         if changed {
@@ -88,10 +91,16 @@ final class ChannelFollowController {
     func state(for store: ChannelStore) -> ChannelFollowAction.State {
         if starting.contains(store.id) { return .starting }
         if entries[store.id] != nil { return .following }
-        guard isRegistrationReady, currentRegistration != nil, catalog?.api.baseURL == store.api.baseURL,
-              store.phase.isConnected, let state = store.state else { return .unavailable }
+        guard catalog?.api.baseURL == store.api.baseURL else { return .unavailable(nil) }
+        if store.phase == .deleted { return .unavailable(.deleted) }
+        if case .failed = store.phase { return .unavailable(.unreachable) }
+        guard store.phase.isConnected, let state = store.state else { return .unavailable(nil) }
         let progress = channelTasksProgress(state.channel.tasks)
-        return progress.total > progress.done ? .available : .unavailable
+        guard progress.total > progress.done else { return .unavailable(.noTasksInProgress) }
+        guard isRegistrationReady, currentRegistration != nil else {
+            return .unavailable(registrationError == nil ? nil : .pushNotSetUp)
+        }
+        return .available
     }
 
     func follow(_ store: ChannelStore) async {
