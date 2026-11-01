@@ -59,45 +59,6 @@ struct TranscriptRequestChoicesTests {
     }
 }
 
-/// The shared answer layout both transcripts and the Mac inbox use, measured through real renders.
-@MainActor
-struct ChoiceButtonLayoutTests {
-    @Test func equalSharesFitOneRow() throws {
-        // Three 60-point buttons with two 8-point gaps need 196 points.
-        #expect(try height(of: [60, 60, 60], width: 196) == 20)
-        #expect(try height(of: [60, 30, 60], width: 400) == 20)
-    }
-
-    @Test func aLongLabelBesideYesStacksInsteadOfTruncatingInItsShare() throws {
-        // Summed, 30 + 300 + 8 fits 400, but two 300-point shares don't, so they stack.
-        #expect(try height(of: [30, 300], width: 400) == 48)
-        #expect(try height(of: [60, 60, 60], width: 195) == 76)
-    }
-
-    @Test func aLongTextLabelWrapsAtFullWidthWhenStacked() throws {
-        let long = String(repeating: "Ship the build now ", count: 4)
-        let renderer = ImageRenderer(content: ChoiceButtonLayout(spacing: 8) {
-            Text("Yes")
-            Text(long)
-        }.font(.system(size: 13)).frame(width: 200))
-        renderer.scale = 1
-        let lineHeight = try #require(ImageRenderer(content: Text("Yes").font(.system(size: 13))).cgImage).height
-        let image = try #require(renderer.cgImage)
-        #expect(image.width == 200)
-        #expect(image.height > lineHeight * 3)
-    }
-
-    private func height(of idealWidths: [CGFloat], width: CGFloat) throws -> Int {
-        let renderer = ImageRenderer(content: ChoiceButtonLayout(spacing: 8) {
-            ForEach(Array(idealWidths.enumerated()), id: \.offset) { _, ideal in
-                Color.clear.frame(idealWidth: ideal, maxWidth: .infinity, minHeight: 20, maxHeight: 20)
-            }
-        }.frame(width: width))
-        renderer.scale = 1
-        return try #require(renderer.cgImage).height
-    }
-}
-
 @MainActor
 struct ChoiceFlowLayoutTests {
     @Test func buttonsKeepTheirNaturalWidthsOnOneLineWhenTheyFit() throws {
@@ -134,7 +95,7 @@ struct ChoiceFlowLayoutTests {
                                          replies: replies)
             let choices = TranscriptRequestChoices(request: request, attempts: [], isConnected: true)
             let renderer = ImageRenderer(content: TranscriptRequestActions(
-                .flow, sequence: 1, choices: choices, replyHelp: "", onChoose: { _ in }, onReply: {})
+                spacing: 6, sequence: 1, choices: choices, replyHelp: "", onChoose: { _ in }, onReply: {})
                 .controlSize(.small).font(.system(size: 11)).frame(width: 300, alignment: .leading))
             renderer.scale = 1
             return try #require(renderer.cgImage).height
@@ -153,7 +114,7 @@ struct ChoiceFlowLayoutTests {
                                          replies: replies)
             let choices = TranscriptRequestChoices(request: request, attempts: [], isConnected: true)
             let renderer = ImageRenderer(content: TranscriptRequestActions(
-                .flow, sequence: 1, choices: choices, replyHelp: "", onChoose: { _ in }, onReply: {})
+                spacing: 6, sequence: 1, choices: choices, replyHelp: "", onChoose: { _ in }, onReply: {})
                 .controlSize(.small).font(.system(size: 11)))
             renderer.proposedSize = ProposedViewSize(width: 300, height: nil)
             renderer.scale = 1

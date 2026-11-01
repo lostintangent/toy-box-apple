@@ -216,11 +216,12 @@ struct TranscriptAgentMessage: View {
                                 .padding(.vertical, 10)
                         }
                         if entry.request == .pending && agent.deleted != true {
-                            TranscriptRequestActions(sequence: entry.message.sequence, choices: choices,
+                            TranscriptRequestActions(spacing: 8, sequence: entry.message.sequence, choices: choices,
                                                      replyHelp: "Reply to \(agent.name)", onChoose: onChoose) {
                                 interaction.reply(to: agent)
                             }
-                            .controlSize(.large)
+                            .controlSize(.small)
+                            .font(.footnote)
                             .padding(.bottom, 12)
                         }
                     }
