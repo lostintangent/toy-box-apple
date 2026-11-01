@@ -121,7 +121,9 @@ struct ChannelScreen: View {
                 ConversationView(store: store)
                     .safeAreaBar(edge: .bottom, spacing: 0) {
                         if !interaction.isFinding {
-                            ComposerView(store: store).findSwapTransition()
+                            ComposerSurface(session: model.composerSession(for: store))
+                                .id(ObjectIdentifier(store))
+                                .findSwapTransition()
                         }
                     }
             }
