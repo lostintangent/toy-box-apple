@@ -2072,7 +2072,8 @@ The whole header is one heading button, including count/diff. Enter/Space or acc
 activation toggles once with 180 ms disclosure, instantly under Reduce Motion, and retains
 focus. Speak natural counts and exact changes: "Team, 9 agents", "Tasks, 1 of 4 top-level tasks
 complete, 1,522 additions, 114 deletions", or "Tasks, no tasks", with Expanded/Collapsed value.
-Use proper plurals, not spoken slash or compact K/M. Symbols/values add no focus stops. Retain
+Use proper plurals, not spoken slash or compact K/M. Symbols/values add no focus stops. The
+Tasks header's in-progress filter is its one extra control, described with task disclosure. Retain
 native focus indication and Show/Hide help. Persistence scopes stay unchanged: collapsed
 sections belong to the Mac window scene, not channel, and to the phone's retained per-channel
 Overview session. Empty sections stay with "No tasks yet", "Nothing shared yet" or "No routines".
@@ -2244,6 +2245,28 @@ animation (instant under Reduce Motion). A user's toggle holds until that parent
 change, not merely its next status change. This departs from the pane, which collapses only
 done parents. The same rule applies on the phone and in the Composer's Tasks popover, which
 shares these rows.
+
+**In-progress filter.** Like the pane, Tasks can show only the work that's moving. A filter
+toggle sits in the Tasks header on both apps, between the diff and the disclosure lane:
+`line.3.horizontal.decrease` in secondary ink while off and the accent while on, the same glyph
+and active tint as Message View. It's a sibling of the heading button, never inside it, so
+pressing it never collapses the section. It's its own focus stop with toggle semantics: label
+"Show Only In-Progress Tasks", value on or off, and the same text as Mac help. Mac uses an
+11-point medium glyph in a 24-point target, 8 points before the disclosure lane. The phone uses
+a 44-point target just before the always-visible chevron, and keeps that pair together at the
+top-trailing edge when the header stacks. Show it whenever the channel has a task, collapsed or
+not, and omit it when Tasks is empty. It starts off and keeps the collapsed sections' scope: the
+Mac window scene, and the phone's retained per-channel Overview session.
+
+While it's on, each level of the tree keeps only the tasks that hold work in progress, the same
+ChannelKit test as disclosure. ChannelKit owns this filtering. Every kept task renders from its
+full value, never a pruned copy, so its x/y count, spoken subtask count, diff and timing still
+describe all of its children. A kept parent with no kept children shows its count without a
+chevron, since it has nothing to disclose. Toggling the filter leaves every parent's disclosure
+alone. The header's count and diff always describe the whole channel. With nothing in progress,
+the section shows "No tasks in progress" in the empty-sentence style. On the phone, a "View N
+subtasks" link and its scoped list apply the same filter, and N counts what that list shows.
+The Composer's Tasks popover has no header and always shows every task.
 
 Rows have 5 points of vertical padding. The first line is the title (13 regular, wrapping, done
 titles in secondary, never struck through) with the owner's 16-point avatar at the trailing
