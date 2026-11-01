@@ -11,10 +11,13 @@ public final class ChannelComposerSession {
     public var pendingEdit: ChannelSendAttempt?
     public private(set) var isSubmitting = false
     private var submissionError: (revision: UUID, message: String)?
+    /// Keeps the text and images after a send is recorded, so the caller clears them once it confirms the echo.
+    private let keepsDraftUntilConfirmed: Bool
 
-    public init(store: ChannelStore, draft: ComposerDraft) {
+    public init(store: ChannelStore, draft: ComposerDraft, keepsDraftUntilConfirmed: Bool = false) {
         self.store = store
         self.draft = draft
+        self.keepsDraftUntilConfirmed = keepsDraftUntilConfirmed
     }
 
     public var attempt: ChannelSendAttempt? {
@@ -22,10 +25,12 @@ public final class ChannelComposerSession {
         return store.sendAttempts.first { $0.id == id }
     }
 
-    public func canSend(hasAdditionalContent: @autoclosure () -> Bool = false,
+    public func canSend(isBlocked: @autoclosure () -> Bool = false,
+                        hasAdditionalContent: @autoclosure () -> Bool = false,
                         isLoadingAdditionalImages: @autoclosure () -> Bool = false) -> Bool {
-        channelCanSend(
-            isConnected: store.phase.isConnected, isSending: store.isSending, isSubmitting: isSubmitting,
+        // Connection comes first, so an offline session never observes what would block it.
+        store.phase.isConnected && !isBlocked() && channelCanSend(
+            isConnected: true, isSending: store.isSending, isSubmitting: isSubmitting,
             hasContent: draft.hasContent || hasAdditionalContent(),
             isLoadingImages: draft.isLoadingImages || isLoadingAdditionalImages(),
             hasUnreadableImage: draft.hasUnreadableImage, textUTF16Count: draft.text.utf16.count
@@ -43,7 +48,11 @@ public final class ChannelComposerSession {
 
     @discardableResult
     public func send() async -> Bool {
-        guard canSend() else { return false }
+        await submit() != nil
+    }
+
+    public func submit() async -> ChannelSendResult? {
+        guard canSend() else { return nil }
         let content = draft.text
         let attachments = draft.images.map(\.attachment)
         let revision = draft.revision
@@ -54,17 +63,17 @@ public final class ChannelComposerSession {
         defer { isSubmitting = false }
         var recorded = false
         do {
-            _ = try await store.post(id: id, content: content, attachments: attachments) { [self] in
+            let result = try await store.post(id: id, content: content, attachments: attachments) { [self] in
                 recorded = true
-                clearSentDraft(revision: revision)
+                if !keepsDraftUntilConfirmed { clearSentDraft(revision: revision) }
             }
-            clearSentDraft(revision: revision)
-            return true
+            if !keepsDraftUntilConfirmed { clearSentDraft(revision: revision) }
+            return result
         } catch {
             if !recorded, store.sendAttempts.first(where: { $0.id == id })?.error == nil {
                 submissionError = (revision, error.localizedDescription)
             }
-            return false
+            return nil
         }
     }
 
