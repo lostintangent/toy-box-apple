@@ -65,12 +65,8 @@ struct AvailabilityTests {
     }
 
     @Test func unavailableServiceSkipsTheModel() async throws {
-        struct Unavailable: ChannelIntelligenceService {
-            var availability: IntelligenceAvailability { .unavailable(.appleIntelligenceNotEnabled) }
-            func catchUp(_ request: CatchUpRequest) async -> CatchUpResult { .unavailable(.appleIntelligenceNotEnabled) }
-            func altText(_ request: AltTextRequest) async -> AltText? { nil }
-        }
-        let service: any ChannelIntelligenceService = Unavailable()
+        let service: any ChannelIntelligenceService = ScriptedIntelligence(
+            availability: .unavailable(.appleIntelligenceNotEnabled))
         #expect(!service.availability.isAvailable)
     }
 }

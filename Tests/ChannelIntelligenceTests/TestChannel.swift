@@ -39,3 +39,28 @@ enum TestChannel {
         flickers when a snapshot arrives late.
         """
 }
+
+/// Answers catch-ups in turn, then keeps the last result (declining when there are none), and answers
+/// alt text with `text`. `count` tallies every model call.
+actor ScriptedIntelligence: ChannelIntelligenceService {
+    nonisolated let availability: IntelligenceAvailability
+    private var results: [CatchUpResult]
+    private let text: String?
+    private(set) var count = 0
+
+    init(availability: IntelligenceAvailability = .available, results: [CatchUpResult] = [], text: String? = nil) {
+        self.availability = availability
+        self.results = results
+        self.text = text
+    }
+
+    func catchUp(_ request: CatchUpRequest) async -> CatchUpResult {
+        count += 1
+        return results.count > 1 ? results.removeFirst() : results.first ?? .declined
+    }
+
+    func altText(_ request: AltTextRequest) async -> AltText? {
+        count += 1
+        return text.map(AltText.init)
+    }
+}
