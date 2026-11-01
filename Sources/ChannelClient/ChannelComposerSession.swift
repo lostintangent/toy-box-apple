@@ -29,12 +29,12 @@ public final class ChannelComposerSession {
                         hasAdditionalContent: @autoclosure () -> Bool = false,
                         isLoadingAdditionalImages: @autoclosure () -> Bool = false) -> Bool {
         // Connection comes first, so an offline session never observes what would block it.
-        store.phase.isConnected && !isBlocked() && channelCanSend(
-            isConnected: true, isSending: store.isSending, isSubmitting: isSubmitting,
-            hasContent: draft.hasContent || hasAdditionalContent(),
-            isLoadingImages: draft.isLoadingImages || isLoadingAdditionalImages(),
-            hasUnreadableImage: draft.hasUnreadableImage, textUTF16Count: draft.text.utf16.count
-        ) && attempt?.phase != .confirmed
+        guard store.phase.isConnected, !isBlocked() else { return false }
+        return !store.isSending && !isSubmitting
+            && (draft.hasContent || hasAdditionalContent())
+            && !(draft.isLoadingImages || isLoadingAdditionalImages())
+            && !draft.hasUnreadableImage && draft.text.utf16.count <= 12_000
+            && attempt?.phase != .confirmed
     }
 
     public var isConfirmed: Bool {
