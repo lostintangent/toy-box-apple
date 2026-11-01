@@ -221,6 +221,8 @@ struct ConversationView: View {
         let context = TranscriptRowContext(agents: store.roster, api: store.api)
         let statusReactions = statusReactions
         let card = interaction.messageView == .all ? catchUp.map { (session: $0, store: store) } : nil
+        let requestChoices = TranscriptRequestChoices(request: store.request, attempts: store.sendAttempts,
+                                                      isConnected: store.phase.isConnected)
         let findMatches = find.isPresented
             ? Dictionary(uniqueKeysWithValues: find.matches.map { ($0.sequence, $0.sequence == find.selectedSequence) })
             : [:]
@@ -237,7 +239,10 @@ struct ConversationView: View {
                                        isExpanded: expanded.contains(item.id),
                                        findHighlight: item.messages.lazy.compactMap { findMatches[$0.sequence] }.first
                                            .map { TranscriptFindHighlight.phone(query: find.query, isCurrent: $0) },
-                                       catchUp: item.divider?.unread == true ? card : nil) { expands in
+                                       catchUp: item.divider?.unread == true ? card : nil,
+                                       choices: item.messages.contains { $0.sequence == requestChoices?.sequence }
+                                           ? requestChoices : nil,
+                                       onChoose: { interaction.sendSuggestedReply($0, store: store) }) { expands in
                         // Keep the tapped message's top where it is, or bring it back when it collapses.
                         place(scroll.update(.toggledExpansion(item.id, expanded: expands)))
                         if expands { expanded.insert(item.id) } else { expanded.remove(item.id) }

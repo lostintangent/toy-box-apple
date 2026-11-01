@@ -23,6 +23,9 @@ struct TranscriptItemView: View, @MainActor Equatable {
     var findHighlight: TranscriptFindHighlight?
     /// The landing's summary, which only the New divider's item draws above itself.
     var catchUp: (session: TranscriptCatchUpSession, store: ChannelStore)?
+    /// The pending request's suggested replies, when it's this item.
+    var choices: TranscriptRequestChoices?
+    var onChoose: (String) -> Void = { _ in }
     var setExpanded: (Bool) -> Void = { _ in }
     @AppStorage(TranscriptIntelligenceSettings.summarizesNewMessages) private var summarizes = true
     @AccessibilityFocusState private var focusesDivider: Bool
@@ -31,6 +34,7 @@ struct TranscriptItemView: View, @MainActor Equatable {
         lhs.item == rhs.item && lhs.context == rhs.context && lhs.statusReactions == rhs.statusReactions
             && lhs.isHighlighted == rhs.isHighlighted && lhs.isExpanded == rhs.isExpanded
             && lhs.findHighlight == rhs.findHighlight && lhs.catchUp?.session === rhs.catchUp?.session
+            && lhs.choices == rhs.choices
     }
 
     var body: some View {
@@ -65,7 +69,9 @@ struct TranscriptItemView: View, @MainActor Equatable {
             TranscriptAgentMessage(entry: entry, agent: channelAgentIdentity(context.agents, id: agentId),
                                    context: context,
                                    statusReactions: statusReactions[entry.message.sequence] ?? [],
-                                   isExpanded: isExpanded, findHighlight: findHighlight, setExpanded: setExpanded)
+                                   isExpanded: isExpanded, findHighlight: findHighlight,
+                                   choices: choices, onChoose: onChoose,
+                                   setExpanded: setExpanded)
         case .system(let messages):
             TranscriptSystemMessages(messages: messages, agents: context.agents, findHighlight: findHighlight)
         }
@@ -162,6 +168,8 @@ struct TranscriptAgentMessage: View {
     let statusReactions: [ChannelReaction]
     var isExpanded = false
     var findHighlight: TranscriptFindHighlight?
+    var choices: TranscriptRequestChoices?
+    var onChoose: (String) -> Void = { _ in }
     var setExpanded: (Bool) -> Void = { _ in }
     @Environment(ChannelInteraction.self) private var interaction
     @ScaledMetric(relativeTo: .body) private var textScale: CGFloat = 1
@@ -182,7 +190,7 @@ struct TranscriptAgentMessage: View {
             VStack(alignment: .leading, spacing: 4) {
                 if entry.showHeader { header.accessibilityHidden(true) }
                 if !entry.body.isEmpty {
-                    Group {
+                    VStack(alignment: .leading, spacing: 0) {
                         if entry.collapsible {
                             // Show More is the bubble's footer, so it replaces the bottom padding. Its 44pt
                             // target reaches below the bubble rather than up into the body's links.
@@ -206,6 +214,14 @@ struct TranscriptAgentMessage: View {
                             TranscriptBody(text: entry.body, agents: context.agents, baseURL: context.api.baseURL,
                                                surface: surface, findHighlight: findHighlight)
                                 .padding(.vertical, 10)
+                        }
+                        if entry.request == .pending && agent.deleted != true {
+                            TranscriptRequestActions(sequence: entry.message.sequence, choices: choices,
+                                                     replyHelp: "Reply to \(agent.name)", onChoose: onChoose) {
+                                interaction.reply(to: agent)
+                            }
+                            .controlSize(.large)
+                            .padding(.bottom, 12)
                         }
                     }
                         .padding(.horizontal, 12)
