@@ -24,6 +24,15 @@ public enum ManagementFlow: Identifiable, Equatable {
         case .deleteRoutine(let channelId, let routineId): "delete-routine-\(channelId)-\(routineId)"
         }
     }
+
+    public var channelId: String? {
+        switch self {
+        case .newChannel: nil
+        case .editChannel(let channelId), .deleteChannel(let channelId),
+             .addMember(let channelId, _), .editMember(let channelId, _),
+             .removeMember(let channelId, _), .deleteRoutine(let channelId, _): channelId
+        }
+    }
 }
 
 @MainActor @Observable

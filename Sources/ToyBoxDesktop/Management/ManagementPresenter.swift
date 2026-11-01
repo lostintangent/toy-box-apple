@@ -48,14 +48,7 @@ private struct ManagementSheet: View {
     let presenter: ManagementPresenter
     @ViewState private var store: ChannelStore?
 
-    private var channelId: String? {
-        switch flow {
-        case .newChannel: nil
-        case .editChannel(let id), .deleteChannel(let id),
-             .addMember(let id, _), .editMember(let id, _),
-             .removeMember(let id, _), .deleteRoutine(let id, _): id
-        }
-    }
+    private var channelId: String? { flow.channelId }
 
     var body: some View {
         Group {
