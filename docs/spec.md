@@ -2226,12 +2226,13 @@ remains separate. These changes do not affect Mac task rows.
 
 A parent's disclosure trails its title inline, as macOS sidebar section headers and the pane do.
 Build the first line as one wrapping `Text`: the title, then two spaces and the progress count
-for an open parent (11 regular, monospaced digits, secondary, "3/4"), then one space and the
+for every parent, whatever its status (11 regular, monospaced digits, secondary, "3/4"), then one space and the
 chevron as a text image (`chevron.right` collapsed, `chevron.down` expanded, 9 bold, secondary).
 The chevron ends the title's last line and wraps with it, never orphaned on a line of its own
 when the title fits. The whole parent row is the click target, so the chevron needs no
-separate hit area. Done parents drop the count, because their children are all done. Pending
-parents omit it too. Leaf rows have neither.
+separate hit area. Pending and done parents keep the count too, so a collapsed parent still
+says how many subtasks it holds: "0/3" and "3/3". Its spoken "N of M subtasks done" and the
+phone's scoped subtask header follow the same rule. Leaf rows have neither.
 
 A parent's disclosure follows its work in progress: a parent starts expanded only while it or
 any descendant is in progress. Every other parent, pending, blocked or done, starts collapsed to
