@@ -10,7 +10,7 @@ struct ImageDescriptionSessionTests {
     private func request(_ digest: String = "chart", server: URL? = nil,
                          file: String = "/fixture/image.png",
                          priority: AltTextRequest.Priority = .visible) -> AltTextRequest {
-        AltTextRequest(server: server ?? self.server, digest: digest, fileURL: URL(fileURLWithPath: file),
+        AltTextRequest(server: server ?? self.server, digest: digest, fileURL: URL(filePath: file),
                        priority: priority)
     }
 
