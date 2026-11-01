@@ -808,7 +808,7 @@ struct ShellTests {
                     lead: .init(id: store.id, name: "Lead")
                 )))
             }
-            @MainActor func waitFor(_ state: ChannelFollowAction.State, for store: ChannelStore) async {
+            @MainActor func waitFor(_ state: ChannelFollowAction.Status, for store: ChannelStore) async {
                 for await current in Observations({ following.state(for: store) }) {
                     if current == state { return }
                 }

@@ -13,10 +13,10 @@ import UIKit
 @MainActor
 struct OverviewTests {
     @Test func bothFollowMenusUseTheSameLabelsAndEnabledStates() {
-        let available = ChannelFollowAction.State.available
-        let unavailable = ChannelFollowAction.State.unavailable(.noTasksInProgress)
-        let starting = ChannelFollowAction.State.starting
-        let following = ChannelFollowAction.State.following
+        let available = ChannelFollowAction.Status.available
+        let unavailable = ChannelFollowAction.Status.unavailable(.noTasksInProgress)
+        let starting = ChannelFollowAction.Status.starting
+        let following = ChannelFollowAction.Status.following
         #expect(available.title == "Follow This Channel")
         #expect(unavailable.title == available.title)
         #expect(unavailable.reason == .noTasksInProgress)

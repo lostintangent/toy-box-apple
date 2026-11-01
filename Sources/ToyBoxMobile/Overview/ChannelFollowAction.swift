@@ -2,7 +2,7 @@ import ChannelClient
 import SwiftUI
 
 struct ChannelFollowAction: View {
-    enum State: Equatable {
+    enum Status: Equatable {
         enum Reason: Equatable {
             case deleted, unreachable, noTasksInProgress, pushNotSetUp
 
@@ -37,7 +37,7 @@ struct ChannelFollowAction: View {
         var isEnabled: Bool { self == .available || self == .following }
     }
 
-    let state: State
+    let state: Status
     let action: () -> Void
 
     var body: some View {
