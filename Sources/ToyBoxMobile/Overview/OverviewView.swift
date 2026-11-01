@@ -6,7 +6,7 @@ import UIKit
 
 struct OverviewView: View {
     let store: ChannelStore
-    @Bindable var session: OverviewSession
+    @Bindable var session: ChannelOverview
     let placement: OverviewPlacement
     @Environment(OverviewPresentation.self) private var presentation
     @Environment(ChannelInteraction.self) private var interaction
@@ -72,7 +72,7 @@ struct OverviewView: View {
 
 private struct OverviewContent: View {
     let store: ChannelStore
-    @Bindable var session: OverviewSession
+    @Bindable var session: ChannelOverview
     let placement: OverviewPlacement
     @Environment(OverviewPresentation.self) private var presentation
     @Environment(ChannelInteraction.self) private var interaction

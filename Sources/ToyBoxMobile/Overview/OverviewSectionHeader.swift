@@ -28,13 +28,13 @@ struct OverviewListRowBoundary: ViewModifier {
 struct OverviewSectionRows<Content: View>: View {
     let summary: ChannelOverviewSummary
     let section: OverviewSection
-    let session: OverviewSession
+    let session: ChannelOverview
     let diff: DiffStats?
     let filter: Binding<Bool>?
     let isFirstSection: Bool
     let content: Content
 
-    init(summary: ChannelOverviewSummary, section: OverviewSection, session: OverviewSession,
+    init(summary: ChannelOverviewSummary, section: OverviewSection, session: ChannelOverview,
          diff: DiffStats? = nil, filter: Binding<Bool>? = nil, isFirstSection: Bool = false,
          @ViewBuilder content: () -> Content) {
         self.summary = summary
@@ -64,7 +64,7 @@ struct OverviewSectionRows<Content: View>: View {
 struct OverviewSectionHeader: View {
     let summary: ChannelOverviewSummary
     let section: OverviewSection
-    @Bindable var session: OverviewSession
+    @Bindable var session: ChannelOverview
     var diff: DiffStats?
     var filter: Binding<Bool>?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion

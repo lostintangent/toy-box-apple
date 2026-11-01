@@ -21,7 +21,7 @@ struct TaskRowsTests {
     }
 
     @Test func closingAParentRetainsDescendantChoicesAndOnlyDefaultChangesReDerive() {
-        let disclosure: [String: OverviewSession.Disclosure] = [
+        let disclosure: [String: ChannelOverview.Disclosure] = [
             "root": .init(expandedByDefault: true, expanded: false),
             "child": .init(expandedByDefault: true, expanded: false),
         ]
@@ -88,7 +88,7 @@ struct TaskRowsTests {
     }
 
     @Test func inProgressFilterLeavesDisclosureAloneAndKeepsCollapsedParentsCollapsed() {
-        let collapsed: [String: OverviewSession.Disclosure] = ["root": .init(expandedByDefault: true, expanded: false)]
+        let collapsed: [String: ChannelOverview.Disclosure] = ["root": .init(expandedByDefault: true, expanded: false)]
         #expect(project(tree, disclosure: collapsed, showsOnlyInProgress: true).map(\.id) == [.task("root")])
         #expect(project(tree, disclosure: collapsed).map(\.id) == [.task("root"), .task("other")])
     }
@@ -241,7 +241,7 @@ struct TaskRowsTests {
                   children: depth < 5 ? [task(depth: depth + 1)] : nil)
         }
         let store = ChannelStore(id: "channel", api: try ChannelAPI(serverURL: "https://fixture.example"))
-        let session = OverviewSession(store: store)
+        let session = ChannelOverview(store: store)
         let viewer = ChannelArtifactSession(
             decodeImage: { _, _, _ in throw ChannelAttachmentError.invalidImage },
             download: { _, _ in throw URLError(.notConnectedToInternet) })
@@ -294,7 +294,7 @@ struct TaskRowsTests {
     func taskAndScopedRowsPreserveTheInheritedSurface(scheme: ColorScheme, size: DynamicTypeSize) async throws {
         let surface = scheme == .light ? Color.red : Color.blue
         let store = ChannelStore(id: "channel", api: try ChannelAPI(serverURL: "https://fixture.example"))
-        let session = OverviewSession(store: store)
+        let session = ChannelOverview(store: store)
         let viewer = ChannelArtifactSession(
             decodeImage: { _, _, _ in throw ChannelAttachmentError.invalidImage },
             download: { _, _ in throw URLError(.notConnectedToInternet) })
@@ -369,7 +369,7 @@ struct TaskRowsTests {
     @Test(arguments: DisclosureChange.allCases, [false, true])
     func taskDisclosureDoesNotAnimateTapsOrStatusChanges(change: DisclosureChange, scoped: Bool) async throws {
         let store = ChannelStore(id: "channel", api: try ChannelAPI(serverURL: "https://fixture.example"))
-        let session = OverviewSession(store: store)
+        let session = ChannelOverview(store: store)
         let record = DisclosureTransactions()
         let size = change.size
         var tasks = tree
@@ -428,7 +428,7 @@ struct TaskRowsTests {
     @Test(arguments: [466.0, 669.0], [DynamicTypeSize.large, .accessibility5])
     func nativeListHasOneCellPerVisibleTaskAndScopedLink(width: CGFloat, size: DynamicTypeSize) async throws {
         let store = ChannelStore(id: "channel", api: try ChannelAPI(serverURL: "https://fixture.example"))
-        let session = OverviewSession(store: store)
+        let session = ChannelOverview(store: store)
         let viewer = ChannelArtifactSession(
             decodeImage: { _, _, _ in throw ChannelAttachmentError.invalidImage },
             download: { _, _ in throw URLError(.notConnectedToInternet) })
@@ -501,7 +501,7 @@ struct TaskRowsTests {
     }
 
     private func project(
-        _ tasks: [ChannelTask], disclosure: [String: OverviewSession.Disclosure] = [:],
+        _ tasks: [ChannelTask], disclosure: [String: ChannelOverview.Disclosure] = [:],
         width: CGFloat = 600, accessibility: Bool = false, showsOnlyInProgress: Bool = false
     ) -> [OverviewTaskListRow] {
         OverviewTaskListRow.visibleRows(tasks: tasks, disclosure: disclosure,
@@ -543,7 +543,7 @@ struct TaskRowsTests {
     private struct DisclosureTransactionScene: View {
         let task: ChannelTask
         let store: ChannelStore
-        @Bindable var session: OverviewSession
+        @Bindable var session: ChannelOverview
         let accessibility: Bool
         let statusDriven: Bool
         let scoped: Bool

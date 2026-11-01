@@ -40,7 +40,7 @@ struct OverviewTaskListRow: Identifiable {
         filtered(task.children ?? [], showsOnlyInProgress: showsOnlyInProgress)
     }
 
-    static func isExpanded(_ task: ChannelTask, disclosure: [String: OverviewSession.Disclosure]) -> Bool {
+    static func isExpanded(_ task: ChannelTask, disclosure: [String: ChannelOverview.Disclosure]) -> Bool {
         guard let saved = disclosure[task.id], saved.expandedByDefault == task.isExpandedByDefault else {
             return task.isExpandedByDefault
         }
@@ -48,7 +48,7 @@ struct OverviewTaskListRow: Identifiable {
     }
 
     static func visibleRows(
-        tasks: [ChannelTask], disclosure: [String: OverviewSession.Disclosure],
+        tasks: [ChannelTask], disclosure: [String: ChannelOverview.Disclosure],
         showsOnlyInProgress: Bool = false,
         layout: (ChannelTask) -> OverviewTaskReadingLayout
     ) -> [Self] {
@@ -79,7 +79,7 @@ struct OverviewTaskListRow: Identifiable {
 struct OverviewTaskRows: View {
     let tasks: [ChannelTask]
     let store: ChannelStore
-    let session: OverviewSession
+    let session: ChannelOverview
     @Environment(\.dynamicTypeSize) private var typeSize
     @ScaledMetric(relativeTo: .body) private var statusWidth = 16
     @ScaledMetric(relativeTo: .body) private var titleGap = 6
