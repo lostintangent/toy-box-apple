@@ -103,14 +103,12 @@ struct MemberEditor: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
-                Button("Cancel", role: .cancel) { sessions.cancel(session, presenter: presenter) }.disabled(saving)
+                Button("Cancel", role: .close) { sessions.cancel(session, presenter: presenter) }.disabled(saving)
             }
             ToolbarItem(placement: .confirmationAction) {
-                Button(action: submit) {
-                    ManagementActionLabel(title: Self.submitTitle(adding: member == nil, saving: saving),
-                                          pendingSince: session.pendingSince)
-                }
-                .accessibilityIdentifier("member-submit")
+                ManagementConfirmButton(label: Self.submitTitle(adding: member == nil, saving: saving),
+                                        pendingSince: session.pendingSince, identifier: "member-submit",
+                                        action: submit)
                 .keyboardShortcut(.return, modifiers: .command)
                 .disabled(!canSave)
             }
@@ -128,7 +126,7 @@ struct MemberEditor: View {
     }
 
     static func submitTitle(adding: Bool, saving: Bool) -> String {
-        adding ? (saving ? "Adding…" : "Add") : (saving ? "Saving…" : "Save")
+        adding ? (saving ? "Adding…" : "Add Agent") : (saving ? "Saving…" : "Save")
     }
 
     private func submit() {

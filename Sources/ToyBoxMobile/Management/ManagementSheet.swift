@@ -119,3 +119,23 @@ struct ManagementActionLabel: View {
         }
     }
 }
+
+/// A management sheet's confirm. iOS draws the checkmark, which gives way to the delayed spinner while a write is pending.
+struct ManagementConfirmButton: View {
+    let label: String
+    let pendingSince: ContinuousClock.Instant?
+    let identifier: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(role: .confirm, action: action) {
+            if let pendingSince {
+                DelayedProgressView(since: pendingSince).controlSize(.small)
+            } else {
+                Text(label)
+            }
+        }
+        .accessibilityLabel(label)
+        .accessibilityIdentifier(identifier)
+    }
+}
