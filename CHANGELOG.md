@@ -4,40 +4,40 @@
 
 ### Bugs/Polish
 
-- The Tasks filter button now sits right after the count it filters, centered on the count, and turns system blue when it's on.
-- Section header chevrons line up with the count beside the title.
+- The task filter is easier to find, and easier to tell when it's on.
+- Overview's section headers line up more cleanly.
 
 ## Mac 0.1.18
 
 ### Bugs/Polish
 
-- The Tasks filter button now sits right after the count it filters, centered on the count, and turns system blue when it's on.
+- The task filter is easier to find, and easier to tell when it's on.
 
 ## iPhone 0.1.10
 
 ### Features
 
-- Swiping an artifact's row all the way left in Overview now removes it from the channel, so clearing out artifacts takes one gesture instead of a swipe and a tap.
-- Parent tasks now start collapsed unless work is in progress under them, and every parent shows its subtask count, so the task list leads with what's moving and a folded parent still says how much it holds.
-- A filter button in the Tasks header shows only work in progress, like the web, while each task still shows its full count.
+- The task list can now be filtered to only in-progress items, which makes it easier to track progress.
+- The task list now opens with finished and waiting work folded away, so what's moving stands out.
+- Artifacts can be removed with a single swipe, which makes tidying up a channel quicker.
 
 ### Bugs/Polish
 
-- The Message View button turns blue while Your Messages is on, like the Mac, so you can tell at a glance that the transcript is filtered.
-- Settings uses the rounded gear symbol, matching the Mac.
-- New Channel, Add Agent and their edit sheets use the system close X and blue checkmark, placed by iOS, so they look and sit like every other modern iPhone sheet.
-- Day and New dividers have the same space above and below, so they no longer look lopsided.
+- It's easier to tell when the transcript is showing only your messages.
+- Channel and agent sheets look and feel like the rest of iOS.
+- The Settings icon is cleaner.
+- Day and New dividers in the transcript are evenly spaced.
 
 ## Mac 0.1.17
 
 ### Features
 
-- Parent tasks now start collapsed unless work is in progress under them, and every parent shows its subtask count, so the task list leads with what's moving and a folded parent still says how much it holds.
-- A filter button in the Tasks header shows only work in progress, like the web, while each task still shows its full count.
+- The task list can now be filtered to only in-progress items, which makes it easier to track progress.
+- The task list now opens with finished and waiting work folded away, so what's moving stands out.
 
 ### Bugs/Polish
 
-- Day and New dividers have the same space above and below, so they no longer look lopsided.
+- Day and New dividers in the transcript are evenly spaced.
 
 ## iPhone 0.1.9
 

@@ -354,9 +354,10 @@ so the suite starts a WebKit web content process once instead of once per render
   Mac GitHub/Sparkle notes use the Mac entry. Phone notes are retained in the job summary/artifact;
   per-build “What to Test” stays manual until a password-authenticated Apple tool path is proven.
 - Each entry groups its bullets under `### Features` and `### Bugs/Polish`, omitting an empty one.
-  A bullet names what changed and why: "The transcript's day dividers now draw a horizontal rule,
-  so they stand out from the messages around them." Each platform's notes stand on their own,
-  never described by comparison to the web or the other app.
+  A bullet says what the user gains, in plain words: "The task list can now be filtered to only
+  in-progress items, which makes it easier to track progress." Leave out mechanics such as
+  placement, glyphs, colors, counts and gestures unless they are the point. Each platform's notes
+  stand on their own, never described by comparison to the web or the other app.
 - The merge that lands a user-facing change adds its bullet to that platform's next unreleased
   entry, creating the entry if the newest one has shipped. A release is then only a tag.
 - User only: `bun run setup-secrets:mobile SHA1 APP_STORE_CONNECT_APP_ID [OWNER/REPO]`.
