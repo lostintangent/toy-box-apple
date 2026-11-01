@@ -165,24 +165,28 @@ private struct TranscriptRule: View {
     let divider: TranscriptDivider
     @Environment(\.channelTextScale) private var textScale
 
+    /// The day label leads a rule across the rest of the lane. At the unread boundary the rule turns blue
+    /// with New after it, so a day and New share one line.
     var body: some View {
-        VStack(spacing: 6) {
+        HStack(spacing: 0) {
             if let day = divider.day {
                 Text(transcriptDayLabel(day))
                     .font(.system(size: 11 * textScale, weight: .semibold))
                     .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, minHeight: 16 * textScale)
+                    .layoutPriority(1)
+                    .padding(.trailing, 8)
             }
+            Rectangle()
+                .fill(divider.unread ? AnyShapeStyle(ChannelColors.newRule) : AnyShapeStyle(.separator))
+                .frame(height: 1)
             if divider.unread {
-                HStack(spacing: 6) {
-                    Rectangle().fill(ChannelColors.newRule).frame(height: 1)
-                    Text("New")
-                        .font(.system(size: 11 * textScale, weight: .semibold))
-                        .foregroundStyle(.blue)
-                }
-                .frame(minHeight: 16 * textScale)
+                Text("New")
+                    .font(.system(size: 11 * textScale, weight: .semibold))
+                    .foregroundStyle(.blue)
+                    .padding(.leading, 6)
             }
         }
+        .frame(minHeight: 16 * textScale)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(transcriptDividerAccessibilityLabel(divider))
         .accessibilityAddTraits(divider.day == nil ? [] : .isHeader)
