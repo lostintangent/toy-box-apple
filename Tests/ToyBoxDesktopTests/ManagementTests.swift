@@ -694,7 +694,7 @@ struct ManagementTests {
         var edges: [CGFloat] = []
         for segment in view.segments {
             #expect(segment.frame.minY == 0 && segment.frame.height == view.bounds.height)
-            #expect(segment.opacity == OverviewEllipsisPulseView.rest)
+            #expect(segment.opacity == ChannelEllipsisPulseMask.rest)
             let fade = try #require(segment.animation(forKey: "fade") as? CABasicAnimation)
             #expect(fade.fromValue as? Float == 1 && fade.toValue as? Float == 0.25)
             #expect(fade.duration == 0.3125)

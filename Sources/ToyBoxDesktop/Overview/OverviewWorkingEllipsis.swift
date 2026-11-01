@@ -55,14 +55,6 @@ final class OverviewEllipsisPulseView: NSView {
         let scale: CGFloat
     }
 
-    /// Measured from the system effect: dots rest at 25%, each rises over 0.3125 s and falls over
-    /// 0.3125 s, starting 1/3 s apart, in a 5/3 s cycle.
-    static let rest = ChannelEllipsisPulseMask.rest
-    static let peak = ChannelEllipsisPulseMask.peak
-    static let rise = ChannelEllipsisPulseMask.rise
-    static let cycle = ChannelEllipsisPulseMask.cycle
-    static let stagger = ChannelEllipsisPulseMask.stagger
-
     /// The symbol drawn offscreen, and the two points between its dots where the segments meet.
     struct Rendering {
         let image: CGImage
