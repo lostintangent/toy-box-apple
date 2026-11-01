@@ -77,7 +77,23 @@ struct TranscriptTests {
             system(5, "artifact_shared", actor: .agent("ada")),
             system(6, "artifact_shared", actor: .user), system(7, "artifact_shared", actor: .user),
         ], lead: lead, members: [ada])
-        #expect(rows.map { $0.messages.count } == [2, 1, 2, 1, 1])
+        #expect(rows.map { $0.messages.count } == [2, 1, 2, 2])
+    }
+
+    @Test func consecutiveRemovalsByOneActorGroupWithoutMixingShares() {
+        func system(_ sequence: Int, _ kind: String, actor: ChannelMessageSender? = nil) -> ChannelMessage {
+            var value = message(sequence, sender: .system)
+            value.content = .system(.init(type: kind, actor: actor))
+            return value
+        }
+        let rows = transcriptRows([
+            system(1, "artifact_removed", actor: .agent("ada")), system(2, "artifact_removed", actor: .agent("ada")),
+            system(3, "artifact_shared", actor: .agent("ada")),
+            system(4, "artifact_removed", actor: .agent("ada")), system(5, "artifact_removed", actor: .agent("ada")),
+            system(6, "artifact_removed", actor: .user), system(7, "artifact_removed", actor: .user),
+            system(8, "artifact_removed", actor: .agent("lead")),
+        ], lead: lead, members: [ada])
+        #expect(rows.map { $0.messages.count } == [2, 1, 2, 2, 1])
     }
 
     @Test func rowBuilderMatchesAFreshBuildAcrossUpdates() {

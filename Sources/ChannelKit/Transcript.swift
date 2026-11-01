@@ -245,8 +245,8 @@ public func transcriptDayLabel(_ date: Date, now: Date = .now,
 private func systemMessageGroup(_ message: ChannelMessage) -> String? {
     guard let system = message.system else { return nil }
     if system.type == "member_joined" || system.type == "member_left" { return system.type }
-    if system.type == "artifact_shared", system.actor?.type == "agent", let id = system.actor?.agentId {
-        return "\(system.type):\(id)"
+    if ["artifact_shared", "artifact_removed"].contains(system.type), let actor = system.actor {
+        return "\(system.type):\(actor.type):\(actor.agentId ?? "")"
     }
     return nil
 }

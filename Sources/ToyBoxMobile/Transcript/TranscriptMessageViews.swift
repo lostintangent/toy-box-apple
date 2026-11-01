@@ -422,6 +422,7 @@ struct TranscriptSystemMessages: View {
         if contents.count > 1, let membership = ChannelSystemText.membership(contents) {
             return "\(membership.names) \(membership.action)"
         }
+        if let group = ChannelArtifactGroup(messages, agents: agents) { return group.sentence }
         return contents.first.map { ChannelSystemText.rendered($0, agents: agents) } ?? ""
     }
 }

@@ -209,7 +209,7 @@ export function createDemoServer(initial: Snapshot = fixture, now = Date.now()) 
       const sequence = snapshot.channel.latestSequence + 1;
       const message = {
         id: crypto.randomUUID(), sequence, timestamp, sender: { type: 'system' },
-        content: { type: 'artifact_removed', actor: { type: 'user' }, artifact: { file: artifact.file, title: artifact.title } },
+        content: { type: 'artifact_removed', actor: { type: 'user' }, artifact: { id: artifact.id, file: artifact.file, title: artifact.title, url: artifact.url } },
       };
       messageIds.add(message.id);
       snapshot.messages = [...snapshot.messages, message].slice(-100);
