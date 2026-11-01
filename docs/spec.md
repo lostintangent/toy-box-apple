@@ -2247,14 +2247,16 @@ done parents. The same rule applies on the phone and in the Composer's Tasks pop
 shares these rows.
 
 **In-progress filter.** Like the pane, Tasks can show only the work that's moving. A filter
-toggle sits in the Tasks header on both apps, between the diff and the disclosure lane:
-`line.3.horizontal.decrease` in secondary ink while off and the accent while on, the same glyph
-and active tint as Message View. It's a sibling of the heading button, never inside it, so
-pressing it never collapses the section. It's its own focus stop with toggle semantics: label
-"Show Only In-Progress Tasks", value on or off, and the same text as Mac help. Mac uses an
-11-point medium glyph in a 24-point target, 8 points before the disclosure lane. The phone uses
-a 44-point target just before the always-visible chevron, and keeps that pair together at the
-top-trailing edge when the header stacks. Show it whenever the channel has a task, collapsed or
+toggle sits in the Tasks header on both apps, right after the count, because it changes the list
+the count describes. The gap after the count matches the gap between the title and the count,
+and the glyph is vertically centered on the count's digits. The user chose this placement from a
+mockup. It's `line.3.horizontal.decrease`, the Message View glyph, in secondary ink while off and
+system blue while on. It's a sibling of the heading button, never inside it, so pressing it never
+collapses the section. It's its own focus stop with toggle semantics: label "Show Only
+In-Progress Tasks", value on or off, and the same text as Mac help. Mac uses an 11-point medium
+glyph in a 24-point target. The phone uses a 44-point target, and keeps the glyph with the count
+when the header stacks while the chevron stays at the top-trailing edge. Neither target takes taps
+meant for the count. Show it whenever the channel has a task, collapsed or
 not, and omit it when Tasks is empty. It starts off and keeps the collapsed sections' scope: the
 Mac window scene, and the phone's retained per-channel Overview session.
 
