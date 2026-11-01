@@ -9,7 +9,7 @@ struct RootView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.horizontalSizeClass) private var sizeClass
     @ViewState private var management = ManagementPresenter()
-    @ViewState private var overview = OverviewPresentation()
+    @ViewState private var overview = Overview()
     @ViewState private var managementSessions = ManagementSessions()
     @ViewState private var columnVisibility = NavigationSplitViewVisibility.automatic
     @ViewState private var preferredCompactColumn = NavigationSplitViewColumn.sidebar

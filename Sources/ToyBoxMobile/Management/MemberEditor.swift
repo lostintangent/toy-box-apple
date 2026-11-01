@@ -11,7 +11,7 @@ struct MemberEditor: View {
     let host: OverviewPlacement?
     @Environment(AppModel.self) private var app
     @Environment(ManagementSessions.self) private var sessions
-    @Environment(OverviewPresentation.self) private var presentation
+    @Environment(Overview.self) private var presentation
     @FocusState private var focus: ManagementField?
 
     private var api: ChannelAPI { session.api }

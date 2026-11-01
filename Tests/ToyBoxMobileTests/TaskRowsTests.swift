@@ -392,7 +392,7 @@ struct TaskRowsTests {
                                        accessibility: size.isAccessibilitySize,
                                        statusDriven: change.isStatusDriven, scoped: scoped, record: record)
                 .environment(viewer)
-                .environment(OverviewPresentation()).environment(ChannelInteraction())
+                .environment(Overview()).environment(ChannelInteraction())
                 .environment(ManagementPresenter())
                 .dynamicTypeSize(size))
         let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 466, height: 1400))

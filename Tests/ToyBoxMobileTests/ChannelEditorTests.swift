@@ -36,7 +36,7 @@ struct ChannelEditorTests {
             let host = UIHostingController(rootView: editor
                 .environment(app)
                 .environment(sessions)
-                .environment(OverviewPresentation())
+                .environment(Overview())
                 .environment(\.colorScheme, scheme)
                 .dynamicTypeSize(.large))
             let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 466, height: 900))
@@ -83,7 +83,7 @@ struct ChannelEditorTests {
             let host = UIHostingController(rootView: editor
                 .environment(app)
                 .environment(sessions)
-                .environment(OverviewPresentation())
+                .environment(Overview())
                 .environment(\.colorScheme, scheme)
                 .dynamicTypeSize(.large))
             let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 466, height: 900))

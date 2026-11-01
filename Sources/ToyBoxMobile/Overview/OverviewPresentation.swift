@@ -32,7 +32,7 @@ enum OverviewSection: Hashable {
 }
 
 @MainActor @Observable
-final class OverviewPresentation {
+final class Overview {
     var placement = OverviewPlacement.sheet
     private(set) var isCompactSheetPresented = false
     @ObservationIgnored private var sessions: [ObjectIdentifier: ChannelOverview] = [:]

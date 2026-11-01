@@ -1264,7 +1264,7 @@ struct ShellTests {
 
     @Test(arguments: [false, true])
     func aReaderWaitsForActualCompactOverviewDismissalNotJustTheClosedIntent(imageReader: Bool) {
-        let overview = OverviewPresentation()
+        let overview = Overview()
         overview.compactSheetDidAppear()
         func visibility(requested: Bool = true, overviewRequested: Bool) -> ChannelReaderVisibility {
             ChannelReaderVisibility(artifactRequested: requested && !imageReader,

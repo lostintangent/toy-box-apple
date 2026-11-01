@@ -8,7 +8,7 @@ struct OverviewView: View {
     let store: ChannelStore
     @Bindable var session: ChannelOverview
     let placement: OverviewPlacement
-    @Environment(OverviewPresentation.self) private var presentation
+    @Environment(Overview.self) private var presentation
     @Environment(ChannelInteraction.self) private var interaction
     @Environment(ManagementPresenter.self) private var management
 
@@ -74,7 +74,7 @@ private struct OverviewContent: View {
     let store: ChannelStore
     @Bindable var session: ChannelOverview
     let placement: OverviewPlacement
-    @Environment(OverviewPresentation.self) private var presentation
+    @Environment(Overview.self) private var presentation
     @Environment(ChannelInteraction.self) private var interaction
 
     var body: some View {

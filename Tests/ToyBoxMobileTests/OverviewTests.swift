@@ -34,7 +34,7 @@ struct OverviewTests {
     @Test func presentationChangesKeepTheSameOverviewState() throws {
         let api = try ChannelAPI(serverURL: "https://fixture.example")
         let store = ChannelStore(id: "channel", api: api)
-        let presentation = OverviewPresentation()
+        let presentation = Overview()
         let session = presentation.session(for: store)
         session.navigationPath = [.subtasks("task")]
         session.purposeExpanded = true
@@ -71,7 +71,7 @@ struct OverviewTests {
     }
 
     @Test func theColumnIgnoresReflowWritesAndShowsOnlyAnUncoveredRequestedOverview() {
-        let presentation = OverviewPresentation()
+        let presentation = Overview()
         let interaction = ChannelInteraction(isInspectorPresented: true)
         let column = presentation.columnBinding(for: interaction)
         #expect(!column.wrappedValue)
@@ -91,7 +91,7 @@ struct OverviewTests {
     }
 
     @Test func compactCoverageEndsOnDismissalAndObsoleteDismissalKeepsTheRequestedReplacementCovered() {
-        let presentation = OverviewPresentation()
+        let presentation = Overview()
         presentation.compactSheetDidAppear()
         presentation.move(to: .inspector)
         #expect(presentation.isCompactSheetPresented)
@@ -491,7 +491,7 @@ struct OverviewTests {
         session.expandedSections[.team] = teamExpanded
         let host = UIHostingController(rootView:
             OverviewView(store: store, session: session, placement: .sheet)
-                .environment(OverviewPresentation()).environment(ChannelInteraction())
+                .environment(Overview()).environment(ChannelInteraction())
                 .environment(ChannelFollowController())
                 .environment(ManagementPresenter()).environment(try artifactSession(artifacts: []))
                 .environment(\.horizontalSizeClass, .compact).dynamicTypeSize(size))
@@ -534,7 +534,7 @@ struct OverviewTests {
         #expect(!OverviewAboutSection.hasContent(store.details))
         let host = UIHostingController(rootView:
             OverviewView(store: store, session: ChannelOverview(store: store), placement: .sheet)
-                .environment(OverviewPresentation()).environment(ChannelInteraction())
+                .environment(Overview()).environment(ChannelInteraction())
                 .environment(ChannelFollowController())
                 .environment(ManagementPresenter()).environment(try artifactSession(artifacts: []))
                 .environment(\.horizontalSizeClass, .compact))
@@ -571,7 +571,7 @@ struct OverviewTests {
         )))
         let host = UIHostingController(rootView:
             OverviewView(store: store, session: ChannelOverview(store: store), placement: .sheet)
-                .environment(OverviewPresentation()).environment(ChannelInteraction())
+                .environment(Overview()).environment(ChannelInteraction())
                 .environment(ChannelFollowController())
                 .environment(ManagementPresenter()).environment(try artifactSession(artifacts: []))
                 .environment(\.horizontalSizeClass, .compact)
@@ -617,7 +617,7 @@ struct OverviewTests {
         let interaction = ChannelInteraction(isInspectorPresented: true)
         let host = UIHostingController(rootView:
             OverviewView(store: store, session: session, placement: placement)
-                .environment(OverviewPresentation())
+                .environment(Overview())
                 .environment(interaction)
                 .environment(ManagementPresenter())
                 .environment(ChannelFollowController())
@@ -1184,7 +1184,7 @@ struct OverviewTests {
         let session = ChannelOverview(store: store)
         let host = UIHostingController(rootView:
             OverviewView(store: store, session: session, placement: .sheet)
-                .environment(OverviewPresentation()).environment(ChannelInteraction())
+                .environment(Overview()).environment(ChannelInteraction())
                 .environment(ChannelFollowController())
                 .environment(ManagementPresenter()).environment(try artifactSession(artifacts: []))
                 .environment(\.horizontalSizeClass, .compact).dynamicTypeSize(.large))

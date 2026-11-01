@@ -12,7 +12,7 @@ struct ManagementConfirmation: View {
     let host: OverviewPlacement?
     @Environment(AppModel.self) private var app
     @Environment(ManagementSessions.self) private var sessions
-    @Environment(OverviewPresentation.self) private var presentation
+    @Environment(Overview.self) private var presentation
     private var api: ChannelAPI { session.api }
     private var deleting: Bool { session.pending }
     private var recovery: ChannelManagementWriteRecovery { session.recovery }

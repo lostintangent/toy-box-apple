@@ -10,7 +10,7 @@ struct ComposerSurface: View {
     @Environment(AppModel.self) private var model
     @Environment(ChannelInteraction.self) private var interaction
     @Environment(ManagementPresenter.self) private var management
-    @Environment(OverviewPresentation.self) private var overviewPresentation
+    @Environment(Overview.self) private var overviewPresentation
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.scenePhase) private var scenePhase
