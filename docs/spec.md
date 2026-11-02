@@ -3,7 +3,7 @@
 Toy Box for Apple is two native clients for Toy Box Channels: a macOS app and an iPhone companion,
 including iPhone Duo folded and unfolded. Each gives the user the full Channel pane experience
 (transcript, composer, overview) in an app that feels first-party on its platform, with the same
-scope tailored to each. The Toy Box server keeps owning Channels, agents, sessions and durable work.
+scope tailored to each. The Toy Box server owns Channels, agents, sessions and durable work.
 Both apps are presentation and input surfaces over Toy Box's public Channel protocol, the
 `/api/v1` HTTP and SSE routes.
 
@@ -179,7 +179,7 @@ not Channels:
 
 | Request | Use |
 | --- | --- |
-| `GET /api/v1/models` | `{version, models, defaultModel}` for model pickers. A server process started before the move to Providers can still return 404 here until it restarts. Treat that as "models unavailable", never as a reason to invent a model |
+| `GET /api/v1/models` | `{version, models, defaultModel}` for model pickers. A 404 here means "models unavailable", never a reason to invent a model |
 
 Management routes (documented in Toy Box's Channels `AGENTS.md`):
 
@@ -220,9 +220,9 @@ for notification authorization reads or request-history loading. The in-app Allo
 choice gates the badge independently of authorization: turning it off immediately clears the
 badge, and catalog refreshes keep it at zero while off.
 
-The shared client and the 3210 demo implement these routes. The shipping server uses the same
-contract before device push proof. Writes make one attempt and return no response body. Registration
-PUT returns 201 when created and 204 when updated. Subscription writes and deletes return 204.
+The shared client, the 3210 demo and the shipping server use these routes. Writes make one attempt
+and return no response body. Registration PUT returns 201 when created and 204 when updated.
+Subscription writes and deletes return 204.
 
 | Request | Body or effect |
 | --- | --- |
@@ -248,8 +248,7 @@ The next app activation also retries a failed registration or topic write. Succe
 are not repeated on activation, and failures never start a background retry loop.
 Until the actual authorization state is loaded, registration and Follow can become ready but
 topic writes wait, preserving the server's existing choices. A stalled read therefore delays
-preference changes without clearing the previous subscriptions. Real-device acceptance must
-verify Settings resolves the authorization state promptly after launch.
+preference changes without clearing the previous subscriptions.
 A 201 also restores active Follows. New Follow remains unavailable until the selected server
 acknowledges its registration. Restored Activities survive that wait and replay deferred tokens after either 201 or
 204, independently of alert preferences.
@@ -262,8 +261,7 @@ optional requester's `handle` beside the system `aps` envelope. Its kinds and ca
 `request` and `completion`; request uses the `reply` text action. The service must match the
 current registration before allowing actions or requesting a widget reload.
 The fixtures are `Tests/Shared/ChannelKitTests/Fixtures/push-request.apns`, `push-completion.apns` and
-`push-activity.apns`. The original generic alert fixtures remain accepted for compatibility.
-Use the selected simulator's actual registration ID for routed alert proof.
+`push-activity.apns`. Generic alert fixtures are also accepted for compatibility.
 
 The server supplies the channel name as the alert title and the flattened question as its body,
 using the Mac's `NotificationText` policy: remove known leading mentions, preserve attachment-only
@@ -274,7 +272,7 @@ by a registration-qualified channel `thread-id`, with no requester subtitle.
 They use the Toy Box app icon, with no communication intent or donation.
 This display-ready text passes through the stateless push relay and Apple without application-level
 encryption. The relay streams the body without parsing or logging it, and its observability is
-disabled. The user has approved sending channel names and request text this way.
+disabled. Channel names and request text travel this way by design.
 
 `MobileNotificationHandler.process(_:)` checks the saved registration and immediately returns
 the received content, preserving its title, body, sound, thread, Reply handle, badge and routing.
@@ -287,8 +285,6 @@ Each callback is called once.
 The channel name and question therefore remain available when the phone cannot reach the server.
 Neither the app nor the notification extension requires the Communication Notifications
 capability.
-`simctl push` does not invoke the notification service on this runtime. Actual service invocation
-remains a real-APNs device check.
 
 The icon badge counts channels whose `channelStatus` is `waiting`, exactly like the widget.
 Reading does not close an open request. Unread messages and completed channels do not count.
@@ -303,7 +299,7 @@ Only request or completion subscriptions qualify, never a Live Activity alone. W
 notifications is off, the app clears the badge and suppresses future catalog badge writes,
 and unsubscribes both alert topics to prevent server pushes from restoring it.
 Fresh successful app catalog refreshes reconcile the same count. Offline or cached-only state
-does not manufacture a fresh count. Subscription reloads and the server's existing five-minute
+does not manufacture a fresh count. Subscription reloads and the server's five-minute
 tick catch up failed badge delivery.
 
 `ChannelActivityAttributes` has `channelID`, `channelName`, `registrationID` and the original
@@ -321,8 +317,7 @@ ActivityKit receives the APNs `aps` envelope, including `update`/`end`,
 throughout. The Activity fixtures cover working, quiet, request, completed, other ending and
 stale states. `push-activity.apns` is the request state; its five named sibling fixtures cover
 the others. Every payload fits APNs' 4 KB limit. Contract tests decode the fixture content with the
-native codec. Simulator checks prove real Follow start against the demo. Subsequent content updates
-and automatic endings require server APNs delivery and are proven on device.
+native codec.
 
 `ChannelActivityLink` carries channel ID, registration ID and an optional positive request sequence
 in `toybox-desktop://activity` URLs. The receiving app checks the selected registration before
@@ -409,10 +404,8 @@ accessible full value or an expansion action.
 
 ### Composition
 
-Functional and accessibility corrections do not constitute final visual acceptance. Review the
-actual user-facing build as a whole, not only an isolated fixture render. The governing
-composition is one native channel title, one quiet inspector, legible tonal messages, and one
-floating glass composer carrying the activity line.
+The governing composition is one native channel title, one quiet inspector, legible tonal messages,
+and one floating glass composer carrying the activity line.
 
 The app requires macOS 27 on Apple Silicon, links against the installed SDK, and `bun run validate`
 fails when the bundle's SDK stamp is below 27. There is no fallback appearance and no availability
@@ -429,21 +422,18 @@ composer's leading edge sits on the avatars' leading edge. At the default 720-po
 width, W is 672, agent surfaces reach 628 and your messages 538. Do not let modifier order
 produce a composer wider than the lane.
 
-On the phone, use the same full-available-lane behavior, preserving its accepted native edge
-insets. Do not cap the overall transcript, activity controls or composer at 720 points in a
-wide scene. Remove that independent container limit from transcript and composer together,
-without changing folded horizontal geometry or document-reader widths. The Mac's 720-point
-example above is a sample conversation width, not a lane cap.
-In an unfolded phone scene, share the Mac's text-scaled individual surface caps: agents up to
-760, yours up to the lesser of 80% of the available lane or 640. Keep the existing phone
-identity gutter. Folded message limits remain unchanged.
-Verify wide unfolded landscape layout and repeated Overview close/reopen separately. The user
-reports an approximately two-second delay, not a failed close action. A header change alone
-does not establish that this delay is fixed.
-Folded with the software keyboard down, remove the extra 8-point bottom gap so the composer's
-bottom edge meets the bottom safe area. Add no toolbar-frame geometry seam or measured offset.
-Always keep the existing 8-point clearance above a visible keyboard, native keyboard avoidance
-and all control targets. Unfolded keeps its existing bottom spacing. Find's bar follows the same
+On the phone, the transcript, activity controls and composer also span the full available lane,
+with no overall cap in a wide scene. The transcript's side insets are 16 points folded and 20
+unfolded, and the composer's are 12 and 16. The Mac's 720-point example above is a sample
+conversation width, not a lane cap. Document readers have their own 720-point text lane, as
+Artifact viewer describes.
+Phone message surfaces share the Mac's text-scaled caps: agents up to 760, and yours up to 640
+and at most 80% of the available lane unfolded or 88% folded. A phone agent message's identity
+gutter is 40 points, a 32-point avatar and an 8-point gap.
+Folded with the software keyboard down, the composer's bottom edge meets the bottom safe area,
+with no gap, toolbar-frame geometry seam or measured offset. Above a visible keyboard the
+composer keeps 8 points of clearance, with native keyboard avoidance and every control target.
+Unfolded, the composer sits 8 points above the bottom safe area. Find's bar follows the same
 rule. The channel screen owns the only keyboard observer, and the composer, Find and the
 notification tip all read it. A bar that arrives over a keyboard that's already up, or returns
 after the keyboard went down behind Find, starts from the current state.
@@ -493,7 +483,7 @@ put glass on messages, inspector sections or list rows, and never place glass on
 inside a glass surface are plain or borderless, except Send. Let the system draw every standard
 glass element. Custom `glassEffect` appears only on the surfaces this section names.
 
-**Toolbar.** Use the system's default window toolbar style. Remove the explicit
+**Toolbar.** Use the system's default window toolbar style, with no explicit
 `.windowToolbarStyle(.unified)`, and set no `toolbarBackground`, `toolbarBackgroundVisibility`
 or column title plate anywhere. Never draw our own rule or band under the toolbar. The
 conversation and the inspector scroll beneath the toolbar, and a top scroll-edge effect
@@ -515,14 +505,13 @@ Message View filter symbol.
 lights over its top, and the system decides its shape. It runs flush to the window's leading,
 top and bottom edges with no margin, as Finder and Mail do. Do not set a sidebar or list
 background, and never imitate the shape by hand. Inactive windows render the sidebar and inspector materials as flat fills,
-which is expected. Replace the hand-built search capsule with
-`.searchable(text:placement: .sidebar, prompt: "Search Channels")`, and drive Edit > Find
-Channel (Command-Option-F) through `.searchFocused`. Filtering semantics are unchanged.
+which is expected. Search is `.searchable(text:placement: .sidebar, prompt: "Search Channels")`, and
+Edit > Find Channel (Command-Option-F) drives it through `.searchFocused`.
 
 **Inspector.** The Overview inspector runs the full window height, with toolbar items floating
 over its top and its content scrolling under them. Attach `.inspector` where it produces that
-full-height column, not a column that starts below the toolbar. Remove the 40-point title row,
-its close button and its divider. The Overview toolbar button, Option-Command-0 and View > Hide
+full-height column, not a column that starts below the toolbar. It has no title row, close
+button or divider. The Overview toolbar button, Option-Command-0 and View > Hide
 Overview close it. Give the inspector container the accessibility label "Overview". Content
 starts 12 points below the top safe area, with 16-point horizontal insets and 16 points at the
 end. Use the system inspector background, with no custom fill. In narrow windows the sheet keeps
@@ -581,7 +570,7 @@ reserves no space.
 | --- | --- |
 | Position | 8 points above the composer, on the same rail, with leading and trailing edges matching the composer |
 | Working capsule | Leading. Height 28, `.glassEffect(.regular.interactive(), in: .capsule)`. At most three 20-point avatars, inset 4 so they sit concentric with the capsule, 6 points to the label and 12 trailing padding |
-| Label | "Ada is working" or "3 agents are working", 12-point medium in the primary label color. Activation opens the existing Working Now popover anchored to the capsule |
+| Label | "Ada is working" or "3 agents are working", 12-point medium in the primary label color. Activation opens the Working Now popover anchored to the capsule |
 | Jump to Latest | Trailing. The same capsule and glass, with `arrow.down` and "Jump to Latest" in 12-point medium and 12-point horizontal padding |
 | Notices | Reveal, send-action and read-position errors stack 8 points above the row in a glass rounded rectangle, radius 14, with primary caption text, 12 horizontal and 8 vertical padding, and borderless Retry or Dismiss |
 | Motion | Appears and leaves with opacity and a 4-point rise over 0.2 seconds, ease-out. Reduce Motion uses opacity only |
@@ -669,8 +658,7 @@ visible, and at the system title's spacing after the leading toolbar items with 
 lists every channel in sidebar order with the current one checked, then a divider, New Channel… and
 Edit Channel…. Choosing a channel behaves like selecting it in the sidebar. Items mirror the
 sidebar's attention state with the system menu-item badge (Input Needed, Unread or Done). If the
-title menu can't carry badges, omit them rather than appending text to channel names. Shell
-verifies the hover chevron and menu in the real glass toolbar.
+title menu can't carry badges, omit them rather than appending text to channel names.
 Trailing controls are Message View (`line.3.horizontal.decrease`),
 Channel Actions (`ellipsis`), and Overview
 (`sidebar.trailing`). Put Open in Toy Box in Channel Actions and the menu bar, not another
@@ -695,15 +683,15 @@ the bottom field, because a full field makes UIKit cancel the first pull to refr
 The unfolded overlay sidebar keeps the full field, since UIKit places the minimized button
 past the sidebar's trailing edge. Search raises the keyboard with its field above it, and Cancel
 restores the bar. No hand-built safe-area text field or duplicate gear in the rail. Keep the large
-Toy Box title and New Channel at the top, with no More menu or Refresh item. Report a native
-placement limitation in the unfolded column instead of substituting custom controls.
-Remove the healthy/connecting connection dot, server label and busy footer spinner. Settings
-owns server identity and connection details. Keep pull to refresh and the shared name/purpose/
-directory filtering unchanged. Pull to refresh holds its spinner until the finger lifts, so a
-fast fetch never ends it mid-pull. Command-F focuses channel search when the list is active,
-without replacing in-conversation Find. A catalog failure still shows its heading, useful error,
-Retry and reachable Settings at the bottom. Cached rows alone do not prove a live connection.
-The Mac sidebar remains unchanged.
+Toy Box title and New Channel at the top, with no More menu or Refresh item. A native placement
+limitation in the unfolded column never justifies substituting custom controls.
+The phone list has no healthy or connecting connection dot, server label or busy footer spinner.
+Settings owns server identity and connection details. The list has pull to refresh, and search
+uses the shared name/purpose/directory filtering. Pull to refresh holds its spinner until the
+finger lifts, so a fast fetch never ends it mid-pull. Command-F focuses channel search when the
+list is active, without replacing in-conversation Find. A catalog failure shows its heading,
+useful error, Retry and reachable Settings at the bottom. Cached rows alone do not prove a live
+connection.
 
 **Phone channel toolbar.** Channel Actions is a `ToolbarOverflowMenu`, so its ••• is always
 the last item. A compact top bar shows Overview, Tasks (only while unfinished), then •••. Regular
@@ -741,8 +729,9 @@ the label becoming "Creating…", "Adding…" or "Saving…". The confirm stays 
 form can save. Never hand-place, restyle or regroup these items. The system places both, so
 where it reports a trailing vertical bar, as on the folded Duo, they join that column the way
 Settings' close does. Where it reports a leading vertical bar, keep the bar horizontal as
-Overview does, so neither covers the form. Mac keeps its text buttons. Swipe dismissal,
-focus/draft restoration and read blocking are unchanged.
+Overview does, so neither covers the form. The Mac uses text buttons. Swipe dismissal is
+disabled while a write is pending. These sheets keep their own focus/draft restoration and read
+blocking.
 
 ### Menu and keyboard model
 
@@ -838,7 +827,7 @@ vertical content padding and native source-list selection. A 30-point channel ic
 before the text and is centered on it: a circle filled with `Color(#0891b2).gradient` (Toy Box's
 channel cyan through SwiftUI's standard gradient, a constant of its own and never read from the
 lead's avatar) and a 14-point semibold white `number`. A round icon
-matches the avatars and status glyphs and replaces the tinted rounded tile, a web convention.
+matches the avatars and status glyphs, rather than a tinted rounded tile, a web convention.
 
 The first line is the name (13 semibold, primary, one line, tail truncation), then at least 6
 points, then the last-activity time (11 regular, secondary, tabular, never truncated), aligned on
@@ -936,7 +925,7 @@ attention. The name and time line never moves:
 
 **Phone.** Attention shows icons only, retaining the Mac's spoken phrases from this table.
 At standard text sizes, keep the time on the name line for quiet and working rows alike, never
-vertically centered in a quiet row. Accessibility sizes retain the stacked heading. Folded rows
+vertically centered in a quiet row. Accessibility sizes use the stacked heading. Folded rows
 hide the system navigation indicator and draw a small tertiary `chevron.forward` immediately
 after the time, aligned on the first baseline. The chevron becomes white when selected.
 Unfolded rows show no chevron.
@@ -983,7 +972,7 @@ corner as evenly as the rows clear the side.
 | --- | --- | --- |
 | First load | `.secondary`, then a spinner after 300 ms | Nothing. The placeholder rows already show loading |
 | Last refresh succeeded | `.green` | Nothing |
-| Refresh failing, rows kept | `.orange` | The existing error block: "Channels may be out of date", the readable failure, then Retry and Settings. Recovery retries every failed channel at once |
+| Refresh failing, rows kept | `.orange` | The error block: "Channels may be out of date", the readable failure, then Retry and Settings. Recovery retries every failed channel at once |
 | Never loaded, invalid URL or authorization failure | `.red` | The same block, headed "Can't connect to Toy Box" |
 
 The error block moves into the same bar, 10 points above the status line and on the same 24-point
@@ -1098,10 +1087,9 @@ On the phone, a Show More/Less footer occupies 40 visible points at Large and gr
 text at larger Dynamic Type. Center the footnote semibold label vertically in that footer and
 align it to the body's leading edge. There is no additional 4-point body/footer gap or 10-point
 bubble padding below it. Its 44-point tap target extends 4 points below the bubble, never up
-into the body, so it doesn't overlap links. Retain 12-point horizontal and 10-point top body
-padding and the 24-point fade. Bubbles without
-this action retain their normal bottom padding. Phone mentions follow the identity-ink and
-contrast policy above, not generic primary text.
+into the body, so it doesn't overlap links. The body has 12-point horizontal and 10-point top
+padding and the 24-point fade. Bubbles without this action have 10-point bottom padding. Phone
+mentions follow the identity-ink and contrast policy above, not generic primary text.
 
 A pending request asks the user for something, so it offers an action rather than an alarm.
 Never outline it. The bubble keeps its normal shape and padding, but trades the neutral fill
@@ -1189,7 +1177,7 @@ Older pages load only through reader paging, Find navigation or Reveal.
 Follow incoming messages only while within
 48 points of the end, or immediately after the user's own successful post. If scrolled away, a
 small glass Jump to Latest capsule appears in the floating activity row above the composer.
-It shares that row with the working summary when present. On the phone, those pills and the transient notices use plain regular glass with no tint, like the toolbar. They and the composer float over the transcript like Messages: the conversation keeps the system's default bottom scroll edge, so rows pass behind the glass right to the screen edge with no band or hairline. Never add `.hard`, a band or a fill behind them. In Dark over a bright image, the placeholder and Find's result count read faintly. That is the accepted cost of floating plain glass. Preserve the visible top message and its offset while prepending history. While reading above the end, rows only move when the reader scrolls: when a row above the viewport changes height, or the lazy stack corrects its estimate for rows it hasn't built yet, the first row starting in the viewport keeps its place, and a row starting in the viewport grows downward. Following the end, landing, jumps, reveals and paging own the position instead. At the top,
+It shares that row with the working summary when present. On the phone, those pills and the transient notices use plain regular glass with no tint, like the toolbar. They and the composer float over the transcript like Messages: the conversation keeps the system's default bottom scroll edge, so rows pass behind the glass right to the screen edge with no band or hairline. Never add `.hard`, a band or a fill behind them. In Dark over a bright image, the placeholder and Find's result count read faintly. That is the deliberate cost of floating plain glass. Preserve the visible top message and its offset while prepending history. While reading above the end, rows only move when the reader scrolls: when a row above the viewport changes height, or the lazy stack corrects its estimate for rows it hasn't built yet, the first row starting in the viewport keeps its place, and a row starting in the viewport grows downward. Following the end, landing, jumps, reveals and paging own the position instead. At the top,
 show Load Older Messages when more history is available, a small loading row while fetching, or
 "Couldn't load older messages" with Retry on failure. Once all history is loaded, show no
 "Beginning of conversation" label and reserve no empty header space. A filtered view must
@@ -1218,7 +1206,7 @@ a layout-time target loss falls back to the document end.
 Lazy containers use the model's `Layout` entry points. A layout separates all canonical
 `RowIdentity` values in conversation order from the subset of measured `RowFrame` values,
 and supplies the viewport, native origin and native `documentEnd`. That extent already
-includes the existing 16-point clearance. Following, threshold classification and clamping
+includes the 16-point clearance. Following, threshold classification and clamping
 use it without adding clearance or inferring an end from the last measured row.
 A known target without a frame returns `needsMeasurement` and no origin, retaining its intent.
 Only canonical absence triggers unavailable-target errors or layout-time survivor fallback.
@@ -1235,7 +1223,7 @@ because a known row is unmeasured.
 Violations of those live-input requirements assert in debug builds and leave the intent and
 position unchanged in release builds, never crashing a release app for delayed geometry.
 `layoutEvent(from:to:)` compares membership, measured geometry, viewport and document extent,
-not reader-only origin changes. Complete-frame entry points remain available and use the
+not reader-only origin changes. Complete-frame entry points are also available and use the
 same reducer and placement logic.
 
 Long histories must stay as fast as short ones. Build rows incrementally: derive each message's
@@ -1288,12 +1276,11 @@ An unavailable file keeps its name and an explicit retryable error, not a blank 
 Opening remote URLs must not assume a matching local filesystem path.
 
 **Phone attachment parity.** The entire attachment set occupies one horizontally scrolling
-row, with 8-point gaps and no stacking or wrapping. Preserve the existing shared
-`ChannelThumbnails.boxSize(fitting:)` image cap of 240 x 160. The 240 x 120 video-preview cap
-is not an image-size change. Keep attachment order, leading/trailing alignment, the correct
-image index on opening, and the presented tile in view when returning. Share the portable
-strip container where practical while each host retains its native tiles. File and video
-actions keep minimum-44 targets.
+row, with 8-point gaps and no stacking or wrapping. Images use the shared
+`ChannelThumbnails.boxSize(fitting:)` cap of 240 x 160, and video previews cap at 240 x 120.
+Keep attachment order, leading/trailing alignment, the correct image index on opening, and the
+presented tile in view when returning. The hosts share the portable strip container where
+practical, each with its own native tiles. File and video actions keep minimum-44 targets.
 
 **Image viewer.** Images open in place, as in Photos, never in another app or a floating Quick
 Look panel. The viewer pages through the clicked message's images in attachment order and
@@ -1317,38 +1304,36 @@ and close commands.
 The phone image gallery's pager capsule and both arrow targets stay anchored across page
 changes, loading, and different image aspect ratios. Only the image, selected outline and
 thumbnail scroll position change. End arrows stay in place, disabled rather than removed.
-Use the artifact viewer's stable presentation as the comparison, not a reason to change it.
-Confirm the actual moving component in before/after Next and swipe recordings and protect
-the capsule and toolbar geometry deterministically.
 
 **SVG attachments.** SVGs are images throughout the transcript filmstrip, viewer and gallery
 capsule, with the same loading, error and keyboard behavior as raster images. Read their intrinsic
 dimensions before the first layout when available. Decode and rasterize off the main thread,
-at the effective display size and scale up to the existing 8192-pixel cap. Keep vector detail sharp
+at the effective display size and scale up to an 8192-pixel cap. Keep vector detail sharp
 at supported zoom levels rather than enlarging a thumbnail, within that cap. For viewer fit, an
 SVG's intrinsic dimensions are logical points, not Retina pixels. Fit large drawings down to the
 available canvas, but do not enlarge a small icon past its natural point size until the person
-zooms. Raster images retain their existing pixel-to-point sizing. Live Text receives
-the resulting `CGImage`. External image or font references must not trigger network requests.
-Malformed, unusably sized or unsupported SVGs show the existing retryable image error, never a
-crash, blank success state or unbounded allocation. Attachments and artifacts share the bounded
-native `TranscriptSVGImage` decoder, while keeping their viewer state and navigation separate.
+zooms. A raster image's point size is its pixel size divided by the display scale. Live Text
+receives the resulting `CGImage`. External image or font references must not trigger network
+requests. Malformed, unusably sized or unsupported SVGs show the same retryable image error as
+raster images, never a crash, blank success state or unbounded allocation. Attachments and artifacts
+share the bounded native `TranscriptSVGImage` decoder, while keeping their viewer state and
+navigation separate.
 
-Reactions are display-only in this client, matching the user pane. Use the existing emoji for
-done, agree, celebrate, love and laugh. Also show the projected looking/working reactions while
-the agent's live presence and matching status target permit them. Group by reaction, then show up
-to three 14-point reactor avatars and `+N`. Chips are 24 high with a subtle border. The phone
+Reactions are display-only in this client, matching the user pane. Done shows ✅, agree 👍,
+celebrate 🎉, love ❤️ and laugh 😂. Also show the projected looking (👀) and working (🏃) reactions
+while the agent's live presence and matching status target permit them. Group by reaction, then show
+up to three 14-point reactor avatars and `+N`. Chips are 24 high with a subtle border. The phone
 draws the same shared pill at caption size, with its avatars and height scaling with Dynamic Type,
-inside a 44-point target. Chips wrap onto as few lines as fit, with lines as far apart as the
-chips. Where pills are shorter than 44 points, adjacent rows split the gap between their targets
-at its midpoint, so a tap anywhere on a visible pill opens that pill, and the outermost rows keep
-their full reach. On the phone's pure black Dark canvas the pill fills with native
+inside a 44-point target. Chips wrap onto as few lines as fit, with lines as far apart as the chips.
+Where pills are shorter than 44 points, adjacent rows split the gap between their targets at its
+midpoint, so a tap anywhere on a visible pill opens that pill, and the outermost rows keep their
+full reach. On the phone's pure black Dark canvas the pill fills with native
 `tertiarySystemBackground` (`#2C2C2E`) instead of the soft fill, so it reads raised above black and
-the agent bubble. Hover, keyboard
-focus or activation reveals every reactor name. Do not make a reaction chip look like an enabled
-"add reaction" button. The working summary floats as a glass capsule above the composer, outside
-the scrollable history. It has 20-point avatars, "Name is working" or "N agents are working", and status details on
-activation. Waiting belongs in the inspector, not this row.
+the agent bubble. Hover, keyboard focus or activation reveals every reactor name. Do not make a
+reaction chip look like an enabled "add reaction" button. The working summary floats as a glass
+capsule above the composer, outside the scrollable history. It has 20-point avatars, "Name is
+working" or "N agents are working", and status details on activation. Waiting belongs in the
+inspector, not this row.
 
 #### Suggested replies
 
@@ -1362,17 +1347,17 @@ A request may offer two to four suggested replies. ChannelKit reads them through
 
 **Phone layout.** The phone uses the Mac layout below, with 8 points between buttons, at the small control size and the footnote font. Reply is the same small untinted bordered button with its arrow as on the Mac, so a request without choices shows only that button, at its natural width on the leading edge. Each button keeps a hit target at least 44 points tall, and long labels wrap inside their own full-width button. A wrap makes the bubble taller, never wider.
 
-**Mac layout.** Choices and Reply flow as small bordered buttons at the system's small size, with 6 points between buttons across and down. Each button is as wide as its label, so the Mac never sets an equal share. A button that does not fit the rest of its line moves to the next line. A label wider than the row wraps inside its own button at full width. Reply is last. In the pending bubble, under the question, it is the small bordered button with its arrow, so it flows like a choice. In the inbox it stays a plain link, below the choices.
+**Mac layout.** Choices and Reply flow as small bordered buttons at the system's small size, with 6 points between buttons across and down. Each button is as wide as its label, so the Mac never sets an equal share. A button that does not fit the rest of its line moves to the next line. A label wider than the row wraps inside its own button at full width. Reply is last. In the pending bubble, under the question, it is the small bordered button with its arrow, so it flows like a choice. In the inbox it is a plain link, below the choices.
 
-**Control style.** In both transcripts, each choice copies the transcript's Reply exactly: the system's bordered style at the small control size, in the system's default shape, without its arrow. Labels are untinted primary text, never the accent color, so they never set blue on the orange wash. The Mac inbox Reply does not change. No reply uses the prominent style, a custom fill or a shadow. macOS 27 and iOS 27 render these styles, and their look is the reference. They sit in the content layer, so they never use Liquid Glass.
+**Control style.** In both transcripts, each choice copies the transcript's Reply exactly: the system's bordered style at the small control size, in the system's default shape, without its arrow. Labels are untinted primary text, never the accent color, so they never set blue on the orange wash. No reply uses the prominent style, a custom fill or a shadow. macOS 27 and iOS 27 render these styles, and their look is the reference. They sit in the content layer, so they never use Liquid Glass.
 
 **Mac menu bar inbox.** Each waiting request shows its choices above Reply, under the Mac layout at inbox width. The Open icon stays top right. Requests have no Open Channel row, and notices keep theirs. A long choice makes its row taller, and the list scrolls. A choice sends through the same path as the transcript's choices.
 
-**Mac notification banner.** Reply and the first choice show as actions, and the rest sit under Options. The banner is posted locally from the request the app already holds, so the push payload does not change for Mac. Registering a request's reply categories must not replace the app's other categories, and requests with the same labels share one category. Two visible actions is a working assumption to verify on device.
+**Mac notification banner.** Reply and the first choice show as actions, and the rest sit under Options. The banner is posted locally from the request the app already holds, so the Mac needs no push payload for it. Registering a request's reply categories must not replace the app's other categories, and requests with the same labels share one category.
 
-**Phone widget.** The Needs You widget keeps Reply only, which opens Quick Send. Choices stay in the transcript and on the Lock Screen, and the widget never sends in the background.
+**Phone widget.** The Needs You widget offers only Reply, which opens Quick Send. Choices stay in the transcript and on the Lock Screen, and the widget never sends in the background.
 
-**Phone Lock Screen.** The card is a translucent material over the wallpaper, not a solid dark panel, and its action labels take the accent color. The push carries the replies as a top-level `replies` array of two to four labels, beside `handle` and outside `aps`, on request messages that have them. The notification service extension registers a reply category keyed by its labels, with one action per reply, then sets it as the content's `categoryIdentifier`. Requests with the same labels share one category, and each registration keeps the reply categories that a delivered notification still uses, plus the last four that process registered, whose notifications may not have posted yet. The actions appear only when the notification is expanded by long press, above the Reply text field. The collapsed banner shows no buttons. A choice sends its label as written, without the requester's mention, through the same path as the Reply text action. The notification's own payload names the channel, since the shared category carries only labels. If the category cannot register on device, the notification falls back to Reply only. Registration and action counts are unverified until the next TestFlight build.
+**Phone Lock Screen.** The card is a translucent material over the wallpaper, not a solid dark panel, and its action labels take the accent color. The push carries the replies as a top-level `replies` array of two to four labels, beside `handle` and outside `aps`, on request messages that have them. The notification service extension registers a reply category keyed by its labels, with one action per reply, then sets it as the content's `categoryIdentifier`. Requests with the same labels share one category, and each registration keeps the reply categories that a delivered notification still uses, plus the last four that process registered, whose notifications may not have posted yet. The actions appear only when the notification is expanded by long press, above the Reply text field. The collapsed banner shows no buttons. A choice sends its label as written, without the requester's mention, through the same path as the Reply text action. The notification's own payload names the channel, since the shared category carries only labels. If the category cannot register on device, the notification falls back to Reply only.
 
 #### In-channel message search
 
@@ -1432,7 +1417,7 @@ Match case- and diacritic-insensitively against the rendered message text: visib
 code contents and prose, not Markdown delimiters or invisible link destinations. Search loaded
 messages immediately, then read older pages through `ChannelAPI.history` into a separate search
 index. Fetching results never prepends them to the channel store or disturbs its scroll anchor.
-Use the existing reveal path to navigate to a selected result, loading the target only on
+Use the reveal path to navigate to a selected result, loading the target only on
 navigation. While Find is open, persistently highlight every rendered occurrence of the query
 with the system find highlight color. Give occurrences in the current result message stronger
 emphasis than matches in other messages, without changing the one-result-per-message count.
@@ -1490,14 +1475,16 @@ The composer covers:
   does nothing and typed text is never cleared. Only connecting and dictation finishing show a spinner
 
 **Phone input refinement.** Native input text and placeholder share 16-point horizontal and
-14-point top insets, applied once. This does not change the accepted action-row padding. Keep measured one-to-three-line growth. The placeholder
-uses muted readable-secondary ink rather than primary draft ink and must reach 4.5:1 over
-actual Light/Dark glass. The static audience preview matches the Mac's capsule shape: 7-point
-horizontal inset and minimum-24 visual height growing with text, in the existing 44-point row.
-Its fill is `secondarySystemFill` rather than the Mac's 8% secondary, so it reads on plain glass
-in Light and Dark at least as clearly as the disabled Send background. The orange No-one state
-keeps its own fill. Idle Dictate draws its `mic` in primary ink, like Attach Image, so every
-control in the row reads at full contrast over bright content. Input Needed stays unfilled with the Mac's filled orange question-circle.
+14-point top insets, applied once. The action row has 8-point horizontal and 6-point bottom
+padding, with 4 points between controls. The input grows by measurement from one to three lines.
+The placeholder uses muted readable-secondary ink rather than primary draft ink and must reach
+4.5:1 over actual Light/Dark glass. The static audience preview matches the Mac's capsule shape:
+7-point horizontal inset and minimum-24 visual height growing with text, in the 44-point row. Its
+fill is `secondarySystemFill` rather than the Mac's 8% secondary, so it reads on plain glass in
+Light and Dark at least as clearly as the disabled Send background. The orange No-one state keeps
+its own fill. Idle Dictate draws its `mic` in primary ink, like Attach Image, so every control in
+the row reads at full contrast over bright content. Input Needed stays unfilled with the Mac's
+filled orange question-circle.
 
 At larger phone text sizes, measure the full context without truncation. If audience and
 Input Needed cannot fit together, put the audience on its own row and the full wrapping
@@ -1518,7 +1505,7 @@ Keep draft, caret and undo. After an explicit dismissal, do not refocus until th
 the composer or Reply. The working capsule is a minimum-44 button opening Working Now in an
 anchored native popover with compact sheet adaptation: actual working agents, 24-point
 avatars, body-17 names, wrapping subheadline-15 status and 12-point row gaps. No navigation or
-management action is implied by these informational rows. Status uses existing opaque
+management action is implied by these informational rows. Status uses opaque
 readable-secondary ink locally, with at least 4.5:1 contrast against the actual Light/Dark
 presentation, not translucent secondary that fades into the sheet's glass.
 
@@ -1545,7 +1532,7 @@ writing-direction and accessibility behavior must work through native text input
 
 **Dictation.** System Dictation already works in the composer because it is a real `NSTextView`.
 The Dictation key and Edit > Start Dictation… stream words in at the caret with the system's own
-indicator. Keep that path intact and never remove the menu item. The composer also has its own
+indicator. That path and its menu item always stay available. The composer also has its own
 Dictate button, because a button must say honestly whether it is listening, and there is no public
 API that starts system Dictation. The button uses the on-device `SpeechAnalyzer` with a
 `DictationTranscriber` on the `progressiveLongDictation` preset, which gives punctuation and live
@@ -1668,14 +1655,12 @@ with a zero-spacing `VStack` and 16-point horizontal insets. Order: About (untit
 Members, Tasks, Artifacts, Routines. Separate sections with a native `Divider()` across the content
 width, with 2 points of vertical padding. No cards, count capsules, section fills or uppercase.
 
-**Phone Overview.** Keep the plain native background.
+**Phone Overview.** The phone Overview has a plain native background.
 Section distinction comes from larger headings and deliberate space, not grouped cards.
-Do not change
-accepted Team/Tasks/Routines content or interactions. No colored panels, glass, shadows,
-section fills or nested task cards. Keep count, diff and disclosure in the same minimum-44
-heading button.
-Separators appear only between rows, never below a group's final row. Preserve native
-navigation, swipe actions, task guides, disclosure, retained scroll and actual Tasks reveal.
+No colored panels, glass, shadows, section fills or nested task cards. Count, diff and
+disclosure share one minimum-44 heading button.
+Separators appear only between rows, never below a group's final row. Navigation, swipe actions,
+task guides, disclosure, retained scroll and the Tasks reveal are native.
 
 The phone sheet's close is the system `Button(role: .close)` glass X, trailing in Overview's own
 inline navigation bar with no title, labeled "Close Overview". It sits on the root and on every
@@ -1689,8 +1674,8 @@ closes it, like the sidebar. Overview has no channel-actions menu: Follow, Edit 
 Delete Channel live in the channel's Channel Actions menu. The purpose starts 12 points below
 the bar (or the column's safe content edge) at every text size, using the full content width,
 and Folder and Preview use the full width below it. All opening information stays outside cards.
-Retain the Overview accessibility label, native sheet dismissal, nested task navigation
-and the same content in both presentations.
+Both presentations have the Overview accessibility label, native sheet dismissal, nested task
+navigation and the same content.
 Overview takes the inspector column only where the conversation keeps the Mac's 420 points beside
 it, which on the Duo is unfolded landscape. Folded and unfolded portrait use the
 sheet, decided by the scene's width rather than its size class alone. Rotating or folding moves an
@@ -1706,7 +1691,7 @@ pair of sections, whether collapsed or expanded. At Large, keep 16 points from p
 heading to content. Folder and Preview stack with no gap, so their 44-point rows read as a pair.
 Show More/Show Less is quiet footnote-semibold secondary text, matching the transcript's toggle,
 and stays minimum 44 with no extra spacer above it. Omit absent content and its gaps.
-Headings and rows grow with Dynamic Type. Mac container geometry stays unchanged.
+Headings and rows grow with Dynamic Type.
 
 On the phone, Folder is a minimum-44-point row of plain primary text, never link ink: the
 `folder` icon and name, then a trailing `doc.on.doc` copy button in secondary glyph ink with a
@@ -1718,12 +1703,11 @@ path row. Screen Preview has only its icon and title, with no window/display ide
 URL previews keep their address line.
 Folder and Preview symbols share monochrome rendering rather than a mixed outline/filled palette.
 On the phone both symbols draw in primary foreground ink. The Preview title is About's one real
-link, so it alone keeps link ink. The Mac already draws both in the property rows' secondary ink.
+link, so it alone keeps link ink. The Mac draws both in the property rows' secondary ink.
 Both sidebars and Overviews use one shared folder-name rule: `NSString.lastPathComponent`,
 falling back to the original path if the component is empty, without expanding or resolving it.
 
 Phone Team avatars are 28 points at default text size, scaling natively up to a 36-point cap.
-Keep the accepted name/single-status hierarchy, text sizing, row growth and agent actions.
 This applies only to the phone Team row, not message, completion, task or Mac avatars.
 
 **Section headers: names lead, facts follow.** The name is the primary anchor and its count is
@@ -1732,9 +1716,9 @@ and 13 regular readable secondary; phone uses native title3 20 semibold primary 
 footnote 13 regular readable secondary at Large. Baseline-align name/count with a 6-point gap
 and tabular digits. Set both text styles explicitly, not through inherited Form header ink.
 Use package-scoped ToyBoxUI `ChannelOverviewInk.secondary(in:)`, opaque sRGB `#636366` Light /
-`#AEAEB2` Dark, for header details and task metadata on both hosts. Leave `ChannelInk.secondary`,
-Mac global secondary ink and waiting amber unchanged. Verify text at 4.5:1 against actual
-native surfaces and non-text disclosure at 3:1.
+`#AEAEB2` Dark, for header details and task metadata on both hosts. It is separate from
+`ChannelInk.secondary`, Mac global secondary ink and waiting amber. Text reaches 4.5:1 against
+actual native surfaces and non-text disclosure reaches 3:1.
 
 Team Members counts the lead plus current members, not working agents. Tasks uses shared completed
 roots / total roots, never descendant or visible-row counts: "Tasks 1/4", or "Tasks 0" when
@@ -1763,10 +1747,10 @@ focus. Speak natural counts and exact changes: "Team Members, 9 agents", "Tasks,
 complete, 1,522 additions, 114 deletions", or "Tasks, no tasks", with Expanded/Collapsed value.
 Use proper plurals, not spoken slash or compact K/M. Symbols/values add no focus stops. The
 Tasks header's in-progress filter and the Team Members header's working filter are each
-their header's one extra control, described with task disclosure and Team Members. Retain
-native focus indication and Show/Hide help. Persistence scopes stay unchanged: collapsed
-sections belong to the Mac window scene, not channel, and to the phone's retained per-channel
-Overview session. Empty sections stay with "No tasks yet", "Nothing shared yet" or "No routines".
+their header's one extra control, described with task disclosure and Team Members. Headers
+use native focus indication and Show/Hide help. Collapsed sections belong to the Mac window
+scene, not channel, and to the phone's retained per-channel Overview session. Empty sections stay
+with "No tasks yet", "Nothing shared yet" or "No routines".
 
 **About.** The purpose is 13 regular primary, about 18-point line height, at most 4 lines, then
 an inline "Show More" link in quiet secondary ink that expands in place ("Show Less" collapses
@@ -1794,11 +1778,11 @@ scannable. Rows are at least 38 high with 4 points of vertical
 padding: a 24-point avatar, a 10-point gap, then the name in 13 regular primary over a one-line
 11-point status, 1 point apart. Status truncates at the tail with the full text in help.
 
-Phone keeps its 38-point content minimum, 12-point avatar/text gap, 2-point name/status gap
-and existing scaled avatar capped at 36. Ordinary text sizes use explicit 12-point vertical
+Phone rows have a 38-point content minimum, a 12-point avatar/text gap, a 2-point name/status gap
+and the scaled avatar capped at 36. Ordinary text sizes use explicit 12-point vertical
 row insets, making each row exactly 6 points shorter than the measured 15-point system
 defaults. Accessibility sizes use 13, 4 points shorter, and keep native wrapping. Snug, never
-cramped: every navigation target remains at least 44 points high. Mac is unchanged.
+cramped: every navigation target remains at least 44 points high.
 Phone Add Agent uses the same 38-point content minimum and vertical spacing, matching a member
 row's height exactly at default text size. Its 12-point ordinary / 13-point accessibility
 padding belongs inside the button, with zero native vertical row insets, so the whole row is
@@ -1817,20 +1801,20 @@ back to the app doesn't blink every status.
 Both also read the status-text ink rule from `ChannelAgentStatusPresentation`: working uses
 primary foreground ink at 85%, while waiting, idle and unavailable remain muted. The phone
 must not render working text in the same secondary ink as waiting. Keep cue colors separate
-from this text rule. Muted status and countdown use `ChannelInk.secondary`, preserving the
-phone's opaque secondary ink and the Mac's existing semantic secondary.
+from this text rule. Muted status and countdown use `ChannelInk.secondary`: opaque `#636366`
+Light / `#AEAEB2` Dark on the phone, and the semantic secondary on the Mac.
 
-Both apps show the waiting check-in in the existing row, never a new metadata line. Mac keeps
-its trailing position and hover-menu replacement. Phone places the bell and duration at the
+Both apps show the waiting check-in in the member's row, never a separate metadata line. On the
+Mac it sits trailing and the hover menu replaces it. Phone places the bell and duration at the
 row's trailing edge, in muted footnote text. Show this only for waiting presence
 with a valid `wakeAt` on a channel that isn't stale or deleted; omit it for working, idle,
-unavailable or absent/invalid wake times. A single ToyBoxUI view owns both the countdown and its localized text, preserving
-the Mac's rounded-up remaining duration and Due behavior. Phone updates only at minute
-boundaries while its row is visible. Keep the bell/value group together and trailing even
-when phone name/status wrap at accessibility sizes. Add no row height at default text.
-Both rows speak "checks again in 8 minutes" or "check-in due". Retain the exact date in About's
-Checks again and Mac help. The bell is decorative, not a second button. It means time until the
-next check-in, unlike the task clock's elapsed time. No activity or progress is inferred.
+unavailable or absent/invalid wake times. A single ToyBoxUI view owns both the countdown and its
+localized text, rounding the remaining duration up and showing Due once it passes. Phone updates
+only at minute boundaries while its row is visible. Keep the bell/value group together and trailing
+even when phone name/status wrap at accessibility sizes. Add no row height at default text. Both
+rows speak "checks again in 8 minutes" or "check-in due". About's Checks again and Mac help show the
+exact date. The bell is decorative, not a second button. It means time until the next check-in,
+unlike the task clock's elapsed time. No activity or progress is inferred.
 
 The working ellipsis pulses only while the window is key. Under Reduce Motion, and in every other
 window, it is static at full color. The pulse matches the system's iterative variable color on that
@@ -1896,36 +1880,35 @@ status icons sit on the 16-point content rail, aligned with the section heading,
 child's status icon sits directly under its parent's title, as in Reminders.
 
 Expanded inline child groups on both Mac and phone have a native separator-colored ancestry
-guide in the existing indent gutter at the parent's status-column center. Phone uses the native
+guide in the indent gutter at the parent's status-column center. Phone uses the native
 list rule's 1-point weight. Mac also uses 1 point, matching its native `Divider()`. Keep both edges
 pixel-aligned at the nearest centered position. It spans that child group's bounds with 4-point
 clearance at each end. Nested expanded
 groups add their own guide. No horizontal elbows, root-level rule, extra indent or title-width
 loss. Collapsing removes it with the children. Do not draw a dangling guide to a phone
 "View N subtasks" link; its scoped list starts a fresh local tree. Guides never hit-test or
-enter accessibility. Include the shared Mac Tasks popover, and preserve all disclosure,
-hierarchy and row-action semantics.
+enter accessibility. The shared Mac Tasks popover draws the same guides. Guides change no
+disclosure, hierarchy or row-action semantics.
 
 **Phone task disclosure.** Every visible task and scoped-subtasks link is its own native List
 row, with stable depth-first identities. Task and scoped rows inherit the same native surface
 as Team in Light, Dark, the elevated sheet, the inspector and the pressed state. Never add an
-opaque task-only background. Until clean native outline motion is verified separately, both
-user-triggered and status-driven task disclosure change immediately, without a fade, at every
-text size and under Reduce Motion in the root and scoped lists. Following-section text must
-not pass through task rows. Do not stage a second content fade, animate the whole list by its
-visible IDs or add a separate animated height transition. One shared phone motion policy owns
-this shipping fallback. Overview section-header behavior is unchanged. Adjacent row guide segments join
-continuously, retaining 4-point clearance only at the whole child group's ends. Preserve saved disclosure, status
-defaults, measured reading width, scoped subtasks, artifact actions and visible-only timers.
-Mac disclosure is unchanged.
+opaque task-only background. Both user-triggered and status-driven task disclosure change
+immediately, without a fade, at every text size and under Reduce Motion in the root and scoped
+lists. Following-section text must not pass through task rows. Do not stage a second content
+fade, animate the whole list by its visible IDs or add a separate animated height transition.
+One shared phone motion policy owns this. Section headers follow their own disclosure rule
+above. Adjacent row guide segments join continuously, with 4-point clearance only at the whole
+child group's ends.
 
 At ordinary phone text sizes, task headings use 11-point top and bottom padding. When the task
-has its own artifact action, keep the heading's bottom padding at zero, preserve the artifact
-line's existing top gap and use 11 points below that line. At accessibility sizes retain
-12-point outer padding. Preserve the 8-point root-group gap and every 44-point minimum target.
+has its own artifact action, the heading has no bottom padding, the artifact line keeps its own
+top gap (see the task's artifact below) and 11 points follow that line. At accessibility sizes
+the outer padding is 12 points. Root groups are 8 points apart, and every target is at least
+44 points.
 "View N subtasks" adds no vertical padding beyond its 44-point minimum and uses only the native
 navigation indicator, like Team. It has no handmade chevron; the title-inline task disclosure
-remains separate. These changes do not affect Mac task rows.
+remains separate. These padding rules apply only to the phone.
 
 A parent's disclosure trails its title inline, as macOS sidebar section headers and the pane do.
 Build the first line as one wrapping `Text`: the title, then two spaces and the progress count
@@ -1972,8 +1955,7 @@ The Composer's Tasks popover has no header and always shows every task.
 
 Rows have 5 points of vertical padding. The first line is the title (13 regular, wrapping, done
 titles in secondary, never struck through) with the owner's 16-point avatar at the trailing
-edge, centered on the first line and at least 8 points from the title. Preserve this status,
-title, owner, child progress and inline disclosure arrangement.
+edge, centered on the first line and at least 8 points from the title.
 
 **Task facts have a dedicated home.** Start metadata 6 points below the final title/progress
 line, aligned with the title and extending to the row's trailing edge under the avatar column,
@@ -2008,29 +1990,29 @@ minimum-24 Mac target with 12-point title and native link ink. Phone uses a mini
 native footnote 13 and explicit primary label ink for readable text under native action tint.
 Top-align the phone label within that growing target. No stretched icon/title gap or centered
 title. Keep the action outside the parent toggle target: opening never toggles, toggling never
-opens. Speak "Open [artifact title]" and use the existing reader route. No reference means no
-empty artifact lane; a missing reference keeps disabled "Artifact unavailable" in tertiary
-label ink on both hosts, never a descendant's file. These row rules also apply to Mac's shared
-Tasks popover.
+opens. Speak "Open [artifact title]" and open it through the same reader route as Artifacts. No
+reference means no empty artifact lane; a missing reference keeps disabled "Artifact unavailable" in
+tertiary label ink on both hosts, never a descendant's file. These row rules also apply to Mac's
+shared Tasks popover.
 
 Tasks with a valid server-owned `startedAt` show elapsed in the metadata lane:
 a small `clock` before "1h 26m", with monospaced digits. Use "59m" below an hour,
 "1h" at an exact hour, and keep hours beyond 24. An in-progress task with a valid `checkInAt`
 adds a `bell` before its remaining time. At zero keep "0m", without warning
 color. Hover spells out "Elapsed: 1 hour 26 minutes", "Check-in in 31 minutes" or "Check-in
-due". Elapsed time rounds down and remaining time rounds up, both clamped at zero. Retain
-the diff and independent artifact through the measured lane reflow above. Use shared
-`ChannelTaskTimingPresentation` without changing arithmetic or agent wake-time semantics.
-Update once a minute only while the timed row
+due". Elapsed time rounds down and remaining time rounds up, both clamped at zero. The
+measured lane reflow above never drops the diff or the separate artifact line. Shared
+`ChannelTaskTimingPresentation` owns this arithmetic, and agent wake times follow the Team
+Members rules. Update once a minute only while the timed row
 is visible. VoiceOver uses expanded units, with no live announcements. These rules apply
 to the shared tray rows too.
 
 **Artifacts.** Mac rows are at least 40 high: a 28-point native Finder file icon, a 10-point gap, the title
 in 13 regular on one line, and an 11-point secondary line, "Kit · 3 hr. ago", with the full date
 in help. Format the time with `RelativeDateTimeFormatter`, `.named` and `.short` ("3 hr. ago",
-"yesterday"). The sharer is the actor of the latest matching `artifact_shared` event. Until Core
-projects it, show the localized type ("Markdown") instead. Sort by `sharedAt` newest first,
-with undated items last and existing order preserved for equal dates. The tray is also
+"yesterday"). The sharer is the actor of the latest matching `artifact_shared` event. Until
+that event is loaded, show the localized type ("Markdown") instead. Sort by `sharedAt` newest
+first, with undated items last and existing order preserved for equal dates. The tray is also
 newest-first. Clicking opens the artifact, and Space on a focused row shows Quick
 Look. The context menu offers Open, Quick Look, Show in Transcript (reveals the share event) and
 Copy Link. A `…` menu on the row offers the same actions, with Remove from Channel after a divider.
@@ -2040,35 +2022,31 @@ removes the row optimistically. The row leaves when the server's `artifact_remov
 rejected request shows its error inline. After a 500, timeout or lost connection, the row shows that
 the removal is unconfirmed, checks the server with `reconcileManagementWrite`, and offers no new attempt
 until the check finishes. Markdown, HTML, SVG and image artifacts open the in-window artifact viewer below,
-not a reader sheet. Other types retain Quick Look and the default application. Show actual
+not a reader sheet. Other types use Quick Look and the default application. Show actual
 fetching and error states, and never open a blank success-shaped reader. Load content from the
 server resource URL, never by assuming the file is local.
 
-Mac preserves the existing Finder-provided, file-type-specific icons. Do not substitute the
-phone's monochrome symbols in Mac Overview or the artifact pager.
+Mac Overview and the artifact pager use Finder-provided, file-type-specific icons, never the
+phone's monochrome symbols.
 The phone Overview list uses one pure file-type-to-SF-Symbol mapping: Markdown and unknown
-types keep `doc.text`, HTML uses `chevron.left.forwardslash.chevron.right`, SVG uses
-`square.on.circle`, and raster images use `photo`. Preserve the phone's symbol lane, ink and
-row geometry. Use the same mapping in phone artifact-viewer pager tiles so a file's symbol matches
-its list entry. Classify SVG before generic images using the existing content-kind policy.
-Keep every phone symbol within the same 24-point icon lane and the current document icon's
-visual size. Bound wider HTML and SVG artwork to that footprint without stretching its aspect
-ratio, enlarging the column or adopting the Mac's 28-point size.
-Phone artifact rows match Team's compact two-line rhythm: body title and footnote date,
-4-point title/date gap, 24-point icon lane and the existing 12-point icon/text gap. Team's
-name/status gap stays 2 points. Remove the
-64-point content minimum. Add exactly 6 points of native vertical row inset above and below
-the minimum-44 label, for both short and two-line titles. Preserve readable content and the full target rather than squeezing the row to 60.
-Grow for wrapping or larger text.
-Phone artifact rows also offer a trailing swipe labelled "Remove", hidden under VoiceOver. Swiping
-all the way across removes the artifact without tapping the button, like Mail. Team and Routines
-swipes keep full swipe off. The row stays in place with its "Removing from channel" spinner until
-the server's event arrives, so a full swipe must not animate it away and bring it back.
-Its context menu and accessibility action say "Remove from Channel". All three
-use the same rules as Mac: no confirmation, one request, no optimistic removal, and unconfirmed
-results are checked before another attempt.
-This is the Artifacts section, not the separate task-artifact link whose compact 35-point
-candidate remains subject to native padded-area and neighboring-action review.
+types use `doc.text`, HTML uses `chevron.left.forwardslash.chevron.right`, SVG uses
+`square.on.circle`, and raster images use `photo`. Use the same mapping in phone artifact-viewer
+pager tiles so a file's symbol matches its list entry. Classify SVG before generic images using
+`ArtifactContentKind`. Every phone symbol fits the 24-point icon lane at the `doc.text` symbol's
+visual size. Bound wider HTML and SVG artwork to that footprint without stretching its aspect ratio,
+enlarging the column or adopting the Mac's 28-point size. Phone artifact rows match Team's compact
+two-line rhythm: body title and footnote date, 4-point title/date gap, 24-point icon lane and
+12-point icon/text gap. Team's name/status gap is 2 points. There is no 64-point content minimum.
+Add exactly 6 points of native vertical row inset above and below the minimum-44 label, for both
+short and two-line titles. Rows keep readable content and the full target and are never squeezed to
+60. Rows grow for wrapping or larger text. Phone artifact rows also offer a trailing swipe labelled
+"Remove", hidden under VoiceOver. Swiping all the way across removes the artifact without tapping
+the button, like Mail. Team and Routines swipes keep full swipe off. The row stays in place with its
+"Removing from channel" spinner until the server's event arrives, so a full swipe must not animate
+it away and bring it back. Its context menu and accessibility action say "Remove from Channel". All
+three use the same rules as Mac: no confirmation, one request, no optimistic removal, and
+unconfirmed results are checked before another attempt. This is the Artifacts section, not the
+separate task-artifact link.
 
 **Routines.** Rows share the artifact geometry: a 28-point icon cell with a 15-point secondary
 `calendar.badge.clock`, the title in 13 regular, and the schedule in words in 11 secondary:
@@ -2126,7 +2104,7 @@ their channel and can move between its artifacts without closing and reopening f
 | Navigation capsule | Only with two or more artifacts. Center horizontally, 16 points above the detail's bottom edge. Reuse the image gallery's regular interactive glass capsule, 8-point padding, 28 x 28 Previous/Next targets, 32-point preview cells, 6-point gaps and 6-point corners. Native Finder icons represent Markdown, HTML and unsupported types. Images and SVG use safely decoded thumbnails when available, otherwise their Finder icon. The current cell has the gallery's 2-point accent ring. Full titles appear in help and accessibility, not tiny filenames beneath every cell |
 | Order and identity | Use the inspector's channel artifact list, newest first, including unsupported types. Previous goes toward newer artifacts and Next toward older ones. Disable at either end, without wrapping. Past nine cells the strip scrolls and keeps the selected one visible. Track selection by server, channel and artifact ID, never its list index. Arrivals and metadata changes may update the list or count but never change the displayed artifact |
 | Content clearance | Markdown and HTML can scroll their final content fully above the capsule, leaving at least 16 points of clear space. Images and SVG fit within 24-point side margins, 16 points below the toolbar and 16 above the capsule. Without a capsule, retain a 24-point bottom margin. At 760 x 560, the reading surface and navigation still work, and long titles yield before toolbar actions |
-| Actions | Share uses the original artifact resource, not a screenshot or sandbox wrapper. More contains Open in Toy Box, Reload and Copy Link. Keep Quick Look and Open in the default application available for supported files. Show in Transcript is available when the share event is known and closes the viewer before using the existing reveal path. Failed actions show an explicit, actionable error without discarding the displayed artifact |
+| Actions | Share uses the original artifact resource, not a screenshot or sandbox wrapper. More contains Open in Toy Box, Reload and Copy Link. Keep Quick Look and Open in the default application available for supported files. Show in Transcript is available when the share event is known and closes the viewer before using the transcript's reveal path. Failed actions show an explicit, actionable error without discarding the displayed artifact |
 | Transition and return | Open and close with a 0.2-second crossfade, not a zoom from a document icon. Paging crossfades with the gallery's 40-point directional slide. Reduce Motion uses crossfade only. Closing returns to the exact channel reading position and draft. Restore the wide inspector's previous state. A narrow Overview sheet dismisses before opening and is not automatically reopened on close. Return keyboard focus to the invoking artifact control when it still exists, otherwise its owning section or the Overview toolbar button |
 
 #### Each kind keeps its own strengths
@@ -2135,7 +2113,7 @@ their channel and can move between its artifacts without closing and reopening f
 | --- | --- |
 | Markdown | Render natively with `TranscriptMarkdown`, selectable text, normal links, code and tables. Use a centered text lane at most 720 points wide, at least 24-point side insets and 32-point top padding. Body is 15-point system text with 4-point additional line spacing; code is 13-point monospaced. Follow the app's Text Size setting. Do not display source syntax or put prose inside a web view. Keep document scroll position when revisiting it during this viewer visit |
 | HTML | Display the authored page as the root `WKWebView` document, not an iframe. Extend its background beneath the native bars while its unobscured viewport excludes the toolbar and floating capsule, preserving responsive layout, `100vh` and fixed headers. Use the native hard top scroll edge. The capsule floats over HTML without a bottom soft edge, but final content still clears it by at least 16 points. Preserve in-page forms and interactions; forms that navigate and other replacement-document navigation remain blocked. Use a non-persistent data store and the reference pane's CSP sandbox with scripts, forms, modals, popups and user-activated external navigation, but no same-origin permission. Its origin is opaque, and it must have no Toy Box server cookies, API access or privileged host bridge. Relative resources resolve from the artifact's directory. User-activated links and new-window requests open in the default browser, never replace the Toy Box channel. Leave ordinary text input, selection and scrolling with the web view. Restore its reading position when revisiting it during this viewer visit |
-| SVG | Mac uses the shared `TranscriptSVGImage` bounded native decoder, not a web renderer. Its off-main-thread decode and display-size rerasterization remain unchanged. The phone-only `ArtifactImageDecoder` adapter uses script-disabled, nonpersistent WebKit to export a local PDF from an inert SVG image, then CoreGraphics to produce a bounded bitmap for the native canvas. Block every non-data request; no web view is presented. Both hosts retain the 8192-pixel cap, fit without cropping and intrinsic logical dimensions: large drawings fit down and small icons stay at natural point size. Preserve transparency, magnification and pan. Never execute scripts or request external resources to display a drawing. This is a viewing surface, not an SVG editor |
+| SVG | Mac uses the shared `TranscriptSVGImage` bounded native decoder, not a web renderer. It decodes off the main thread and rerasterizes at display size. The phone-only `ArtifactImageDecoder` adapter uses script-disabled, nonpersistent WebKit to export a local PDF from an inert SVG image, then CoreGraphics to produce a bounded bitmap for the native canvas. Block every non-data request; no web view is presented. Both hosts apply the 8192-pixel cap, fit without cropping and intrinsic logical dimensions: large drawings fit down and small icons stay at natural point size. Preserve transparency, magnification and pan. Never execute scripts or request external resources to display a drawing. This is a viewing surface, not an SVG editor |
 | Raster images | Use the native image rendering and zoom/pan behavior of the image gallery, including Live Text when available. Changing artifacts resets image zoom as changing gallery images does. Do not fabricate a transcript message to represent an artifact |
 | Other files | Keep the artifact title, type and gallery position visible. Center the real file icon, a short explanation, Quick Look and Open in the default application. Unsupported content is an honest fallback, not a failed Markdown page. Quick Look may use its normal system panel |
 
@@ -2176,14 +2154,14 @@ failure announcements are polite and occur once, not on every layout pass.
 | Load failure | Center `doc.badge.ellipsis`, "Couldn't Load Artifact", the actual useful error and Retry. Keep the selected cell, title and neighbor navigation. Never turn failure into an empty document |
 | Missing or removed artifact | "Artifact Unavailable" and "This artifact is no longer available." Keep Back and other artifacts available. Do not silently substitute a neighbor |
 | No artifacts | `doc`, "No Artifacts Yet", "Files shared by this team will appear here." No empty capsule or enabled paging arrows |
-| Offline | Keep already loaded content visible. A fetch that cannot complete shows the existing connection error and Retry rather than a false empty state |
+| Offline | Keep already loaded content visible. A fetch that cannot complete shows the connection error and Retry rather than a false empty state |
 | Channel/server change | Close the viewer without animation and cancel its loads. A deleted channel returns to the normal deleted-channel state. Do not retain another server's files, gallery or web state |
 
 Opening, rendering, paging and closing never post messages, answer requests or mark underlying
 messages read. Do not restore a viewer on app relaunch. One viewer per channel window is active
 at a time; opening an attachment image replaces an artifact viewer and vice versa, without a
 stack of hidden viewers. Overview owns the artifact presentation, loaders and renderers.
-The existing image gallery remains Transcript's surface.
+The image gallery is Transcript's surface.
 
 ### Management and Settings
 
@@ -2202,20 +2180,20 @@ reconciled state or offer a reviewed retry.
 **Phone channel forms.** Neither New Channel nor Edit Channel shows
 a Folder/Working directory field. Phone creation omits the directory from its request and
 creates a discussion-only channel. Editing must preserve any existing server directory
-without exposing or writing it. New Channel removes the recruiting-agent introduction.
-Its Name row has a visible "Name" label aligned like Lead model, with "Required" as the field
-prompt. Leave Purpose, model/options, validation, focus, cancellation and write recovery
-unchanged. Neither channel form shows an explanatory introduction. Edit Channel also omits its
+without exposing or writing it. New Channel's Name row has a visible "Name" label aligned like
+Lead model, with "Required" as the field prompt. Purpose, model/options, validation, focus,
+cancellation and write recovery follow the shared rules in this section. Neither channel form
+shows an explanatory introduction. Edit Channel also omits its
 subtitle on the Mac.
 
 **Phone member forms.** Add Agent matches New Channel. Its Name row
 has a visible "Name" label with "Required" as the field prompt, and the unlabeled Role field asks
 "What is this agent's role in the channel?". Neither Add Agent nor Edit Agent shows a note above
-the form, so the onboarding and "Member of" lines stay Mac-only. The identity footer still reads
+the form, so the onboarding and "Member of" lines stay Mac-only. The identity footer reads
 "Names are unique in this channel.", led by the live handle once there's a name. Add Agent's
 confirm is the system checkmark (see Phone sheet semantics). Role's height, the model,
-validation, focus, cancellation and write recovery are unchanged. The Mac sheets keep their
-subtitles, role prompt and Add Agent button.
+validation, focus, cancellation and write recovery follow the shared rules in this section. The
+Mac sheets have subtitles, a role prompt and an Add Agent button.
 
 New Channel, Edit Channel, Add Agent and Edit Agent share one sheet language:
 
@@ -2265,8 +2243,8 @@ Copy:
 | Add Agent | Joins {channel} and starts onboarding right away. | Identity: "Mentioned as @handle. Names are unique in this channel." (live). Role prompt: "What this agent owns and how it works, including any persona." | Cancel, Add Agent |
 | Edit Agent | Member of {channel} | Identity as Add Agent. Model: "Model changes apply the next time {name} works. Its history is kept." | Remove from Channel… (leading, destructive), Cancel, Save |
 
-Names affect mentions, so the identity footer always shows the resulting handle. Preserve server
-validation for unique handles and role requirements. The lead cannot be edited through the member
+Names affect mentions, so the identity footer always shows the resulting handle. The server
+validates unique handles and role requirements. The lead cannot be edited through the member
 sheet. Deletion confirmations name the exact target and consequence:
 deleting a channel removes its agents and private sessions, removing a member retains public
 messages and reactions as Deleted agent, and deleting a routine stops future scheduled runs.
@@ -2296,9 +2274,9 @@ while automatic checks are off or the updater disallows it. These controls are h
 running updater. Only a bundle containing `SUFeedURL` outside snapshot mode starts the standard
 Sparkle updater, so development, validation and test bundles cannot update themselves.
 
-**Settings additions.** General gains "Show in menu bar" (see Menu bar extra) and a group of two toggles, both
-on by default. Each toggle's description sits in its row as secondary text under the label, the
-way System Settings describes its toggles, rather than as a section footer:
+**Settings additions.** General has "Show in menu bar" (see Menu bar extra) and a group of two
+toggles, both on by default. Each toggle's description sits in its row as secondary text under the
+label, the way System Settings describes its toggles, rather than as a section footer:
 
 | Toggle | Description |
 | --- | --- |
@@ -2388,8 +2366,8 @@ its `requestSequence` changes or clears, wherever it was answered. Remove a comp
 `seenThrough` reaches its sequence. Remove all of a channel's delivered notifications when it
 becomes active in a key window. While the app is active, present requests from other channels as
 banners with sound and send completions to Notification Center only, since the sidebar already
-shows them. The active key channel still never notifies. Keep the existing per-milestone
-deduplication and the two Settings toggles.
+shows them. The active key channel still never notifies. Per-milestone deduplication and the two
+Settings toggles apply throughout.
 
 **Phone.** The phone's request and completion alerts arrive by push. Their text, badge, service
 extension and routing are under Push and topic subscriptions, and their Lock Screen reply choices
@@ -2415,7 +2393,7 @@ from the icon's own head path, with the visor knocked out. The canvas always res
 room, so the item never changes width. Images swap instantly. Show no count, because the Dock badge
 already counts.
 
-General settings adds "Show in menu bar" as a pop-up with Always, When Active and Never. When
+General settings has "Show in menu bar" as a pop-up with Always, When Active and Never. When
 Active is the default, with the footer "When Active shows the icon while agents are working or a
 channel is waiting for you." In When Active, the item appears as soon as anything is active,
 stays 10 seconds after the last activity ends so short gaps between agent turns don't shift the
@@ -2430,8 +2408,8 @@ fixed footer, with 16-point content insets.
 | --- | --- |
 | Needs Your Reply | 15-point semibold header with the live waiting count. Every pending channel is shown, newest request first on opening, between full-width dividers. Each row starts with the 13-point semibold channel name and a trailing 28-point Open control |
 | Request | Wrapping 13-point quote aligned with the channel name, flattened from Markdown without dropping @mentions. A short request takes only its lines. A longer one scrolls within 160 points, and opening the inbox flashes its scroll indicator. While more is below, its bottom 24 points fade like a clamped transcript message, clearing over the last 24 points of scrolling. At either end of the request, the wheel carries on scrolling the inbox. The channel name and Open reveal the request in the main window. Reply, labeled "Reply in [channel]", expands an editor beneath the quote without moving the request's scroll position |
-| Reply | One expanded editor at a time. Native 14-point text, three lines before scrolling, 12-point insets, 10-point corners and primary-at-5% fill. Attach Images, the canonical audience, Dictate and Send reuse the existing composer components, without another glass surface |
-| Working Now | Up to three channels with working agents and no pending request, most recently updated first, without a section heading or count. The 13-point medium channel name and the existing 11-point secondary working subtitle sit on the leading inset, with a trailing static 20-point avatar stack of up to three agents, lead first. Overflow opens the main window |
+| Reply | One expanded editor at a time. Native 14-point text, three lines before scrolling, 12-point insets, 10-point corners and primary-at-5% fill. Attach Images, the canonical audience, Dictate and Send reuse the composer's components, without another glass surface |
+| Working Now | Up to three channels with working agents and no pending request, most recently updated first, without a section heading or count. The 13-point medium channel name and the 11-point secondary working subtitle sit on the leading inset, with a trailing static 20-point avatar stack of up to three agents, lead first. Overflow opens the main window |
 | Empty and unavailable | "All caught up" when nothing needs attention, "Connecting…" before the first catalog, "No channels yet" with the main-window route, and "Connect to Toy Box" with Settings for invalid configuration. Offline keeps cached rows, says requests may be out of date and offers Retry |
 | Footer | A fixed Quick Send command with the configured shortcut, then Open Toy Box and Settings. Close the inbox before opening another surface. No Quit, because this is a regular Dock app |
 
@@ -2466,14 +2444,14 @@ canonical request sequence. The menu never fetches history, changes selection or
 | Waiting requests | One item per waiting channel: "[Channel]: [plain-text question]". Collapse whitespace and shorten the title at a word boundary to about 60 characters, including an ellipsis. Keep the complete quote, channel and requester in the item's help. While resolving the quote, use "[Channel]: Needs your reply" |
 | No requests | A disabled "Nothing needs you" row instead of an empty region |
 | Cached offline content | Keep cached request items, preceded by a disabled "May be out of date". Without usable content, show "Connect to Toy Box", not "Nothing needs you" |
-| Commands | One separator, then "Quick Send…" and "New Channel…". These open the existing panel and `ManagementPresenter` flow |
+| Commands | One separator, then "Quick Send…" and "New Channel…". These open the Quick Send panel and the `ManagementPresenter` New Channel flow |
 
 A request opens its exact channel and message through the widget's validated navigation path.
-Invalid or deleted targets show the existing unavailable state, never a different request.
+Invalid or deleted targets show that path's unavailable state, never a different request.
 Catch Me Up is deliberately absent: its current result is a system-hosted Siri card, not an
 in-app destination for this menu. macOS retains its own standard Dock items.
 
-Notifications Settings adds "Bounce Dock icon for new requests", off by default, with
+Notifications Settings has "Bounce Dock icon for new requests", off by default, with
 "Bounce once when a new request arrives while you're using another app." It is independent of
 notification authorization. Use one `.informationalRequest` for a newly observed request while
 Toy Box is inactive, never persistent attention or one bounce per agent. Deduplicate by server,
@@ -2486,7 +2464,7 @@ launches never request real Dock attention.
 
 Open at Login is Mac only.
 
-General Settings adds "Open at Login", off by default, with the secondary description
+General Settings has "Open at Login", off by default, with the secondary description
 "Keep Toy Box ready in the Dock and menu bar without opening a window." Use the real
 `SMAppService.mainApp` status, not a separately saved Boolean, and refresh it when Settings
 becomes active. Enabling registers the main app and disabling unregisters it. A pending request
@@ -2569,13 +2547,13 @@ Multiple invocations preserve all incoming content rather than replacing an earl
 and consumption happens once so reopening the panel cannot duplicate it. Consumption clears only
 the matching payload ID.
 
-Images use the existing attachment validation. Other in-place regular files become visible plain path
-text only when the server has a loopback host, so agents on this Mac can open them. Those paths
-are text for the person to review before sending, not uploads or pretend attachments. A remote
-server rejects non-image files with "Only images can be attached" and preserves the existing
-draft. The Share extension has no editor or networking of its own. It hands the explicitly shared
-content to the host's same prefill path. It copies image bytes before the provider expires, but
-rejects temporary non-image files in this release. Never give agents a path inside a sandbox
+Images use the main composer's attachment validation. Other in-place regular files become
+visible plain path text only when the server has a loopback host, so agents on this Mac can open
+them. Those paths are text for the person to review before sending, not uploads or pretend
+attachments. A remote server rejects non-image files with "Only images can be attached" and
+preserves the existing draft. The Share extension has no editor or networking of its own. It hands
+the explicitly shared content to the host's same prefill path. It copies image bytes before the
+provider expires, but rejects temporary non-image files. Never give agents a path inside a sandbox
 container. The Share extension's `toybox-desktop://quick-send?pasteboard=<name>` route accepts only
 `dev.toybox.desktop.share.<UUID>` names. The host copies that named pasteboard and clears it,
 including on failure.
@@ -2649,7 +2627,7 @@ count. Both numbers are parameters.
 | Header | 18 high. `text.line.3.summary` in 12-point medium secondary, 6 points, then "Summary of 42 new messages" in 12-point semibold secondary, counting messages from others. Trailing Dismiss: `xmark`, 10-point semibold tertiary, 28 x 28 hit area, help "Dismiss Summary" |
 | Lines | 8 points below the header, 2 apart, each 3 points of vertical padding. A 16-point leading slot, 8 points, then 13-point primary text, wrapping up to 3 lines and then truncating, with the full line in help. The slot holds the 16-point avatar of the sender of the line's first source. When that source is a channel event, it holds the event row's own symbol and color at 13 points instead, such as the green `checkmark.circle.fill` of All tasks completed, never a generic `info.circle`. Text scales with Text Size |
 | Needs you | The first line, only while a request is pending. The slot holds an orange 13-point `questionmark.bubble.fill`, and the text is medium weight. Once the transcript shows the request as Replied, the symbol becomes a secondary `checkmark` and the text turns secondary, in place, so the card never changes height. A later landing drops it |
-| Line action | Each line is a button. Hover fills primary at 5% in a 6-point rounded rectangle extending 6 points past the text horizontally and 3 vertically. Click, Return or Space reveals the first source through the existing Reveal. Help "Show Message" |
+| Line action | Each line is a button. Hover fills primary at 5% in a 6-point rounded rectangle extending 6 points past the text horizontally and 3 vertically. Click, Return or Space reveals the first source through the transcript's Reveal. Help "Show Message" |
 | Footer | 8 points below the lines. "Summarized on this Mac" in 11-point tertiary. Its help: "Made on this Mac from the messages below. Summaries can be wrong." |
 
 | State | Behavior |
@@ -2690,28 +2668,27 @@ default preference never prompts for permission on launch.
 
 The notification title is "Morning digest", with no subtitle or badge change and no added sound.
 Its body has one plain-text line per qualifying channel, busiest first:
-"Studio: Finished the layout and needs your review." Use the existing on-device catch-up path
-for short, factual summaries. No praise, invented urgency or claim that the user has read
+"Studio: Finished the layout and needs your review." Use the on-device catch-up path for
+short, factual summaries. No praise, invented urgency or claim that the user has read
 something. When Apple Intelligence is off, unavailable or fails, use the deterministic line
 "Studio: 12 new messages", with correct singular/plural forms. Do not manufacture a summary or
 make model availability a prerequisite for the digest. System notification truncation is allowed,
 but the authored content retains one line per qualifying channel.
 
-Activating the notification opens its busiest channel through the existing navigation path,
-with a deterministic tie-break when activity counts tie. It offers no Reply action and never
-posts, answers a request or marks a channel read in the background. Snapshot, benchmark and
-validation launches never schedule or post a digest. An explicit test-bundle-only trigger may
+Activating the notification opens its busiest channel through the same navigation path as other
+notifications, with a deterministic tie-break when activity counts tie. It offers no Reply action
+and never posts, answers a request or marks a channel read in the background. Snapshot, benchmark
+and validation launches never schedule or post a digest. An explicit test-bundle-only trigger may
 present a demo banner for acceptance without changing the production daily-delivery record.
 
-Under Settings > Notifications, add a separate grouped section below the existing request and
-completion alerts. Its rows are an on-by-default "Morning digest" toggle and a native time-only
+Settings > Notifications has a separate grouped section below the request and completion
+alerts. Its rows are an on-by-default "Morning digest" toggle and a native time-only
 morning picker labeled "Deliver at", initially 8:00 AM and formatted for the user's locale. The footer
 reads "A daily recap of activity from your teams. Made on this Mac. If your Mac is asleep, it
 arrives when you return before noon." Turning the digest off disables its time picker without
-discarding the chosen time. Existing notification authorization remains the master gate:
-denied permission uses the existing Open System Settings explanation, never repeated prompts.
-The new section fits in the native Settings window in both appearances, with no custom card or
-artificial fixed-height spacer.
+discarding the chosen time. Notification authorization is the master gate: denied permission
+uses the Open System Settings explanation, never repeated prompts. The section fits in the native
+Settings window in both appearances, with no custom card or artificial fixed-height spacer.
 
 ### Image descriptions and Live Text
 
@@ -2742,7 +2719,7 @@ its links.
 | Live Text button | The system's supplementary button, only when text is found, inside the image's bottom-trailing corner, so it never meets the capsule. Hidden while zoomed, when selection still works. It takes its appearance from the image beneath it, not the window: set the overlay to light when the image's bottom-trailing 64-point square averages above 0.5 relative luminance, and dark otherwise. Where that corner is transparent, the canvas behind it counts. Measure once per decoded image. Otherwise a dark window's glass turns gray over a white screenshot and the glyph drops to about 1.9:1. The text menu keeps the window's appearance |
 | Pointer and gestures | The system I-beam over text. A drag that starts on text selects text at any zoom. Elsewhere a drag pans when zoomed and exports the file at fit. Double-click on text selects a word and triple-click a line. Double-click elsewhere toggles zoom. Scrolling always pans and swiping pages. Data detectors underline on hover and open on click |
 | Keys | `Cmd-C` copies the selected text when there is a selection, otherwise the image, and Edit > Copy keeps the title "Copy". More > Copy Image always copies the image. Escape clears a selection first, and a second Escape closes. Left, Right and paging clear the selection |
-| Menus | A right-click on selected text shows the system text menu (Copy, Look Up, Translate, Share). Everywhere else is unchanged |
+| Menus | A right-click on selected text shows the system text menu (Copy, Look Up, Translate, Share). Live Text adds no menu anywhere else |
 | Accessibility | Recognized text is exposed as the overlay provides it. The image keeps its label and description value |
 
 ### Siri and Shortcuts
@@ -2847,13 +2824,13 @@ prohibited. That launch presents no window and runs as an accessory app outside 
 system quits it once the intent finishes. Windows restored from the last session stay hidden, and
 no extra window opens. Activation or a shown window, from a reopen, Open Channel, the menu bar
 extra or a notification, makes it an ordinary app. Every other launch, Dock click and reopen is
-unchanged.
+an ordinary app launch.
 
 `bun run build` generates `Contents/Resources/Metadata.appintents` by running Xcode's
 `appintentsmetadataprocessor` directly over the const values SwiftPM already emits, so it needs
 Xcode installed but never `xcodebuild`. Titles, phrases and parameter names must stay literals.
 The system only indexes a bundle outside `/tmp` that has launched once, and parameterized phrases
-need a team-signed build, so verify Siri with a Developer ID build in Applications.
+need a team-signed build.
 
 **Handoff.** A window that shows a channel makes it the window's user activity (`dev.toybox.desktop.channel`)
 with `appEntityIdentifier` set to its Channel entity, through `userActivity(_:element:_:)` so the
@@ -2875,7 +2852,7 @@ handler as native Handoff. For the phone simulator, pass it through
 `bun run snapshot --state handoff-match` or `--state handoff-unavailable` and the normal snapshot
 arguments. Match becomes ready after the continuation selects the channel. Unavailable waits for
 the receiver's unavailable presentation rather than a live conversation it intentionally never
-opens. Both use the existing snapshot renderer without delaying Handoff lookup. These are
+opens. Both use the normal snapshot renderer without delaying Handoff lookup. These are
 receiver-state proof hooks, not proof of native cross-device discovery or delivery, which requires
 the signed phone and Mac on real devices.
 
@@ -2895,8 +2872,7 @@ everything. Launches with `--server`, `TOY_BOX_SERVER_URL`, a snapshot or a benc
 the index. When Spotlight asks the app to reindex, it indexes the catalog's channels and removes
 identifiers the catalog no longer has.
 
-Waiting requests join the existing channel results as their own `IndexedEntity`. Channel results
-retain their current name/purpose presentation and Open Channel behavior. Index requests from
+Waiting requests appear beside the channel results as their own `IndexedEntity`. Index requests from
 `MenuBarStatus.waiting`, not a separate interpretation of unread messages.
 
 Each resolved request displays its plain-text question as the title, "[Agent] · [Channel]" as
@@ -2910,9 +2886,9 @@ in the channel. It never automatically sends or answers it.
 "Reply to [Request] with [Message]". It asks for missing text, confirms the message, requester and
 channel, then revalidates that the original request is still waiting on the current server.
 An answered, replaced or unavailable request explains the change without posting to a newer one.
-Use the existing scoped reply's canonical mention and one caller-owned UUID/outbox attempt,
-without opening a window. Empty text posts nothing. Rejection and uncertain-delivery handling
-preserve the submitted text through the existing intent send path.
+Use the in-app Reply's canonical mention and one caller-owned UUID/outbox attempt, without
+opening a window. Empty text posts nothing. Rejection and uncertain-delivery handling preserve
+the submitted text through Send Message's intent send path.
 
 Remove indexed requests when answered, replaced, deleted or after a server switch. Follow
 `ChannelSpotlight`'s production and server-override gating for indexing and cleanup. Background
@@ -2958,21 +2934,20 @@ request sequence, quote and request time, with no requester profile or rendered 
 
 Medium and Large add a quiet 28 x 28 `arrowshape.turn.up.left` Reply button beside each request.
 Use sibling Open and Reply targets, never a button nested in a link. Its help and accessibility
-label are "Reply in [Channel]". It opens Quick Send with the existing request-scoped
-inbox draft and canonical audience. Opening it never sends, marks read or borrows a main-window
+label are "Reply in [Channel]". It opens Quick Send with the request-scoped inbox draft and
+canonical audience. Opening it never sends, marks read or borrows a main-window
 draft. An answered or replaced request preserves editable text and explains why sending is
 unavailable, rather than silently replying to its successor.
 The strict route is `toybox-desktop://reply?server=<encoded-server>&channel=<encoded-ID>&sequence=<positive-request-sequence>`.
 The plain `toybox-desktop://quick-send` route opens the usual channel chooser/draft selection.
-Existing `quick-send?pasteboard=...` intake and request-reveal routes retain their behavior.
+The `quick-send?pasteboard=...` intake (see Quick Send and Share) and the request-reveal route
+work independently of these.
 
 Full Color, Tinted and Clear use the same layout and semantic hierarchy. Let WidgetKit supply
 the background and style treatment, and apply `widgetAccentable` deliberately rather than
 painting every text line with the accent. In Clear, let the system adapt or remove the material
-without losing labels, request context or readable ink. Do not bake a desktop wallpaper or simulated glass into the
-content. Check all three sizes in Light/Dark, full-color and accented content, including long
-names, empty and stale states. Off-screen Clear-equivalent or accented renders establish content
-layout only, not the system's actual desktop materials.
+without losing labels, request context or readable ink. Do not bake a desktop wallpaper or
+simulated glass into the content.
 
 The empty state is a centered quiet status, not a request row. Use a 16-point regular
 `checkmark.circle`, a 6-point vertical gap, then "You're all caught up" at 13-point regular.
@@ -2989,15 +2964,11 @@ Clicking a request opens Toy Box at that channel and request sequence through a 
 The empty Small tile opens the main app. In Medium and Large, the empty state, overflow
 and background open the main app. A stale link never redirects to a
 different channel or sends anything. Normal active-window read policy applies only after opening
-the channel window, not while WidgetKit renders the snapshot or opens a reply panel. Check
-Small, Medium and Large in Light, Dark and the system's accented appearance, plus long names,
-long quotes, empty and stale states.
-If Developer ID app-group access or widget registration cannot be established within the release
-timebox, defer this feature rather than shipping a widget that cannot receive data.
+the channel window, not while WidgetKit renders the snapshot or opens a reply panel.
 
 The phone offers Home Screen Small, Medium and Large, plus Lock Screen Rectangular.
-Its Home content reuses `ToyBoxWidgetViews`, retaining the Mac's text metrics
-while passing a 44-point sibling Reply target. Reduce complete request rows to fit the
+Its Home content reuses `ToyBoxWidgetViews`, with the Mac's text metrics and a 44-point sibling
+Reply target. Reduce complete request rows to fit the
 system-provided height, with overflow based on the rows actually shown. The phone's
 Rectangular widget shows only "1 channel needs you" or "[N] channels need you", not a private
 question or update time. Use 15-point regular primary text on up to two lines. Empty uses the
@@ -3010,14 +2981,14 @@ App Group `NeedsYouSnapshot`. On timeline refresh, the phone widget extension fe
 waiting requests from the saved server through the app publisher's HTTP and snapshot path,
 within a ten-second total network deadline, then writes the shared snapshot. After a request or completion alert, the notification service
 extension asks WidgetKit to reload this widget's timelines. WidgetKit schedules the refresh,
-so this is not an immediate-delivery guarantee. A failed fetch keeps the saved snapshot and
-existing stale rule, without advancing its update time or claiming a fresh all-clear.
+so this is not an immediate-delivery guarantee. A failed fetch keeps the saved snapshot and the
+stale rule, without advancing its update time or claiming a fresh all-clear.
 Out-of-date phone content says "May be out of date" and
 shows its last update, never a current all-clear. A timeline entry at the shared 30-minute
 freshness boundary makes this change without requiring the foreground app to run.
 The widget never sends, marks read or changes a draft. Open and Reply
-use the existing `NeedsYouRequestLink` routes. Native widget backgrounds, tint and
-margins remain system-owned, with no custom largest-text layout.
+use the `NeedsYouRequestLink` routes. Native widget backgrounds, tint and
+margins are system-owned, with no custom largest-text layout.
 
 ### Live Activities
 
@@ -3054,9 +3025,9 @@ Lock Screen content uses native background, 16-point padding, an 8-point heading
 and 4-point related gaps. The channel name is subheadline semibold, state headline, task detail
 footnote and update time caption2. The heading uses the full-color Toy Box app-icon mark.
 Compact Dynamic Island uses the monochrome Toy Box robot and actual working count or state
-symbol. Minimal uses the robot for working/quiet and retains the request, completion, ended
-and stale state symbols. Both marks use the original app icon's geometry. Expanded and the
-small supplemental Activity family retain the same hierarchy without progress animations,
+symbol. Minimal uses the robot for working/quiet and the state symbols for request, completion,
+ended and stale. Both marks use the original app icon's geometry. Expanded and the
+small supplemental Activity family use the same hierarchy without progress animations,
 percentages or an ETA.
 
 Working and quiet content show actual working-agent and task counts. A current request says
@@ -3073,15 +3044,15 @@ when the channel has live unfinished work.
 
 Controls are Mac only.
 
-The existing widget extension offers two `ControlWidget` buttons, letting macOS host them in
+The widget extension offers two `ControlWidget` buttons, letting macOS host them in
 Control Center and the menu bar. These are momentary actions, not on/off switches. Use system
 control sizes, typography, shapes and tint. Do not add a custom glass capsule, persistent
 animation, extra status dot or a second menu bar inbox implementation.
 
 | Control | Symbol and label | Action |
 | --- | --- | --- |
-| Quick Send | `square.and.pencil`, "Quick Send" | Opens the existing Quick Send panel through its plain route. It never preloads clipboard data or sends automatically |
-| Needs You | `questionmark.bubble`, "Needs You", with "1 waiting" or "[N] waiting" | Opens the existing menu bar inbox through `toybox-desktop://inbox`. If the menu bar icon is normally hidden, the action must still present that inbox |
+| Quick Send | `square.and.pencil`, "Quick Send" | Opens the Quick Send panel through its plain route. It never preloads clipboard data or sends automatically |
+| Needs You | `questionmark.bubble`, "Needs You", with "1 waiting" or "[N] waiting" | Opens the menu bar inbox through `toybox-desktop://inbox`. If the menu bar icon is normally hidden, the action must still present that inbox |
 
 Needs You reads the same app-group snapshot as the widget, with the same server scope and
 freshness policy. Zero says "Nothing needs you". Without a usable snapshot, say
@@ -3151,7 +3122,7 @@ result from a window that is not drawing. Activation diagnostics include the nat
 window's WindowServer registration.
 
 Scroll also reports actual main-thread CPU ms per 1,000 native points, and paging reports CPU ms
-per older page. These are informational, not new budgets. Compare CPU work when the Mac is
+per older page. These are informational, not budgets. Compare CPU work when the Mac is
 loaded, since run-loop wall time includes scheduling delays. Judge hitches only on a quiet
 machine, with the same gesture, distance, loaded count and hover state in both builds.
 
@@ -3186,14 +3157,14 @@ The check reports native travel after a one-second end drain. AppKit's interpola
 content beyond the raw delivered delta, so this is not a deterministic wheel baseline or a raw
 wheel-relative row-drift gate.
 
-During the transcript replacement, `TOY_BOX_TRANSCRIPT=lazy|document|table bun run benchmark scroll`
-selects the container through `open --env`. The output names the requested transcript. This is
-a temporary benchmark option, not a product preference.
+`TOY_BOX_TRANSCRIPT=lazy|document|table bun run benchmark scroll` selects the container through
+`open --env`. The output names the requested transcript. This is a benchmark option, not a
+product preference.
 Hosted native tables are sampled relative to that outer scroll view's clip coordinates, including
 the table's offset within the SwiftUI document. Discovery excludes independent nested scroll views
 and never mounts cells to obtain row frames.
 `TOY_BOX_BENCHMARK_SCROLL_DRIFT=0` disables the geometry producer and sampling for paired probe
-overhead checks. It is also benchmark-only and temporary. Normal app launches install no geometry
+overhead checks. It is also benchmark-only. Normal app launches install no geometry
 provider and add no row callbacks.
 The native-table producer reads existing row rects without mounting cells or forcing layout.
 Scroll fixtures do not reorder rows during a gesture, so native row indices are stable for the
@@ -3203,9 +3174,9 @@ per-frame samples in memory and prints them after CPU measurement. The trace inc
 row and its two viewport positions, delivered wheel delta, signed residual, native top, document
 height and event counts. Lazy samples also retain the row's callback-reported positions for
 comparison with live native clipping.
-Diagnostic traces also retain display-link samples for comparison with the accepted late-run-loop
-phase. Display-link residuals can include input-application lag and are not an acceptance metric.
-`TOY_BOX_TRANSCRIPT=native-control bun run benchmark scroll` runs only the retained plain-table
+Diagnostic traces also retain display-link samples for comparison with the late-run-loop phase the
+measurement uses. Display-link residuals can include input-application lag and are not an acceptance
+metric. `TOY_BOX_TRANSCRIPT=native-control bun run benchmark scroll` runs only the plain-table
 self-check. It is not a product-container performance baseline.
 
 ### Native quality gates
@@ -3223,7 +3194,7 @@ real AppKit/SwiftUI behavior over a custom imitation, and preserve it through al
 | Pointer and popover behavior | Hover controls do not move content or disappear while moving into them. Popovers anchor to their triggering control/caret, stay inside the visible screen and dismiss predictably without losing selection |
 | Text and information density | Short content never shows an unnecessary Show More. Timestamps do not tick every second. Full values remain available without turning every row into a multi-line card. Messages and artifact prose are genuinely selectable |
 | Platform appearance | Light, dark, inactive selection, user accent, increased contrast, reduced transparency and reduced motion retain the same hierarchy and meaning. Custom rendering is justified only when native controls cannot meet the behavior |
-| Evidence and closure | Recheck the actual corrected build, not just the intended code change. A screenshot closes only the visual state it shows. Missing interaction or accessibility evidence remains explicitly open |
+| Evidence and closure | Check the actual user-facing build as a whole, not just the intended code change or an isolated fixture render. A screenshot closes only the visual state it shows. Missing interaction or accessibility evidence remains explicitly open |
 
 **Accessibility coverage.** Keep these requirements and their regressions:
 
@@ -3255,9 +3226,30 @@ real AppKit/SwiftUI behavior over a custom imitation, and preserve it through al
   a spinner, and there are no explicit animated transcript scrolls.
 - Source checks don't substitute for a spoken screen-reader or runtime preference-switching check.
 
+**Device and real-window proof.** Simulators, fixtures and snapshots can't prove these, so each
+has its own check:
+
+- On a real device, Settings resolves the notification authorization state promptly after launch.
+- Routed alert proof in the Simulator uses the selected simulator's actual registration ID.
+- `simctl push` does not invoke the notification service on the Simulator runtime, so service
+  invocation is proven with real APNs on a device.
+- Simulator checks prove real Follow start against the demo. Live Activity content updates and
+  automatic endings require server APNs delivery and are proven on device.
+- Shell checks the title menu's hover chevron and menu in the real glass toolbar.
+- Deterministic regressions protect the phone image gallery's pager capsule and toolbar geometry.
+- The Mac notification banner's two visible actions, Reply and the first choice, are confirmed on
+  device.
+- The phone Lock Screen's reply category registration and action counts are confirmed on a
+  TestFlight build.
+- Siri is checked with a Developer ID build in Applications.
+- The Needs you widget is checked in Small, Medium and Large, in Light, Dark, full-color and the
+  system's accented appearance, with long names, long quotes, empty and stale states. Off-screen
+  Clear-equivalent or accented renders establish content layout only, not the system's actual
+  desktop materials.
+
 Every user-visible feature lands with its README update in the same pass. Designer keeps the
 README grouped around the most compelling user outcomes, rather than appending a release log.
-Feature owners provide the accepted behavior and any limits so it does not advertise a future
+Feature owners provide the shipped behavior and any limits so it does not advertise a future
 capability as already shipped.
 
 Before calling the UI complete, inspect the running app in Dark at the default text size at
