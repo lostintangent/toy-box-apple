@@ -18,7 +18,7 @@ struct ChannelSidebar: View {
         let channels = model.catalog?.channels ?? []
         let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return channels }
-        return channels.filter { channelMatchesQuery($0, query: query) }
+        return channels.filter { $0.matches(query) }
     }
 
     /// A server address the app can't use has no catalog phase to show.

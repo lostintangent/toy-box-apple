@@ -324,8 +324,8 @@ final class AppModel {
         sidebarProjection.channel(channel)
     }
 
-    func sidebarAttention(_ channel: Channel) -> ChannelAttention? {
-        sidebarProjection.attention(channel)
+    func sidebarAttention(_ channel: Channel) -> Channel.Status? {
+        sidebarProjection.status(channel)
     }
 
     func sidebarAgents(_ channel: Channel) -> [ChannelAgent] {
@@ -338,7 +338,7 @@ final class AppModel {
 
     static func dockBadge(channels: [Channel], openChannelIDs: Set<String>) -> String? {
         let count = channels.filter {
-            channelSidebarStatus($0, isOpen: openChannelIDs.contains($0.id)) != nil
+            $0.sidebarStatus(isOpen: openChannelIDs.contains($0.id)) != nil
         }.count
         return count == 0 ? nil : String(count)
     }

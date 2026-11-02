@@ -232,7 +232,7 @@ private struct ShareChannelPicker: View {
 
     var body: some View {
         let channels = session.catalog?.channels ?? []
-        let choices = channelChoices(channels, query: query, recentIDs: session.recentChannelIDs)
+        let choices = channels.choices(matching: query, recentIDs: session.recentChannelIDs)
         List {
             if let notice = session.notice {
                 ShareNotice(title: notice, detail: nil).listRowBackground(Color.clear)

@@ -26,7 +26,7 @@ struct SidebarAttentionTests {
         #expect(bottom - top + 1 == 21)
         #expect(right == unread.width - 1, "The dot keeps its trailing position.")
 
-        let expected = selected ? Color.white : ChannelAttentionStyle.color(for: .unread, in: scheme)
+        let expected = selected ? Color.white : Channel.Status.unread.color(in: scheme)
         let traits = UITraitCollection(userInterfaceStyle: scheme == .dark ? .dark : .light)
         let color = UIColor(expected).resolvedColor(with: traits)
         var red: CGFloat = 0
@@ -40,8 +40,8 @@ struct SidebarAttentionTests {
         }
     }
 
-    @Test(arguments: [ChannelAttention.waiting, .finished], [ColorScheme.light, .dark])
-    func otherAttentionStatesDrawOnlyTheirTrailingSymbol(attention: ChannelAttention, scheme: ColorScheme) throws {
+    @Test(arguments: [Channel.Status.waiting, .finished], [ColorScheme.light, .dark])
+    func otherAttentionStatesDrawOnlyTheirTrailingSymbol(attention: Channel.Status, scheme: ColorScheme) throws {
         let plain = try render(attention: nil, scheme: scheme, selected: false)
         let marked = try render(attention: attention, scheme: scheme, selected: false)
         #expect(marked.width == plain.width && marked.height == plain.height)
@@ -58,9 +58,9 @@ struct SidebarAttentionTests {
     }
 
     #if DEBUG
-    @Test(arguments: [ChannelAttention.unread, .waiting, .finished], [ColorScheme.light, .dark])
+    @Test(arguments: [Channel.Status.unread, .waiting, .finished], [ColorScheme.light, .dark])
     func attentionRemainsSpokenInTheSingleChannelAccessibilityElement(
-        attention: ChannelAttention, scheme: ColorScheme
+        attention: Channel.Status, scheme: ColorScheme
     ) throws {
         let host = UIHostingController(rootView: row(attention: attention)
             .environment(\.colorScheme, scheme)
@@ -83,7 +83,7 @@ struct SidebarAttentionTests {
     }
     #endif
 
-    private func row(attention: ChannelAttention?) -> some View {
+    private func row(attention: Channel.Status?) -> some View {
         ChannelSidebarRow(
             channel: Channel(id: "workshop", name: "Workshop", directory: "/Projects/Workshop",
                              model: .init(provider: "test", name: "test"),
@@ -92,7 +92,7 @@ struct SidebarAttentionTests {
             now: Date(timeIntervalSince1970: 1_793_016_000))
     }
 
-    private func render(attention: ChannelAttention?, scheme: ColorScheme, selected: Bool) throws
+    private func render(attention: Channel.Status?, scheme: ColorScheme, selected: Bool) throws
         -> (width: Int, height: Int, pixels: [UInt8]) {
         let renderer = ImageRenderer(content: row(attention: attention)
             .frame(width: 360)

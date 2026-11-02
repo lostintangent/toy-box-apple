@@ -341,7 +341,7 @@ public final class ChannelStore {
     /// last state, so the divider matches those cached rows until the reconnect's snapshot or replay
     /// completes and places it for good.
     public func captureUnreadBoundary() {
-        unreadAfter = state.flatMap { channelUnreadAfter($0.channel) }
+        unreadAfter = state.flatMap { $0.channel.unreadAfter }
         capturedUnread = state != nil && phase.isConnected
     }
 
@@ -723,7 +723,7 @@ public final class ChannelStore {
         } else { throw ChannelAPIError.invalidEvent("pre-snapshot \(event.type)") }
         if event.type == "snapshot" || event.type == "resumed" {
             if !capturedUnread, let state {
-                unreadAfter = channelUnreadAfter(state.channel)
+                unreadAfter = state.channel.unreadAfter
                 capturedUnread = true
             }
             if event.type == "resumed" {

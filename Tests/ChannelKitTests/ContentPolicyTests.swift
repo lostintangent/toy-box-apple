@@ -15,11 +15,15 @@ struct ContentPolicyTests {
     }
 
     @Test func purposePreviewKeepsTheOriginalFirstLineSemantics() {
-        #expect(channelPurposePreview("  Ship the demo  \nThen the docs") == "Ship the demo")
-        #expect(channelPurposePreview("\n\nFirst\r\nSecond") == "First")
-        #expect(channelPurposePreview(" \nSecond") == nil)
-        #expect(channelPurposePreview("") == nil)
-        #expect(channelPurposePreview(nil) == nil)
+        func preview(_ purpose: String?) -> String? {
+            Channel(id: "c", name: "C", purpose: purpose, model: .init(provider: "p", name: "m"),
+                    updatedAt: "2026-10-01T00:00:00Z").purposePreview
+        }
+        #expect(preview("  Ship the demo  \nThen the docs") == "Ship the demo")
+        #expect(preview("\n\nFirst\r\nSecond") == "First")
+        #expect(preview(" \nSecond") == nil)
+        #expect(preview("") == nil)
+        #expect(preview(nil) == nil)
     }
 
     @Test func unnamedImagesAreNamedByPositionAndDataURLsNeverNameAFile() {

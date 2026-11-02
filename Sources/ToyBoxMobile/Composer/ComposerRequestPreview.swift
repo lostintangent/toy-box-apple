@@ -171,7 +171,7 @@ struct ComposerRequestLabel: View {
             Text("Input Needed").foregroundStyle(Color.primary)
         } icon: {
             Image(systemName: "questionmark.circle.fill")
-                .foregroundStyle(ChannelAttentionStyle.color(for: .waiting, in: colorScheme))
+                .foregroundStyle(Channel.Status.waiting.color(in: colorScheme))
         }
         .lineLimit(wraps ? nil : 1)
         .fixedSize(horizontal: false, vertical: wraps)

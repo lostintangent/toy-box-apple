@@ -33,17 +33,17 @@ public enum ChannelColors {
     public static let newRule = Color.blue.opacity(0.7)
 }
 
-public enum ChannelAttentionStyle {
-    public static func symbol(for attention: ChannelAttention) -> String {
-        switch attention {
+extension Channel.Status {
+    public var symbol: String {
+        switch self {
         case .waiting: "questionmark.bubble.fill"
         case .finished: "checkmark.circle.fill"
         case .unread: "circle.fill"
         }
     }
 
-    public static func color(for attention: ChannelAttention, in scheme: ColorScheme) -> Color {
-        switch attention {
+    public func color(in scheme: ColorScheme) -> Color {
+        switch self {
         case .waiting: .orange
         case .finished: ChannelTaskColors.changes(in: scheme).added
         case .unread: .blue

@@ -193,14 +193,14 @@ struct PolicyTests {
         var channel = Channel(id: "test", name: "Test", model: .init(provider: "test", name: "test"),
                               latestSequence: 10, seenThrough: 4, completedSequence: 7,
                               requestSequence: 8, updatedAt: "2026-10-01T00:00:00Z")
-        #expect(channelSidebarStatus(channel, isOpen: true) == .waiting)
+        #expect(channel.sidebarStatus(isOpen: true) == .waiting)
         channel.requestSequence = nil
-        #expect(channelStatus(channel) == .finished)
-        #expect(channelSidebarStatus(channel, isOpen: true) == nil)
+        #expect(channel.status == .finished)
+        #expect(channel.sidebarStatus(isOpen: true) == nil)
         channel.seenThrough = 7
-        #expect(channelStatus(channel) == .unread)
+        #expect(channel.status == .unread)
         channel.seenThrough = 10
-        #expect(channelStatus(channel) == nil)
+        #expect(channel.status == nil)
         #expect(channelAgentIdentity([ada], id: "removed").name == "Deleted agent")
     }
 

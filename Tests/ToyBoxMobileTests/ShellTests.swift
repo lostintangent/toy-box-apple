@@ -1244,7 +1244,7 @@ struct ShellTests {
                 name: "Agent \(index)", role: "Coordinator", avatar: .init(mark: "M4 12H20", color: "#123456")
             ))
         }
-        func height(working: [ChannelAgent], attention: ChannelAttention?) -> CGFloat {
+        func height(working: [ChannelAgent], attention: Channel.Status?) -> CGFloat {
             let host = UIHostingController(rootView: ChannelSidebarRow(
                 channel: channel, agents: agents, working: working, attention: attention,
                 now: Date(timeIntervalSince1970: 1_793_000_000)

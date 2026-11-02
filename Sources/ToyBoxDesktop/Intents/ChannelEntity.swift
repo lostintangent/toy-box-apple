@@ -23,7 +23,7 @@ struct ChannelEntity: IndexedEntity, Identifiable {
     var tasksCompleted: Bool
 
     /// Matches the sidebar's indicator.
-    let attention: ChannelAttention?
+    let attention: Channel.Status?
 
     /// The first line of the channel's purpose, which Spotlight shows under its name.
     let purpose: String?
@@ -32,13 +32,13 @@ struct ChannelEntity: IndexedEntity, Identifiable {
     let thumbnail: Data?
 
     init(_ channel: Channel) {
-        self.init(id: channel.id, name: channel.name, attention: channelStatus(channel),
+        self.init(id: channel.id, name: channel.name, attention: channel.status,
                   unreadCount: max(0, channel.latestSequence - channel.seenThrough),
-                  purpose: channelPurposePreview(channel.purpose))
+                  purpose: channel.purposePreview)
     }
 
     /// A channel as a card remembers it, for its buttons, or as Spotlight indexes it.
-    init(id: String, name: String, attention: ChannelAttention? = nil, unreadCount: Int = 0,
+    init(id: String, name: String, attention: Channel.Status? = nil, unreadCount: Int = 0,
          purpose: String? = nil, thumbnail: Data? = nil) {
         self.id = id
         self.attention = attention

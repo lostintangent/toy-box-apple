@@ -435,7 +435,7 @@ struct IntentsTests {
 
     private func answerWithCard(_ state: ChannelState, unreadAfter: Int? = nil,
                                 summary: (catchUp: CatchUp, count: Int)? = nil) -> CatchUpAnswer.Answer {
-        let boundary = unreadAfter ?? channelUnreadAfter(state.channel)
+        let boundary = unreadAfter ?? state.channel.unreadAfter
         let answer = CatchUpAnswer.channelAnswer(state, unreadAfter: boundary,
                                                  digest: CatchUpDigest(state: state, unreadAfter: boundary), summary: summary)
         #expect(answer.spoken == self.answer(state, unreadAfter: unreadAfter, summary: summary))
@@ -444,7 +444,7 @@ struct IntentsTests {
 
     private func answer(_ state: ChannelState, unreadAfter: Int? = nil,
                         summary: (catchUp: CatchUp, count: Int)? = nil) -> String {
-        let boundary = unreadAfter ?? channelUnreadAfter(state.channel)
+        let boundary = unreadAfter ?? state.channel.unreadAfter
         return CatchUpAnswer.channel(state.channel, unreadAfter: boundary,
                                      digest: CatchUpDigest(state: state, unreadAfter: boundary), summary: summary)
     }

@@ -257,7 +257,7 @@ private struct CatchUpCardRow: View {
         .accessibilityHint("Opens the channel")
     }
 
-    private var attention: ChannelAttention? { row.attention.flatMap(ChannelAttention.init(rawValue:)) }
+    private var attention: Channel.Status? { row.attention.flatMap(Channel.Status.init(rawValue:)) }
 
     /// The sidebar's indicator.
     @ViewBuilder private var indicator: some View {

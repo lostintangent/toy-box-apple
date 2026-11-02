@@ -11,11 +11,6 @@ public func channelAgentMessageCount(_ messages: [ChannelMessage], after sequenc
     }
 }
 
-public func channelPurposePreview(_ text: String?) -> String? {
-    let line = text?.split(whereSeparator: \.isNewline).first?.trimmingCharacters(in: .whitespaces)
-    return line?.isEmpty == false ? line : nil
-}
-
 extension ChannelAttachment {
     public var filename: String? {
         if let name, !name.isEmpty { return name }
