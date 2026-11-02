@@ -659,7 +659,7 @@ struct ConversationTranscript: View {
               let made = TranscriptCatchUp.make(
                   server: store.api.baseURL, state: state, unreadAfter: unreadAfter, view: interaction.messageView,
                   availability: intelligence.availability,
-                  isOn: TranscriptIntelligenceSettings.isOn(TranscriptIntelligenceSettings.summarizesNewMessages))
+                  isOn: IntelligenceSettings.isOn(IntelligenceSettings.summarizesNewMessages))
         else { return }
         catchUp = made
     }

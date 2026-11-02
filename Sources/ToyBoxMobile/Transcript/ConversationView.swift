@@ -434,7 +434,7 @@ struct ConversationView: View {
             catchUp = TranscriptCatchUpSession.make(
                 server: store.api.baseURL, state: state, unreadAfter: arrivalUnreadAfter, view: interaction.messageView,
                 boundaryIsLoaded: true, availability: intelligence.availability,
-                isOn: TranscriptIntelligenceSettings.isOn(TranscriptIntelligenceSettings.summarizesNewMessages))
+                isOn: IntelligenceSettings.isOn(IntelligenceSettings.summarizesNewMessages))
         }
         guard interaction.revealRequest == nil else {
             landsOnReveal = true

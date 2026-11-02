@@ -310,7 +310,7 @@ private struct TranscriptGalleryPage: View {
     @Environment(\.displayScale) private var displayScale
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
     @Environment(\.channelIntelligence) private var intelligence
-    @AppStorage(TranscriptIntelligenceSettings.describesImages) private var describesImages = true
+    @AppStorage(IntelligenceSettings.describesImages) private var describesImages = true
     @ViewState private var loaded: (image: UIImage, size: CGSize, file: URL)?
     @ViewState private var failure: String?
     @ViewState private var attempt = 0

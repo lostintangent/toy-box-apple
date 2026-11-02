@@ -171,7 +171,7 @@ struct GalleryIntelligenceTests {
         let defaults = try #require(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         func inline(voiceOver: Bool, isOn: Bool = true, service: any ChannelIntelligenceService = service) -> some View {
-            defaults.set(isOn, forKey: TranscriptIntelligenceSettings.describesImages)
+            defaults.set(isOn, forKey: IntelligenceSettings.describesImages)
             return TranscriptImage(attachment: attachment, api: api, voiceOver: voiceOver) {
                 gallery.open(images: [attachment], at: 0,
                              source: .init(messageID: "inline", sender: "Lead", timestamp: ""), api: api)

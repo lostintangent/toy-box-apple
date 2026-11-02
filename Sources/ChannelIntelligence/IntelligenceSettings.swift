@@ -1,7 +1,7 @@
 import Foundation
 
 /// The Intelligence toggles in Settings. Neither key registers a default, so an unset key reads as on.
-public enum TranscriptIntelligenceSettings {
+public enum IntelligenceSettings {
     public static let summarizesNewMessages = "summarizeNewMessages"
     public static let describesImages = "describeImagesForVoiceOver"
 

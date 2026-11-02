@@ -110,7 +110,7 @@ final class AppModel {
                 guard let api = self?.api else { throw ChannelAPIError.invalidServerURL }
                 return try await MorningDigest.build(
                     api: api, window: window,
-                    summarizes: TranscriptIntelligenceSettings.isOn(TranscriptIntelligenceSettings.summarizesNewMessages),
+                    summarizes: IntelligenceSettings.isOn(IntelligenceSettings.summarizesNewMessages),
                     intelligence: LiveChannelIntelligence.shared
                 )
             },

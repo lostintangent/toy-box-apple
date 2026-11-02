@@ -76,7 +76,7 @@ private struct TranscriptAttachment: View {
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
     @Environment(\.channelIntelligence) private var intelligence
     @Environment(\.displayScale) private var displayScale
-    @AppStorage(TranscriptIntelligenceSettings.describesImages) private var describesImages = true
+    @AppStorage(IntelligenceSettings.describesImages) private var describesImages = true
 
     private var name: String { imageName ?? attachment.displayName }
 
