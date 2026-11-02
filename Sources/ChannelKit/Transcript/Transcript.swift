@@ -233,22 +233,24 @@ public final class TranscriptRowBuilder {
     }
 }
 
-public func transcriptDayLabel(_ date: Date, now: Date = .now,
-                               calendar: Calendar = .current) -> String {
-    let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: date),
-                                       to: calendar.startOfDay(for: now)).day
-    if days == 0 { return "Today" }
-    if days == 1 { return "Yesterday" }
-    var format = Date.FormatStyle()
-    format.calendar = calendar
-    format.timeZone = calendar.timeZone
-    if let locale = calendar.locale { format.locale = locale }
-    if let days, (2...6).contains(days) { return date.formatted(format.weekday(.wide)) }
-    format = format.weekday(.wide).month(.wide).day()
-    if calendar.component(.year, from: date) != calendar.component(.year, from: now) {
-        format = format.year()
+extension TranscriptDivider {
+    /// The day header: "Today", "Yesterday", a weekday within the last week, or a date.
+    public static func dayLabel(for date: Date, now: Date = .now, calendar: Calendar = .current) -> String {
+        let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: date),
+                                           to: calendar.startOfDay(for: now)).day
+        if days == 0 { return "Today" }
+        if days == 1 { return "Yesterday" }
+        var format = Date.FormatStyle()
+        format.calendar = calendar
+        format.timeZone = calendar.timeZone
+        if let locale = calendar.locale { format.locale = locale }
+        if let days, (2...6).contains(days) { return date.formatted(format.weekday(.wide)) }
+        format = format.weekday(.wide).month(.wide).day()
+        if calendar.component(.year, from: date) != calendar.component(.year, from: now) {
+            format = format.year()
+        }
+        return date.formatted(format)
     }
-    return date.formatted(format)
 }
 
 private func systemMessageGroup(_ message: ChannelMessage) -> String? {

@@ -782,7 +782,7 @@ struct TranscriptTests {
         } + [ChannelAttachment(name: "A very long attachment name that would otherwise stretch across the row.txt",
                                url: "/files/notes.txt", mimeType: "text/plain")]
         let api = try ChannelAPI(serverURL: "https://strip-\(UUID().uuidString.lowercased()).invalid")
-        let tile = transcriptThumbnailSize(CGSize(width: 400, height: 300))
+        let tile = ChannelThumbnails.boxSize(fitting: CGSize(width: 400, height: 300))
         let host = UIHostingController(rootView: TranscriptAttachments(
             attachments: attachments, api: api, alignment: .trailing,
             source: .init(messageID: "m1", sender: "Lead", timestamp: "2026-10-26T12:00:00Z")))

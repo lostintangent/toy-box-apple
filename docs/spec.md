@@ -1592,7 +1592,7 @@ Opening remote URLs must not assume a matching local filesystem path.
 
 **Phone attachment parity.** The entire attachment set occupies one horizontally scrolling
 row, with 8-point gaps and no stacking or wrapping. Preserve the existing shared
-`ChannelClient.transcriptThumbnailSize` image cap of 240 x 160. The 240 x 120 video-preview cap
+`ChannelThumbnails.boxSize(fitting:)` image cap of 240 x 160. The 240 x 120 video-preview cap
 is not an image-size change. Keep attachment order, leading/trailing alignment, the correct
 image index on opening, and the presented tile in view when returning. Share the portable
 strip container where practical while each host retains its native tiles. File and video

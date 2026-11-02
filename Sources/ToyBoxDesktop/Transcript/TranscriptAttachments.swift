@@ -171,7 +171,7 @@ private struct TranscriptAttachment: View {
     private func imageTile(_ thumbnail: CGImage?) -> some View {
         let pixels = ChannelImageDecoder.pixelSize(for: attachment, api: api)
             ?? thumbnail.map { CGSize(width: $0.width, height: $0.height) } ?? CGSize(width: 120, height: 90)
-        let size = transcriptThumbnailSize(pixels)
+        let size = ChannelThumbnails.boxSize(fitting: pixels)
         let tile = RoundedRectangle(cornerRadius: 8)
         return Button(action: view) {
             ZStack {

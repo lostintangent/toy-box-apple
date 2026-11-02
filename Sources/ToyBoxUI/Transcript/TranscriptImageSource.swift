@@ -34,7 +34,7 @@ public struct TranscriptImageSource: Equatable, Sendable {
         let sent = (try? Date(timestamp, strategy: .iso8601)).map { sentAt in
             let time = Date.FormatStyle(date: .omitted, time: .shortened, locale: calendar.locale ?? .current,
                                         calendar: calendar, timeZone: calendar.timeZone)
-            return "\(transcriptDayLabel(sentAt, now: now, calendar: calendar)) at \(sentAt.formatted(time))"
+            return "\(TranscriptDivider.dayLabel(for: sentAt, now: now, calendar: calendar)) at \(sentAt.formatted(time))"
         }
         return (sent, count > 1 ? "\(index + 1) of \(count)" : nil)
     }

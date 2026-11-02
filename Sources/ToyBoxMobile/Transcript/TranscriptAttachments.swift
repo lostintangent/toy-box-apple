@@ -93,7 +93,7 @@ struct TranscriptImage: View {
     }
 
     private func thumbnail(_ shown: CGImage?) -> some View {
-        let size = transcriptThumbnailSize(ChannelImageDecoder.pixelSize(for: attachment, api: api)
+        let size = ChannelThumbnails.boxSize(fitting: ChannelImageDecoder.pixelSize(for: attachment, api: api)
             ?? shown.map { CGSize(width: $0.width, height: $0.height) } ?? .zero)
         return ZStack {
             if let shown {

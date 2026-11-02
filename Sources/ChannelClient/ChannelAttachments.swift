@@ -268,6 +268,15 @@ public enum ChannelThumbnails {
         Int((240 * max(scale, 1)).rounded(.up))
     }
 
+    /// An inline transcript image's box: at most 240 by 160 points, never upscaled. Empty or
+    /// non-finite sizes get a 44-point square.
+    public static func boxSize(fitting original: CGSize) -> CGSize {
+        guard original.width > 0, original.height > 0,
+              original.width.isFinite, original.height.isFinite else { return CGSize(width: 44, height: 44) }
+        let scale = min(1, 240 / original.width, 160 / original.height)
+        return CGSize(width: original.width * scale, height: original.height * scale)
+    }
+
     /// Any remembered thumbnail, to draw at once while a sharper one may still be decoding.
     public static func remembered(for attachment: ChannelAttachment, api: ChannelAPI) -> CGImage? {
         ChannelAttachmentCache.identity(for: attachment, api: api).flatMap {
@@ -324,14 +333,6 @@ public enum ChannelThumbnails {
         return (try await image(at: file, for: attachment, api: api, scale: scale, reload: reload, fallback: fallback),
                 file)
     }
-}
-
-/// An inline transcript image's box: at most 240 by 160 points, never upscaled.
-public func transcriptThumbnailSize(_ original: CGSize) -> CGSize {
-    guard original.width > 0, original.height > 0,
-          original.width.isFinite, original.height.isFinite else { return CGSize(width: 44, height: 44) }
-    let scale = min(1, 240 / original.width, 160 / original.height)
-    return CGSize(width: original.width * scale, height: original.height * scale)
 }
 
 private extension String {

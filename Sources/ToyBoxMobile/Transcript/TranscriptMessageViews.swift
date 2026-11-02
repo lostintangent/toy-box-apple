@@ -87,7 +87,7 @@ struct TranscriptRule: View {
     var body: some View {
         HStack(spacing: 0) {
             if let day = divider.day {
-                Text(transcriptDayLabel(day))
+                Text(TranscriptDivider.dayLabel(for: day))
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(TranscriptInk.secondary)
                     .layoutPriority(1)
