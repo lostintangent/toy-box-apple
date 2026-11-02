@@ -33,7 +33,7 @@ struct RequestSpotlightTests {
         var removedRequester = item(sequence: 9)
         removedRequester.agent = nil
         var polls = 0
-        let resolved = try await ChannelIntentsContext.resolveWaitingRequests {
+        let resolved = try await ChannelIntents.resolveWaitingRequests {
             polls += 1
             return ("https://server.test", true, [healthy, removedRequester])
         }
@@ -45,12 +45,12 @@ struct RequestSpotlightTests {
         let healthy = item()
         var unresolved = item(sequence: 9)
         unresolved.quote = nil
-        let resolved = try await ChannelIntentsContext.resolveWaitingRequests(timeout: .zero) {
+        let resolved = try await ChannelIntents.resolveWaitingRequests(timeout: .zero) {
             ("https://server.test", true, [healthy, unresolved])
         }
         #expect(resolved.map(\.id) == [try entry().id])
         await #expect(throws: ChannelIntentError.unreachable) {
-            try await ChannelIntentsContext.resolveWaitingRequests(timeout: .zero) {
+            try await ChannelIntents.resolveWaitingRequests(timeout: .zero) {
                 throw ChannelIntentError.unreachable
             }
         }
@@ -279,10 +279,10 @@ private final class RequestIntentFixture {
     var opened: [String] = []
     var held = 0
     var released = 0
-    var confirmations: [ChannelIntentsContext.SendConfirmation] = []
+    var confirmations: [ChannelIntents.SendConfirmation] = []
     var onConfirm: () throws -> Void = {}
-    lazy var context: ChannelIntentsContext = {
-        let context = ChannelIntentsContext(host: .init(
+    lazy var context: ChannelIntents = {
+        let context = ChannelIntents(host: .init(
             api: { self.api }, store: { _ in self.store },
             hold: { _ in self.held += 1 }, release: { _ in self.released += 1 },
             open: { _ in Issue.record("Reply must not open a window") },

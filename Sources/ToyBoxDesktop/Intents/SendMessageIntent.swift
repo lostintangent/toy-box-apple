@@ -16,7 +16,7 @@ struct SendMessageIntent: AppIntent {
                requestValueDialog: "What do you want to say?")
     var message: String
 
-    @AppDependency var context: ChannelIntentsContext
+    @AppDependency var context: ChannelIntents
 
     static var parameterSummary: some ParameterSummary {
         Summary("Send \(\.$message) to \(\.$channel)")

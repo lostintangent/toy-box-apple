@@ -384,10 +384,10 @@ struct IntentsTests {
     }
 
     @Test func aReplyConfirmsWithItsRecipientAndMentionsThem() {
-        let prompt = ChannelIntentsContext.SendConfirmation(channel: "Studio demo", message: "Next to the app.",
+        let prompt = ChannelIntents.SendConfirmation(channel: "Studio demo", message: "Next to the app.",
                                                             recipient: "Lead")
         #expect(prompt.question == "Send \u{201C}Next to the app.\u{201D} to Lead in Studio demo?")
-        #expect(ChannelIntentsContext.SendConfirmation(channel: "Docs", message: "Hi").question
+        #expect(ChannelIntents.SendConfirmation(channel: "Docs", message: "Hi").question
             == "Send \u{201C}Hi\u{201D} to Docs?")
     }
 
@@ -649,13 +649,13 @@ private final class TestHost {
     private(set) var holds: [String: Int] = [:]
     private(set) var held: [String] = []
     private(set) var opened: [String] = []
-    private(set) var confirmations: [ChannelIntentsContext.SendConfirmation] = []
+    private(set) var confirmations: [ChannelIntents.SendConfirmation] = []
     var declines = false
     var waitingRequests: [WaitingRequestEntry] = []
     private(set) var revealedRequests: [String] = []
     /// Installs a context backed by this host, which intents use until the next is installed.
-    var context: ChannelIntentsContext {
-        let context = ChannelIntentsContext(host: .init(
+    var context: ChannelIntents {
+        let context = ChannelIntents(host: .init(
             api: { self.api },
             store: { self.store($0) },
             hold: { store in

@@ -12,7 +12,7 @@ struct CatchMeUpIntent: AppIntent {
     @Parameter(title: "Channel", description: "Leave empty to hear about every channel that needs you.")
     var channel: ChannelEntity?
 
-    @AppDependency var context: ChannelIntentsContext
+    @AppDependency var context: ChannelIntents
 
     static var parameterSummary: some ParameterSummary {
         Summary("Catch me up on \(\.$channel)")

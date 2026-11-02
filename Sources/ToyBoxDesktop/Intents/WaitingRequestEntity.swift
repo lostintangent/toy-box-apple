@@ -70,7 +70,7 @@ struct WaitingRequestEntity: IndexedEntity {
 }
 
 struct WaitingRequestQuery: EntityStringQuery, EnumerableEntityQuery, IndexedEntityQuery {
-    @AppDependency var context: ChannelIntentsContext
+    @AppDependency var context: ChannelIntents
 
     func entities(for identifiers: [String]) async throws -> [WaitingRequestEntity] {
         let requests = try await context.waitingRequests()

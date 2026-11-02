@@ -81,7 +81,7 @@ struct ChannelEntity: IndexedEntity, Identifiable {
 
 /// Channels in the server's order, which is the sidebar's, found by name.
 struct ChannelQuery: EntityStringQuery, EnumerableEntityQuery {
-    @AppDependency var context: ChannelIntentsContext
+    @AppDependency var context: ChannelIntents
 
     func entities(for identifiers: [String]) async throws -> [ChannelEntity] {
         let channels = try await context.entities()

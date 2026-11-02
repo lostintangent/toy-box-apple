@@ -8,7 +8,7 @@ struct OpenRequestIntent: OpenIntent {
     @Parameter(title: "Request")
     var target: WaitingRequestEntity
 
-    @AppDependency var context: ChannelIntentsContext
+    @AppDependency var context: ChannelIntents
 
     static var parameterSummary: some ParameterSummary { Summary("Open \(\.$target)") }
 

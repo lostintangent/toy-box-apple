@@ -9,7 +9,7 @@ import Foundation
 /// share, and the route a notification takes to open a channel. Intents read the catalog fresh,
 /// send through a channel's outbox, and never mark anything read.
 @MainActor
-final class ChannelIntentsContext {
+final class ChannelIntents {
     struct Host {
         var api: @MainActor () -> ChannelAPI?
         var store: @MainActor (String) -> ChannelStore?
@@ -23,7 +23,7 @@ final class ChannelIntentsContext {
 
     private let host: Host
     /// Resolved on first use, because the live service loads the system model and the app
-    /// registers this context before its first window.
+    /// registers these intents before its first window.
     private(set) lazy var intelligence: any ChannelIntelligenceService = makeIntelligence()
     private let makeIntelligence: @MainActor () -> any ChannelIntelligenceService
     /// The "Summarize new messages" setting. Off, Catch Me Up reads messages without the model.
@@ -294,8 +294,8 @@ final class ChannelIntentsContext {
     }
 }
 
-extension ChannelIntentsContext {
-    /// The app's context. Its stores are the ones its windows show, so a send appears in an open
+extension ChannelIntents {
+    /// The app's intents. Their stores are the ones its windows show, so a send appears in an open
     /// channel at once and a failed one waits there for Send Again.
     convenience init(model: AppModel) {
         self.init(host: Host(
@@ -321,7 +321,7 @@ extension ChannelIntentsContext {
 
     /// Makes the intents' dependency available. Call once, before the first intent runs.
     static func register(_ model: AppModel) {
-        let context = ChannelIntentsContext(model: model)
+        let context = ChannelIntents(model: model)
         AppDependencyManager.shared.add(dependency: context)
         guard !model.launchOptions.isSnapshot else { return }
         ShortcutParameters.observe(model)
