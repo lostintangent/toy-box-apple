@@ -16,8 +16,8 @@ view.
   and cron. `ChannelClient` is transport: HTTP commands, SSE, reconnect and observable stores.
   `ChannelIntelligence` is on-device Foundation Models. `ToyBoxUI` is shared SwiftUI presentation
   without AppKit or UIKit. `ToyBoxDesktop` and `ToyBoxMobile` own native platform integration.
-- It talks to the same `/api/v1` HTTP and SSE routes as the Minecraft client. The conformance
-  fixtures are copied unchanged from that client.
+- It talks to Toy Box's public `/api/v1` HTTP and SSE routes. `~/Desktop/toy-box` is the read-only
+  reference for the server and the web pane. Never modify it.
 
 ## Build and run
 

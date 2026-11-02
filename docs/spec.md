@@ -3,20 +3,20 @@
 Toy Box is a native macOS client for Toy Box Channels. It gives the user the full Channel
 pane experience (transcript, composer, overview) in an app that feels first-party on macOS. The
 Toy Box server keeps owning Channels, agents, sessions and durable work. This app is a
-presentation and input surface over the same public Channel protocol that the Minecraft client uses.
+presentation and input surface over Toy Box's public Channel protocol, the `/api/v1` HTTP and SSE routes.
 
 Reference sources (read-only):
 
 - Toy Box server and pane: `~/Desktop/toy-box/src/features/channels` (start with its `AGENTS.md`)
-- Contract fixtures: `Tests/Shared/ChannelKitTests/Fixtures`, originally exported from the Minecraft client.
-  The demo servers read the same `channel-snapshot.json`.
+- Contract fixtures: `Tests/Shared/ChannelKitTests/Fixtures`. The demo servers read the same
+  `channel-snapshot.json`.
 
 ## Success criteria
 
-1. **Same protocol.** Listing, observing, paging, posting and reading use only `/api/v1` routes that
-   Minecraft uses. No private TanStack server functions, no database access, and no parallel schema.
+1. **Same protocol.** Listing, observing, paging, posting and reading use only the public `/api/v1`
+   routes. No private TanStack server functions, no database access, and no parallel schema.
 2. **Faithful state.** A Swift port of `reduceChannelState` produces the same state as Toy Box. Tests
-   prove it against Minecraft's exported snapshot and transition fixtures.
+   prove it against the snapshot and transition fixtures.
 3. **Pane parity.** Every capability in the parity checklist below works, or is explicitly excluded
    here with a reason.
 4. **Idiomatic macOS.** This should read as an Apple-quality app, not a web view: native split view,
