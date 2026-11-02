@@ -33,7 +33,7 @@ preserving drafts and requiring an explicit send. Image bytes are loaded before 
 completes so a provider's temporary URL cannot expire underneath the host.
 Only in-place non-image files are passed as paths. Temporary/provider-only non-image files and
 sandbox-container paths are rejected explicitly, rather than giving an agent an expired or
-inaccessible path. This release does not upload arbitrary files.
+inaccessible path. Arbitrary files are never uploaded.
 
 The extension has only App Sandbox, with hardened runtime and a secure timestamp in releases.
 Its ID is the containing app's ID plus `.share`, and its version and build match the app.
@@ -63,7 +63,7 @@ certificate's identity into a temporary encrypted file, then removes it on exit.
 
 Setup writes the selected public certificate SHA-1 to `MACOS_SIGNING_IDENTITY`; the workflow reads
 that variable, not a hard-coded fingerprint. Apple ID (`joncart@outlook.com`) and Team ID
-(`RHFNBL7EG4`) remain public account settings. Setup also exports the verified public issuer chain
+(`RHFNBL7EG4`) are public account settings. Setup also exports the verified public issuer chain
 to `MACOS_SIGNING_CERTIFICATE_CHAIN`, alongside the encrypted identity, allowing issuer renewal
 through setup without a workflow edit. CI stores the notarization login in a temporary keychain
 profile. Missing or rejected credentials fail the release explicitly.
@@ -139,13 +139,13 @@ and push routes. Common commands live in `scripts/shared/`, with helpers in `lib
 Platform folders never import each other. CI calls release-only helpers by path rather than exposing
 unused package commands.
 
-Script tests and their fake-command harness are omitted. CI keeps `bun check` and
+There are no script tests. CI keeps `bun check` and
 `bun run lint:workflows`. Any change to bundle or release tooling requires both real release
 dry runs to pass. Bun 1.4.4 is pinned in the package metadata and CI, and setup-bun is commit-pinned
 on both runner platforms. Scripts use TypeScript, Bun Shell and native file and XML APIs.
 The sole `.sh` helper uses Bash's silent `read -rs` for the
-user-only credential prompt. Native Swift helpers retain Security-framework identity export and
-AppKit icon rendering. Local builds remain Command Line Tools only.
+user-only credential prompt. Native Swift helpers handle Security-framework identity export and
+AppKit icon rendering.
 
 ## iPhone TestFlight
 
@@ -202,7 +202,7 @@ Keep the signed IPA and notes even if delivery fails. Upload success does not cl
 group has access.
 
 After local qualification, `.github/workflows/mobile-release.yml` handles only `mobile-vX.Y.Z` tags,
-independently of the Mac's unchanged `vX.Y.Z` release line. Both require one nonempty matching
+independently of the Mac's `vX.Y.Z` release line. Both require one nonempty matching
 `## Mac X.Y.Z` / `## iPhone X.Y.Z` entry in root `CHANGELOG.md` before release building or credential
 access. `MOBILE_VERSION` must match the phone tag. The mobile workflow serializes its own publishes,
 uses Xcode 27's device SDK without a Simulator and calls the same `testflight` command.
