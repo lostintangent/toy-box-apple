@@ -8,7 +8,7 @@ public struct ChannelTray: Equatable, Sendable {
     public var isVisible: Bool { !artifacts.isEmpty || hasTasks || preview != nil }
 
     public init(artifacts: [ChannelArtifact], tasks: [ChannelTask], preview: ChannelPreview?) {
-        self.artifacts = channelArtifactsNewestFirst(artifacts)
+        self.artifacts = artifacts.newestFirst
         taskProgress = channelTasksProgress(tasks)
         self.preview = preview
     }

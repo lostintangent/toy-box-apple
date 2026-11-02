@@ -150,9 +150,9 @@ struct PolicyTests {
             artifact("same-time", sharedAt: "2026-10-24T09:00:00.000Z"),
             artifact("invalid", sharedAt: "not-a-date")
         ]
-        #expect(channelArtifactsNewestFirst(artifacts).map(\.id)
+        #expect(artifacts.newestFirst.map(\.id)
                 == ["newer", "same-time", "older", "undated", "invalid"])
-        #expect(channelArtifactsNewestFirst([]).isEmpty)
+        #expect(([] as [ChannelArtifact]).newestFirst.isEmpty)
     }
 
     @Test func artifactTiesStayInInputOrderAcrossSortRuns() {
@@ -167,7 +167,7 @@ struct PolicyTests {
         let newest = artifacts.filter { $0.sharedAt == timestamps[4] }
         let tied = artifacts.filter { $0.sharedAt == timestamps[2] || $0.sharedAt == timestamps[3] }
         let undated = artifacts.filter { $0.sharedAt == nil || $0.sharedAt == "invalid" }
-        #expect(channelArtifactsNewestFirst(artifacts) == newest + tied + undated)
+        #expect(artifacts.newestFirst == newest + tied + undated)
     }
 
     @Test func wireDatesAcceptOptionalFractionsAndOffsets() throws {

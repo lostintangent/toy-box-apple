@@ -7,7 +7,7 @@ struct ArtifactShareTests {
         let url = try #require(Bundle.module.url(forResource: "channel-snapshot", withExtension: "json",
                                                 subdirectory: "Fixtures"))
         let state = try JSONDecoder().decode(ChannelState.self, from: Data(contentsOf: url))
-        let shares = channelArtifactShares(state.messages)
+        let shares = ChannelArtifact.Share.shares(in: state.messages)
         #expect(shares.count == 2)
         #expect(shares["session:pixel-designer:Workshop plan.md"]
                 == .init(actor: .agent("pixel-designer"), sharedAt: "2026-10-03T20:00:00.000Z", sequence: 10))
@@ -21,10 +21,10 @@ struct ArtifactShareTests {
         let renamed = ChannelArtifact(id: "legacy-alias", file: file, title: "Renamed", sharedAt: "not-the-event-time")
         let first = share(2, artifact: old, actor: .agent("ada"), timestamp: "2026-10-22T12:00:00Z")
         let latest = share(9, artifact: renamed, actor: .user, timestamp: "2026-10-21T12:00:00Z")
-        let expected = ChannelArtifactShare(actor: .user, sharedAt: latest.timestamp, sequence: 9)
-        #expect(channelArtifactShares([first, latest])[file.id] == expected)
-        #expect(channelArtifactShares([latest, first])[file.id] == expected)
-        #expect(channelArtifactShares([latest])["legacy-alias"] == nil)
+        let expected = ChannelArtifact.Share(actor: .user, sharedAt: latest.timestamp, sequence: 9)
+        #expect(ChannelArtifact.Share.shares(in: [first, latest])[file.id] == expected)
+        #expect(ChannelArtifact.Share.shares(in: [latest, first])[file.id] == expected)
+        #expect(ChannelArtifact.Share.shares(in: [latest])["legacy-alias"] == nil)
     }
 
     @Test func fileIdentityKeepsSessionsAndMachineArtifactsDistinct() {
@@ -36,7 +36,7 @@ struct ArtifactShareTests {
         let messages = files.enumerated().map { index, file in
             share(index + 1, artifact: .init(file: file, title: "Plan"), actor: .agent("member-\(index)"))
         }
-        let shares = channelArtifactShares(messages)
+        let shares = ChannelArtifact.Share.shares(in: messages)
         #expect(shares.count == 3)
         #expect(files.enumerated().allSatisfy { index, file in shares[file.id]?.sequence == index + 1 })
     }
@@ -49,10 +49,10 @@ struct ArtifactShareTests {
         otherKind.content = .system(.init(type: "routine_scheduled", artifact: artifact))
         let missingArtifact = ChannelMessage(id: "missing", sequence: 5, timestamp: "2026-10-22T12:00:00Z",
                                             sender: .system, content: .system(.init(type: "artifact_shared", actor: .user)))
-        #expect(channelArtifactShares([ordinary, otherKind, missingArtifact]).isEmpty)
-        #expect(channelArtifactShares([])[artifact.id] == nil)
+        #expect(ChannelArtifact.Share.shares(in: [ordinary, otherKind, missingArtifact]).isEmpty)
+        #expect(ChannelArtifact.Share.shares(in: [])[artifact.id] == nil)
         let missingActor = share(6, artifact: artifact, actor: nil)
-        #expect(channelArtifactShares([missingActor])[artifact.id]
+        #expect(ChannelArtifact.Share.shares(in: [missingActor])[artifact.id]
                 == .init(actor: nil, sharedAt: missingActor.timestamp, sequence: 6))
     }
 

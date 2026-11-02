@@ -31,7 +31,7 @@ public struct ArtifactPageList: Equatable, Sendable {
     public private(set) var selectedID: String
 
     public init(artifacts: [ChannelArtifact], opening artifact: ChannelArtifact) {
-        self.artifacts = channelArtifactsNewestFirst(artifacts)
+        self.artifacts = artifacts.newestFirst
         if !self.artifacts.contains(where: { $0.id == artifact.id }) { self.artifacts.insert(artifact, at: 0) }
         selectedID = artifact.id
     }
@@ -56,6 +56,6 @@ public struct ArtifactPageList: Equatable, Sendable {
     }
 
     public mutating func update(_ artifacts: [ChannelArtifact]) {
-        self.artifacts = channelArtifactsNewestFirst(artifacts)
+        self.artifacts = artifacts.newestFirst
     }
 }
