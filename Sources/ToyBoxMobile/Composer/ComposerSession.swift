@@ -11,7 +11,7 @@ import UniformTypeIdentifiers
 final class ComposerSession {
     let composer: ChannelComposerSession
     let dictation: ComposerDictation
-    let editor = ComposerEditorState()
+    let editor = ComposerEditor()
     private var photoImportCount = 0
     private(set) var isFinalizingDictation = false
     var store: ChannelStore { composer.store }

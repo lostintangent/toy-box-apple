@@ -30,7 +30,7 @@ struct ComposerReaderFocus {
 }
 
 @MainActor @Observable
-final class ComposerEditorState {
+final class ComposerEditor {
     var selection = NSRange(location: 0, length: 0)
     private(set) var hasMarkedText = false
     private(set) var isFocused = false
@@ -99,7 +99,7 @@ struct NativeComposerInput: UIViewRepresentable {
     static let textInsets = UIEdgeInsets(top: 14, left: 16, bottom: 0, right: 16)
 
     @Binding var text: String
-    let editor: ComposerEditorState
+    let editor: ComposerEditor
     var completionIsVisible = false
     var isEditable = true
     var onSend: () -> Void
