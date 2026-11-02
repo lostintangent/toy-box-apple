@@ -173,7 +173,7 @@ struct RootView: View {
                 ChannelScreen(store: store)
                     .environment(model.interaction(for: store.id))
                     .environment(model.artifactSession(for: store))
-                    .environment(model.galleryPresenter(for: store))
+                    .environment(model.gallery(for: store))
                     .userActivity(ChannelHandoff.activityType, element: store.id) { id, activity in
                         activity.userInfo = ChannelHandoff(channelID: id).userInfo
                         activity.requiredUserInfoKeys = [ChannelHandoff.channelIDKey]

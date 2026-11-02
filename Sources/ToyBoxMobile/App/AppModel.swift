@@ -48,7 +48,7 @@ final class AppModel {
     @ObservationIgnored private var interactions: [String: ChannelInteraction] = [:]
     @ObservationIgnored private var composerSessions: [String: ComposerSession] = [:]
     @ObservationIgnored private var artifactSessions: [String: (store: ChannelStore, session: ChannelArtifactSession)] = [:]
-    @ObservationIgnored private var galleryPresenters: [String: (store: ChannelStore, presenter: TranscriptGallery)] = [:]
+    @ObservationIgnored private var galleries: [String: (store: ChannelStore, gallery: TranscriptGallery)] = [:]
     @ObservationIgnored private var integrationsStarted = false
     @ObservationIgnored private var integrationsGeneration = UUID()
     @ObservationIgnored private var resumeCatalogBaseline: Date?
@@ -144,11 +144,11 @@ final class AppModel {
         holdsSelectedConnection = false
         selectedChannelID = nil
         visibleChannelID = nil
-        for id in Set(artifactSessions.keys).union(galleryPresenters.keys) { closeReaders(for: id) }
+        for id in Set(artifactSessions.keys).union(galleries.keys) { closeReaders(for: id) }
         interactions = [:]
         composerSessions = [:]
         artifactSessions = [:]
-        galleryPresenters = [:]
+        galleries = [:]
         self.serverURL = api.baseURL.absoluteString
         serverIdentity = identity
         catalog = ChannelCatalogStore(api: api)
@@ -436,26 +436,26 @@ final class AppModel {
         return session
     }
 
-    func galleryPresenter(for store: ChannelStore) -> TranscriptGallery {
+    func gallery(for store: ChannelStore) -> TranscriptGallery {
         resetReaderScopeIfNeeded(for: store)
-        if let entry = galleryPresenters[store.id], entry.store === store { return entry.presenter }
-        let presenter = TranscriptGallery()
-        galleryPresenters[store.id] = (store, presenter)
-        return presenter
+        if let entry = galleries[store.id], entry.store === store { return entry.gallery }
+        let created = TranscriptGallery()
+        galleries[store.id] = (store, created)
+        return created
     }
 
     private func resetReaderScopeIfNeeded(for store: ChannelStore) {
         if artifactSessions[store.id].map({ $0.store !== store }) == true
-            || galleryPresenters[store.id].map({ $0.store !== store }) == true {
+            || galleries[store.id].map({ $0.store !== store }) == true {
             closeReaders(for: store.id)
             artifactSessions[store.id] = nil
-            galleryPresenters[store.id] = nil
+            galleries[store.id] = nil
         }
     }
 
     private func closeReaders(for channelID: String) {
         artifactSessions[channelID]?.session.close()
-        galleryPresenters[channelID]?.presenter.close()
+        galleries[channelID]?.gallery.close()
         interactions[channelID]?.isArtifactViewerPresented = false
     }
 
