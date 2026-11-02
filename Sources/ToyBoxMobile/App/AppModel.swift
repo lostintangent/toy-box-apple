@@ -112,9 +112,9 @@ final class AppModel {
     var canManageChannels: Bool { isActive && catalog?.phase == .connected }
     var canCreateChannel: Bool { canManageChannels }
 
-    var sidebarProjection: ChannelSidebarProjection {
+    var sidebarProjection: ChannelSidebarPresentation {
         let visible = isActive ? visibleChannelID : nil
-        return ChannelSidebarProjection(catalog: catalog, openChannelIDs: Set(visible.map { [$0] } ?? []))
+        return ChannelSidebarPresentation(catalog: catalog, openChannelIDs: Set(visible.map { [$0] } ?? []))
     }
 
     func hold(_ store: ChannelStore) {

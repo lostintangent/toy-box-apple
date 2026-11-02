@@ -1,7 +1,7 @@
 import ChannelKit
 
 @MainActor
-public struct ChannelSidebarProjection {
+public struct ChannelSidebarPresentation {
     private let catalog: ChannelCatalogStore?
     private let openChannelIDs: Set<String>
 

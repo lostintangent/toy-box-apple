@@ -6,7 +6,7 @@ import Testing
 @testable import ChannelClient
 
 @MainActor
-struct ChannelSidebarProjectionTests {
+struct ChannelSidebarPresentationTests {
     @Test func visibleChannelsUseLiveSlicesAndClosedChannelsUseTheCatalog() async throws {
         var listed = testState().channel
         listed.requestSequence = 12
@@ -24,8 +24,8 @@ struct ChannelSidebarProjectionTests {
         live.presence = ["test": .init(state: "working")]
         _ = try store.apply(.init(type: "snapshot", state: live))
 
-        let open = ChannelSidebarProjection(catalog: catalog, openChannelIDs: ["test"])
-        let closed = ChannelSidebarProjection(catalog: catalog, openChannelIDs: [])
+        let open = ChannelSidebarPresentation(catalog: catalog, openChannelIDs: ["test"])
+        let closed = ChannelSidebarPresentation(catalog: catalog, openChannelIDs: [])
         #expect(open.channel(listed).name == "Live name")
         #expect(open.channel(listed).updatedAt == listed.updatedAt)
         #expect(closed.channel(listed) == listed)
@@ -47,7 +47,7 @@ struct ChannelSidebarProjectionTests {
         #expect(store.phase.isUnavailable)
         #expect(open.working(listed, agents: open.agents(listed)).isEmpty)
 
-        let absent = ChannelSidebarProjection(catalog: nil, openChannelIDs: ["test"])
+        let absent = ChannelSidebarPresentation(catalog: nil, openChannelIDs: ["test"])
         #expect(absent.channel(listed) == listed)
         #expect(absent.agents(listed).isEmpty)
         #expect(absent.working(listed, agents: []).isEmpty)
@@ -59,7 +59,7 @@ struct ChannelSidebarProjectionTests {
         let store = catalog.channel(id: "test")
         let state = testState(revision: 1)
         _ = try store.apply(.init(type: "snapshot", state: state))
-        let projection = ChannelSidebarProjection(catalog: catalog, openChannelIDs: ["test"])
+        let projection = ChannelSidebarPresentation(catalog: catalog, openChannelIDs: ["test"])
         let changed = Mutex(false)
         withObservationTracking {
             _ = projection.channel(state.channel)
