@@ -492,6 +492,6 @@ hard-code a color or size that would break them.
   existing query normalization and ordering. `ChannelAPI.channelURL(channelID:files:)` builds
   browser routes, preserving deployment prefixes. `SidebarFooter` (ToyBoxUI) projects the
   catalog phase into the shared footer and names its server.
-- `ChannelSidebarProjection` (ChannelClient) takes the catalog and the host's current
+- `ChannelSidebarPresentation` (ChannelClient) takes the catalog and the host's current
   `openChannelIDs`. Its `channel`, `attention`, `agents`, `working` and `catalogAgents` methods
   preserve the Mac's live-versus-catalog rules and granular observation.
