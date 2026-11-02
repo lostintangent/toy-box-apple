@@ -915,7 +915,7 @@ struct OverviewTests {
         }
 
         let schedule = ChannelRoutineRunPresentation.label(
-            schedule: try cronSummary("0 9 * * 1-5"), pending: false, requestedAt: nil)
+            schedule: try RoutineSchedule("0 9 * * 1-5").summary(), pending: false, requestedAt: nil)
         #expect(schedule.hasPrefix("Weekdays at 9:00"))
         var collapsed = try row()
         #expect(collapsed.label == "Daily review")
