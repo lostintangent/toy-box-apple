@@ -90,9 +90,9 @@ public struct ChannelSystemContent: Codable, Equatable, Sendable {
         return line.count <= 120 ? line : "\(line.prefix(117))..."
     }
 
-    public static func actorName(_ system: ChannelSystemContent?, agents: [ChannelAgent]) -> String {
-        system?.actor?.type == "user" ? "You"
-            : channelAgentIdentity(agents, id: system?.actor?.agentId ?? "").name
+    public func actorName(agents: [ChannelAgent]) -> String {
+        actor?.type == "user" ? "You"
+            : channelAgentIdentity(agents, id: actor?.agentId ?? "").name
     }
 
     public static func phrase(for system: ChannelSystemContent?) -> String {
@@ -141,9 +141,9 @@ public struct ChannelSystemContent: Codable, Equatable, Sendable {
             }
             return phrase
         case "artifact_shared":
-            return "\(Self.actorName(self, agents: agents)) shared \(artifact?.title ?? "")"
+            return "\(actorName(agents: agents)) shared \(artifact?.title ?? "")"
         case "artifact_removed":
-            return "\(Self.actorName(self, agents: agents)) removed \(artifact?.title ?? "")"
+            return "\(actorName(agents: agents)) removed \(artifact?.title ?? "")"
         case "routine_scheduled", "routine_edited", "routine_deleted":
             return event(routine?.title ?? "Routine")
         default:

@@ -23,6 +23,18 @@ struct ComposerDraftTests {
         }
     }
 
+    @Test func sendabilityKeepsTheExactLengthBoundaryAndBlocksEachDraftCondition() {
+        let draft = ComposerDraft(imageIsReadable: { _ in true })
+        #expect(!draft.isSendable())
+        #expect(draft.isSendable(hasAdditionalContent: true))
+        #expect(!draft.isSendable(hasAdditionalContent: true, isLoadingAdditionalImages: true))
+        draft.text = String(repeating: "a", count: ChannelMessage.maxLength)
+        #expect(draft.isSendable())
+        draft.text += "a"
+        #expect(draft.isOverLimit)
+        #expect(!draft.isSendable(hasAdditionalContent: true))
+    }
+
     @Test func anOldCompletionCannotEraseANewerDraft() async throws {
         try await withDraft { draft, _ in
             draft.text = "Original"

@@ -38,6 +38,20 @@ struct ChannelComposerSessionTests {
         #expect(!session.canSend(hasAdditionalContent: true))
     }
 
+    @Test func anOfflineSessionNeverReadsItsBlockers() throws {
+        let store = ChannelStore(id: "test", api: try ChannelAPI(serverURL: "http://localhost:3210"),
+                                 sendJournal: nil)
+        let session = ChannelComposerSession(store: store, draft: ComposerDraft(imageIsReadable: { _ in false }))
+        var blockerReads = 0
+        func blocked() -> Bool {
+            blockerReads += 1
+            return true
+        }
+        let allowed = session.canSend(isBlocked: blocked())
+        #expect(!allowed)
+        #expect(blockerReads == 0)
+    }
+
     @Test func recoveryPreservesBothMessagesAndRequiresANewIdentityAfterAppending() throws {
         let draft = ComposerDraft(imageIsReadable: { _ in false })
         let store = ChannelStore(id: "test", api: try ChannelAPI(serverURL: "http://localhost:3210"),

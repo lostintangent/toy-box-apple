@@ -16,7 +16,7 @@ struct SystemTextTests {
             file: .init(kind: "session", path: "plan.md"), title: "Workshop plan")))
                 == "You removed Workshop plan")
         let agents = [ChannelAgent(id: "lead", name: "Lead")]
-        #expect(ChannelSystemContent.actorName(.init(type: "artifact_removed", actor: .agent("lead")), agents: agents) == "Lead")
+        #expect(ChannelSystemContent(type: "artifact_removed", actor: .agent("lead")).actorName(agents: agents) == "Lead")
     }
 
     @Test func groupedMembershipKeepsTheSameCountAndActionWords() throws {
@@ -78,10 +78,10 @@ struct SystemTextTests {
 
     @Test func actorsAndUnknownEventDescriptionsPreserveTheirExistingWords() throws {
         let agents = [ChannelAgent(id: "lead", name: "Lead")]
-        #expect(ChannelSystemContent.actorName(.init(type: "artifact_shared", actor: .agent("lead")), agents: agents) == "Lead")
-        #expect(ChannelSystemContent.actorName(.init(type: "artifact_shared", actor: .agent("missing")), agents: agents)
+        #expect(ChannelSystemContent(type: "artifact_shared", actor: .agent("lead")).actorName(agents: agents) == "Lead")
+        #expect(ChannelSystemContent(type: "artifact_shared", actor: .agent("missing")).actorName(agents: agents)
                 == "Deleted agent")
-        #expect(ChannelSystemContent.actorName(nil, agents: agents) == "Deleted agent")
+        #expect(ChannelSystemContent(type: "artifact_shared").actorName(agents: agents) == "Deleted agent")
         #expect(text(.init(type: "unknown")) == "Channel updated")
         let future = try JSONDecoder().decode(ChannelSystemContent.self,
                                               from: Data(#"{"type":"future","description":"More\nwords"}"#.utf8))
