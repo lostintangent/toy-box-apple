@@ -55,7 +55,7 @@ struct TranscriptImage: View {
     var open: (() -> Void)?
     @Environment(\.displayScale) private var displayScale
     @Environment(\.channelIntelligence) private var intelligence
-    @AppStorage(TranscriptIntelligenceSettings.describesImages) private var describesImages = true
+    @AppStorage(IntelligenceSettings.describesImages) private var describesImages = true
     @ViewState private var file: URL?
     @ViewState private var image: CGImage?
     @ViewState private var failed = false

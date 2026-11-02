@@ -27,7 +27,7 @@ struct TranscriptItemView: View, @MainActor Equatable {
     var choices: TranscriptRequestChoices?
     var onChoose: (String) -> Void = { _ in }
     var setExpanded: (Bool) -> Void = { _ in }
-    @AppStorage(TranscriptIntelligenceSettings.summarizesNewMessages) private var summarizes = true
+    @AppStorage(IntelligenceSettings.summarizesNewMessages) private var summarizes = true
     @AccessibilityFocusState private var focusesDivider: Bool
 
     static func == (lhs: Self, rhs: Self) -> Bool {

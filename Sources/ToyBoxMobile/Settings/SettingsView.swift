@@ -9,8 +9,8 @@ struct SettingsView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.channelIntelligence) private var intelligence
     @AppStorage("appearance") private var appearance: AppAppearance = .system
-    @AppStorage(TranscriptIntelligenceSettings.summarizesNewMessages) private var summarizesNewMessages = true
-    @AppStorage(TranscriptIntelligenceSettings.describesImages) private var describesImages = true
+    @AppStorage(IntelligenceSettings.summarizesNewMessages) private var summarizesNewMessages = true
+    @AppStorage(IntelligenceSettings.describesImages) private var describesImages = true
     @ViewState private var connection = ServerConnectionProbe()
     @ViewState private var availability: IntelligenceAvailability?
     @ViewState private var switchFailure: String?

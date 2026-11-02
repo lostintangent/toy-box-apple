@@ -316,7 +316,7 @@ extension ChannelIntents {
                 }
             },
             revealRequest: { model.activate(channelID: $0, sequence: $1) }
-        ), summarizes: { TranscriptIntelligenceSettings.isOn(TranscriptIntelligenceSettings.summarizesNewMessages) })
+        ), summarizes: { IntelligenceSettings.isOn(IntelligenceSettings.summarizesNewMessages) })
     }
 
     /// Makes the intents' dependency available. Call once, before the first intent runs.

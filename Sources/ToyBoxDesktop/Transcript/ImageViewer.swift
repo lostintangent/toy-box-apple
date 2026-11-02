@@ -731,7 +731,7 @@ private struct ImageViewerStage: View {
     @Environment(\.displayScale) private var displayScale
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
     @Environment(\.channelIntelligence) private var intelligence
-    @AppStorage(TranscriptIntelligenceSettings.describesImages) private var describesImages = true
+    @AppStorage(IntelligenceSettings.describesImages) private var describesImages = true
     @ViewState private var isRevealed = false
     @ViewState private var showsBackdrop = false
     @ViewState private var magnification: ImageViewer.Magnification?

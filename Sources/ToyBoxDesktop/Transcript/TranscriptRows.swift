@@ -139,7 +139,7 @@ struct TranscriptDividerStack: View {
     let divider: TranscriptDivider
     let catchUp: TranscriptCatchUp?
     let store: ChannelStore
-    @AppStorage(TranscriptIntelligenceSettings.summarizesNewMessages) private var summarizes = true
+    @AppStorage(IntelligenceSettings.summarizesNewMessages) private var summarizes = true
     @AccessibilityFocusState private var focusesDivider: Bool
 
     var body: some View {

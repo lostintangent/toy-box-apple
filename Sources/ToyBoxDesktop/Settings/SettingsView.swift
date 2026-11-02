@@ -10,8 +10,8 @@ struct SettingsView: View {
     @Environment(\.channelIntelligence) private var intelligence
     @AppStorage("appearance") private var appearance: AppAppearance = .system
     @AppStorage(MenuBarVisibility.key) private var menuBarVisibility: MenuBarVisibility = .whenActive
-    @AppStorage(TranscriptIntelligenceSettings.summarizesNewMessages) private var summarizesNewMessages = true
-    @AppStorage(TranscriptIntelligenceSettings.describesImages) private var describesImages = true
+    @AppStorage(IntelligenceSettings.summarizesNewMessages) private var summarizesNewMessages = true
+    @AppStorage(IntelligenceSettings.describesImages) private var describesImages = true
     @AppStorage("notificationsEnabled") private var notificationsEnabled = false
     @AppStorage("requestNotifications") private var requestNotifications = true
     @AppStorage("completionNotifications") private var completionNotifications = false
