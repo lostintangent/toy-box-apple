@@ -17,7 +17,7 @@ package enum ChannelOverviewSummary {
 
     package var title: String {
         switch self {
-        case .team: "Team"
+        case .team: "Team Members"
         case .tasks: "Tasks"
         case .artifacts: "Artifacts"
         case .routines: "Routines"
@@ -52,6 +52,26 @@ package enum ChannelOverviewSummary {
             detail = "\(count) \(count == 1 ? "routine" : "routines")"
         }
         return "\(title), \(detail)"
+    }
+}
+
+/// A section header's toggle that narrows its rows. Both apps take its copy, identifier and rule from here.
+package struct ChannelOverviewFilter {
+    package let title: String
+    package let identifier: String
+    package let isOn: Binding<Bool>
+
+    package static func inProgressTasks(_ isOn: Binding<Bool>) -> Self {
+        .init(title: "Show Only In-Progress Tasks", identifier: "overview-tasks-in-progress-filter", isOn: isOn)
+    }
+
+    package static func workingAgents(_ isOn: Binding<Bool>) -> Self {
+        .init(title: "Show Only Working Agents", identifier: "overview-team-working-filter", isOn: isOn)
+    }
+
+    /// Keeps exactly the agents whose row shows the working cue, so the filter and the pulse never disagree.
+    package static func keepsWorkingAgent(presence: ChannelAgentPresence?, isAvailable: Bool) -> Bool {
+        ChannelAgentStatusPresentation(presence: presence, isAvailable: isAvailable).cue == .working
     }
 }
 

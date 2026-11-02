@@ -8,6 +8,7 @@ import ToyBoxUI
 struct OverviewTeamList: View {
     @Environment(ManagementPresenter.self) private var management
     let store: ChannelStore
+    var showsOnlyWorking = false
     @ViewState private var slots = OverviewSlots()
 
     /// `roster` starts with the lead.
@@ -19,18 +20,32 @@ struct OverviewTeamList: View {
         }
     }
 
+    static func keeps(_ agent: ChannelAgent, presence: [String: ChannelAgentPresence], isAvailable: Bool,
+                      showsOnlyWorking: Bool) -> Bool {
+        !showsOnlyWorking
+            || ChannelOverviewFilter.keepsWorkingAgent(presence: presence[agent.id], isAvailable: isAvailable)
+    }
+
     var body: some View {
         let roster = store.roster
         let presence = store.presence
         let isConnected = store.phase.isConnected
         let isAvailable = !store.phase.isUnavailable
+        // Slots come from the whole roster, so turning the filter on or off never moves a row's slot.
+        let entries = slots.entries(Self.ordered(roster), in: store.id)
+        let shown = entries.filter {
+            Self.keeps($0.item, presence: presence, isAvailable: isAvailable, showsOnlyWorking: showsOnlyWorking)
+        }
         VStack(alignment: .leading, spacing: 0) {
-            ForEach(slots.entries(Self.ordered(roster), in: store.id)) { entry in
+            ForEach(shown) { entry in
                 let agent = entry.item
                 let isLead = agent.id == roster.first?.id
                 OverviewAgentRow(agent: agent, key: entry.key, presence: presence[agent.id], isLead: isLead,
                                  model: isLead ? agent.model ?? store.details?.model : agent.model,
                                  channelId: store.id, isConnected: isConnected, isAvailable: isAvailable)
+            }
+            if showsOnlyWorking, !roster.isEmpty, shown.isEmpty {
+                OverviewEmptyText("No agents working")
             }
             OverviewAddAgentRow(isConnected: isConnected, isAvailable: isAvailable) {
                 management.present(.addMember(channelId: store.id, name: ""))
