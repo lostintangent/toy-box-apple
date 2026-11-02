@@ -9,8 +9,8 @@ import UIKit
 struct SidebarAttentionTests {
     @Test(arguments: [ColorScheme.light, .dark], [false, true])
     func unreadAddsOnlyATrailingSevenPointDot(scheme: ColorScheme, selected: Bool) throws {
-        let plain = try render(attention: nil, scheme: scheme, selected: selected)
-        let unread = try render(attention: .unread, scheme: scheme, selected: selected)
+        let plain = try render(status: nil, scheme: scheme, selected: selected)
+        let unread = try render(status: .unread, scheme: scheme, selected: selected)
         #expect(unread.width == plain.width && unread.height == plain.height)
         let before = plain.pixels
         let after = unread.pixels
@@ -41,9 +41,9 @@ struct SidebarAttentionTests {
     }
 
     @Test(arguments: [Channel.Status.waiting, .finished], [ColorScheme.light, .dark])
-    func otherAttentionStatesDrawOnlyTheirTrailingSymbol(attention: Channel.Status, scheme: ColorScheme) throws {
-        let plain = try render(attention: nil, scheme: scheme, selected: false)
-        let marked = try render(attention: attention, scheme: scheme, selected: false)
+    func otherAttentionStatesDrawOnlyTheirTrailingSymbol(status: Channel.Status, scheme: ColorScheme) throws {
+        let plain = try render(status: nil, scheme: scheme, selected: false)
+        let marked = try render(status: status, scheme: scheme, selected: false)
         #expect(marked.width == plain.width && marked.height == plain.height)
         let before = plain.pixels
         let after = marked.pixels
@@ -60,9 +60,9 @@ struct SidebarAttentionTests {
     #if DEBUG
     @Test(arguments: [Channel.Status.unread, .waiting, .finished], [ColorScheme.light, .dark])
     func attentionRemainsSpokenInTheSingleChannelAccessibilityElement(
-        attention: Channel.Status, scheme: ColorScheme
+        status: Channel.Status, scheme: ColorScheme
     ) throws {
-        let host = UIHostingController(rootView: row(attention: attention)
+        let host = UIHostingController(rootView: row(status: status)
             .environment(\.colorScheme, scheme)
             .dynamicTypeSize(.large))
         let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 360, height: 100))
@@ -74,7 +74,7 @@ struct SidebarAttentionTests {
         #expect(elements.count == 1)
         let channel = try #require(elements.first)
         #expect(channel.label == "Workshop")
-        let spoken = switch attention {
+        let spoken = switch status {
         case .unread: "Unread messages"
         case .waiting: "Waiting for your response"
         case .finished: "All tasks completed"
@@ -83,18 +83,18 @@ struct SidebarAttentionTests {
     }
     #endif
 
-    private func row(attention: Channel.Status?) -> some View {
+    private func row(status: Channel.Status?) -> some View {
         ChannelSidebarRow(
             channel: Channel(id: "workshop", name: "Workshop", directory: "/Projects/Workshop",
                              model: .init(provider: "test", name: "test"),
                              updatedAt: "2026-10-26T12:00:00Z"),
-            agents: [], working: [], attention: attention,
+            agents: [], working: [], status: status,
             now: Date(timeIntervalSince1970: 1_793_016_000))
     }
 
-    private func render(attention: Channel.Status?, scheme: ColorScheme, selected: Bool) throws
+    private func render(status: Channel.Status?, scheme: ColorScheme, selected: Bool) throws
         -> (width: Int, height: Int, pixels: [UInt8]) {
-        let renderer = ImageRenderer(content: row(attention: attention)
+        let renderer = ImageRenderer(content: row(status: status)
             .frame(width: 360)
             .background(selected ? Color.blue : (scheme == .dark ? Color.black : Color.white))
             .environment(\.colorScheme, scheme)

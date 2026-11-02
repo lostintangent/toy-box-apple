@@ -117,7 +117,7 @@ struct ChannelSidebar: View {
         return ChannelSidebarRow(
             channel: presentation.channel(channel), agents: agents,
             working: presentation.working(channel, agents: agents),
-            attention: presentation.status(channel), now: now
+            status: presentation.status(channel), now: now
         )
     }
 

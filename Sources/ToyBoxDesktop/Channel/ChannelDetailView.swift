@@ -253,8 +253,8 @@ struct ChannelDetailView: View {
             .disabled(!store.phase.isConnected)
     }
 
-    static func badge(_ attention: Channel.Status?) -> Text? {
-        switch attention {
+    static func badge(_ status: Channel.Status?) -> Text? {
+        switch status {
         case .waiting: Text("Input Needed")
         case .unread: Text("Unread")
         case .finished: Text("Done")

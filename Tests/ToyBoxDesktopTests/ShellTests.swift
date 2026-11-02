@@ -665,7 +665,7 @@ struct ShellTests {
 struct SidebarFacesYieldTests {
     /// These SwiftUI-only rows render synchronously, without a window or a display-settling wait.
     private func secondLine(width: CGFloat, directory: String? = nil, purpose: String? = nil,
-                            working count: Int, attention: Channel.Status? = .unread)
+                            working count: Int, status: Channel.Status? = .unread)
         throws -> (faces: Int, detailEnd: CGFloat) {
         let agents = ["#ff0000", "#00ff00", "#0000ff", "#808080", "#808080"].enumerated().map { index, color in
             ChannelAgent(id: "agent-\(index)", name: "Agent \(index)",
@@ -674,7 +674,7 @@ struct SidebarFacesYieldTests {
         let channel = Channel(id: "yield", name: "Yield", purpose: purpose, directory: directory,
                               model: .init(provider: "test", name: "test"), updatedAt: "2026-10-22T08:00:00Z")
         let renderer = ImageRenderer(content:
-            ChannelSidebarRow(channel: channel, agents: agents, working: Array(agents.prefix(count)), attention: attention,
+            ChannelSidebarRow(channel: channel, agents: agents, working: Array(agents.prefix(count)), status: status,
                               folder: directory == nil ? nil : .remote(host: "elsewhere"),
                               openFolder: {}, onTap: {})
                 .frame(width: width, height: 60)

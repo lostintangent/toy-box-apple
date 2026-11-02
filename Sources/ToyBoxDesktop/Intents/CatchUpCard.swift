@@ -234,7 +234,7 @@ private struct CatchUpCardRow: View {
 
     var body: some View {
         Button(intent: OpenChannelIntent(target: ChannelEntity(id: row.channelID, name: row.name,
-                                                               attention: attention))) {
+                                                               status: status))) {
             HStack(spacing: 8) {
                 indicator.frame(width: 16, height: 16)
                 Text(row.name)
@@ -257,11 +257,11 @@ private struct CatchUpCardRow: View {
         .accessibilityHint("Opens the channel")
     }
 
-    private var attention: Channel.Status? { row.attention.flatMap(Channel.Status.init(rawValue:)) }
+    private var status: Channel.Status? { row.attention.flatMap(Channel.Status.init(rawValue:)) }
 
     /// The sidebar's indicator.
     @ViewBuilder private var indicator: some View {
-        switch attention {
+        switch status {
         case .waiting:
             Image(systemName: "questionmark.bubble.fill").font(.system(size: 13))
                 .foregroundStyle(Color.orange)
