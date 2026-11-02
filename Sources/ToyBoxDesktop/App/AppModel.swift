@@ -324,7 +324,7 @@ final class AppModel {
         sidebarPresentation.channel(channel)
     }
 
-    func sidebarAttention(_ channel: Channel) -> Channel.Status? {
+    func sidebarStatus(_ channel: Channel) -> Channel.Status? {
         sidebarPresentation.status(channel)
     }
 
