@@ -71,7 +71,11 @@ struct ConnectionGraceTests {
 
         store.reconnect()
         #expect(store.phase.message == ChannelStore.unansweredConnect, "Retry keeps the failure until connected")
-        try await eventually(observing: mock) { mock.requests.count == 2 && mock.pendingResponseCount == 1 }
+        // Retry cancels the first request, but URLSession stops it later, sometimes after the second
+        // is recorded and before it's held. Waiting for that stop leaves only the second one pending.
+        try await eventually(observing: mock) {
+            mock.requests.count == 2 && mock.stops == 1 && mock.pendingResponseCount == 1
+        }
         #expect(mock.sendPendingBody(try MockResponse.stream([.init(type: "snapshot", state: testState())]).body) == 1)
         try await eventually { store.phase.isConnected }
     }

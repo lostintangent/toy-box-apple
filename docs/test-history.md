@@ -177,6 +177,26 @@ Incident records moved from AGENTS.md on 2026-10-27, with their evidence and res
   both waits now observe the held response for their own path through `pendingCount(for:)`, and the
   test passes with the same delay. No retry or timing assertion was added.
 
+## Hung-connect retry race
+
+- On 2026-11-01, t676's first local `bun run test:mobile` on the shared Mac, run while two release
+  builds ran alongside, failed `ConnectionGraceTests.aHungConnectShowsItAfterTheGraceAndRetryKeepsIt`
+  at the one-minute suite limit, with one issue and no failed expectation. A quiet rerun passed. It
+  has not failed in CI. The log is `t676/mobile-grace-hang.log` in Core's session files.
+- Retry cancels the held first stream, and URLSession stops it later, sometimes after the second
+  request's `startLoading` has begun. `MockTransport` records a request before `MockURLProtocol`
+  holds its response, so the test's wait for two requests and one held response could match the
+  cancelled first one. `sendPendingBody` then returned 1, but the snapshot went to the cancelled
+  request, and the store never connected.
+- A temporary probe found the first stop arriving after the second start in 3 of 200 retries on a
+  quiet Mac. Holding the second start 20 ms, the old wait matched the cancelled request both times
+  that happened. Recording the mock's stop 50 ms late with the same 20 ms hold reproduced the hang
+  exactly. The probe and logs are in `t682/` in Core's session files.
+- Fixed in t682 rather than quarantined: the wait also requires the first request's stop, so the one
+  held response is the second request in every order. It passed three of three with the same delays.
+  No retry or timing assertion was added. Other tests that cancel a held stream wait for its stop
+  before sending.
+
 ## Phone audience-capsule rendering
 
 - `ToyBoxMobileTests/ComposerTests.audienceCapsuleIsSeparateFromIts44PointRowAndGrowsWithText`
