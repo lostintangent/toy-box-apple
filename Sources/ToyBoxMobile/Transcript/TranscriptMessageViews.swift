@@ -598,7 +598,7 @@ struct TranscriptSystemDetails: View {
 
     static func details(_ system: ChannelSystemContent, agents: [ChannelAgent]) -> [(label: String, value: String)] {
         var details: [(label: String, value: String)] = []
-        if system.actor != nil { details.append(("By", ChannelSystemContent.actorName(system, agents: agents))) }
+        if system.actor != nil { details.append(("By", system.actorName(agents: agents))) }
         if let member = system.member?.name { details.append(("Member", member)) }
         if let name = system.name { details.append(("Name", name)) }
         if let purpose = system.purpose { details.append(("Purpose", purpose)) }

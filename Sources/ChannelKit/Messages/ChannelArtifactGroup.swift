@@ -40,7 +40,7 @@ public struct ChannelArtifactGroup: Equatable, Sendable {
             return Entry(messageID: message.id, sequence: message.sequence, artifact: artifact)
         }
         guard !entries.isEmpty, entries.count == messages.count else { return nil }
-        let actorName = ChannelSystemContent.actorName(first, agents: agents)
+        let actorName = first.actorName(agents: agents)
         var sentence = "\(actorName) \(verb.rawValue) "
         var offsets: [Int] = []
         for (index, entry) in entries.enumerated() {
