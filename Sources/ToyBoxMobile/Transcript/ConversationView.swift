@@ -64,7 +64,7 @@ final class TranscriptScroll {
     }
 
     /// Reduces an explicit event, or derives reader input and geometry changes when there's none.
-    func update(_ explicit: Model.Event? = nil) -> Model.Placement? {
+    func update(_ explicit: Model.Event? = nil) -> Model? {
         guard let layout else { return nil }
         defer { lastLayout = layout }
         if holdsPlacementThroughInput, let origin = Model.placement(for: intent, layout: layout).origin,
@@ -444,7 +444,7 @@ struct ConversationView: View {
         place(scroll.update(.land(target)))
     }
 
-    private func place(_ placement: TranscriptPlacement.Placement?) {
+    private func place(_ placement: TranscriptPlacement?) {
         var isMoving = false
         if let placement {
             if let origin = placement.origin {
