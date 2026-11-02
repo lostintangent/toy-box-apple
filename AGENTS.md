@@ -314,7 +314,13 @@ so the suite starts a WebKit web content process once instead of once per render
 ## Swift conventions
 
 - The macOS 27 CLT SDK exports an unusable `@State` macro. Use `@ViewState`, which aliases
-  `SwiftUI.State`.
+  `SwiftUI.State` once in `ToyBoxUI/Shared`.
+- Command Line Tools lack the SwiftUIMacros plugin, so code that builds for the Mac declares
+  environment values with an `EnvironmentKey`, not `@Entry`.
+- Rules live on their nouns as members, such as `channel.status`, `agent.handle` and
+  `state.applying(event)`, not as free functions. Name a type for the thing itself, nesting a part
+  under its owner (`Channel.Status`, `ChannelTask.Timing`), and avoid Manager, Helper, Support,
+  Context and Projection.
 - `ChannelKit` owns domain semantics and `ChannelClient` owns transport and stores. Views never
   reimplement reducer, audience, task, attention or transcript-grouping rules. Ask Core for a
   domain or store change instead of working around it in a view.
@@ -434,9 +440,9 @@ so the suite starts a WebKit web content process once instead of once per render
 
 | Path | Owner |
 | --- | --- |
-| `Sources/ChannelKit/`, `Sources/ChannelClient/`, `Sources/ToyBoxControlIntents/`, `Tests/` (except below), `scripts/`, `Package.swift`, `package.json` | Core |
+| `Sources/ChannelKit/`, `Sources/ChannelClient/`, `Sources/ToyBoxControlIntents/`, `Sources/ToyBoxShare/`, `Sources/ToyBoxMobile/Automation`, `Tests/` (except below), `scripts/`, `Package.swift`, `package.json` | Core |
 | `Sources/ToyBoxUI/` shared presentation, identity and interaction models | Core, with the originating UI owner |
-| `Sources/ToyBoxDesktop/App`, `Shell`, `Sidebar`, `Settings`, `Shared`, `Channel/ChannelDetailView.swift` | Shell |
+| `Sources/ToyBoxDesktop/App`, `Shell`, `Sidebar`, `Channel`, `MenuBar`, `Notifications`, `QuickSend`, `Intents`, `Settings`, `Shared` | Shell |
 | `Sources/ToyBoxDesktop/Transcript`, `Tests/ToyBoxDesktopTests/TranscriptTests.swift` | Transcript |
 | `Sources/ToyBoxDesktop/Composer` (composer and tray), `Tests/ToyBoxDesktopTests/ComposerTests.swift` | Composer |
 | `Sources/ToyBoxDesktop/Overview`, `Management` | Overview |
@@ -446,7 +452,7 @@ so the suite starts a WebKit web content process once instead of once per render
 | `Sources/ToyBoxMobile/Composer` (composer and tray) | Composer |
 | `Sources/ToyBoxMobile/Overview`, `Management` | Overview |
 | `Sources/ToyBoxMobileIntegrations/`, `Sources/ToyBoxMobileNotification/`, `Sources/ToyBoxMobileShare/`, `Resources/Mobile/` | Core |
-| `Sources/ToyBoxWidgetViews/`, `Sources/ToyBoxMobileWidget/`, `Tests/ToyBoxMobileWidgetTests/` | Overview |
+| `Sources/ToyBoxWidgetViews/`, `Sources/ToyBoxWidget/`, `Sources/ToyBoxMobileWidget/`, `Tests/ToyBoxMobileWidgetTests/` | Overview |
 
 UI engineers may add one `Tests/ToyBoxDesktopTests/<Surface>Tests.swift` file for their own surface.
 
