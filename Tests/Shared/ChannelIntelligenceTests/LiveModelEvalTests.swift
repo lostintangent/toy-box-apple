@@ -110,7 +110,8 @@ struct LiveModelEvalTests {
 
     @Test func catchUpPreemptsADescription() async throws {
         let service = service()
-        let root = URL(filePath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let root = URL(filePath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
         let image = root.appending(path: "docs/transcript-events.png")
         let digest = SHA256.hash(data: try Data(contentsOf: image)).map { String(format: "%02x", $0) }.joined()
         let started = ContinuousClock.now
@@ -149,7 +150,8 @@ struct LiveModelEvalTests {
 
     @Test func altText() async throws {
         let service = service()
-        let root = URL(filePath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let root = URL(filePath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
         var images = ["docs/overview-inspector.png", "docs/transcript-events.png"].map { root.appending(path: $0) }
         images += (Self.environment["TBM_LIVE_IMAGES"] ?? "").split(separator: ":").map { URL(filePath: String($0)) }
         let pixel = URL.temporaryDirectory.appending(path: "eval-1x1.png")

@@ -2,15 +2,15 @@ import { copyFile, mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { command, plist, root, text } from "../../shared/lib/index.ts";
 
-export function shareExtension(app: string) { return join(app, "Contents/PlugIns/ToyBoxShare.appex"); }
+export function shareExtension(app: string) { return join(app, "Contents/PlugIns/ToyBoxDesktopShare.appex"); }
 
 export async function embedShareExtension(bin: string, app: string, sdkVersion: string, minimumOS: string) {
     const extension = shareExtension(app);
     await rm(extension, { recursive: true, force: true });
     await mkdir(join(extension, "Contents/MacOS"), { recursive: true });
-    const binary = join(extension, "Contents/MacOS/ToyBoxShare");
-    await copyFile(join(bin, "ToyBoxShare"), binary);
-    await copyFile(join(root, "Resources/ShareExtension-Info.plist"), join(extension, "Contents/Info.plist"));
+    const binary = join(extension, "Contents/MacOS/ToyBoxDesktopShare");
+    await copyFile(join(bin, "ToyBoxDesktopShare"), binary);
+    await copyFile(join(root, "Resources/Desktop/Share-Info.plist"), join(extension, "Contents/Info.plist"));
     await command(["xcrun", "vtool", "-set-build-version", "macos", minimumOS, sdkVersion,
         "-replace", "-output", binary, binary]);
 }
@@ -53,7 +53,7 @@ export async function validateShareExtension(app: string) {
         || await plist(info, ["Print :NSExtension:NSExtensionPointIdentifier"]) !== "com.apple.share-services") {
         throw new Error("The Share extension identity or extension point is invalid.");
     }
-    const binary = join(extension, "Contents/MacOS/ToyBoxShare");
+    const binary = join(extension, "Contents/MacOS/ToyBoxDesktopShare");
     if (await text(["xcrun", "lipo", "-archs", binary]) !== "arm64") {
         throw new Error("The Share extension must contain only arm64.");
     }

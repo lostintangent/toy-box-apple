@@ -94,6 +94,6 @@ for (const expression of [
     "0 ".repeat(513),
 ]) add(expression, utc, "UTC", 1, "invalid-fixture");
 
-const output = resolve(root, "Tests/ChannelKitTests/Fixtures/cron-occurrences.json");
+const output = resolve(root, "Tests/Shared/ChannelKitTests/Fixtures/cron-occurrences.json");
 await Bun.write(output, JSON.stringify({ parser: `cron-parser@${version}`, fixtures }, null, 2) + "\n");
 console.log(`${fixtures.length} fixtures from cron-parser@${version}: ${output}`);

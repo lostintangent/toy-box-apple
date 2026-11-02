@@ -38,7 +38,7 @@ if (import.meta.main) await main(async () => {
     const publicKey = required("SPARKLE_ED_PUBLIC_KEY");
     if (!/^[A-Za-z0-9+/]{43}=$/.test(publicKey)) throw new Error("The update public key must encode 32 bytes.");
     for (const name of ["AppIcon.icns", "Assets.car"]) {
-        if (!Bun.file(join(root, "Resources", name)).size) throw new Error(`${name} is missing or empty. Run bun run icon.`);
+        if (!Bun.file(join(root, "Resources/Desktop", name)).size) throw new Error(`${name} is missing or empty. Run bun run icon.`);
     }
     const scratch = resolve(process.env.SCRATCH_PATH || join(root, ".build/distribution"));
     const output = resolve(process.env.OUTPUT_DIR || join(root, "dist"));

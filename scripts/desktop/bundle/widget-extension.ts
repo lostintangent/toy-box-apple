@@ -5,7 +5,7 @@ import { configureExtension } from "./share-extension.ts";
 
 export const widgetAppGroup = "RHFNBL7EG4.dev.toybox.desktop";
 export const widgetGroupKey = "ToyBoxWidgetAppGroup";
-export function widgetExtension(app: string) { return join(app, "Contents/PlugIns/ToyBoxWidget.appex"); }
+export function widgetExtension(app: string) { return join(app, "Contents/PlugIns/ToyBoxDesktopWidget.appex"); }
 
 function record(value: unknown): Record<string, unknown> | undefined {
     return value !== null && typeof value === "object" && !Array.isArray(value)
@@ -35,9 +35,9 @@ export function validateControlExports(symbols: string, isWidget: boolean) {
     const required = [
         "ToyBoxControlIntents.OpenToyBoxControlIntent : AppIntents.AppIntent",
         ...(isWidget ? [
-            "ToyBoxWidget.ToyBoxWidgets : SwiftUI.WidgetBundle",
-            "ToyBoxWidget.QuickSendControl : SwiftUI.ControlWidget",
-            "ToyBoxWidget.NeedsYouControl : SwiftUI.ControlWidget",
+            "ToyBoxDesktopWidget.ToyBoxWidgets : SwiftUI.WidgetBundle",
+            "ToyBoxDesktopWidget.QuickSendControl : SwiftUI.ControlWidget",
+            "ToyBoxDesktopWidget.NeedsYouControl : SwiftUI.ControlWidget",
         ] : []),
     ];
     for (const name of required) {
@@ -51,9 +51,9 @@ export async function embedWidgetExtension(bin: string, app: string, sdkVersion:
     const extension = widgetExtension(app);
     await rm(extension, { recursive: true, force: true });
     await mkdir(join(extension, "Contents/MacOS"), { recursive: true });
-    const binary = join(extension, "Contents/MacOS/ToyBoxWidget");
-    await copyFile(join(bin, "ToyBoxWidget"), binary);
-    await copyFile(join(root, "Resources/WidgetExtension-Info.plist"), join(extension, "Contents/Info.plist"));
+    const binary = join(extension, "Contents/MacOS/ToyBoxDesktopWidget");
+    await copyFile(join(bin, "ToyBoxDesktopWidget"), binary);
+    await copyFile(join(root, "Resources/Desktop/Widget-Info.plist"), join(extension, "Contents/Info.plist"));
     await command(["xcrun", "vtool", "-set-build-version", "macos", minimumOS, sdkVersion,
         "-replace", "-output", binary, binary]);
 }
@@ -94,7 +94,7 @@ export async function validateWidgetExtension(app: string) {
         || await plist(info, ["Print :NSExtension:NSExtensionPointIdentifier"]) !== "com.apple.widgetkit-extension") {
         throw new Error("The widget identity or extension point is invalid.");
     }
-    const binary = join(extension, "Contents/MacOS/ToyBoxWidget");
+    const binary = join(extension, "Contents/MacOS/ToyBoxDesktopWidget");
     if (await text(["xcrun", "lipo", "-archs", binary]) !== "arm64") {
         throw new Error("The widget extension must contain only arm64.");
     }
@@ -105,7 +105,7 @@ export async function validateWidgetExtension(app: string) {
     }
     for (const bundle of [app, extension]) {
         validateControlMetadata(await Bun.file(join(bundle, "Contents/Resources/Metadata.appintents/extract.actionsdata")).text());
-        const executable = bundle === app ? "ToyBoxDesktop" : "ToyBoxWidget";
+        const executable = bundle === app ? "ToyBoxDesktop" : "ToyBoxDesktopWidget";
         const symbols = await text(["xcrun", "swift-demangle"], {
             input: await text(["xcrun", "nm", "-U", join(bundle, "Contents/MacOS", executable)]),
         });

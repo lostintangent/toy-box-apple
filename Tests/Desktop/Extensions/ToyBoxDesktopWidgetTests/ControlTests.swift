@@ -2,7 +2,7 @@ import ChannelKit
 import Foundation
 import Testing
 @testable import ToyBoxControlIntents
-@testable import ToyBoxWidget
+@testable import ToyBoxDesktopWidget
 
 @Suite(.serialized) struct ControlTests {
     private let now = Date(timeIntervalSince1970: 1_000_000)

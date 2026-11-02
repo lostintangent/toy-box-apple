@@ -9,7 +9,7 @@ struct ChannelActivityLogo: View {
     var style: Style = .fullColor
     @Environment(\.colorScheme) private var colorScheme
 
-    // Exact 1024-unit geometry from Resources/AppIcon.icon/Assets.
+    // Exact 1024-unit geometry from Resources/Shared/AppIcon.icon/Assets.
     static let headData = "M380 305.2 H644 A187 187 0 0 1 831 492.2 V591.2 A187 187 0 0 1 644 778.2 H426.2 C391 824.4 336 864 261.2 879.4 C294.2 837.6 305.2 795.8 300.8 758.4 A187 187 0 0 1 193 591.2 V492.2 A187 187 0 0 1 380 305.2 Z"
     static let smileData = "M465.8 617.6 A66 66 0 0 0 558.2 617.6"
     private static let head = try! SVGPath.parse(headData)

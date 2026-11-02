@@ -24,8 +24,8 @@ export async function buildApp(configuration = process.env.CONFIGURATION || "deb
     await mkdir(join(app, "Contents/MacOS"), { recursive: true });
     await mkdir(join(app, "Contents/Resources"), { recursive: true });
     await copyFile(join(bin, "ToyBoxDesktop"), binary);
-    await copyFile(join(root, "Resources/Info.plist"), info);
-    await embedAppIcon(join(root, "Resources"), app);
+    await copyFile(join(root, "Resources/Desktop/Info.plist"), info);
+    await embedAppIcon(join(root, "Resources/Desktop"), app);
     await plist(info, ["Add :CFBundleIconFile string AppIcon", "Add :CFBundleIconName string AppIcon"]);
     const minimumOS = await plist(info, ["Print :LSMinimumSystemVersion"]);
     await command(["xcrun", "vtool", "-set-build-version", "macos", minimumOS, sdkVersion,

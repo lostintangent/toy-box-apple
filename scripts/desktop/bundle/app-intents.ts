@@ -3,6 +3,12 @@ import { basename, dirname, join, resolve } from "node:path";
 import { command, executable, plist, root, text } from "../../shared/lib/index.ts";
 import { validateControlMetadata, widgetExtension } from "./widget-extension.ts";
 
+const sourceDirectories: Record<string, string> = {
+    ToyBoxControlIntents: "Sources/Desktop/ToyBoxControlIntents",
+    ToyBoxDesktop: "Sources/Desktop/ToyBoxDesktop",
+    ToyBoxDesktopWidget: "Sources/Desktop/Extensions/ToyBoxDesktopWidget",
+};
+
 export async function extractAppIntents(app: string, scratch: string, configuration: string,
     sdk: string, minimumOS: string) {
     let processor = process.env.APP_INTENTS_PROCESSOR;
@@ -31,7 +37,7 @@ export async function extractAppIntents(app: string, scratch: string, configurat
         await mkdir(intents, { recursive: true });
         await mkdir(output, { recursive: true });
         const sources = (await Array.fromAsync(new Bun.Glob("**/*.swift").scan({
-            cwd: join(root, "Sources", module), absolute: true,
+            cwd: join(root, sourceDirectories[module]), absolute: true,
         }))).sort();
         await Bun.write(join(intents, "sources.txt"), sources.join("\n") + "\n");
         const stems = new Set(sources.map(source => basename(source, ".swift")));
@@ -72,5 +78,5 @@ export async function extractAppIntents(app: string, scratch: string, configurat
     const dependencies = [join(sharedOutput, "Metadata.appintents/extract.actionsdata")];
     await extract("ToyBoxDesktop", app, "ToyBoxDesktop", join(app, "Contents/Resources"), dependencies);
     const widget = widgetExtension(app);
-    await extract("ToyBoxWidget", widget, "ToyBoxWidget", join(widget, "Contents/Resources"), dependencies);
+    await extract("ToyBoxDesktopWidget", widget, "ToyBoxDesktopWidget", join(widget, "Contents/Resources"), dependencies);
 }

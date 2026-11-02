@@ -5,7 +5,7 @@
     <key>CFBundleName</key><string>Needs you</string>
     <key>CFBundleDisplayName</key><string>Needs you</string>
     <key>CFBundleIdentifier</key><string>dev.toybox.desktop.widget</string>
-    <key>CFBundleExecutable</key><string>ToyBoxWidget</string>
+    <key>CFBundleExecutable</key><string>ToyBoxDesktopWidget</string>
     <key>CFBundlePackageType</key><string>XPC!</string>
     <key>CFBundleShortVersionString</key><string>0.1.0</string>
     <key>CFBundleVersion</key><string>1</string>
