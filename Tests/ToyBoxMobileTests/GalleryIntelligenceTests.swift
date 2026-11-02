@@ -10,8 +10,8 @@ import UIKit
 @MainActor
 @Suite("Gallery image descriptions")
 struct GalleryIntelligenceTests {
-    private func gallery() throws -> TranscriptGalleryPresenter {
-        let presenter = TranscriptGalleryPresenter()
+    private func gallery() throws -> TranscriptGallery {
+        let presenter = TranscriptGallery()
         let api = try ChannelAPI(serverURL: "https://gallery-\(UUID().uuidString.lowercased()).invalid/prefix")
         presenter.open(images: [
             ChannelAttachment(name: "chart.png", url: "/chart.png", mimeType: "image/png"),
@@ -50,7 +50,7 @@ struct GalleryIntelligenceTests {
         #expect(request.digest == cached.deletingPathExtension().lastPathComponent)
         #expect(request.server == session.api.baseURL.absoluteString)
         #expect(request.priority == .focused)
-        #expect(TranscriptGalleryPresenter.accessibilityLabel(session) == "Image 1 of 2 from Lead, chart.png")
+        #expect(TranscriptGallery.accessibilityLabel(session) == "Image 1 of 2 from Lead, chart.png")
     }
 
     @Test func returningToAnImageReusesItsDescriptionWithoutMixingUpPages() async throws {
@@ -87,7 +87,7 @@ struct GalleryIntelligenceTests {
         let descriptions = TranscriptImageDescriptionSession()
         await descriptions.describe(request, using: service)
         #expect(TranscriptImageDescriptionSession.value(descriptions.text(for: request)) == "")
-        #expect(TranscriptGalleryPresenter.accessibilityLabel(session) == "Image 1 of 2 from Lead, chart.png")
+        #expect(TranscriptGallery.accessibilityLabel(session) == "Image 1 of 2 from Lead, chart.png")
     }
 
     @Test func departingAndClosedPagesImmediatelyLoseTheirRequest() throws {
@@ -95,7 +95,7 @@ struct GalleryIntelligenceTests {
         let first = try #require(gallery.session)
         let file = URL(filePath: "/fixture/chart.png")
         let service = GalleryDescriptionService()
-        func request(_ page: TranscriptGalleryPresenter.Session) -> AltTextRequest? {
+        func request(_ page: TranscriptGallery.Session) -> AltTextRequest? {
             gallery.descriptionRequest(for: page, file: file, voiceOver: true, isOn: true, using: service)
         }
         #expect(request(first) != nil)
@@ -166,7 +166,7 @@ struct GalleryIntelligenceTests {
         #expect(request.fileURL == ChannelAttachmentCache.cachedFile(for: attachment, api: api))
         let service = GalleryDescriptionService(text: "A yellow square.")
         await TranscriptImageDescriptionSession.shared.describe(request, using: service)
-        let gallery = TranscriptGalleryPresenter()
+        let gallery = TranscriptGallery()
         let suite = "GalleryIntelligenceTests-\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }

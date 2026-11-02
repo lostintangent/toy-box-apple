@@ -13,15 +13,15 @@ struct TranscriptAttachments: View {
     let alignment: UnitPoint
     /// The message the images belong to, which the gallery names.
     let source: TranscriptImageSource
-    @Environment(TranscriptGalleryPresenter.self) private var gallery: TranscriptGalleryPresenter?
+    @Environment(TranscriptGallery.self) private var gallery: TranscriptGallery?
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
 
     var body: some View {
-        let images = TranscriptGalleryPresenter.images(in: attachments)
+        let images = TranscriptGallery.images(in: attachments)
         TranscriptAttachmentStrip(count: attachments.count, alignment: alignment, presented: presented) { offset in
             let attachment = attachments[offset]
-            if TranscriptGalleryPresenter.isGalleryImage(attachment) {
-                let position = attachments[..<offset].count(where: TranscriptGalleryPresenter.isGalleryImage)
+            if TranscriptGallery.isGalleryImage(attachment) {
+                let position = attachments[..<offset].count(where: TranscriptGallery.isGalleryImage)
                 if let gallery {
                     TranscriptImage(attachment: attachment, api: api, voiceOver: voiceOver) {
                         gallery.open(images: images, at: position, source: source, api: api)
@@ -41,7 +41,7 @@ struct TranscriptAttachments: View {
     /// The attachment the gallery presents from this message, if any.
     private var presented: Int? {
         guard let session = gallery?.session, session.source.messageID == source.messageID else { return nil }
-        return attachments.indices.filter { TranscriptGalleryPresenter.isGalleryImage(attachments[$0]) }
+        return attachments.indices.filter { TranscriptGallery.isGalleryImage(attachments[$0]) }
             .dropFirst(session.index).first
     }
 }

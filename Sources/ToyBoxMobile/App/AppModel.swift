@@ -48,7 +48,7 @@ final class AppModel {
     @ObservationIgnored private var interactions: [String: ChannelInteraction] = [:]
     @ObservationIgnored private var composerSessions: [String: ComposerSession] = [:]
     @ObservationIgnored private var artifactSessions: [String: (store: ChannelStore, session: ChannelArtifactSession)] = [:]
-    @ObservationIgnored private var galleryPresenters: [String: (store: ChannelStore, presenter: TranscriptGalleryPresenter)] = [:]
+    @ObservationIgnored private var galleryPresenters: [String: (store: ChannelStore, presenter: TranscriptGallery)] = [:]
     @ObservationIgnored private var integrationsStarted = false
     @ObservationIgnored private var integrationsGeneration = UUID()
     @ObservationIgnored private var resumeCatalogBaseline: Date?
@@ -436,10 +436,10 @@ final class AppModel {
         return session
     }
 
-    func galleryPresenter(for store: ChannelStore) -> TranscriptGalleryPresenter {
+    func galleryPresenter(for store: ChannelStore) -> TranscriptGallery {
         resetReaderScopeIfNeeded(for: store)
         if let entry = galleryPresenters[store.id], entry.store === store { return entry.presenter }
-        let presenter = TranscriptGalleryPresenter()
+        let presenter = TranscriptGallery()
         galleryPresenters[store.id] = (store, presenter)
         return presenter
     }

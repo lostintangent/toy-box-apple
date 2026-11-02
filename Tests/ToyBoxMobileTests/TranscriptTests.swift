@@ -504,10 +504,10 @@ struct TranscriptTests {
             ChannelAttachment(name: "two.jpg", url: "/files/two.jpg", mimeType: "image/jpeg"),
             ChannelAttachment(name: "three.heic", url: "/files/three.heic"),
         ]
-        let images = TranscriptGalleryPresenter.images(in: attachments)
+        let images = TranscriptGallery.images(in: attachments)
         #expect(images.map(\.name) == ["one.png", "two.jpg", "three.heic"])
 
-        let gallery = TranscriptGalleryPresenter()
+        let gallery = TranscriptGallery()
         let api = try ChannelAPI(serverURL: "http://127.0.0.1:3210")
         let source = TranscriptImageSource(messageID: "m1", sender: "Lead",
                                                        timestamp: "2026-10-25T12:00:00Z")
@@ -522,7 +522,7 @@ struct TranscriptTests {
         #expect(gallery.session?.canShowPrevious == false)
         gallery.move(by: -1)
         #expect(gallery.session?.index == 0)
-        #expect(gallery.session.map(TranscriptGalleryPresenter.accessibilityLabel) == "Image 1 of 3 from Lead, one.png")
+        #expect(gallery.session.map(TranscriptGallery.accessibilityLabel) == "Image 1 of 3 from Lead, one.png")
 
         gallery.close()
         #expect(gallery.session == nil)

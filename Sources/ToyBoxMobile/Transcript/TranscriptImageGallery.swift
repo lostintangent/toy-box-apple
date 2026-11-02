@@ -11,7 +11,7 @@ import VisionKit
 /// Which message's images the gallery shows. Shell keeps one per channel and shows
 /// `TranscriptImageGallery` over the conversation while `session` is set.
 @MainActor @Observable
-final class TranscriptGalleryPresenter {
+final class TranscriptGallery {
     struct Session: Identifiable {
         let id = UUID()
         let source: TranscriptImageSource
@@ -82,7 +82,7 @@ final class TranscriptGalleryReader {
     var original: TranscriptGalleryOriginal?
     var preview: URL?
 
-    func original(for session: TranscriptGalleryPresenter.Session) -> TranscriptGalleryOriginal? {
+    func original(for session: TranscriptGallery.Session) -> TranscriptGalleryOriginal? {
         original.flatMap { $0.session == session.id && $0.index == session.index ? $0 : nil }
     }
 
@@ -122,7 +122,7 @@ struct TranscriptGalleryShareItem: Transferable {
     let api: ChannelAPI
     let name: String
 
-    init(_ session: TranscriptGalleryPresenter.Session) {
+    init(_ session: TranscriptGallery.Session) {
         attachment = session.image
         api = session.api
         name = session.image.imageName(index: session.index, count: session.images.count)
@@ -143,7 +143,7 @@ struct TranscriptGalleryShareItem: Transferable {
 }
 
 struct TranscriptImageGallery: View {
-    let presenter: TranscriptGalleryPresenter
+    let gallery: TranscriptGallery
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.openURL) private var openURL
@@ -151,20 +151,20 @@ struct TranscriptImageGallery: View {
     @AccessibilityFocusState private var titleFocused: Bool
 
     var body: some View {
-        if let session = presenter.session {
-            gallery(session)
+        if let session = gallery.session {
+            pages(session)
         }
     }
 
-    private func margin(_ session: TranscriptGalleryPresenter.Session) -> EdgeInsets {
+    private func margin(_ session: TranscriptGallery.Session) -> EdgeInsets {
         let side: CGFloat = sizeClass == .regular ? 24 : 16
         return EdgeInsets(top: side, leading: side, bottom: session.images.count > 1 ? 16 : side, trailing: side)
     }
 
-    private func gallery(_ session: TranscriptGalleryPresenter.Session) -> some View {
+    private func pages(_ session: TranscriptGallery.Session) -> some View {
         // The container keeps the page's identity and transition off the capsule and toolbar.
         ZStack {
-            TranscriptGalleryPage(session: session, reader: reader, presenter: presenter, page: move)
+            TranscriptGalleryPage(session: session, reader: reader, gallery: gallery, page: move)
                 .padding(margin(session))
                 .id(session.index)
                 .transition(pageTransition(session.direction))
@@ -208,10 +208,10 @@ struct TranscriptImageGallery: View {
     }
 
     @ToolbarContentBuilder
-    private func toolbar(_ session: TranscriptGalleryPresenter.Session) -> some ToolbarContent {
+    private func toolbar(_ session: TranscriptGallery.Session) -> some ToolbarContent {
         let original = reader.original(for: session)
         ToolbarItem(placement: .topBarLeading) {
-            Button("Back to Conversation", systemImage: "chevron.backward") { presenter.close() }
+            Button("Back to Conversation", systemImage: "chevron.backward") { gallery.close() }
                 .labelStyle(.iconOnly)
         }
         ToolbarItem(placement: .principal) {
@@ -258,7 +258,7 @@ struct TranscriptImageGallery: View {
         }
     }
 
-    private func remoteURL(_ session: TranscriptGalleryPresenter.Session) -> URL? {
+    private func remoteURL(_ session: TranscriptGallery.Session) -> URL? {
         guard let address = session.image.url, !address.hasPrefix("data:") else { return nil }
         return session.api.resourceURL(address)
     }
@@ -269,11 +269,11 @@ struct TranscriptImageGallery: View {
     }
 
     private func move(_ offset: Int) {
-        withAnimation(pageAnimation) { presenter.move(by: offset) }
+        withAnimation(pageAnimation) { gallery.move(by: offset) }
     }
 
     private func select(_ index: Int) {
-        withAnimation(pageAnimation) { presenter.select(index) }
+        withAnimation(pageAnimation) { gallery.select(index) }
     }
 
     /// Escape clears a Live Text selection before it closes the gallery.
@@ -281,7 +281,7 @@ struct TranscriptImageGallery: View {
         if let liveText = reader.liveText, liveText.hasActiveTextSelection {
             liveText.resetTextSelection()
         } else {
-            presenter.close()
+            gallery.close()
         }
     }
 
@@ -295,7 +295,7 @@ struct TranscriptImageGallery: View {
     }
 
     private func copyImage() {
-        guard let session = presenter.session, let original = reader.original(for: session),
+        guard let session = gallery.session, let original = reader.original(for: session),
               let data = try? Data(contentsOf: original.export, options: .mappedIfSafe) else { return }
         UIPasteboard.general.setData(data, forPasteboardType: (original.type ?? .image).identifier)
     }
@@ -303,9 +303,9 @@ struct TranscriptImageGallery: View {
 
 /// One image: it loads the original, decodes it within a bound and hosts the shared canvas.
 private struct TranscriptGalleryPage: View {
-    let session: TranscriptGalleryPresenter.Session
+    let session: TranscriptGallery.Session
     let reader: TranscriptGalleryReader
-    let presenter: TranscriptGalleryPresenter
+    let gallery: TranscriptGallery
     let page: (Int) -> Void
     @Environment(\.displayScale) private var displayScale
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
@@ -316,7 +316,7 @@ private struct TranscriptGalleryPage: View {
     @ViewState private var attempt = 0
 
     private var descriptionRequest: AltTextRequest? {
-        presenter.descriptionRequest(
+        gallery.descriptionRequest(
             for: session, file: loaded?.file, voiceOver: voiceOver, isOn: describesImages, using: intelligence)
     }
 
@@ -324,7 +324,7 @@ private struct TranscriptGalleryPage: View {
         ZStack {
             if let loaded {
                 TranscriptGalleryCanvas(image: loaded.image, size: loaded.size, file: loaded.file,
-                                        title: TranscriptGalleryPresenter.accessibilityLabel(session),
+                                        title: TranscriptGallery.accessibilityLabel(session),
                                         descriptionValue: TranscriptImageDescriptionSession.value(
                                             TranscriptImageDescriptionSession.shared.text(for: descriptionRequest)),
                                         reader: reader, page: page)

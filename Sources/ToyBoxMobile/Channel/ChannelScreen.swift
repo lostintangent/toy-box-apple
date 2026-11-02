@@ -10,7 +10,7 @@ struct ChannelScreen: View {
     @Environment(ChannelInteraction.self) private var interaction
     @Environment(ManagementPresenter.self) private var management
     @Environment(ChannelArtifactSession.self) private var artifacts
-    @Environment(TranscriptGalleryPresenter.self) private var gallery
+    @Environment(TranscriptGallery.self) private var gallery
     @Environment(Overview.self) private var overview
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.usesVerticalToolbar) private var usesVerticalToolbar
@@ -51,7 +51,7 @@ struct ChannelScreen: View {
                 if artifacts.isPresented {
                     ArtifactViewer(session: artifacts)
                 } else {
-                    TranscriptImageGallery(presenter: gallery)
+                    TranscriptImageGallery(gallery: gallery)
                 }
             }
         }
