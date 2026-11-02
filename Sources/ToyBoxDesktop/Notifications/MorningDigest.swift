@@ -154,7 +154,7 @@ final class MorningDigest {
 
 extension MorningDigest {
     static func line(_ state: ChannelState, summary: CatchUp? = nil) -> Content.Line? {
-        let count = channelAgentMessageCount(state.messages)
+        let count = state.messages.agentMessageCount()
         guard count > 0 else { return nil }
         let text = summary?.needsYou?.text ?? summary?.changes.first?.text
             ?? "\(count) new \(count == 1 ? "message" : "messages")"

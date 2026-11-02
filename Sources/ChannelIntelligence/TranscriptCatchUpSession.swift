@@ -22,7 +22,7 @@ public final class TranscriptCatchUpSession {
 
         /// The agent messages after this summary once there are enough to earn an Update, else nil.
         public func newerMessageCount(in messages: [ChannelMessage]) -> Int? {
-            let count = channelAgentMessageCount(messages, after: catchUp.through)
+            let count = messages.agentMessageCount(after: catchUp.through)
             return count >= 4 ? count : nil
         }
     }

@@ -368,7 +368,7 @@ struct ConversationTranscript: View {
             agent.status = statuses[agent.id]
             return agent
         }
-        return channelStatusReactions(agents: agents, presence: store.presence)
+        return agents.statusReactions(presence: store.presence)
     }
 
     private func sendAttempt(_ attempt: ChannelSendAttempt, divider: TranscriptDivider?,

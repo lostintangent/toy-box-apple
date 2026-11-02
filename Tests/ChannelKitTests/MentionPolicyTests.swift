@@ -3,7 +3,7 @@ import Testing
 @testable import ChannelKit
 
 struct MentionPolicyTests {
-    @Test func mentionContextUsesCaretAndCanonicalBoundaries() {
+    @Test func mentionQueryUsesCaretAndCanonicalBoundaries() {
         let text = "Hello, @Pi"
         let context = AgentMentions.Query.match(text: text, selection: .init(location: text.utf16.count, length: 0))
         #expect(context?.text == "pi")
