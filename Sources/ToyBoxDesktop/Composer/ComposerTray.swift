@@ -205,7 +205,7 @@ struct ComposerTasksPopover: View {
     let onArtifactOpen: (ChannelArtifact) -> Void
 
     var body: some View {
-        let progress = channelTasksProgress(tasks)
+        let progress = tasks.progress
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Text("Tasks").font(.headline)

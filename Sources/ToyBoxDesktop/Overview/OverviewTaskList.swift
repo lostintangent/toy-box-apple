@@ -165,11 +165,11 @@ struct OverviewTaskRow: View {
     private var owner: ChannelAgent? { task.ownerId.map { channelAgentIdentity(agents, id: $0) } }
     private var progress: (done: Int, total: Int)? {
         guard task.showsChildProgress else { return nil }
-        let progress = channelTasksProgress(children)
+        let progress = children.progress
         return (progress.done, progress.total)
     }
 
-    private var diff: DiffStats? { task.status == "pending" ? nil : channelTasksDiff([task]) }
+    private var diff: DiffStats? { task.status == "pending" ? nil : [task].diff }
     private var linkedArtifact: (id: String, artifact: ChannelArtifact?)? {
         task.artifactId.map { id in (id, artifacts.first { $0.id == id }) }
     }
@@ -205,7 +205,7 @@ struct OverviewTaskRow: View {
     private var timedHeader: some View {
         if task.startedAt.flatMap({ try? Date($0, strategy: .iso8601) }) != nil {
             TimelineView(ChannelTaskMinuteSchedule(isVisible: isTimingVisible)) { context in
-                header(timing: channelTaskTiming(task, now: context.date))
+                header(timing: task.timing(now: context.date))
             }
             .onScrollVisibilityChange(threshold: 0.01) { isTimingVisible = $0 }
         } else {
@@ -213,7 +213,7 @@ struct OverviewTaskRow: View {
         }
     }
 
-    private func header(timing: ChannelTaskTiming?) -> some View {
+    private func header(timing: ChannelTask.Timing?) -> some View {
         HStack(alignment: .top, spacing: Self.titleGap) {
             OverviewTaskStatusIcon(status: task.status)
             VStack(alignment: .leading, spacing: ChannelOverviewFactsLayout.titleGap) {
@@ -296,7 +296,7 @@ struct OverviewTaskRow: View {
         return .handled
     }
 
-    private func accessibilityLabel(timing: ChannelTaskTiming?) -> String {
+    private func accessibilityLabel(timing: ChannelTask.Timing?) -> String {
         var parts = [task.title, task.statusDescription]
         if let timing { parts.append(ChannelTaskTimingPresentation(timing: timing).spoken) }
         if let progress {

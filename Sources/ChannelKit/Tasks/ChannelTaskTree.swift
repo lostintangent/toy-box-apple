@@ -1,20 +1,40 @@
 import Foundation
 
-public func channelTasksDiff(_ tasks: [ChannelTask]) -> DiffStats? {
-    var total: DiffStats?
-    for task in tasks {
-        for diff in [task.diff, channelTasksDiff(task.children ?? [])].compactMap({ $0 }) {
-            total = .init(added: (total?.added ?? 0) + diff.added,
-                          removed: (total?.removed ?? 0) + diff.removed)
+extension Array where Element == ChannelTask {
+    public var diff: DiffStats? {
+        var total: DiffStats?
+        for task in self {
+            for stats in [task.diff, (task.children ?? []).diff].compactMap({ $0 }) {
+                total = .init(added: (total?.added ?? 0) + stats.added,
+                              removed: (total?.removed ?? 0) + stats.removed)
+            }
+        }
+        return total
+    }
+
+    /// The tasks at one level that hold work in progress, each whole, so its counts, diff and timing
+    /// still describe every child. Callers apply this to each level of the tree.
+    public var holdingWorkInProgress: [ChannelTask] {
+        filter(\.holdsWorkInProgress)
+    }
+
+    public func unassigning(agentId: String) -> [ChannelTask] {
+        map { task in
+            var next = task
+            if next.ownerId == agentId { next.ownerId = nil }
+            if let children = next.children { next.children = children.unassigning(agentId: agentId) }
+            return next
         }
     }
-    return total
-}
 
-/// The tasks at one level that hold work in progress, each whole, so its counts, diff and timing
-/// still describe every child. Callers apply this to each level of the tree.
-public func channelTasksHoldingWorkInProgress(_ tasks: [ChannelTask]) -> [ChannelTask] {
-    tasks.filter(\.holdsWorkInProgress)
+    public func unlinking(artifactId: String) -> [ChannelTask] {
+        map { task in
+            var next = task
+            if next.artifactId == artifactId { next.artifactId = nil }
+            if let children = next.children { next.children = children.unlinking(artifactId: artifactId) }
+            return next
+        }
+    }
 }
 
 extension ChannelTask {
@@ -38,20 +58,3 @@ extension ChannelTask {
     }
 }
 
-public func unassignChannelTasks(_ tasks: [ChannelTask], agentId: String) -> [ChannelTask] {
-    tasks.map { task in
-        var next = task
-        if next.ownerId == agentId { next.ownerId = nil }
-        if let children = next.children { next.children = unassignChannelTasks(children, agentId: agentId) }
-        return next
-    }
-}
-
-public func unlinkChannelTasks(_ tasks: [ChannelTask], artifactId: String) -> [ChannelTask] {
-    tasks.map { task in
-        var next = task
-        if next.artifactId == artifactId { next.artifactId = nil }
-        if let children = next.children { next.children = unlinkChannelTasks(children, artifactId: artifactId) }
-        return next
-    }
-}

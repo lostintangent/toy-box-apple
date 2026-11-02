@@ -13,14 +13,14 @@ struct OverviewTasksSection: View {
     let session: ChannelOverview
 
     var body: some View {
-        let progress = channelTasksProgress(store.tasks)
+        let progress = store.tasks.progress
         let filter: ChannelOverviewFilter? = store.tasks.isEmpty
             ? nil : ChannelOverviewFilter.inProgressTasks(Bindable(session).showsOnlyInProgressTasks)
         OverviewSectionRows(summary: .tasks(progress), section: .tasks, session: session,
-                            diff: channelTasksDiff(store.tasks), filter: filter) {
+                            diff: store.tasks.diff, filter: filter) {
             if store.tasks.isEmpty {
                 Text("No tasks yet").foregroundStyle(ChannelInk.secondary)
-            } else if session.showsOnlyInProgressTasks, channelTasksHoldingWorkInProgress(store.tasks).isEmpty {
+            } else if session.showsOnlyInProgressTasks, store.tasks.holdingWorkInProgress.isEmpty {
                 Text("No tasks in progress").foregroundStyle(ChannelInk.secondary)
             } else {
                 OverviewTaskRows(tasks: store.tasks, store: store, session: session)
@@ -42,7 +42,7 @@ struct OverviewSubtasksScreen: View {
                     Section {
                         Text(parent.title).font(.headline).fixedSize(horizontal: false, vertical: true)
                         if parent.showsChildProgress {
-                            let progress = channelTasksProgress(parent.children ?? [])
+                            let progress = (parent.children ?? []).progress
                             Text("\(progress.done) of \(progress.total) subtasks done")
                                 .font(.footnote).foregroundStyle(ChannelInk.secondary)
                         }
@@ -103,7 +103,7 @@ struct OverviewTaskNode: View {
         OverviewTaskListRow.isExpanded(task, disclosure: session.taskDisclosure)
     }
     private var owner: ChannelAgent? { task.ownerId.map { channelAgentIdentity(store.roster, id: $0) } }
-    private var diff: DiffStats? { task.status == "pending" ? nil : channelTasksDiff([task]) }
+    private var diff: DiffStats? { task.status == "pending" ? nil : [task].diff }
     private var artifact: ChannelArtifact? { store.artifacts.first { $0.id == task.artifactId } }
 
     var body: some View {
@@ -131,14 +131,14 @@ struct OverviewTaskNode: View {
     private var timedHeader: some View {
         if task.startedAt.flatMap({ try? Date($0, strategy: .iso8601) }) != nil {
             TimelineView(ChannelTaskMinuteSchedule(isVisible: isVisible)) { context in
-                header(timing: channelTaskTiming(task, now: context.date))
+                header(timing: task.timing(now: context.date))
             }
         } else {
             header(timing: nil)
         }
     }
 
-    private func header(timing: ChannelTaskTiming?) -> some View {
+    private func header(timing: ChannelTask.Timing?) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             if layout.accessibility {
                 HStack {
@@ -175,7 +175,7 @@ struct OverviewTaskNode: View {
         }
     }
 
-    private func heading(timing: ChannelTaskTiming?) -> some View {
+    private func heading(timing: ChannelTask.Timing?) -> some View {
         VStack(alignment: .leading, spacing: ChannelOverviewFactsLayout.titleGap) {
             HStack(alignment: .top, spacing: 8) {
                 HStack(alignment: .top, spacing: layout.titleGap) {
@@ -210,7 +210,7 @@ struct OverviewTaskNode: View {
     }
 
     private var progressCount: Text {
-        let count = channelTasksProgress(children)
+        let count = children.progress
         return Text(verbatim: "\(count.done)/\(count.total)\u{00A0}")
             .font(.footnote.monospacedDigit()).foregroundStyle(ChannelInk.secondary)
     }
@@ -233,10 +233,10 @@ struct OverviewTaskNode: View {
         session.taskDisclosure[task.id] = .init(expandedByDefault: task.isExpandedByDefault, expanded: !expanded)
     }
 
-    private func spoken(timing: ChannelTaskTiming?) -> String {
+    private func spoken(timing: ChannelTask.Timing?) -> String {
         var parts = [task.title, task.statusDescription]
         if task.showsChildProgress {
-            let progress = channelTasksProgress(children)
+            let progress = children.progress
             parts.append("\(progress.done) of \(progress.total) subtasks done")
         }
         if let timing { parts.append(ChannelTaskTimingPresentation(timing: timing).spoken) }
@@ -272,7 +272,7 @@ struct OverviewTaskArtifactLabel: View {
 }
 
 struct OverviewTaskMetadata: View {
-    let timing: ChannelTaskTiming?
+    let timing: ChannelTask.Timing?
     let diff: DiffStats?
     @Environment(\.dynamicTypeSize) private var typeSize
 

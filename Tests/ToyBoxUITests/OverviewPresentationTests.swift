@@ -28,16 +28,16 @@ struct OverviewPresentationTests {
     }
 
     @Test func countsKeepKnownZeroUnavailableAndNaturalSingularPluralDistinct() {
-        let empty = ChannelOverviewSummary.tasks(channelTasksProgress([]))
+        let empty = ChannelOverviewSummary.tasks(([] as [ChannelTask]).progress)
         #expect(empty.count == "0" && empty.spoken == "Tasks, no tasks")
-        let one = ChannelOverviewSummary.tasks(channelTasksProgress([
+        let one = ChannelOverviewSummary.tasks([
             ChannelTask(id: "one", title: "One", status: "done"),
-        ]))
+        ].progress)
         #expect(one.count == "1/1" && one.spoken == "Tasks, 1 of 1 top-level task complete")
-        let two = ChannelOverviewSummary.tasks(channelTasksProgress([
+        let two = ChannelOverviewSummary.tasks([
             ChannelTask(id: "one", title: "One", status: "done"),
             ChannelTask(id: "two", title: "Two", status: "pending"),
-        ]))
+        ].progress)
         #expect(two.count == "1/2" && two.spoken == "Tasks, 1 of 2 top-level tasks complete")
         let cases: [(ChannelOverviewSummary, String)] = [
             (.team(1), "Team Members, 1 agent"), (.team(9), "Team Members, 9 agents"),

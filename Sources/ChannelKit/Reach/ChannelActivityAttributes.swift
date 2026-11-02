@@ -52,7 +52,7 @@ public struct ChannelActivityAttributes: Codable, Hashable, Sendable {
         }
 
         public init(state: ChannelState, updatedAt: Date) {
-            let progress = channelTasksProgress(state.channel.tasks)
+            let progress = state.channel.tasks.progress
             let ending: Ending?
             if progress.total == 0 { ending = .tasksRemoved }
             else if progress.done == progress.total { ending = .completed }

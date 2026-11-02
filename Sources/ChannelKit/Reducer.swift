@@ -105,7 +105,7 @@ public func reduceChannelState(_ previous: ChannelState,
                     if let member = content.member {
                         next.members.removeAll { $0.id == member.id }
                         next.presence.removeValue(forKey: member.id)
-                        next.channel.tasks = unassignChannelTasks(next.channel.tasks, agentId: member.id)
+                        next.channel.tasks = next.channel.tasks.unassigning(agentId: member.id)
                     }
                 case "artifact_shared":
                     if var artifact = content.artifact {
@@ -122,7 +122,7 @@ public func reduceChannelState(_ previous: ChannelState,
                 case "artifact_removed":
                     if let file = content.artifact?.file {
                         next.artifacts.removeAll { $0.id == file.id }
-                        next.channel.tasks = unlinkChannelTasks(next.channel.tasks, artifactId: file.id)
+                        next.channel.tasks = next.channel.tasks.unlinking(artifactId: file.id)
                     }
                 case "routine_scheduled", "routine_edited":
                     if let routine = content.routine {

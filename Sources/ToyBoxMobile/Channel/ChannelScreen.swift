@@ -217,7 +217,7 @@ struct ChannelScreen: View {
 
     @ViewBuilder
     private var tasksButton: some View {
-        let progress = channelTasksProgress(store.tasks)
+        let progress = store.tasks.progress
         if progress.done < progress.total {
             Button("Tasks", systemImage: "checklist") {
                 interaction.showOverviewTasks()

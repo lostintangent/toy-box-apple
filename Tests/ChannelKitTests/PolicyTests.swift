@@ -63,11 +63,11 @@ struct PolicyTests {
                                          ownerId: "ada", diff: .init(added: 3, removed: 1))]),
             ChannelTask(id: "zero", title: "Measure", status: "done", diff: .init(added: 0, removed: 0)),
         ]
-        #expect(channelTasksDiff(tasks) == .init(added: 7, removed: 3))
-        #expect(channelTasksDiff([]) == nil)
-        #expect(channelTasksDiff([tasks[1]]) == .init(added: 0, removed: 0))
-        #expect(channelTasksProgress(tasks) == .init(done: 1, total: 2))
-        #expect(unassignChannelTasks(tasks, agentId: "ada")[0].children?[0].ownerId == nil)
+        #expect(tasks.diff == .init(added: 7, removed: 3))
+        #expect(([] as [ChannelTask]).diff == nil)
+        #expect([tasks[1]].diff == .init(added: 0, removed: 0))
+        #expect(tasks.progress == .init(done: 1, total: 2))
+        #expect(tasks.unassigning(agentId: "ada")[0].children?[0].ownerId == nil)
     }
 
     @Test func trayProjectionUsesCanonicalOrderAndDirectRootProgressWithoutMutatingInputs() {
@@ -116,27 +116,27 @@ struct PolicyTests {
         let now = try #require(try? Date("2026-10-24T11:26:59Z", strategy: .iso8601))
         var task = ChannelTask(id: "task", title: "Task", status: "in_progress",
                                startedAt: "2026-10-24T10:00:00Z", checkInAt: "2026-10-24T11:57:00Z")
-        #expect(channelTaskTiming(task, now: now) == .init(elapsedMinutes: 86, checkInMinutes: 31))
-        #expect(channelTaskTiming(task, now: now.addingTimeInterval(1))
+        #expect(task.timing(now: now) == .init(elapsedMinutes: 86, checkInMinutes: 31))
+        #expect(task.timing(now: now.addingTimeInterval(1))
                 == .init(elapsedMinutes: 87, checkInMinutes: 30))
         task.checkInAt = "2026-10-24T11:26:59Z"
-        #expect(channelTaskTiming(task, now: now)?.checkInMinutes == 0)
+        #expect(task.timing(now: now)?.checkInMinutes == 0)
         task.checkInAt = "2026-10-24T11:00:00Z"
-        #expect(channelTaskTiming(task, now: now)?.checkInMinutes == 0)
+        #expect(task.timing(now: now)?.checkInMinutes == 0)
         for status in ["pending", "blocked", "done"] {
             task.status = status
-            #expect(channelTaskTiming(task, now: now) == .init(elapsedMinutes: 86))
+            #expect(task.timing(now: now) == .init(elapsedMinutes: 86))
         }
         task.status = "in_progress"
         task.checkInAt = "invalid"
-        #expect(channelTaskTiming(task, now: now) == .init(elapsedMinutes: 86))
+        #expect(task.timing(now: now) == .init(elapsedMinutes: 86))
         task.startedAt = "2026-10-24T12:00:00Z"
-        #expect(channelTaskTiming(task, now: now)?.elapsedMinutes == 0)
+        #expect(task.timing(now: now)?.elapsedMinutes == 0)
         task.startedAt = "invalid"
-        #expect(channelTaskTiming(task, now: now) == nil)
+        #expect(task.timing(now: now) == nil)
         task.checkInAt = "2026-10-24T12:00:00Z"
         task.startedAt = nil
-        #expect(channelTaskTiming(task, now: now) == nil)
+        #expect(task.timing(now: now) == nil)
     }
 
     @Test func artifactsAreNewestFirstWithStableTiesAndUndatedItemsLast() {

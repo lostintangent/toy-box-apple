@@ -14,9 +14,9 @@ package struct ChannelTaskMinuteSchedule: TimelineSchedule {
 }
 
 package struct ChannelTaskTimingPresentation {
-    package let timing: ChannelTaskTiming
+    package let timing: ChannelTask.Timing
 
-    package init(timing: ChannelTaskTiming) { self.timing = timing }
+    package init(timing: ChannelTask.Timing) { self.timing = timing }
 
     package var elapsedText: String { Self.duration(timing.elapsedMinutes) }
     package var checkInText: String? { timing.checkInMinutes.map { Self.duration($0) } }

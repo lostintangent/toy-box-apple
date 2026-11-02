@@ -95,7 +95,7 @@ final class ChannelFollowController {
         if store.phase == .deleted { return .unavailable(.deleted) }
         if case .failed = store.phase { return .unavailable(.unreachable) }
         guard store.phase.isConnected, let state = store.state else { return .unavailable(nil) }
-        let progress = channelTasksProgress(state.channel.tasks)
+        let progress = state.channel.tasks.progress
         guard progress.total > progress.done else { return .unavailable(.noTasksInProgress) }
         guard isRegistrationReady, currentRegistration != nil else {
             return .unavailable(registrationError == nil ? nil : .pushNotSetUp)
@@ -113,7 +113,7 @@ final class ChannelFollowController {
             }
             guard isRegistrationReady, self.registration == registration, self.catalog?.api.baseURL == store.api.baseURL,
                   starting.contains(store.id), store.phase.isConnected, let state = store.state,
-                  channelTasksProgress(state.channel.tasks).done < state.channel.tasks.count
+                  state.channel.tasks.progress.done < state.channel.tasks.count
             else { throw Failure.obsolete }
             let date = now()
             let activity = try client.request(

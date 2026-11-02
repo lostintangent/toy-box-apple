@@ -2051,7 +2051,7 @@ Team Members counts the lead plus current members, not working agents. Tasks use
 roots / total roots, never descendant or visible-row counts: "Tasks 1/4", or "Tasks 0" when
 there are no roots. Artifacts counts channel artifact entries; Routines counts registered
 routines, not executions. Keep known zeros and local empty sentences. Never invent zeros
-before loading; retain cached counts while reconnecting. Tasks' recursive `channelTasksDiff`
+before loading; retain cached counts while reconnecting. Tasks' recursive `tasks.diff`
 is separate change volume, not progress. Keep the shared +/− pair together in 11-point Mac /
 footnote 13 phone, with its readable colors, tabular digits and 6-point pair gap. Leave at least
 12 points after name/count and 8 before the disclosure lane. Nil omits the diff; measured
@@ -3350,7 +3350,7 @@ blocker stays a plain disabled item. iOS menus don't render two-line Label subti
 carries the reason and the item's VoiceOver label repeats it. Notification permission never gates
 following, so it is never a reason. The item uses one app-scoped controller, shows "Starting…" during
 registration and "Stop Following" while active. Starting requires a
-live snapshot with unfinished direct-root tasks, measured by `channelTasksProgress`. Stop
+live snapshot with unfinished direct-root tasks, measured by `tasks.progress`. Stop
 stays available offline and immediately removes the local Activity without confirmation or
 changing the team's work. A failed start tears down its partial Activity and shows only the
 native "Couldn't follow this channel" alert, "Try again." and OK.
