@@ -1,6 +1,6 @@
 import Foundation
 
-public struct ChannelTrayProjection: Equatable, Sendable {
+public struct ChannelTray: Equatable, Sendable {
     public let artifacts: [ChannelArtifact]
     public let taskProgress: TaskProgress
     public let preview: ChannelPreview?

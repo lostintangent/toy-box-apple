@@ -84,7 +84,7 @@ struct PolicyTests {
             ChannelTask(id: "done", title: "Done root", status: "done"),
         ]
         let preview = ChannelPreview(kind: "screen", screenId: "display-1")
-        let projection = ChannelTrayProjection(artifacts: artifacts, tasks: tasks, preview: preview)
+        let projection = ChannelTray(artifacts: artifacts, tasks: tasks, preview: preview)
         #expect(projection.artifacts == [artifacts[1], artifacts[0]])
         #expect(projection.taskProgress == .init(done: 1, total: 2))
         #expect(projection.hasTasks)
@@ -102,7 +102,7 @@ struct PolicyTests {
                 for preview in [nil, ChannelPreview(kind: "url", url: "https://example.com"),
                                 ChannelPreview(kind: "screen", screenId: "display-1"),
                                 ChannelPreview(kind: "future")] {
-                    let projection = ChannelTrayProjection(artifacts: artifacts, tasks: tasks, preview: preview)
+                    let projection = ChannelTray(artifacts: artifacts, tasks: tasks, preview: preview)
                     #expect(projection.isVisible == (!artifacts.isEmpty || !tasks.isEmpty || preview != nil))
                     #expect(projection.hasTasks == !tasks.isEmpty)
                     #expect(projection.preview == preview)
