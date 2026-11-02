@@ -9,7 +9,7 @@ struct QuickSendPrefill: Identifiable, Sendable {
     var images: [ComposerImage] = []
 
     func appending(_ other: QuickSendPrefill) -> QuickSendPrefill {
-        .init(text: joinedComposerText(text, other.text), fileURLs: fileURLs + other.fileURLs,
+        .init(text: ComposerDraft.joined(text, other.text), fileURLs: fileURLs + other.fileURLs,
               images: images + other.images)
     }
 }
@@ -41,7 +41,7 @@ final class QuickSendPrefillInbox {
 
     func receive(_ prefill: QuickSendPrefill) {
         lastAppliedRevision = nil
-        draft.text = joinedComposerText(draft.text, prefill.text)
+        draft.text = ComposerDraft.joined(draft.text, prefill.text)
         for image in prefill.images {
             var copy = image
             copy.id = UUID()
