@@ -458,10 +458,10 @@ struct NativeComposerInput: NSViewRepresentable {
                 dismissCompletion()
                 return
             }
-            guard let context = ChannelMentionContext.match(text: input.string, selection: input.selectedRange())
+            guard let context = AgentMentions.Query.match(text: input.string, selection: input.selectedRange())
             else { dismissCompletion(); return }
             mentionRange = context.range
-            let items = ChannelMentionChoice.choices(matching: context.query, among: parent.agents,
+            let items = AgentMentions.Choice.choices(matching: context.text, among: parent.agents,
                                                      allowsCreation: parent.agentManagement.isVisible)
             guard !items.isEmpty else { dismissCompletion(); return }
             if completion.items.map(\.id) != items.map(\.id) { completion.selected = 0 }
@@ -489,7 +489,7 @@ struct NativeComposerInput: NSViewRepresentable {
             }
         }
 
-        private func accept(_ item: ChannelMentionChoice) {
+        private func accept(_ item: AgentMentions.Choice) {
             guard let input, let range = mentionRange, completion.creatingID == nil else { return }
             if item.isCreate {
                 guard case .enabled(let create, _) = parent.agentManagement else { return }
@@ -851,13 +851,13 @@ extension NativeComposerInput.Coordinator: DictationTextTarget {
 }
 
 @MainActor @Observable private final class MentionMenuModel {
-    var items: [ChannelMentionChoice] = []
+    var items: [AgentMentions.Choice] = []
     var selected = 0
     var canManage = false
     var showsManagement = true
     var creatingID: String?
     var error: String?
-    @ObservationIgnored var onAccept: ((ChannelMentionChoice) -> Void)?
+    @ObservationIgnored var onAccept: ((AgentMentions.Choice) -> Void)?
     @ObservationIgnored var onEdit: ((ChannelAgent) -> Void)?
 }
 
@@ -896,7 +896,7 @@ private struct MentionCompletionMenu: View {
         .frame(maxHeight: 320)
     }
 
-    private func choiceRow(_ item: ChannelMentionChoice, index: Int) -> some View {
+    private func choiceRow(_ item: AgentMentions.Choice, index: Int) -> some View {
         HStack(spacing: 6) {
             Button {
                 model.onAccept?(item)
@@ -935,7 +935,7 @@ private struct MentionCompletionMenu: View {
                     in: RoundedRectangle(cornerRadius: 6))
     }
 
-    private func title(_ item: ChannelMentionChoice) -> String {
+    private func title(_ item: AgentMentions.Choice) -> String {
         if model.creatingID == item.id { return "Creating \(item.name)..." }
         return item.isCreate ? "Create \(item.name)" : item.name
     }

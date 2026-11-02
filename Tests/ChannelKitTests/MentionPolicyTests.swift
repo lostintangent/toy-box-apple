@@ -5,18 +5,18 @@ import Testing
 struct MentionPolicyTests {
     @Test func mentionContextUsesCaretAndCanonicalBoundaries() {
         let text = "Hello, @Pi"
-        let context = ChannelMentionContext.match(text: text, selection: .init(location: text.utf16.count, length: 0))
-        #expect(context?.query == "pi")
+        let context = AgentMentions.Query.match(text: text, selection: .init(location: text.utf16.count, length: 0))
+        #expect(context?.text == "pi")
         #expect(context?.range == NSRange(location: 7, length: 3))
-        #expect(ChannelMentionContext.match(text: "a@pixel", selection: .init(location: 7, length: 0)) == nil)
-        #expect(ChannelMentionContext.match(text: "@pi", selection: .init(location: 3, length: 1)) == nil)
-        #expect(ChannelMentionContext.match(text: "@pi", selection: .init(location: NSNotFound, length: 0)) == nil)
-        #expect(ChannelMentionContext.match(text: "@\n", selection: .init(location: 2, length: 0)) == nil)
+        #expect(AgentMentions.Query.match(text: "a@pixel", selection: .init(location: 7, length: 0)) == nil)
+        #expect(AgentMentions.Query.match(text: "@pi", selection: .init(location: 3, length: 1)) == nil)
+        #expect(AgentMentions.Query.match(text: "@pi", selection: .init(location: NSNotFound, length: 0)) == nil)
+        #expect(AgentMentions.Query.match(text: "@\n", selection: .init(location: 2, length: 0)) == nil)
         let emoji = "\u{1f642} @pi"
-        #expect(ChannelMentionContext.match(text: emoji, selection: .init(location: emoji.utf16.count, length: 0))?.range
+        #expect(AgentMentions.Query.match(text: emoji, selection: .init(location: emoji.utf16.count, length: 0))?.range
                 == NSRange(location: 3, length: 3))
-        #expect(ChannelMentionContext.match(text: "@pi rest", selection: .init(location: 3, length: 0))?.query == "pi")
-        #expect(ChannelMentionContext.match(text: "@pi", selection: .init(location: -1, length: 0)) == nil)
+        #expect(AgentMentions.Query.match(text: "@pi rest", selection: .init(location: 3, length: 0))?.text == "pi")
+        #expect(AgentMentions.Query.match(text: "@pi", selection: .init(location: -1, length: 0)) == nil)
     }
 
     @Test func completionUsesCanonicalMatchingOrderAndCreateRules() {
@@ -26,19 +26,19 @@ struct MentionPolicyTests {
             .init(id: "a", name: "Ada", role: "Engineering"),
             .init(id: "p", name: "Pixel", role: "Design"),
         ]
-        #expect(ChannelMentionChoice.choices(matching: "", among: agents).map(\.name)
+        #expect(AgentMentions.Choice.choices(matching: "", among: agents).map(\.name)
                 == ["Everyone", "Lead", "Ada", "Pixel", "Zebra"])
-        #expect(ChannelMentionChoice.choices(matching: "design", among: agents).filter { !$0.isCreate }.map(\.name)
+        #expect(AgentMentions.Choice.choices(matching: "design", among: agents).filter { !$0.isCreate }.map(\.name)
                 == ["Pixel", "Zebra"])
-        #expect(ChannelMentionChoice.choices(matching: "pixel", among: agents).allSatisfy { !$0.isCreate })
-        let create = ChannelMentionChoice.choices(matching: "new-person", among: agents).last
+        #expect(AgentMentions.Choice.choices(matching: "pixel", among: agents).allSatisfy { !$0.isCreate })
+        let create = AgentMentions.Choice.choices(matching: "new-person", among: agents).last
         #expect(create?.isCreate == true)
         #expect(create?.name == "New Person")
-        let member = ChannelMentionChoice.choices(matching: "ada", among: agents).first
+        let member = AgentMentions.Choice.choices(matching: "ada", among: agents).first
         #expect(member?.isMember == true && member?.agent == agents[2])
-        let lead = ChannelMentionChoice.choices(matching: "lead", among: agents).first
+        let lead = AgentMentions.Choice.choices(matching: "lead", among: agents).first
         #expect(lead?.isMember == false && lead?.agent == agents[0])
-        #expect(ChannelMentionChoice.choices(matching: "new-person", among: agents, allowsCreation: false).isEmpty)
+        #expect(AgentMentions.Choice.choices(matching: "new-person", among: agents, allowsCreation: false).isEmpty)
     }
 
     @Test func deletedAgentsNeverAppearButTheOriginalLeadStillDeterminesMembership() {
@@ -46,7 +46,7 @@ struct MentionPolicyTests {
             .init(id: "lead", name: "Lead", deleted: true),
             .init(id: "a", name: "Ada"),
         ]
-        let choices = ChannelMentionChoice.choices(matching: "", among: agents)
+        let choices = AgentMentions.Choice.choices(matching: "", among: agents)
         #expect(choices.map(\.name) == ["Everyone", "Ada"])
         #expect(choices.last?.isMember == true)
         #expect(choices.last?.detail == "Onboarding")
@@ -55,11 +55,11 @@ struct MentionPolicyTests {
 
     @Test func wholeMentionsUseTheTranscriptBoundaries() {
         let text = "@Ada, @Adam, x@Ada, @Ada-bot and @Ada's"
-        let ranges = channelMentionRanges(of: "@Ada", in: text)
+        let ranges = AgentMentions.ranges(of: "@Ada", in: text)
         #expect(ranges.map { String(text[$0.upperBound...].prefix(2)) } == [", ", "'s"])
-        #expect(channelMentionRanges(of: "", in: text).isEmpty)
-        #expect(channelMentionRanges(of: "@ada", in: text).isEmpty)
+        #expect(AgentMentions.ranges(of: "", in: text).isEmpty)
+        #expect(AgentMentions.ranges(of: "@ada", in: text).isEmpty)
         let adjacent = "\u{00e9}@Ada \u{1f642}@Ada 9@Ada -@Ada @Ada9"
-        #expect(channelMentionRanges(of: "@Ada", in: adjacent).count == 2)
+        #expect(AgentMentions.ranges(of: "@Ada", in: adjacent).count == 2)
     }
 }

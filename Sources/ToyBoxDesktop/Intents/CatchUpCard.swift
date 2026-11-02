@@ -192,7 +192,7 @@ private struct CatchUpCardLine: View {
         let ink = TranscriptMentionInk(isDark: colorScheme == .dark, isContrastIncreased: contrast == .increased)
         let mentions = (line.mentions ?? []).map { ("@" + $0.name, Optional($0)) } + [("@everyone", nil)]
         for (token, agent) in mentions {
-            for range in channelMentionRanges(of: token, in: line.text) {
+            for range in AgentMentions.ranges(of: token, in: line.text) {
                 guard let lower = AttributedString.Index(range.lowerBound, within: text),
                       let upper = AttributedString.Index(range.upperBound, within: text) else { continue }
                 text[lower..<upper].font = .system(size: 13, weight: .semibold)

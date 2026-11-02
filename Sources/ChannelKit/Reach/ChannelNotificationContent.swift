@@ -49,7 +49,7 @@ extension ChannelNotification {
 
         private static func requestText(_ request: ChannelRequestMessage) -> String {
             let message = request.message
-            let stripped = withoutLeadingMentions(message.text, agents: request.agents)
+            let stripped = AgentMentions.removingLeadingMentions(from: message.text, agents: request.agents)
             let onlyMentions = stripped.wholeMatch(of: /(\s*@[a-zA-Z0-9][a-zA-Z0-9-]*[\s,:]*)+/) != nil
             let text = onlyMentions ? "" : MarkdownBlock.plainText(stripped)
             if !text.isEmpty { return truncated(text) }

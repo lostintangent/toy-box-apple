@@ -221,12 +221,12 @@ public final class TranscriptRowBuilder {
         let date = try? Date(message.timestamp, strategy: .iso8601)
         var info = Derived(timestamp: message.timestamp, date: date, day: date.map { calendar.startOfDay(for: $0) })
         if isAgent {
-            let audience = resolveChannelAudience(extractAgentMentionHandles(message.text), sender: message.sender,
+            let audience = resolveChannelAudience(AgentMentions(parsing: message.text), sender: message.sender,
                                                   lead: lead, agents: agents, handles: handles)
             info.agent = AgentDerived(
                 text: message.text, sender: message.sender,
                 addressee: audience.isEmpty ? nil : channelAudienceLabel(audience, reachableCount: agents.count - 1),
-                body: withoutLeadingMentions(message.text, handles: handleSet))
+                body: AgentMentions.removingLeadingMentions(from: message.text, handles: handleSet))
         }
         derived[message.id] = info
         return info

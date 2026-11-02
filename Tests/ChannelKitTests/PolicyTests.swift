@@ -16,14 +16,14 @@ struct PolicyTests {
         #expect(agentHandleFromName("ÅNGSTRÖM ﬁx") == "angstrom-fix")
         #expect(agentHandleFromName("日本 Team") == "team")
         #expect(agentHandleFromName(String(repeating: "x", count: 47) + " y") == String(repeating: "x", count: 47))
-        let mentions = extractAgentMentionHandles("dev@example.com and @ADA, (@finch) @ada @everyone")
+        let mentions = AgentMentions(parsing: "dev@example.com and @ADA, (@finch) @ada @everyone")
         #expect(mentions.handles == ["ada", "finch"])
         #expect(mentions.mentionAll)
-        #expect(extractAgentMentionHandles("name-@ada 9@finch").handles.isEmpty)
-        #expect(extractAgentMentionHandles("@Kit @İris").handles.isEmpty)
-        #expect(withoutLeadingMentions("@Ada, @Finch: Ship it", agents: [ada, finch]) == "Ship it")
-        #expect(withoutLeadingMentions("@Ada @unknown Ship it", agents: [ada]) == "@Ada @unknown Ship it")
-        #expect(withoutLeadingMentions("@Ada", agents: [ada]) == "@Ada")
+        #expect(AgentMentions(parsing: "name-@ada 9@finch").handles.isEmpty)
+        #expect(AgentMentions(parsing: "@\u{212A}it @\u{0130}ris").handles.isEmpty)
+        #expect(AgentMentions.removingLeadingMentions(from: "@Ada, @Finch: Ship it", agents: [ada, finch]) == "Ship it")
+        #expect(AgentMentions.removingLeadingMentions(from: "@Ada @unknown Ship it", agents: [ada]) == "@Ada @unknown Ship it")
+        #expect(AgentMentions.removingLeadingMentions(from: "@Ada", agents: [ada]) == "@Ada")
     }
 
     @Test func mentionCompletionIncludesEveryAgentForAnEmptyQuery() {
