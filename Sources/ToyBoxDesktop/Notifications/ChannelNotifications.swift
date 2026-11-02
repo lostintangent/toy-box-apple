@@ -203,8 +203,8 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
     /// like the phone's, so sending it again can't post it twice. One for a deleted channel or
     /// another server was never posted, so it becomes the channel's draft on its own server.
     func reply(_ text: String, channelID: String, channelName: String, handle: String?, serverURL: String) async {
-        guard let reply = ChannelNotification.Reply(text, to: handle) else { return }
-        let content = reply.content
+        guard let addressed = ChannelNotification.Reply(text, to: handle) else { return }
+        let content = addressed.content
         let store = store?(serverURL, channelID)
         var outcome = NotificationReply.Outcome.failed
         if let store { outcome = await NotificationReply(store: store).send(content) }
@@ -214,7 +214,7 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
             body = Self.waitingBody
         } else {
             let draft = ComposerDraft.shared(serverURL: server, channelID: channelID)
-            draft.text = reply.appended(to: draft.text)
+            draft.text = addressed.appended(to: draft.text)
             body = outcome == .deleted
                 ? ChannelNotification.Content(deletedChannel: channelName).body
                 : ChannelNotification.Content.unsentBody
