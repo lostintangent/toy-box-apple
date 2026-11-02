@@ -161,7 +161,7 @@ struct TranscriptTests {
     @Test func pagingKeepsCurrentMessageValues() {
         let current = message(2, text: "Current")
         let older = [message(1), message(2, text: "Stale")]
-        #expect(mergeChannelMessages([current], incoming: older).map(\.text) == ["Progress", "Current"])
+        #expect([current].merging(older).map(\.text) == ["Progress", "Current"])
     }
 
     @Test func dayLabelsSwitchFromWeekdayToFullDateAtSevenDays() throws {

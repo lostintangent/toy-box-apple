@@ -357,7 +357,7 @@ public final class ChannelStore {
             let page = try await api.history(channelId: id, before: first.sequence)
             guard historyGeneration == historyToken, phase != .deleted else { return }
             if var current = self.state {
-                current.messages = mergeChannelMessages(current.messages, incoming: page.messages)
+                current.messages = current.messages.merging(page.messages)
                 self.state = current
             }
             hasOlderMessages = !page.messages.isEmpty && page.messages.first?.sequence != 1
@@ -535,7 +535,7 @@ public final class ChannelStore {
                                              attachments: attempt.attachments)
             if var current = state, phase != .deleted {
                 current.messages.removeAll { $0.id == attempt.id }
-                current.messages = mergeChannelMessages(current.messages, incoming: [message])
+                current.messages = current.messages.merging([message])
                 state = current
             }
             reconcileSend(id: attempt.id)
@@ -716,7 +716,7 @@ public final class ChannelStore {
             var events = heldReplay ?? []
             events.append(event)
             heldReplay = nil
-            state = events.reduce(previous, reduceChannelState)
+            state = events.reduce(previous) { $0.applying($1) }
             for event in events {
                 if let message = event.message, event.revision != nil { reconcileSend(id: message.id) }
             }

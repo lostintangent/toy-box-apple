@@ -84,7 +84,7 @@ struct ArtifactShareTests {
         let message = ChannelMessage(id: "removed", sequence: sequence, timestamp: "2026-10-22T12:00:00Z",
                                      sender: .system, content: .system(.init(type: "artifact_removed", actor: .user,
                                                                              artifact: .init(file: removed, title: "Interaction notes"))))
-        let next = reduceChannelState(state, .init(type: "message", revision: state.revision + 1, message: message))
+        let next = state.applying(.init(type: "message", revision: state.revision + 1, message: message))
         let root = try #require(next.channel.tasks.first)
         #expect(root.artifactId == nil)
         #expect(root.children?.map(\.artifactId) == [nil, kept.id])
