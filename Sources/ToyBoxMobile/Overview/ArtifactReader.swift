@@ -6,7 +6,7 @@ import QuickLook
 import ToyBoxUI
 
 @MainActor @Observable
-final class ArtifactReaderState {
+final class ArtifactReader {
     var preview: URL?
     var sharing: ArtifactShare?
     var isPreparingOriginal = false
