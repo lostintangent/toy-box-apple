@@ -318,7 +318,6 @@ so the suite starts a WebKit web content process once instead of once per render
 - `ChannelKit` owns domain semantics and `ChannelClient` owns transport and stores. Views never
   reimplement reducer, audience, task, attention or transcript-grouping rules. Ask Core for a
   domain or store change instead of working around it in a view.
-- `TranscriptView` is ChannelKit's message filter enum, so SwiftUI views use other names.
 - `ToyBoxUI.TranscriptMarkdown` owns portable Markdown, mention styling and find decorations.
   Hosts inject text scale, resolved mention ink and Copy Code, keeping native bubble geometry,
   font preferences, system-color resolution and clipboard access in the platform target. The shared
@@ -480,7 +479,8 @@ hard-code a color or size that would break them.
 - `ManagementPresenter` (ToyBoxUI, environment, one per window): `present(_:)` opens any management flow.
   Overview implements the flows behind it. Every other surface only calls `present`.
 - `AgentAvatarView`, `AgentAvatarStack`, `ChannelMark`, `ChannelTaskColors`, `ChannelColors`,
-  `ChannelAttentionStyle` and `TranscriptSurface` (ToyBoxUI) preserve the Mac's identity and colors.
+  `Channel.Status`'s `symbol` and `color(in:)`, and `TranscriptSurface` (ToyBoxUI) preserve the
+  Mac's identity and colors.
   Typography, navigation and layout stay platform-native.
 - `ComposerDraft`, `ComposerImage` and `ChannelConnections` live in ChannelClient.
   Supply a native image-readability check to the shared draft. Mac uses its existing lazy NSImage
@@ -488,10 +488,10 @@ hard-code a color or size that would break them.
 - Connections follow the spec's Connections invariants: one notice and one verb, Retry, per scope.
   Views change on `phase.isUnavailable`, never a timer, and actions wait for `phase.isConnected`.
   Refresh means only the channel list, and background work never lights the footer spinner.
-- `channelMatchesQuery` (ChannelKit) matches name, purpose and directory. Callers retain their
+- `channel.matches(_:)` (ChannelKit) matches name, purpose and directory. Callers retain their
   existing query normalization and ordering. `ChannelAPI.channelURL(channelID:files:)` builds
   browser routes, preserving deployment prefixes. `SidebarFooter` (ToyBoxUI) projects the
   catalog phase into the shared footer and names its server.
 - `ChannelSidebarPresentation` (ChannelClient) takes the catalog and the host's current
-  `openChannelIDs`. Its `channel`, `attention`, `agents`, `working` and `catalogAgents` methods
+  `openChannelIDs`. Its `channel`, `status`, `agents`, `working` and `catalogAgents` methods
   preserve the Mac's live-versus-catalog rules and granular observation.
