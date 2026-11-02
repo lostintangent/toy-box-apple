@@ -2,7 +2,7 @@ import ChannelClient
 import SwiftUI
 
 struct ManagementRecoveryNotice: View {
-    let state: ChannelManagementRecoveryState
+    let state: ChannelManagementWriteRecovery.Phase
     var reviewTitle: String?
     let onCheck: () -> Void
     var onReview: () -> Void = {}
