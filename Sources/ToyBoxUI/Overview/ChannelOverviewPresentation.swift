@@ -73,6 +73,12 @@ package struct ChannelOverviewFilter {
     package static func keepsWorkingAgent(presence: ChannelAgentPresence?, isAvailable: Bool) -> Bool {
         ChannelAgentStatusPresentation(presence: presence, isAvailable: isAvailable).cue == .working
     }
+
+    /// What the filtered team reads with no one kept. Offline it repeats the rows' own status rather
+    /// than claiming nobody is working.
+    package static func noWorkingAgentsText(isAvailable: Bool) -> String {
+        isAvailable ? "No agents working" : ChannelAgentStatusPresentation(presence: nil, isAvailable: false).text
+    }
 }
 
 package struct ChannelTaskStatusSymbol: View {

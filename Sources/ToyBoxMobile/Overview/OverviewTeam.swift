@@ -34,7 +34,8 @@ struct OverviewTeamSection: View {
         OverviewSectionRows(summary: .team(store.roster.count), section: .team, session: session,
                             filter: filter, isFirstSection: !OverviewAboutSection.hasContent(store.details)) {
             if session.showsOnlyWorkingAgents, shown.isEmpty, !store.roster.isEmpty {
-                Text("No agents working").foregroundStyle(ChannelInk.secondary)
+                Text(ChannelOverviewFilter.noWorkingAgentsText(isAvailable: isAvailable))
+                    .foregroundStyle(ChannelInk.secondary)
             }
             ForEach(shown) { agent in
                 OverviewTeamRow(agent: agent, store: store, session: session,

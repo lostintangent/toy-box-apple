@@ -60,6 +60,13 @@ struct OverviewPresentationTests {
         #expect(disconnected == false, "disconnected working agent kept: \(disconnected)")
     }
 
+    @Test func anEmptyWorkingFilterSaysNobodyIsWorkingOnlyWhileItCanKnow() {
+        #expect(ChannelOverviewFilter.noWorkingAgentsText(isAvailable: true) == "No agents working")
+        let offline = ChannelOverviewFilter.noWorkingAgentsText(isAvailable: false)
+        #expect(offline == "Status unavailable while disconnected")
+        #expect(offline == ChannelAgentStatusPresentation(presence: .init(state: "working"), isAvailable: false).text)
+    }
+
     @Test func filtersNameTheirToggleAndIdentifyItForBothHosts() {
         var isOn = false
         let binding = Binding(get: { isOn }, set: { isOn = $0 })
