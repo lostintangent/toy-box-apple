@@ -44,15 +44,7 @@ public struct TranscriptRow: Equatable, Identifiable, Sendable {
     }
 }
 
-public func transcriptRows(_ messages: [ChannelMessage], lead: ChannelAgent,
-                           members: [ChannelAgent], unreadAfter: Int? = nil,
-                           view: TranscriptView = .all,
-                           calendar: Calendar = .current) -> [TranscriptRow] {
-    TranscriptRowBuilder().rows(messages, lead: lead, members: members, unreadAfter: unreadAfter,
-                                view: view, calendar: calendar)
-}
-
-/// Builds the same rows as `transcriptRows`, keeping each message's derived values between builds.
+/// Builds transcript rows, keeping each message's derived values between builds.
 /// When messages were only appended, it keeps every row but the last and resumes there, because a
 /// new message can only extend the last run or group.
 public final class TranscriptRowBuilder {
@@ -99,6 +91,23 @@ public final class TranscriptRowBuilder {
     private var checkpoint: Checkpoint?
 
     public init() {}
+
+    /// The day divider each pending message's row will have once it's sent, keyed by message ID, so the
+    /// divider is already there and doesn't appear on confirming. `last` is the newest loaded message.
+    public static func pendingDividers(_ pending: [ChannelMessage], after last: ChannelMessage?,
+                                       roster: [ChannelAgent]) -> [String: TranscriptDivider] {
+        guard let lead = roster.first else { return [:] }
+        let members = Array(roster.dropFirst())
+        var previous = last
+        var dividers: [String: TranscriptDivider] = [:]
+        for message in pending {
+            dividers[message.id] = TranscriptRowBuilder().rows([previous, message].compactMap(\.self),
+                                                               lead: lead, members: members)
+                .last?.divider
+            previous = message
+        }
+        return dividers
+    }
 
     public func rows(_ messages: [ChannelMessage], lead: ChannelAgent, members: [ChannelAgent],
                      unreadAfter: Int? = nil, view: TranscriptView = .all,

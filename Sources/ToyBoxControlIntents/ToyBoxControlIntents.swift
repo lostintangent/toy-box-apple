@@ -29,7 +29,7 @@ public struct OpenToyBoxControlIntent: AppIntent {
     @Parameter(title: "Control")
     public var target: ToyBoxControlDestination
 
-    @AppDependency var context: ToyBoxControlsContext
+    @AppDependency var context: ControlRouter
 
     public init() {}
 
@@ -45,7 +45,7 @@ public struct OpenToyBoxControlIntent: AppIntent {
 }
 
 @MainActor
-public final class ToyBoxControlsContext {
+public final class ControlRouter {
     private let openURL: @MainActor (URL) throws -> Void
 
     public init(openURL: @escaping @MainActor (URL) throws -> Void) {

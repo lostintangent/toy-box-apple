@@ -9,7 +9,7 @@ import ToyBoxUI
 /// go to the native scroll position. It never re-renders the transcript, so frame reports stay cheap.
 @MainActor
 final class TranscriptScroll {
-    typealias Model = TranscriptScrollModel
+    typealias Model = TranscriptPlacement
 
     struct Metrics: Equatable {
         var viewport: Model.Viewport
@@ -64,7 +64,7 @@ final class TranscriptScroll {
     }
 
     /// Reduces an explicit event, or derives reader input and geometry changes when there's none.
-    func update(_ explicit: Model.Event? = nil) -> Model.Placement? {
+    func update(_ explicit: Model.Event? = nil) -> Model? {
         guard let layout else { return nil }
         defer { lastLayout = layout }
         if holdsPlacementThroughInput, let origin = Model.placement(for: intent, layout: layout).origin,
@@ -256,8 +256,8 @@ struct ConversationView: View {
                         .padding(.top, item.spacing)
                         .id(item.id)
                 }
-                let attemptDividers = transcriptPendingDividers(store.sendAttempts.map(\.message),
-                                                                after: items.last?.messages.last, roster: store.roster)
+                let attemptDividers = TranscriptRowBuilder.pendingDividers(store.sendAttempts.map(\.message),
+                                                                           after: items.last?.messages.last, roster: store.roster)
                 ForEach(store.sendAttempts) { attempt in
                     // The committed row takes the attempt's UUID, so keep the two identities apart.
                     TranscriptSendAttempt(attempt: attempt, divider: attemptDividers[attempt.id], store: store,
@@ -268,7 +268,7 @@ struct ConversationView: View {
                 }
             }
             .padding(.top, 12)
-            .padding(.bottom, TranscriptScrollModel.endClearance)
+            .padding(.bottom, TranscriptPlacement.endClearance)
             .opacity(landsOnReveal ? 0 : 1)
             // The whole column, like the Mac. Each message caps its own line length instead.
             .padding(.horizontal, transcriptEdgeInset(sizeClass))
@@ -440,11 +440,11 @@ struct ConversationView: View {
             landsOnReveal = true
             return
         }
-        let target = divider.map { TranscriptScrollModel.Target.row($0.id, order: $0.order) } ?? .end
+        let target = divider.map { TranscriptPlacement.Target.row($0.id, order: $0.order) } ?? .end
         place(scroll.update(.land(target)))
     }
 
-    private func place(_ placement: TranscriptScrollModel.Placement?) {
+    private func place(_ placement: TranscriptPlacement?) {
         var isMoving = false
         if let placement {
             if let origin = placement.origin {
@@ -467,7 +467,7 @@ struct ConversationView: View {
                 isMoving = true
             }
         }
-        let away = scroll.hasLanded && scroll.distanceToEnd > TranscriptScrollModel.followingThreshold
+        let away = scroll.hasLanded && scroll.distanceToEnd > TranscriptPlacement.followingThreshold
         if away != showsJumpToLatest {
             withAnimation(.easeOut(duration: 0.2)) { showsJumpToLatest = away }
         }
@@ -511,7 +511,7 @@ struct ConversationView: View {
         await store.loadOlder()
     }
 
-    private var rowIdentities: [TranscriptScrollModel.RowIdentity] {
+    private var rowIdentities: [TranscriptPlacement.RowIdentity] {
         items.map { .init(id: $0.id, order: $0.order) }
     }
 

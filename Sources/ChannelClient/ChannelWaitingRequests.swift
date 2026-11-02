@@ -28,7 +28,7 @@ public final class ChannelWaitingRequests {
     /// Waiting channels as the sidebar shows them, newest request first. One whose message isn't
     /// known yet sorts by its channel's last activity.
     public func entries(openChannelIDs: Set<String> = []) -> [Entry] {
-        let projection = ChannelSidebarProjection(catalog: catalog, openChannelIDs: openChannelIDs)
+        let projection = ChannelSidebarPresentation(catalog: catalog, openChannelIDs: openChannelIDs)
         return catalog.channels.compactMap { listed -> (entry: Entry, date: Date)? in
             let channel = projection.channel(listed)
             guard let sequence = channel.requestSequence else { return nil }
@@ -66,7 +66,7 @@ public final class ChannelWaitingRequests {
         var found = store?.state.flatMap { ChannelWaitingRequest.message(at: sequence, in: $0) }
             .map { ChannelRequestMessage(message: $0, agents: store?.roster ?? []) }
         if found == nil, sequence < .max {
-            let agents = ChannelSidebarProjection(catalog: catalog, openChannelIDs: []).catalogAgents(channelID: channelID)
+            let agents = ChannelSidebarPresentation(catalog: catalog, openChannelIDs: []).catalogAgents(channelID: channelID)
             let page = try await catalog.api.history(channelId: channelID, before: sequence + 1)
             found = page.messages.first { $0.sequence == sequence }.map { .init(message: $0, agents: agents) }
         }

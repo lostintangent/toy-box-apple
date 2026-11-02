@@ -957,8 +957,8 @@ struct OverviewTests {
         // A 500 may already have removed the artifact, so the row checks the server before offering another attempt.
         #expect(state.recovery.record(ChannelAPIError.http(status: 500, message: "Server error")))
         #expect(!state.canRemove(connected: true))
-        #expect(state.recovery.error == ChannelManagementRecoveryState.uncertaintyMessage)
-        #expect(state.recovery.state == ChannelManagementRecoveryState.checking)
+        #expect(state.recovery.error == ChannelManagementWriteRecovery.Phase.uncertaintyMessage)
+        #expect(state.recovery.state == ChannelManagementWriteRecovery.Phase.checking)
     }
 
     @Test func artifactRowOffersRemoveFromTheSwipeAndTheActionsOnceConnected() async throws {
@@ -1035,7 +1035,7 @@ struct OverviewTests {
         host.view.layoutIfNeeded()
 
         let tree = MobileAutomationTree(windows: [window])
-        #expect(!tree.matching(ChannelManagementRecoveryState.uncertaintyMessage).isEmpty)
+        #expect(!tree.matching(ChannelManagementWriteRecovery.Phase.uncertaintyMessage).isEmpty)
         #expect(state.recovery.blocksWrites)
     }
 

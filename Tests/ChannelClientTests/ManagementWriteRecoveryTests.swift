@@ -24,7 +24,7 @@ struct ManagementWriteRecoveryTests {
         }
         #expect(recovery.blocksWrites)
         recovery.clearError()
-        #expect(recovery.error == ChannelManagementRecoveryState.uncertaintyMessage)
+        #expect(recovery.error == ChannelManagementWriteRecovery.Phase.uncertaintyMessage)
         recovery.finishReview()
         #expect(recovery.blocksWrites)
         await recovery.check(catalog: catalog, channelId: "deleted-channel") { current in
@@ -75,9 +75,9 @@ struct ManagementWriteRecoveryTests {
     }
 
     @Test func unexpectedManagementFailuresRequireAReadBeforeAnotherWrite() {
-        #expect(ChannelManagementRecoveryState.isRequired(after: ChannelAPIError.http(status: 503, message: "Unavailable.")))
-        #expect(!ChannelManagementRecoveryState.isRequired(after: ChannelAPIError.http(status: 404, message: "Not found.")))
-        #expect(!ChannelManagementRecoveryState.isRequired(after: ChannelAPIError.invalidMessage("Invalid name.")))
+        #expect(ChannelManagementWriteRecovery.Phase.isRequired(after: ChannelAPIError.http(status: 503, message: "Unavailable.")))
+        #expect(!ChannelManagementWriteRecovery.Phase.isRequired(after: ChannelAPIError.http(status: 404, message: "Not found.")))
+        #expect(!ChannelManagementWriteRecovery.Phase.isRequired(after: ChannelAPIError.invalidMessage("Invalid name.")))
     }
 
     @Test(arguments: [URLError.Code.timedOut, .networkConnectionLost])
@@ -96,7 +96,7 @@ struct ManagementWriteRecoveryTests {
             #expect(recovery.record(error))
         }
         #expect(recovery.blocksWrites)
-        #expect(recovery.error == ChannelManagementRecoveryState.uncertaintyMessage)
+        #expect(recovery.error == ChannelManagementWriteRecovery.Phase.uncertaintyMessage)
         recovery.finishReview()
         #expect(recovery.blocksWrites)
         await recovery.check(catalog: catalog, channelId: "deleted-channel") { current in
@@ -120,9 +120,9 @@ struct ManagementWriteRecoveryTests {
     }
 
     @Test func bridgedURLSessionErrorsKeepTheirClassification() {
-        #expect(ChannelManagementRecoveryState.isRequired(
+        #expect(ChannelManagementWriteRecovery.Phase.isRequired(
             after: NSError(domain: NSURLErrorDomain, code: URLError.timedOut.rawValue)))
-        #expect(!ChannelManagementRecoveryState.isRequired(
+        #expect(!ChannelManagementWriteRecovery.Phase.isRequired(
             after: NSError(domain: "FixtureError", code: URLError.timedOut.rawValue)))
     }
 

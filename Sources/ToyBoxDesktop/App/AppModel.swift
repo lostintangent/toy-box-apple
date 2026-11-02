@@ -316,7 +316,7 @@ final class AppModel {
         dockAttention.update(status: status, serverURL: serverURL, hasCatalog: hasCatalog)
     }
 
-    private var sidebarProjection: ChannelSidebarProjection {
+    private var sidebarProjection: ChannelSidebarPresentation {
         .init(catalog: catalog, openChannelIDs: openChannelIDs)
     }
 

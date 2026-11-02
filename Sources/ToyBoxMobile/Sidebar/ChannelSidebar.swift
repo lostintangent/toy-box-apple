@@ -25,7 +25,7 @@ struct ChannelSidebar: View {
 
     private var canCreate: Bool { model.canCreateChannel }
 
-    private var projection: ChannelSidebarProjection { model.sidebarProjection }
+    private var projection: ChannelSidebarPresentation { model.sidebarProjection }
 
     private func channelList(now: Date) -> some View {
         @Bindable var model = model

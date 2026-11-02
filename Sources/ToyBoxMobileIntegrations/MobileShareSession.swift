@@ -64,7 +64,7 @@ public final class MobileShareSession {
     /// The lead first, then the channel's members, as the audience pill reads them.
     public var agents: [ChannelAgent] {
         guard let target else { return [] }
-        return ChannelSidebarProjection(catalog: catalog, openChannelIDs: []).catalogAgents(channelID: target.id)
+        return ChannelSidebarPresentation(catalog: catalog, openChannelIDs: []).catalogAgents(channelID: target.id)
     }
 
     /// Reads what was shared while the channel list loads.

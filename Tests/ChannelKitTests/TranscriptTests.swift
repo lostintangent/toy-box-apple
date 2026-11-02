@@ -23,7 +23,7 @@ struct TranscriptTests {
             message(4, text: "Proceed?", minute: 4, request: true),
             message(5, sender: .user, text: "Yes", minute: 5),
         ]
-        let rows = transcriptRows(messages, lead: lead, members: [ada])
+        let rows = TranscriptRowBuilder().rows(messages, lead: lead, members: [ada])
         #expect(rows.count == 2)
         guard case .agent(_, let entries) = rows[0].content else { Issue.record("Expected agent run"); return }
         #expect(entries.map(\.body) == ["Build it", "Test it", "Ready to review", "Proceed?"])
@@ -31,13 +31,13 @@ struct TranscriptTests {
         #expect(entries.map(\.showHeader) == [true, false, true, true])
         #expect(entries.map(\.collapsible) == [true, true, false, false])
         #expect(entries[3].request == .acknowledged)
-        let pending = transcriptRows(Array(messages.dropLast()), lead: lead, members: [ada])
+        let pending = TranscriptRowBuilder().rows(Array(messages.dropLast()), lead: lead, members: [ada])
         guard case .agent(_, let pendingEntries) = pending[0].content else { return }
         #expect(pendingEntries[3].request == .pending)
     }
 
     @Test func exactRunWindowAndUnreadBoundary() {
-        let rows = transcriptRows([
+        let rows = TranscriptRowBuilder().rows([
             message(1), message(2, minute: 10), message(3, minute: 21), message(4, minute: 22),
         ], lead: lead, members: [], unreadAfter: 3)
         #expect(rows.map { $0.messages.count } == [2, 1, 1])
@@ -48,19 +48,19 @@ struct TranscriptTests {
     @Test func coincidentDayAndUnreadDivision() {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(secondsFromGMT: 0)!
-        let rows = transcriptRows([message(1), message(2, day: 2)], lead: lead, members: [],
-                                  unreadAfter: 1, calendar: calendar)
+        let rows = TranscriptRowBuilder().rows([message(1), message(2, day: 2)], lead: lead, members: [],
+                                               unreadAfter: 1, calendar: calendar)
         #expect(rows.count == 2)
         #expect(rows[1].divider?.day != nil)
         #expect(rows[1].divider?.unread == true)
-        let firstUnread = transcriptRows([message(2)], lead: lead, members: [], unreadAfter: 1)
+        let firstUnread = TranscriptRowBuilder().rows([message(2)], lead: lead, members: [], unreadAfter: 1)
         #expect(firstUnread[0].divider?.unread == false)
     }
 
     @Test func yoursViewBuildsRunsAfterFiltering() {
         let coordination = message(2, sender: .agent("ada"), text: "For @lead", minute: 1)
-        let rows = transcriptRows([message(1), coordination, message(3, minute: 2)],
-                                  lead: lead, members: [ada], view: .yours)
+        let rows = TranscriptRowBuilder().rows([message(1), coordination, message(3, minute: 2)],
+                                               lead: lead, members: [ada], view: .yours)
         #expect(rows.count == 1)
         #expect(rows[0].messages.map(\.sequence) == [1, 3])
     }
@@ -71,7 +71,7 @@ struct TranscriptTests {
             value.content = .system(.init(type: kind, actor: actor))
             return value
         }
-        let rows = transcriptRows([
+        let rows = TranscriptRowBuilder().rows([
             system(1, "member_joined"), system(2, "member_joined"),
             system(3, "member_left"), system(4, "artifact_shared", actor: .agent("ada")),
             system(5, "artifact_shared", actor: .agent("ada")),
@@ -86,7 +86,7 @@ struct TranscriptTests {
             value.content = .system(.init(type: kind, actor: actor))
             return value
         }
-        let rows = transcriptRows([
+        let rows = TranscriptRowBuilder().rows([
             system(1, "artifact_removed", actor: .agent("ada")), system(2, "artifact_removed", actor: .agent("ada")),
             system(3, "artifact_shared", actor: .agent("ada")),
             system(4, "artifact_removed", actor: .agent("ada")), system(5, "artifact_removed", actor: .agent("ada")),
@@ -132,8 +132,8 @@ struct TranscriptTests {
                          sourceLocation: SourceLocation = #_sourceLocation) {
             let built = builder.rows(messages, lead: lead, members: members, unreadAfter: unreadAfter,
                                      view: view, calendar: calendar)
-            let fresh = transcriptRows(messages, lead: lead, members: members, unreadAfter: unreadAfter,
-                                       view: view, calendar: calendar)
+            let fresh = TranscriptRowBuilder().rows(messages, lead: lead, members: members, unreadAfter: unreadAfter,
+                                                    view: view, calendar: calendar)
             #expect(built == fresh, sourceLocation: sourceLocation)
         }
 

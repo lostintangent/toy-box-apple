@@ -1,24 +1,24 @@
 import Foundation
 import Observation
 
-public enum ChannelManagementRecoveryState: Equatable, Sendable {
-    case checking
-    case checkFailed(String)
-    case reconciled(String)
-
-    public static func isRequired(after error: any Error) -> Bool {
-        if case ChannelAPIError.http(let status, _) = error { return status >= 500 }
-        guard let error = error as? URLError else { return false }
-        return error.code == .timedOut || error.code == .networkConnectionLost
-    }
-
-    public static let uncertaintyMessage = "The change may already have been applied, but its result could not be confirmed. The request was not repeated."
-}
-
 @MainActor @Observable
 public final class ChannelManagementWriteRecovery {
+    public enum Phase: Equatable, Sendable {
+        case checking
+        case checkFailed(String)
+        case reconciled(String)
+
+        public static func isRequired(after error: any Error) -> Bool {
+            if case ChannelAPIError.http(let status, _) = error { return status >= 500 }
+            guard let error = error as? URLError else { return false }
+            return error.code == .timedOut || error.code == .networkConnectionLost
+        }
+
+        public static let uncertaintyMessage = "The change may already have been applied, but its result could not be confirmed. The request was not repeated."
+    }
+
     public private(set) var error: String?
-    public private(set) var state: ChannelManagementRecoveryState?
+    public private(set) var state: Phase?
     public private(set) var result: ChannelManagementReconciliation?
     @ObservationIgnored private var isChecking = false
 
@@ -33,8 +33,8 @@ public final class ChannelManagementWriteRecovery {
 
     @discardableResult
     public func record(_ error: any Error) -> Bool {
-        if ChannelManagementRecoveryState.isRequired(after: error) {
-            self.error = ChannelManagementRecoveryState.uncertaintyMessage
+        if Phase.isRequired(after: error) {
+            self.error = Phase.uncertaintyMessage
             state = .checking
             result = nil
             return true

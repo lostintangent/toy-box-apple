@@ -50,11 +50,11 @@ struct TranscriptPresentationTests {
         }
         let yesterday = message("old", "2026-10-30T12:00:00Z", sender: .agent("lead"))
         let pending = [message("first", "2026-10-31T12:00:00Z"), message("second", "2026-10-31T12:00:05Z")]
-        let dividers = transcriptPendingDividers(pending, after: yesterday, roster: roster)
+        let dividers = TranscriptRowBuilder.pendingDividers(pending, after: yesterday, roster: roster)
         #expect(dividers["first"]?.day != nil && dividers["first"]?.unread == false)
         #expect(dividers["second"] == nil)
-        #expect(transcriptPendingDividers(pending, after: pending[0], roster: roster)["second"] == nil)
-        #expect(transcriptPendingDividers(pending, after: yesterday, roster: []).isEmpty)
+        #expect(TranscriptRowBuilder.pendingDividers(pending, after: pending[0], roster: roster)["second"] == nil)
+        #expect(TranscriptRowBuilder.pendingDividers(pending, after: yesterday, roster: []).isEmpty)
     }
 
     @Test func revealRejectsUnmeasuredAndPrependStaleTargets() throws {
@@ -360,7 +360,7 @@ struct TranscriptPresentationTests {
 @Suite("Transcript landing policy")
 struct TranscriptLandingTests {
     private func rows(_ range: ClosedRange<Int> = 1...20) -> [TranscriptRow] {
-        transcriptRows(range.map {
+        TranscriptRowBuilder().rows(range.map {
             catchUpTestMessage($0, sender: $0.isMultiple(of: 2) ? .user : .agent("lead"))
         }, lead: .lead(id: "lead"), members: [])
     }
@@ -384,8 +384,8 @@ struct TranscriptLandingTests {
         #expect(TranscriptLanding.target(unreadAfter: 20, rows: rows) == .latest)
         #expect(TranscriptLanding.target(unreadAfter: 0, rows: []) == .latest)
         #expect(TranscriptLanding.target(unreadAfter: 10, rows: rows) == .unread(rows[10].id))
-        let run = transcriptRows((1...10).map(transcriptTestMessage),
-                                 lead: .lead(id: "lead"), members: [], unreadAfter: 5)
+        let run = TranscriptRowBuilder().rows((1...10).map(transcriptTestMessage),
+                                              lead: .lead(id: "lead"), members: [], unreadAfter: 5)
         let unread = try #require(run.first { $0.messages.contains { $0.sequence == 6 } })
         #expect(TranscriptLanding.target(unreadAfter: 5, rows: run) == .unread(unread.id))
     }

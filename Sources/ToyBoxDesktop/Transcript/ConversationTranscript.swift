@@ -345,8 +345,8 @@ struct ConversationTranscript: View {
                     .equatable()
                     .padding(.top, gaps[row.id] ?? TranscriptSpacing.run)
             }
-            let attemptDividers = transcriptPendingDividers(store.sendAttempts.map(\.message),
-                                                            after: rows.last?.messages.last, roster: store.roster)
+            let attemptDividers = TranscriptRowBuilder.pendingDividers(store.sendAttempts.map(\.message),
+                                                                       after: rows.last?.messages.last, roster: store.roster)
             ForEach(store.sendAttempts) { attempt in
                 sendAttempt(attempt, divider: attemptDividers[attempt.id],
                             statusReactions: statusReactions[attempt.message.sequence] ?? [])

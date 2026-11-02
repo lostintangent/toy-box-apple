@@ -39,7 +39,7 @@ struct ToyBoxDesktopApp: App {
                 model.quickSend.present(prefill: prefill)
             } : nil
             ChannelIntents.register(model)
-            ToyBoxControlsContext.register(model, delegate: delegate)
+            ControlRouter.register(model, delegate: delegate)
             delegate.widgetURLHandler = { try model.openWidgetURL($0) }
             delegate.dockMenuProvider = { model.makeDockMenu() }
             _model = ViewState(wrappedValue: model)

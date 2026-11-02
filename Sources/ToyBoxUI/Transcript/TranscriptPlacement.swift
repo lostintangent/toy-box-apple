@@ -3,11 +3,30 @@ import Foundation
 /// Vertical document coordinates. Rows are supplied in conversation order, with increasing tops.
 /// The container applies placements during layout and never reports those writes as reader input.
 /// Use `layoutEvent` for real geometry changes, not each repeated native layout pass.
-public enum TranscriptScrollModel {
+public struct TranscriptPlacement: Equatable, Sendable {
     public typealias RowID = String
 
     public static let endClearance: CGFloat = 16
     public static let followingThreshold: CGFloat = 48
+
+    public let intent: Intent
+    /// Nil leaves the position to the reader. Animation and its cancellation belong to the adapter.
+    public let origin: CGFloat?
+    /// The adapter reports an unavailable explicit row action instead of silently moving elsewhere.
+    public let unavailableTarget: RowID?
+    /// A canonical target that the adapter must bring into measured layout before placement.
+    public let needsMeasurement: RowID?
+
+    public init(intent: Intent, origin: CGFloat?, unavailableTarget: RowID? = nil,
+                needsMeasurement: RowID? = nil) {
+        precondition(origin?.isFinite != false)
+        precondition(origin == nil || (unavailableTarget == nil && needsMeasurement == nil))
+        precondition(unavailableTarget == nil || needsMeasurement == nil)
+        self.intent = intent
+        self.origin = origin
+        self.unavailableTarget = unavailableTarget
+        self.needsMeasurement = needsMeasurement
+    }
 
     public struct RowIdentity: Equatable, Sendable {
         public let id: RowID
@@ -131,70 +150,49 @@ public enum TranscriptScrollModel {
         case toggledExpansion(RowID, expanded: Bool)
     }
 
-    public struct Placement: Equatable, Sendable {
-        public let intent: Intent
-        /// Nil leaves the position to the reader. Animation and its cancellation belong to the adapter.
-        public let origin: CGFloat?
-        /// The adapter reports an unavailable explicit row action instead of silently moving elsewhere.
-        public let unavailableTarget: RowID?
-        /// A canonical target that the adapter must bring into measured layout before placement.
-        public let needsMeasurement: RowID?
-
-        public init(intent: Intent, origin: CGFloat?, unavailableTarget: RowID? = nil,
-                    needsMeasurement: RowID? = nil) {
-            precondition(origin?.isFinite != false)
-            precondition(origin == nil || (unavailableTarget == nil && needsMeasurement == nil))
-            precondition(unavailableTarget == nil || needsMeasurement == nil)
-            self.intent = intent
-            self.origin = origin
-            self.unavailableTarget = unavailableTarget
-            self.needsMeasurement = needsMeasurement
-        }
-    }
-
     public static func reduce(_ intent: Intent, _ event: Event, rows: [RowFrame],
-                              viewport: Viewport, origin: CGFloat) -> Placement {
+                              viewport: Viewport, origin: CGFloat) -> TranscriptPlacement {
         precondition(origin.isFinite)
         let currentOrigin: CGFloat
         if case .readerScrolled(let y) = event { currentOrigin = y } else { currentOrigin = origin }
         return reduce(intent, event, layout: completeLayout(rows, viewport: viewport, origin: currentOrigin))
     }
 
-    public static func reduce(_ intent: Intent, _ event: Event, layout: Layout) -> Placement {
+    public static func reduce(_ intent: Intent, _ event: Event, layout: Layout) -> TranscriptPlacement {
         switch event {
         case .readerScrolled(let y):
             precondition(y.isFinite)
             guard y == layout.origin else {
                 assertionFailure("Reader input and layout must share the current native origin.")
-                return Placement(intent: intent, origin: nil)
+                return TranscriptPlacement(intent: intent, origin: nil)
             }
-            return Placement(intent: intentForPosition(layout, allowsFollowing: true) ?? intent, origin: nil)
+            return TranscriptPlacement(intent: intentForPosition(layout, allowsFollowing: true) ?? intent, origin: nil)
         case .holdCurrentPosition:
             if !layout.rows.contains(where: \.isAnchorable) {
-                return Placement(intent: intent, origin: nil)
+                return TranscriptPlacement(intent: intent, origin: nil)
             }
-            return Placement(intent: intentForPosition(layout, allowsFollowing: false) ?? intent, origin: nil)
+            return TranscriptPlacement(intent: intentForPosition(layout, allowsFollowing: false) ?? intent, origin: nil)
         case .resumeFromCurrentPosition:
-            return Placement(intent: intentForPosition(layout, allowsFollowing: true) ?? intent, origin: nil)
+            return TranscriptPlacement(intent: intentForPosition(layout, allowsFollowing: true) ?? intent, origin: nil)
         case .land(let target):
             if case .row(let id, _) = target, anchorableIdentity(id, layout: layout) == nil {
-                return Placement(intent: intent, origin: nil, unavailableTarget: id)
+                return TranscriptPlacement(intent: intent, origin: nil, unavailableTarget: id)
             }
             return place(.landing(target), layout: layout)
         case .jumpToLatest, .ownPostConfirmed:
             return place(.following, layout: layout)
         case .reveal(let id):
             guard let row = anchorableIdentity(id, layout: layout) else {
-                return Placement(intent: intent, origin: nil, unavailableTarget: id)
+                return TranscriptPlacement(intent: intent, origin: nil, unavailableTarget: id)
             }
             return place(.revealing(id, order: row.order), layout: layout)
         case .toggledExpansion(let id, let expanded):
             guard let identity = anchorableIdentity(id, layout: layout) else {
-                return Placement(intent: intent, origin: nil, unavailableTarget: id)
+                return TranscriptPlacement(intent: intent, origin: nil, unavailableTarget: id)
             }
             guard let row = layout.measurements[id] else {
                 assertionFailure("Expansion requires the clicked row's measured frame.")
-                return Placement(intent: intent, origin: nil)
+                return TranscriptPlacement(intent: intent, origin: nil)
             }
             let offset = row.top - layout.origin - layout.viewport.topInset
             let anchor = Anchor(row: id, order: identity.order, offset: expanded ? offset : max(offset, 0))
@@ -205,11 +203,11 @@ public enum TranscriptScrollModel {
     }
 
     /// Projects an existing intent onto current geometry without reducing an event.
-    public static func placement(for intent: Intent, rows: [RowFrame], viewport: Viewport) -> Placement {
+    public static func placement(for intent: Intent, rows: [RowFrame], viewport: Viewport) -> TranscriptPlacement {
         place(intent, layout: completeLayout(rows, viewport: viewport, origin: 0))
     }
 
-    public static func placement(for intent: Intent, layout: Layout) -> Placement {
+    public static func placement(for intent: Intent, layout: Layout) -> TranscriptPlacement {
         place(intent, layout: layout)
     }
 
@@ -295,7 +293,7 @@ public enum TranscriptScrollModel {
         return row.map { Anchor(row: $0.id, order: $0.order, offset: $0.top - top) }
     }
 
-    private static func place(_ intent: Intent, layout: Layout) -> Placement {
+    private static func place(_ intent: Intent, layout: Layout) -> TranscriptPlacement {
         let viewport = layout.viewport
         let proposed: CGFloat
         switch intent {
@@ -306,7 +304,7 @@ public enum TranscriptScrollModel {
                 return place(.following, layout: layout)
             }
             guard let row = layout.measurements[identity.id] else {
-                return Placement(intent: intent, origin: nil, needsMeasurement: identity.id)
+                return TranscriptPlacement(intent: intent, origin: nil, needsMeasurement: identity.id)
             }
             proposed = row.top - viewport.topInset
         case .reading(let anchor):
@@ -314,7 +312,7 @@ public enum TranscriptScrollModel {
                 return place(.following, layout: layout)
             }
             guard let row = layout.measurements[identity.id] else {
-                return Placement(intent: intent, origin: nil, needsMeasurement: identity.id)
+                return TranscriptPlacement(intent: intent, origin: nil, needsMeasurement: identity.id)
             }
             proposed = row.top - viewport.topInset - anchor.offset
         case .revealing(let id, let order):
@@ -322,7 +320,7 @@ public enum TranscriptScrollModel {
                 return place(.following, layout: layout)
             }
             guard let row = layout.measurements[identity.id] else {
-                return Placement(intent: intent, origin: nil, needsMeasurement: identity.id)
+                return TranscriptPlacement(intent: intent, origin: nil, needsMeasurement: identity.id)
             }
             // A row taller than the unobscured area starts at its top, so its sender stays in view.
             let middle = viewport.topInset + viewport.unobscuredHeight / 2
@@ -331,7 +329,7 @@ public enum TranscriptScrollModel {
         }
         let minimum = -viewport.topInset
         let maximum = max(minimum, layout.documentEnd - viewport.height + viewport.bottomInset)
-        return Placement(intent: intent, origin: min(maximum, max(minimum, proposed)))
+        return TranscriptPlacement(intent: intent, origin: min(maximum, max(minimum, proposed)))
     }
 
     private static func survivor(id: RowID, order: Int, layout: Layout) -> RowIdentity? {

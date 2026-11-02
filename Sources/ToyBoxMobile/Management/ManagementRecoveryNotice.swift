@@ -19,7 +19,7 @@ struct ManagementError: View {
 }
 
 struct ManagementRecoveryNotice: View {
-    let state: ChannelManagementRecoveryState
+    let state: ChannelManagementWriteRecovery.Phase
     let reviewTitle: String?
     let onCheck: () -> Void
     let onReview: () -> Void
