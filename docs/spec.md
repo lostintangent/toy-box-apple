@@ -1499,7 +1499,7 @@ show Load Older Messages when more history is available, a small loading row whi
 "Beginning of conversation" label and reserve no empty header space. A filtered view must
 continue paging even when a page contains no visible rows.
 
-`ChannelKit.TranscriptScrollModel` defines container-independent placement from ordered row frames
+`ToyBoxUI.TranscriptPlacement` defines container-independent placement from ordered row frames
 and the viewport's width, height and glass insets. Its adapter sends `layoutChanged` only when
 `layoutEvent` detects changed geometry, never just because another native layout pass ran.
 The pure `placement(for:rows:viewport:)` function projects an existing intent against current

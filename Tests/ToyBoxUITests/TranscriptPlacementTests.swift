@@ -1,8 +1,8 @@
 import Foundation
 import Testing
-import ChannelKit
+import ToyBoxUI
 
-@Suite("Pure transcript scroll model")
+@Suite("Pure transcript placement")
 struct TranscriptPlacementTests {
     typealias Model = TranscriptPlacement
     let viewport = Model.Viewport(width: 600, height: 600, topInset: 50, bottomInset: 150)
