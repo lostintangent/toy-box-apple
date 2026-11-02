@@ -432,7 +432,7 @@ struct ConversationView: View {
         // The summary sits in the New divider's item, so landing on that item holds the card's top.
         if divider != nil, catchUp == nil, let state = store.state {
             catchUp = TranscriptCatchUpSession.make(
-                server: store.api.baseURL, state: state, unreadAfter: arrivalUnreadAfter, view: interaction.messageView,
+                server: store.api.baseURL, state: state, unreadAfter: arrivalUnreadAfter, filter: interaction.messageView,
                 boundaryIsLoaded: true, availability: intelligence.availability,
                 isOn: IntelligenceSettings.isOn(IntelligenceSettings.summarizesNewMessages))
         }

@@ -657,7 +657,7 @@ struct ConversationTranscript: View {
         guard catchUp == nil, let state = store.state,
               snapshot == nil || snapshot?.requestedState == "transcript-catchup",
               let made = TranscriptCatchUp.make(
-                  server: store.api.baseURL, state: state, unreadAfter: unreadAfter, view: interaction.messageView,
+                  server: store.api.baseURL, state: state, unreadAfter: unreadAfter, filter: interaction.messageView,
                   availability: intelligence.availability,
                   isOn: IntelligenceSettings.isOn(IntelligenceSettings.summarizesNewMessages))
         else { return }

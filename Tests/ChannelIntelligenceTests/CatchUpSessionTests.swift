@@ -9,10 +9,10 @@ struct CatchUpSessionTests {
     let server = URL(string: "https://summary-\(UUID().uuidString.lowercased()).invalid/prefix")!
 
     private func make(_ state: ChannelState = summarySessionState(), unreadAfter: Int? = 10,
-                      view: TranscriptFilter = .all, boundaryIsLoaded: Bool = true,
+                      filter: TranscriptFilter = .all, boundaryIsLoaded: Bool = true,
                       availability: IntelligenceAvailability = .available, isOn: Bool = true,
                       timeout: Duration = .seconds(15)) -> TranscriptCatchUpSession? {
-        TranscriptCatchUpSession.make(server: server, state: state, unreadAfter: unreadAfter, view: view,
+        TranscriptCatchUpSession.make(server: server, state: state, unreadAfter: unreadAfter, filter: filter,
                                      boundaryIsLoaded: boundaryIsLoaded, availability: availability,
                                      isOn: isOn, timeout: timeout)
     }
@@ -26,7 +26,7 @@ struct CatchUpSessionTests {
         #expect(session.title == "Summarizing 20 new messages")
         #expect(make(boundaryIsLoaded: false) == nil)
         #expect(make(isOn: false) == nil)
-        #expect(make(view: .yours) == nil)
+        #expect(make(filter: .yours) == nil)
         #expect(make(unreadAfter: nil) == nil)
         #expect(make(unreadAfter: 28) == nil)
         for reason in [IntelligenceUnavailableReason.deviceNotEligible, .appleIntelligenceNotEnabled,
@@ -92,7 +92,7 @@ struct CatchUpSessionTests {
         #expect(make(summarySessionState(channel: "another")) != nil)
         let otherServer = URL(string: server.absoluteString + "/another")!
         #expect(TranscriptCatchUpSession.make(
-            server: otherServer, state: summarySessionState(), unreadAfter: 10, view: .all,
+            server: otherServer, state: summarySessionState(), unreadAfter: 10, filter: .all,
             boundaryIsLoaded: true, availability: .available, isOn: true) != nil)
         await session.run(using: ScriptedIntelligence(results: [.ready(summarySessionResult())]))
         #expect(session.summary == nil)
@@ -240,7 +240,7 @@ struct CatchUpSessionTests {
         #expect(make(summarySessionState(through: 31))?.phase == .loading)
         let otherServer = URL(string: server.absoluteString + "/another")!
         let other = TranscriptCatchUpSession.make(
-            server: otherServer, state: summarySessionState(), unreadAfter: 10, view: .all,
+            server: otherServer, state: summarySessionState(), unreadAfter: 10, filter: .all,
             boundaryIsLoaded: true, availability: .available, isOn: true)
         #expect(other?.phase == .loading)
     }
