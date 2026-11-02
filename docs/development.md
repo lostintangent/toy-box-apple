@@ -2,7 +2,7 @@
 
 How to build, test, run and validate both apps in detail. [AGENTS.md](../AGENTS.md) has the rules
 every change follows, and [scripts/README.md](../scripts/README.md) lists every command. Release
-signing, notarization, updates and TestFlight are in the spec's [Releases](spec.md#releases).
+signing, notarization, updates and TestFlight are in [releases.md](releases.md).
 
 ## Toolchains
 
@@ -249,8 +249,8 @@ servers for any script that writes. Never skip or retry actions.
 - Simulator push injection never invokes the notification service. Prove real APNs-to-service
   wake on a device.
 - `bun run testflight --build-only` makes an **unsigned** release arm64 bundle without reading
-  signing identities or profiles. Signed builds, validation and upload are in the spec's
-  [iPhone TestFlight](spec.md#iphone-testflight).
+  signing identities or profiles. Signed builds, validation and upload are in
+  [iPhone TestFlight](releases.md#iphone-testflight).
 - Before the first signed build, the **user** confirms an active Apple Developer team, accepts
   pending agreements, registers the explicit App ID `dev.toybox.mobile` and creates its App Store
   Connect app. TestFlight also needs an Apple Distribution certificate, App Store Connect profiles,
