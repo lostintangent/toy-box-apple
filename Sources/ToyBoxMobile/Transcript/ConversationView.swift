@@ -9,7 +9,7 @@ import ToyBoxUI
 /// go to the native scroll position. It never re-renders the transcript, so frame reports stay cheap.
 @MainActor
 final class TranscriptScroll {
-    typealias Model = TranscriptScrollModel
+    typealias Model = TranscriptPlacement
 
     struct Metrics: Equatable {
         var viewport: Model.Viewport
@@ -268,7 +268,7 @@ struct ConversationView: View {
                 }
             }
             .padding(.top, 12)
-            .padding(.bottom, TranscriptScrollModel.endClearance)
+            .padding(.bottom, TranscriptPlacement.endClearance)
             .opacity(landsOnReveal ? 0 : 1)
             // The whole column, like the Mac. Each message caps its own line length instead.
             .padding(.horizontal, transcriptEdgeInset(sizeClass))
@@ -440,11 +440,11 @@ struct ConversationView: View {
             landsOnReveal = true
             return
         }
-        let target = divider.map { TranscriptScrollModel.Target.row($0.id, order: $0.order) } ?? .end
+        let target = divider.map { TranscriptPlacement.Target.row($0.id, order: $0.order) } ?? .end
         place(scroll.update(.land(target)))
     }
 
-    private func place(_ placement: TranscriptScrollModel.Placement?) {
+    private func place(_ placement: TranscriptPlacement.Placement?) {
         var isMoving = false
         if let placement {
             if let origin = placement.origin {
@@ -467,7 +467,7 @@ struct ConversationView: View {
                 isMoving = true
             }
         }
-        let away = scroll.hasLanded && scroll.distanceToEnd > TranscriptScrollModel.followingThreshold
+        let away = scroll.hasLanded && scroll.distanceToEnd > TranscriptPlacement.followingThreshold
         if away != showsJumpToLatest {
             withAnimation(.easeOut(duration: 0.2)) { showsJumpToLatest = away }
         }
@@ -511,7 +511,7 @@ struct ConversationView: View {
         await store.loadOlder()
     }
 
-    private var rowIdentities: [TranscriptScrollModel.RowIdentity] {
+    private var rowIdentities: [TranscriptPlacement.RowIdentity] {
         items.map { .init(id: $0.id, order: $0.order) }
     }
 

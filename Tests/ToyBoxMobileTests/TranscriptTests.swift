@@ -47,7 +47,7 @@ struct TranscriptTests {
     }
 
     @Test func readingAPositionWaitsForAMeasuredRowInView() {
-        let viewport = TranscriptScrollModel.Viewport(width: 386, height: 600, topInset: 0, bottomInset: 0)
+        let viewport = TranscriptPlacement.Viewport(width: 386, height: 600, topInset: 0, bottomInset: 0)
         let scroll = TranscriptScroll()
         scroll.rows = (0..<10).map { .init(id: "r\($0)", order: $0) }
         for index in 0..<10 { scroll.measure("r\(index)", frame: CGRect(x: 0, y: CGFloat(index) * 100, width: 386, height: 100)) }
@@ -75,7 +75,7 @@ struct TranscriptTests {
     }
 
     @Test func jumpingToLatestDuringAFlickLandsAtTheEndInOneTap() {
-        let viewport = TranscriptScrollModel.Viewport(width: 386, height: 600, topInset: 0, bottomInset: 0)
+        let viewport = TranscriptPlacement.Viewport(width: 386, height: 600, topInset: 0, bottomInset: 0)
         let scroll = TranscriptScroll()
         scroll.rows = (0..<40).map { .init(id: "r\($0)", order: $0) }
         for index in 0..<40 { scroll.measure("r\(index)", frame: CGRect(x: 0, y: CGFloat(index) * 100, width: 386, height: 100)) }
@@ -109,7 +109,7 @@ struct TranscriptTests {
     }
 
     @Test func aPostureChangeSettlesAtTheEndAfterTheStackDropsItsPlacement() {
-        let viewport = TranscriptScrollModel.Viewport(width: 466, height: 669, topInset: 82, bottomInset: 186)
+        let viewport = TranscriptPlacement.Viewport(width: 466, height: 669, topInset: 82, bottomInset: 186)
         let scroll = TranscriptScroll()
         scroll.rows = (0..<40).map { .init(id: "r\($0)", order: $0) }
         for index in 0..<40 { scroll.measure("r\(index)", frame: CGRect(x: 0, y: CGFloat(index) * 100, width: 466, height: 100)) }
@@ -136,7 +136,7 @@ struct TranscriptTests {
     }
 
     @Test func aReaderAtRestIsNeverPulledBackToTheirAnchor() {
-        let viewport = TranscriptScrollModel.Viewport(width: 386, height: 600, topInset: 0, bottomInset: 0)
+        let viewport = TranscriptPlacement.Viewport(width: 386, height: 600, topInset: 0, bottomInset: 0)
         let scroll = TranscriptScroll()
         scroll.rows = (0..<40).map { .init(id: "r\($0)", order: $0) }
         for index in 0..<40 { scroll.measure("r\(index)", frame: CGRect(x: 0, y: CGFloat(index) * 100, width: 386, height: 100)) }
@@ -156,7 +156,7 @@ struct TranscriptTests {
     }
 
     @Test func aNewTouchReadsEvenBeforeAJumpSettlesAtTheEnd() {
-        let viewport = TranscriptScrollModel.Viewport(width: 386, height: 600, topInset: 0, bottomInset: 0)
+        let viewport = TranscriptPlacement.Viewport(width: 386, height: 600, topInset: 0, bottomInset: 0)
         let scroll = TranscriptScroll()
         scroll.rows = (0..<40).map { .init(id: "r\($0)", order: $0) }
         for index in 0..<40 { scroll.measure("r\(index)", frame: CGRect(x: 0, y: CGFloat(index) * 100, width: 386, height: 100)) }
@@ -178,7 +178,7 @@ struct TranscriptTests {
     }
 
     @Test func aRevealFinishesFromSettledGeometryOrWhenTheReaderTakesOver() {
-        let viewport = TranscriptScrollModel.Viewport(width: 386, height: 600, topInset: 0, bottomInset: 0)
+        let viewport = TranscriptPlacement.Viewport(width: 386, height: 600, topInset: 0, bottomInset: 0)
         let scroll = TranscriptScroll()
         scroll.rows = (0..<20).map { .init(id: "r\($0)", order: $0) }
         for index in 0..<20 { scroll.measure("r\(index)", frame: CGRect(x: 0, y: CGFloat(index) * 100, width: 386, height: 100)) }
@@ -206,16 +206,16 @@ struct TranscriptTests {
     }
 
     @Test func aRevealIntoAPageThatJustLandedFindsItsRow() {
-        let viewport = TranscriptScrollModel.Viewport(width: 386, height: 600, topInset: 0, bottomInset: 0)
+        let viewport = TranscriptPlacement.Viewport(width: 386, height: 600, topInset: 0, bottomInset: 0)
         let scroll = TranscriptScroll()
-        let loaded: [TranscriptScrollModel.RowIdentity] = (0..<20).map { .init(id: "r\($0)", order: $0 + 5) }
+        let loaded: [TranscriptPlacement.RowIdentity] = (0..<20).map { .init(id: "r\($0)", order: $0 + 5) }
         scroll.sync(loaded)
         for index in 0..<20 { scroll.measure("r\(index)", frame: CGRect(x: 0, y: CGFloat(index) * 100, width: 386, height: 100)) }
         scroll.metrics = .init(viewport: viewport, origin: 1400, documentEnd: 2000)
         _ = scroll.update(.land(.end))
 
         // The reveal resumes after older pages land but before SwiftUI reports the new rows.
-        let paged = (0..<5).map { TranscriptScrollModel.RowIdentity(id: "p\($0)", order: $0) } + loaded
+        let paged = (0..<5).map { TranscriptPlacement.RowIdentity(id: "p\($0)", order: $0) } + loaded
         #expect(scroll.update(.reveal("p2"))?.unavailableTarget == "p2")
         scroll.sync(paged)
         #expect(scroll.update(.reveal("p2"))?.unavailableTarget == nil)
@@ -232,17 +232,17 @@ struct TranscriptTests {
     }
 
     @Test func aRequestAlertsRevealIsTheFirstLandingEvenSeveralPagesBack() {
-        let viewport = TranscriptScrollModel.Viewport(width: 386, height: 600, topInset: 0, bottomInset: 0)
+        let viewport = TranscriptPlacement.Viewport(width: 386, height: 600, topInset: 0, bottomInset: 0)
         let scroll = TranscriptScroll()
         // The newest page opens at the bottom with its New divider at r10, but nothing lands there.
-        let latest: [TranscriptScrollModel.RowIdentity] = (0..<20).map { .init(id: "r\($0)", order: $0 + 300) }
+        let latest: [TranscriptPlacement.RowIdentity] = (0..<20).map { .init(id: "r\($0)", order: $0 + 300) }
         scroll.sync(latest)
         for index in 0..<20 { scroll.measure("r\(index)", frame: CGRect(x: 0, y: CGFloat(index) * 100, width: 386, height: 100)) }
         scroll.metrics = .init(viewport: viewport, origin: 1400, documentEnd: 2000)
         #expect(scroll.update() == nil && !scroll.hasLanded)
 
         // Three pages arrive above without holding any row, since the reader hasn't seen one.
-        let paged = (0..<300).map { TranscriptScrollModel.RowIdentity(id: "p\($0)", order: $0) } + latest
+        let paged = (0..<300).map { TranscriptPlacement.RowIdentity(id: "p\($0)", order: $0) } + latest
         scroll.sync(paged)
         for index in 0..<300 { scroll.measure("p\(index)", frame: CGRect(x: 0, y: CGFloat(index) * 100, width: 386, height: 100)) }
         for index in 0..<20 {
@@ -281,7 +281,7 @@ struct TranscriptTests {
     }
 
     @Test func aRevealThatCantFindItsRowLeavesTheFirstLandingToTheDivider() {
-        let viewport = TranscriptScrollModel.Viewport(width: 386, height: 600, topInset: 0, bottomInset: 0)
+        let viewport = TranscriptPlacement.Viewport(width: 386, height: 600, topInset: 0, bottomInset: 0)
         let scroll = TranscriptScroll()
         scroll.sync((0..<20).map { .init(id: "r\($0)", order: $0) })
         for index in 0..<20 { scroll.measure("r\(index)", frame: CGRect(x: 0, y: CGFloat(index) * 100, width: 386, height: 100)) }
@@ -292,9 +292,9 @@ struct TranscriptTests {
     }
 
     @Test func aPageArrivingAtTheTopKeepsTheReadersRowInsteadOfItsOldFrame() {
-        let viewport = TranscriptScrollModel.Viewport(width: 386, height: 600, topInset: 0, bottomInset: 0)
+        let viewport = TranscriptPlacement.Viewport(width: 386, height: 600, topInset: 0, bottomInset: 0)
         let scroll = TranscriptScroll()
-        let loaded: [TranscriptScrollModel.RowIdentity] = (0..<20).map { .init(id: "r\($0)", order: $0 + 5) }
+        let loaded: [TranscriptPlacement.RowIdentity] = (0..<20).map { .init(id: "r\($0)", order: $0 + 5) }
         scroll.sync(loaded)
         for index in 0..<20 { scroll.measure("r\(index)", frame: CGRect(x: 0, y: CGFloat(index) * 100, width: 386, height: 100)) }
         scroll.metrics = .init(viewport: viewport, origin: 1400, documentEnd: 2000)
@@ -304,7 +304,7 @@ struct TranscriptTests {
         _ = scroll.update()
 
         // UIKit keeps the offset as the page lands above, so r1's old frame would say nothing moved.
-        let paged = (0..<5).map { TranscriptScrollModel.RowIdentity(id: "p\($0)", order: $0) } + loaded
+        let paged = (0..<5).map { TranscriptPlacement.RowIdentity(id: "p\($0)", order: $0) } + loaded
         scroll.sync(paged)
         scroll.metrics?.documentEnd = 2500
         #expect(scroll.update()?.needsMeasurement == "r1")
@@ -317,9 +317,9 @@ struct TranscriptTests {
     }
 
     @Test func aMergedPageLoadsOnceEvenWhenGeometryArrivesBeforeItsRows() {
-        let viewport = TranscriptScrollModel.Viewport(width: 386, height: 600, topInset: 0, bottomInset: 0)
+        let viewport = TranscriptPlacement.Viewport(width: 386, height: 600, topInset: 0, bottomInset: 0)
         let scroll = TranscriptScroll()
-        let loaded: [TranscriptScrollModel.RowIdentity] = (0..<20).map { .init(id: "r\($0)", order: $0 + 5) }
+        let loaded: [TranscriptPlacement.RowIdentity] = (0..<20).map { .init(id: "r\($0)", order: $0 + 5) }
         scroll.sync(loaded)
         for index in 0..<20 { scroll.measure("r\(index)", frame: CGRect(x: 0, y: CGFloat(index) * 100, width: 386, height: 100)) }
         scroll.metrics = .init(viewport: viewport, origin: 1400, documentEnd: 2000)
@@ -352,12 +352,12 @@ struct TranscriptTests {
     }
 
     @Test func aLandingThatCantFillTheScreenReachesOlderHistoryOnceItsPlaced() {
-        let viewport = TranscriptScrollModel.Viewport(width: 386, height: 600, topInset: 0, bottomInset: 0)
+        let viewport = TranscriptPlacement.Viewport(width: 386, height: 600, topInset: 0, bottomInset: 0)
         let scroll = TranscriptScroll()
         scroll.sync((0..<3).map { .init(id: "r\($0)", order: $0) })
         for index in 0..<3 { scroll.measure("r\(index)", frame: CGRect(x: 0, y: CGFloat(index) * 100, width: 386, height: 100)) }
         // Before landing, the initial offset says nothing about where the reader is.
-        scroll.metrics = .init(viewport: viewport, origin: 0, documentEnd: 300 + TranscriptScrollModel.endClearance)
+        scroll.metrics = .init(viewport: viewport, origin: 0, documentEnd: 300 + TranscriptPlacement.endClearance)
         #expect(!scroll.reachesOlder)
         let landing = scroll.update(.land(.end))
         #expect(landing?.origin == 0)

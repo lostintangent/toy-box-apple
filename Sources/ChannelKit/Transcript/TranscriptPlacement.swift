@@ -3,7 +3,7 @@ import Foundation
 /// Vertical document coordinates. Rows are supplied in conversation order, with increasing tops.
 /// The container applies placements during layout and never reports those writes as reader input.
 /// Use `layoutEvent` for real geometry changes, not each repeated native layout pass.
-public enum TranscriptScrollModel {
+public enum TranscriptPlacement {
     public typealias RowID = String
 
     public static let endClearance: CGFloat = 16

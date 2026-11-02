@@ -3,8 +3,8 @@ import Testing
 import ChannelKit
 
 @Suite("Pure transcript scroll model")
-struct TranscriptScrollModelTests {
-    typealias Model = TranscriptScrollModel
+struct TranscriptPlacementTests {
+    typealias Model = TranscriptPlacement
     let viewport = Model.Viewport(width: 600, height: 600, topInset: 50, bottomInset: 150)
 
     func frames(_ count: Int = 20, height: CGFloat = 100, shift: CGFloat = 0) -> [Model.RowFrame] {
