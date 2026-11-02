@@ -160,6 +160,6 @@ public final class TranscriptFind {
                 ? withoutLeadingMentions(message.text, agents: agents) : message.text
             return TranscriptMarkdownText(MarkdownBlock.parse(body)).text
         }
-        return ChannelSystemText.rendered(system, agents: agents)
+        return system.rendered(agents: agents)
     }
 }

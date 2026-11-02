@@ -249,7 +249,7 @@ struct TranscriptFindModelTests {
         let renamed = ChannelSystemContent(type: "channel_renamed", name: "Team")
         let find = make([.init(id: "system", sequence: 1, timestamp: "2026-10-24T12:00:00Z",
                                sender: .system, content: .system(renamed))])
-        find.query = ChannelSystemText.rendered(renamed, agents: [])
+        find.query = renamed.rendered(agents: [])
         #expect(find.matches.map(\.sequence) == [1])
         find.query = renamed.type
         #expect(find.matches.isEmpty)

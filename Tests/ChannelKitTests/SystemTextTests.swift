@@ -16,19 +16,19 @@ struct SystemTextTests {
             file: .init(kind: "session", path: "plan.md"), title: "Workshop plan")))
                 == "You removed Workshop plan")
         let agents = [ChannelAgent(id: "lead", name: "Lead")]
-        #expect(ChannelSystemText.actor(.init(type: "artifact_removed", actor: .agent("lead")), agents: agents) == "Lead")
+        #expect(ChannelSystemContent.actorName(.init(type: "artifact_removed", actor: .agent("lead")), agents: agents) == "Lead")
     }
 
     @Test func groupedMembershipKeepsTheSameCountAndActionWords() throws {
         let joined = ["Ada", "Moss", "Finch"].enumerated().map {
             ChannelSystemContent(type: "member_joined", member: .init(id: "\($0.offset)", name: $0.element))
         }
-        #expect(ChannelSystemText.membership([.init(type: "member_joined")]) == nil)
-        #expect(ChannelSystemText.membership(Array(joined.prefix(1)))?.names == "Ada")
-        #expect(ChannelSystemText.membership(Array(joined.prefix(2)))?.names == "Ada and 1 other")
-        let group = try #require(ChannelSystemText.membership(joined + [.init(type: "member_joined")]))
+        #expect(ChannelSystemContent.membership([.init(type: "member_joined")]) == nil)
+        #expect(ChannelSystemContent.membership(Array(joined.prefix(1)))?.names == "Ada")
+        #expect(ChannelSystemContent.membership(Array(joined.prefix(2)))?.names == "Ada and 1 other")
+        let group = try #require(ChannelSystemContent.membership(joined + [.init(type: "member_joined")]))
         #expect(group.names == "Ada and 2 others" && group.action == "joined the channel")
-        #expect(ChannelSystemText.membership([.init(type: "member_left", member: .init(id: "a", name: "Ada"))])?.action
+        #expect(ChannelSystemContent.membership([.init(type: "member_left", member: .init(id: "a", name: "Ada"))])?.action
                 == "left the channel")
     }
 
@@ -54,7 +54,7 @@ struct SystemTextTests {
         #expect(sentence(group("artifact_removed", ["A"]) + group("artifact_shared", ["B"])) == nil)
         #expect(sentence(group("member_joined", ["A"])) == nil)
         #expect(sentence([]) == nil)
-        #expect(ChannelSystemText.phrase(for: .init(type: "artifact_removed")) == "Artifact removed")
+        #expect(ChannelSystemContent.phrase(for: .init(type: "artifact_removed")) == "Artifact removed")
 
         let shared = try #require(ChannelArtifactGroup(group("artifact_shared", ["A", "B", "C"]), agents: agents))
         #expect(shared.verb == .shared && shared.actor == "Lead")
@@ -65,23 +65,23 @@ struct SystemTextTests {
 
         let single = group("artifact_removed", ["A"])
         let system = try #require(single.first?.system)
-        #expect(ChannelSystemText.rendered(system, agents: agents) == sentence(single))
+        #expect(system.rendered(agents: agents) == sentence(single))
     }
 
     @Test func changedValuesCollapseWhitespaceAndTruncateByCharactersNotUTF16() {
-        #expect(ChannelSystemText.value("  a\n b\t c  ") == "a b c")
-        #expect(ChannelSystemText.value(String(repeating: "a", count: 120)) == String(repeating: "a", count: 120))
-        #expect(ChannelSystemText.value(String(repeating: "a", count: 121)) == String(repeating: "a", count: 117) + "...")
-        #expect(ChannelSystemText.value(String(repeating: "\u{1F680}", count: 121))
+        #expect(ChannelSystemContent.value("  a\n b\t c  ") == "a b c")
+        #expect(ChannelSystemContent.value(String(repeating: "a", count: 120)) == String(repeating: "a", count: 120))
+        #expect(ChannelSystemContent.value(String(repeating: "a", count: 121)) == String(repeating: "a", count: 117) + "...")
+        #expect(ChannelSystemContent.value(String(repeating: "\u{1F680}", count: 121))
                 == String(repeating: "\u{1F680}", count: 117) + "...")
     }
 
     @Test func actorsAndUnknownEventDescriptionsPreserveTheirExistingWords() throws {
         let agents = [ChannelAgent(id: "lead", name: "Lead")]
-        #expect(ChannelSystemText.actor(.init(type: "artifact_shared", actor: .agent("lead")), agents: agents) == "Lead")
-        #expect(ChannelSystemText.actor(.init(type: "artifact_shared", actor: .agent("missing")), agents: agents)
+        #expect(ChannelSystemContent.actorName(.init(type: "artifact_shared", actor: .agent("lead")), agents: agents) == "Lead")
+        #expect(ChannelSystemContent.actorName(.init(type: "artifact_shared", actor: .agent("missing")), agents: agents)
                 == "Deleted agent")
-        #expect(ChannelSystemText.actor(nil, agents: agents) == "Deleted agent")
+        #expect(ChannelSystemContent.actorName(nil, agents: agents) == "Deleted agent")
         #expect(text(.init(type: "unknown")) == "Channel updated")
         let future = try JSONDecoder().decode(ChannelSystemContent.self,
                                               from: Data(#"{"type":"future","description":"More\nwords"}"#.utf8))
@@ -89,6 +89,6 @@ struct SystemTextTests {
     }
 
     private func text(_ system: ChannelSystemContent) -> String {
-        ChannelSystemText.rendered(system, agents: [])
+        system.rendered(agents: [])
     }
 }
