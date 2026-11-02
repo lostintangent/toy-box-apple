@@ -30,8 +30,8 @@ let package = Package(
         .executable(name: "ToyBoxMobileShare", targets: ["ToyBoxMobileShare"]),
     ] : [
         .executable(name: "ToyBoxDesktop", targets: ["ToyBoxDesktop"]),
-        .executable(name: "ToyBoxShare", targets: ["ToyBoxShare"]),
-        .executable(name: "ToyBoxWidget", targets: ["ToyBoxWidget"]),
+        .executable(name: "ToyBoxDesktopShare", targets: ["ToyBoxDesktopShare"]),
+        .executable(name: "ToyBoxDesktopWidget", targets: ["ToyBoxDesktopWidget"]),
     ]),
     dependencies: mobile ? [] : [
         .package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.10.0"),
@@ -82,15 +82,15 @@ let package = Package(
         .target(name: "ToyBoxControlIntents", path: "Sources/Desktop/ToyBoxControlIntents",
                 swiftSettings: [.unsafeFlags(["-application-extension"])]),
         .executableTarget(
-            name: "ToyBoxShare",
-            path: "Sources/Desktop/Extensions/ToyBoxShare",
+            name: "ToyBoxDesktopShare",
+            path: "Sources/Desktop/Extensions/ToyBoxDesktopShare",
             swiftSettings: [.unsafeFlags(["-application-extension"])],
             linkerSettings: [.unsafeFlags(["-Xlinker", "-e", "-Xlinker", "_NSExtensionMain"])]
         ),
         .executableTarget(
-            name: "ToyBoxWidget",
+            name: "ToyBoxDesktopWidget",
             dependencies: ["ChannelKit", "ToyBoxControlIntents", "ToyBoxWidgetViews"],
-            path: "Sources/Desktop/Extensions/ToyBoxWidget",
+            path: "Sources/Desktop/Extensions/ToyBoxDesktopWidget",
             swiftSettings: [.unsafeFlags(["-application-extension"])]
         ),
         .executableTarget(
@@ -104,10 +104,10 @@ let package = Package(
             linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])]
         ),
         .testTarget(name: "ToyBoxDesktopTests", dependencies: ["ToyBoxDesktop"], path: "Tests/Desktop/ToyBoxDesktopTests"),
-        .testTarget(name: "ToyBoxShareTests", dependencies: ["ToyBoxShare"],
-                    path: "Tests/Desktop/Extensions/ToyBoxShareTests"),
-        .testTarget(name: "ToyBoxWidgetTests", dependencies: ["ToyBoxWidget"],
-                    path: "Tests/Desktop/Extensions/ToyBoxWidgetTests"),
+        .testTarget(name: "ToyBoxDesktopShareTests", dependencies: ["ToyBoxDesktopShare"],
+                    path: "Tests/Desktop/Extensions/ToyBoxDesktopShareTests"),
+        .testTarget(name: "ToyBoxDesktopWidgetTests", dependencies: ["ToyBoxDesktopWidget"],
+                    path: "Tests/Desktop/Extensions/ToyBoxDesktopWidgetTests"),
     ]) + [
         .testTarget(
             name: "ChannelKitTests",

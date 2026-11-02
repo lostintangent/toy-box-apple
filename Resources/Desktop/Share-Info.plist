@@ -9,7 +9,7 @@
     <key>CFBundleIdentifier</key>
     <string>dev.toybox.desktop.share</string>
     <key>CFBundleExecutable</key>
-    <string>ToyBoxShare</string>
+    <string>ToyBoxDesktopShare</string>
     <key>CFBundlePackageType</key>
     <string>XPC!</string>
     <key>CFBundleShortVersionString</key>

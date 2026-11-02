@@ -400,10 +400,10 @@ so the suite starts a WebKit web content process once instead of once per render
   latest feed, serializes workflows and uses `github.run_number.github.run_attempt` to advance reruns.
 - Hardened runtime and a secure timestamp throughout. The app has audio-input permission and,
   when Developer ID signed with its widget, the `RHFNBL7EG4.dev.toybox.desktop` app group.
-  `Contents/PlugIns/ToyBoxShare.appex` has only App Sandbox, no network or file-access entitlement.
+  `Contents/PlugIns/ToyBoxDesktopShare.appex` has only App Sandbox, no network or file-access entitlement.
   Its identity is the app's ID plus `.share`, with matching version/build, signed before the app.
   Never `--deep`. Validation checks its arm64 architecture, SDK stamp, signature and sandbox.
-- `Contents/PlugIns/ToyBoxWidget.appex`: App Sandbox, same Team-ID-prefixed group, no networking,
+- `Contents/PlugIns/ToyBoxDesktopWidget.appex`: App Sandbox, same Team-ID-prefixed group, no networking,
   app ID plus `.widget`, matching version/build. Ad-hoc builds have no group entitlement or snapshot
   publishing. Isolated validation/snapshot/benchmark copies remove widget/group metadata.
   Register the containing app with LaunchServices before probing WidgetKit registration.
@@ -445,7 +445,7 @@ so the suite starts a WebKit web content process once instead of once per render
 
 | Path | Owner |
 | --- | --- |
-| `Sources/Shared/ChannelKit/`, `Sources/Shared/ChannelClient/`, `Sources/Desktop/ToyBoxControlIntents/`, `Sources/Desktop/Extensions/ToyBoxShare/`, `Sources/Mobile/ToyBoxMobile/Automation`, `Tests/` (except below), `scripts/`, `Package.swift`, `package.json` | Core |
+| `Sources/Shared/ChannelKit/`, `Sources/Shared/ChannelClient/`, `Sources/Desktop/ToyBoxControlIntents/`, `Sources/Desktop/Extensions/ToyBoxDesktopShare/`, `Sources/Mobile/ToyBoxMobile/Automation`, `Tests/` (except below), `scripts/`, `Package.swift`, `package.json` | Core |
 | `Sources/Shared/ToyBoxUI/` shared presentation, identity and interaction models | Core, with the originating UI owner |
 | `Sources/Desktop/ToyBoxDesktop/App`, `Shell`, `Sidebar`, `Channel`, `MenuBar`, `Notifications`, `QuickSend`, `Intents`, `Settings`, `Shared` | Shell |
 | `Sources/Desktop/ToyBoxDesktop/Transcript`, `Tests/Desktop/ToyBoxDesktopTests/TranscriptTests.swift` | Transcript |
@@ -457,7 +457,7 @@ so the suite starts a WebKit web content process once instead of once per render
 | `Sources/Mobile/ToyBoxMobile/Composer` (composer and tray) | Composer |
 | `Sources/Mobile/ToyBoxMobile/Overview`, `Management` | Overview |
 | `Sources/Mobile/ToyBoxMobileIntegrations/`, `Sources/Mobile/Extensions/ToyBoxMobileNotification/`, `Sources/Mobile/Extensions/ToyBoxMobileShare/`, `Resources/Mobile/` | Core |
-| `Sources/Shared/ToyBoxWidgetViews/`, `Sources/Desktop/Extensions/ToyBoxWidget/`, `Sources/Mobile/Extensions/ToyBoxMobileWidget/`, `Tests/Mobile/Extensions/ToyBoxMobileWidgetTests/` | Overview |
+| `Sources/Shared/ToyBoxWidgetViews/`, `Sources/Desktop/Extensions/ToyBoxDesktopWidget/`, `Sources/Mobile/Extensions/ToyBoxMobileWidget/`, `Tests/Mobile/Extensions/ToyBoxMobileWidgetTests/` | Overview |
 
 UI engineers may add one `Tests/Desktop/ToyBoxDesktopTests/<Surface>Tests.swift` file for their own surface.
 

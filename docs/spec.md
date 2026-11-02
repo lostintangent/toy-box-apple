@@ -164,7 +164,7 @@ The iOS gate stops a suite that prints nothing for three minutes, well inside it
 prints the call graph of that suite's own `xctest` process and the suites and tests that started
 without finishing, then ends the process before the simulator shuts down. It never retries.
 
-Every normal bundle embeds `Contents/PlugIns/ToyBoxShare.appex`, a SwiftPM executable linked with
+Every normal bundle embeds `Contents/PlugIns/ToyBoxDesktopShare.appex`, a SwiftPM executable linked with
 `_NSExtensionMain` for `com.apple.share-services`. Its activation rules accept text, URLs, images
 and files. It performs no networking and presents no editor. It loads the explicit items into a
 uniquely named `dev.toybox.desktop.share.<UUID>` pasteboard, then opens

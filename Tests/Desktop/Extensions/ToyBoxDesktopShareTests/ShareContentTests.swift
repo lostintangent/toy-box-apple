@@ -1,7 +1,7 @@
 import AppKit
 import Testing
 import UniformTypeIdentifiers
-@testable import ToyBoxShare
+@testable import ToyBoxDesktopShare
 
 @MainActor
 struct ShareContentTests {

@@ -6,7 +6,7 @@ import { validateControlMetadata, widgetExtension } from "./widget-extension.ts"
 const sourceDirectories: Record<string, string> = {
     ToyBoxControlIntents: "Sources/Desktop/ToyBoxControlIntents",
     ToyBoxDesktop: "Sources/Desktop/ToyBoxDesktop",
-    ToyBoxWidget: "Sources/Desktop/Extensions/ToyBoxWidget",
+    ToyBoxDesktopWidget: "Sources/Desktop/Extensions/ToyBoxDesktopWidget",
 };
 
 export async function extractAppIntents(app: string, scratch: string, configuration: string,
@@ -78,5 +78,5 @@ export async function extractAppIntents(app: string, scratch: string, configurat
     const dependencies = [join(sharedOutput, "Metadata.appintents/extract.actionsdata")];
     await extract("ToyBoxDesktop", app, "ToyBoxDesktop", join(app, "Contents/Resources"), dependencies);
     const widget = widgetExtension(app);
-    await extract("ToyBoxWidget", widget, "ToyBoxWidget", join(widget, "Contents/Resources"), dependencies);
+    await extract("ToyBoxDesktopWidget", widget, "ToyBoxDesktopWidget", join(widget, "Contents/Resources"), dependencies);
 }
