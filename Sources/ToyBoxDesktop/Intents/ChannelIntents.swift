@@ -192,14 +192,14 @@ final class ChannelIntents {
         let needing = CatchUpAnswer.needingAttention(channels)
         if needing.count == 1 { return try await catchUp(needing[0]) }
         var counts: [String: Int] = [:]
-        for channel in needing.prefix(CatchUpAnswer.overviewRowLimit) where channel.status == .unread {
+        for channel in needing.prefix(CatchUpAnswer.overviewRowLimit) where channel.attention == .unread {
             counts[channel.id] = try? await newMessageCount(channel)
         }
         return CatchUpAnswer.overviewAnswer(needing, newMessages: counts)
     }
 
     private func catchUp(_ channel: Channel) async throws -> CatchUpAnswer.Answer {
-        guard channel.status != nil else { return .init(spoken: CatchUpAnswer.caughtUp(in: channel.name)) }
+        guard channel.attention != nil else { return .init(spoken: CatchUpAnswer.caughtUp(in: channel.name)) }
         let state = try await connected(channel.id) { $0.state }
         guard let state else { throw ChannelIntentError.unreachable }
         let unreadAfter = state.channel.unreadAfter

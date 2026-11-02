@@ -26,7 +26,7 @@ struct IntentsTests {
 
         #expect(subtitle(ChannelEntity(channel("c", "Notes", latest: 5, seen: 3))) == "Unread messages")
         let quiet = ChannelEntity(channel("d", "Quiet", latest: 4, seen: 4))
-        #expect(quiet.unreadCount == 0 && quiet.status == nil && subtitle(quiet) == nil)
+        #expect(quiet.unreadCount == 0 && quiet.attention == nil && subtitle(quiet) == nil)
     }
 
     @Test func channelsMatchByNameIgnoringCaseAccentsAndPunctuation() {
@@ -52,7 +52,7 @@ struct IntentsTests {
         #expect(attributes.contentDescription == "Ship the demo" && attributes.thumbnailData == nil)
 
         let png = try #require(ChannelSpotlight.renderIcon())
-        let quiet = ChannelEntity(id: "b", name: "Docs", status: .unread, thumbnail: png).attributeSet
+        let quiet = ChannelEntity(id: "b", name: "Docs", attention: .unread, thumbnail: png).attributeSet
         #expect(quiet.contentDescription == nil && quiet.thumbnailData == png)
 
         let icon = try #require(NSBitmapImageRep(data: png))

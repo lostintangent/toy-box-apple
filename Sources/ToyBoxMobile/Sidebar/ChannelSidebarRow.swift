@@ -6,7 +6,7 @@ struct ChannelSidebarRow: View {
     let channel: Channel
     let agents: [ChannelAgent]
     let working: [ChannelAgent]
-    let status: Channel.Status?
+    let attention: Channel.Attention?
     let now: Date
     @Environment(\.backgroundProminence) private var prominence
     @Environment(\.colorScheme) private var colorScheme
@@ -118,17 +118,17 @@ struct ChannelSidebarRow: View {
     }
 
     private var attentionColor: Color {
-        guard let status else { return .primary }
-        return prominence == .increased ? .white : status.color(in: colorScheme)
+        guard let attention else { return .primary }
+        return prominence == .increased ? .white : attention.color(in: colorScheme)
     }
 
     @ViewBuilder private var attentionLabel: some View {
-        if let status {
-            if status == .unread {
+        if let attention {
+            if attention == .unread {
                 Circle().fill(attentionColor)
                     .frame(width: 7, height: 7)
             } else {
-                Image(systemName: status.symbol)
+                Image(systemName: attention.symbol)
                     .font(.footnote.weight(.semibold))
                     .foregroundStyle(attentionColor)
             }
@@ -136,7 +136,7 @@ struct ChannelSidebarRow: View {
     }
 
     private var attentionText: String {
-        switch status {
+        switch attention {
         case .waiting: "Waiting for your response"
         case .finished: "All tasks completed"
         case .unread: "Unread messages"

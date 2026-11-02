@@ -300,7 +300,7 @@ struct RootView: View {
 
     private func selectNextAttention() {
         let channels = model.catalog?.channels ?? []
-        let attention = Set(channels.filter { $0.status != nil }.map(\.id))
+        let attention = Set(channels.filter { $0.attention != nil }.map(\.id))
         if let id = ChannelNavigation.nextAttention(in: channels.map(\.id), from: selectedId,
                                                     attentionIDs: attention) {
             selectChannel(id)
