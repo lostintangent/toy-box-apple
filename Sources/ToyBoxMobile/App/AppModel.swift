@@ -112,7 +112,7 @@ final class AppModel {
     var canManageChannels: Bool { isActive && catalog?.phase == .connected }
     var canCreateChannel: Bool { canManageChannels }
 
-    var sidebarProjection: ChannelSidebarPresentation {
+    var sidebarPresentation: ChannelSidebarPresentation {
         let visible = isActive ? visibleChannelID : nil
         return ChannelSidebarPresentation(catalog: catalog, openChannelIDs: Set(visible.map { [$0] } ?? []))
     }
@@ -272,7 +272,7 @@ final class AppModel {
     private func observeIntegrations(generation: UUID) {
         guard generation == integrationsGeneration else { return }
         let context = withObservationTracking {
-            let channels = catalog?.channels.map(sidebarProjection.channel) ?? []
+            let channels = catalog?.channels.map(sidebarPresentation.channel) ?? []
             let active = isActive && !isSettingsPresented
                 && selectedStore.map({ interaction(for: $0.id).isArtifactViewerPresented != true }) != false
                 ? visibleChannelID : nil

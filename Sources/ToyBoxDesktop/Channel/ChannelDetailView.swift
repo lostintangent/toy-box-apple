@@ -241,7 +241,7 @@ struct ChannelDetailView: View {
         Picker("Channel", selection: Binding(get: { store.id }, set: { if $0 != store.id { onSelect($0) } })) {
             ForEach(model.catalog?.channels ?? []) { channel in
                 Text(model.sidebarChannel(channel).name)
-                    .badge(Self.badge(model.sidebarAttention(channel)))
+                    .badge(Self.badge(model.sidebarStatus(channel)))
                     .tag(channel.id)
             }
         }

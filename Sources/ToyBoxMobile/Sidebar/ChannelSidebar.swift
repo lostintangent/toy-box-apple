@@ -25,7 +25,7 @@ struct ChannelSidebar: View {
 
     private var canCreate: Bool { model.canCreateChannel }
 
-    private var projection: ChannelSidebarPresentation { model.sidebarProjection }
+    private var presentation: ChannelSidebarPresentation { model.sidebarPresentation }
 
     private func channelList(now: Date) -> some View {
         @Bindable var model = model
@@ -47,7 +47,7 @@ struct ChannelSidebar: View {
                         .contextMenu {
                             contextMenu(channel)
                         } preview: {
-                            ChannelSidebarPreview(channel: projection.channel(channel), agents: projection.agents(channel))
+                            ChannelSidebarPreview(channel: presentation.channel(channel), agents: presentation.agents(channel))
                         }
                         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                             Button(role: .destructive) {
@@ -113,11 +113,11 @@ struct ChannelSidebar: View {
     }
 
     private func row(_ channel: Channel, now: Date) -> some View {
-        let agents = projection.agents(channel)
+        let agents = presentation.agents(channel)
         return ChannelSidebarRow(
-            channel: projection.channel(channel), agents: agents,
-            working: projection.working(channel, agents: agents),
-            attention: projection.status(channel), now: now
+            channel: presentation.channel(channel), agents: agents,
+            working: presentation.working(channel, agents: agents),
+            attention: presentation.status(channel), now: now
         )
     }
 

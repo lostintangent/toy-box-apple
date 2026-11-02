@@ -235,7 +235,7 @@ struct RootView: View {
             overview.isCompactSheetPresented || (sizeClass == .compact && $0.isInspectorPresented) ? nil : $0
         }
         let channels = model.catalog?.channels ?? []
-        let attention = Set(channels.filter { model.sidebarProjection.status($0) != nil }.map(\.id))
+        let attention = Set(channels.filter { model.sidebarPresentation.status($0) != nil }.map(\.id))
         return WindowCommandActions(
             messageView: interaction?.messageView ?? .all,
             sidebarVisible: columnVisibility != .detailOnly,
