@@ -597,7 +597,7 @@ extension IntentsTests {
             let agent = try #require(([before.lead] + before.members).first { $0.id == request.sender.agentId })
             let item = MenuBarStatus.Item(id: before.channel.id, name: before.channel.name, subtitle: "",
                                          agent: agent, sequence: request.sequence,
-                                         quote: NotificationText.plainText(request.text))
+                                         quote: MarkdownBlock.plainText(request.text))
             let entry = try #require(WaitingRequestEntry(item: item, serverURL: api.baseURL.absoluteString))
             let text = "Spotlight reply fixture \(UUID().uuidString.prefix(8))"
             var intent = ReplyToRequestIntent(request: WaitingRequestEntity(entry), message: "  \(text)\n")

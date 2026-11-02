@@ -1059,6 +1059,10 @@ struct NotificationTests {
                 seenThrough: seen, requestSequence: request, updatedAt: "2026-10-22T08:00:00Z")
     }
 
+    private func requestBody(_ message: ChannelMessage) -> String {
+        ChannelNotification.Content(request: ChannelRequestMessage(message: message, agents: agents)).body
+    }
+
     @MainActor @Test func requestAlertsLeadWithTheChannelWithoutLosingTheirReplyHandle() {
         let content = ChannelNotifications.content(
             for: .init(channel: channel("Workshop"), sequence: 12, kind: .request),
@@ -1085,7 +1089,7 @@ struct NotificationTests {
             let door = arch
             ```
             """
-        #expect(NotificationText.requestBody(message(text), agents: agents) == """
+        #expect(requestBody(message(text)) == """
             which entrance should we ship?
             \u{2022} The arched one
             \u{2022} The flat one
@@ -1096,36 +1100,38 @@ struct NotificationTests {
     @Test func attachmentOnlyRequestsSayWhatWasSent() {
         let image = ChannelAttachment(name: "door.png", mimeType: "image/png")
         let file = ChannelAttachment(name: "notes.pdf", mimeType: "application/pdf")
-        #expect(NotificationText.requestBody(message("@lead", attachments: [image]), agents: agents) == "Sent an image")
-        #expect(NotificationText.requestBody(message("", attachments: [image, image, image]), agents: agents) == "Sent 3 images")
-        #expect(NotificationText.requestBody(message("", attachments: [file]), agents: agents) == "Sent a file")
-        #expect(NotificationText.requestBody(message("", attachments: [image, file]), agents: agents) == "Sent 2 files")
-        #expect(NotificationText.requestBody(message("  "), agents: agents) == NotificationText.waitingBody)
+        #expect(requestBody(message("@lead", attachments: [image])) == "Sent an image")
+        #expect(requestBody(message("", attachments: [image, image, image])) == "Sent 3 images")
+        #expect(requestBody(message("", attachments: [file])) == "Sent a file")
+        #expect(requestBody(message("", attachments: [image, file])) == "Sent 2 files")
+        #expect(requestBody(message("  ")) == ChannelNotification.Content.waitingBody)
     }
 
     @Test func longRequestsCutAtAWordBoundary() {
         let text = String(repeating: "entrance ", count: 60)
-        let body = NotificationText.truncated(text)
-        #expect(body.count <= NotificationText.bodyLimit)
+        let body = ChannelNotification.Content.truncated(text)
+        #expect(body.count <= ChannelNotification.Content.bodyLimit)
         #expect(body.hasSuffix("entrance\u{2026}"))
-        #expect(NotificationText.truncated("Short and sweet.") == "Short and sweet.")
-        #expect(NotificationText.truncated(String(repeating: "a", count: 500)).count == NotificationText.bodyLimit)
+        #expect(ChannelNotification.Content.truncated("Short and sweet.") == "Short and sweet.")
+        #expect(ChannelNotification.Content.truncated(String(repeating: "a", count: 500)).count
+            == ChannelNotification.Content.bodyLimit)
     }
 
     @Test func completionNamesASingleTask() {
-        #expect(NotificationText.completionBody(tasks: [.init(id: "1", title: "Ship the door")])
+        #expect(ChannelNotification.Content(completion: [.init(id: "1", title: "Ship the door")]).body
             == "Completed \u{201C}Ship the door\u{201D}")
-        #expect(NotificationText.completionBody(tasks: [.init(id: "1", title: "A"), .init(id: "2", title: "B")])
+        #expect(ChannelNotification.Content(completion: [.init(id: "1", title: "A"), .init(id: "2", title: "B")]).body
             == "All 2 tasks completed")
     }
 
     @Test func repliesAreAddressedLikeTheInAppReply() {
-        #expect(NotificationText.addressedReply("  Ship it  ", to: "ada-lovelace") == "@ada-lovelace Ship it")
-        #expect(NotificationText.addressedReply("@lead Ship it", to: "ada-lovelace") == "@lead Ship it")
-        #expect(NotificationText.addressedReply("Ship it", to: nil) == "Ship it")
-        #expect(NotificationText.addressedReply(" \n ", to: "ada-lovelace") == nil)
-        #expect(NotificationText.draft("", adding: "@ada Ship it") == "@ada Ship it")
-        #expect(NotificationText.draft("Earlier thought\n", adding: "@ada Ship it") == "Earlier thought\n\n@ada Ship it")
+        #expect(ChannelNotification.Reply("  Ship it  ", to: "ada-lovelace")?.content == "@ada-lovelace Ship it")
+        #expect(ChannelNotification.Reply("@lead Ship it", to: "ada-lovelace")?.content == "@lead Ship it")
+        #expect(ChannelNotification.Reply("Ship it", to: nil)?.content == "Ship it")
+        #expect(ChannelNotification.Reply(" \n ", to: "ada-lovelace") == nil)
+        #expect(ChannelNotification.Reply("@ada Ship it", to: nil)?.appended(to: "") == "@ada Ship it")
+        #expect(ChannelNotification.Reply("@ada Ship it", to: nil)?.appended(to: "Earlier thought\n")
+            == "Earlier thought\n\n@ada Ship it")
     }
 
     @Test func sentRepliesMarkTheChannelReadThroughThemselves() async {
@@ -1269,12 +1275,12 @@ struct NotificationTests {
 
     @Test func choicesMapToTheirLabelsOnlyWhileInRange() {
         let replies = ["Yes", "No"]
-        #expect(SuggestedReplies.label(forAction: "reply-choice.0", replies: replies) == "Yes")
-        #expect(SuggestedReplies.label(forAction: "reply-choice.1", replies: replies) == "No")
-        #expect(SuggestedReplies.label(forAction: "reply-choice.2", replies: replies) == nil)
-        #expect(SuggestedReplies.label(forAction: "reply-choice.x", replies: replies) == nil)
-        #expect(SuggestedReplies.label(forAction: "reply-choice.0", replies: nil) == nil)
-        #expect(SuggestedReplies.label(forAction: UNNotificationDefaultActionIdentifier, replies: replies) == nil)
+        #expect(SuggestedReplies(replies).label(forAction: "reply-choice.0") == "Yes")
+        #expect(SuggestedReplies(replies).label(forAction: "reply-choice.1") == "No")
+        #expect(SuggestedReplies(replies).label(forAction: "reply-choice.2") == nil)
+        #expect(SuggestedReplies(replies).label(forAction: "reply-choice.x") == nil)
+        #expect(SuggestedReplies(nil).label(forAction: "reply-choice.0") == nil)
+        #expect(SuggestedReplies(replies).label(forAction: UNNotificationDefaultActionIdentifier) == nil)
     }
 
     @Test func aChoiceSendsItsLabelOnceThroughTheOutbox() async {
@@ -1283,7 +1289,7 @@ struct NotificationTests {
             sent.append(content)
             return .committed(self.message(content, sequence: 31))
         }, markRead: { _ in }, pause: {})
-        let content = NotificationText.addressedReply("Yes", to: nil)
+        let content = ChannelNotification.Reply("Yes", to: nil)?.content
         #expect(await reply.send(content ?? "") == .sent)
         #expect(sent == ["Yes"])
     }

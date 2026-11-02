@@ -114,7 +114,7 @@ final class ComposerSession {
         isCurrentRegistration: () -> Bool
     ) async -> NotificationReplyOutcome {
         guard isCurrentRegistration(), store.phase != .deleted,
-              let content = NotificationText.addressedReply(text, to: handle) else { return .notSent }
+              let content = ChannelNotification.Reply(text, to: handle)?.content else { return .notSent }
         do {
             _ = try await store.postInBackground(id: id, content: content)
             return .sent

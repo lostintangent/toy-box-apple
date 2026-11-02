@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import ChannelKit
 
-struct CronTests {
+struct RoutineScheduleTests {
     private struct Corpus: Decodable {
         var parser: String
         var fixtures: [Fixture]
@@ -31,15 +31,15 @@ struct CronTests {
             let context = "\(fixture.expression) from \(fixture.from) in \(fixture.timeZone)"
             for expectedText in fixture.next {
                 let expected = try #require(formatter.date(from: expectedText))
-                let actual = try nextCronOccurrence(fixture.expression, from: from, timeZone: zone,
-                                                    hashSeed: fixture.hashSeed)
+                let actual = try RoutineSchedule(fixture.expression, hashSeed: fixture.hashSeed)
+                    .next(after: from, timeZone: zone)
                 #expect(actual == expected, Comment(rawValue: "\(context), expected \(expectedText), got \(formatter.string(from: actual))"))
                 from = expected
             }
             if let error = fixture.error {
                 #expect(throws: CronScheduleError.self, Comment(rawValue: "\(context), reference error: \(error)")) {
-                    try nextCronOccurrence(fixture.expression, from: from, timeZone: zone,
-                                           hashSeed: fixture.hashSeed)
+                    try RoutineSchedule(fixture.expression, hashSeed: fixture.hashSeed)
+                        .next(after: from, timeZone: zone)
                 }
             }
         }
@@ -48,16 +48,16 @@ struct CronTests {
     @Test func exactBoundaryIsExclusiveAndFractionalTimesRoundForward() throws {
         let zone = try #require(TimeZone(secondsFromGMT: 0))
         let date = Date(timeIntervalSince1970: 1_770_000_000)
-        #expect(try nextCronOccurrence("* * * * * *", from: date, timeZone: zone)
+        #expect(try RoutineSchedule("* * * * * *").next(after: date, timeZone: zone)
                 == date.addingTimeInterval(1))
-        #expect(try nextCronOccurrence("* * * * * *", from: date.addingTimeInterval(0.125), timeZone: zone)
+        #expect(try RoutineSchedule("* * * * * *").next(after: date.addingTimeInterval(0.125), timeZone: zone)
                 == date.addingTimeInterval(1))
     }
 
     @Test func invalidDatesFailExplicitly() {
         for value in [Double.nan, .infinity, -.infinity, 8_640_000_000_001] {
             #expect(throws: CronScheduleError.invalidDate) {
-                try nextCronOccurrence("* * * * *", from: Date(timeIntervalSince1970: value))
+                try RoutineSchedule("* * * * *").next(after: Date(timeIntervalSince1970: value))
             }
         }
     }
@@ -79,12 +79,12 @@ struct CronTests {
             ("@weekdays", "Weekdays at 12:00 AM")
         ]
         for (expression, expected) in cases {
-            let result = try cronSummary(expression, locale: Locale(identifier: "en_US"))
+            let result = try RoutineSchedule(expression).summary(locale: Locale(identifier: "en_US"))
                 .replacingOccurrences(of: "\u{202f}", with: " ")
             #expect(result == expected, Comment(rawValue: expression))
         }
-        let morning = try cronSummary("0 9 * * *", locale: Locale(identifier: "en_GB"))
-        let afternoon = try cronSummary("30 14 * * *", locale: Locale(identifier: "en_GB"))
+        let morning = try RoutineSchedule("0 9 * * *").summary(locale: Locale(identifier: "en_GB"))
+        let afternoon = try RoutineSchedule("30 14 * * *").summary(locale: Locale(identifier: "en_GB"))
         #expect(morning == "Every day at 9:00")
         #expect(afternoon == "Every day at 14:30")
     }
@@ -96,13 +96,13 @@ struct CronTests {
             "H 9 * * *", "0 H * * *", "0 9 * * H", "H/15 * * * *",
             "  */15   * * * *  "
         ] {
-            #expect(try cronSummary(expression) == expression)
+            #expect(try RoutineSchedule(expression).summary() == expression)
         }
     }
 
     @Test func summaryRejectionsUseTheExistingCronParser() {
         for expression in ["70 9 * * *", "0 25 * * *", "0 9 * * WRONG", "0 9 15W * *", "*/0 * * * *"] {
-            #expect(throws: CronScheduleError.self) { try cronSummary(expression) }
+            #expect(throws: CronScheduleError.self) { try RoutineSchedule(expression) }
         }
     }
 }

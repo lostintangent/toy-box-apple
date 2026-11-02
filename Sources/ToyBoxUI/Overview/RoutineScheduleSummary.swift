@@ -17,7 +17,7 @@ package enum RoutineScheduleSummary {
             }
         }
         if summaries.count >= 256 { summaries.removeAll() }
-        let summary = (try? cronSummary(schedule)) ?? schedule
+        let summary = (try? RoutineSchedule(schedule).summary()) ?? schedule
         summaries[schedule] = summary
         return summary
     }

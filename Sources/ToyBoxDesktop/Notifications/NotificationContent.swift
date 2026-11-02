@@ -3,8 +3,6 @@ import ChannelKit
 import Foundation
 import UserNotifications
 
-typealias NotificationText = ChannelKit.NotificationText
-
 /// Posts a reply from a notification through the channel's outbox, like the phone's. A transport
 /// failure retries once with the same message ID, so the server can tell a lost response from a
 /// second message. A reply that still fails waits in the channel under that ID, so sending it again

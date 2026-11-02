@@ -80,7 +80,7 @@ struct MenuBarStatus: Equatable {
         waiting = requests.map { entry in
             let requester = entry.request?.requester
             return Item(id: entry.channel.id, name: entry.channel.name,
-                        subtitle: requester.map { NotificationText.subtitle(requester: $0.name) } ?? NotificationText.needsReply,
+                        subtitle: requester.map { ChannelNotification.Content.subtitle(requester: $0.name) } ?? ChannelNotification.Content.needsReply,
                         agent: requester, sequence: entry.sequence, quote: entry.request?.quote,
                         requestedAt: entry.requestedAt, replies: entry.request?.message.suggestedReplies ?? [])
         }

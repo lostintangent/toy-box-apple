@@ -32,6 +32,29 @@ public struct MarkdownBlock: Identifiable, Equatable {
         self.kind = kind
     }
 
+    /// Links become their text, code keeps its contents, list items keep a bullet and each block
+    /// takes one line.
+    public static func plainText(_ markdown: String) -> String {
+        parse(markdown).compactMap { block -> String? in
+            switch block.kind {
+            case .paragraph(let text), .heading(_, let text), .quote(let text): inline(text)
+            case .listItem(_, let text, let depth): String(repeating: "  ", count: depth) + "\u{2022} " + inline(text)
+            case .code(_, let code): code
+            case .table(let rows): rows.map { $0.map(inline).joined(separator: "  ") }.joined(separator: "\n")
+            case .rule: nil
+            }
+        }
+        .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        .filter { !$0.isEmpty }
+        .joined(separator: "\n")
+    }
+
+    private static func inline(_ markdown: String) -> String {
+        let options = AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+        guard let parsed = try? AttributedString(markdown: markdown, options: options) else { return markdown }
+        return String(parsed.characters)
+    }
+
     public static func parse(_ source: String) -> [MarkdownBlock] {
         let lines = source.replacingOccurrences(of: "\r\n", with: "\n").components(separatedBy: "\n")
         var blocks: [MarkdownBlock] = []

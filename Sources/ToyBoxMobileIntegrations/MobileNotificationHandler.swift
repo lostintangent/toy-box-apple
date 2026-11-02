@@ -47,7 +47,7 @@ public final class MobileNotificationHandler {
         }
         reloadWidgets()
         guard payload.kind == .request else { return original }
-        let labels = SuggestedReplies.labels(original.userInfo["replies"] as? [String])
+        let labels = SuggestedReplies(original.userInfo["replies"] as? [String]).labels
         guard !labels.isEmpty else { return original }
         let category = ReplyCategories.category(labels: labels)
         await replyCategories.publish(adding: category)

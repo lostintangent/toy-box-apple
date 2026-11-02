@@ -14,16 +14,7 @@ public enum CronScheduleError: Error, Equatable, LocalizedError, Sendable {
     }
 }
 
-public func nextCronOccurrence(_ expression: String, from date: Date,
-                               timeZone: TimeZone = .current, hashSeed: String? = nil) throws -> Date {
-    try CronSchedule(expression, hashSeed: hashSeed).next(after: date, timeZone: timeZone)
-}
-
-public func cronSummary(_ expression: String, locale: Locale = .current) throws -> String {
-    try CronSchedule(expression, hashSeed: nil).summary(locale: locale) ?? expression
-}
-
-private struct CronSchedule {
+public struct RoutineSchedule {
     private enum Unit: Int, CaseIterable {
         case second, minute, hour, day, month, weekday
 
@@ -57,6 +48,7 @@ private struct CronSchedule {
         func next(after value: Int) -> Int? { values.first { $0 > value } }
     }
 
+    public let expression: String
     private let fields: [Field]
     private var second: Field { fields[0] }
     private var minute: Field { fields[1] }
@@ -65,7 +57,8 @@ private struct CronSchedule {
     private var month: Field { fields[4] }
     private var weekday: Field { fields[5] }
 
-    init(_ expression: String, hashSeed: String?) throws {
+    public init(_ expression: String, hashSeed: String? = nil) throws {
+        self.expression = expression
         let aliases = [
             "@yearly": "0 0 0 1 1 *", "@annually": "0 0 0 1 1 *",
             "@monthly": "0 0 0 1 * *", "@weekly": "0 0 0 * * 0",
@@ -110,7 +103,11 @@ private struct CronSchedule {
         }
     }
 
-    func summary(locale: Locale) -> String? {
+    public func summary(locale: Locale = .current) -> String {
+        plainSummary(locale: locale) ?? expression
+    }
+
+    private func plainSummary(locale: Locale) -> String? {
         guard !fields.contains(where: \.isHashed), second.values == [0],
               day.isWildcard, month.isWildcard, weekday.special.isEmpty, weekday.nth == nil else {
             return nil
@@ -243,7 +240,7 @@ private struct CronSchedule {
         Int(value.prefix { $0.isASCII && $0.isNumber })
     }
 
-    func next(after date: Date, timeZone: TimeZone) throws -> Date {
+    public func next(after date: Date, timeZone: TimeZone = .current) throws -> Date {
         guard date.timeIntervalSince1970.isFinite, abs(date.timeIntervalSince1970) <= 8_640_000_000_000 else {
             throw CronScheduleError.invalidDate
         }

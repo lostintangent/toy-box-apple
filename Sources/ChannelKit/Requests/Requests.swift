@@ -16,8 +16,8 @@ public struct ChannelRequestMessage: Equatable, Sendable {
 
     /// The request's own words, or how the transcript shows it when it has none.
     public var quote: String {
-        let text = NotificationText.plainText(message.text)
-        return text.isEmpty ? NotificationText.requestBody(message, agents: agents) : text
+        let text = MarkdownBlock.plainText(message.text)
+        return text.isEmpty ? ChannelNotification.Content(request: self).body : text
     }
 }
 

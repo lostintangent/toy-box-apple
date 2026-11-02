@@ -21,8 +21,8 @@ enum DockMenu {
             for request in status.waiting {
                 let question = request.quote?.split(whereSeparator: \.isWhitespace).joined(separator: " ") ?? ""
                 let name = request.name.split(whereSeparator: \.isWhitespace).joined(separator: " ")
-                let fullTitle = "\(name): \(question.isEmpty ? NotificationText.needsReply : question)"
-                let item = item(NotificationText.truncated(fullTitle, limit: titleLimit)) { open(request) }
+                let fullTitle = "\(name): \(question.isEmpty ? ChannelNotification.Content.needsReply : question)"
+                let item = item(ChannelNotification.Content.truncated(fullTitle, limit: titleLimit)) { open(request) }
                 item.toolTip = request.agent.map { "\(fullTitle)\n\($0.name) needs your reply" } ?? fullTitle
                 menu.addItem(item)
             }

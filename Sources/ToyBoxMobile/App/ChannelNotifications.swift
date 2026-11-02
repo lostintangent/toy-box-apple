@@ -289,7 +289,7 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
 
     func receive(_ payload: ChannelPushPayload, action: String, text: String?, handle: String?,
                  replies: [String]? = nil, identifier: String) async {
-        if let label = SuggestedReplies.label(forAction: action, replies: replies) {
+        if let label = SuggestedReplies(replies).label(forAction: action) {
             await sendReply(payload, text: label, handle: nil, identifier: identifier)
             return
         }

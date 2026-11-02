@@ -33,7 +33,7 @@ public struct ChannelMessage: Codable, Equatable, Identifiable, Sendable {
     /// A request's answers the server accepts: 2 to 4 labels, each non-empty and at most 80 UTF-16
     /// units. Anything else reads as no replies, so a malformed list never hides the request itself.
     public var suggestedReplies: [String] {
-        request == true ? SuggestedReplies.labels(replies) : []
+        request == true ? SuggestedReplies(replies).labels : []
     }
 
     public var text: String {
