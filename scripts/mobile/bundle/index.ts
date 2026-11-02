@@ -154,7 +154,7 @@ export async function bundleMobile(device = false) {
     ]);
     const binary = join(app, "ToyBoxMobile");
     const minimumOS = await plist(join(app, "Info.plist"), ["Print :MinimumOSVersion"]);
-    await embedMobileAppIcon(join(root, "Resources"), app, device, minimumOS, mobileEnvironment);
+    await embedMobileAppIcon(join(root, "Resources/Shared"), app, device, minimumOS, mobileEnvironment);
     await command(["xcrun", "vtool", "-set-build-version", device ? "ios" : "iossim", minimumOS, version,
         "-replace", "-output", binary, binary], { env: mobileEnvironment });
     checkMobileBuildVersion(await text(["xcrun", "vtool", "-show-build", binary], { env: mobileEnvironment }),

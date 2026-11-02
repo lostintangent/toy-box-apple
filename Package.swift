@@ -37,50 +37,60 @@ let package = Package(
         .package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.10.0"),
     ],
     targets: [
-        .target(name: "ChannelKit"),
-        .target(name: "ChannelClient", dependencies: ["ChannelKit"]),
-        .target(name: "ChannelIntelligence", dependencies: ["ChannelKit", "ChannelClient"]),
-        .target(name: "ToyBoxUI", dependencies: ["ChannelKit", "ChannelClient"]),
-        .target(name: "ToyBoxWidgetViews", dependencies: ["ChannelKit"],
+        .target(name: "ChannelKit", path: "Sources/Shared/ChannelKit"),
+        .target(name: "ChannelClient", dependencies: ["ChannelKit"], path: "Sources/Shared/ChannelClient"),
+        .target(name: "ChannelIntelligence", dependencies: ["ChannelKit", "ChannelClient"],
+                path: "Sources/Shared/ChannelIntelligence"),
+        .target(name: "ToyBoxUI", dependencies: ["ChannelKit", "ChannelClient"], path: "Sources/Shared/ToyBoxUI"),
+        .target(name: "ToyBoxWidgetViews", dependencies: ["ChannelKit"], path: "Sources/Shared/ToyBoxWidgetViews",
                 swiftSettings: [.unsafeFlags(["-application-extension"])]),
     ] + (mobile ? [
         .target(name: "ToyBoxMobileIntegrations", dependencies: ["ChannelKit", "ChannelClient", "ToyBoxUI"],
+                path: "Sources/Mobile/ToyBoxMobileIntegrations",
                 swiftSettings: [.unsafeFlags(["-application-extension"])]),
         .executableTarget(name: "ToyBoxMobile", dependencies: [
             "ChannelClient", "ChannelIntelligence", "ToyBoxUI", "ToyBoxMobileIntegrations"
-        ], linkerSettings: simulatedEntitlements("dev.toybox.mobile")),
+        ], path: "Sources/Mobile/ToyBoxMobile", linkerSettings: simulatedEntitlements("dev.toybox.mobile")),
         .executableTarget(
             name: "ToyBoxMobileWidget", dependencies: ["ChannelKit", "ToyBoxMobileIntegrations", "ToyBoxWidgetViews"],
+            path: "Sources/Mobile/Extensions/ToyBoxMobileWidget",
             swiftSettings: [.unsafeFlags(["-application-extension"])],
             linkerSettings: [.unsafeFlags(["-Xlinker", "-e", "-Xlinker", "_NSExtensionMain"])]
                 + simulatedEntitlements("dev.toybox.mobile.widget")
         ),
         .executableTarget(
             name: "ToyBoxMobileNotification", dependencies: ["ChannelKit", "ToyBoxMobileIntegrations"],
+            path: "Sources/Mobile/Extensions/ToyBoxMobileNotification",
             swiftSettings: [.unsafeFlags(["-application-extension"])],
             linkerSettings: [.unsafeFlags(["-Xlinker", "-e", "-Xlinker", "_NSExtensionMain"])]
                 + simulatedEntitlements("dev.toybox.mobile.notification")
         ),
         .executableTarget(
             name: "ToyBoxMobileShare", dependencies: ["ChannelKit", "ChannelClient", "ToyBoxUI", "ToyBoxMobileIntegrations"],
+            path: "Sources/Mobile/Extensions/ToyBoxMobileShare",
             swiftSettings: [.unsafeFlags(["-application-extension"])],
             linkerSettings: [.unsafeFlags(["-Xlinker", "-e", "-Xlinker", "_NSExtensionMain"])]
                 + simulatedEntitlements("dev.toybox.mobile.share")
         ),
-        .testTarget(name: "ToyBoxMobileTests", dependencies: ["ToyBoxMobile"]),
+        .testTarget(name: "ToyBoxMobileTests", dependencies: ["ToyBoxMobile"], path: "Tests/Mobile/ToyBoxMobileTests"),
         .testTarget(name: "ToyBoxMobileIntegrationsTests",
-                    dependencies: ["ChannelClient", "ChannelKit", "ToyBoxMobileIntegrations"]),
-        .testTarget(name: "ToyBoxMobileWidgetTests", dependencies: ["ToyBoxMobileWidget"]),
+                    dependencies: ["ChannelClient", "ChannelKit", "ToyBoxMobileIntegrations"],
+                    path: "Tests/Mobile/ToyBoxMobileIntegrationsTests"),
+        .testTarget(name: "ToyBoxMobileWidgetTests", dependencies: ["ToyBoxMobileWidget"],
+                    path: "Tests/Mobile/Extensions/ToyBoxMobileWidgetTests"),
     ] : [
-        .target(name: "ToyBoxControlIntents", swiftSettings: [.unsafeFlags(["-application-extension"])]),
+        .target(name: "ToyBoxControlIntents", path: "Sources/Desktop/ToyBoxControlIntents",
+                swiftSettings: [.unsafeFlags(["-application-extension"])]),
         .executableTarget(
             name: "ToyBoxShare",
+            path: "Sources/Desktop/Extensions/ToyBoxShare",
             swiftSettings: [.unsafeFlags(["-application-extension"])],
             linkerSettings: [.unsafeFlags(["-Xlinker", "-e", "-Xlinker", "_NSExtensionMain"])]
         ),
         .executableTarget(
             name: "ToyBoxWidget",
             dependencies: ["ChannelKit", "ToyBoxControlIntents", "ToyBoxWidgetViews"],
+            path: "Sources/Desktop/Extensions/ToyBoxWidget",
             swiftSettings: [.unsafeFlags(["-application-extension"])]
         ),
         .executableTarget(
@@ -90,22 +100,27 @@ let package = Package(
                 "ToyBoxControlIntents",
                 .product(name: "Sparkle", package: "Sparkle"),
             ],
+            path: "Sources/Desktop/ToyBoxDesktop",
             linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])]
         ),
-        .testTarget(name: "ToyBoxDesktopTests", dependencies: ["ToyBoxDesktop"]),
-        .testTarget(name: "ToyBoxShareTests", dependencies: ["ToyBoxShare"]),
-        .testTarget(name: "ToyBoxWidgetTests", dependencies: ["ToyBoxWidget"]),
+        .testTarget(name: "ToyBoxDesktopTests", dependencies: ["ToyBoxDesktop"], path: "Tests/Desktop/ToyBoxDesktopTests"),
+        .testTarget(name: "ToyBoxShareTests", dependencies: ["ToyBoxShare"],
+                    path: "Tests/Desktop/Extensions/ToyBoxShareTests"),
+        .testTarget(name: "ToyBoxWidgetTests", dependencies: ["ToyBoxWidget"],
+                    path: "Tests/Desktop/Extensions/ToyBoxWidgetTests"),
     ]) + [
         .testTarget(
             name: "ChannelKitTests",
             dependencies: ["ChannelKit"],
+            path: "Tests/Shared/ChannelKitTests",
             resources: [.copy("Fixtures")]
         ),
-        .testTarget(name: "ChannelClientTests", dependencies: ["ChannelClient"]),
-        .testTarget(name: "ToyBoxUITests", dependencies: ["ToyBoxUI"]),
+        .testTarget(name: "ChannelClientTests", dependencies: ["ChannelClient"], path: "Tests/Shared/ChannelClientTests"),
+        .testTarget(name: "ToyBoxUITests", dependencies: ["ToyBoxUI"], path: "Tests/Shared/ToyBoxUITests"),
         .testTarget(
             name: "ChannelIntelligenceTests",
             dependencies: ["ChannelIntelligence"],
+            path: "Tests/Shared/ChannelIntelligenceTests",
             resources: [.copy("Fixtures")]
         ),
     ]

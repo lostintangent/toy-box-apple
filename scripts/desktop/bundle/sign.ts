@@ -11,14 +11,14 @@ export async function signApp(app: string, options = ["--force", "--timestamp=no
         await configureWidgetExtension(app, productionWidget);
         const widgetOptions = options.includes("--options") ? options : [...options, "--options", "runtime"];
         await command(["codesign", ...widgetOptions, "--entitlements",
-            join(root, productionWidget ? "Resources/WidgetExtension.entitlements" : "Resources/ShareExtension.entitlements"), widget]);
+            join(root, productionWidget ? "Resources/Desktop/Widget.entitlements" : "Resources/Desktop/Share.entitlements"), widget]);
         await command(["codesign", "--verify", "--strict", widget]);
     }
     const extension = shareExtension(app);
     if (await Bun.file(join(extension, "Contents/Info.plist")).exists()) {
         await configureShareExtension(app);
         const extensionOptions = options.includes("--options") ? options : [...options, "--options", "runtime"];
-        await command(["codesign", ...extensionOptions, "--entitlements", join(root, "Resources/ShareExtension.entitlements"), extension]);
+        await command(["codesign", ...extensionOptions, "--entitlements", join(root, "Resources/Desktop/Share.entitlements"), extension]);
         await command(["codesign", "--verify", "--strict", extension]);
     }
     const framework = join(app, "Contents/Frameworks/Sparkle.framework");
@@ -30,7 +30,7 @@ export async function signApp(app: string, options = ["--force", "--timestamp=no
         await command(["codesign", "--verify", "--strict", component]);
     }
     await command(["codesign", ...options, "--entitlements",
-        join(root, productionWidget ? "Resources/WidgetHost.entitlements" : "Resources/Release.entitlements"), app]);
+        join(root, productionWidget ? "Resources/Desktop/WidgetHost.entitlements" : "Resources/Desktop/Release.entitlements"), app]);
     await command(["codesign", "--verify", "--strict", app]);
 }
 

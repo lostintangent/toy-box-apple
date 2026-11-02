@@ -287,9 +287,9 @@ struct QuickSendIntakeTests {
     }
 
     @Test func bundleDeclaresServicesAndDockDropWithoutClaimingDefaultFileHandling() throws {
-        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().deletingLastPathComponent()
-        let data = try Data(contentsOf: root.appendingPathComponent("Resources/Info.plist"))
+        let data = try Data(contentsOf: root.appendingPathComponent("Resources/Desktop/Info.plist"))
         let info = try #require(PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any])
         #expect(info["CFBundleName"] as? String == "Toy Box")
         #expect(info["CFBundleDisplayName"] as? String == "Toy Box")

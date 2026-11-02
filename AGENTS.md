@@ -7,7 +7,11 @@ view.
 ## Tech stack
 
 - SwiftUI, with AppKit where SwiftUI falls short. Swift 6.4 and SwiftPM, with no Xcode project.
-  macOS 27 on Apple Silicon, plus the iOS 27 iPhone companion in `Sources/ToyBoxMobile`.
+  macOS 27 on Apple Silicon, plus the iOS 27 iPhone companion in `Sources/Mobile/ToyBoxMobile`.
+- `Sources`, `Tests` and `Resources` each split into `Shared`, `Desktop` and `Mobile`. `Shared`
+  holds the libraries both apps use. Each platform folder holds its app, the one library its app
+  and extensions share (`ToyBoxControlIntents` or `ToyBoxMobileIntegrations`) and its app
+  extensions under `Extensions`. Folders keep their module names, and Swift imports by module.
 - `ChannelKit` is the domain: Codable models, the reducer, transcript grouping, attention, tasks
   and cron. `ChannelClient` is transport: HTTP commands, SSE, reconnect and observable stores.
   `ChannelIntelligence` is on-device Foundation Models. `ToyBoxUI` is shared SwiftUI presentation
@@ -167,7 +171,7 @@ use demo servers only for write scripts. Never skip or retry actions.
   Output states configuration/optimization.
 - **Bundle contract:** before signing, stamp/verify the selected iOS SDK in `LC_BUILD_VERSION`,
   preserving plist deployment minimum and device/Simulator platform. `DTSDKName` alone is insufficient.
-  Compile shared `Resources/AppIcon.icon` with the selected platform's `actool`, embedding layered
+  Compile `Resources/Shared/AppIcon.icon` with the selected platform's `actool`, embedding layered
   appearances, PNG fallbacks and generated metadata. No separate phone artwork/iOS asset catalog.
   Embed `PlugIns/ToyBoxMobileWidget.appex` (`dev.toybox.mobile.widget`),
   `PlugIns/ToyBoxMobileNotification.appex` (`dev.toybox.mobile.notification`) and
@@ -428,8 +432,9 @@ so the suite starts a WebKit web content process once instead of once per render
   The current Developer ID expires February 1, 2027. Renew and rerun setup before then.
   Sparkle's archive key stays required, but the feed is unsigned and both strict flags stay absent.
   Existing v0.1.8 has the strict policy: install the first replacement manually once.
-- Icon source: `Resources/AppIcon.icon` (Designer). After changes, `bun run icon`, then commit it with
-  `Resources/AppIcon.icns` / `Resources/Assets.car`. Generation needs Icon Composer/Xcode `actool`.
+- Icon source: `Resources/Shared/AppIcon.icon` (Designer). After changes, `bun run icon`, then commit
+  it with `Resources/Desktop/AppIcon.icns` / `Resources/Desktop/Assets.car`. Generation needs Icon
+  Composer/Xcode `actool`.
   Mac builds only copy outputs, so CLT/Mac CI need neither. Mobile uses Xcode `actool` for the
   selected platform. `CFBundleIconName` selects layered dark/clear/tinted appearances.
   Mac `.icns` and generated phone PNGs remain fallbacks.
@@ -440,21 +445,21 @@ so the suite starts a WebKit web content process once instead of once per render
 
 | Path | Owner |
 | --- | --- |
-| `Sources/ChannelKit/`, `Sources/ChannelClient/`, `Sources/ToyBoxControlIntents/`, `Sources/ToyBoxShare/`, `Sources/ToyBoxMobile/Automation`, `Tests/` (except below), `scripts/`, `Package.swift`, `package.json` | Core |
-| `Sources/ToyBoxUI/` shared presentation, identity and interaction models | Core, with the originating UI owner |
-| `Sources/ToyBoxDesktop/App`, `Shell`, `Sidebar`, `Channel`, `MenuBar`, `Notifications`, `QuickSend`, `Intents`, `Settings`, `Shared` | Shell |
-| `Sources/ToyBoxDesktop/Transcript`, `Tests/ToyBoxDesktopTests/TranscriptTests.swift` | Transcript |
-| `Sources/ToyBoxDesktop/Composer` (composer and tray), `Tests/ToyBoxDesktopTests/ComposerTests.swift` | Composer |
-| `Sources/ToyBoxDesktop/Overview`, `Management` | Overview |
-| `Sources/ChannelIntelligence/`, `Tests/ChannelIntelligenceTests/` | Intelligence |
-| `Sources/ToyBoxMobile/App`, `Shell`, `Sidebar`, `Settings`, `Shared`, `Channel` | Shell |
-| `Sources/ToyBoxMobile/Transcript` | Transcript |
-| `Sources/ToyBoxMobile/Composer` (composer and tray) | Composer |
-| `Sources/ToyBoxMobile/Overview`, `Management` | Overview |
-| `Sources/ToyBoxMobileIntegrations/`, `Sources/ToyBoxMobileNotification/`, `Sources/ToyBoxMobileShare/`, `Resources/Mobile/` | Core |
-| `Sources/ToyBoxWidgetViews/`, `Sources/ToyBoxWidget/`, `Sources/ToyBoxMobileWidget/`, `Tests/ToyBoxMobileWidgetTests/` | Overview |
+| `Sources/Shared/ChannelKit/`, `Sources/Shared/ChannelClient/`, `Sources/Desktop/ToyBoxControlIntents/`, `Sources/Desktop/Extensions/ToyBoxShare/`, `Sources/Mobile/ToyBoxMobile/Automation`, `Tests/` (except below), `scripts/`, `Package.swift`, `package.json` | Core |
+| `Sources/Shared/ToyBoxUI/` shared presentation, identity and interaction models | Core, with the originating UI owner |
+| `Sources/Desktop/ToyBoxDesktop/App`, `Shell`, `Sidebar`, `Channel`, `MenuBar`, `Notifications`, `QuickSend`, `Intents`, `Settings`, `Shared` | Shell |
+| `Sources/Desktop/ToyBoxDesktop/Transcript`, `Tests/Desktop/ToyBoxDesktopTests/TranscriptTests.swift` | Transcript |
+| `Sources/Desktop/ToyBoxDesktop/Composer` (composer and tray), `Tests/Desktop/ToyBoxDesktopTests/ComposerTests.swift` | Composer |
+| `Sources/Desktop/ToyBoxDesktop/Overview`, `Management` | Overview |
+| `Sources/Shared/ChannelIntelligence/`, `Tests/Shared/ChannelIntelligenceTests/` | Intelligence |
+| `Sources/Mobile/ToyBoxMobile/App`, `Shell`, `Sidebar`, `Settings`, `Shared`, `Channel` | Shell |
+| `Sources/Mobile/ToyBoxMobile/Transcript` | Transcript |
+| `Sources/Mobile/ToyBoxMobile/Composer` (composer and tray) | Composer |
+| `Sources/Mobile/ToyBoxMobile/Overview`, `Management` | Overview |
+| `Sources/Mobile/ToyBoxMobileIntegrations/`, `Sources/Mobile/Extensions/ToyBoxMobileNotification/`, `Sources/Mobile/Extensions/ToyBoxMobileShare/`, `Resources/Mobile/` | Core |
+| `Sources/Shared/ToyBoxWidgetViews/`, `Sources/Desktop/Extensions/ToyBoxWidget/`, `Sources/Mobile/Extensions/ToyBoxMobileWidget/`, `Tests/Mobile/Extensions/ToyBoxMobileWidgetTests/` | Overview |
 
-UI engineers may add one `Tests/ToyBoxDesktopTests/<Surface>Tests.swift` file for their own surface.
+UI engineers may add one `Tests/Desktop/ToyBoxDesktopTests/<Surface>Tests.swift` file for their own surface.
 
 Edit only files you own. Ask the owner for anything else in the channel.
 

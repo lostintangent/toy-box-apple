@@ -4,9 +4,9 @@ import { command, executable, main, plist, root, temporary } from "./lib/index.t
 import { compileAppIcon } from "./lib/app-icon.ts";
 
 if (import.meta.main) await main(async () => {
-    const source = join(root, "Resources/AppIcon.icon");
-    const output = join(root, "Resources/AppIcon.icns");
-    const assets = join(root, "Resources/Assets.car");
+    const source = join(root, "Resources/Shared/AppIcon.icon");
+    const output = join(root, "Resources/Desktop/AppIcon.icns");
+    const assets = join(root, "Resources/Desktop/Assets.car");
     if (!await Bun.file(join(source, "icon.json")).exists()) throw new Error("AppIcon.icon source is missing.");
     let tool = process.env.ICTOOL;
     if (!tool) {
@@ -18,7 +18,7 @@ if (import.meta.main) await main(async () => {
     if (!tool || !await executable(tool)) throw new Error("ictool not found. Install Icon Composer or set ICTOOL.");
     await temporary("toy-box-icon.", async directory => {
         const metadata = await compileAppIcon(source, directory, "macosx",
-            await plist(join(root, "Resources/Info.plist"), ["Print :LSMinimumSystemVersion"]));
+            await plist(join(root, "Resources/Desktop/Info.plist"), ["Print :LSMinimumSystemVersion"]));
         if (!Bun.file(join(directory, "Assets.car")).size
             || await plist(metadata, ["Print :CFBundleIconName"]) !== "AppIcon") {
             throw new Error("actool did not produce the AppIcon appearance assets.");

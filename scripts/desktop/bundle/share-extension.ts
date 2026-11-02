@@ -10,7 +10,7 @@ export async function embedShareExtension(bin: string, app: string, sdkVersion: 
     await mkdir(join(extension, "Contents/MacOS"), { recursive: true });
     const binary = join(extension, "Contents/MacOS/ToyBoxShare");
     await copyFile(join(bin, "ToyBoxShare"), binary);
-    await copyFile(join(root, "Resources/ShareExtension-Info.plist"), join(extension, "Contents/Info.plist"));
+    await copyFile(join(root, "Resources/Desktop/Share-Info.plist"), join(extension, "Contents/Info.plist"));
     await command(["xcrun", "vtool", "-set-build-version", "macos", minimumOS, sdkVersion,
         "-replace", "-output", binary, binary]);
 }

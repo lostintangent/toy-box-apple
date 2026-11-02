@@ -53,7 +53,7 @@ export async function embedWidgetExtension(bin: string, app: string, sdkVersion:
     await mkdir(join(extension, "Contents/MacOS"), { recursive: true });
     const binary = join(extension, "Contents/MacOS/ToyBoxWidget");
     await copyFile(join(bin, "ToyBoxWidget"), binary);
-    await copyFile(join(root, "Resources/WidgetExtension-Info.plist"), join(extension, "Contents/Info.plist"));
+    await copyFile(join(root, "Resources/Desktop/Widget-Info.plist"), join(extension, "Contents/Info.plist"));
     await command(["xcrun", "vtool", "-set-build-version", "macos", minimumOS, sdkVersion,
         "-replace", "-output", binary, binary]);
 }

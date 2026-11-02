@@ -8,7 +8,7 @@ presentation and input surface over the same public Channel protocol that the Mi
 Reference sources (read-only):
 
 - Toy Box server and pane: `~/Desktop/toy-box/src/features/channels` (start with its `AGENTS.md`)
-- Contract fixtures: `Tests/ChannelKitTests/Fixtures`, originally exported from the Minecraft client.
+- Contract fixtures: `Tests/Shared/ChannelKitTests/Fixtures`, originally exported from the Minecraft client.
   The demo servers read the same `channel-snapshot.json`.
 
 ## Success criteria
@@ -480,7 +480,7 @@ The demo exposes canonical read-only history pages for the app and widget.
 optional requester's `handle` beside the system `aps` envelope. Its kinds and categories are
 `request` and `completion`; request uses the `reply` text action. The service must match the
 current registration before allowing actions or requesting a widget reload.
-The fixtures are `Tests/ChannelKitTests/Fixtures/push-request.apns`, `push-completion.apns` and
+The fixtures are `Tests/Shared/ChannelKitTests/Fixtures/push-request.apns`, `push-completion.apns` and
 `push-activity.apns`. The original generic alert fixtures remain accepted for compatibility.
 Use the selected simulator's actual registration ID for routed alert proof.
 
@@ -3465,12 +3465,12 @@ antenna for one warm accent, and it never shows text or a hash mark.
 
 | Part | Specification (1024 pt Icon Composer canvas) |
 | --- | --- |
-| Source | `Resources/AppIcon.icon`, an Icon Composer document with one 1024 x 1024 SVG per layer. It's the only artwork. Edit it in Icon Composer or as text |
+| Source | `Resources/Shared/AppIcon.icon`, an Icon Composer document with one 1024 x 1024 SVG per layer. It's the only artwork. Edit it in Icon Composer or as text |
 | Background | Vertical linear gradient `#1C4090` to `#071937`. The dark specialization is `#122656` to `#040B1A` |
 | Head group (back) | Speech bubble body x 193...831, y 305.2...778.2, corner radius 187, with its tail to x 261.2, y 879.4 at the lower left. The body is centered on x 512, and the whole robot, antenna to tail, on y 512. Antenna stem 39.6 x 121 at x 492.2, y 210.6. Fill `#F3EFE6`, `#E6E2DA` in dark. Glass on, translucency 0.3, neutral shadow 0.5 |
 | Face group (front) | Visor 492.8 x 277.2 at x 265.6, y 402, radius 138.6, `#0A1530`, not glass. Eyes 61.6 x 110 capsules at x 391 and 571.4, y 468. Smile is a radius-66 arc from x 465.8 to 558.2 at y 617.6 with a 26.4 pt round stroke. Eyes and smile are `#67E8F9`. Antenna ball radius 50.6 at 512, 195.2 in gold `#FACC15`, glass |
-| Shipped artwork | `Resources/Assets.car` contains the layered icon and its system Dark, Clear and Tinted appearances, compiled with Xcode's `actool`. The gold antenna and cyan face stay in Default and Dark; the system derives Clear and Tinted from the same layers, without a second drawing. Both local and GitHub bundles ship this same committed file |
-| Fallback | `Resources/AppIcon.icns`, also committed. `bun run icon` renders the Default appearance with Icon Composer's `ictool` and places it on Apple's grid: an 824 pt body inset 100 pt, with a black 22% shadow offset 10 pt down and blurred 34 pt. That matches Apple's own `.icns` files within a pixel. The fallback output is byte-identical across runs |
+| Shipped artwork | `Resources/Desktop/Assets.car` contains the layered icon and its system Dark, Clear and Tinted appearances, compiled with Xcode's `actool`. The gold antenna and cyan face stay in Default and Dark; the system derives Clear and Tinted from the same layers, without a second drawing. Both local and GitHub bundles ship this same committed file |
+| Fallback | `Resources/Desktop/AppIcon.icns`, also committed. `bun run icon` renders the Default appearance with Icon Composer's `ictool` and places it on Apple's grid: an 824 pt body inset 100 pt, with a black 22% shadow offset 10 pt down and blurred 34 pt. That matches Apple's own `.icns` files within a pixel. The fallback output is byte-identical across runs |
 | Builds | Local and GitHub bundles copy both outputs, set `CFBundleIconName` to AppIcon for the layered icon and keep `CFBundleIconFile` as the fallback. Neither build invokes Icon Composer or `actool`. Missing or empty artwork fails the build rather than silently shipping a generic icon |
 
 Change the artwork only in the `.icon`, then run `bun run icon` and commit it with both outputs.
