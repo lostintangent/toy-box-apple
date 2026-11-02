@@ -98,7 +98,7 @@ struct ChannelAgentStatusTests {
 
     @Test func wakeCountdownRequiresLiveWaitingPresenceAndAValidWakeTime() throws {
         let raw = "2026-10-26T23:00:00Z"
-        let date = try #require(ChannelDates.date(raw))
+        let date = try #require(try? Date(raw, strategy: .iso8601))
         #expect(ChannelAgentWakePresentation.wake(for: .init(state: "waiting", wakeAt: raw), isAvailable: true) == date)
         for presence: ChannelAgentPresence? in [
             nil, .init(state: "waiting"), .init(state: "waiting", wakeAt: "invalid"),

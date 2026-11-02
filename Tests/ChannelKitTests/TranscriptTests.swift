@@ -166,7 +166,7 @@ struct TranscriptTests {
 
     @Test func dayLabelsSwitchFromWeekdayToFullDateAtSevenDays() throws {
         let calendar = fixedCalendar()
-        let now = try #require(ChannelDates.date("2026-10-22T12:00:00Z"))
+        let now = try #require(try? Date("2026-10-22T12:00:00Z", strategy: .iso8601))
         for (days, expected) in [
             (0, "Today"), (1, "Yesterday"), (2, "Tuesday"), (6, "Friday"),
             (7, "Thursday, October 15")
@@ -178,7 +178,7 @@ struct TranscriptTests {
 
     @Test func onlyFullDatesOutsideTheCurrentYearIncludeTheYear() throws {
         let calendar = fixedCalendar()
-        let now = try #require(ChannelDates.date("2026-01-03T12:00:00Z"))
+        let now = try #require(try? Date("2026-01-03T12:00:00Z", strategy: .iso8601))
         for (timestamp, expected) in [
             ("2026-01-02T12:00:00Z", "Yesterday"),
             ("2026-01-01T12:00:00Z", "Thursday"),
@@ -186,7 +186,7 @@ struct TranscriptTests {
             ("2025-12-28T12:00:00Z", "Sunday"),
             ("2025-12-27T12:00:00Z", "Saturday, December 27, 2025")
         ] {
-            let date = try #require(ChannelDates.date(timestamp))
+            let date = try #require(try? Date(timestamp, strategy: .iso8601))
             #expect(transcriptDayLabel(date, now: now, calendar: calendar) == expected)
         }
     }
@@ -194,12 +194,12 @@ struct TranscriptTests {
     @Test func dayLabelsUseTheSuppliedCalendarForBothBoundariesAndFormatting() throws {
         let zone = try #require(TimeZone(identifier: "Pacific/Auckland"))
         let calendar = fixedCalendar(timeZone: zone)
-        let now = try #require(ChannelDates.date("2026-10-30T12:00:00Z"))
-        let date = try #require(ChannelDates.date("2026-10-22T12:00:00Z"))
+        let now = try #require(try? Date("2026-10-30T12:00:00Z", strategy: .iso8601))
+        let date = try #require(try? Date("2026-10-22T12:00:00Z", strategy: .iso8601))
         #expect(transcriptDayLabel(date, now: now, calendar: calendar) == "Friday, October 23")
         let losAngeles = try #require(TimeZone(identifier: "America/Los_Angeles"))
-        let beforeDST = try #require(ChannelDates.date("2026-03-07T23:30:00-08:00"))
-        let afterDST = try #require(ChannelDates.date("2026-03-09T09:00:00-07:00"))
+        let beforeDST = try #require(try? Date("2026-03-07T23:30:00-08:00", strategy: .iso8601))
+        let afterDST = try #require(try? Date("2026-03-09T09:00:00-07:00", strategy: .iso8601))
         #expect(transcriptDayLabel(beforeDST, now: afterDST, calendar: fixedCalendar(timeZone: losAngeles)) == "Saturday")
     }
 

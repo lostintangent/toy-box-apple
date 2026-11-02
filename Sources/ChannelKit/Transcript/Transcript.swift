@@ -209,7 +209,7 @@ public final class TranscriptRowBuilder {
            !isAgent || (cached.agent?.text == message.text && cached.agent?.sender == message.sender) {
             return cached
         }
-        let date = ChannelDates.date(message.timestamp)
+        let date = try? Date(message.timestamp, strategy: .iso8601)
         var info = Derived(timestamp: message.timestamp, date: date, day: date.map { calendar.startOfDay(for: $0) })
         if isAgent {
             let audience = resolveChannelAudience(extractAgentMentionHandles(message.text), sender: message.sender,

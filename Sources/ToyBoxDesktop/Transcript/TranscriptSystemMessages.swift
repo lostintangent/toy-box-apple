@@ -182,7 +182,7 @@ struct TranscriptSystemMessages: View {
                 .compactMap { $0 }.joined(separator: "\n")
         default: detail = first?.unknownFields?["description"]?.string ?? ""
         }
-        let timestamp = messages.first.flatMap { ChannelDates.date($0.timestamp) }?
+        let timestamp = messages.first.flatMap { try? Date($0.timestamp, strategy: .iso8601) }?
             .formatted(date: .complete, time: .shortened) ?? ""
         return [detail, timestamp].filter { !$0.isEmpty }.joined(separator: "\n")
     }

@@ -23,7 +23,7 @@ public struct ChannelDigestWindow: Equatable, Sendable {
     public func selecting(_ state: ChannelState) -> ChannelState {
         var state = state
         state.messages = state.messages.filter {
-            guard let date = ChannelDates.date($0.timestamp) else { return false }
+            guard let date = try? Date($0.timestamp, strategy: .iso8601) else { return false }
             return date > since && date <= through
         }
         if !state.messages.contains(where: { $0.sequence == state.channel.requestSequence }) {
@@ -39,7 +39,7 @@ public struct ChannelDigestWindow: Equatable, Sendable {
         var seen = Set(state.messages.map(\.sequence))
         var before = state.messages.map(\.sequence).min() ?? state.channel.latestSequence + 1
         while before > 1,
-              !state.messages.contains(where: { ChannelDates.date($0.timestamp).map { $0 <= since } ?? false }) {
+              !state.messages.contains(where: { (try? Date($0.timestamp, strategy: .iso8601)).map { $0 <= since } ?? false }) {
             try Task.checkCancellation()
             let older = try await page(before).filter { $0.sequence < before }
             guard let next = older.map(\.sequence).min(), next < before else { break }

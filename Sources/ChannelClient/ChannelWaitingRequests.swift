@@ -14,7 +14,7 @@ public final class ChannelWaitingRequests {
         /// The request's message, once it's known.
         public var request: ChannelRequestMessage?
 
-        public var requestedAt: Date? { request.flatMap { ChannelDates.date($0.message.timestamp) } }
+        public var requestedAt: Date? { request.flatMap { try? Date($0.message.timestamp, strategy: .iso8601) } }
     }
 
     public let catalog: ChannelCatalogStore
@@ -33,7 +33,7 @@ public final class ChannelWaitingRequests {
             let channel = projection.channel(listed)
             guard let sequence = channel.requestSequence else { return nil }
             let entry = Entry(channel: channel, sequence: sequence, request: known(channel.id, sequence))
-            return (entry, entry.requestedAt ?? ChannelDates.date(channel.updatedAt) ?? .distantPast)
+            return (entry, entry.requestedAt ?? (try? Date(channel.updatedAt, strategy: .iso8601)) ?? .distantPast)
         }.sorted { $0.date > $1.date }.map(\.entry)
     }
 

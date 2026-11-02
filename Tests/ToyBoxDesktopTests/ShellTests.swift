@@ -1433,7 +1433,7 @@ struct MenuBarExtraTests {
         #expect(status.waiting[0].quote == long)
         #expect(status.waiting[2].quote == nil)
         #expect(status.waiting[2].subtitle == "Needs your reply")
-        #expect(status.waiting[0].requestedAt == ChannelDates.date("2026-10-22T09:00:00Z"))
+        #expect(status.waiting[0].requestedAt == (try? Date("2026-10-22T09:00:00Z", strategy: .iso8601)))
         // A waiting channel stays out of Working even while its agents work.
         #expect(status.working.isEmpty)
     }

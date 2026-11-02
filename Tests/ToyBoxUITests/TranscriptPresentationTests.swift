@@ -31,7 +31,7 @@ struct TranscriptPresentationTests {
         var calendar = Calendar(identifier: .gregorian)
         calendar.locale = Locale(identifier: "en_US")
         calendar.timeZone = try #require(TimeZone(identifier: "UTC"))
-        let now = try #require(ChannelDates.date("2026-10-22T20:00:00Z"))
+        let now = try #require(try? Date("2026-10-22T20:00:00Z", strategy: .iso8601))
         func subtitle(_ sent: String, _ index: Int, _ count: Int) -> String {
             TranscriptImageSource(messageID: "m1", sender: "Lead", timestamp: sent)
                 .subtitle(index: index, count: count, now: now, calendar: calendar)

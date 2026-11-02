@@ -55,7 +55,7 @@ final class ChannelWaitingRequestsTests {
         #expect(requests.entries().map(\.channel.id) == ["a", "b", "test"])
         #expect(requests.entries()[0].request?.quote == "Ship it?")
         #expect(requests.entries()[0].request?.requester?.name == "Lead")
-        #expect(requests.entries()[0].requestedAt == ChannelDates.date("2026-10-22T11:00:00Z"))
+        #expect(requests.entries()[0].requestedAt == (try? Date("2026-10-22T11:00:00Z", strategy: .iso8601)))
         #expect(lookups.withLock { $0 } == ["a": 1, "b": 1])
         #expect(catalog.existingChannel(id: "a") == nil, "Looking a request up never opens its channel")
     }

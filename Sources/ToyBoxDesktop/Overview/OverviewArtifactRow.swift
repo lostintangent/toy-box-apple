@@ -51,7 +51,7 @@ struct OverviewArtifactRow: View {
         let pathExtension = (artifact.file.path as NSString).pathExtension
         return pathExtension.isEmpty ? nil : UTType(filenameExtension: pathExtension)
     }
-    private var sharedDate: Date? { (share?.sharedAt ?? artifact.sharedAt).flatMap(ChannelDates.date) }
+    private var sharedDate: Date? { (share?.sharedAt ?? artifact.sharedAt).flatMap { try? Date($0, strategy: .iso8601) } }
 
     /// The sharer from the latest loaded share event, or the localized file type when it is not loaded.
     private var source: String {

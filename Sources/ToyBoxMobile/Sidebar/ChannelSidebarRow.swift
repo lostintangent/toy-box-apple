@@ -58,7 +58,7 @@ struct ChannelSidebarRow: View {
 
     private var activity: some View {
         HStack(alignment: .firstTextBaseline, spacing: 4) {
-            if let date = ChannelDates.date(channel.updatedAt) {
+            if let date = try? Date(channel.updatedAt, strategy: .iso8601) {
                 Text(ChannelActivityTime.label(for: date, now: now))
                     .font(.caption)
                     .foregroundStyle(ChannelInk.secondary)
@@ -149,7 +149,7 @@ struct ChannelSidebarRow: View {
         if !attentionText.isEmpty { parts.append(attentionText) }
         if !working.isEmpty { parts.append(working.map(\.name).formatted(.list(type: .and)) + " working") }
         parts.append("Team: " + agents.map(\.name).formatted(.list(type: .and)))
-        if let date = ChannelDates.date(channel.updatedAt) {
+        if let date = try? Date(channel.updatedAt, strategy: .iso8601) {
             parts.append(ChannelActivityTime.accessibilityLabel(for: date, now: now))
         }
         return parts.filter { !$0.isEmpty }.joined(separator: ". ")

@@ -86,7 +86,7 @@ struct MenuBarStatus: Equatable {
         }
         let waitingIDs = Set(waiting.map(\.id))
         working = inputs.filter { !waitingIDs.contains($0.channel.id) && !$0.working.isEmpty }
-            .map { input in (input, ChannelDates.date(input.channel.updatedAt) ?? .distantPast) }
+            .map { input in (input, (try? Date(input.channel.updatedAt, strategy: .iso8601)) ?? .distantPast) }
             .sorted { $0.1 > $1.1 }
             .map { input, _ in
                 Item(id: input.channel.id, name: input.channel.name,

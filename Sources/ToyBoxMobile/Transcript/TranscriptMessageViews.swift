@@ -393,7 +393,7 @@ struct TranscriptTimestamp: View {
     let timestamp: String
 
     var body: some View {
-        if let date = ChannelDates.date(timestamp) {
+        if let date = try? Date(timestamp, strategy: .iso8601) {
             Text(date, format: .dateTime.hour().minute())
                 .foregroundStyle(TranscriptInk.secondary)
                 .monospacedDigit()
@@ -576,7 +576,7 @@ struct TranscriptSystemDetails: View {
                                 Text(detail.value).textSelection(.enabled).multilineTextAlignment(.trailing)
                             }
                         }
-                        if let date = ChannelDates.date(message.timestamp) {
+                        if let date = try? Date(message.timestamp, strategy: .iso8601) {
                             LabeledContent("Time", value: date.formatted(date: .abbreviated, time: .shortened))
                         }
                     } header: {

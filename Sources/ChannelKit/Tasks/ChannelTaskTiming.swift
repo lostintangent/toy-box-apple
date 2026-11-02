@@ -11,10 +11,10 @@ public struct ChannelTaskTiming: Equatable, Sendable {
 }
 
 public func channelTaskTiming(_ task: ChannelTask, now: Date) -> ChannelTaskTiming? {
-    guard let started = task.startedAt.flatMap(ChannelDates.date) else { return nil }
+    guard let started = task.startedAt.flatMap({ try? Date($0, strategy: .iso8601) }) else { return nil }
     let elapsed = max(0, Int(floor(now.timeIntervalSince(started) / 60)))
     let remaining = task.status == "in_progress"
-        ? task.checkInAt.flatMap(ChannelDates.date).map { max(0, Int(ceil($0.timeIntervalSince(now) / 60))) }
+        ? task.checkInAt.flatMap({ try? Date($0, strategy: .iso8601) }).map { max(0, Int(ceil($0.timeIntervalSince(now) / 60))) }
         : nil
     return ChannelTaskTiming(elapsedMinutes: elapsed, checkInMinutes: remaining)
 }

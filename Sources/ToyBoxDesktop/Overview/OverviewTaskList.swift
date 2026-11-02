@@ -203,7 +203,7 @@ struct OverviewTaskRow: View {
 
     @ViewBuilder
     private var timedHeader: some View {
-        if task.startedAt.flatMap(ChannelDates.date) != nil {
+        if task.startedAt.flatMap({ try? Date($0, strategy: .iso8601) }) != nil {
             TimelineView(ChannelTaskMinuteSchedule(isVisible: isTimingVisible)) { context in
                 header(timing: channelTaskTiming(task, now: context.date))
             }
