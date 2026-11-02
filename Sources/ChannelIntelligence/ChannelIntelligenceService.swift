@@ -107,7 +107,7 @@ public struct AltTextRequest: Sendable, Hashable {
     public let priority: Priority
 
     public init(server: URL, digest: String, fileURL: URL, priority: Priority = .visible) {
-        self.server = intelligenceServerKey(server)
+        self.server = server.intelligenceKey
         self.digest = digest
         self.fileURL = fileURL
         self.priority = priority
@@ -116,10 +116,13 @@ public struct AltTextRequest: Sendable, Hashable {
     var key: String { server + "\n" + digest }
 }
 
-func intelligenceServerKey(_ server: URL) -> String {
-    var value = server.absoluteString.lowercased()
-    while value.hasSuffix("/") { value.removeLast() }
-    return value
+extension URL {
+    /// The server's identity in intelligence cache keys: lowercased, without trailing slashes.
+    var intelligenceKey: String {
+        var value = absoluteString.lowercased()
+        while value.hasSuffix("/") { value.removeLast() }
+        return value
+    }
 }
 
 private struct ChannelIntelligenceEnvironmentKey: EnvironmentKey {

@@ -151,7 +151,7 @@ public final class TranscriptCatchUpSession {
     /// Explicitly replaces coverage, never in response to arrivals alone.
     public func update(from state: ChannelState, server: URL) {
         guard case .ready(let current) = phase, !isFading, !Self.dismissed.contains(boundary),
-              intelligenceServerKey(server) == boundary.server, state.channel.id == boundary.channelId,
+              server.intelligenceKey == boundary.server, state.channel.id == boundary.channelId,
               current.newerMessageCount(in: state.messages) != nil,
               let request = CatchUpRequest(server: server, state: state, unreadAfter: boundary.unreadAfter),
               request.key.through > self.request.key.through else { return }
