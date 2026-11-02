@@ -13,17 +13,17 @@ struct ArtifactViewer: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.openURL) private var openURL
-    @ViewState private var reading = ArtifactReaderState()
+    @ViewState private var reader = ArtifactReader()
     @AccessibilityFocusState private var titleFocused: Bool
 
     private var hasNavigation: Bool { (session.pages?.artifacts.count ?? 0) > 1 }
     private var bottomClearance: CGFloat { hasNavigation ? 88 : 24 }
     private var canPrepareOriginal: Bool {
-        session.resource != nil && !session.isUnavailable && !session.isLoading && !reading.isPreparingOriginal
+        session.resource != nil && !session.isUnavailable && !session.isLoading && !reader.isPreparingOriginal
     }
     private var canZoom: Bool {
-        _ = reading.imageRevision
-        return reading.imageView != nil
+        _ = reader.imageRevision
+        return reader.imageView != nil
     }
     private var source: ChannelArtifactShare? {
         guard let artifact = session.artifact, let store = app.selectedStore,
@@ -52,8 +52,8 @@ struct ArtifactViewer: View {
         }
         .navigationBarBackButtonHidden()
         .toolbar { toolbar }
-        .quickLookPreview($reading.preview)
-        .sheet(item: $reading.sharing) { share in
+        .quickLookPreview($reader.preview)
+        .sheet(item: $reader.sharing) { share in
             ArtifactShareSheet(file: share.file) { session.actionError = $0 }
         }
         .alert("Couldn't Complete Action", isPresented: Binding(
@@ -65,17 +65,17 @@ struct ArtifactViewer: View {
             Text(session.actionError ?? "").foregroundStyle(Color(uiColor: .label))
         }
         .task(id: session.artifact?.id) { titleFocused = true }
-        .onChange(of: session.artifact?.id) { _, _ in reading.cancelOriginal() }
+        .onChange(of: session.artifact?.id) { _, _ in reader.cancelOriginal() }
         .onChange(of: session.isUnavailable) { _, unavailable in
-            if unavailable { reading.cancelOriginal() }
+            if unavailable { reader.cancelOriginal() }
         }
         .onChange(of: session.isPresented) { _, presented in
-            if !presented { reading.reset() }
+            if !presented { reader.reset() }
         }
-        .onChange(of: ObjectIdentifier(session)) { _, _ in reading.reset() }
-        .onChange(of: session.server) { _, _ in reading.reset() }
-        .onChange(of: session.channelID) { _, _ in reading.reset() }
-        .onDisappear { reading.stopPendingOriginal() }
+        .onChange(of: ObjectIdentifier(session)) { _, _ in reader.reset() }
+        .onChange(of: session.server) { _, _ in reader.reset() }
+        .onChange(of: session.channelID) { _, _ in reader.reset() }
+        .onDisappear { reader.stopPendingOriginal() }
     }
 
     private var pageTransition: AnyTransition {
@@ -93,16 +93,16 @@ struct ArtifactViewer: View {
         } else if let content = session.content {
             switch content.kind {
             case .markdown:
-                ArtifactMarkdownDocument(content: content, reading: reading, bottomInset: bottomClearance)
+                ArtifactMarkdownDocument(content: content, reader: reader, bottomInset: bottomClearance)
             case .html:
-                ArtifactHTMLDocument(content: content, reading: reading, bottomInset: bottomClearance)
+                ArtifactHTMLDocument(content: content, reader: reader, bottomInset: bottomClearance)
             case .image, .svg:
                 if let bitmap = content.bitmap {
                     ArtifactNativeImage(content: content, image: UIImage(cgImage: bitmap),
-                                        title: session.artifact?.title ?? content.artifact.title, reading: reading,
+                                        title: session.artifact?.title ?? content.artifact.title, reader: reader,
                                         onError: { session.actionError = $0 })
-                        .onAppear { reading.imageRevision += 1 }
-                        .onDisappear { reading.imageRevision += 1 }
+                        .onAppear { reader.imageRevision += 1 }
+                        .onDisappear { reader.imageRevision += 1 }
                         .padding(.horizontal, 16)
                         .padding(.top, 16)
                         .padding(.bottom, bottomClearance)
@@ -146,10 +146,10 @@ struct ArtifactViewer: View {
         } description: {
             Text("This \(content.kind.label(for: content.artifact)) file can be opened with Quick Look or shared to another app.")
         } actions: {
-            Button("Quick Look", systemImage: "eye") { reading.prepareOriginal(session: session, sharing: false) }
+            Button("Quick Look", systemImage: "eye") { reader.prepareOriginal(session: session, sharing: false) }
                 .disabled(!canPrepareOriginal)
             Button("Share Original", systemImage: "square.and.arrow.up") {
-                reading.prepareOriginal(session: session, sharing: true)
+                reader.prepareOriginal(session: session, sharing: true)
             }
             .disabled(!canPrepareOriginal)
         }
@@ -188,24 +188,24 @@ struct ArtifactViewer: View {
         }
         ToolbarItemGroup(placement: sizeClass == .compact ? .bottomBar : .topBarTrailing) {
             Button("Share Original", systemImage: "square.and.arrow.up") {
-                reading.prepareOriginal(session: session, sharing: true)
+                reader.prepareOriginal(session: session, sharing: true)
             }
             .labelStyle(.iconOnly)
             .disabled(!canPrepareOriginal)
             Menu {
                 Button("Open in Toy Box", systemImage: "arrow.up.forward.app", action: openInToyBox)
                     .disabled(session.isUnavailable || session.artifact == nil)
-                Button("Reload", systemImage: "arrow.clockwise") { reading.reload(session) }
+                Button("Reload", systemImage: "arrow.clockwise") { reader.reload(session) }
                     .disabled(session.isUnavailable || session.isLoading)
                 Button("Copy Link", systemImage: "link") { UIPasteboard.general.url = session.resource }
                     .disabled(session.resource == nil)
-                Button("Quick Look", systemImage: "eye") { reading.prepareOriginal(session: session, sharing: false) }
+                Button("Quick Look", systemImage: "eye") { reader.prepareOriginal(session: session, sharing: false) }
                     .disabled(!canPrepareOriginal)
                 if session.kind == .image || session.kind == .svg {
                     Divider()
-                    Button("Fit Image", systemImage: "arrow.down.right.and.arrow.up.left") { reading.imageView?.fit() }
+                    Button("Fit Image", systemImage: "arrow.down.right.and.arrow.up.left") { reader.imageView?.fit() }
                         .disabled(!canZoom)
-                    Button("Actual Size", systemImage: "1.magnifyingglass") { reading.imageView?.actualSize() }
+                    Button("Actual Size", systemImage: "1.magnifyingglass") { reader.imageView?.actualSize() }
                         .disabled(!canZoom)
                 }
                 if let source {
@@ -265,18 +265,18 @@ struct ArtifactViewer: View {
 
 private struct ArtifactMarkdownDocument: View {
     let content: ArtifactContent
-    let reading: ArtifactReaderState
+    let reader: ArtifactReader
     let bottomInset: CGFloat
     @Environment(\.horizontalSizeClass) private var sizeClass
     @ScaledMetric(relativeTo: .body) private var textScale = 1
     @ViewState private var position: ScrollPosition
     @ViewState private var offset: CGFloat = 0
 
-    init(content: ArtifactContent, reading: ArtifactReaderState, bottomInset: CGFloat) {
+    init(content: ArtifactContent, reader: ArtifactReader, bottomInset: CGFloat) {
         self.content = content
-        self.reading = reading
+        self.reader = reader
         self.bottomInset = bottomInset
-        _position = ViewState(initialValue: ScrollPosition(y: reading.markdownOffsets[content.artifact.id] ?? 0))
+        _position = ViewState(initialValue: ScrollPosition(y: reader.markdownOffsets[content.artifact.id] ?? 0))
     }
 
     var body: some View {
@@ -298,13 +298,13 @@ private struct ArtifactMarkdownDocument: View {
         .onScrollGeometryChange(for: CGFloat.self) { geometry in
             max(0, geometry.contentOffset.y + geometry.contentInsets.top)
         } action: { _, value in offset = value }
-        .onDisappear { reading.markdownOffsets[content.artifact.id] = offset }
+        .onDisappear { reader.markdownOffsets[content.artifact.id] = offset }
     }
 }
 
 private struct ArtifactHTMLDocument: View {
     let content: ArtifactContent
-    let reading: ArtifactReaderState
+    let reader: ArtifactReader
     let bottomInset: CGFloat
     @ViewState private var renderer = ArtifactWebRenderer.phone()
     @ViewState private var retry = 0
@@ -329,20 +329,20 @@ private struct ArtifactHTMLDocument: View {
             }
         }
         .task(id: LoadIdentity(file: content.file, retry: retry)) {
-            reading.webRenderer = renderer
+            reader.webRenderer = renderer
             await loadDocument()
         }
         .onDisappear {
-            if let state = renderer.readingState { reading.webReadingStates[content.artifact.id] = state }
+            if let state = renderer.readingState { reader.webReadingStates[content.artifact.id] = state }
             renderer.stop()
-            if reading.webRenderer === renderer { reading.webRenderer = nil }
+            if reader.webRenderer === renderer { reader.webRenderer = nil }
         }
     }
 
     private func loadDocument() async {
         guard let text = content.text else { return }
         await renderer.load(text, directory: content.directory, server: content.server, resource: content.resource,
-                            state: reading.webReadingStates[content.artifact.id])
+                            state: reader.webReadingStates[content.artifact.id])
     }
 
     private struct LoadIdentity: Hashable {
@@ -372,7 +372,7 @@ private struct ArtifactNativeImage: UIViewRepresentable {
     let content: ArtifactContent
     let image: UIImage
     let title: String
-    let reading: ArtifactReaderState
+    let reader: ArtifactReader
     let onError: (String) -> Void
 
     func makeUIView(context: Context) -> ArtifactImageScrollView {
@@ -386,7 +386,7 @@ private struct ArtifactNativeImage: UIViewRepresentable {
     private func configure(_ view: ArtifactImageScrollView) {
         view.onError = onError
         view.configure(image: image, size: content.imageSize ?? image.size, file: content.file, title: title)
-        reading.imageView = view
+        reader.imageView = view
     }
 
     static func dismantleUIView(_ view: ArtifactImageScrollView, coordinator: ()) { view.stop() }

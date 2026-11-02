@@ -1471,9 +1471,9 @@ struct OverviewTests {
         let session = try artifactSession(artifacts: [first, second])
         defer { session.close() }
         session.open(first)
-        let reading = ArtifactReaderState(download: { _, _ in await downloads.file() })
-        reading.prepareOriginal(session: session, sharing: true)
-        let pending = try #require(reading.originalTask)
+        let reader = ArtifactReader(download: { _, _ in await downloads.file() })
+        reader.prepareOriginal(session: session, sharing: true)
+        let pending = try #require(reader.originalTask)
         try await waitForOriginal(downloads)
         if changingServer {
             session.configure(api: try ChannelAPI(serverURL: "https://replacement.example"),
@@ -1482,8 +1482,8 @@ struct OverviewTests {
         } else { session.select(second.id) }
         await downloads.release(URL(fileURLWithPath: "/fixture/first.dat"))
         await pending.value
-        #expect(reading.sharing == nil && reading.preview == nil)
-        #expect(!reading.isPreparingOriginal)
+        #expect(reader.sharing == nil && reader.preview == nil)
+        #expect(!reader.isPreparingOriginal)
         #expect(session.artifact?.id == (changingServer ? first.id : second.id))
         #expect(session.actionError == nil)
     }
@@ -1494,24 +1494,24 @@ struct OverviewTests {
         let session = try artifactSession(artifacts: [file])
         defer { session.close() }
         session.open(file)
-        let reading = ArtifactReaderState(download: { _, _ in await downloads.file() })
-        reading.prepareOriginal(session: session, sharing: true)
-        let pending = try #require(reading.originalTask)
+        let reader = ArtifactReader(download: { _, _ in await downloads.file() })
+        reader.prepareOriginal(session: session, sharing: true)
+        let pending = try #require(reader.originalTask)
         try await waitForOriginal(downloads)
-        reading.cancelOriginal()
-        #expect(!reading.isPreparingOriginal)
-        reading.prepareOriginal(session: session, sharing: true)
-        let newer = try #require(reading.originalTask)
+        reader.cancelOriginal()
+        #expect(!reader.isPreparingOriginal)
+        reader.prepareOriginal(session: session, sharing: true)
+        let newer = try #require(reader.originalTask)
         try await waitForOriginal(downloads, count: 2)
         await downloads.release(URL(fileURLWithPath: "/fixture/first.dat"))
         await pending.value
-        #expect(reading.sharing == nil && reading.preview == nil)
-        #expect(reading.isPreparingOriginal && reading.originalTask != nil)
+        #expect(reader.sharing == nil && reader.preview == nil)
+        #expect(reader.isPreparingOriginal && reader.originalTask != nil)
         let current = URL(fileURLWithPath: "/fixture/current.dat")
         await downloads.release(current, request: 2)
         await newer.value
-        #expect(reading.sharing?.file == current)
-        #expect(!reading.isPreparingOriginal && reading.originalTask == nil)
+        #expect(reader.sharing?.file == current)
+        #expect(!reader.isPreparingOriginal && reader.originalTask == nil)
         #expect(session.actionError == nil)
     }
 
@@ -1520,24 +1520,24 @@ struct OverviewTests {
         let session = try artifactSession(artifacts: [file])
         defer { session.close() }
         session.open(file)
-        let reading = ArtifactReaderState(download: { _, _ in throw URLError(.timedOut) })
-        reading.prepareOriginal(session: session, sharing: true)
-        await reading.originalTask?.value
+        let reader = ArtifactReader(download: { _, _ in throw URLError(.timedOut) })
+        reader.prepareOriginal(session: session, sharing: true)
+        await reader.originalTask?.value
         #expect(session.actionError == URLError(.timedOut).localizedDescription)
         #expect(session.artifact?.id == file.id)
-        #expect(!reading.isPreparingOriginal)
+        #expect(!reader.isPreparingOriginal)
     }
 
     @Test func artifactNativeReadingStateSurvivesPresentationCoverageButEndsWithTheVisit() {
-        let reading = ArtifactReaderState()
-        reading.markdownOffsets["artifact"] = 480
-        reading.sharing = ArtifactShare(file: URL(fileURLWithPath: "/fixture/document.md"))
-        reading.stopPendingOriginal()
-        #expect(reading.markdownOffsets["artifact"] == 480)
-        #expect(reading.sharing != nil)
-        reading.reset()
-        #expect(reading.markdownOffsets.isEmpty)
-        #expect(reading.sharing == nil && reading.preview == nil)
+        let reader = ArtifactReader()
+        reader.markdownOffsets["artifact"] = 480
+        reader.sharing = ArtifactShare(file: URL(fileURLWithPath: "/fixture/document.md"))
+        reader.stopPendingOriginal()
+        #expect(reader.markdownOffsets["artifact"] == 480)
+        #expect(reader.sharing != nil)
+        reader.reset()
+        #expect(reader.markdownOffsets.isEmpty)
+        #expect(reader.sharing == nil && reader.preview == nil)
     }
 
     @Test func artifactFitCallbacksDistinguishZoomFromFitAndDoNotPublishAnObsoletePage() async {
