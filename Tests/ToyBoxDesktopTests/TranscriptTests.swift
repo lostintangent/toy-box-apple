@@ -2245,7 +2245,7 @@ struct TranscriptCatchUpTests {
     let server = URL(string: "https://catch-up-\(UUID().uuidString.lowercased()).invalid")!
 
     func make(unreadAfter: Int = 10, availability: IntelligenceAvailability = .available) -> TranscriptCatchUp? {
-        TranscriptCatchUp.make(server: server, state: catchUpTestState(), unreadAfter: unreadAfter, view: .all,
+        TranscriptCatchUp.make(server: server, state: catchUpTestState(), unreadAfter: unreadAfter, filter: .all,
                                availability: availability, isOn: true)
     }
 

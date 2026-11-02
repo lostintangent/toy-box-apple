@@ -62,10 +62,10 @@ public final class TranscriptCatchUpSession {
     private static var resultOrder: [CatchUpRequest.Key] = []
 
     /// A missing loaded boundary never triggers history loading just to make a summary.
-    public static func make(server: URL, state: ChannelState, unreadAfter: Int?, view: TranscriptFilter,
+    public static func make(server: URL, state: ChannelState, unreadAfter: Int?, filter: TranscriptFilter,
                             boundaryIsLoaded: Bool, availability: IntelligenceAvailability, isOn: Bool,
                             timeout: Duration = .seconds(15)) -> TranscriptCatchUpSession? {
-        guard boundaryIsLoaded, availability.isAvailable, isOn, view == .all,
+        guard boundaryIsLoaded, availability.isAvailable, isOn, filter == .all,
               let request = CatchUpRequest(server: server, state: state, unreadAfter: unreadAfter) else { return nil }
         let boundary = Boundary(server: request.key.server, channelId: request.key.channelId,
                                 unreadAfter: request.key.unreadAfter)
