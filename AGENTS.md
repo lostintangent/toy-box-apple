@@ -43,6 +43,27 @@ Design section, and your surface's section under Surfaces, before changing any v
 - **Leave credentials to the user.** Agents never create accounts, profiles or secrets, accept
   agreements, read keys or passwords, or run real credential setup.
 
+## Where we differ from the iOS Guidelines
+
+The [iOS Guidelines](https://gist.github.com/lostintangent/0174bc38d16b98c07570b3071c8890dd) are
+our general habits for Apple apps. This file and the spec win where they differ, and these
+differences are deliberate:
+
+- **SwiftPM builds everything, with no Xcode project,** and the Mac needs only Command Line
+  Tools. Use the `bun run` commands, never `xcodebuild`, `xcresulttool` or `devicectl`. Real
+  phones get builds only through TestFlight.
+- **Command Line Tools lack SwiftUI's macros,** so use `@ViewState`, and an `EnvironmentKey`
+  instead of `@Entry` in code that builds for the Mac. [Swift](#swift) says why.
+- **Some test machinery is deliberate.** SwiftPM can't host XCUITest, so the phone's DEBUG-only
+  drive scripts, and the Mac's snapshot states and benchmarks, stand in for UI and performance
+  tests. Release phone builds carry no driver. Add to them only for a check nothing else can
+  make.
+- **The send outbox and management-write reconcile stay.** They're the guidelines' "record what
+  you're sending" guard, which protects the user's messages and changes, not the outbox smell.
+- **Channels are live server state, not local-first data.** Show stale data as stale, keep
+  connection status apart from activity, and resume from the last applied revision. Only what
+  the user writes, like a draft, is saved locally first.
+
 ## Architecture
 
 `Sources`, `Tests` and `Resources` each split into `Shared`, `Desktop` and `Mobile`. Folders keep
