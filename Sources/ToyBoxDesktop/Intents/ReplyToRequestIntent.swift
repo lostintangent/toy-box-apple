@@ -14,7 +14,7 @@ struct ReplyToRequestIntent: AppIntent {
     @Parameter(title: "Message", inputOptions: String.IntentInputOptions(multiline: true))
     var message: String
 
-    @AppDependency var context: ChannelIntentsContext
+    @AppDependency var context: ChannelIntents
     /// Retained by this invocation, including a repeated perform after an uncertain delivery.
     let sendID = UUID().uuidString
 

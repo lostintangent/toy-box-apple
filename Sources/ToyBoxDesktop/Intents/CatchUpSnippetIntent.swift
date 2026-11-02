@@ -10,7 +10,7 @@ struct CatchUpSnippetIntent: SnippetIntent {
     @Parameter(title: "Card")
     var card: String
 
-    @AppDependency var context: ChannelIntentsContext
+    @AppDependency var context: ChannelIntents
 
     init() {}
 

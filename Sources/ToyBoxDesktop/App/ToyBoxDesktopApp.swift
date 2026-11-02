@@ -38,7 +38,7 @@ struct ToyBoxDesktopApp: App {
                 guard model.quickSend.isEnabled else { throw QuickSendIntake.IntakeError.unavailable }
                 model.quickSend.present(prefill: prefill)
             } : nil
-            ChannelIntentsContext.register(model)
+            ChannelIntents.register(model)
             ToyBoxControlsContext.register(model, delegate: delegate)
             delegate.widgetURLHandler = { try model.openWidgetURL($0) }
             delegate.dockMenuProvider = { model.makeDockMenu() }

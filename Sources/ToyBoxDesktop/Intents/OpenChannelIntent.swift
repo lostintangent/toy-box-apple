@@ -8,7 +8,7 @@ struct OpenChannelIntent: OpenIntent {
     @Parameter(title: "Channel", requestValueDialog: "Which channel?")
     var target: ChannelEntity
 
-    @AppDependency var context: ChannelIntentsContext
+    @AppDependency var context: ChannelIntents
 
     static var parameterSummary: some ParameterSummary {
         Summary("Open \(\.$target)")
