@@ -2,47 +2,47 @@ import Foundation
 import Testing
 @testable import ChannelKit
 
-struct ManagementPolicyTests {
-    @Test func emptyAndOversizedMemberNamesAreRejected() {
-        #expect(ChannelAgent.nameError(" \n ", agents: []) == "Enter an agent name.")
-        #expect(ChannelAgent.nameError(String(repeating: "a", count: 80), agents: []) == nil)
-        #expect(ChannelAgent.nameError(String(repeating: "a", count: 81), agents: []) != nil)
-        #expect(ChannelAgent.nameError(String(repeating: "\u{1F680}", count: 40), agents: []) == nil)
-        #expect(ChannelAgent.nameError(String(repeating: "\u{1F680}", count: 41), agents: []) != nil)
+struct ChannelTaskTests {
+    @Test func taskMathPreservesMeasuredZero() {
+        let tasks = [
+            ChannelTask(id: "parent", title: "Build", status: "in_progress",
+                        diff: .init(added: 4, removed: 2),
+                        children: [.init(id: "child", title: "Review", status: "done",
+                                         ownerId: "ada", diff: .init(added: 3, removed: 1))]),
+            ChannelTask(id: "zero", title: "Measure", status: "done", diff: .init(added: 0, removed: 0)),
+        ]
+        #expect(tasks.diff == .init(added: 7, removed: 3))
+        #expect(([] as [ChannelTask]).diff == nil)
+        #expect([tasks[1]].diff == .init(added: 0, removed: 0))
+        #expect(tasks.progress == .init(done: 1, total: 2))
+        #expect(tasks.unassigning(agentId: "ada")[0].children?[0].ownerId == nil)
     }
 
-    @Test func duplicateMentionsUseTheCanonicalHandle() {
-        let agents = [ChannelAgent.lead(id: "channel"), ChannelAgent(id: "member", name: "Caf\u{00E9} Critic")]
-        #expect(ChannelAgent.nameError(" lead ", agents: agents) != nil)
-        #expect(ChannelAgent.nameError("CAFE-critic", agents: agents) != nil)
-        #expect(ChannelAgent.nameError("Caf\u{00E9} Critic", agents: agents, excludingID: "member") == nil)
-        #expect(ChannelAgent.nameError("Another critic", agents: agents) == nil)
-        #expect(ChannelAgent.nameError("CAFE-critic", agents: [
-            .init(id: "deleted", name: "Caf\u{00E9} Critic", deleted: true)
-        ]) == "Another agent is already mentioned as @cafe-critic.")
-    }
-
-    @Test func editorFieldLimitsUseUTF16AndLeaveRequiredFieldPromptsToTheForm() {
-        for (check, limit) in [
-            (Channel.nameError, 100),
-            (Channel.purposeError, 12_000),
-            (Channel.directoryError, 4_096),
-        ] {
-            #expect(check("") == nil)
-            #expect(check(String(repeating: "a", count: limit)) == nil)
-            #expect(check(String(repeating: "a", count: limit + 1)) != nil)
-            #expect(check(String(repeating: "\u{1F680}", count: limit / 2)) == nil)
-            #expect(check(String(repeating: "\u{1F680}", count: limit / 2 + 1)) != nil)
+    @Test func taskTimingFloorsElapsedCeilsCheckInAndHandlesAbsentOrInvalidDates() throws {
+        let now = try #require(try? Date("2026-10-24T11:26:59Z", strategy: .iso8601))
+        var task = ChannelTask(id: "task", title: "Task", status: "in_progress",
+                               startedAt: "2026-10-24T10:00:00Z", checkInAt: "2026-10-24T11:57:00Z")
+        #expect(task.timing(now: now) == .init(elapsedMinutes: 86, checkInMinutes: 31))
+        #expect(task.timing(now: now.addingTimeInterval(1))
+                == .init(elapsedMinutes: 87, checkInMinutes: 30))
+        task.checkInAt = "2026-10-24T11:26:59Z"
+        #expect(task.timing(now: now)?.checkInMinutes == 0)
+        task.checkInAt = "2026-10-24T11:00:00Z"
+        #expect(task.timing(now: now)?.checkInMinutes == 0)
+        for status in ["pending", "blocked", "done"] {
+            task.status = status
+            #expect(task.timing(now: now) == .init(elapsedMinutes: 86))
         }
-    }
-
-    @Test func anExistingRoleCannotBeEmptiedButANewRoleMayBeOmitted() {
-        #expect(ChannelAgent.roleError("", existingRole: nil) == nil)
-        #expect(ChannelAgent.roleError("", existingRole: "") == "An existing role can't be emptied.")
-        #expect(ChannelAgent.roleError("", existingRole: "Existing") == "An existing role can't be emptied.")
-        #expect(ChannelAgent.roleError(String(repeating: "\u{1F680}", count: 4_000), existingRole: "Old") == nil)
-        #expect(ChannelAgent.roleError(String(repeating: "a", count: 8_001), existingRole: nil)
-                == "Roles are limited to 8,000 characters.")
+        task.status = "in_progress"
+        task.checkInAt = "invalid"
+        #expect(task.timing(now: now) == .init(elapsedMinutes: 86))
+        task.startedAt = "2026-10-24T12:00:00Z"
+        #expect(task.timing(now: now)?.elapsedMinutes == 0)
+        task.startedAt = "invalid"
+        #expect(task.timing(now: now) == nil)
+        task.checkInAt = "2026-10-24T12:00:00Z"
+        task.startedAt = nil
+        #expect(task.timing(now: now) == nil)
     }
 
     @Test func taskStatusDeterminesInitialDisclosureAndSubtaskProgress() {
