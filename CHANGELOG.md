@@ -1,5 +1,25 @@
 # Changelog
 
+## iPhone 0.1.12
+
+### Features
+
+- The team list can now be filtered to only the agents who are working, which makes it easier to see who's busy.
+
+### Bugs/Polish
+
+- Overview's team section is now called Team Members.
+
+## Mac 0.1.19
+
+### Features
+
+- The team list can now be filtered to only the agents who are working, which makes it easier to see who's busy.
+
+### Bugs/Polish
+
+- Overview's team section is now called Team Members.
+
 ## iPhone 0.1.11
 
 ### Bugs/Polish

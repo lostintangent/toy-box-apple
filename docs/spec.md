@@ -1974,8 +1974,8 @@ The inspector has no title row or close button. It runs the full window height, 
 starts 12 points below the toolbar's safe area and scrolls beneath the toolbar, and its
 container is labeled "Overview" for accessibility. Only the narrow-window sheet shows a visible
 "Overview" title, with a Done button. Do not set a nested navigation title. Use a `ScrollView`
-with a zero-spacing `VStack` and 16-point horizontal insets. Order: About (untitled), Team,
-Tasks, Artifacts, Routines. Separate sections with a native `Divider()` across the content
+with a zero-spacing `VStack` and 16-point horizontal insets. Order: About (untitled), Team
+Members, Tasks, Artifacts, Routines. Separate sections with a native `Divider()` across the content
 width, with 2 points of vertical padding. No cards, count capsules, section fills or uppercase.
 
 **Phone Overview, user 3484/3506/3572/3575 and design 3510/3600.** Keep the plain native background.
@@ -2047,7 +2047,7 @@ Use package-scoped ToyBoxUI `ChannelOverviewInk.secondary(in:)`, opaque sRGB `#6
 Mac global secondary ink and waiting amber unchanged. Verify text at 4.5:1 against actual
 native surfaces and non-text disclosure at 3:1.
 
-Team counts the lead plus current members, not working agents. Tasks uses shared completed
+Team Members counts the lead plus current members, not working agents. Tasks uses shared completed
 roots / total roots, never descendant or visible-row counts: "Tasks 1/4", or "Tasks 0" when
 there are no roots. Artifacts counts channel artifact entries; Routines counts registered
 routines, not executions. Keep known zeros and local empty sentences. Never invent zeros
@@ -2070,10 +2070,11 @@ Wrap a localized name if necessary; never shrink, clip or hide facts to preserve
 
 The whole header is one heading button, including count/diff. Enter/Space or accessibility
 activation toggles once with 180 ms disclosure, instantly under Reduce Motion, and retains
-focus. Speak natural counts and exact changes: "Team, 9 agents", "Tasks, 1 of 4 top-level tasks
+focus. Speak natural counts and exact changes: "Team Members, 9 agents", "Tasks, 1 of 4 top-level tasks
 complete, 1,522 additions, 114 deletions", or "Tasks, no tasks", with Expanded/Collapsed value.
 Use proper plurals, not spoken slash or compact K/M. Symbols/values add no focus stops. The
-Tasks header's in-progress filter is its one extra control, described with task disclosure. Retain
+Tasks header's in-progress filter and the Team Members header's working filter are each
+their header's one extra control, described with task disclosure and Team Members. Retain
 native focus indication and Show/Hide help. Persistence scopes stay unchanged: collapsed
 sections belong to the Mac window scene, not channel, and to the phone's retained per-channel
 Overview session. Empty sections stay with "No tasks yet", "Nothing shared yet" or "No routines".
@@ -2098,8 +2099,9 @@ rows, each 22 high: an 18-point secondary SF Symbol column, a 6-point gap and a 
   browser. A screen preview reads "Window preview" and opens the channel in Toy Box. Omit the
   row when there is no preview.
 
-**Team.** The lead first, then members alphabetically. Never reorder by presence, because stable
-positions are what make the list scannable. Rows are at least 38 high with 4 points of vertical
+**Team Members.** The section is titled Team Members on both apps. The lead first, then members
+alphabetically. Never reorder by presence, because stable positions are what make the list
+scannable. Rows are at least 38 high with 4 points of vertical
 padding: a 24-point avatar, a 10-point gap, then the name in 13 regular primary over a one-line
 11-point status, 1 point apart. Status truncates at the tail with the full text in help.
 
@@ -2178,6 +2180,17 @@ Agent's labels, or "Workspace default". At accessibility sizes the header stacks
 unbounded, each key sits above its value, and the popover takes the system's width and scrolls
 as one. VoiceOver reads the header as "Name, Lead, @handle" and each fact as one element. It
 updates live and never shows private session contents.
+
+**Working filter.** Team Members has the Tasks header's filter toggle, with the same glyph, ink,
+placement after the count, targets and focus behavior, so the user can see only who's working.
+Its label and Mac help read "Show Only Working Agents". While it's on, the list keeps exactly the
+agents whose row shows the working cue, the lead included, in their usual order. ToyBoxUI owns
+this rule, so the filter and the cue never disagree. Rows keep their slots, so toggling never
+moves one. Add Agent stays. The count still describes the whole team. With nobody working, the
+section shows "No agents working" in the empty-sentence style. While the channel is unavailable
+no row shows the working cue, so the list is empty and reads "Status unavailable while
+disconnected" instead, the rows' own offline status, never a guess from stale presence. Show
+the toggle whenever the channel has an agent. It starts off and keeps the same scope as the Tasks filter.
 
 **Tasks.** Status is read-only, in a 16 x 16 cell at 14 points: pending `circle` in secondary,
 in progress `circle.lefthalf.filled` in secondary, blocked `exclamationmark.circle.fill` white
