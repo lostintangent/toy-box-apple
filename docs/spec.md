@@ -3157,9 +3157,9 @@ The check reports native travel after a one-second end drain. AppKit's interpola
 content beyond the raw delivered delta, so this is not a deterministic wheel baseline or a raw
 wheel-relative row-drift gate.
 
-`TOY_BOX_TRANSCRIPT=lazy|document|table bun run benchmark scroll` selects the container through
-`open --env`. The output names the requested transcript. This is a benchmark option, not a
-product preference.
+The app has one transcript container. `TOY_BOX_TRANSCRIPT`, passed through `open --env`, only
+labels the scroll output, `lazy` by default, except that `native-control` runs the plain-table
+self-check described below. This is a benchmark option, not a product preference.
 Hosted native tables are sampled relative to that outer scroll view's clip coordinates, including
 the table's offset within the SwiftUI document. Discovery excludes independent nested scroll views
 and never mounts cells to obtain row frames.
