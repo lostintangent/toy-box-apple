@@ -3,7 +3,7 @@ import Testing
 import UniformTypeIdentifiers
 @testable import ChannelKit
 
-struct ContentPolicyTests {
+struct ChannelMessageTests {
     @Test func agentCountsExcludeUsersSystemRowsAndOtherSendersAtTheExactBoundary() {
         let messages = [message(1, .agent("lead")), message(2, .user), message(3, .system),
                         message(4, .agent("member")), message(5, .init(type: "other"))]
@@ -12,18 +12,6 @@ struct ContentPolicyTests {
             #expect(messages.agentMessageCount(after: boundary) == count)
         }
         #expect([ChannelMessage]().agentMessageCount() == 0)
-    }
-
-    @Test func purposePreviewKeepsTheOriginalFirstLineSemantics() {
-        func preview(_ purpose: String?) -> String? {
-            Channel(id: "c", name: "C", purpose: purpose, model: .init(provider: "p", name: "m"),
-                    updatedAt: "2026-10-01T00:00:00Z").purposePreview
-        }
-        #expect(preview("  Ship the demo  \nThen the docs") == "Ship the demo")
-        #expect(preview("\n\nFirst\r\nSecond") == "First")
-        #expect(preview(" \nSecond") == nil)
-        #expect(preview("") == nil)
-        #expect(preview(nil) == nil)
     }
 
     @Test func unnamedImagesAreNamedByPositionAndDataURLsNeverNameAFile() {

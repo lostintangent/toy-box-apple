@@ -2,7 +2,59 @@ import Foundation
 import Testing
 @testable import ChannelKit
 
-struct MentionPolicyTests {
+struct AgentMentionsTests {
+    let lead = ChannelAgent.lead(id: "lead")
+    let ada = ChannelAgent(id: "ada", name: "Ada")
+    let finch = ChannelAgent(id: "finch", name: "Finch")
+
+    @Test func mentionGrammar() {
+        #expect(ChannelAgent.handle(forName: "  Déjà Vu! ") == "deja-vu")
+        #expect(ChannelAgent.handle(forName: "Everyone") == "everyone-agent")
+        #expect(ChannelAgent.handle(forName: "!!!") == "teammate")
+        #expect(ChannelAgent.handle(forName: String(repeating: "x", count: 60)).count == 48)
+        #expect(ChannelAgent.handle(forName: "--Ada  Lovelace__2--") == "ada-lovelace-2")
+        #expect(ChannelAgent.handle(forName: "ÅNGSTRÖM ﬁx") == "angstrom-fix")
+        #expect(ChannelAgent.handle(forName: "日本 Team") == "team")
+        #expect(ChannelAgent.handle(forName: String(repeating: "x", count: 47) + " y") == String(repeating: "x", count: 47))
+        let mentions = AgentMentions(parsing: "dev@example.com and @ADA, (@finch) @ada @everyone")
+        #expect(mentions.handles == ["ada", "finch"])
+        #expect(mentions.mentionAll)
+        #expect(AgentMentions(parsing: "name-@ada 9@finch").handles.isEmpty)
+        #expect(AgentMentions(parsing: "@\u{212A}it @\u{0130}ris").handles.isEmpty)
+        #expect(AgentMentions.removingLeadingMentions(from: "@Ada, @Finch: Ship it", agents: [ada, finch]) == "Ship it")
+        #expect(AgentMentions.removingLeadingMentions(from: "@Ada @unknown Ship it", agents: [ada]) == "@Ada @unknown Ship it")
+        #expect(AgentMentions.removingLeadingMentions(from: "@Ada", agents: [ada]) == "@Ada")
+    }
+
+    @Test func mentionCompletionIncludesEveryAgentForAnEmptyQuery() {
+        let engineer = ChannelAgent(id: "ada", name: "Ada Lovelace", role: "Swift engineer")
+        #expect(lead.matches(mentionQuery: ""))
+        #expect(ada.matches(mentionQuery: ""))
+        #expect(engineer.matches(mentionQuery: ""))
+        #expect(engineer.matches(mentionQuery: "LOVELACE"))
+        #expect(engineer.matches(mentionQuery: "ada-lovelace"))
+        #expect(engineer.matches(mentionQuery: "ENGINEER"))
+        #expect(!engineer.matches(mentionQuery: "unknown"))
+    }
+
+    @Test func canonicalAudience() {
+        let members = [ada, finch]
+        func ids(_ text: String, sender: ChannelMessageSender = .user,
+                 acknowledged: Bool = false) -> [String] {
+            AgentMentions(parsing: text).audience(sender: sender, lead: lead, members: members,
+                                                  acknowledgedRequest: acknowledged).map(\.id)
+        }
+        #expect(ids("Hello") == ["lead"])
+        #expect(ids("Hello", sender: .agent("lead")).isEmpty)
+        #expect(ids("Hello", sender: .agent("ada")) == ["lead"])
+        #expect(ids("@Ada hello") == ["ada"])
+        #expect(ids("@unknown hello").isEmpty)
+        #expect(ids("@Ada hello", acknowledged: true) == ["lead", "ada"])
+        #expect(ids("@everyone", sender: .agent("ada")) == ["lead", "finch"])
+        #expect(ids("@ada", sender: .agent("ada")).isEmpty)
+        #expect(AgentMentions.audienceLabel(for: [lead, ada], reachableCount: 2) == "Everyone")
+    }
+
     @Test func mentionQueryUsesCaretAndCanonicalBoundaries() {
         let text = "Hello, @Pi"
         let context = AgentMentions.Query.match(text: text, selection: .init(location: text.utf16.count, length: 0))
