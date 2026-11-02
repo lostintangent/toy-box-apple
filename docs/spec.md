@@ -247,7 +247,9 @@ Apple ID app-specific password are unchanged. The renamed app needs new macOS no
 and microphone grants, and Computer Use needs approval for `dev.toybox.desktop.test`.
 
 After notarization and stapling, the workflow's `scripts/desktop/release/appcast.ts` helper uses Sparkle's checksum-pinned tools to
-sign the finished archive with Ed25519. The archive signature, length, URL,
+sign the finished archive with Ed25519. It reads the private key on stdin from
+`SPARKLE_ED_PRIVATE_KEY`, or from an explicit `SPARKLE_ED_KEY_FILE` in isolated tests, and never
+from the default Keychain. The archive signature, length, URL,
 machine and human-readable versions, and minimum macOS version are checked before publishing.
 The archive signature is verified with `sign_update`. The feed and release notes are not separately
 signed, and `SUVerifyUpdateBeforeExtraction` / `SURequireSignedFeed` stay absent. This trades the
@@ -382,6 +384,8 @@ validator allows that rotation through the installed app's Apple signing require
 requiring the new archive signature to match its embedded public key. Current v0.1.8 installs have
 the stricter feed/pre-extraction policy and need a one-time manual installation of this replacement.
 No actual key rotation or credential setup is performed by agents.
+
+The current Developer ID certificate expires February 1, 2027. Renew it and rerun setup before then.
 
 ## Protocol (v1)
 
@@ -3247,6 +3251,8 @@ artificial fixed-height spacer.
 The WidgetKit extension is a glanceable view of the same waiting requests as the menu bar inbox,
 not a second attention model. The host writes a small server-scoped snapshot from `MenuBarStatus`
 to its Team-ID-prefixed app group and requests a timeline reload when that snapshot changes.
+Successful catalog polls feed the snapshot's 15-minute heartbeat even when nothing changed.
+Offline polls never advance its last-success time.
 The Mac widget does not connect to a server, send a reply or mark anything read. Its signed,
 sandboxed extension lives in `Contents/PlugIns`, shares the app's version/build and is omitted
 from isolated test, snapshot and benchmark bundles like the Share extension.
@@ -3329,7 +3335,7 @@ native 157 x 73.5-point rectangular host.
 Both surfaces render waiting, empty, out-of-date and not-connected states from the phone's
 App Group `NeedsYouSnapshot`. On timeline refresh, the phone widget extension fetches current
 waiting requests from the saved server through the app publisher's HTTP and snapshot path,
-then writes the shared snapshot. After a request or completion alert, the notification service
+within a ten-second total network deadline, then writes the shared snapshot. After a request or completion alert, the notification service
 extension asks WidgetKit to reload this widget's timelines. WidgetKit schedules the refresh,
 so this is not an immediate-delivery guarantee. A failed fetch keeps the saved snapshot and
 existing stale rule, without advancing its update time or claiming a fresh all-clear.
