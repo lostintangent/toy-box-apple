@@ -1287,7 +1287,7 @@ struct ShellTests {
             let interaction = model.interaction(for: store.id)
             let composer = model.composerSession(for: store)
             let artifacts = model.artifactSession(for: store)
-            let gallery = model.galleryPresenter(for: store)
+            let gallery = model.gallery(for: store)
             gallery.open(images: [.init(name: "image.png", url: "/image.png")], at: 0,
                          source: .init(messageID: "image", sender: "Lead", timestamp: "2026-10-25T12:00:00Z"),
                          api: store.api)
@@ -1300,7 +1300,7 @@ struct ShellTests {
             #expect(model.interaction(for: store.id) === interaction)
             #expect(model.composerSession(for: store) === composer)
             #expect(model.artifactSession(for: store) === artifacts)
-            #expect(model.galleryPresenter(for: store) === gallery)
+            #expect(model.gallery(for: store) === gallery)
         }
     }
 
@@ -1313,7 +1313,7 @@ struct ShellTests {
             let store = try #require(model.selectedStore)
             let interaction = model.interaction(for: store.id)
             let artifacts = model.artifactSession(for: store)
-            let gallery = model.galleryPresenter(for: store)
+            let gallery = model.gallery(for: store)
             gallery.open(images: [.init(name: "image.png", url: "/image.png")], at: 0,
                          source: .init(messageID: "image", sender: "Lead", timestamp: "2026-10-25T12:00:00Z"),
                          api: store.api)
@@ -1326,7 +1326,7 @@ struct ShellTests {
                 replacement = ChannelStore(id: store.id, api: store.api)
             }
             #expect(model.artifactSession(for: replacement) !== artifacts)
-            #expect(model.galleryPresenter(for: replacement) !== gallery)
+            #expect(model.gallery(for: replacement) !== gallery)
             #expect(gallery.session == nil)
             #expect(!interaction.isArtifactViewerPresented)
         }
