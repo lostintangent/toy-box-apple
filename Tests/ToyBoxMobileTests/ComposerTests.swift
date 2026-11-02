@@ -266,7 +266,7 @@ struct ComposerTests {
     }
 
     @Test func mentionInsertionUsesNativeEditingAndKeepsTheCaretAfterTheInsertedSpace() {
-        let editor = ComposerEditorState()
+        let editor = ComposerEditor()
         let view = ComposerTextView()
         editor.textView = view
         view.text = "Hello @ad"
@@ -281,7 +281,7 @@ struct ComposerTests {
 
     @Test func nativeUndoAndRedoKeepTheBoundTextInSync() throws {
         var text = ""
-        let editor = ComposerEditorState()
+        let editor = ComposerEditor()
         let input = NativeComposerInput(
             text: Binding(get: { text }, set: { text = $0 }), editor: editor,
             onSend: {}, onCompletionKey: { _ in false }, onPasteImages: { _ in }
@@ -353,7 +353,7 @@ struct ComposerTests {
 
     @Test func readerCoverageRetainsTheNativeEditorTextSelectionAndUndo() throws {
         var text = ""
-        let editor = ComposerEditorState()
+        let editor = ComposerEditor()
         let input = NativeComposerInput(
             text: Binding(get: { text }, set: { text = $0 }), editor: editor,
             onSend: {}, onCompletionKey: { _ in false }, onPasteImages: { _ in }
@@ -509,7 +509,7 @@ struct ComposerTests {
     }
 
     @Test func upperContextCompressesBeforeTheNativeEditorAndActionRow() throws {
-        let editor = ComposerEditorState()
+        let editor = ComposerEditor()
         var text = "A draft"
         func content(height: CGFloat) -> some View {
             VStack(spacing: 0) {
@@ -757,7 +757,7 @@ struct ComposerTests {
 
     @Test func tentativeDictationStaysOutOfTheBindingAndFinalWordsFormOneUndoStep() throws {
         var text = "Hello old world"
-        let editor = ComposerEditorState()
+        let editor = ComposerEditor()
         let input = NativeComposerInput(
             text: Binding(get: { text }, set: { text = $0 }), editor: editor,
             onSend: {}, onCompletionKey: { _ in false }, onPasteImages: { _ in }
@@ -872,7 +872,7 @@ struct ComposerTests {
     @Test(arguments: [false, true])
     func losingTheNativeDictationRangePreservesRecognizedWordsThroughTheDraft(finalizes: Bool) {
         var text = "Typed"
-        let editor = ComposerEditorState()
+        let editor = ComposerEditor()
         let input = NativeComposerInput(
             text: Binding(get: { text }, set: { text = $0 }), editor: editor,
             onSend: {}, onCompletionKey: { _ in false }, onPasteImages: { _ in }
@@ -952,7 +952,7 @@ struct ComposerTests {
     @Test func discardedTentativeWordsDoNotLeaveAnEmptyUndoStepOrRemoveEarlierHistory() throws {
         var text = ""
         let input = NativeComposerInput(
-            text: Binding(get: { text }, set: { text = $0 }), editor: ComposerEditorState(),
+            text: Binding(get: { text }, set: { text = $0 }), editor: ComposerEditor(),
             onSend: {}, onCompletionKey: { _ in false }, onPasteImages: { _ in }
         )
         let coordinator = NativeComposerInput.Coordinator(parent: input)

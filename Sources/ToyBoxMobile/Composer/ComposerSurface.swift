@@ -31,7 +31,7 @@ struct ComposerSurface: View {
     private var store: ChannelStore { session.store }
     private var composer: ChannelComposerSession { session.composer }
     private var dictation: ComposerDictation { session.dictation }
-    private var editor: ComposerEditorState { session.editor }
+    private var editor: ComposerEditor { session.editor }
     private var draftID: ObjectIdentifier { ObjectIdentifier(draft) }
     private var isConnecting: Bool { store.phase == .connecting }
     private var isReaderCovered: Bool {
