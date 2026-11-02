@@ -450,12 +450,12 @@ so the suite starts a WebKit web content process once instead of once per render
 | `Sources/Desktop/ToyBoxDesktop/App`, `Shell`, `Sidebar`, `Channel`, `MenuBar`, `Notifications`, `QuickSend`, `Intents`, `Settings`, `Shared` | Shell |
 | `Sources/Desktop/ToyBoxDesktop/Transcript`, `Tests/Desktop/ToyBoxDesktopTests/TranscriptTests.swift` | Transcript |
 | `Sources/Desktop/ToyBoxDesktop/Composer` (composer and tray), `Tests/Desktop/ToyBoxDesktopTests/ComposerTests.swift` | Composer |
-| `Sources/Desktop/ToyBoxDesktop/Overview`, `Management` | Overview |
+| `Sources/Desktop/ToyBoxDesktop/Overview`, `Artifacts`, `Management` | Overview |
 | `Sources/Shared/ChannelIntelligence/`, `Tests/Shared/ChannelIntelligenceTests/` | Intelligence |
-| `Sources/Mobile/ToyBoxMobile/App`, `Shell`, `Sidebar`, `Settings`, `Shared`, `Channel` | Shell |
+| `Sources/Mobile/ToyBoxMobile/App`, `Shell`, `Sidebar`, `Channel`, `Notifications`, `Settings`, `Shared` | Shell |
 | `Sources/Mobile/ToyBoxMobile/Transcript` | Transcript |
 | `Sources/Mobile/ToyBoxMobile/Composer` (composer and tray) | Composer |
-| `Sources/Mobile/ToyBoxMobile/Overview`, `Management` | Overview |
+| `Sources/Mobile/ToyBoxMobile/Overview`, `Artifacts`, `LiveActivities`, `Management` | Overview |
 | `Sources/Mobile/ToyBoxMobileIntegrations/`, `Sources/Mobile/Extensions/ToyBoxMobileNotification/`, `Sources/Mobile/Extensions/ToyBoxMobileShare/`, `Resources/Mobile/` | Core |
 | `Sources/Shared/ToyBoxWidgetViews/`, `Sources/Desktop/Extensions/ToyBoxDesktopWidget/`, `Sources/Mobile/Extensions/ToyBoxMobileWidget/`, `Tests/Mobile/Extensions/ToyBoxMobileWidgetTests/` | Overview |
 
