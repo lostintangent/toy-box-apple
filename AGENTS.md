@@ -45,8 +45,10 @@ Design section, and your surface's section under Surfaces, before changing any v
 
 ## Where we differ from the iOS Guidelines
 
-The [iOS Guidelines](https://gist.github.com/lostintangent/0174bc38d16b98c07570b3071c8890dd) are
-our general habits for Apple apps. This file and the spec win where they differ, and these
+[Coding Agent Culture](https://gist.github.com/lostintangent/fe01cdf38ff1a370fcb08711a698ecfa)
+is how our team works, and its
+[iOS Guidelines](https://gist.github.com/lostintangent/fe01cdf38ff1a370fcb08711a698ecfa#file-ios-md)
+are our general habits for Apple apps. This file and the spec win where they differ, and these
 differences are deliberate:
 
 - **SwiftPM builds everything, with no Xcode project,** and the Mac needs only Command Line
