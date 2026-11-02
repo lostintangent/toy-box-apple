@@ -1221,8 +1221,14 @@ struct OverviewTests {
     }
 
     @Test func workingFilterKeepsWorkingAgentsAndExplainsWhenNoneAre() async throws {
-        let store = ChannelStore(id: "channel", api: try ChannelAPI(serverURL: "https://fixture.example"),
-                                 sendJournal: nil)
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [FollowUnreachableProtocol.self]
+        let api = try ChannelAPI(serverURL: "https://working-filter.invalid",
+                                 session: URLSession(configuration: configuration))
+        let store = ChannelStore(id: "channel", api: api,
+                                 reconnectPolicy: .init(initialDelay: 60, maximumDelay: 60, grace: 3),
+                                 sendJournal: nil, sleep: { _ in })
+        defer { store.disconnect() }
         var state = ChannelState(
             revision: 1,
             channel: .init(id: "channel", name: "Workshop", model: .init(provider: "test", name: "test"),
@@ -1268,6 +1274,19 @@ struct OverviewTests {
         host.view.layoutIfNeeded()
         #expect(elements().contains { $0.label == "No agents working" })
         #expect(elements().contains { $0.identifier == "overview-add-agent" })
+        #expect(!elements().contains { $0.identifier == "overview-agent-ada" })
+
+        state.revision += 1
+        state.presence = ["ada": .init(state: "working", text: "Compiling")]
+        _ = try store.apply(.init(type: "snapshot", state: state))
+        // An unreachable server fails the channel without a deletion, which would replace the list.
+        store.connect()
+        for await isUnavailable in Observations({ store.phase.isUnavailable }) where isUnavailable { break }
+        await Task.yield()
+        host.view.layoutIfNeeded()
+        #expect(store.presence["ada"]?.state == "working", "The last presence stays, and the filter still hides it")
+        #expect(elements().contains { $0.label == "Status unavailable while disconnected" })
+        #expect(!elements().contains { $0.label == "No agents working" })
         #expect(!elements().contains { $0.identifier == "overview-agent-ada" })
     }
 

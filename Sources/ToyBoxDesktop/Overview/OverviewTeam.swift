@@ -45,7 +45,7 @@ struct OverviewTeamList: View {
                                  channelId: store.id, isConnected: isConnected, isAvailable: isAvailable)
             }
             if showsOnlyWorking, !roster.isEmpty, shown.isEmpty {
-                OverviewEmptyText("No agents working")
+                OverviewEmptyText(ChannelOverviewFilter.noWorkingAgentsText(isAvailable: isAvailable))
             }
             OverviewAddAgentRow(isConnected: isConnected, isAvailable: isAvailable) {
                 management.present(.addMember(channelId: store.id, name: ""))
