@@ -11,14 +11,6 @@ public func channelAgentMessageCount(_ messages: [ChannelMessage], after sequenc
     }
 }
 
-public func channelCanSend(isConnected: Bool, isSending: @autoclosure () -> Bool,
-                           isSubmitting: @autoclosure () -> Bool, hasContent: @autoclosure () -> Bool,
-                           isLoadingImages: @autoclosure () -> Bool, hasUnreadableImage: @autoclosure () -> Bool,
-                           textUTF16Count: @autoclosure () -> Int) -> Bool {
-    isConnected && !isSending() && !isSubmitting() && hasContent() && !isLoadingImages()
-        && !hasUnreadableImage() && textUTF16Count() <= ChannelMessage.maxLength
-}
-
 public func channelPurposePreview(_ text: String?) -> String? {
     let line = text?.split(whereSeparator: \.isNewline).first?.trimmingCharacters(in: .whitespaces)
     return line?.isEmpty == false ? line : nil
