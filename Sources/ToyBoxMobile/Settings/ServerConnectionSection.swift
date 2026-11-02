@@ -81,7 +81,7 @@ struct ServerConnectionSection: View {
 
     private var loopbackHost: String? {
         guard let url = try? ChannelAPI(serverURL: connection.address).baseURL, let host = url.host,
-              isLoopbackHost(host.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "[]."))) else {
+              ChannelAPI.isLoopback(host: host.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "[]."))) else {
             return nil
         }
         return host

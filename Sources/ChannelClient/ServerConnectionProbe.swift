@@ -2,10 +2,6 @@ import ChannelKit
 import Foundation
 import Observation
 
-public func isLoopbackHost(_ host: String) -> Bool {
-    host == "localhost" || host.hasSuffix(".localhost") || host == "::1" || host.hasPrefix("127.")
-}
-
 @MainActor @Observable
 public final class ServerConnectionProbe {
     public enum Phase {
