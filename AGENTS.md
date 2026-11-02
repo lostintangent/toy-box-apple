@@ -195,8 +195,7 @@ every build its own scratch path, so parallel builds never share `.build`.
 
 - **Tags need the user's approval.** `vX.Y.Z` ships the Mac to GitHub Releases, and
   `mobile-vX.Y.Z` ships the phone to TestFlight. A manual workflow run on `main` is a dry run.
-  Signing, notarization, updates and TestFlight are in
-  [docs/releases.md](docs/releases.md).
+  Signing, notarization, updates and TestFlight are in [docs/releases.md](docs/releases.md).
 - **Release notes are written at merge time.** The merge that lands a user-facing change adds its
   bullet to that platform's next unreleased `## Mac X.Y.Z` or `## iPhone X.Y.Z` entry in
   `CHANGELOG.md`, creating the entry if the newest one has shipped. A release is then only a tag.

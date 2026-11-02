@@ -1479,9 +1479,9 @@ The composer covers:
 - An audience preview ("To Lead", or the mentioned agents) computed by a port of
   `resolveChannelAudience`
 - Image attachments by paste, drag and file picker, sent inline as base64
-- Disabled while disconnected, with a visible stale state. A failed send stays on its row in
-  the transcript with Edit and Send Again, the draft is never restored, and it is never retried
-  automatically
+- Sending is unavailable while disconnected, with a visible stale state, but editing isn't. A
+  failed send stays on its row in the transcript with Edit and Send Again. The composer gets its
+  text back only through Edit, and it is never retried automatically
 - Optimistic message that the committed echo replaces, drawn exactly as the echo (bubble, gap and
   day divider) so confirming changes nothing on screen. Only a send still going after 1 second
   shows a quiet "Sending"
@@ -1629,8 +1629,9 @@ failed channel and owns its Retry, and Send's help gives the reason, so the comp
 only for a deleted channel, with its draft recovery. A stale snapshot must never determine a new
 send's audience without reconnection.
 
-Submitting creates one optimistic row with "Sending". A committed echo replaces it by UUID.
-On a definite rejection, retain the draft and mark the row "Not sent". On timeout or lost response,
+Submitting creates one optimistic row, which shows "Sending" only while the send is still going
+after 1 second. A committed echo replaces it by UUID. On a definite rejection, mark the row
+"Not sent" and keep its text and attachments on the row for Edit. On timeout or lost response,
 say "Delivery not confirmed" rather than falsely claiming failure. Expose Edit and explicit Send
 Again, never an automatic retry. Keep the original UUID when verifying or explicitly repeating
 that attempted send so a 409 cannot deliver it twice. Do not clear a newer draft when an older
@@ -2627,7 +2628,8 @@ while sending. Swiping down with a note asks "Discard Note" or "Keep Editing".
 
 ### Catch-up summaries
 
-The morning digest is Mac only. The catch-up summary below is specified for the Mac.
+The morning digest is Mac only. Both apps show the catch-up summary, and the rules below are
+written for the Mac.
 
 **Catch-up summary.** When you return to a busy channel, a short on-device summary sits above the
 New divider. Each line points at the messages it came from.
@@ -2713,7 +2715,8 @@ artificial fixed-height spacer.
 
 ### Image descriptions and Live Text
 
-Image descriptions and Live Text are specified here for the Mac.
+Both apps describe images for VoiceOver and offer Live Text, and the rules below are written for
+the Mac.
 
 **Image descriptions.** Generated descriptions are for VoiceOver. Sighted readers already see the
 image, so descriptions never appear as captions, help, copied text or exports.
