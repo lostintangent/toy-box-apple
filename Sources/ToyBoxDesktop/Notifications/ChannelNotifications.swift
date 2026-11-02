@@ -124,7 +124,7 @@ final class ChannelNotifications: NSObject, UNUserNotificationCenterDelegate {
             if let request {
                 content.body = ChannelNotification.Content(request: request).body
                 if let requester = request.requester {
-                    info["handle"] = agentHandleFromName(requester.name)
+                    info["handle"] = requester.handle
                 }
                 let labels = request.message.suggestedReplies
                 if !labels.isEmpty {

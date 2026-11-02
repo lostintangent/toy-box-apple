@@ -7,14 +7,14 @@ struct AvatarTests {
         let data = Data(##"{"mark":"M4 12H20","color":"#1e3a8a","ink":"#facc15"}"##.utf8)
         let avatar = try JSONDecoder().decode(AgentAvatar.self, from: data)
         #expect(avatar.ink == "#facc15")
-        #expect(resolvedAvatarInk(for: avatar) == "#facc15")
+        #expect(avatar.resolvedInk == "#facc15")
         #expect(try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(avatar))
                 == JSONDecoder().decode(JSONValue.self, from: data))
         let legacy = try JSONDecoder().decode(
             AgentAvatar.self, from: Data(##"{"mark":"M4 12H20","color":"#0891b2"}"##.utf8)
         )
         #expect(legacy.ink == nil)
-        #expect(resolvedAvatarInk(for: legacy) == "#000000")
+        #expect(legacy.resolvedInk == "#000000")
         #expect(try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(legacy))
                 == .object(["mark": .string("M4 12H20"), "color": .string("#0891b2")]))
     }
@@ -81,6 +81,6 @@ struct AvatarTests {
     }
 
     private func ink(on background: String, requested: String? = nil) -> String? {
-        resolvedAvatarInk(for: .init(mark: "M4 12H20", color: background, ink: requested))
+        AgentAvatar(mark: "M4 12H20", color: background, ink: requested).resolvedInk
     }
 }

@@ -51,9 +51,9 @@ extension AgentMentions {
             }
             for agent in Array(agents.prefix(1)) + agents.dropFirst().sorted(by: {
                 $0.name.localizedStandardCompare($1.name) == .orderedAscending
-            }) where agent.deleted != true && agentMatchesMentionQuery(agent, query: query) {
+            }) where agent.deleted != true && agent.matches(mentionQuery: query) {
                 items.append(.init(id: agent.id, name: agent.name, detail: agent.role ?? "Onboarding",
-                                   handle: "@\(agentHandleFromName(agent.name))",
+                                   handle: "@\(agent.handle)",
                                    kind: agent.id == agents.first?.id ? .lead(agent) : .member(agent)))
             }
             let words = query.split(separator: "-")

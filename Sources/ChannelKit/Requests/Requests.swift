@@ -66,7 +66,7 @@ public struct ChannelWaitingRequest: Equatable, Identifiable, Sendable {
 
     public static func recipient(of sequence: Int, in state: ChannelState) -> String? {
         guard let id = message(at: sequence, in: state)?.sender.agentId else { return nil }
-        let agent = channelAgentIdentity(state.agents, id: id)
+        let agent = ChannelAgent(id: id, in: state.agents)
         return agent.deleted == true ? nil : agent.name
     }
 

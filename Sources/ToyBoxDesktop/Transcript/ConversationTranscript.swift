@@ -214,7 +214,7 @@ struct ConversationTranscript: View {
                       let sequence else { return }
                 if let request = store.request, request.sequence == sequence,
                    let agentID = request.sender.agentId {
-                    let author = channelAgentIdentity(store.roster, id: agentID).name
+                    let author = ChannelAgent(id: agentID, in: store.roster).name
                     window.announce("\(author) needs your reply.")
                 } else {
                     window.announce("Your team needs your reply.")

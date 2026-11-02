@@ -162,7 +162,7 @@ struct OverviewTaskRow: View {
     private var visibleChildren: [ChannelTask] {
         children.filter { OverviewTaskList.keeps($0, showsOnlyInProgress: showsOnlyInProgress) }
     }
-    private var owner: ChannelAgent? { task.ownerId.map { channelAgentIdentity(agents, id: $0) } }
+    private var owner: ChannelAgent? { task.ownerId.map { ChannelAgent(id: $0, in: agents) } }
     private var progress: (done: Int, total: Int)? {
         guard task.showsChildProgress else { return nil }
         let progress = children.progress

@@ -27,7 +27,7 @@ public struct ChannelReactionGroup: Equatable {
         var grouped: [String: [ChannelAgent]] = [:]
         for entry in channelMessageReactions(message, status: [message.sequence: statusReactions]) {
             if grouped[entry.reaction] == nil { order.append(entry.reaction) }
-            grouped[entry.reaction, default: []].append(channelAgentIdentity(agents, id: entry.agentId))
+            grouped[entry.reaction, default: []].append(ChannelAgent(id: entry.agentId, in: agents))
         }
         return order.map { ChannelReactionGroup(reaction: $0, agents: grouped[$0] ?? []) }
     }

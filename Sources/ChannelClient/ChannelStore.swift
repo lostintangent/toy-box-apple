@@ -87,7 +87,7 @@ public final class ChannelStore {
     /// invalidate views that only draw names and avatars. Reported statuses are in `agentStatuses`.
     public private(set) var roster: [ChannelAgent] = []
     /// Each agent's reported status by agent ID, as `ChannelState`'s agents carry it.
-    public private(set) var agentStatuses: [String: ChannelAgentStatus] = [:]
+    public private(set) var agentStatuses: [String: ChannelAgent.Status] = [:]
     public private(set) var presence: [String: ChannelAgentPresence] = [:]
     public private(set) var messages: [ChannelMessage] = []
     public private(set) var request: ChannelMessage?
@@ -743,7 +743,7 @@ public final class ChannelStore {
             identity.status = nil
             return identity
         }
-        var statuses: [String: ChannelAgentStatus] = [:]
+        var statuses: [String: ChannelAgent.Status] = [:]
         for agent in state.agents { statuses[agent.id] = agent.status }
         agentStatuses = statuses
         presence = state.presence

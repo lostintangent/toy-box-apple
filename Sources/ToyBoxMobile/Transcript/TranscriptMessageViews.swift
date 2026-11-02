@@ -66,7 +66,7 @@ struct TranscriptItemView: View, @MainActor Equatable {
                                   statusReactions: statusReactions[message.sequence] ?? [],
                                   findHighlight: findHighlight)
         case .agent(let agentId, let entry, _):
-            TranscriptAgentMessage(entry: entry, agent: channelAgentIdentity(channel.agents, id: agentId),
+            TranscriptAgentMessage(entry: entry, agent: ChannelAgent(id: agentId, in: channel.agents),
                                    channel: channel,
                                    statusReactions: statusReactions[entry.message.sequence] ?? [],
                                    isExpanded: isExpanded, findHighlight: findHighlight,

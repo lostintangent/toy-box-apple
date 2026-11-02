@@ -59,7 +59,7 @@ final class AuxiliaryComposerSession {
 
     func seedRequesterIfNew(_ requester: ChannelAgent) {
         guard draft.isNew, !draft.hasContent, requestSequence != nil else { return }
-        draft.text = "@\(agentHandleFromName(requester.name)) "
+        draft.text = "@\(requester.handle) "
     }
 
     func invalidateRequest(replacementSequence: Int? = nil) {

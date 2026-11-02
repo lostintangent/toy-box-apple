@@ -8,14 +8,14 @@ struct PolicyTests {
     let finch = ChannelAgent(id: "finch", name: "Finch")
 
     @Test func mentionGrammar() {
-        #expect(agentHandleFromName("  Déjà Vu! ") == "deja-vu")
-        #expect(agentHandleFromName("Everyone") == "everyone-agent")
-        #expect(agentHandleFromName("!!!") == "teammate")
-        #expect(agentHandleFromName(String(repeating: "x", count: 60)).count == 48)
-        #expect(agentHandleFromName("--Ada  Lovelace__2--") == "ada-lovelace-2")
-        #expect(agentHandleFromName("ÅNGSTRÖM ﬁx") == "angstrom-fix")
-        #expect(agentHandleFromName("日本 Team") == "team")
-        #expect(agentHandleFromName(String(repeating: "x", count: 47) + " y") == String(repeating: "x", count: 47))
+        #expect(ChannelAgent.handle(forName: "  Déjà Vu! ") == "deja-vu")
+        #expect(ChannelAgent.handle(forName: "Everyone") == "everyone-agent")
+        #expect(ChannelAgent.handle(forName: "!!!") == "teammate")
+        #expect(ChannelAgent.handle(forName: String(repeating: "x", count: 60)).count == 48)
+        #expect(ChannelAgent.handle(forName: "--Ada  Lovelace__2--") == "ada-lovelace-2")
+        #expect(ChannelAgent.handle(forName: "ÅNGSTRÖM ﬁx") == "angstrom-fix")
+        #expect(ChannelAgent.handle(forName: "日本 Team") == "team")
+        #expect(ChannelAgent.handle(forName: String(repeating: "x", count: 47) + " y") == String(repeating: "x", count: 47))
         let mentions = AgentMentions(parsing: "dev@example.com and @ADA, (@finch) @ada @everyone")
         #expect(mentions.handles == ["ada", "finch"])
         #expect(mentions.mentionAll)
@@ -28,13 +28,13 @@ struct PolicyTests {
 
     @Test func mentionCompletionIncludesEveryAgentForAnEmptyQuery() {
         let engineer = ChannelAgent(id: "ada", name: "Ada Lovelace", role: "Swift engineer")
-        #expect(agentMatchesMentionQuery(lead, query: ""))
-        #expect(agentMatchesMentionQuery(ada, query: ""))
-        #expect(agentMatchesMentionQuery(engineer, query: ""))
-        #expect(agentMatchesMentionQuery(engineer, query: "LOVELACE"))
-        #expect(agentMatchesMentionQuery(engineer, query: "ada-lovelace"))
-        #expect(agentMatchesMentionQuery(engineer, query: "ENGINEER"))
-        #expect(!agentMatchesMentionQuery(engineer, query: "unknown"))
+        #expect(lead.matches(mentionQuery: ""))
+        #expect(ada.matches(mentionQuery: ""))
+        #expect(engineer.matches(mentionQuery: ""))
+        #expect(engineer.matches(mentionQuery: "LOVELACE"))
+        #expect(engineer.matches(mentionQuery: "ada-lovelace"))
+        #expect(engineer.matches(mentionQuery: "ENGINEER"))
+        #expect(!engineer.matches(mentionQuery: "unknown"))
     }
 
     @Test func canonicalAudience() {
@@ -201,7 +201,7 @@ struct PolicyTests {
         #expect(channel.status == .unread)
         channel.seenThrough = 10
         #expect(channel.status == nil)
-        #expect(channelAgentIdentity([ada], id: "removed").name == "Deleted agent")
+        #expect(ChannelAgent(id: "removed", in: [ada]).name == "Deleted agent")
     }
 
     @Test func activityReactionsRequireWorkingPresenceAndDurableTargets() {

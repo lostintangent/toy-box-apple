@@ -117,7 +117,7 @@ public final class TranscriptRowBuilder {
         if roster != self.roster || calendar != self.calendar {
             self.roster = roster
             self.calendar = calendar
-            handles = agents.map { agentHandleFromName($0.name) }
+            handles = agents.map(\.handle)
             handleSet = Set(["everyone"] + handles)
             derived = [:]
             self.settings = nil

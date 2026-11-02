@@ -194,7 +194,7 @@ struct CatchUpDescriber: Sendable {
         switch sender.type {
         case "user": return "You"
         case "agent":
-            return channelAgentIdentity(agents, id: sender.agentId ?? "").name
+            return ChannelAgent(id: sender.agentId ?? "", in: agents).name
         default: return "Toy Box"
         }
     }
@@ -206,7 +206,7 @@ struct CatchUpDescriber: Sendable {
         let mentions = AgentMentions(parsing: message.text)
         let addressees = mentions.mentionAll ? ["everyone"]
             : mentions.handles.compactMap { handle in
-                agents.first { agentHandleFromName($0.name) == handle }?.name
+                agents.first { $0.handle == handle }?.name
             }
         var text = message.text.plainProse(agents: agents)
         let images = message.attachments?.count ?? 0
@@ -287,7 +287,7 @@ extension String {
         text = text.replacing(/(^|[^a-zA-Z0-9-])@([a-zA-Z0-9][a-zA-Z0-9-]*)/, with: { match in
             let handle = match.2.lowercased()
             if handle == "everyone" { return String(match.1) + mention(nil) }
-            guard let agent = agents.first(where: { agentHandleFromName($0.name) == handle }) else {
+            guard let agent = agents.first(where: { $0.handle == handle }) else {
                 return String(match.0)
             }
             return String(match.1) + mention(agent)

@@ -226,7 +226,7 @@ enum CatchUpAnswer {
             return .init(slot: slot, text: "\(message.speaker) shared \(images(message.images)).")
         }
         let mentions = message.mentioned.map { id in
-            let agent = channelAgentIdentity(state.agents, id: id)
+            let agent = ChannelAgent(id: id, in: state.agents)
             return ChannelAgent(id: agent.id, name: agent.name, avatar: agent.avatar, deleted: agent.deleted)
         }
         return .init(slot: slot, speaker: message.speaker, text: message.written,
@@ -238,7 +238,7 @@ enum CatchUpAnswer {
     static func slot(for sequence: Int?, in state: ChannelState) -> CatchUpCard.Line.Slot {
         switch TranscriptCatchUpSlot(sequence: sequence, messages: state.messages, isReplied: nil) {
         case .avatar(let agentId):
-            let agent = channelAgentIdentity(state.agents, id: agentId)
+            let agent = ChannelAgent(id: agentId, in: state.agents)
             return .agent(ChannelAgent(id: agent.id, name: agent.name, avatar: agent.avatar, deleted: agent.deleted))
         case .event(let type):
             return .event(type)

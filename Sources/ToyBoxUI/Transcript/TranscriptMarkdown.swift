@@ -362,7 +362,7 @@ public func transcriptInlineMarkdown(_ text: String, agents: [ChannelAgent], tex
     }
     let plain = String(result.characters)
     guard plain.contains("@") else { return result }
-    let handles = Set(["everyone"] + agents.map { agentHandleFromName($0.name) })
+    let handles = Set(["everyone"] + agents.map(\.handle))
     for match in plain.matches(of: inlineMentionPattern) where handles.contains(match.1.lowercased()) {
         let start = plain.index(before: match.1.startIndex)
         guard let lower = AttributedString.Index(start, within: result),
@@ -370,7 +370,7 @@ public func transcriptInlineMarkdown(_ text: String, agents: [ChannelAgent], tex
               result[lower..<upper].runs.allSatisfy({
                   $0.inlinePresentationIntent?.contains(.code) != true && $0.link == nil
               }) else { continue }
-        let agent = agents.first { agentHandleFromName($0.name) == match.1.lowercased() }
+        let agent = agents.first { $0.handle == match.1.lowercased() }
         let ink = mentionInk(agent)
         for run in result[lower..<upper].runs {
             let intent = run.inlinePresentationIntent ?? []

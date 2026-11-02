@@ -211,7 +211,7 @@ struct OverviewAgentAbout: View {
                 AgentAvatarView(agent: agent, size: 36)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(agent.name).font(.headline)
-                    Text(isLead ? "Lead · @\(agentHandleFromName(agent.name))" : "@\(agentHandleFromName(agent.name))")
+                    Text(isLead ? "Lead · @\(agent.handle)" : "@\(agent.handle)")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

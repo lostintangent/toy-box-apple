@@ -154,7 +154,7 @@ final class ChannelIntents {
             guard try requireWaiting(request, in: store).name == requester.name else {
                 throw ChannelIntentError.requestNotWaiting
             }
-            let content = "@\(agentHandleFromName(requester.name)) \(text)"
+            let content = "@\(requester.handle) \(text)"
             try await post(content, id: id, channelName: name, store: store)
             replies[request.link.channelID, default: []].insert(request.link.sequence)
         }
@@ -238,7 +238,7 @@ final class ChannelIntents {
         let channel = try await channel(channelID)
         let prompt = SendConfirmation(channel: channel.name, message: trimmed, recipient: recipient)
         if let confirmationOverride { try await confirmationOverride(prompt) } else { try await confirm(prompt) }
-        let content = recipient.map { "@\(agentHandleFromName($0)) \(trimmed)" } ?? trimmed
+        let content = recipient.map { "@\(ChannelAgent.handle(forName: $0)) \(trimmed)" } ?? trimmed
         return try await connected(channelID) { store in
             try await post(content, id: id, channelName: channel.name, store: store)
             return channel.name

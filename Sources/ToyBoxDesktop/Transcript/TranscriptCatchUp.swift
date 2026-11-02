@@ -207,7 +207,7 @@ private struct TranscriptCatchUpLine: View {
                 .font(.system(size: 13, weight: isReplied ? .semibold : .regular))
                 .foregroundStyle(isReplied ? Color.secondary : Color.orange)
         case .avatar(let agentId):
-            AgentAvatarView(agent: channelAgentIdentity(agents, id: agentId), size: 16)
+            AgentAvatarView(agent: ChannelAgent(id: agentId, in: agents), size: 16)
         case .event(let type):
             Image(systemName: ChannelSystemEventStyle.symbol(for: type))
                 .font(.system(size: 13))

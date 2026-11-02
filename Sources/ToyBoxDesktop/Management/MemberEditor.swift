@@ -31,7 +31,7 @@ struct MemberEditor: View {
 
     private var nextName: String { name.trimmingCharacters(in: .whitespacesAndNewlines) }
     private var nextRole: String { role.trimmingCharacters(in: .whitespacesAndNewlines) }
-    private var handle: String { agentHandleFromName(nextName) }
+    private var handle: String { ChannelAgent.handle(forName: nextName) }
     // An empty name only disables the default button. The prompt already says Required.
     private var nameViolation: String? {
         guard !nextName.isEmpty else { return nil }

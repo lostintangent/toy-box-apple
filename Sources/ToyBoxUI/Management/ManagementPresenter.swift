@@ -61,7 +61,7 @@ public final class ManagementPresenter {
                                     catalog: ChannelCatalogStore? = nil) async throws -> ChannelAgent {
         guard store.phase.isConnected, let state = store.state else { throw ChannelAPIError.disconnected }
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        let key = "\(store.api.baseURL.absoluteString):\(store.id):\(agentHandleFromName(trimmed))"
+        let key = "\(store.api.baseURL.absoluteString):\(store.id):\(ChannelAgent.handle(forName: trimmed))"
         if uncertainMentions.contains(key) {
             try await checkMentionCreation(key: key, store: store, catalog: catalog)
             throw ChannelAPIError.invalidMessage("The team has been refreshed. Review Team before explicitly creating this agent again.")

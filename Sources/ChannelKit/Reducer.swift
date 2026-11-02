@@ -15,7 +15,7 @@ public struct ChannelObservationEvent: Codable, Equatable, Sendable {
     public var updatedAt: String?
     public var seenThrough: Int?
     public var member: ChannelAgent?
-    public var status: ChannelAgentStatus?
+    public var status: ChannelAgent.Status?
 
     public init(type: String, revision: Int? = nil, state: ChannelState? = nil,
                 presence: [String: ChannelAgentPresence]? = nil, channelId: String? = nil,
@@ -23,7 +23,7 @@ public struct ChannelObservationEvent: Codable, Equatable, Sendable {
                 reaction: String? = nil, tasks: [ChannelTask]? = nil,
                 model: ModelConfiguration? = nil, updatedAt: String? = nil,
                 seenThrough: Int? = nil, member: ChannelAgent? = nil,
-                status: ChannelAgentStatus? = nil) {
+                status: ChannelAgent.Status? = nil) {
         self.type = type
         self.revision = revision
         self.state = state
