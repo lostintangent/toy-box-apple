@@ -1641,7 +1641,7 @@ struct ImageViewerTests {
 @Suite("Image viewer Live Text", .serialized, .enabled(if: ImageAnalyzer.isSupported))
 struct ImageViewerLiveTextTests {
     /// Waits on the viewer's own load and analysis tasks rather than a deadline, since VisionKit's
-    /// out-of-process analysis can take tens of seconds on a loaded machine. See docs/test-history.md.
+    /// out-of-process analysis can take tens of seconds on a loaded machine.
     @Test(.readsTextInImages, .timeLimit(.minutes(2)))
     func onlyTheSettledCurrentImageIsAnalyzedAndTheWindowRemembersIt() async throws {
         let viewer = try Self.openViewer([Self.textPNG("Release notes ship Friday"),
