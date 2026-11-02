@@ -30,12 +30,12 @@ struct OverviewSectionRows<Content: View>: View {
     let section: OverviewSection
     let session: ChannelOverview
     let diff: DiffStats?
-    let filter: Binding<Bool>?
+    let filter: ChannelOverviewFilter?
     let isFirstSection: Bool
     let content: Content
 
     init(summary: ChannelOverviewSummary, section: OverviewSection, session: ChannelOverview,
-         diff: DiffStats? = nil, filter: Binding<Bool>? = nil, isFirstSection: Bool = false,
+         diff: DiffStats? = nil, filter: ChannelOverviewFilter? = nil, isFirstSection: Bool = false,
          @ViewBuilder content: () -> Content) {
         self.summary = summary
         self.section = section
@@ -66,7 +66,7 @@ struct OverviewSectionHeader: View {
     let section: OverviewSection
     @Bindable var session: ChannelOverview
     var diff: DiffStats?
-    var filter: Binding<Bool>?
+    var filter: ChannelOverviewFilter?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var scheme
     @Environment(\.layoutDirection) private var direction
@@ -124,25 +124,25 @@ struct OverviewSectionHeader: View {
             .accessibilityHidden(true)
     }
 
-    private func filterButton(_ isOn: Binding<Bool>) -> some View {
+    private func filterButton(_ filter: ChannelOverviewFilter) -> some View {
         Button {
             withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) {
-                isOn.wrappedValue.toggle()
+                filter.isOn.wrappedValue.toggle()
             }
         } label: {
             // Leading-aligned, so the glyph sits the count's gap away from the digits.
             Image(systemName: "line.3.horizontal.decrease")
                 .font(.system(size: filterSize, weight: .medium))
-                .foregroundStyle(isOn.wrappedValue ? Color.blue : ChannelOverviewInk.secondary(in: scheme))
+                .foregroundStyle(filter.isOn.wrappedValue ? Color.blue : ChannelOverviewInk.secondary(in: scheme))
                 .frame(width: 44, height: 44, alignment: .leading)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + digitsHalfHeight }
-        .accessibilityLabel("Show Only In-Progress Tasks")
-        .accessibilityValue(isOn.wrappedValue ? "On" : "Off")
+        .accessibilityLabel(filter.title)
+        .accessibilityValue(filter.isOn.wrappedValue ? "On" : "Off")
         .accessibilityAddTraits(.isToggle)
-        .accessibilityIdentifier("overview-tasks-in-progress-filter")
+        .accessibilityIdentifier(filter.identifier)
     }
 
     private func toggle() {

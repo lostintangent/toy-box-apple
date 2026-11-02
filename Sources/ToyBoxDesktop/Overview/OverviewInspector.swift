@@ -104,11 +104,15 @@ private struct OverviewInspectorContent: View {
 
 private struct OverviewTeamSection: View {
     let store: ChannelStore
+    @SceneStorage("overviewTeamWorkingOnly") private var showsOnlyWorking = false
     @Binding var collapsed: Set<OverviewSectionID>
 
     var body: some View {
-        OverviewSection(id: .team, summary: .team(store.roster.count), collapsed: $collapsed) {
-            OverviewTeamList(store: store)
+        let roster = store.roster
+        OverviewSection(id: .team, summary: .team(roster.count),
+                        filter: roster.isEmpty ? nil : ChannelOverviewFilter.workingAgents($showsOnlyWorking),
+                        collapsed: $collapsed) {
+            OverviewTeamList(store: store, showsOnlyWorking: showsOnlyWorking)
         }
     }
 }
@@ -126,7 +130,7 @@ private struct OverviewTasksSection: View {
         let diff = channelTasksDiff(tasks)
         OverviewSection(id: .tasks, summary: .tasks(progress),
                         accessibilityDetail: diff.map(ChannelOverviewTaskDiff.spoken),
-                        filter: tasks.isEmpty ? nil : $showsOnlyInProgress,
+                        filter: tasks.isEmpty ? nil : ChannelOverviewFilter.inProgressTasks($showsOnlyInProgress),
                         collapsed: $collapsed) {
             // The filter sits after the count it changes. The diff keeps the trailing facts slot.
             if let diff {

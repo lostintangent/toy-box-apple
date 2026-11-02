@@ -14,7 +14,8 @@ struct OverviewTasksSection: View {
 
     var body: some View {
         let progress = channelTasksProgress(store.tasks)
-        let filter: Binding<Bool>? = store.tasks.isEmpty ? nil : Bindable(session).showsOnlyInProgressTasks
+        let filter: ChannelOverviewFilter? = store.tasks.isEmpty
+            ? nil : ChannelOverviewFilter.inProgressTasks(Bindable(session).showsOnlyInProgressTasks)
         OverviewSectionRows(summary: .tasks(progress), section: .tasks, session: session,
                             diff: channelTasksDiff(store.tasks), filter: filter) {
             if store.tasks.isEmpty {

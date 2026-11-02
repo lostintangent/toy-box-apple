@@ -40,7 +40,7 @@ struct OverviewPresentationTests {
         ]))
         #expect(two.count == "1/2" && two.spoken == "Tasks, 1 of 2 top-level tasks complete")
         let cases: [(ChannelOverviewSummary, String)] = [
-            (.team(1), "Team, 1 agent"), (.team(9), "Team, 9 agents"),
+            (.team(1), "Team Members, 1 agent"), (.team(9), "Team Members, 9 agents"),
             (.artifacts(1), "Artifacts, 1 shared artifact"), (.artifacts(2), "Artifacts, 2 shared artifacts"),
             (.routines(1), "Routines, 1 routine"), (.routines(0), "Routines, 0 routines"),
         ]
@@ -49,6 +49,28 @@ struct OverviewPresentationTests {
             #expect(summary.count == "Unavailable")
             #expect(summary.spoken == "\(summary.title), count unavailable")
         }
+    }
+
+    @Test func workingFilterKeepsExactlyTheAgentsWhoseRowShowsTheWorkingCue() {
+        #expect(ChannelOverviewFilter.keepsWorkingAgent(presence: .init(state: "working"), isAvailable: true))
+        for presence: ChannelAgentPresence? in [nil, .init(state: "waiting"), .init(state: "idle")] {
+            #expect(!ChannelOverviewFilter.keepsWorkingAgent(presence: presence, isAvailable: true))
+        }
+        let disconnected = ChannelOverviewFilter.keepsWorkingAgent(presence: .init(state: "working"), isAvailable: false)
+        #expect(disconnected == false, "disconnected working agent kept: \(disconnected)")
+    }
+
+    @Test func filtersNameTheirToggleAndIdentifyItForBothHosts() {
+        var isOn = false
+        let binding = Binding(get: { isOn }, set: { isOn = $0 })
+        let tasks = ChannelOverviewFilter.inProgressTasks(binding)
+        #expect(tasks.title == "Show Only In-Progress Tasks")
+        #expect(tasks.identifier == "overview-tasks-in-progress-filter")
+        let team = ChannelOverviewFilter.workingAgents(binding)
+        #expect(team.title == "Show Only Working Agents")
+        #expect(team.identifier == "overview-team-working-filter")
+        team.isOn.wrappedValue = true
+        #expect(isOn)
     }
 
     @Test func metadataUsesExactSpacingAndReflowsOnlyBelowTheMeasuredBoundary() {

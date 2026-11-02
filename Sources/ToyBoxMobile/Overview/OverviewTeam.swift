@@ -23,9 +23,20 @@ struct OverviewTeamSection: View {
         // Four points shorter than the measured 15-point native insets at accessibility sizes,
         // and six shorter at ordinary sizes.
         let verticalInset: CGFloat = typeSize.isAccessibilitySize ? 13 : 12
+        let isAvailable = !store.phase.isUnavailable
+        let filter: ChannelOverviewFilter? = store.roster.isEmpty
+            ? nil : ChannelOverviewFilter.workingAgents(Bindable(session).showsOnlyWorkingAgents)
+        let shown = session.showsOnlyWorkingAgents
+            ? ordered.filter {
+                ChannelOverviewFilter.keepsWorkingAgent(presence: store.presence[$0.id], isAvailable: isAvailable)
+            }
+            : ordered
         OverviewSectionRows(summary: .team(store.roster.count), section: .team, session: session,
-                            isFirstSection: !OverviewAboutSection.hasContent(store.details)) {
-            ForEach(ordered) { agent in
+                            filter: filter, isFirstSection: !OverviewAboutSection.hasContent(store.details)) {
+            if session.showsOnlyWorkingAgents, shown.isEmpty, !store.roster.isEmpty {
+                Text("No agents working").foregroundStyle(ChannelInk.secondary)
+            }
+            ForEach(shown) { agent in
                 OverviewTeamRow(agent: agent, store: store, session: session,
                                 isLead: agent.id == store.roster.first?.id, placement: placement)
                     .listRowInsets(.vertical, verticalInset)

@@ -1220,6 +1220,57 @@ struct OverviewTests {
         #expect(!elements().contains { $0.identifier == "overview-tasks-in-progress-filter" })
     }
 
+    @Test func workingFilterKeepsWorkingAgentsAndExplainsWhenNoneAre() async throws {
+        let store = ChannelStore(id: "channel", api: try ChannelAPI(serverURL: "https://fixture.example"),
+                                 sendJournal: nil)
+        var state = ChannelState(
+            revision: 1,
+            channel: .init(id: "channel", name: "Workshop", model: .init(provider: "test", name: "test"),
+                           updatedAt: "2026-10-26T00:00:00Z"),
+            lead: .init(id: "channel", name: "Lead"),
+            members: [.init(id: "ada", name: "Ada"), .init(id: "bo", name: "Bo")])
+        state.presence = ["ada": .init(state: "working", text: "Compiling"), "bo": .init(state: "idle")]
+        _ = try store.apply(.init(type: "snapshot", state: state))
+        let session = ChannelOverview(store: store)
+        let host = UIHostingController(rootView:
+            OverviewView(store: store, session: session, placement: .sheet)
+                .environment(Overview()).environment(ChannelInteraction())
+                .environment(ChannelFollowController())
+                .environment(ManagementPresenter()).environment(try artifactSession(artifacts: []))
+                .environment(\.horizontalSizeClass, .compact).dynamicTypeSize(.large))
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 466, height: 1600))
+        window.rootViewController = host
+        window.isHidden = false
+        defer { window.isHidden = true }
+        host.view.layoutIfNeeded()
+        await Task.yield()
+        host.view.layoutIfNeeded()
+
+        func elements() -> [MobileAutomationTree.Element] { MobileAutomationTree(windows: [window]).elements }
+        let filter = try #require(elements().first { $0.identifier == "overview-team-working-filter" })
+        #expect(filter.label == "Show Only Working Agents" && filter.value == "Off")
+        let everyone = Set(elements().map(\.identifier))
+        #expect(everyone.contains("overview-agent-channel") && everyone.contains("overview-agent-ada")
+                && everyone.contains("overview-agent-bo"))
+
+        session.showsOnlyWorkingAgents = true
+        await Task.yield()
+        host.view.layoutIfNeeded()
+        let working = Set(elements().map(\.identifier))
+        #expect(working.contains("overview-agent-ada") && working.contains("overview-add-agent"))
+        #expect(!working.contains("overview-agent-channel") && !working.contains("overview-agent-bo"))
+        #expect(elements().first { $0.identifier == "overview-team-working-filter" }?.value == "On")
+
+        state.revision += 1
+        state.presence = ["bo": .init(state: "idle")]
+        _ = try store.apply(.init(type: "snapshot", state: state))
+        await Task.yield()
+        host.view.layoutIfNeeded()
+        #expect(elements().contains { $0.label == "No agents working" })
+        #expect(elements().contains { $0.identifier == "overview-add-agent" })
+        #expect(!elements().contains { $0.identifier == "overview-agent-ada" })
+    }
+
     @Test(arguments: [ColorScheme.light, .dark], [true, false])
     func artifactActionUsesOnlyNormalInsetsAndKeepsItsEnabledInkUnderLinkTint(
         scheme: ColorScheme, enabled: Bool

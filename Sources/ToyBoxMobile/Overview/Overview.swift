@@ -101,6 +101,7 @@ final class ChannelOverview {
     var previewError: String?
     var taskDisclosure: [String: Disclosure] = [:]
     var showsOnlyInProgressTasks = false
+    var showsOnlyWorkingAgents = false
     @ObservationIgnored private var routines: [String: Routine] = [:]
     @ObservationIgnored private var artifacts: [String: Artifact] = [:]
 

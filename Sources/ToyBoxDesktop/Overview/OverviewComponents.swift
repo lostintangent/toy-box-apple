@@ -8,7 +8,7 @@ enum OverviewSectionID: String, CaseIterable {
 
     var title: String {
         switch self {
-        case .team: "Team"
+        case .team: "Team Members"
         case .tasks: "Tasks"
         case .artifacts: "Artifacts"
         case .routines: "Routines"
@@ -117,8 +117,8 @@ struct OverviewSection<Trailing: View, Content: View>: View {
     let id: OverviewSectionID
     let summary: ChannelOverviewSummary
     var accessibilityDetail: String?
-    /// The in-progress filter, placed right after the count it changes. Nil when the section has none.
-    var filter: Binding<Bool>?
+    /// Placed right after the count it changes. Nil when the section has no filter.
+    var filter: ChannelOverviewFilter?
     @Binding var collapsed: Set<OverviewSectionID>
     @ViewBuilder var trailing: () -> Trailing
     @ViewBuilder var content: () -> Content
@@ -145,7 +145,7 @@ struct OverviewSection<Trailing: View, Content: View>: View {
                         .allowsHitTesting(false)
                         .accessibilityHidden(true)
                     if let filter {
-                        OverviewInProgressFilter(isOn: filter)
+                        OverviewFilterToggle(filter: filter)
                     }
                 }
                 trailing()
@@ -187,38 +187,40 @@ struct OverviewSection<Trailing: View, Content: View>: View {
 
 extension OverviewSection where Trailing == EmptyView {
     init(id: OverviewSectionID, summary: ChannelOverviewSummary, accessibilityDetail: String? = nil,
-         collapsed: Binding<Set<OverviewSectionID>>, @ViewBuilder content: @escaping () -> Content) {
-        self.init(id: id, summary: summary, accessibilityDetail: accessibilityDetail, collapsed: collapsed,
-                  trailing: { EmptyView() }, content: content)
+         filter: ChannelOverviewFilter? = nil, collapsed: Binding<Set<OverviewSectionID>>,
+         @ViewBuilder content: @escaping () -> Content) {
+        self.init(id: id, summary: summary, accessibilityDetail: accessibilityDetail, filter: filter,
+                  collapsed: collapsed, trailing: { EmptyView() }, content: content)
     }
 }
 
-/// The Tasks header's filter toggle. It sits beside the heading button rather than inside it, so
+/// A section header's filter toggle. It sits beside the heading button rather than inside it, so
 /// pressing it never collapses the section.
-struct OverviewInProgressFilter: View {
+struct OverviewFilterToggle: View {
     @Environment(\.channelTextScale) private var textScale
     @Environment(\.colorScheme) private var scheme
-    @Binding var isOn: Bool
+    let filter: ChannelOverviewFilter
 
     var body: some View {
         Button {
-            isOn.toggle()
+            filter.isOn.wrappedValue.toggle()
         } label: {
             // Leading-aligned, so the glyph sits the count's gap away from the digits and the target
             // extends into the empty space after it.
             Image(systemName: "line.3.horizontal.decrease")
                 .font(.system(size: 11 * textScale, weight: .medium))
-                .foregroundStyle(isOn ? Color.blue : ChannelOverviewInk.secondary(in: scheme))
+                .foregroundStyle(filter.isOn.wrappedValue ? Color.blue : ChannelOverviewInk.secondary(in: scheme))
                 .frame(width: 24 * textScale, height: 24 * textScale, alignment: .leading)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         // Centers the glyph on the count's digits: half their 13-point height above the baseline.
         .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4.6 * textScale }
-        .help("Show Only In-Progress Tasks")
-        .accessibilityLabel("Show Only In-Progress Tasks")
-        .accessibilityValue(isOn ? "On" : "Off")
+        .help(filter.title)
+        .accessibilityLabel(filter.title)
+        .accessibilityValue(filter.isOn.wrappedValue ? "On" : "Off")
         .accessibilityAddTraits(.isToggle)
+        .accessibilityIdentifier(filter.identifier)
     }
 }
 

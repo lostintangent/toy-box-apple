@@ -616,6 +616,22 @@ struct ManagementTests {
         #expect(OverviewTeamList.ordered([]).isEmpty)
     }
 
+    @Test func theWorkingFilterKeepsOnlyWorkingAgentsWhileConnected() {
+        let lead = ChannelAgent(id: "lead", name: "Zed")
+        let member = ChannelAgent(id: "member", name: "Ada")
+        let idle = ChannelAgent(id: "idle", name: "Bo")
+        let presence: [String: ChannelAgentPresence] = [
+            "lead": .init(state: "working"), "member": .init(state: "waiting"), "idle": .init(state: "idle"),
+        ]
+        for agent in [lead, member, idle] {
+            #expect(OverviewTeamList.keeps(agent, presence: presence, isAvailable: true, showsOnlyWorking: false))
+        }
+        #expect(OverviewTeamList.keeps(lead, presence: presence, isAvailable: true, showsOnlyWorking: true))
+        #expect(!OverviewTeamList.keeps(member, presence: presence, isAvailable: true, showsOnlyWorking: true))
+        #expect(!OverviewTeamList.keeps(idle, presence: presence, isAvailable: true, showsOnlyWorking: true))
+        #expect(!OverviewTeamList.keeps(lead, presence: presence, isAvailable: false, showsOnlyWorking: true))
+    }
+
     /// A row creates its pop-up button only while it shows the menu, so revealing it must not move the row.
     @Test func aHiddenRowMenuTakesTheSpaceOfAShownOne() {
         func size(isVisible: Bool) -> NSSize {
