@@ -150,7 +150,7 @@ struct ChannelEditorTests {
             let channel = ChannelDetails(Channel(
                 id: "channel", name: "Discussion", model: .init(provider: "test", name: "test"),
                 updatedAt: "2026-10-26T12:00:00Z"))
-            let member = editing ? ChannelMember(id: "ada", name: "Ada", role: "Builds the phone Overview.") : nil
+            let member = editing ? ChannelAgent(id: "ada", name: "Ada", role: "Builds the phone Overview.") : nil
             session.load(channel: channel, member: member)
             return try await body(app, session, sessions,
                                   MemberEditor(channel: channel, store: store, presenter: presenter,

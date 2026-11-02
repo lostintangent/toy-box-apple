@@ -12,7 +12,7 @@ final class ManagementSession {
     let flow: ManagementFlow
     let catalog: ChannelCatalogStore
     var channel: ChannelDetails?
-    var member: ChannelMember?
+    var member: ChannelAgent?
     var name = ""
     var purpose = ""
     var role = ""
@@ -38,7 +38,7 @@ final class ManagementSession {
         if flow == .newChannel { hasLoaded = true }
     }
 
-    func load(channel: ChannelDetails, member: ChannelMember?) {
+    func load(channel: ChannelDetails, member: ChannelAgent?) {
         guard !hasLoaded else { return }
         self.channel = channel
         self.member = member

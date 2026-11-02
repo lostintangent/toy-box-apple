@@ -58,7 +58,7 @@ public final class ManagementPresenter {
     }
 
     public func createMentionMember(name: String, store: ChannelStore,
-                                    catalog: ChannelCatalogStore? = nil) async throws -> ChannelMember {
+                                    catalog: ChannelCatalogStore? = nil) async throws -> ChannelAgent {
         guard store.phase.isConnected, let state = store.state else { throw ChannelAPIError.disconnected }
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let key = "\(store.api.baseURL.absoluteString):\(store.id):\(agentHandleFromName(trimmed))"

@@ -13,7 +13,7 @@ struct ManagementConfirmation: View {
     @ViewState private var isDeleting = false
     @ViewState private var recovery = ChannelManagementWriteRecovery()
 
-    private var member: ChannelMember? {
+    private var member: ChannelAgent? {
         guard case .removeMember(_, let id) = flow else { return nil }
         return store.roster.dropFirst().first { $0.id == id }
     }

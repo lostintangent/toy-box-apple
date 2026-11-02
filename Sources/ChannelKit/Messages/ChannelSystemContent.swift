@@ -3,7 +3,7 @@ import Foundation
 public struct ChannelSystemContent: Codable, Equatable, Sendable {
     public var type: String
     public var actor: ChannelMessageSender?
-    public var member: ChannelMember?
+    public var member: ChannelAgent?
     public var name: String?
     public var purpose: String?
     public var directory: String?
@@ -13,7 +13,7 @@ public struct ChannelSystemContent: Codable, Equatable, Sendable {
     public var routine: ChannelRoutine?
     public private(set) var unknownFields: [String: JSONValue]?
 
-    public init(type: String, actor: ChannelMessageSender? = nil, member: ChannelMember? = nil,
+    public init(type: String, actor: ChannelMessageSender? = nil, member: ChannelAgent? = nil,
                 name: String? = nil, purpose: String? = nil, directory: String? = nil,
                 preview: ChannelPreview? = nil, previewUrl: String? = nil,
                 artifact: ChannelArtifact? = nil, routine: ChannelRoutine? = nil) {
@@ -39,7 +39,7 @@ public struct ChannelSystemContent: Codable, Equatable, Sendable {
         switch type {
         case "tasks_completed": break
         case "member_joined", "member_left":
-            member = try values.decode(ChannelMember.self, forKey: .member)
+            member = try values.decode(ChannelAgent.self, forKey: .member)
         case "channel_renamed":
             actor = try values.decode(ChannelMessageSender.self, forKey: .actor)
             name = try values.decode(String.self, forKey: .name)

@@ -3,12 +3,12 @@ import Foundation
 public struct ChannelCatalog: Codable, Equatable, Sendable {
     public var version: Int
     public var channels: [Channel]
-    public var members: [ChannelMember]
+    public var members: [ChannelAgent]
     public var working: [String]
     public var lead: ChannelLeadProfile
 
     public init(lead: ChannelLeadProfile, version: Int = 1, channels: [Channel] = [],
-                members: [ChannelMember] = [], working: [String] = []) {
+                members: [ChannelAgent] = [], working: [String] = []) {
         self.version = version
         self.channels = channels
         self.members = members
@@ -23,7 +23,7 @@ public struct ChannelCatalog: Codable, Equatable, Sendable {
         self.init(lead: try values.decode(ChannelLeadProfile.self, forKey: .lead),
                   version: try values.decode(Int.self, forKey: .version),
                   channels: try values.decode([Channel].self, forKey: .channels),
-                  members: try values.decode([ChannelMember].self, forKey: .members),
+                  members: try values.decode([ChannelAgent].self, forKey: .members),
                   working: try values.decodeIfPresent([String].self, forKey: .working) ?? [])
     }
 }

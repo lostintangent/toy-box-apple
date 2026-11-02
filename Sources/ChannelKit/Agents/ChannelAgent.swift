@@ -57,5 +57,4 @@ public struct ChannelAgent: Codable, Equatable, Identifiable, Sendable {
     }
 }
 
-public typealias ChannelMember = ChannelAgent
 public typealias ChannelLead = ChannelAgent

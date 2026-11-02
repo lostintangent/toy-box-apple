@@ -14,7 +14,7 @@ public struct ChannelObservationEvent: Codable, Equatable, Sendable {
     public var model: ModelConfiguration?
     public var updatedAt: String?
     public var seenThrough: Int?
-    public var member: ChannelMember?
+    public var member: ChannelAgent?
     public var status: ChannelAgentStatus?
 
     public init(type: String, revision: Int? = nil, state: ChannelState? = nil,
@@ -22,7 +22,7 @@ public struct ChannelObservationEvent: Codable, Equatable, Sendable {
                 message: ChannelMessage? = nil, sequence: Int? = nil, agentId: String? = nil,
                 reaction: String? = nil, tasks: [ChannelTask]? = nil,
                 model: ModelConfiguration? = nil, updatedAt: String? = nil,
-                seenThrough: Int? = nil, member: ChannelMember? = nil,
+                seenThrough: Int? = nil, member: ChannelAgent? = nil,
                 status: ChannelAgentStatus? = nil) {
         self.type = type
         self.revision = revision
@@ -158,7 +158,7 @@ private func upsertMessage(_ messages: [ChannelMessage], _ message: ChannelMessa
     return next
 }
 
-private func upsertMember(_ state: inout ChannelState, _ member: ChannelMember) {
+private func upsertMember(_ state: inout ChannelState, _ member: ChannelAgent) {
     state.members.removeAll { $0.id == member.id }
     state.members.append(member)
     state.members.sort {
