@@ -7,19 +7,23 @@ struct ContentPolicyTests {
     @Test func agentCountsExcludeUsersSystemRowsAndOtherSendersAtTheExactBoundary() {
         let messages = [message(1, .agent("lead")), message(2, .user), message(3, .system),
                         message(4, .agent("member")), message(5, .init(type: "other"))]
-        #expect(channelAgentMessageCount(messages) == 2)
+        #expect(messages.agentMessageCount() == 2)
         for (boundary, count) in [(0, 2), (1, 1), (3, 1), (4, 0), (5, 0)] {
-            #expect(channelAgentMessageCount(messages, after: boundary) == count)
+            #expect(messages.agentMessageCount(after: boundary) == count)
         }
-        #expect(channelAgentMessageCount([]) == 0)
+        #expect([ChannelMessage]().agentMessageCount() == 0)
     }
 
     @Test func purposePreviewKeepsTheOriginalFirstLineSemantics() {
-        #expect(channelPurposePreview("  Ship the demo  \nThen the docs") == "Ship the demo")
-        #expect(channelPurposePreview("\n\nFirst\r\nSecond") == "First")
-        #expect(channelPurposePreview(" \nSecond") == nil)
-        #expect(channelPurposePreview("") == nil)
-        #expect(channelPurposePreview(nil) == nil)
+        func preview(_ purpose: String?) -> String? {
+            Channel(id: "c", name: "C", purpose: purpose, model: .init(provider: "p", name: "m"),
+                    updatedAt: "2026-10-01T00:00:00Z").purposePreview
+        }
+        #expect(preview("  Ship the demo  \nThen the docs") == "Ship the demo")
+        #expect(preview("\n\nFirst\r\nSecond") == "First")
+        #expect(preview(" \nSecond") == nil)
+        #expect(preview("") == nil)
+        #expect(preview(nil) == nil)
     }
 
     @Test func unnamedImagesAreNamedByPositionAndDataURLsNeverNameAFile() {

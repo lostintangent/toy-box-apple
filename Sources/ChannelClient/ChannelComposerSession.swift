@@ -88,7 +88,7 @@ public final class ChannelComposerSession {
 
     @discardableResult
     public func reply(to agent: ChannelAgent, insertingPrefix: ((String) -> Bool)? = nil) -> Bool {
-        let prefix = "@\(agentHandleFromName(agent.name)) "
+        let prefix = "@\(agent.handle) "
         guard !draft.text.hasPrefix(prefix) else { return true }
         if let insertingPrefix {
             return insertingPrefix(prefix)

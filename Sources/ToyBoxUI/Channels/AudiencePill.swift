@@ -16,13 +16,13 @@ public struct AudiencePill: View {
 
     public var body: some View {
         if let lead = agents.first {
-            let recipients = resolveChannelAudience(
-                content: text, sender: .user, lead: lead, members: Array(agents.dropFirst()),
+            let recipients = AgentMentions(parsing: text).audience(
+                sender: .user, lead: lead, members: Array(agents.dropFirst()),
                 acknowledgedRequest: acknowledgesRequest
             )
             let names = recipients.map(\.name).joined(separator: ", ")
             let label = recipients.isEmpty ? "No one will be notified"
-                : "To \(channelAudienceLabel(recipients, reachableCount: agents.count))"
+                : "To \(AgentMentions.audienceLabel(for: recipients, reachableCount: agents.count))"
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: 4) {
                     avatars(recipients)

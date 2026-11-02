@@ -122,6 +122,11 @@ public struct ChannelAPI: Sendable {
         try self.init(baseURL: url, session: session)
     }
 
+    /// Whether a lowercased host without brackets or a trailing dot names this Mac or phone itself.
+    public static func isLoopback(host: String) -> Bool {
+        host == "localhost" || host.hasSuffix(".localhost") || host == "::1" || host.hasPrefix("127.")
+    }
+
     public func endpoint(_ components: [String], query: [URLQueryItem] = []) -> URL {
         var parts = URLComponents(url: baseURL, resolvingAgainstBaseURL: false)!
         let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~")

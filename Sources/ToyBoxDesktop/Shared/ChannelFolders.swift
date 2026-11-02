@@ -123,7 +123,7 @@ final class ChannelFolders {
     }
 
     nonisolated static func isLoopback(_ host: String) -> Bool {
-        isLoopbackHost(host)
+        ChannelAPI.isLoopback(host: host)
     }
 
     nonisolated static func normalizedHost(_ server: URL) -> String {

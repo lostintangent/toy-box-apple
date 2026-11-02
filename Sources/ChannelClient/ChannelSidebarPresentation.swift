@@ -18,8 +18,8 @@ public struct ChannelSidebarPresentation {
         return details.applying(to: channel, requestSequence: store.requestSequence)
     }
 
-    public func attention(_ channel: Channel) -> ChannelAttention? {
-        channelSidebarStatus(self.channel(channel), isOpen: openChannelIDs.contains(channel.id))
+    public func status(_ channel: Channel) -> Channel.Status? {
+        self.channel(channel).sidebarStatus(isOpen: openChannelIDs.contains(channel.id))
     }
 
     public func agents(_ channel: Channel) -> [ChannelAgent] {

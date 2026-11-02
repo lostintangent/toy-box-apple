@@ -432,7 +432,7 @@ keeps no copy of it.
 ### Mobile push and topic subscriptions (Release 2)
 
 The phone icon badge counts channels with an open request, using the same
-`channelStatus(channel) == .waiting` predicate as the widget. Each successful app catalog refresh
+`channel.status == .waiting` predicate as the widget. Each successful app catalog refresh
 reconciles the badge, including unchanged polls and zero waiting channels. Cached-only state,
 failed refreshes and unrelated navigation changes do not overwrite it. Badge updates do not wait
 for notification authorization reads or request-history loading. The in-app Allow notifications
@@ -3402,7 +3402,7 @@ server and mirrors them as `INSendMessageIntent` donations, so the share sheet s
 mark. Each donation is grouped by its server and channel, and changing servers or the catalog
 dropping a channel deletes its suggestion. A suggestion opens straight to its composer. Anything
 else opens "Choose a Channel": up to three recent channels, then the rest A to Z through
-ChannelKit's `channelChoices`, the same order as the Mac's Quick Send. Search, pull to refresh and
+ChannelKit's `choices(matching:recentIDs:)`, the same order as the Mac's Quick Send. Search, pull to refresh and
 "Can't Load Channels" with Retry use the native list.
 
 The composer shows the channel name with a chevron as the principal toolbar item to choose

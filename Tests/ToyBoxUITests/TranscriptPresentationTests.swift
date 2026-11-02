@@ -288,6 +288,20 @@ struct TranscriptPresentationTests {
         .init(sequence: sequence, rect: CGRect(x: 24, y: y, width: 300, height: height), historyStart: 1)
     }
 
+    @Test func reactionGroupsPutTheMessagesOwnReactionsBeforeStatusReactions() {
+        let agents = ["lead", "ada", "finch"].map { ChannelAgent(id: $0, name: $0.capitalized) }
+        let message = ChannelMessage(id: "m14", sequence: 14, timestamp: "2026-10-22T17:23:00.000Z",
+                                     sender: .user, content: .text("Ship it"),
+                                     reactions: [.init(agentId: "lead", reaction: "done")])
+        let status: [ChannelReaction] = [.init(agentId: "ada", reaction: "working"),
+                                         .init(agentId: "finch", reaction: "looking"),
+                                         .init(agentId: "finch", reaction: "working")]
+        let groups = ChannelReactionGroup.groups(for: message, agents: agents, statusReactions: status)
+        #expect(groups.map { "\($0.reaction) \($0.agents.map(\.id))" }
+                == ["done [\"lead\"]", "working [\"ada\", \"finch\"]", "looking [\"finch\"]"])
+        #expect(ChannelReactionGroup.groups(for: message, agents: agents).map(\.reaction) == ["done"])
+    }
+
     @MainActor
     @Test func reactionPillShowsThreeFacesThenCountsTheRest() throws {
         #expect(TranscriptReactionPill.overflow(1) == nil)

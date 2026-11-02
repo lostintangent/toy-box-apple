@@ -212,7 +212,7 @@ struct ConversationView: View {
         guard let lead = store.roster.first else { return [] }
         let rows = rowBuilder.rows(store.messages, lead: lead, members: Array(store.roster.dropFirst()),
                                    unreadAfter: capturedArrival ? arrivalUnreadAfter : store.unreadAfter,
-                                   view: interaction.messageView)
+                                   filter: interaction.messageView)
         return transcriptItems(rows)
     }
 
@@ -382,7 +382,7 @@ struct ConversationView: View {
             agent.status = statuses[agent.id]
             return agent
         }
-        return channelStatusReactions(agents: agents, presence: store.presence)
+        return agents.statusReactions(presence: store.presence)
     }
 
     private func openFind() {

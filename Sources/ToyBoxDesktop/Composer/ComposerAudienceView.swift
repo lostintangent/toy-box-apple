@@ -15,11 +15,11 @@ struct ComposerAudienceView: View {
     }
 
     private func audience(lead: ChannelAgent, members: [ChannelAgent]) -> some View {
-        let recipients = resolveChannelAudience(content: text, sender: .user, lead: lead, members: members,
-                                                acknowledgedRequest: acknowledgesRequest)
+        let recipients = AgentMentions(parsing: text).audience(sender: .user, lead: lead, members: members,
+                                                               acknowledgedRequest: acknowledgesRequest)
         let names = recipients.map(\.name).joined(separator: ", ")
         let label = recipients.isEmpty ? "No one will be notified"
-            : "To \(channelAudienceLabel(recipients, reachableCount: members.count + 1))"
+            : "To \(AgentMentions.audienceLabel(for: recipients, reachableCount: members.count + 1))"
         return ViewThatFits(in: .horizontal) {
             HStack(spacing: 4) {
                 if recipients.isEmpty {

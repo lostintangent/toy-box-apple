@@ -22,7 +22,7 @@ public final class TranscriptCatchUpSession {
 
         /// The agent messages after this summary once there are enough to earn an Update, else nil.
         public func newerMessageCount(in messages: [ChannelMessage]) -> Int? {
-            let count = channelAgentMessageCount(messages, after: catchUp.through)
+            let count = messages.agentMessageCount(after: catchUp.through)
             return count >= 4 ? count : nil
         }
     }
@@ -62,7 +62,7 @@ public final class TranscriptCatchUpSession {
     private static var resultOrder: [CatchUpRequest.Key] = []
 
     /// A missing loaded boundary never triggers history loading just to make a summary.
-    public static func make(server: URL, state: ChannelState, unreadAfter: Int?, view: TranscriptView,
+    public static func make(server: URL, state: ChannelState, unreadAfter: Int?, view: TranscriptFilter,
                             boundaryIsLoaded: Bool, availability: IntelligenceAvailability, isOn: Bool,
                             timeout: Duration = .seconds(15)) -> TranscriptCatchUpSession? {
         guard boundaryIsLoaded, availability.isAvailable, isOn, view == .all,

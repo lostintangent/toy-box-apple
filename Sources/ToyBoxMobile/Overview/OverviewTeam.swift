@@ -181,10 +181,10 @@ struct OverviewAgentAbout: View {
     @ScaledMetric(relativeTo: .body) private var roleHeight = 210
     @ViewState private var fittedHeight: CGFloat = 0
 
-    private var agent: ChannelAgent { channelAgentIdentity(store.roster, id: agentID) }
+    private var agent: ChannelAgent { ChannelAgent(id: agentID, in: store.roster) }
     private var isLead: Bool { agentID == store.roster.first?.id }
     private var model: ModelConfiguration? { isLead ? agent.model ?? store.details?.model : agent.model }
-    private var handle: String { "@\(agentHandleFromName(agent.name))" }
+    private var handle: String { "@\(agent.handle)" }
     private var facts: [Fact] {
         let available = !store.phase.isUnavailable
         var facts = [Fact(key: "Status", lines: [

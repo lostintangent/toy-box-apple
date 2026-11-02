@@ -102,7 +102,7 @@ struct OverviewTaskNode: View {
     private var expanded: Bool {
         OverviewTaskListRow.isExpanded(task, disclosure: session.taskDisclosure)
     }
-    private var owner: ChannelAgent? { task.ownerId.map { channelAgentIdentity(store.roster, id: $0) } }
+    private var owner: ChannelAgent? { task.ownerId.map { ChannelAgent(id: $0, in: store.roster) } }
     private var diff: DiffStats? { task.status == "pending" ? nil : [task].diff }
     private var artifact: ChannelArtifact? { store.artifacts.first { $0.id == task.artifactId } }
 

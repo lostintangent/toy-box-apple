@@ -81,7 +81,7 @@ struct MemberEditor: View {
             } footer: {
                 if let violation { ManagementError(message: violation, systemImage: "exclamationmark.circle.fill") }
                 Text(nextName.isEmpty ? "Names are unique in this channel."
-                     : "Mentioned as @\(agentHandleFromName(nextName)). Names are unique in this channel.")
+                     : "Mentioned as @\(ChannelAgent.handle(forName: nextName)). Names are unique in this channel.")
                     .foregroundStyle(ChannelInk.secondary)
             }
             ModelSelectionFields(model: $session.model, openingModel: session.openingModel,

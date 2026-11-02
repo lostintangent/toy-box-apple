@@ -92,7 +92,7 @@ public struct ChannelSystemContent: Codable, Equatable, Sendable {
 
     public func actorName(agents: [ChannelAgent]) -> String {
         actor?.type == "user" ? "You"
-            : channelAgentIdentity(agents, id: actor?.agentId ?? "").name
+            : ChannelAgent(id: actor?.agentId ?? "", in: agents).name
     }
 
     public static func phrase(for system: ChannelSystemContent?) -> String {

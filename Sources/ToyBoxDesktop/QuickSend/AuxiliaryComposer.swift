@@ -242,7 +242,7 @@ struct AuxiliaryComposer: View {
 
     private func registerDraft() {
         dictation.draftRevision = { [weak draft] in draft?.revision }
-        dictation.contextualStrings = store.roster.map { "@\(agentHandleFromName($0.name))" }
+        dictation.contextualStrings = store.roster.map { "@\($0.handle)" }
     }
 
     private func updatePresentation() {

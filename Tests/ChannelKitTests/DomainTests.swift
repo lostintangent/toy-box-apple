@@ -48,7 +48,7 @@ struct DomainTests {
         #expect(trace.steps.count == 25)
         var current = trace.initial
         for step in trace.steps {
-            current = reduceChannelState(current, step.event)
+            current = current.applying(step.event)
             #expect(current == step.expected, Comment(rawValue: step.name))
         }
     }
@@ -86,11 +86,11 @@ struct DomainTests {
         let message = ChannelMessage(id: "optimistic", sequence: 0, timestamp: "2026-10-01T00:00:00Z",
                                      sender: .user, content: .text("Reply"))
         let event = ChannelObservationEvent(type: "message", message: message)
-        let next = reduceChannelState(trace.initial, event)
+        let next = trace.initial.applying(event)
         #expect(next.revision == trace.initial.revision)
         #expect(next.channel == trace.initial.channel)
         #expect(next.request == trace.initial.request)
         #expect(next.messages.last?.id == "optimistic")
-        #expect(reduceChannelState(next, event) == next)
+        #expect(next.applying(event) == next)
     }
 }

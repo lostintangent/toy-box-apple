@@ -8,14 +8,14 @@ struct PolicyTests {
     let finch = ChannelAgent(id: "finch", name: "Finch")
 
     @Test func mentionGrammar() {
-        #expect(agentHandleFromName("  Déjà Vu! ") == "deja-vu")
-        #expect(agentHandleFromName("Everyone") == "everyone-agent")
-        #expect(agentHandleFromName("!!!") == "teammate")
-        #expect(agentHandleFromName(String(repeating: "x", count: 60)).count == 48)
-        #expect(agentHandleFromName("--Ada  Lovelace__2--") == "ada-lovelace-2")
-        #expect(agentHandleFromName("ÅNGSTRÖM ﬁx") == "angstrom-fix")
-        #expect(agentHandleFromName("日本 Team") == "team")
-        #expect(agentHandleFromName(String(repeating: "x", count: 47) + " y") == String(repeating: "x", count: 47))
+        #expect(ChannelAgent.handle(forName: "  Déjà Vu! ") == "deja-vu")
+        #expect(ChannelAgent.handle(forName: "Everyone") == "everyone-agent")
+        #expect(ChannelAgent.handle(forName: "!!!") == "teammate")
+        #expect(ChannelAgent.handle(forName: String(repeating: "x", count: 60)).count == 48)
+        #expect(ChannelAgent.handle(forName: "--Ada  Lovelace__2--") == "ada-lovelace-2")
+        #expect(ChannelAgent.handle(forName: "ÅNGSTRÖM ﬁx") == "angstrom-fix")
+        #expect(ChannelAgent.handle(forName: "日本 Team") == "team")
+        #expect(ChannelAgent.handle(forName: String(repeating: "x", count: 47) + " y") == String(repeating: "x", count: 47))
         let mentions = AgentMentions(parsing: "dev@example.com and @ADA, (@finch) @ada @everyone")
         #expect(mentions.handles == ["ada", "finch"])
         #expect(mentions.mentionAll)
@@ -28,21 +28,21 @@ struct PolicyTests {
 
     @Test func mentionCompletionIncludesEveryAgentForAnEmptyQuery() {
         let engineer = ChannelAgent(id: "ada", name: "Ada Lovelace", role: "Swift engineer")
-        #expect(agentMatchesMentionQuery(lead, query: ""))
-        #expect(agentMatchesMentionQuery(ada, query: ""))
-        #expect(agentMatchesMentionQuery(engineer, query: ""))
-        #expect(agentMatchesMentionQuery(engineer, query: "LOVELACE"))
-        #expect(agentMatchesMentionQuery(engineer, query: "ada-lovelace"))
-        #expect(agentMatchesMentionQuery(engineer, query: "ENGINEER"))
-        #expect(!agentMatchesMentionQuery(engineer, query: "unknown"))
+        #expect(lead.matches(mentionQuery: ""))
+        #expect(ada.matches(mentionQuery: ""))
+        #expect(engineer.matches(mentionQuery: ""))
+        #expect(engineer.matches(mentionQuery: "LOVELACE"))
+        #expect(engineer.matches(mentionQuery: "ada-lovelace"))
+        #expect(engineer.matches(mentionQuery: "ENGINEER"))
+        #expect(!engineer.matches(mentionQuery: "unknown"))
     }
 
     @Test func canonicalAudience() {
         let members = [ada, finch]
         func ids(_ text: String, sender: ChannelMessageSender = .user,
                  acknowledged: Bool = false) -> [String] {
-            resolveChannelAudience(content: text, sender: sender, lead: lead, members: members,
-                                   acknowledgedRequest: acknowledged).map(\.id)
+            AgentMentions(parsing: text).audience(sender: sender, lead: lead, members: members,
+                                                  acknowledgedRequest: acknowledged).map(\.id)
         }
         #expect(ids("Hello") == ["lead"])
         #expect(ids("Hello", sender: .agent("lead")).isEmpty)
@@ -52,7 +52,7 @@ struct PolicyTests {
         #expect(ids("@Ada hello", acknowledged: true) == ["lead", "ada"])
         #expect(ids("@everyone", sender: .agent("ada")) == ["lead", "finch"])
         #expect(ids("@ada", sender: .agent("ada")).isEmpty)
-        #expect(channelAudienceLabel([lead, ada], reachableCount: 2) == "Everyone")
+        #expect(AgentMentions.audienceLabel(for: [lead, ada], reachableCount: 2) == "Everyone")
     }
 
     @Test func taskMathPreservesMeasuredZero() {
@@ -193,30 +193,25 @@ struct PolicyTests {
         var channel = Channel(id: "test", name: "Test", model: .init(provider: "test", name: "test"),
                               latestSequence: 10, seenThrough: 4, completedSequence: 7,
                               requestSequence: 8, updatedAt: "2026-10-01T00:00:00Z")
-        #expect(channelSidebarStatus(channel, isOpen: true) == .waiting)
+        #expect(channel.sidebarStatus(isOpen: true) == .waiting)
         channel.requestSequence = nil
-        #expect(channelStatus(channel) == .finished)
-        #expect(channelSidebarStatus(channel, isOpen: true) == nil)
+        #expect(channel.status == .finished)
+        #expect(channel.sidebarStatus(isOpen: true) == nil)
         channel.seenThrough = 7
-        #expect(channelStatus(channel) == .unread)
+        #expect(channel.status == .unread)
         channel.seenThrough = 10
-        #expect(channelStatus(channel) == nil)
-        #expect(channelAgentIdentity([ada], id: "removed").name == "Deleted agent")
+        #expect(channel.status == nil)
+        #expect(ChannelAgent(id: "removed", in: [ada]).name == "Deleted agent")
     }
 
     @Test func activityReactionsRequireWorkingPresenceAndDurableTargets() {
         var agent = ada
         agent.status = .init(state: "working", text: "Reviewing", lookingAt: 12, workingOn: 12)
-        let message = ChannelMessage(id: "m12", sequence: 12, timestamp: "2026-10-01T00:00:00Z",
-                                     sender: .user, content: .text("Review this"),
-                                     reactions: [.init(agentId: "finch", reaction: "agree")])
-        let working = channelStatusReactions(agents: [agent], presence: ["ada": .init(state: "working")])
-        #expect(channelMessageReactions(message, status: working).map(\.reaction) == ["agree", "looking", "working"])
-        let absent = channelStatusReactions(agents: [agent], presence: [:])
-        #expect(channelMessageReactions(message, status: absent).map(\.reaction) == ["agree"])
+        let working = [agent].statusReactions(presence: ["ada": .init(state: "working")])
+        #expect(working[12]?.map(\.reaction) == ["looking", "working"])
+        #expect([agent].statusReactions(presence: [:]).isEmpty)
         agent.status = .init(state: "waiting", text: "Waiting", lookingAt: 12)
-        let waiting = channelStatusReactions(agents: [agent], presence: ["ada": .init(state: "working")])
-        #expect(channelMessageReactions(message, status: waiting).map(\.reaction) == ["agree"])
+        #expect([agent].statusReactions(presence: ["ada": .init(state: "working")]).isEmpty)
     }
 
     @Test func statusReactionsGroupBySequenceInAgentOrder() {
@@ -225,14 +220,9 @@ struct PolicyTests {
         ada.status = .init(state: "working", text: "Reviewing", lookingAt: 12, workingOn: 14)
         finch.status = .init(state: "working", text: "Building", lookingAt: 14, workingOn: 14)
         let presence: [String: ChannelAgentPresence] = ["ada": .init(state: "working"), "finch": .init(state: "working")]
-        let reactions = channelStatusReactions(agents: [ada, finch], presence: presence)
+        let reactions = [ada, finch].statusReactions(presence: presence)
         #expect(reactions[12]?.map(\.agentId) == ["ada"])
         #expect(reactions[14]?.map { "\($0.agentId) \($0.reaction)" } == ["ada working", "finch looking", "finch working"])
-        #expect(channelStatusReactions(agents: [ada, finch], presence: [:]).isEmpty)
-        let message = ChannelMessage(id: "m14", sequence: 14, timestamp: "2026-10-22T17:23:00.000Z",
-                                     sender: .user, content: .text("Ship it"),
-                                     reactions: [.init(agentId: "lead", reaction: "done")])
-        #expect(channelMessageReactions(message, status: reactions).map { "\($0.agentId) \($0.reaction)" }
-                == ["lead done", "ada working", "finch looking", "finch working"])
+        #expect([ada, finch].statusReactions(presence: [:]).isEmpty)
     }
 }

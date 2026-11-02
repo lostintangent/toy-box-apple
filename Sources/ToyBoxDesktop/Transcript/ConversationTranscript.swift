@@ -54,7 +54,7 @@ struct ConversationTranscript: View {
         guard let lead = store.roster.first else { return [] }
         return rowBuilder.rows(store.messages, lead: lead, members: Array(store.roster.dropFirst()),
                                unreadAfter: capturedArrivalBoundary ? arrivalUnreadAfter : store.unreadAfter,
-                               view: interaction.messageView)
+                               filter: interaction.messageView)
     }
 
     var viewport: TranscriptViewport { geometry.viewport }
@@ -214,7 +214,7 @@ struct ConversationTranscript: View {
                       let sequence else { return }
                 if let request = store.request, request.sequence == sequence,
                    let agentID = request.sender.agentId {
-                    let author = channelAgentIdentity(store.roster, id: agentID).name
+                    let author = ChannelAgent(id: agentID, in: store.roster).name
                     window.announce("\(author) needs your reply.")
                 } else {
                     window.announce("Your team needs your reply.")
@@ -368,7 +368,7 @@ struct ConversationTranscript: View {
             agent.status = statuses[agent.id]
             return agent
         }
-        return channelStatusReactions(agents: agents, presence: store.presence)
+        return agents.statusReactions(presence: store.presence)
     }
 
     private func sendAttempt(_ attempt: ChannelSendAttempt, divider: TranscriptDivider?,

@@ -49,3 +49,48 @@ public struct Channel: Codable, Equatable, Identifiable, Sendable {
         directory.utf16.count > 4_096 ? "Working directory paths are limited to 4,096 characters." : nil
     }
 }
+
+extension Channel {
+    public enum Status: String, Sendable {
+        case waiting, finished, unread
+    }
+
+    public var status: Status? {
+        if requestSequence != nil { return .waiting }
+        if (completedSequence ?? 0) > seenThrough { return .finished }
+        return latestSequence > seenThrough ? .unread : nil
+    }
+
+    public func sidebarStatus(isOpen: Bool) -> Status? {
+        let status = status
+        return status == .waiting || !isOpen ? status : nil
+    }
+
+    public var unreadAfter: Int? {
+        latestSequence > seenThrough ? seenThrough : nil
+    }
+
+    public var purposePreview: String? {
+        let line = purpose?.split(whereSeparator: \.isNewline).first?.trimmingCharacters(in: .whitespaces)
+        return line?.isEmpty == false ? line : nil
+    }
+
+    public func matches(_ query: String) -> Bool {
+        query.isEmpty || name.localizedStandardContains(query)
+            || purpose?.localizedStandardContains(query) == true
+            || directory?.localizedStandardContains(query) == true
+    }
+}
+
+extension Array where Element == Channel {
+    /// The matching channels among the three most recent, in that order, then every other match A to Z.
+    public func choices(matching query: String, recentIDs: [String]) -> (recent: [Channel], others: [Channel]) {
+        let matching = filter { $0.matches(query) }
+        let recent = recentIDs.prefix(3).compactMap { id in matching.first { $0.id == id } }
+        let recentIDs = Set(recent.map(\.id))
+        return (recent, matching.filter { !recentIDs.contains($0.id) }.sorted {
+            let order = $0.name.localizedStandardCompare($1.name)
+            return order == .orderedSame ? $0.id < $1.id : order == .orderedAscending
+        })
+    }
+}

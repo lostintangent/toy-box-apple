@@ -1,19 +1,19 @@
 import Foundation
 
-public enum TranscriptView: String, CaseIterable, Sendable {
+public enum TranscriptFilter: String, CaseIterable, Sendable {
     case all, yours
 }
 
-public enum ChannelRequestState: String, Sendable {
-    case pending, acknowledged
-}
-
 public struct AgentRunEntry: Equatable, Identifiable, Sendable {
+    public enum RequestStatus: String, Sendable {
+        case pending, acknowledged
+    }
+
     public var message: ChannelMessage
     public var body: String
     public var startsRun: Bool
     public var addressee: String?
-    public var request: ChannelRequestState?
+    public var request: RequestStatus?
     public var showHeader: Bool
     public var collapsible: Bool
     public var id: String { message.id }
@@ -55,7 +55,7 @@ public final class TranscriptRowBuilder {
 
     private struct Settings: Equatable {
         var unreadAfter: Int?
-        var view: TranscriptView
+        var filter: TranscriptFilter
         var latestUserSequence: Int
     }
 
@@ -110,19 +110,19 @@ public final class TranscriptRowBuilder {
     }
 
     public func rows(_ messages: [ChannelMessage], lead: ChannelAgent, members: [ChannelAgent],
-                     unreadAfter: Int? = nil, view: TranscriptView = .all,
+                     unreadAfter: Int? = nil, filter: TranscriptFilter = .all,
                      calendar: Calendar = .current) -> [TranscriptRow] {
         let agents = [lead] + members
         let roster = Roster(ids: agents.map(\.id), names: agents.map(\.name))
         if roster != self.roster || calendar != self.calendar {
             self.roster = roster
             self.calendar = calendar
-            handles = agents.map { agentHandleFromName($0.name) }
+            handles = agents.map(\.handle)
             handleSet = Set(["everyone"] + handles)
             derived = [:]
             self.settings = nil
         }
-        let settings = Settings(unreadAfter: unreadAfter, view: view,
+        let settings = Settings(unreadAfter: unreadAfter, filter: filter,
                                 latestUserSequence: messages.lazy.filter { $0.sender.type == "user" }
                                     .map(\.sequence).max() ?? 0)
         // Arrays that share storage compare in constant time, which repeated reads in one update hit.
@@ -155,7 +155,7 @@ public final class TranscriptRowBuilder {
                           previous: inout ChannelMessage?, lead: ChannelAgent, agents: [ChannelAgent],
                           settings: Settings, calendar: Calendar) {
         func entry(_ message: ChannelMessage, _ info: AgentDerived, previous: AgentRunEntry? = nil) -> AgentRunEntry {
-            let request: ChannelRequestState? = message.request == true
+            let request: AgentRunEntry.RequestStatus? = message.request == true
                 ? (message.sequence > settings.latestUserSequence ? .pending : .acknowledged) : nil
             return AgentRunEntry(message: message, body: info.body, startsRun: previous == nil,
                                  addressee: info.addressee, request: request,
@@ -167,7 +167,7 @@ public final class TranscriptRowBuilder {
             let message = messages[index]
             let info = derive(message, lead: lead, agents: agents, calendar: calendar)
             let runEntry = info.agent.map { entry(message, $0) }
-            if settings.view == .yours && (message.isSystem || runEntry?.collapsible == true) { continue }
+            if settings.filter == .yours && (message.isSystem || runEntry?.collapsible == true) { continue }
             let previousInfo = previous.flatMap { derived[$0.id] }
             let differentDay: Bool
             if let day = info.day, let previousDay = previousInfo?.day { differentDay = day != previousDay }
@@ -221,11 +221,12 @@ public final class TranscriptRowBuilder {
         let date = try? Date(message.timestamp, strategy: .iso8601)
         var info = Derived(timestamp: message.timestamp, date: date, day: date.map { calendar.startOfDay(for: $0) })
         if isAgent {
-            let audience = resolveChannelAudience(AgentMentions(parsing: message.text), sender: message.sender,
-                                                  lead: lead, agents: agents, handles: handles)
+            let audience = AgentMentions(parsing: message.text).audience(sender: message.sender,
+                                                                         lead: lead, agents: agents, handles: handles)
             info.agent = AgentDerived(
                 text: message.text, sender: message.sender,
-                addressee: audience.isEmpty ? nil : channelAudienceLabel(audience, reachableCount: agents.count - 1),
+                addressee: audience.isEmpty ? nil
+                    : AgentMentions.audienceLabel(for: audience, reachableCount: agents.count - 1),
                 body: AgentMentions.removingLeadingMentions(from: message.text, handles: handleSet))
         }
         derived[message.id] = info

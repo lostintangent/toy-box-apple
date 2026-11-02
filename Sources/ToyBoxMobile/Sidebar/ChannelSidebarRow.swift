@@ -6,7 +6,7 @@ struct ChannelSidebarRow: View {
     let channel: Channel
     let agents: [ChannelAgent]
     let working: [ChannelAgent]
-    let attention: ChannelAttention?
+    let attention: Channel.Status?
     let now: Date
     @Environment(\.backgroundProminence) private var prominence
     @Environment(\.colorScheme) private var colorScheme
@@ -107,7 +107,7 @@ struct ChannelSidebarRow: View {
                 .truncationMode(.middle)
                 .fixedSize(horizontal: !yields, vertical: false)
                 .layoutPriority(1)
-        } else if let purpose = channelPurposePreview(channel.purpose) {
+        } else if let purpose = channel.purposePreview {
             Text(purpose)
                 .font(.footnote)
                 .foregroundStyle(ChannelInk.secondary)
@@ -119,7 +119,7 @@ struct ChannelSidebarRow: View {
 
     private var attentionColor: Color {
         guard let attention else { return .primary }
-        return prominence == .increased ? .white : ChannelAttentionStyle.color(for: attention, in: colorScheme)
+        return prominence == .increased ? .white : attention.color(in: colorScheme)
     }
 
     @ViewBuilder private var attentionLabel: some View {
@@ -128,7 +128,7 @@ struct ChannelSidebarRow: View {
                 Circle().fill(attentionColor)
                     .frame(width: 7, height: 7)
             } else {
-                Image(systemName: ChannelAttentionStyle.symbol(for: attention))
+                Image(systemName: attention.symbol)
                     .font(.footnote.weight(.semibold))
                     .foregroundStyle(attentionColor)
             }

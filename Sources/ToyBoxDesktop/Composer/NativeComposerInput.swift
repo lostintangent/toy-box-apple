@@ -509,11 +509,11 @@ struct NativeComposerInput: NSViewRepresentable {
                         if let input = self.input, input.string == originalText,
                            input.selectedRange() == originalSelection, !input.hasMarkedText() {
                             dismissCompletion()
-                            insertMention("@\(agentHandleFromName(member.name))", replacing: range)
+                            insertMention("@\(member.handle)", replacing: range)
                         } else if let input = self.input {
                             NSAccessibility.post(
                                 element: input, notification: .announcementRequested,
-                                userInfo: [.announcement: "\(member.name) was created. Mention @\(agentHandleFromName(member.name)) to address them.",
+                                userInfo: [.announcement: "\(member.name) was created. Mention @\(member.handle) to address them.",
                                            .priority: NSAccessibilityPriorityLevel.medium.rawValue]
                             )
                         }

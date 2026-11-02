@@ -89,7 +89,7 @@ struct TranscriptRowContent: View, @MainActor Equatable {
                                             historyStart: channel.historyStart)
                     .id(message.id)
             case .agent(let agentId, let entries):
-                let agent = channelAgentIdentity(channel.agents, id: agentId)
+                let agent = ChannelAgent(id: agentId, in: channel.agents)
                 HStack(alignment: .top, spacing: 12) {
                     AgentAvatarView(agent: agent, size: 32)
                     VStack(alignment: .leading, spacing: TranscriptSpacing.entry) {

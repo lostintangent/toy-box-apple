@@ -23,7 +23,7 @@ final class ChannelSpotlight {
         }
 
         init(_ channel: Channel) {
-            self.init(id: channel.id, name: channel.name, purpose: channelPurposePreview(channel.purpose))
+            self.init(id: channel.id, name: channel.name, purpose: channel.purposePreview)
         }
     }
 

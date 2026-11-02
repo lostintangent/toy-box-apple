@@ -59,7 +59,7 @@ struct StoreSliceTests {
         #expect(try changes(in: store, applying: .init(type: "presence", presence: ["ana": .init(state: "working")]))
                 == ["state", "presence"])
 
-        let status = ChannelAgentStatus(state: "working", text: "Reading", lookingAt: 3)
+        let status = ChannelAgent.Status(state: "working", text: "Reading", lookingAt: 3)
         #expect(try changes(in: store, applying: .init(type: "status", revision: 4, agentId: "ana", status: status))
                 == ["state", "agentStatuses"])
         #expect(store.agentStatuses["ana"] == status)

@@ -7,7 +7,7 @@ import Observation
 @MainActor @Observable
 public final class ChannelInteraction {
     /// Transcript filter from the Message View menu. It never changes audience or read policy.
-    public var messageView: TranscriptView = .all
+    public var messageView: TranscriptFilter = .all
     public var isInspectorPresented: Bool
     public var isArtifactViewerPresented = false
     public private(set) var overviewTasksRequest: UUID?

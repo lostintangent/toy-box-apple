@@ -15,7 +15,7 @@ public struct ChannelObservationEvent: Codable, Equatable, Sendable {
     public var updatedAt: String?
     public var seenThrough: Int?
     public var member: ChannelAgent?
-    public var status: ChannelAgentStatus?
+    public var status: ChannelAgent.Status?
 
     public init(type: String, revision: Int? = nil, state: ChannelState? = nil,
                 presence: [String: ChannelAgentPresence]? = nil, channelId: String? = nil,
@@ -23,7 +23,7 @@ public struct ChannelObservationEvent: Codable, Equatable, Sendable {
                 reaction: String? = nil, tasks: [ChannelTask]? = nil,
                 model: ModelConfiguration? = nil, updatedAt: String? = nil,
                 seenThrough: Int? = nil, member: ChannelAgent? = nil,
-                status: ChannelAgentStatus? = nil) {
+                status: ChannelAgent.Status? = nil) {
         self.type = type
         self.revision = revision
         self.state = state
@@ -42,113 +42,118 @@ public struct ChannelObservationEvent: Codable, Equatable, Sendable {
     }
 }
 
-public func reduceChannelState(_ previous: ChannelState,
-                               _ event: ChannelObservationEvent) -> ChannelState {
-    if event.type == "snapshot", let snapshot = event.state { return snapshot }
-    var next = previous
-    if event.type == "message", event.revision == nil, var message = event.message {
-        guard !previous.messages.contains(where: { $0.id == message.id }) else { return previous }
-        message.sequence = (previous.messages.last?.sequence ?? 0) + 1
-        next.messages = upsertMessage(previous.messages, message)
-        return next
-    }
-    if event.type == "presence" || event.type == "resumed" {
-        let incoming = event.presence ?? [:]
-        next.presence = event.type == "resumed"
-            ? incoming : previous.presence.merging(incoming) { _, new in new }
-        return next
-    }
-    guard let revision = event.revision, revision > previous.revision else { return previous }
-    next.revision = revision
-    switch event.type {
-    case "tasks":
-        if let tasks = event.tasks { next.channel.tasks = tasks }
-    case "model":
-        if let model = event.model { next.channel.model = model }
-        if let date = event.updatedAt { next.channel.updatedAt = date }
-    case "read":
-        if let sequence = event.seenThrough { next.channel.seenThrough = sequence }
-    case "status":
-        if event.agentId == next.lead.id { next.lead.status = event.status }
-        else if let index = next.members.firstIndex(where: { $0.id == event.agentId }) {
-            next.members[index].status = event.status
-        }
-    case "member":
-        if let member = event.member { upsertMember(&next, member) }
-    case "reaction":
-        next.messages = next.messages.map { reduceReaction($0, event) }
-        if let request = next.request { next.request = reduceReaction(request, event) }
-    case "message":
-        if let message = event.message {
+extension ChannelState {
+    /// The state after one server event, the same as Toy Box's `reduceChannelState`.
+    public func applying(_ event: ChannelObservationEvent) -> ChannelState {
+        let previous = self
+        if event.type == "snapshot", let snapshot = event.state { return snapshot }
+        var next = previous
+        if event.type == "message", event.revision == nil, var message = event.message {
+            guard !previous.messages.contains(where: { $0.id == message.id }) else { return previous }
+            message.sequence = (previous.messages.last?.sequence ?? 0) + 1
             next.messages = upsertMessage(previous.messages, message)
-            next.channel.latestSequence = max(previous.channel.latestSequence, message.sequence)
-            next.channel.updatedAt = message.timestamp
-            if !message.isSystem {
-                if message.sender.type == "user" { next.channel.requestSequence = nil }
-                else if message.request == true { next.channel.requestSequence = message.sequence }
-            } else if let content = message.system {
-                switch content.type {
-                case "channel_renamed":
-                    if let name = content.name { next.channel.name = name }
-                case "channel_purpose_changed":
-                    next.channel.purpose = content.purpose
-                case "channel_directory_changed":
-                    next.channel.directory = content.directory
-                case "preview_changed":
-                    next.channel.preview = content.preview
-                    next.channel.previewUrl = content.previewUrl
-                case "tasks_completed":
-                    next.channel.completedSequence = message.sequence
-                case "member_joined":
-                    if let member = content.member { upsertMember(&next, member) }
-                case "member_left":
-                    if let member = content.member {
-                        next.members.removeAll { $0.id == member.id }
-                        next.presence.removeValue(forKey: member.id)
-                        next.channel.tasks = next.channel.tasks.unassigning(agentId: member.id)
-                    }
-                case "artifact_shared":
-                    if var artifact = content.artifact {
-                        artifact.id = artifact.file.id
-                        if let index = next.artifacts.firstIndex(where: { $0.id == artifact.id }) {
-                            artifact.sharedAt = next.artifacts[index].sharedAt
-                            artifact.url = artifact.url ?? next.artifacts[index].url
-                            next.artifacts[index] = artifact
-                        } else {
-                            artifact.sharedAt = message.timestamp
-                            next.artifacts.append(artifact)
+            return next
+        }
+        if event.type == "presence" || event.type == "resumed" {
+            let incoming = event.presence ?? [:]
+            next.presence = event.type == "resumed"
+                ? incoming : previous.presence.merging(incoming) { _, new in new }
+            return next
+        }
+        guard let revision = event.revision, revision > previous.revision else { return previous }
+        next.revision = revision
+        switch event.type {
+        case "tasks":
+            if let tasks = event.tasks { next.channel.tasks = tasks }
+        case "model":
+            if let model = event.model { next.channel.model = model }
+            if let date = event.updatedAt { next.channel.updatedAt = date }
+        case "read":
+            if let sequence = event.seenThrough { next.channel.seenThrough = sequence }
+        case "status":
+            if event.agentId == next.lead.id { next.lead.status = event.status }
+            else if let index = next.members.firstIndex(where: { $0.id == event.agentId }) {
+                next.members[index].status = event.status
+            }
+        case "member":
+            if let member = event.member { upsertMember(&next, member) }
+        case "reaction":
+            next.messages = next.messages.map { reduceReaction($0, event) }
+            if let request = next.request { next.request = reduceReaction(request, event) }
+        case "message":
+            if let message = event.message {
+                next.messages = upsertMessage(previous.messages, message)
+                next.channel.latestSequence = max(previous.channel.latestSequence, message.sequence)
+                next.channel.updatedAt = message.timestamp
+                if !message.isSystem {
+                    if message.sender.type == "user" { next.channel.requestSequence = nil }
+                    else if message.request == true { next.channel.requestSequence = message.sequence }
+                } else if let content = message.system {
+                    switch content.type {
+                    case "channel_renamed":
+                        if let name = content.name { next.channel.name = name }
+                    case "channel_purpose_changed":
+                        next.channel.purpose = content.purpose
+                    case "channel_directory_changed":
+                        next.channel.directory = content.directory
+                    case "preview_changed":
+                        next.channel.preview = content.preview
+                        next.channel.previewUrl = content.previewUrl
+                    case "tasks_completed":
+                        next.channel.completedSequence = message.sequence
+                    case "member_joined":
+                        if let member = content.member { upsertMember(&next, member) }
+                    case "member_left":
+                        if let member = content.member {
+                            next.members.removeAll { $0.id == member.id }
+                            next.presence.removeValue(forKey: member.id)
+                            next.channel.tasks = next.channel.tasks.unassigning(agentId: member.id)
                         }
+                    case "artifact_shared":
+                        if var artifact = content.artifact {
+                            artifact.id = artifact.file.id
+                            if let index = next.artifacts.firstIndex(where: { $0.id == artifact.id }) {
+                                artifact.sharedAt = next.artifacts[index].sharedAt
+                                artifact.url = artifact.url ?? next.artifacts[index].url
+                                next.artifacts[index] = artifact
+                            } else {
+                                artifact.sharedAt = message.timestamp
+                                next.artifacts.append(artifact)
+                            }
+                        }
+                    case "artifact_removed":
+                        if let file = content.artifact?.file {
+                            next.artifacts.removeAll { $0.id == file.id }
+                            next.channel.tasks = next.channel.tasks.unlinking(artifactId: file.id)
+                        }
+                    case "routine_scheduled", "routine_edited":
+                        if let routine = content.routine {
+                            if let index = next.routines.firstIndex(where: { $0.id == routine.id }) {
+                                next.routines[index] = routine
+                            } else { next.routines.append(routine) }
+                        }
+                    case "routine_deleted":
+                        if let routine = content.routine { next.routines.removeAll { $0.id == routine.id } }
+                    default: break
                     }
-                case "artifact_removed":
-                    if let file = content.artifact?.file {
-                        next.artifacts.removeAll { $0.id == file.id }
-                        next.channel.tasks = next.channel.tasks.unlinking(artifactId: file.id)
-                    }
-                case "routine_scheduled", "routine_edited":
-                    if let routine = content.routine {
-                        if let index = next.routines.firstIndex(where: { $0.id == routine.id }) {
-                            next.routines[index] = routine
-                        } else { next.routines.append(routine) }
-                    }
-                case "routine_deleted":
-                    if let routine = content.routine { next.routines.removeAll { $0.id == routine.id } }
-                default: break
                 }
             }
+        default: break
         }
-    default: break
+        if next.channel.requestSequence != previous.channel.requestSequence {
+            next.request = event.message.flatMap { !$0.isSystem && $0.request == true ? $0 : nil }
+        }
+        return next
     }
-    if next.channel.requestSequence != previous.channel.requestSequence {
-        next.request = event.message.flatMap { !$0.isSystem && $0.request == true ? $0 : nil }
-    }
-    return next
 }
 
-public func mergeChannelMessages(_ messages: [ChannelMessage],
-                                 incoming: [ChannelMessage]) -> [ChannelMessage] {
-    var ids = Set(messages.map(\.id))
-    let additions = incoming.filter { ids.insert($0.id).inserted }
-    return additions.isEmpty ? messages : (messages + additions).sorted { $0.sequence < $1.sequence }
+extension Array where Element == ChannelMessage {
+    /// These messages plus any incoming ones not already here, in sequence order.
+    public func merging(_ incoming: [ChannelMessage]) -> [ChannelMessage] {
+        var ids = Set(map(\.id))
+        let additions = incoming.filter { ids.insert($0.id).inserted }
+        return additions.isEmpty ? self : (self + additions).sorted { $0.sequence < $1.sequence }
+    }
 }
 
 private func upsertMessage(_ messages: [ChannelMessage], _ message: ChannelMessage) -> [ChannelMessage] {

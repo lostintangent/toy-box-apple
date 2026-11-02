@@ -435,7 +435,7 @@ struct IntentsTests {
 
     private func answerWithCard(_ state: ChannelState, unreadAfter: Int? = nil,
                                 summary: (catchUp: CatchUp, count: Int)? = nil) -> CatchUpAnswer.Answer {
-        let boundary = unreadAfter ?? channelUnreadAfter(state.channel)
+        let boundary = unreadAfter ?? state.channel.unreadAfter
         let answer = CatchUpAnswer.channelAnswer(state, unreadAfter: boundary,
                                                  digest: CatchUpDigest(state: state, unreadAfter: boundary), summary: summary)
         #expect(answer.spoken == self.answer(state, unreadAfter: unreadAfter, summary: summary))
@@ -444,7 +444,7 @@ struct IntentsTests {
 
     private func answer(_ state: ChannelState, unreadAfter: Int? = nil,
                         summary: (catchUp: CatchUp, count: Int)? = nil) -> String {
-        let boundary = unreadAfter ?? channelUnreadAfter(state.channel)
+        let boundary = unreadAfter ?? state.channel.unreadAfter
         return CatchUpAnswer.channel(state.channel, unreadAfter: boundary,
                                      digest: CatchUpDigest(state: state, unreadAfter: boundary), summary: summary)
     }
@@ -541,7 +541,7 @@ extension IntentsTests {
             var snapshot = api.observe(channelId: "studio-demo").makeAsyncIterator()
             let state = try #require(try await snapshot.next()?.state)
             let posted = state.messages.filter { $0.text.hasSuffix(text) }
-            #expect(posted.map(\.text) == [recipient.map { "@\(agentHandleFromName($0)) \(text)" } ?? text])
+            #expect(posted.map(\.text) == [recipient.map { "@\(ChannelAgent.handle(forName: $0)) \(text)" } ?? text])
             #expect(posted.first?.sender == .user)
             if reply != nil {
                 #expect(context.withReplies(card).isReplied)
@@ -611,7 +611,7 @@ extension IntentsTests {
             let after = try #require(try await stream.next()?.state)
             #expect(after.channel.requestSequence == nil)
             #expect(after.channel.seenThrough == before.channel.seenThrough)
-            #expect(after.messages.filter { $0.id == intent.sendID }.map(\.text) == ["@\(agentHandleFromName(agent.name)) \(text)"])
+            #expect(after.messages.filter { $0.id == intent.sendID }.map(\.text) == ["@\(agent.handle) \(text)"])
             #expect(host.opened.isEmpty && host.store("studio-demo")?.sendAttempts.isEmpty == true)
             print("Spotlight request reply: confirmed \(agent.name) in \(before.channel.name), one POST, no read write, UUID \(intent.sendID)")
         }

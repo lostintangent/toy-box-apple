@@ -87,7 +87,7 @@ public final class ChannelStore {
     /// invalidate views that only draw names and avatars. Reported statuses are in `agentStatuses`.
     public private(set) var roster: [ChannelAgent] = []
     /// Each agent's reported status by agent ID, as `ChannelState`'s agents carry it.
-    public private(set) var agentStatuses: [String: ChannelAgentStatus] = [:]
+    public private(set) var agentStatuses: [String: ChannelAgent.Status] = [:]
     public private(set) var presence: [String: ChannelAgentPresence] = [:]
     public private(set) var messages: [ChannelMessage] = []
     public private(set) var request: ChannelMessage?
@@ -341,7 +341,7 @@ public final class ChannelStore {
     /// last state, so the divider matches those cached rows until the reconnect's snapshot or replay
     /// completes and places it for good.
     public func captureUnreadBoundary() {
-        unreadAfter = state.flatMap { channelUnreadAfter($0.channel) }
+        unreadAfter = state.flatMap { $0.channel.unreadAfter }
         capturedUnread = state != nil && phase.isConnected
     }
 
@@ -357,7 +357,7 @@ public final class ChannelStore {
             let page = try await api.history(channelId: id, before: first.sequence)
             guard historyGeneration == historyToken, phase != .deleted else { return }
             if var current = self.state {
-                current.messages = mergeChannelMessages(current.messages, incoming: page.messages)
+                current.messages = current.messages.merging(page.messages)
                 self.state = current
             }
             hasOlderMessages = !page.messages.isEmpty && page.messages.first?.sequence != 1
@@ -535,7 +535,7 @@ public final class ChannelStore {
                                              attachments: attempt.attachments)
             if var current = state, phase != .deleted {
                 current.messages.removeAll { $0.id == attempt.id }
-                current.messages = mergeChannelMessages(current.messages, incoming: [message])
+                current.messages = current.messages.merging([message])
                 state = current
             }
             reconcileSend(id: attempt.id)
@@ -716,14 +716,14 @@ public final class ChannelStore {
             var events = heldReplay ?? []
             events.append(event)
             heldReplay = nil
-            state = events.reduce(previous, reduceChannelState)
+            state = events.reduce(previous) { $0.applying($1) }
             for event in events {
                 if let message = event.message, event.revision != nil { reconcileSend(id: message.id) }
             }
         } else { throw ChannelAPIError.invalidEvent("pre-snapshot \(event.type)") }
         if event.type == "snapshot" || event.type == "resumed" {
             if !capturedUnread, let state {
-                unreadAfter = channelUnreadAfter(state.channel)
+                unreadAfter = state.channel.unreadAfter
                 capturedUnread = true
             }
             if event.type == "resumed" {
@@ -743,7 +743,7 @@ public final class ChannelStore {
             identity.status = nil
             return identity
         }
-        var statuses: [String: ChannelAgentStatus] = [:]
+        var statuses: [String: ChannelAgent.Status] = [:]
         for agent in state.agents { statuses[agent.id] = agent.status }
         agentStatuses = statuses
         presence = state.presence

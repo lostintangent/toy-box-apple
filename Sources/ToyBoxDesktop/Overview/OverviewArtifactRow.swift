@@ -58,7 +58,7 @@ struct OverviewArtifactRow: View {
         if let actor = share?.actor {
             switch actor.type {
             case "user": return "You"
-            case "agent": if let id = actor.agentId { return channelAgentIdentity(agents, id: id).name }
+            case "agent": if let id = actor.agentId { return ChannelAgent(id: id, in: agents).name }
             default: break
             }
         }

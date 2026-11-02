@@ -27,7 +27,7 @@ extension AgentMentions {
     }
 
     public static func removingLeadingMentions(from content: String, agents: [ChannelAgent]) -> String {
-        removingLeadingMentions(from: content, handles: Set(["everyone"] + agents.map { agentHandleFromName($0.name) }))
+        removingLeadingMentions(from: content, handles: Set(["everyone"] + agents.map(\.handle)))
     }
 
     /// `removingLeadingMentions` with the known handles, including "everyone", already derived.

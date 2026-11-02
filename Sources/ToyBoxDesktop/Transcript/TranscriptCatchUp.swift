@@ -17,7 +17,7 @@ final class TranscriptCatchUp {
 
     /// Nil unless the landing is eligible: the model is available, the setting is on, All Messages is
     /// showing, this boundary's summary wasn't dismissed, and enough unread text came from others.
-    static func make(server: URL, state: ChannelState, unreadAfter: Int?, view: TranscriptView,
+    static func make(server: URL, state: ChannelState, unreadAfter: Int?, view: TranscriptFilter,
                      availability: IntelligenceAvailability, isOn: Bool) -> TranscriptCatchUp? {
         guard let session = TranscriptCatchUpSession.make(
             server: server, state: state, unreadAfter: unreadAfter, view: view, boundaryIsLoaded: true,
@@ -207,7 +207,7 @@ private struct TranscriptCatchUpLine: View {
                 .font(.system(size: 13, weight: isReplied ? .semibold : .regular))
                 .foregroundStyle(isReplied ? Color.secondary : Color.orange)
         case .avatar(let agentId):
-            AgentAvatarView(agent: channelAgentIdentity(agents, id: agentId), size: 16)
+            AgentAvatarView(agent: ChannelAgent(id: agentId, in: agents), size: 16)
         case .event(let type):
             Image(systemName: ChannelSystemEventStyle.symbol(for: type))
                 .font(.system(size: 13))

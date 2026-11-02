@@ -16,7 +16,7 @@ struct WindowCommandActions {
     var hasRequest: Bool
     var sidebarVisible: Bool
     var inspectorVisible: Bool
-    var messageView: TranscriptView
+    var messageView: TranscriptFilter
     /// Non-nil while the image viewer covers the conversation, which disables the commands that
     /// act on what's underneath.
     var imageZoom: ImageZoomActions? = nil
@@ -29,7 +29,7 @@ struct WindowCommandActions {
     var findChannel: () -> Void
     var toggleSidebar: () -> Void
     var toggleInspector: () -> Void
-    var setMessageView: (TranscriptView) -> Void
+    var setMessageView: (TranscriptFilter) -> Void
     var refresh: () -> Void
     var nextChannel: (ChannelNavigation.Direction) -> Void
     var nextAttention: () -> Void
@@ -111,8 +111,8 @@ struct ChannelCommands: Commands {
                 get: { actions?.messageView ?? .all },
                 set: { actions?.setMessageView($0) }
             )) {
-                Label("All Messages", systemImage: "bubble.left.and.bubble.right").tag(TranscriptView.all).keyboardShortcut("1")
-                Label("Your Messages", systemImage: "person").tag(TranscriptView.yours).keyboardShortcut("2")
+                Label("All Messages", systemImage: "bubble.left.and.bubble.right").tag(TranscriptFilter.all).keyboardShortcut("1")
+                Label("Your Messages", systemImage: "person").tag(TranscriptFilter.yours).keyboardShortcut("2")
             }
             .disabled(!hasConversation)
             Button("Refresh") { actions?.refresh() }.keyboardShortcut("r").disabled(actions == nil)

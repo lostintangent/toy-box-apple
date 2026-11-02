@@ -66,7 +66,7 @@ final class QuickSendTargetHistory {
     }
 
     func choices(channels: [Channel], query: String) -> [Channel] {
-        let matching = channels.filter { channelMatchesQuery($0, query: query) }
+        let matching = channels.filter { $0.matches(query) }
         let recent = saved.recents.prefix(3).compactMap { id in matching.first { $0.id == id } }
         let recentIDs = Set(recent.map(\.id))
         return recent + matching.filter { !recentIDs.contains($0.id) }.sorted {

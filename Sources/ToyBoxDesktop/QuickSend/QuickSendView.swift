@@ -389,7 +389,7 @@ struct QuickSendChannelChooser: View {
 
     private var matches: [Channel] {
         history?.choices(channels: channels, query: query)
-            ?? channels.filter { channelMatchesQuery($0, query: query) }
+            ?? channels.filter { $0.matches(query) }
     }
 
     var body: some View {

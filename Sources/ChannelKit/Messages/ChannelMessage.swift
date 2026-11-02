@@ -47,4 +47,14 @@ public struct ChannelMessage: Codable, Equatable, Identifiable, Sendable {
     }
 
     public var isSystem: Bool { sender.type == "system" }
+
+    public var isAgentMessage: Bool { !isSystem && sender.type == "agent" }
+}
+
+extension Array where Element == ChannelMessage {
+    public func agentMessageCount(after sequence: Int? = nil) -> Int {
+        count { message in
+            message.isAgentMessage && (sequence.map { message.sequence > $0 } ?? true)
+        }
+    }
 }

@@ -46,7 +46,7 @@ struct ManagementReconciliationTests {
         state.members = [ChannelAgent(id: "member", name: "Ada", channelId: "test",
                                       model: .init(provider: "copilot", name: "explicit"))]
         let cleared = try JSONDecoder().decode(ChannelAgent.self, from: memberData)
-        let reduced = reduceChannelState(state, .init(type: "member", revision: 1, member: cleared))
+        let reduced = state.applying(.init(type: "member", revision: 1, member: cleared))
         #expect(reduced.members.first?.model == nil)
         #expect(reduced.members.first?.id == "member")
     }

@@ -18,7 +18,7 @@ struct ChannelSidebar: View {
     private var trimmedQuery: String { query.trimmingCharacters(in: .whitespacesAndNewlines) }
 
     private var channels: [Channel] {
-        (model.catalog?.channels ?? []).filter { channelMatchesQuery($0, query: trimmedQuery) }
+        (model.catalog?.channels ?? []).filter { $0.matches(trimmedQuery) }
     }
 
     private var initialLoading: Bool { model.catalog?.phase == .connecting }
@@ -117,7 +117,7 @@ struct ChannelSidebar: View {
         return ChannelSidebarRow(
             channel: projection.channel(channel), agents: agents,
             working: projection.working(channel, agents: agents),
-            attention: projection.attention(channel), now: now
+            attention: projection.status(channel), now: now
         )
     }
 

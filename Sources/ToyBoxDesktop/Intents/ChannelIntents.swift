@@ -154,7 +154,7 @@ final class ChannelIntents {
             guard try requireWaiting(request, in: store).name == requester.name else {
                 throw ChannelIntentError.requestNotWaiting
             }
-            let content = "@\(agentHandleFromName(requester.name)) \(text)"
+            let content = "@\(requester.handle) \(text)"
             try await post(content, id: id, channelName: name, store: store)
             replies[request.link.channelID, default: []].insert(request.link.sequence)
         }
@@ -192,17 +192,17 @@ final class ChannelIntents {
         let needing = CatchUpAnswer.needingAttention(channels)
         if needing.count == 1 { return try await catchUp(needing[0]) }
         var counts: [String: Int] = [:]
-        for channel in needing.prefix(CatchUpAnswer.overviewRowLimit) where channelStatus(channel) == .unread {
+        for channel in needing.prefix(CatchUpAnswer.overviewRowLimit) where channel.status == .unread {
             counts[channel.id] = try? await newMessageCount(channel)
         }
         return CatchUpAnswer.overviewAnswer(needing, newMessages: counts)
     }
 
     private func catchUp(_ channel: Channel) async throws -> CatchUpAnswer.Answer {
-        guard channelStatus(channel) != nil else { return .init(spoken: CatchUpAnswer.caughtUp(in: channel.name)) }
+        guard channel.status != nil else { return .init(spoken: CatchUpAnswer.caughtUp(in: channel.name)) }
         let state = try await connected(channel.id) { $0.state }
         guard let state else { throw ChannelIntentError.unreachable }
-        let unreadAfter = channelUnreadAfter(state.channel)
+        let unreadAfter = state.channel.unreadAfter
         let digest = CatchUpDigest(state: state, unreadAfter: unreadAfter)
         var summary: (catchUp: CatchUp, count: Int)?
         if summarizes(), intelligence.availability.isAvailable, let api = host.api(),
@@ -220,10 +220,10 @@ final class ChannelIntents {
 
     /// New messages from agents in a channel that isn't open, from one page of history.
     private func newMessageCount(_ channel: Channel) async throws -> Int? {
-        guard let api = host.api(), let unreadAfter = channelUnreadAfter(channel) else { return nil }
+        guard let api = host.api(), let unreadAfter = channel.unreadAfter else { return nil }
         let page = try await api.history(channelId: channel.id, before: channel.latestSequence + 1)
         guard let oldest = page.messages.first?.sequence, oldest <= unreadAfter + 1 else { return nil }
-        return channelAgentMessageCount(page.messages, after: unreadAfter)
+        return page.messages.agentMessageCount(after: unreadAfter)
     }
 
     // MARK: Send Message
@@ -238,7 +238,7 @@ final class ChannelIntents {
         let channel = try await channel(channelID)
         let prompt = SendConfirmation(channel: channel.name, message: trimmed, recipient: recipient)
         if let confirmationOverride { try await confirmationOverride(prompt) } else { try await confirm(prompt) }
-        let content = recipient.map { "@\(agentHandleFromName($0)) \(trimmed)" } ?? trimmed
+        let content = recipient.map { "@\(ChannelAgent.handle(forName: $0)) \(trimmed)" } ?? trimmed
         return try await connected(channelID) { store in
             try await post(content, id: id, channelName: channel.name, store: store)
             return channel.name

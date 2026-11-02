@@ -8,7 +8,7 @@ struct ChannelSidebarRow: View {
     let channel: Channel
     let agents: [ChannelAgent]
     let working: [ChannelAgent]
-    let attention: ChannelAttention?
+    let attention: Channel.Status?
     /// Nil when the channel has no directory.
     let folder: ChannelFolderAvailability?
     var openFolder: () -> Void
@@ -36,7 +36,7 @@ private struct ChannelSidebarRowContent: View {
 
     private var channel: Channel { row.channel }
     private var working: [ChannelAgent] { row.working }
-    private var attention: ChannelAttention? { row.attention }
+    private var attention: Channel.Status? { row.attention }
     private var folder: ChannelFolderAvailability? { row.folder }
     /// The key window's accent selection, where every custom color yields to white.
     private var emphasized: Bool { prominence == .increased }
@@ -120,7 +120,7 @@ private struct ChannelSidebarRowContent: View {
                 .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(Self.space)) } action: { folderFrame = $0 }
                 .padding(.leading, -6)
                 .layoutPriority(1)
-        } else if let purpose = channelPurposePreview(channel.purpose) {
+        } else if let purpose = channel.purposePreview {
             Text(purpose).font(.system(size: 11 * scale)).foregroundStyle(.secondary)
                 .lineLimit(1).truncationMode(.tail)
                 .frame(minWidth: 0, idealWidth: yields ? nil : 60, maxWidth: .infinity, alignment: .leading)
@@ -131,13 +131,13 @@ private struct ChannelSidebarRowContent: View {
     @ViewBuilder private var attentionIndicator: some View {
         switch attention {
         case .waiting:
-            Image(systemName: ChannelAttentionStyle.symbol(for: .waiting)).font(.system(size: 13))
-                .foregroundStyle(emphasized ? .white : ChannelAttentionStyle.color(for: .waiting, in: colorScheme))
+            Image(systemName: Channel.Status.waiting.symbol).font(.system(size: 13))
+                .foregroundStyle(emphasized ? .white : Channel.Status.waiting.color(in: colorScheme))
         case .finished:
-            Image(systemName: ChannelAttentionStyle.symbol(for: .finished)).font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(emphasized ? .white : ChannelAttentionStyle.color(for: .finished, in: colorScheme))
+            Image(systemName: Channel.Status.finished.symbol).font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(emphasized ? .white : Channel.Status.finished.color(in: colorScheme))
         case .unread:
-            Circle().fill(emphasized ? .white : ChannelAttentionStyle.color(for: .unread, in: colorScheme))
+            Circle().fill(emphasized ? .white : Channel.Status.unread.color(in: colorScheme))
                 .frame(width: 7, height: 7)
         case nil:
             EmptyView()
@@ -154,7 +154,7 @@ private struct ChannelSidebarRowContent: View {
             case .missing: parts.append("Folder \(name), missing")
             default: parts.append("Folder \(name)")
             }
-        } else if let purpose = channelPurposePreview(channel.purpose) {
+        } else if let purpose = channel.purposePreview {
             parts.append(purpose)
         }
         switch attention {

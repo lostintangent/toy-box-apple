@@ -25,7 +25,7 @@ public struct AgentAvatarView: View {
                     .foregroundStyle(.secondary)
             } else if let avatar = agent.avatar, let fill = Color(hex: avatar.color),
                       let mark = try? SVGPath.parse(avatar.mark),
-                      let ink = resolvedAvatarInk(for: avatar).flatMap({ Color(hex: $0) }) {
+                      let ink = avatar.resolvedInk.flatMap({ Color(hex: $0) }) {
                 if contrast == .increased {
                     Circle().fill(fill)
                 } else {

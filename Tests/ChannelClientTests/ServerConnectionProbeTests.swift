@@ -11,7 +11,7 @@ struct ServerConnectionProbeTests {
         ("::1", true), ("192.168.1.10", false), ("100.64.0.10", false), ("mac.example", false),
     ])
     func loopbackClassificationRetainsTheMacFolderPolicy(host: String, expected: Bool) {
-        #expect(isLoopbackHost(host) == expected)
+        #expect(ChannelAPI.isLoopback(host: host) == expected)
     }
 
     private final class ControlledCatalog: Sendable {
