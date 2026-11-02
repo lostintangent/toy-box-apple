@@ -38,7 +38,7 @@ struct TranscriptSystemMessages: View {
 
     @ViewBuilder
     private var content: some View {
-        let phrase = ChannelSystemText.phrase(for: first)
+        let phrase = ChannelSystemContent.phrase(for: first)
         switch first?.type {
         case "tasks_completed": sentence(phrase)
         case "member_joined", "member_left":
@@ -80,11 +80,11 @@ struct TranscriptSystemMessages: View {
                                 .lineLimit(1).truncationMode(.middle)
                         }
                     } else {
-                        sentence(ChannelSystemText.unavailablePreview).help(preview.url ?? "Missing URL")
+                        sentence(ChannelSystemContent.unavailablePreview).help(preview.url ?? "Missing URL")
                     }
                 } else if preview.kind == "screen" {
                     if let url = app?.channelURL(channelID: channelID) {
-                        let screen = ChannelSystemText.openScreen
+                        let screen = ChannelSystemContent.openScreen
                         valueLine(phrase, findText: "\(phrase) \(screen)") {
                             Link(destination: url) {
                                 TranscriptSystemLinkLabel(title: screen, findHighlight: findHighlight,
@@ -137,7 +137,7 @@ struct TranscriptSystemMessages: View {
     }
 
     private func event(_ name: String, value: String?) -> some View {
-        sentence(eventLabel(name, value: value), spoken: value.map { "\(name) \(ChannelSystemText.value($0))" } ?? name)
+        sentence(eventLabel(name, value: value), spoken: value.map { "\(name) \(ChannelSystemContent.value($0))" } ?? name)
     }
 
     /// A phrase followed by one value that truncates in place, so the sentence keeps one line.
@@ -151,7 +151,7 @@ struct TranscriptSystemMessages: View {
 
     private func eventLabel(_ event: String, value: String?) -> Text {
         guard let value else { return findText(event) }
-        var detail = AttributedString(ChannelSystemText.value(value))
+        var detail = AttributedString(ChannelSystemContent.value(value))
         detail.foregroundColor = .primary
         detail.font = .system(size: 11 * textScale, weight: .medium)
         let label = AttributedString(event + " ") + detail
@@ -159,8 +159,8 @@ struct TranscriptSystemMessages: View {
     }
 
     private var membershipLabel: (text: Text, spoken: String) {
-        guard let membership = ChannelSystemText.membership(contents) else {
-            let phrase = ChannelSystemText.phrase(for: first)
+        guard let membership = ChannelSystemContent.membership(contents) else {
+            let phrase = ChannelSystemContent.phrase(for: first)
             return (Text(phrase), phrase)
         }
         var styledNames = AttributedString(membership.names)
@@ -182,7 +182,7 @@ struct TranscriptSystemMessages: View {
                 .compactMap { $0 }.joined(separator: "\n")
         default: detail = first?.unknownFields?["description"]?.string ?? ""
         }
-        let timestamp = messages.first.flatMap { ChannelDates.date($0.timestamp) }?
+        let timestamp = messages.first.flatMap { try? Date($0.timestamp, strategy: .iso8601) }?
             .formatted(date: .complete, time: .shortened) ?? ""
         return [detail, timestamp].filter { !$0.isEmpty }.joined(separator: "\n")
     }

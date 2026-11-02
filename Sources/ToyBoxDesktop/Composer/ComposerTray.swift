@@ -154,7 +154,7 @@ struct ComposerTray: View {
                                 Image(systemName: "doc.text").foregroundStyle(.secondary)
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text(artifact.title).lineLimit(2)
-                                    if let sharedAt = artifact.sharedAt, let date = ChannelDates.date(sharedAt) {
+                                    if let sharedAt = artifact.sharedAt, let date = try? Date(sharedAt, strategy: .iso8601) {
                                         Text("Shared \(date.formatted(date: .abbreviated, time: .shortened))")
                                             .font(.caption).foregroundStyle(.secondary)
                                     }

@@ -18,7 +18,7 @@ struct ManagementConfirmation: View {
     private var recovery: ChannelManagementWriteRecovery { session.recovery }
     private var isCurrentHost: Bool { host == nil || host == presentation.placement }
 
-    private var member: ChannelMember? {
+    private var member: ChannelAgent? {
         guard case .removeMember(_, let id) = flow else { return nil }
         return store.roster.dropFirst().first { $0.id == id }
     }

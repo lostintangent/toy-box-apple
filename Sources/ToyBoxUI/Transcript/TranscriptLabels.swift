@@ -14,7 +14,7 @@ extension ChannelMessage {
     /// request and its delivery.
     public func accessibilityLabel(author: String, addressee: String? = nil, request: ChannelRequestState? = nil,
                                    delivery: String? = nil) -> String {
-        [author, ChannelDates.date(timestamp)?.formatted(date: .abbreviated, time: .shortened) ?? timestamp,
+        [author, (try? Date(timestamp, strategy: .iso8601))?.formatted(date: .abbreviated, time: .shortened) ?? timestamp,
          addressee.map { "To \($0)" },
          request.map { $0 == .pending ? "Needs your reply" : "Replied" }, delivery]
             .compactMap { $0 }

@@ -4,29 +4,29 @@ import Testing
 
 struct ManagementPolicyTests {
     @Test func emptyAndOversizedMemberNamesAreRejected() {
-        #expect(ChannelValidation.memberNameError(" \n ", agents: []) == "Enter an agent name.")
-        #expect(ChannelValidation.memberNameError(String(repeating: "a", count: 80), agents: []) == nil)
-        #expect(ChannelValidation.memberNameError(String(repeating: "a", count: 81), agents: []) != nil)
-        #expect(ChannelValidation.memberNameError(String(repeating: "\u{1F680}", count: 40), agents: []) == nil)
-        #expect(ChannelValidation.memberNameError(String(repeating: "\u{1F680}", count: 41), agents: []) != nil)
+        #expect(ChannelAgent.nameError(" \n ", agents: []) == "Enter an agent name.")
+        #expect(ChannelAgent.nameError(String(repeating: "a", count: 80), agents: []) == nil)
+        #expect(ChannelAgent.nameError(String(repeating: "a", count: 81), agents: []) != nil)
+        #expect(ChannelAgent.nameError(String(repeating: "\u{1F680}", count: 40), agents: []) == nil)
+        #expect(ChannelAgent.nameError(String(repeating: "\u{1F680}", count: 41), agents: []) != nil)
     }
 
     @Test func duplicateMentionsUseTheCanonicalHandle() {
         let agents = [ChannelAgent.lead(id: "channel"), ChannelAgent(id: "member", name: "Caf\u{00E9} Critic")]
-        #expect(ChannelValidation.memberNameError(" lead ", agents: agents) != nil)
-        #expect(ChannelValidation.memberNameError("CAFE-critic", agents: agents) != nil)
-        #expect(ChannelValidation.memberNameError("Caf\u{00E9} Critic", agents: agents, excludingID: "member") == nil)
-        #expect(ChannelValidation.memberNameError("Another critic", agents: agents) == nil)
-        #expect(ChannelValidation.memberNameError("CAFE-critic", agents: [
+        #expect(ChannelAgent.nameError(" lead ", agents: agents) != nil)
+        #expect(ChannelAgent.nameError("CAFE-critic", agents: agents) != nil)
+        #expect(ChannelAgent.nameError("Caf\u{00E9} Critic", agents: agents, excludingID: "member") == nil)
+        #expect(ChannelAgent.nameError("Another critic", agents: agents) == nil)
+        #expect(ChannelAgent.nameError("CAFE-critic", agents: [
             .init(id: "deleted", name: "Caf\u{00E9} Critic", deleted: true)
         ]) == "Another agent is already mentioned as @cafe-critic.")
     }
 
     @Test func editorFieldLimitsUseUTF16AndLeaveRequiredFieldPromptsToTheForm() {
         for (check, limit) in [
-            (ChannelValidation.channelNameError, 100),
-            (ChannelValidation.purposeError, 12_000),
-            (ChannelValidation.directoryError, 4_096),
+            (Channel.nameError, 100),
+            (Channel.purposeError, 12_000),
+            (Channel.directoryError, 4_096),
         ] {
             #expect(check("") == nil)
             #expect(check(String(repeating: "a", count: limit)) == nil)
@@ -37,11 +37,11 @@ struct ManagementPolicyTests {
     }
 
     @Test func anExistingRoleCannotBeEmptiedButANewRoleMayBeOmitted() {
-        #expect(ChannelValidation.memberRoleError("", existingRole: nil) == nil)
-        #expect(ChannelValidation.memberRoleError("", existingRole: "") == "An existing role can't be emptied.")
-        #expect(ChannelValidation.memberRoleError("", existingRole: "Existing") == "An existing role can't be emptied.")
-        #expect(ChannelValidation.memberRoleError(String(repeating: "\u{1F680}", count: 4_000), existingRole: "Old") == nil)
-        #expect(ChannelValidation.memberRoleError(String(repeating: "a", count: 8_001), existingRole: nil)
+        #expect(ChannelAgent.roleError("", existingRole: nil) == nil)
+        #expect(ChannelAgent.roleError("", existingRole: "") == "An existing role can't be emptied.")
+        #expect(ChannelAgent.roleError("", existingRole: "Existing") == "An existing role can't be emptied.")
+        #expect(ChannelAgent.roleError(String(repeating: "\u{1F680}", count: 4_000), existingRole: "Old") == nil)
+        #expect(ChannelAgent.roleError(String(repeating: "a", count: 8_001), existingRole: nil)
                 == "Roles are limited to 8,000 characters.")
     }
 

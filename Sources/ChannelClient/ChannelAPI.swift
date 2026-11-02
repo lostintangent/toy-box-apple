@@ -250,14 +250,14 @@ public struct ChannelAPI: Sendable {
         try await noContent("DELETE", channelPath(id))
     }
 
-    public func createMember(channelId: String, input: CreateMemberInput) async throws -> ChannelMember {
+    public func createMember(channelId: String, input: CreateMemberInput) async throws -> ChannelAgent {
         let result: MemberResponse = try await command("POST", channelPath(channelId) + ["members"], body: input)
         try requireVersion(result.version)
         return result.member
     }
 
     public func editMember(channelId: String, agentId: String,
-                           changes: EditMemberInput) async throws -> ChannelMember {
+                           changes: EditMemberInput) async throws -> ChannelAgent {
         let result: MemberResponse = try await command("PATCH", channelPath(channelId) + ["members", agentId],
                                                        body: changes)
         try requireVersion(result.version)
@@ -348,4 +348,4 @@ private struct ErrorResponse: Decodable { var error: String }
 private struct MessageResponse: Decodable { var version: Int; var message: ChannelMessage }
 private struct ReadResponse: Decodable { var version: Int; var seenThrough: Int }
 private struct ChannelResponse: Decodable { var version: Int; var channel: Channel }
-private struct MemberResponse: Decodable { var version: Int; var member: ChannelMember }
+private struct MemberResponse: Decodable { var version: Int; var member: ChannelAgent }

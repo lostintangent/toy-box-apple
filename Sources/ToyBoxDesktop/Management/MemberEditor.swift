@@ -6,7 +6,7 @@ import ToyBoxUI
 struct MemberEditor: View {
     @Environment(AppModel.self) private var app
     let channel: ChannelDetails
-    @ViewState private var member: ChannelMember?
+    @ViewState private var member: ChannelAgent?
     let store: ChannelStore
     let api: ChannelAPI
     let presenter: ManagementPresenter
@@ -17,7 +17,7 @@ struct MemberEditor: View {
     @ViewState private var recovery = ChannelManagementWriteRecovery()
     @FocusState private var nameFocused: Bool
 
-    init(channel: ChannelDetails, member: ChannelMember?, initialName: String, store: ChannelStore,
+    init(channel: ChannelDetails, member: ChannelAgent?, initialName: String, store: ChannelStore,
          api: ChannelAPI, presenter: ManagementPresenter) {
         self.channel = channel
         _member = ViewState(initialValue: member)
@@ -35,10 +35,10 @@ struct MemberEditor: View {
     // An empty name only disables the default button. The prompt already says Required.
     private var nameViolation: String? {
         guard !nextName.isEmpty else { return nil }
-        return ChannelValidation.memberNameError(nextName, agents: store.roster, excludingID: member?.id)
+        return ChannelAgent.nameError(nextName, agents: store.roster, excludingID: member?.id)
     }
     private var roleViolation: String? {
-        ChannelValidation.memberRoleError(nextRole, existingRole: member?.role)
+        ChannelAgent.roleError(nextRole, existingRole: member?.role)
     }
     private var isValid: Bool { !nextName.isEmpty && nameViolation == nil && roleViolation == nil }
     private var hasChanges: Bool {
@@ -48,7 +48,7 @@ struct MemberEditor: View {
     private var canSave: Bool {
         isValid && hasChanges && !isSaving && !recovery.blocksWrites && store.phase.isConnected
     }
-    private var refreshedMember: ChannelMember? {
+    private var refreshedMember: ChannelAgent? {
         guard let member else { return nil }
         return recovery.result?.state?.members.first { $0.id == member.id }
     }

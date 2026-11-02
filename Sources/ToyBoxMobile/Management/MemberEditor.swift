@@ -15,7 +15,7 @@ struct MemberEditor: View {
     @FocusState private var focus: ManagementField?
 
     private var api: ChannelAPI { session.api }
-    private var member: ChannelMember? { session.member }
+    private var member: ChannelAgent? { session.member }
     private var name: String { session.name }
     private var role: String { session.role }
     private var model: ModelConfiguration? { session.model }
@@ -27,8 +27,8 @@ struct MemberEditor: View {
     private var nextName: String { name.trimmingCharacters(in: .whitespacesAndNewlines) }
     private var nextRole: String { role.trimmingCharacters(in: .whitespacesAndNewlines) }
     private var violation: String? {
-        (nextName.isEmpty ? nil : ChannelValidation.memberNameError(nextName, agents: store.roster, excludingID: member?.id))
-            ?? ChannelValidation.memberRoleError(nextRole, existingRole: member?.role)
+        (nextName.isEmpty ? nil : ChannelAgent.nameError(nextName, agents: store.roster, excludingID: member?.id))
+            ?? ChannelAgent.roleError(nextRole, existingRole: member?.role)
     }
     private var changed: Bool {
         guard let member else { return true }
@@ -40,7 +40,7 @@ struct MemberEditor: View {
     private var catalog: ChannelCatalogStore? {
         app.catalog === session.catalog ? session.catalog : nil
     }
-    private var refreshedMember: ChannelMember? {
+    private var refreshedMember: ChannelAgent? {
         guard let member else { return nil }
         return recovery.result?.state?.members.first { $0.id == member.id }
     }

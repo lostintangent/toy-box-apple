@@ -532,7 +532,7 @@ private struct TranscriptTimestamp: View {
     let timestamp: String
 
     var body: some View {
-        if let date = ChannelDates.date(timestamp) {
+        if let date = try? Date(timestamp, strategy: .iso8601) {
             Text(date, format: .dateTime.hour().minute())
                 .foregroundStyle(.secondary)
                 .monospacedDigit()

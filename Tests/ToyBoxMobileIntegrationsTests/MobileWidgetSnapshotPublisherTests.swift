@@ -18,7 +18,7 @@ struct MobileWidgetSnapshotPublisherTests {
         #expect(waiting.requests.first?.quote == "Ready to ship?")
         #expect(waiting.requests.first?.channelName == "Studio")
         #expect(waiting.requests.first?.sequence == 15)
-        #expect(waiting.requests.first?.requestedAt == ChannelDates.date("2026-10-27T07:30:00Z"))
+        #expect(waiting.requests.first?.requestedAt == (try? Date("2026-10-27T07:30:00Z", strategy: .iso8601)))
         let request = try #require(waiting.requests.first)
         let row = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(request)) as? [String: Any])
         #expect(Set(row.keys) == ["channelID", "channelName", "sequence", "quote", "requestedAt"])

@@ -220,7 +220,7 @@ struct ManagementTests {
         let presenter = ManagementPresenter()
         presenter.present(.addMember(channelId: "channel", name: "Finch"))
         let member = try await presenter.createMentionMember(name: "Moss", store: store)
-        #expect(member == ChannelMember(id: "moss", name: "Moss"))
+        #expect(member == ChannelAgent(id: "moss", name: "Moss"))
         #expect(presenter.flow == .addMember(channelId: "channel", name: "Finch"))
         #expect(fixture.requests == ["POST /api/v1/channels/channel/members"])
     }
@@ -254,7 +254,7 @@ struct ManagementTests {
             Issue.record("Invalid inline names must fail before making a request.")
         } catch let error as ChannelAPIError {
             #expect(error == .invalidMessage(
-                try #require(ChannelValidation.memberNameError(name, agents: store.roster))))
+                try #require(ChannelAgent.nameError(name, agents: store.roster))))
         }
         #expect(fixture.requests.isEmpty)
     }

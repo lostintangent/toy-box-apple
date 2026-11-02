@@ -118,7 +118,7 @@ struct DigestWindowTests {
         return calendar
     }
 
-    private func date(_ value: String) -> Date { ChannelDates.date(value)! }
+    private func date(_ value: String) -> Date { try! Date(value, strategy: .iso8601) }
 
     private func state(_ messages: [ChannelMessage]) -> ChannelState {
         ChannelState(revision: 1, channel: Channel(id: "studio", name: "Studio",

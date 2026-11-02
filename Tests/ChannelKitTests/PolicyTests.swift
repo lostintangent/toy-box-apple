@@ -113,7 +113,7 @@ struct PolicyTests {
     }
 
     @Test func taskTimingFloorsElapsedCeilsCheckInAndHandlesAbsentOrInvalidDates() throws {
-        let now = try #require(ChannelDates.date("2026-10-24T11:26:59Z"))
+        let now = try #require(try? Date("2026-10-24T11:26:59Z", strategy: .iso8601))
         var task = ChannelTask(id: "task", title: "Task", status: "in_progress",
                                startedAt: "2026-10-24T10:00:00Z", checkInAt: "2026-10-24T11:57:00Z")
         #expect(channelTaskTiming(task, now: now) == .init(elapsedMinutes: 86, checkInMinutes: 31))
@@ -181,11 +181,11 @@ struct PolicyTests {
             ("2026-10-24T11:00:00+02:00", 0.0),
             ("2026-10-24T03:30:00.125-05:30", 0.125),
         ] {
-            let date = try #require(ChannelDates.date(value))
+            let date = try #require(try? Date(value, strategy: .iso8601))
             #expect(abs(date.timeIntervalSince(whole) - fraction) < 0.000001, Comment(rawValue: value))
         }
         for value in ["", "not-a-date", "2026-10-24T09:00:00.invalidZ"] {
-            #expect(ChannelDates.date(value) == nil)
+            #expect((try? Date(value, strategy: .iso8601)) == nil)
         }
     }
 

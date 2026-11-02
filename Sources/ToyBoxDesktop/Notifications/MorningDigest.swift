@@ -175,7 +175,7 @@ extension MorningDigest {
         var lines: [Content.Line] = []
         for channel in channels where channel.latestSequence > 0 {
             try Task.checkCancellation()
-            if let updated = ChannelDates.date(channel.updatedAt), updated <= window.since { continue }
+            if let updated = try? Date(channel.updatedAt, strategy: .iso8601), updated <= window.since { continue }
             var snapshot: ChannelState?
             for try await event in api.observe(channelId: channel.id) {
                 guard event.type == "snapshot", let state = event.state else {

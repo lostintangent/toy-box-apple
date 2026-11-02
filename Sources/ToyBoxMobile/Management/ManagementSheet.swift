@@ -24,7 +24,7 @@ struct ManagementSheet: View {
                         } else {
                             ProgressView("Loading current values")
                                 .task {
-                                    let member: ChannelMember?
+                                    let member: ChannelAgent?
                                     if case .editMember(_, let id) = flow {
                                         member = store.roster.dropFirst().first { $0.id == id }
                                     } else { member = nil }

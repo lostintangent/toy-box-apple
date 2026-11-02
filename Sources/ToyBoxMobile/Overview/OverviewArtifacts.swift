@@ -67,7 +67,7 @@ struct OverviewArtifactLabel: View {
                 .frame(width: iconLane)
             VStack(alignment: .leading, spacing: 4) {
                 Text(artifact.title).font(.body).lineLimit(typeSize.isAccessibilitySize ? nil : 2)
-                if let date = (share?.sharedAt ?? artifact.sharedAt).flatMap(ChannelDates.date) {
+                if let date = (share?.sharedAt ?? artifact.sharedAt).flatMap({ try? Date($0, strategy: .iso8601) }) {
                     Text(date, format: .dateTime.month(.abbreviated).day().hour().minute())
                         .font(.footnote).foregroundStyle(ChannelInk.secondary)
                 } else {

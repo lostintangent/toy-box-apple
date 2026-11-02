@@ -764,7 +764,7 @@ public final class ChannelCatalogStore {
     public let api: ChannelAPI
     public private(set) var state: ChannelCatalog?
     public var channels: [Channel] { state?.channels ?? [] }
-    public var members: [ChannelMember] { state?.members ?? [] }
+    public var members: [ChannelAgent] { state?.members ?? [] }
     public private(set) var working: Set<String> = []
     public private(set) var isActive = true
     public private(set) var phase: ChannelCatalogPhase = .connecting

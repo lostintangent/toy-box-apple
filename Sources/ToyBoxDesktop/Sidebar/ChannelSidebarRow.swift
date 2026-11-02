@@ -40,7 +40,7 @@ private struct ChannelSidebarRowContent: View {
     private var folder: ChannelFolderAvailability? { row.folder }
     /// The key window's accent selection, where every custom color yields to white.
     private var emphasized: Bool { prominence == .increased }
-    private var updatedAt: Date? { ChannelDates.date(channel.updatedAt) }
+    private var updatedAt: Date? { try? Date(channel.updatedAt, strategy: .iso8601) }
 
     var body: some View {
         content

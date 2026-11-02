@@ -20,7 +20,7 @@ package struct ChannelAgentWakePresentation: Equatable, Sendable {
 
     package static func wake(for presence: ChannelAgentPresence?, isAvailable: Bool) -> Date? {
         guard isAvailable, let presence, presence.state == "waiting", let raw = presence.wakeAt else { return nil }
-        return ChannelDates.date(raw)
+        return (try? Date(raw, strategy: .iso8601))
     }
 }
 

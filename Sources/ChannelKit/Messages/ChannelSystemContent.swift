@@ -3,7 +3,7 @@ import Foundation
 public struct ChannelSystemContent: Codable, Equatable, Sendable {
     public var type: String
     public var actor: ChannelMessageSender?
-    public var member: ChannelMember?
+    public var member: ChannelAgent?
     public var name: String?
     public var purpose: String?
     public var directory: String?
@@ -13,7 +13,7 @@ public struct ChannelSystemContent: Codable, Equatable, Sendable {
     public var routine: ChannelRoutine?
     public private(set) var unknownFields: [String: JSONValue]?
 
-    public init(type: String, actor: ChannelMessageSender? = nil, member: ChannelMember? = nil,
+    public init(type: String, actor: ChannelMessageSender? = nil, member: ChannelAgent? = nil,
                 name: String? = nil, purpose: String? = nil, directory: String? = nil,
                 preview: ChannelPreview? = nil, previewUrl: String? = nil,
                 artifact: ChannelArtifact? = nil, routine: ChannelRoutine? = nil) {
@@ -39,7 +39,7 @@ public struct ChannelSystemContent: Codable, Equatable, Sendable {
         switch type {
         case "tasks_completed": break
         case "member_joined", "member_left":
-            member = try values.decode(ChannelMember.self, forKey: .member)
+            member = try values.decode(ChannelAgent.self, forKey: .member)
         case "channel_renamed":
             actor = try values.decode(ChannelMessageSender.self, forKey: .actor)
             name = try values.decode(String.self, forKey: .name)
@@ -80,5 +80,78 @@ public struct ChannelSystemContent: Codable, Equatable, Sendable {
         try values.encodeIfPresent(previewUrl, forKey: .previewUrl)
         try values.encodeIfPresent(artifact, forKey: .artifact)
         try values.encodeIfPresent(routine, forKey: .routine)
+    }
+
+    public static let unavailablePreview = "Preview link unavailable"
+    public static let openScreen = "Open screen in Toy Box"
+
+    public static func value(_ text: String) -> String {
+        let line = text.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        return line.count <= 120 ? line : "\(line.prefix(117))..."
+    }
+
+    public static func actorName(_ system: ChannelSystemContent?, agents: [ChannelAgent]) -> String {
+        system?.actor?.type == "user" ? "You"
+            : channelAgentIdentity(agents, id: system?.actor?.agentId ?? "").name
+    }
+
+    public static func phrase(for system: ChannelSystemContent?) -> String {
+        switch system?.type {
+        case "tasks_completed": "All tasks completed"
+        case "member_joined", "member_left": "Channel membership changed"
+        case "channel_renamed": "Channel renamed"
+        case "channel_purpose_changed": system?.purpose == nil ? "Purpose cleared" : "Purpose updated"
+        case "channel_directory_changed": system?.directory == nil ? "Working directory cleared" : "Working directory changed"
+        case "preview_changed":
+            system?.preview == nil && system?.previewUrl == nil ? "Preview cleared" : "Preview updated"
+        case "artifact_shared": "Artifact shared"
+        case "artifact_removed": "Artifact removed"
+        case "routine_scheduled": "New routine scheduled"
+        case "routine_edited": "Routine edited"
+        case "routine_deleted": "Routine deleted"
+        default: "Channel updated"
+        }
+    }
+
+    public static func membership(_ contents: [ChannelSystemContent]) -> (names: String, action: String)? {
+        let names = contents.compactMap { $0.member?.name }
+        guard let name = names.first else { return nil }
+        let identities = names.count == 1 ? name
+            : "\(name) and \(names.count - 1) \(names.count == 2 ? "other" : "others")"
+        return (identities, membershipAction(contents.first?.type))
+    }
+
+    public func rendered(agents: [ChannelAgent]) -> String {
+        let phrase = Self.phrase(for: self)
+        func event(_ detail: String?) -> String {
+            detail.map { phrase + " " + Self.value($0) } ?? phrase
+        }
+        switch type {
+        case "tasks_completed": return phrase
+        case "member_joined", "member_left":
+            guard let name = member?.name else { return phrase }
+            return "\(name) \(Self.membershipAction(type))"
+        case "channel_renamed": return event(name)
+        case "channel_purpose_changed": return event(purpose)
+        case "channel_directory_changed":
+            return directory.map { phrase + " " + $0 } ?? phrase
+        case "preview_changed":
+            if let preview = self.preview ?? previewUrl.map({ ChannelPreview(kind: "url", url: $0) }) {
+                return preview.kind == "screen" ? phrase + " " + Self.openScreen : event(preview.url)
+            }
+            return phrase
+        case "artifact_shared":
+            return "\(Self.actorName(self, agents: agents)) shared \(artifact?.title ?? "")"
+        case "artifact_removed":
+            return "\(Self.actorName(self, agents: agents)) removed \(artifact?.title ?? "")"
+        case "routine_scheduled", "routine_edited", "routine_deleted":
+            return event(routine?.title ?? "Routine")
+        default:
+            return unknownFields?["description"]?.string.map { phrase + "\n" + $0 } ?? phrase
+        }
+    }
+
+    private static func membershipAction(_ type: String?) -> String {
+        type == "member_joined" ? "joined the channel" : "left the channel"
     }
 }

@@ -26,7 +26,7 @@ struct ChannelEditor: View {
     private var nextName: String { name.trimmingCharacters(in: .whitespacesAndNewlines) }
     private var nextPurpose: String { purpose.trimmingCharacters(in: .whitespacesAndNewlines) }
     private var violation: String? {
-        (nextName.isEmpty ? nil : ChannelValidation.channelNameError(nextName)) ?? ChannelValidation.purposeError(nextPurpose)
+        (nextName.isEmpty ? nil : Channel.nameError(nextName)) ?? Channel.purposeError(nextPurpose)
     }
     private var changed: Bool {
         guard let channel else { return true }

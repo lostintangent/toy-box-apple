@@ -393,7 +393,7 @@ struct TranscriptTimestamp: View {
     let timestamp: String
 
     var body: some View {
-        if let date = ChannelDates.date(timestamp) {
+        if let date = try? Date(timestamp, strategy: .iso8601) {
             Text(date, format: .dateTime.hour().minute())
                 .foregroundStyle(TranscriptInk.secondary)
                 .monospacedDigit()
@@ -467,11 +467,11 @@ struct TranscriptSystemMessages: View {
 
     private var text: String {
         let contents = messages.compactMap(\.system)
-        if contents.count > 1, let membership = ChannelSystemText.membership(contents) {
+        if contents.count > 1, let membership = ChannelSystemContent.membership(contents) {
             return "\(membership.names) \(membership.action)"
         }
         if let group = ChannelArtifactGroup(messages, agents: agents) { return group.sentence }
-        return contents.first.map { ChannelSystemText.rendered($0, agents: agents) } ?? ""
+        return contents.first.map { $0.rendered(agents: agents) } ?? ""
     }
 }
 
@@ -576,15 +576,15 @@ struct TranscriptSystemDetails: View {
                                 Text(detail.value).textSelection(.enabled).multilineTextAlignment(.trailing)
                             }
                         }
-                        if let date = ChannelDates.date(message.timestamp) {
+                        if let date = try? Date(message.timestamp, strategy: .iso8601) {
                             LabeledContent("Time", value: date.formatted(date: .abbreviated, time: .shortened))
                         }
                     } header: {
-                        Text(ChannelSystemText.phrase(for: system))
+                        Text(ChannelSystemContent.phrase(for: system))
                     }
                 }
             }
-            .navigationTitle(messages.count > 1 ? "Membership" : ChannelSystemText.phrase(for: messages.first?.system))
+            .navigationTitle(messages.count > 1 ? "Membership" : ChannelSystemContent.phrase(for: messages.first?.system))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -598,7 +598,7 @@ struct TranscriptSystemDetails: View {
 
     static func details(_ system: ChannelSystemContent, agents: [ChannelAgent]) -> [(label: String, value: String)] {
         var details: [(label: String, value: String)] = []
-        if system.actor != nil { details.append(("By", ChannelSystemText.actor(system, agents: agents))) }
+        if system.actor != nil { details.append(("By", ChannelSystemContent.actorName(system, agents: agents))) }
         if let member = system.member?.name { details.append(("Member", member)) }
         if let name = system.name { details.append(("Name", name)) }
         if let purpose = system.purpose { details.append(("Purpose", purpose)) }

@@ -58,7 +58,7 @@ public final class ManagementPresenter {
     }
 
     public func createMentionMember(name: String, store: ChannelStore,
-                                    catalog: ChannelCatalogStore? = nil) async throws -> ChannelMember {
+                                    catalog: ChannelCatalogStore? = nil) async throws -> ChannelAgent {
         guard store.phase.isConnected, let state = store.state else { throw ChannelAPIError.disconnected }
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let key = "\(store.api.baseURL.absoluteString):\(store.id):\(agentHandleFromName(trimmed))"
@@ -66,7 +66,7 @@ public final class ManagementPresenter {
             try await checkMentionCreation(key: key, store: store, catalog: catalog)
             throw ChannelAPIError.invalidMessage("The team has been refreshed. Review Team before explicitly creating this agent again.")
         }
-        if let message = ChannelValidation.memberNameError(trimmed, agents: state.agents) {
+        if let message = ChannelAgent.nameError(trimmed, agents: state.agents) {
             throw ChannelAPIError.invalidMessage(message)
         }
         guard creatingMentions.insert(key).inserted else {

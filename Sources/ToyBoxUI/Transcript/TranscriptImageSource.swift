@@ -31,7 +31,7 @@ public struct TranscriptImageSource: Equatable, Sendable {
 
     public func subtitleParts(index: Int, count: Int, now: Date = .now,
                               calendar: Calendar = .current) -> (sent: String?, position: String?) {
-        let sent = ChannelDates.date(timestamp).map { sentAt in
+        let sent = (try? Date(timestamp, strategy: .iso8601)).map { sentAt in
             let time = Date.FormatStyle(date: .omitted, time: .shortened, locale: calendar.locale ?? .current,
                                         calendar: calendar, timeZone: calendar.timeZone)
             return "\(transcriptDayLabel(sentAt, now: now, calendar: calendar)) at \(sentAt.formatted(time))"
