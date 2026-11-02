@@ -333,7 +333,7 @@ struct MenuBarInbox: View {
     /// so a failure waits there for Open Channel instead of retrying from the menu.
     private func sendChoice(_ choice: String, to item: MenuBarStatus.Item) {
         guard let catalog = model.catalog, catalog.channels.contains(where: { $0.id == item.id }),
-              let content = NotificationText.addressedReply(choice, to: nil) else {
+              let content = ChannelNotification.Reply(choice, to: nil)?.content else {
             inbox.record(item.id, .notSent)
             return
         }

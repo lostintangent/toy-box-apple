@@ -69,22 +69,22 @@ struct RequestRepliesTests {
 
     @Test func choiceActionsSendTheirTrimmedLabelByIndex() {
         let replies = [" Near the entrance ", "Beside the team desks"]
-        #expect(SuggestedReplies.label(forAction: SuggestedReplies.actionIdentifier(0), replies: replies)
+        #expect(SuggestedReplies(replies).label(forAction: SuggestedReplies.actionIdentifier(at: 0))
             == "Near the entrance")
-        #expect(SuggestedReplies.label(forAction: SuggestedReplies.actionIdentifier(1), replies: replies)
+        #expect(SuggestedReplies(replies).label(forAction: SuggestedReplies.actionIdentifier(at: 1))
             == "Beside the team desks")
     }
 
     @Test func choicesRejectNonCanonicalIndexes() {
         let replies = ["Yes", "No"]
         for action in ["reply-choice.01", "reply-choice.+1", "reply-choice.-0", "reply-choice.", "reply-choice.1 "] {
-            #expect(SuggestedReplies.label(forAction: action, replies: replies) == nil, "\(action)")
+            #expect(SuggestedReplies(replies).label(forAction: action) == nil, "\(action)")
         }
     }
 
     @Test func choicesNeedTheSameValidLabelsAsTheCategory() {
-        #expect(SuggestedReplies.label(forAction: "reply-choice.0", replies: ["Only one"]) == nil)
-        #expect(SuggestedReplies.label(forAction: "reply-choice.0", replies: nil) == nil)
-        #expect(SuggestedReplies.label(forAction: "reply-choice.0", replies: ["Yes", " "]) == nil)
+        #expect(SuggestedReplies(["Only one"]).label(forAction: "reply-choice.0") == nil)
+        #expect(SuggestedReplies(nil).label(forAction: "reply-choice.0") == nil)
+        #expect(SuggestedReplies(["Yes", " "]).label(forAction: "reply-choice.0") == nil)
     }
 }

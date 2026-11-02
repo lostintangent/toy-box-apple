@@ -23,12 +23,12 @@ public enum ReplyCategories {
     /// The Reply field first, then one action per label in the order the lead gave them.
     public static func category(labels: [String]) -> UNNotificationCategory {
         let choices = labels.enumerated().map {
-            UNNotificationAction(identifier: SuggestedReplies.actionIdentifier($0.offset),
+            UNNotificationAction(identifier: SuggestedReplies.actionIdentifier(at: $0.offset),
                                  title: $0.element, options: [])
         }
         return UNNotificationCategory(identifier: identifier(labels: labels), actions: [textReply()] + choices,
                                       intentIdentifiers: [],
-                                      hiddenPreviewsBodyPlaceholder: NotificationText.requestPlaceholder)
+                                      hiddenPreviewsBodyPlaceholder: ChannelNotification.Content.requestPlaceholder)
     }
 
     /// The categories every process registers: request, completion and reply failure.
@@ -36,10 +36,10 @@ public enum ReplyCategories {
         [
             UNNotificationCategory(identifier: ChannelNotificationCategory.request, actions: [textReply()],
                                    intentIdentifiers: [],
-                                   hiddenPreviewsBodyPlaceholder: NotificationText.requestPlaceholder),
+                                   hiddenPreviewsBodyPlaceholder: ChannelNotification.Content.requestPlaceholder),
             UNNotificationCategory(identifier: ChannelNotificationCategory.completion, actions: [],
                                    intentIdentifiers: [],
-                                   hiddenPreviewsBodyPlaceholder: NotificationText.completionPlaceholder),
+                                   hiddenPreviewsBodyPlaceholder: ChannelNotification.Content.completionPlaceholder),
             UNNotificationCategory(identifier: ChannelNotificationCategory.replyFailed, actions: [],
                                    intentIdentifiers: []),
         ]

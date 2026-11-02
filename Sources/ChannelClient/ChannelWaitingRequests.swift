@@ -90,7 +90,7 @@ extension NeedsYouSnapshot {
                   waitingCount: waiting.count, requests: waiting.prefix(5).compactMap { entry in
             guard entry.sequence > 0 else { return nil }
             return Request(channelID: entry.channel.id, channelName: entry.channel.name, sequence: entry.sequence,
-                           quote: entry.request?.quote ?? NotificationText.needsReply, requestedAt: entry.requestedAt)
+                           quote: entry.request?.quote ?? ChannelNotification.Content.needsReply, requestedAt: entry.requestedAt)
         })
     }
 }
