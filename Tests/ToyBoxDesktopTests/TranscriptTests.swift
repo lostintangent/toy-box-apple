@@ -499,7 +499,7 @@ struct TranscriptTests {
         #expect(abs(harness.bottomGap) < 2)
         #expect(harness.isVisible("m480"))
         #expect(service.catchUpCount == 0)
-        let rows = transcriptRows(harness.store.messages, lead: .lead(id: "lead"), members: [], unreadAfter: 180)
+        let rows = TranscriptRowBuilder().rows(harness.store.messages, lead: .lead(id: "lead"), members: [], unreadAfter: 180)
         #expect(rows.allSatisfy { $0.divider?.unread != true })
         #expect(harness.readRequests == 0)
     }
@@ -1122,7 +1122,7 @@ struct TranscriptTests {
                            sender: kind == nil ? .agent("lead") : .system,
                            content: kind.map { .system(.init(type: $0)) } ?? .text("Progress"))
         }
-        let rows = transcriptRows([
+        let rows = TranscriptRowBuilder().rows([
             message(1), message(2, system: "member_joined"), message(3, system: "member_left"),
             message(4, day: 2, system: "tasks_completed"), message(5, day: 2, system: "channel_renamed"),
             message(6, day: 2), message(7, day: 2, system: "tasks_completed"),
@@ -1138,8 +1138,8 @@ struct TranscriptTests {
                            timestamp: String(format: "2026-10-%02dT10:00:00Z", day),
                            sender: .agent("lead"), content: .text("Progress"))
         }
-        let rows = transcriptRows([message(1, day: 1), message(2, day: 2)],
-                                  lead: .lead(id: "lead"), members: [], unreadAfter: 1)
+        let rows = TranscriptRowBuilder().rows([message(1, day: 1), message(2, day: 2)],
+                                               lead: .lead(id: "lead"), members: [], unreadAfter: 1)
         let divider = try #require(rows.last?.divider)
         let day = try #require(divider.day)
         #expect(divider.accessibilityLabel(now: day) == "Today, New messages")
@@ -2925,7 +2925,7 @@ private final class HoveredMessage {
         let message = ChannelMessage(id: id, sequence: 1, timestamp: "2026-10-22T10:00:00Z", sender: .agent("lead"),
                                      content: .text(String(repeating: "A paragraph long enough to wrap. ", count: 6)
                                          + "\n\nA second paragraph."))
-        let row = try #require(transcriptRows([message], lead: lead, members: []).last)
+        let row = try #require(TranscriptRowBuilder().rows([message], lead: lead, members: []).last)
         let channel = TranscriptRowChannel(agents: [lead], id: "selection", historyStart: 1, api: store.api)
         host = NSHostingView(rootView:
             TranscriptRowContent(row: row, channel: channel, statusReactions: [:], highlightedSequence: nil,

@@ -256,8 +256,8 @@ struct ConversationView: View {
                         .padding(.top, item.spacing)
                         .id(item.id)
                 }
-                let attemptDividers = transcriptPendingDividers(store.sendAttempts.map(\.message),
-                                                                after: items.last?.messages.last, roster: store.roster)
+                let attemptDividers = TranscriptRowBuilder.pendingDividers(store.sendAttempts.map(\.message),
+                                                                           after: items.last?.messages.last, roster: store.roster)
                 ForEach(store.sendAttempts) { attempt in
                     // The committed row takes the attempt's UUID, so keep the two identities apart.
                     TranscriptSendAttempt(attempt: attempt, divider: attemptDividers[attempt.id], store: store,

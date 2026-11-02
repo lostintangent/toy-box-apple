@@ -27,8 +27,8 @@ struct TranscriptTests {
             message(3, .agent("lead")),
             message(4, .agent("ada")),
         ]
-        let rows = transcriptRows(messages, lead: lead, members: [ada], unreadAfter: 3,
-                                  calendar: Calendar(identifier: .gregorian))
+        let rows = TranscriptRowBuilder().rows(messages, lead: lead, members: [ada], unreadAfter: 3,
+                                               calendar: Calendar(identifier: .gregorian))
         let items = transcriptItems(rows)
 
         #expect(items.map(\.id) == ["m1", "m2", "m3", "m4"])
@@ -750,8 +750,8 @@ struct TranscriptTests {
                                      sender: .agent("lead"), content: .text(text), request: request)
             let answer = ChannelMessage(id: "m2", sequence: 2, timestamp: "2026-10-25T12:01:00Z",
                                         sender: .user, content: .text("Near the entrance"))
-            let rows = transcriptRows(answered ? [ask, answer] : [ask], lead: lead, members: [],
-                                      calendar: Calendar(identifier: .gregorian))
+            let rows = TranscriptRowBuilder().rows(answered ? [ask, answer] : [ask], lead: lead, members: [],
+                                                   calendar: Calendar(identifier: .gregorian))
             guard case .agent(_, let entries) = rows[0].content else { return .infinity }
             let view = TranscriptAgentMessage(entry: entries[0], agent: lead,
                                               channel: TranscriptRowChannel(agents: [lead], api: api),
