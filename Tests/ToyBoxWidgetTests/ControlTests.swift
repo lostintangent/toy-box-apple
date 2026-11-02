@@ -54,7 +54,7 @@ import Testing
 
     @Test @MainActor func actionsUseOnlyTheAgreedRoutesWithoutSending() async throws {
         var opened: [URL] = []
-        let context = ToyBoxControlsContext { opened.append($0) }
+        let context = ControlRouter { opened.append($0) }
         for target in [ToyBoxControlDestination.quickSend, .needsYou] {
             var intent = OpenToyBoxControlIntent(target: target)
             intent.context = context
@@ -66,7 +66,7 @@ import Testing
     }
 
     @Test @MainActor func routeFailuresAreNotReportedAsSuccess() async {
-        let context = ToyBoxControlsContext { _ in throw CocoaError(.fileReadNoPermission) }
+        let context = ControlRouter { _ in throw CocoaError(.fileReadNoPermission) }
         var intent = OpenToyBoxControlIntent(target: .needsYou)
         intent.context = context
         await #expect(throws: CocoaError.self) {

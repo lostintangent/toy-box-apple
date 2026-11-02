@@ -8,7 +8,7 @@ import ToyBoxControlIntents
     @Test func controlRoutesMarkTheLaunchBeforeOpeningExactlyTheirTarget() throws {
         let delegate = AppDelegate()
         var opened: [URL] = []
-        let router = ToyBoxControlsContext.makeRouter(delegate: delegate) { url in
+        let router = ControlRouter.makeRouter(delegate: delegate) { url in
             #expect(delegate.receivedOpenEvent)
             #expect(!AppLoginLaunch.shouldOpenStartupWindow(
                 login: false, backgroundIntent: false,
@@ -26,7 +26,7 @@ import ToyBoxControlIntents
     @Test(arguments: [false, true])
     func unavailableAndFailedRoutesStayMarkedAndPropagateTheirErrors(throwFromRoute: Bool) {
         let delegate = AppDelegate()
-        let router = ToyBoxControlsContext.makeRouter(delegate: delegate) { _ in
+        let router = ControlRouter.makeRouter(delegate: delegate) { _ in
             #expect(delegate.receivedOpenEvent)
             if throwFromRoute { throw CocoaError(.fileReadNoPermission) }
             return false
