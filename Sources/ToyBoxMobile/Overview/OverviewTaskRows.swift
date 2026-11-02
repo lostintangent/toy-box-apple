@@ -33,7 +33,7 @@ struct OverviewTaskListRow: Identifiable {
     }
 
     static func filtered(_ tasks: [ChannelTask], showsOnlyInProgress: Bool) -> [ChannelTask] {
-        showsOnlyInProgress ? channelTasksHoldingWorkInProgress(tasks) : tasks
+        showsOnlyInProgress ? tasks.holdingWorkInProgress : tasks
     }
 
     static func visibleChildren(of task: ChannelTask, showsOnlyInProgress: Bool) -> [ChannelTask] {

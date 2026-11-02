@@ -15,7 +15,7 @@ struct OverviewArtifactsSection: View {
                 Text("Nothing shared yet").foregroundStyle(ChannelInk.secondary)
                     .modifier(OverviewListRowBoundary(isLast: true))
             } else {
-                let artifacts = channelArtifactsNewestFirst(store.artifacts)
+                let artifacts = store.artifacts.newestFirst
                 ForEach(artifacts) { artifact in
                     OverviewArtifactRow(artifact: artifact, share: store.artifactShares[artifact.file.id],
                                         store: store, state: session.artifact(artifact.id))
@@ -38,7 +38,7 @@ struct OverviewArtifactList: View {
                                        description: Text("Files shared by this team will appear here.")
                                         .foregroundStyle(ChannelInk.secondary))
             } else {
-                List(channelArtifactsNewestFirst(store.artifacts)) { artifact in
+                List(store.artifacts.newestFirst) { artifact in
                     Button { onOpen(artifact) } label: {
                         OverviewArtifactLabel(artifact: artifact, share: store.artifactShares[artifact.file.id])
                     }
@@ -54,7 +54,7 @@ struct OverviewArtifactList: View {
 
 struct OverviewArtifactLabel: View {
     let artifact: ChannelArtifact
-    let share: ChannelArtifactShare?
+    let share: ChannelArtifact.Share?
     var preparing = false
     var removing = false
     @Environment(\.dynamicTypeSize) private var typeSize
@@ -109,7 +109,7 @@ struct OverviewRowSymbol: View {
 
 struct OverviewArtifactRow: View {
     let artifact: ChannelArtifact
-    let share: ChannelArtifactShare?
+    let share: ChannelArtifact.Share?
     let store: ChannelStore
     let state: ChannelOverview.Artifact
     @Environment(AppModel.self) private var app

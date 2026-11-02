@@ -17,7 +17,7 @@ struct OverviewArtifactRow: View {
     let artifact: ChannelArtifact
     /// Names the artifact for this visit to the channel. See `OverviewSlots`.
     let key: String
-    let share: ChannelArtifactShare?
+    let share: ChannelArtifact.Share?
     let agents: [ChannelAgent]
     let store: ChannelStore
     let open: () -> Void

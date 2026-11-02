@@ -4,7 +4,7 @@ public func resolveChannelAudience(content: String, sender: ChannelMessageSender
                                    lead: ChannelAgent, members: [ChannelAgent],
                                    acknowledgedRequest: Bool = false) -> [ChannelAgent] {
     let agents = [lead] + members
-    return resolveChannelAudience(extractAgentMentionHandles(content), sender: sender, lead: lead, agents: agents,
+    return resolveChannelAudience(AgentMentions(parsing: content), sender: sender, lead: lead, agents: agents,
                                   handles: agents.map { agentHandleFromName($0.name) },
                                   acknowledgedRequest: acknowledgedRequest)
 }

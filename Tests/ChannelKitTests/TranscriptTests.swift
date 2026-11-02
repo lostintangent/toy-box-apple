@@ -172,7 +172,7 @@ struct TranscriptTests {
             (7, "Thursday, October 15")
         ] {
             let date = try #require(calendar.date(byAdding: .day, value: -days, to: now))
-            #expect(transcriptDayLabel(date, now: now, calendar: calendar) == expected)
+            #expect(TranscriptDivider.dayLabel(for: date, now: now, calendar: calendar) == expected)
         }
     }
 
@@ -187,7 +187,7 @@ struct TranscriptTests {
             ("2025-12-27T12:00:00Z", "Saturday, December 27, 2025")
         ] {
             let date = try #require(try? Date(timestamp, strategy: .iso8601))
-            #expect(transcriptDayLabel(date, now: now, calendar: calendar) == expected)
+            #expect(TranscriptDivider.dayLabel(for: date, now: now, calendar: calendar) == expected)
         }
     }
 
@@ -196,11 +196,11 @@ struct TranscriptTests {
         let calendar = fixedCalendar(timeZone: zone)
         let now = try #require(try? Date("2026-10-30T12:00:00Z", strategy: .iso8601))
         let date = try #require(try? Date("2026-10-22T12:00:00Z", strategy: .iso8601))
-        #expect(transcriptDayLabel(date, now: now, calendar: calendar) == "Friday, October 23")
+        #expect(TranscriptDivider.dayLabel(for: date, now: now, calendar: calendar) == "Friday, October 23")
         let losAngeles = try #require(TimeZone(identifier: "America/Los_Angeles"))
         let beforeDST = try #require(try? Date("2026-03-07T23:30:00-08:00", strategy: .iso8601))
         let afterDST = try #require(try? Date("2026-03-09T09:00:00-07:00", strategy: .iso8601))
-        #expect(transcriptDayLabel(beforeDST, now: afterDST, calendar: fixedCalendar(timeZone: losAngeles)) == "Saturday")
+        #expect(TranscriptDivider.dayLabel(for: beforeDST, now: afterDST, calendar: fixedCalendar(timeZone: losAngeles)) == "Saturday")
     }
 
     private func fixedCalendar(timeZone: TimeZone = .gmt) -> Calendar {

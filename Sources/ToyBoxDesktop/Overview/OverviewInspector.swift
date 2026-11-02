@@ -126,8 +126,8 @@ private struct OverviewTasksSection: View {
 
     var body: some View {
         let tasks = store.tasks
-        let progress = channelTasksProgress(tasks)
-        let diff = channelTasksDiff(tasks)
+        let progress = tasks.progress
+        let diff = tasks.diff
         OverviewSection(id: .tasks, summary: .tasks(progress),
                         accessibilityDetail: diff.map(ChannelOverviewTaskDiff.spoken),
                         filter: tasks.isEmpty ? nil : ChannelOverviewFilter.inProgressTasks($showsOnlyInProgress),
@@ -153,7 +153,7 @@ private struct OverviewArtifactsSection: View {
     @ViewState private var slots = OverviewSlots()
 
     var body: some View {
-        let artifacts = channelArtifactsNewestFirst(store.artifacts)
+        let artifacts = store.artifacts.newestFirst
         OverviewSection(id: .artifacts, summary: .artifacts(artifacts.count), collapsed: $collapsed) {
             if artifacts.isEmpty {
                 OverviewEmptyText("Nothing shared yet")

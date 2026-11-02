@@ -434,9 +434,9 @@ struct OverviewTests {
                 OverviewSectionRows(summary: .team(1), section: .team, session: session, isFirstSection: true) {
                     Text("Ada").frame(height: 44).listRowInsets(.vertical, 0)
                 }
-                OverviewSectionRows(summary: .tasks(channelTasksProgress([
+                OverviewSectionRows(summary: .tasks([
                     ChannelTask(id: "task", title: "Build", status: "pending")
-                ])),
+                ].progress),
                                     section: .tasks, session: session) {
                     Text("Build").frame(height: 44).listRowInsets(.vertical, 0)
                 }
@@ -1125,9 +1125,9 @@ struct OverviewTests {
                             Text("Agent \(index)").frame(height: 44).listRowInsets(.vertical, 0)
                         }
                     }
-                    OverviewSectionRows(summary: .tasks(channelTasksProgress([
+                    OverviewSectionRows(summary: .tasks([
                         ChannelTask(id: "task", title: "Build", status: "pending")
-                    ])), section: .tasks, session: session) {
+                    ].progress), section: .tasks, session: session) {
                         Text("Build").frame(height: 44).listRowInsets(.vertical, 0)
                     }
                     OverviewSectionRows(summary: .artifacts(20), section: .artifacts, session: session) {

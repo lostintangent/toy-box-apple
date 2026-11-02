@@ -8,10 +8,10 @@ import UniformTypeIdentifiers
 
 struct ChannelAttachmentTests {
     @Test func thumbnailsFitTheirBoundsWithoutCroppingOrUpscaling() {
-        #expect(transcriptThumbnailSize(CGSize(width: 1200, height: 600)) == CGSize(width: 240, height: 120))
-        #expect(transcriptThumbnailSize(CGSize(width: 600, height: 1200)) == CGSize(width: 80, height: 160))
-        #expect(transcriptThumbnailSize(CGSize(width: 1, height: 1)) == CGSize(width: 1, height: 1))
-        #expect(transcriptThumbnailSize(.zero) == CGSize(width: 44, height: 44))
+        #expect(ChannelThumbnails.boxSize(fitting: CGSize(width: 1200, height: 600)) == CGSize(width: 240, height: 120))
+        #expect(ChannelThumbnails.boxSize(fitting: CGSize(width: 600, height: 1200)) == CGSize(width: 80, height: 160))
+        #expect(ChannelThumbnails.boxSize(fitting: CGSize(width: 1, height: 1)) == CGSize(width: 1, height: 1))
+        #expect(ChannelThumbnails.boxSize(fitting: .zero) == CGSize(width: 44, height: 44))
     }
 
     @Test func inlineImageSizesComeFromTheHeaderWithoutDecodingThePayload() throws {

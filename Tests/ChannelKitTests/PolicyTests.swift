@@ -16,14 +16,14 @@ struct PolicyTests {
         #expect(agentHandleFromName("ÅNGSTRÖM ﬁx") == "angstrom-fix")
         #expect(agentHandleFromName("日本 Team") == "team")
         #expect(agentHandleFromName(String(repeating: "x", count: 47) + " y") == String(repeating: "x", count: 47))
-        let mentions = extractAgentMentionHandles("dev@example.com and @ADA, (@finch) @ada @everyone")
+        let mentions = AgentMentions(parsing: "dev@example.com and @ADA, (@finch) @ada @everyone")
         #expect(mentions.handles == ["ada", "finch"])
         #expect(mentions.mentionAll)
-        #expect(extractAgentMentionHandles("name-@ada 9@finch").handles.isEmpty)
-        #expect(extractAgentMentionHandles("@Kit @İris").handles.isEmpty)
-        #expect(withoutLeadingMentions("@Ada, @Finch: Ship it", agents: [ada, finch]) == "Ship it")
-        #expect(withoutLeadingMentions("@Ada @unknown Ship it", agents: [ada]) == "@Ada @unknown Ship it")
-        #expect(withoutLeadingMentions("@Ada", agents: [ada]) == "@Ada")
+        #expect(AgentMentions(parsing: "name-@ada 9@finch").handles.isEmpty)
+        #expect(AgentMentions(parsing: "@\u{212A}it @\u{0130}ris").handles.isEmpty)
+        #expect(AgentMentions.removingLeadingMentions(from: "@Ada, @Finch: Ship it", agents: [ada, finch]) == "Ship it")
+        #expect(AgentMentions.removingLeadingMentions(from: "@Ada @unknown Ship it", agents: [ada]) == "@Ada @unknown Ship it")
+        #expect(AgentMentions.removingLeadingMentions(from: "@Ada", agents: [ada]) == "@Ada")
     }
 
     @Test func mentionCompletionIncludesEveryAgentForAnEmptyQuery() {
@@ -63,11 +63,11 @@ struct PolicyTests {
                                          ownerId: "ada", diff: .init(added: 3, removed: 1))]),
             ChannelTask(id: "zero", title: "Measure", status: "done", diff: .init(added: 0, removed: 0)),
         ]
-        #expect(channelTasksDiff(tasks) == .init(added: 7, removed: 3))
-        #expect(channelTasksDiff([]) == nil)
-        #expect(channelTasksDiff([tasks[1]]) == .init(added: 0, removed: 0))
-        #expect(channelTasksProgress(tasks) == .init(done: 1, total: 2))
-        #expect(unassignChannelTasks(tasks, agentId: "ada")[0].children?[0].ownerId == nil)
+        #expect(tasks.diff == .init(added: 7, removed: 3))
+        #expect(([] as [ChannelTask]).diff == nil)
+        #expect([tasks[1]].diff == .init(added: 0, removed: 0))
+        #expect(tasks.progress == .init(done: 1, total: 2))
+        #expect(tasks.unassigning(agentId: "ada")[0].children?[0].ownerId == nil)
     }
 
     @Test func trayProjectionUsesCanonicalOrderAndDirectRootProgressWithoutMutatingInputs() {
@@ -84,7 +84,7 @@ struct PolicyTests {
             ChannelTask(id: "done", title: "Done root", status: "done"),
         ]
         let preview = ChannelPreview(kind: "screen", screenId: "display-1")
-        let projection = ChannelTrayProjection(artifacts: artifacts, tasks: tasks, preview: preview)
+        let projection = ChannelTray(artifacts: artifacts, tasks: tasks, preview: preview)
         #expect(projection.artifacts == [artifacts[1], artifacts[0]])
         #expect(projection.taskProgress == .init(done: 1, total: 2))
         #expect(projection.hasTasks)
@@ -102,7 +102,7 @@ struct PolicyTests {
                 for preview in [nil, ChannelPreview(kind: "url", url: "https://example.com"),
                                 ChannelPreview(kind: "screen", screenId: "display-1"),
                                 ChannelPreview(kind: "future")] {
-                    let projection = ChannelTrayProjection(artifacts: artifacts, tasks: tasks, preview: preview)
+                    let projection = ChannelTray(artifacts: artifacts, tasks: tasks, preview: preview)
                     #expect(projection.isVisible == (!artifacts.isEmpty || !tasks.isEmpty || preview != nil))
                     #expect(projection.hasTasks == !tasks.isEmpty)
                     #expect(projection.preview == preview)
@@ -116,27 +116,27 @@ struct PolicyTests {
         let now = try #require(try? Date("2026-10-24T11:26:59Z", strategy: .iso8601))
         var task = ChannelTask(id: "task", title: "Task", status: "in_progress",
                                startedAt: "2026-10-24T10:00:00Z", checkInAt: "2026-10-24T11:57:00Z")
-        #expect(channelTaskTiming(task, now: now) == .init(elapsedMinutes: 86, checkInMinutes: 31))
-        #expect(channelTaskTiming(task, now: now.addingTimeInterval(1))
+        #expect(task.timing(now: now) == .init(elapsedMinutes: 86, checkInMinutes: 31))
+        #expect(task.timing(now: now.addingTimeInterval(1))
                 == .init(elapsedMinutes: 87, checkInMinutes: 30))
         task.checkInAt = "2026-10-24T11:26:59Z"
-        #expect(channelTaskTiming(task, now: now)?.checkInMinutes == 0)
+        #expect(task.timing(now: now)?.checkInMinutes == 0)
         task.checkInAt = "2026-10-24T11:00:00Z"
-        #expect(channelTaskTiming(task, now: now)?.checkInMinutes == 0)
+        #expect(task.timing(now: now)?.checkInMinutes == 0)
         for status in ["pending", "blocked", "done"] {
             task.status = status
-            #expect(channelTaskTiming(task, now: now) == .init(elapsedMinutes: 86))
+            #expect(task.timing(now: now) == .init(elapsedMinutes: 86))
         }
         task.status = "in_progress"
         task.checkInAt = "invalid"
-        #expect(channelTaskTiming(task, now: now) == .init(elapsedMinutes: 86))
+        #expect(task.timing(now: now) == .init(elapsedMinutes: 86))
         task.startedAt = "2026-10-24T12:00:00Z"
-        #expect(channelTaskTiming(task, now: now)?.elapsedMinutes == 0)
+        #expect(task.timing(now: now)?.elapsedMinutes == 0)
         task.startedAt = "invalid"
-        #expect(channelTaskTiming(task, now: now) == nil)
+        #expect(task.timing(now: now) == nil)
         task.checkInAt = "2026-10-24T12:00:00Z"
         task.startedAt = nil
-        #expect(channelTaskTiming(task, now: now) == nil)
+        #expect(task.timing(now: now) == nil)
     }
 
     @Test func artifactsAreNewestFirstWithStableTiesAndUndatedItemsLast() {
@@ -150,9 +150,9 @@ struct PolicyTests {
             artifact("same-time", sharedAt: "2026-10-24T09:00:00.000Z"),
             artifact("invalid", sharedAt: "not-a-date")
         ]
-        #expect(channelArtifactsNewestFirst(artifacts).map(\.id)
+        #expect(artifacts.newestFirst.map(\.id)
                 == ["newer", "same-time", "older", "undated", "invalid"])
-        #expect(channelArtifactsNewestFirst([]).isEmpty)
+        #expect(([] as [ChannelArtifact]).newestFirst.isEmpty)
     }
 
     @Test func artifactTiesStayInInputOrderAcrossSortRuns() {
@@ -167,7 +167,7 @@ struct PolicyTests {
         let newest = artifacts.filter { $0.sharedAt == timestamps[4] }
         let tied = artifacts.filter { $0.sharedAt == timestamps[2] || $0.sharedAt == timestamps[3] }
         let undated = artifacts.filter { $0.sharedAt == nil || $0.sharedAt == "invalid" }
-        #expect(channelArtifactsNewestFirst(artifacts) == newest + tied + undated)
+        #expect(artifacts.newestFirst == newest + tied + undated)
     }
 
     @Test func wireDatesAcceptOptionalFractionsAndOffsets() throws {

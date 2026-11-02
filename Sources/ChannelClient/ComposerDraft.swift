@@ -169,6 +169,10 @@ public final class ComposerDraft {
     public var isLoadingImages: Bool { loadingImageCount > 0 }
     public var isOverLimit: Bool { text.utf16.count > ChannelMessage.maxLength }
 
+    public nonisolated static func joined(_ existing: String, _ incoming: String) -> String {
+        [existing, incoming].filter { !$0.isEmpty }.joined(separator: "\n\n")
+    }
+
     public func isSendable(hasAdditionalContent: @autoclosure () -> Bool = false,
                            isLoadingAdditionalImages: @autoclosure () -> Bool = false) -> Bool {
         (hasContent || hasAdditionalContent()) && !(isLoadingImages || isLoadingAdditionalImages())
@@ -344,7 +348,7 @@ public final class ComposerDraft {
                     }.value
                     switch imported {
                     case .image(let image): append(image)
-                    case .path(let path): text = joinedComposerText(text, path)
+                    case .path(let path): text = Self.joined(text, path)
                     }
                 } catch {
                     failures.append("\(url.lastPathComponent): \(error.localizedDescription)")
@@ -446,7 +450,7 @@ public final class ComposerDraft {
 
     public func append(contentsOf other: ComposerDraft) {
         guard other !== self else { return }
-        text = joinedComposerText(text, other.text)
+        text = Self.joined(text, other.text)
         for image in other.images {
             var copy = image
             copy.id = UUID()
@@ -601,8 +605,4 @@ public final class ComposerDraft {
             }
         }
     }
-}
-
-public func joinedComposerText(_ existing: String, _ incoming: String) -> String {
-    [existing, incoming].filter { !$0.isEmpty }.joined(separator: "\n\n")
 }

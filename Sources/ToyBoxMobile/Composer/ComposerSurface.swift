@@ -23,7 +23,7 @@ struct ComposerSurface: View {
     @ViewState private var restoresFocus = false
     @ViewState private var dragging = false
     @ViewState private var highlightedChoice: String?
-    @ViewState private var dismissedCompletion: ChannelMentionContext?
+    @ViewState private var dismissedCompletion: AgentMentions.Query?
     @ViewState private var completionHeight: CGFloat = 264
     @ViewState private var completionViewportHeight: CGFloat = 0
 
@@ -47,13 +47,13 @@ struct ComposerSurface: View {
     private var canPresentRequestPreview: Bool {
         canRestoreReaderFocus && !isReaderCovered
     }
-    private var mentionContext: ChannelMentionContext? {
+    private var mentionContext: AgentMentions.Query? {
         guard editor.isFocused, !editor.hasMarkedText, !dictation.isSessionActive else { return nil }
         return .match(text: draft.text, selection: editor.selection)
     }
-    private var choices: [ChannelMentionChoice] {
+    private var choices: [AgentMentions.Choice] {
         guard let context = mentionContext, context != dismissedCompletion else { return [] }
-        return ChannelMentionChoice.choices(matching: context.query, among: store.roster)
+        return AgentMentions.Choice.choices(matching: context.text, among: store.roster)
     }
     private var hasNotices: Bool {
         draft.error != nil || composer.error != nil || store.attemptPersistenceError != nil
@@ -375,7 +375,7 @@ struct ComposerSurface: View {
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
     }
 
-    private func completionRow(_ choice: ChannelMentionChoice) -> some View {
+    private func completionRow(_ choice: AgentMentions.Choice) -> some View {
         Button { accept(choice) } label: {
             HStack(spacing: 10) {
                 if let agent = choice.agent { AgentAvatarView(agent: agent, size: 24) }
@@ -420,7 +420,7 @@ struct ComposerSurface: View {
         return true
     }
 
-    private func accept(_ choice: ChannelMentionChoice) {
+    private func accept(_ choice: AgentMentions.Choice) {
         guard let context = mentionContext else { return }
         if choice.isCreate {
             guard store.phase.isConnected else { return }

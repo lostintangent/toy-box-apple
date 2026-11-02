@@ -157,7 +157,7 @@ public final class TranscriptFind {
     public static func renderedText(_ message: ChannelMessage, agents: [ChannelAgent]) -> String {
         guard let system = message.system else {
             let body = message.sender.type == "agent"
-                ? withoutLeadingMentions(message.text, agents: agents) : message.text
+                ? AgentMentions.removingLeadingMentions(from: message.text, agents: agents) : message.text
             return TranscriptMarkdownText(MarkdownBlock.parse(body)).text
         }
         return system.rendered(agents: agents)

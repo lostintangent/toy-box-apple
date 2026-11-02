@@ -25,7 +25,7 @@ struct ArtifactViewer: View {
         _ = reader.imageRevision
         return reader.imageView != nil
     }
-    private var source: ChannelArtifactShare? {
+    private var source: ChannelArtifact.Share? {
         guard let artifact = session.artifact, let store = app.selectedStore,
               store.id == session.channelID, store.api.baseURL == session.server else { return nil }
         return store.artifactShares[artifact.file.id]

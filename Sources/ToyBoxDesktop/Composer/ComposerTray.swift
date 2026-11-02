@@ -17,8 +17,8 @@ struct ComposerTray: View {
     @ViewState private var artifactsChannel: ObjectIdentifier?
     @ViewState private var tasksChannel: ObjectIdentifier?
 
-    private var projection: ChannelTrayProjection {
-        ChannelTrayProjection(artifacts: store.artifacts, tasks: store.tasks, preview: store.details?.resolvedPreview)
+    private var projection: ChannelTray {
+        ChannelTray(artifacts: store.artifacts, tasks: store.tasks, preview: store.details?.resolvedPreview)
     }
     private var showArtifacts: Binding<Bool> { presented($artifactsChannel) }
     private var showTasks: Binding<Bool> { presented($tasksChannel) }
@@ -51,7 +51,7 @@ struct ComposerTray: View {
         }
     }
 
-    private func row(_ tray: ChannelTrayProjection) -> some View {
+    private func row(_ tray: ChannelTray) -> some View {
         let artifacts = tray.artifacts
         let progress = tray.taskProgress
         return HStack(spacing: 8) {
@@ -122,7 +122,7 @@ struct ComposerTray: View {
     }
 
     static func isVisible(artifacts: [ChannelArtifact], tasks: [ChannelTask], preview: ChannelPreview?) -> Bool {
-        ChannelTrayProjection(artifacts: artifacts, tasks: tasks, preview: preview).isVisible
+        ChannelTray(artifacts: artifacts, tasks: tasks, preview: preview).isVisible
     }
 
     private var artifactOverflow: some View {
@@ -205,7 +205,7 @@ struct ComposerTasksPopover: View {
     let onArtifactOpen: (ChannelArtifact) -> Void
 
     var body: some View {
-        let progress = channelTasksProgress(tasks)
+        let progress = tasks.progress
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Text("Tasks").font(.headline)

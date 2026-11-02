@@ -85,15 +85,15 @@ struct ManagementPolicyTests {
             .init(id: "h", title: "H", children: [.init(id: "i", title: "I", status: "in_progress")]),
             .init(id: "j", title: "J", status: "in_progress", children: [.init(id: "k", title: "K")]),
         ]
-        let roots = channelTasksHoldingWorkInProgress(tasks)
+        let roots = tasks.holdingWorkInProgress
         #expect(roots.map(\.id) == ["a", "h", "j"])
         #expect(roots[0] == tasks[0])
-        #expect(channelTasksDiff([roots[0]]) == .init(added: 6, removed: 1))
-        #expect(channelTasksHoldingWorkInProgress(roots[0].children ?? []).map(\.id) == ["b"])
-        #expect(channelTasksHoldingWorkInProgress(roots[0].children?[0].children ?? []).map(\.id) == ["c"])
-        #expect(channelTasksHoldingWorkInProgress(roots[1].children ?? []).map(\.id) == ["i"])
-        #expect(channelTasksHoldingWorkInProgress(roots[2].children ?? []).isEmpty)
+        #expect([roots[0]].diff == .init(added: 6, removed: 1))
+        #expect((roots[0].children ?? []).holdingWorkInProgress.map(\.id) == ["b"])
+        #expect((roots[0].children?[0].children ?? []).holdingWorkInProgress.map(\.id) == ["c"])
+        #expect((roots[1].children ?? []).holdingWorkInProgress.map(\.id) == ["i"])
+        #expect((roots[2].children ?? []).holdingWorkInProgress.isEmpty)
         #expect(roots[2].showsChildProgress)
-        #expect(channelTasksHoldingWorkInProgress([tasks[1]]).isEmpty)
+        #expect([tasks[1]].holdingWorkInProgress.isEmpty)
     }
 }

@@ -95,7 +95,7 @@ public final class ChannelStore {
     public private(set) var tasks: [ChannelTask] = []
     public private(set) var artifacts: [ChannelArtifact] = []
     /// Who shared each artifact and when, by file ID, from the loaded messages.
-    public private(set) var artifactShares: [String: ChannelArtifactShare] = [:]
+    public private(set) var artifactShares: [String: ChannelArtifact.Share] = [:]
     public private(set) var routines: [ChannelRoutine] = []
 
     /// Whether a snapshot has arrived, without observing anything that changes after it.
@@ -749,7 +749,7 @@ public final class ChannelStore {
         presence = state.presence
         if messages != state.messages {
             messages = state.messages
-            artifactShares = channelArtifactShares(state.messages)
+            artifactShares = ChannelArtifact.Share.shares(in: state.messages)
         }
         request = state.request
         requestSequence = state.channel.requestSequence

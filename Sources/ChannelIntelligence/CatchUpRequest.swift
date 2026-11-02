@@ -203,7 +203,7 @@ struct CatchUpDescriber: Sendable {
         if let system = message.system { return event(message.sequence, system) }
         guard message.sender.type == "agent" else { return nil }
 
-        let mentions = extractAgentMentionHandles(message.text)
+        let mentions = AgentMentions(parsing: message.text)
         let addressees = mentions.mentionAll ? ["everyone"]
             : mentions.handles.compactMap { handle in
                 agents.first { agentHandleFromName($0.name) == handle }?.name
@@ -276,7 +276,7 @@ extension String {
     /// mention reads as the agent's name, or "everyone" for nil, unless `mention` writes it another way.
     func plainProse(agents: [ChannelAgent],
                     mention: (ChannelAgent?) -> String = { $0?.name ?? "everyone" }) -> String {
-        var text = withoutLeadingMentions(self, agents: agents)
+        var text = AgentMentions.removingLeadingMentions(from: self, agents: agents)
         text = text.replacing(/```[\s\S]*?(```|$)/, with: " (code) ")
         text = text.replacing(/!\[([^\]]*)\]\([^)]*\)/, with: { $0.1.isEmpty ? "" : " (image: \($0.1)) " })
         text = text.replacing(/\[([^\]]+)\]\([^)]*\)/, with: { String($0.1) })

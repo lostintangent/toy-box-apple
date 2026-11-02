@@ -13,7 +13,7 @@ package enum ChannelArtifactSymbol {
 }
 
 package enum ChannelOverviewSummary {
-    case team(Int?), tasks(TaskProgress?), artifacts(Int?), routines(Int?)
+    case team(Int?), tasks(ChannelTask.Progress?), artifacts(Int?), routines(Int?)
 
     package var title: String {
         switch self {
@@ -295,13 +295,13 @@ package struct ChannelOverviewTaskDiff: View {
 }
 
 package struct ChannelOverviewTaskMetadata: View {
-    package let timing: ChannelTaskTiming?
+    package let timing: ChannelTask.Timing?
     package let diff: DiffStats?
     package let stacksLeading: Bool
     @Environment(\.colorScheme) private var scheme
     @Environment(\.layoutDirection) private var direction
 
-    package init(timing: ChannelTaskTiming?, diff: DiffStats?, stacksLeading: Bool = false) {
+    package init(timing: ChannelTask.Timing?, diff: DiffStats?, stacksLeading: Bool = false) {
         self.timing = timing
         self.diff = diff
         self.stacksLeading = stacksLeading

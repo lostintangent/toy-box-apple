@@ -4,7 +4,7 @@ import Foundation
 extension TranscriptDivider {
     /// What VoiceOver reads for the divider: its day, then whether new messages start here.
     public func accessibilityLabel(now: Date = .now) -> String {
-        [day.map { transcriptDayLabel($0, now: now) }, unread ? "New messages" : nil]
+        [day.map { TranscriptDivider.dayLabel(for: $0, now: now) }, unread ? "New messages" : nil]
             .compactMap { $0 }.joined(separator: ", ")
     }
 }
