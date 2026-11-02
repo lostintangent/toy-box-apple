@@ -9,7 +9,7 @@ import UniformTypeIdentifiers
 import VisionKit
 
 /// Which message's images the gallery shows. Shell keeps one per channel and shows
-/// `TranscriptImageGallery` over the conversation while `session` is set.
+/// `TranscriptGalleryView` over the conversation while `session` is set.
 @MainActor @Observable
 final class TranscriptGallery {
     struct Session: Identifiable {
@@ -142,7 +142,7 @@ struct TranscriptGalleryShareItem: Transferable {
     }
 }
 
-struct TranscriptImageGallery: View {
+struct TranscriptGalleryView: View {
     let gallery: TranscriptGallery
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.accessibilityReduceMotion) private var reduceMotion

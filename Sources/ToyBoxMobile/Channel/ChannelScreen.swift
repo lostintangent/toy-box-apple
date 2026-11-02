@@ -51,7 +51,7 @@ struct ChannelScreen: View {
                 if artifacts.isPresented {
                     ArtifactViewer(session: artifacts)
                 } else {
-                    TranscriptImageGallery(gallery: gallery)
+                    TranscriptGalleryView(gallery: gallery)
                 }
             }
         }
