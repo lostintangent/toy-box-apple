@@ -47,13 +47,13 @@ struct ComposerSurface: View {
     private var canPresentRequestPreview: Bool {
         canRestoreReaderFocus && !isReaderCovered
     }
-    private var mentionContext: AgentMentions.Query? {
+    private var mentionQuery: AgentMentions.Query? {
         guard editor.isFocused, !editor.hasMarkedText, !dictation.isSessionActive else { return nil }
         return .match(text: draft.text, selection: editor.selection)
     }
     private var choices: [AgentMentions.Choice] {
-        guard let context = mentionContext, context != dismissedCompletion else { return [] }
-        return AgentMentions.Choice.choices(matching: context.text, among: store.roster)
+        guard let query = mentionQuery, query != dismissedCompletion else { return [] }
+        return AgentMentions.Choice.choices(matching: query.text, among: store.roster)
     }
     private var hasNotices: Bool {
         draft.error != nil || composer.error != nil || store.attemptPersistenceError != nil
@@ -111,7 +111,7 @@ struct ComposerSurface: View {
         .onChange(of: interaction.isRequestPreviewPresented) { _, covered in
             if !covered { restoreFocus() }
         }
-        .onChange(of: mentionContext) { _, _ in
+        .onChange(of: mentionQuery) { _, _ in
             dismissedCompletion = nil
             highlightedChoice = choices.first?.id
         }
@@ -415,20 +415,20 @@ struct ComposerSurface: View {
         case .previous: highlightedChoice = choices[max(0, index - 1)].id
         case .next: highlightedChoice = choices[min(choices.count - 1, index + 1)].id
         case .accept: accept(choices[index])
-        case .dismiss: dismissedCompletion = mentionContext
+        case .dismiss: dismissedCompletion = mentionQuery
         }
         return true
     }
 
     private func accept(_ choice: AgentMentions.Choice) {
-        guard let context = mentionContext else { return }
+        guard let query = mentionQuery else { return }
         if choice.isCreate {
             guard store.phase.isConnected else { return }
-            dismissedCompletion = context
+            dismissedCompletion = query
             preparePresentation()
             management.present(.addMember(channelId: store.id, name: choice.name))
         } else {
-            editor.replace(context.range, with: "\(choice.handle) ")
+            editor.replace(query.range, with: "\(choice.handle) ")
         }
     }
 

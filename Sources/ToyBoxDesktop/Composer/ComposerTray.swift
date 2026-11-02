@@ -17,7 +17,7 @@ struct ComposerTray: View {
     @ViewState private var artifactsChannel: ObjectIdentifier?
     @ViewState private var tasksChannel: ObjectIdentifier?
 
-    private var projection: ChannelTray {
+    private var tray: ChannelTray {
         ChannelTray(artifacts: store.artifacts, tasks: store.tasks, preview: store.details?.resolvedPreview)
     }
     private var showArtifacts: Binding<Bool> { presented($artifactsChannel) }
@@ -37,7 +37,7 @@ struct ComposerTray: View {
     }
 
     var body: some View {
-        let tray = projection
+        let tray = self.tray
         VStack(spacing: 0) {
             if tray.isVisible {
                 row(tray)
@@ -127,7 +127,7 @@ struct ComposerTray: View {
 
     private var artifactOverflow: some View {
         Menu {
-            ForEach(projection.artifacts) { artifact in
+            ForEach(tray.artifacts) { artifact in
                 Button(artifact.title) { artifactOpener.open(artifact) }
             }
         } label: {
@@ -140,7 +140,7 @@ struct ComposerTray: View {
     }
 
     private var artifactList: some View {
-        let artifacts = projection.artifacts
+        let artifacts = tray.artifacts
         return VStack(alignment: .leading, spacing: 12) {
             Text("Artifacts").font(.headline)
             ScrollView {

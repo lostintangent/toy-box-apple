@@ -458,10 +458,10 @@ struct NativeComposerInput: NSViewRepresentable {
                 dismissCompletion()
                 return
             }
-            guard let context = AgentMentions.Query.match(text: input.string, selection: input.selectedRange())
+            guard let query = AgentMentions.Query.match(text: input.string, selection: input.selectedRange())
             else { dismissCompletion(); return }
-            mentionRange = context.range
-            let items = AgentMentions.Choice.choices(matching: context.text, among: parent.agents,
+            mentionRange = query.range
+            let items = AgentMentions.Choice.choices(matching: query.text, among: parent.agents,
                                                      allowsCreation: parent.agentManagement.isVisible)
             guard !items.isEmpty else { dismissCompletion(); return }
             if completion.items.map(\.id) != items.map(\.id) { completion.selected = 0 }
