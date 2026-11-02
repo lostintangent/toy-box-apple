@@ -5,11 +5,12 @@ shared core in Swift 6.4 and SwiftPM, with no Xcode project. Both target the 27 
 Silicon and talk to Toy Box's public `/api/v1` HTTP and SSE routes.
 
 [docs/spec.md](docs/spec.md) is the source of truth for parity, protocol and design. Read its
-Design section before changing any view.
+Design section, and your surface's section under Surfaces, before changing any view.
 
 | Read | Before |
 | --- | --- |
-| [docs/spec.md](docs/spec.md) | Changing behavior, protocol, design or release tooling |
+| [docs/spec.md](docs/spec.md) | Changing behavior, protocol or design |
+| [docs/releases.md](docs/releases.md) | Changing signing, updates, TestFlight or release tooling |
 | [docs/development.md](docs/development.md) | Opt-in tests, benchmarks, the simulator, drive scripts, validation builds or bundle contents |
 | [scripts/README.md](scripts/README.md) | Running or changing a command |
 | [docs/quarantined-tests.md](docs/quarantined-tests.md) | Touching a quarantined test |
@@ -194,8 +195,8 @@ every build its own scratch path, so parallel builds never share `.build`.
 
 - **Tags need the user's approval.** `vX.Y.Z` ships the Mac to GitHub Releases, and
   `mobile-vX.Y.Z` ships the phone to TestFlight. A manual workflow run on `main` is a dry run.
-  Signing, notarization, updates and TestFlight are in the spec's
-  [Releases](docs/spec.md#releases).
+  Signing, notarization, updates and TestFlight are in
+  [docs/releases.md](docs/releases.md).
 - **Release notes are written at merge time.** The merge that lands a user-facing change adds its
   bullet to that platform's next unreleased `## Mac X.Y.Z` or `## iPhone X.Y.Z` entry in
   `CHANGELOG.md`, creating the entry if the newest one has shipped. A release is then only a tag.

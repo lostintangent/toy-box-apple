@@ -1,9 +1,11 @@
-# Toy Box for Mac: spec
+# Toy Box for Apple: spec
 
-Toy Box is a native macOS client for Toy Box Channels. It gives the user the full Channel
-pane experience (transcript, composer, overview) in an app that feels first-party on macOS. The
-Toy Box server keeps owning Channels, agents, sessions and durable work. This app is a
-presentation and input surface over Toy Box's public Channel protocol, the `/api/v1` HTTP and SSE routes.
+Toy Box for Apple is two native clients for Toy Box Channels: a macOS app and an iPhone companion,
+including iPhone Duo folded and unfolded. Each gives the user the full Channel pane experience
+(transcript, composer, overview) in an app that feels first-party on its platform, with the same
+scope tailored to each. The Toy Box server keeps owning Channels, agents, sessions and durable work.
+Both apps are presentation and input surfaces over Toy Box's public Channel protocol, the
+`/api/v1` HTTP and SSE routes.
 
 Reference sources (read-only):
 
@@ -11,17 +13,35 @@ Reference sources (read-only):
 - Contract fixtures: `Tests/Shared/ChannelKitTests/Fixtures`. The demo servers read the same
   `channel-snapshot.json`.
 
+Signing, notarization, in-place updates and TestFlight are in [releases.md](releases.md).
+
 ## Success criteria
 
-1. **Same protocol.** Listing, observing, paging, posting and reading use only the public `/api/v1`
-   routes. No private TanStack server functions, no database access, and no parallel schema.
+1. **Same protocol.** The Mac app and the iPhone companion speak the same protocol. Listing,
+   observing, paging, posting and reading use only the public `/api/v1` routes. No private
+   TanStack server functions, no database access, and no parallel schema.
 2. **Faithful state.** A Swift port of `reduceChannelState` produces the same state as Toy Box. Tests
    prove it against the snapshot and transition fixtures.
-3. **Pane parity.** Every capability in the parity checklist below works, or is explicitly excluded
-   here with a reason.
-4. **Idiomatic macOS.** This should read as an Apple-quality app, not a web view: native split view,
-   sidebar, toolbar, inspector, menus, keyboard shortcuts, Settings, Dock badge and notifications,
-   with correct behavior in light and dark mode, at any window size, and with accessibility.
+3. **Pane parity.** Every capability of the pane works, as the surface sections under Surfaces
+   describe, or is explicitly excluded here with a reason. The iPhone companion offers the same
+   scope tailored to the phone, and each surface section states where the phone differs.
+4. **Idiomatic on each platform.** Each app should read as an Apple-quality app, not a web view,
+   with correct behavior in light and dark mode, at any window or scene size, and with
+   accessibility. On the Mac that means native split view, sidebar, toolbar, inspector, menus,
+   keyboard shortcuts, Settings, Dock badge and notifications. On iPhone it means the platform's
+   own navigation, sheets, toolbars and controls, in layouts that adapt to the scene the system
+   provides. The Mac's idioms are:
+   - `NavigationSplitView` with a source-list sidebar, the transcript in the content column, and the
+     overview as an `.inspector`
+   - Toolbar: channel title and purpose subtitle, presence summary, a view-filter menu, the inspector
+     toggle, and Open in Toy Box
+   - Menu commands and shortcuts: next and previous channel, next unread, toggle inspector, focus the
+     composer, jump to the request, refresh, and open the channel in a new window
+   - A Settings scene for the server URL (default `http://localhost:3000`, the port the `toy-box` CLI
+     serves) and connection test
+   - A Dock badge counting channels that need attention, plus user notifications for requests and
+     completions in channels that aren't currently focused
+   - Multiple windows, state restoration, and accent color and vibrancy that respect system settings
 5. **Resilient.** It resumes from the applied revision after a disconnect, falls back to a snapshot,
    visibly marks stale state, never auto-retries a send, and handles channel deletion cleanly.
 6. **Verified.** Unit tests cover the model, reducer, transcript rows and audience policy. The running
@@ -144,254 +164,11 @@ couldn't be opened is Handoff's `missing`.
 - **Holders:** `ChannelConnections` counts who holds each store through `hold` and `release`. The
   last release lingers as State describes, and `disconnectAll` serves a server change.
 
-## Releases
-
-Releases are Developer ID signed, notarized and stapled, then published with their SHA-256 checksum
-and Sparkle appcast by `.github/workflows/build-and-release.yml` on an approved `vX.Y.Z` tag.
-A manual run on `main` performs the same signing, notarization and appcast generation but keeps them
-as artifacts, without publishing.
-Local builds use Command Line Tools. CI uses its selected Xcode 27 toolchain on the `xcode-27` runner.
-Checks run for pull requests and pushes to `main`, not standalone branch pushes. A newer revision
-cancels unfinished checks for the same pull request or ref. Release tags and manual dry runs retain
-their serialized, non-cancellable publication group. Tooling typechecking and workflow linting run
-on Linux. Native bundling, Siri metadata and signing checks run in the Mac release job.
-The Mac gate emits unbuffered test progress. Its twelve-minute watchdog samples only its own
-SwiftPM and XCTest descendants, prints their stacks and uploads diagnostics before failing.
-The job's twenty-minute limit remains unchanged. It runs ChannelClient with
-`LIBDISPATCH_COOPERATIVE_POOL_STRICT=1` before the full suite, so test gates must suspend rather than
-block a cooperative worker.
-The iOS gate stops a suite that prints nothing for three minutes, well inside its 25-minute job. It
-prints the call graph of that suite's own `xctest` process and the suites and tests that started
-without finishing, then ends the process before the simulator shuts down. It never retries.
-
-Every normal bundle embeds `Contents/PlugIns/ToyBoxDesktopShare.appex`, a SwiftPM executable linked with
-`_NSExtensionMain` for `com.apple.share-services`. Its activation rules accept text, URLs, images
-and files. It performs no networking and presents no editor. It loads the explicit items into a
-uniquely named `dev.toybox.desktop.share.<UUID>` pasteboard, then opens
-`toybox-desktop://quick-send?pasteboard=<name>`. Quick Send imports and clears that pasteboard,
-preserving drafts and requiring an explicit send. Image bytes are loaded before the extension
-completes so a provider's temporary URL cannot expire underneath the host.
-Only in-place non-image files are passed as paths. Temporary/provider-only non-image files and
-sandbox-container paths are rejected explicitly, rather than giving an agent an expired or
-inaccessible path. This release does not upload arbitrary files.
-
-The extension has only App Sandbox, with hardened runtime and a secure timestamp in releases.
-Its ID is the containing app's ID plus `.share`, and its version and build match the app.
-Inside-out signing verifies the extension before signing the container, without `--deep`.
-Validation checks its architecture, SDK stamp, extension point, metadata, signature and entitlements.
-Isolated validation/benchmark bundles and snapshots remove Share, Services, URL-scheme and document
-registrations so they cannot take over the user's integrations.
-
-The app's bundle identity is `dev.toybox.desktop`. Agent validation uses `dev.toybox.desktop.test`,
-and the benchmark uses `dev.toybox.desktop.benchmark`, keeping their preferences and permissions
-isolated from the user's app.
-
-Only the certificate owner runs the one-time setup:
-
-```sh
-bun run setup-secrets SHA1 APPLE_ID TEAM_ID
-```
-
-It uses an Apple ID and an app-specific password from account.apple.com. Its silent prompt reads
-the password without echoing or logging it, and accepts piped stdin with or without a trailing
-newline. Never pass the password as a script argument. The command optionally accepts `OWNER/REPO`
-as the final argument and configures the local
-`toy-box-channels-notary` keychain profile plus GitHub's `MACOS_SIGNING_CERTIFICATE`,
-`MACOS_SIGNING_PASSWORD` and `NOTARY_APP_PASSWORD` secrets, plus the Sparkle archive-signing key
-described below. Setup exports only the pinned
-certificate's identity into a temporary encrypted file, then removes it on exit.
-
-Setup writes the selected public certificate SHA-1 to `MACOS_SIGNING_IDENTITY`; the workflow reads
-that variable, not a hard-coded fingerprint. Apple ID (`joncart@outlook.com`) and Team ID
-(`RHFNBL7EG4`) remain public account settings. Setup also exports the verified public issuer chain
-to `MACOS_SIGNING_CERTIFICATE_CHAIN`, alongside the encrypted identity, allowing issuer renewal
-through setup without a workflow edit. CI stores the notarization login in a temporary keychain
-profile. Missing or rejected credentials fail the release explicitly.
-
-Agents never run setup with real credentials or read signing keys and passwords.
-For a local release, set `SIGNING_IDENTITY=SHA1`,
-`BUILD_NUMBER=N` and `NOTARY_PROFILE=toy-box-channels-notary` when invoking `bun run release vX.Y.Z`.
-Without a notary profile, the archive is named `SIGNED-UNNOTARIZED` and is never published.
-The release script uses Bun's native JSON parser for notarization responses and requires a
-string status before accepting one.
-
-### In-place updates
-
-Sparkle 2.10.0 is an exact SwiftPM dependency of the app target. Every bundle includes the framework,
-`Autoupdate` installer and `Updater.app`, thinned to arm64, with symlinks and license notices
-preserved. Headers, modules and sandbox-only XPC services are omitted. The framework adds about
-1.3 MB installed, or 0.5 MB compressed. Signing proceeds from installer to updater to framework to
-app, verifying each component strictly and never using `--deep`. Developer ID releases use hardened
-runtime and secure timestamps throughout. Ad-hoc development signing does not enable hardened
-runtime, because library validation cannot match Team IDs between ad-hoc-signed binaries.
-
-Only `bun run release` adds the production `SUFeedURL` and `SUPublicEDKey`. The stable feed is
-`https://github.com/lostintangent/toy-box-apple/releases/latest/download/appcast.xml`, and every
-enclosure points at that version's GitHub release asset URL. Development, validation,
-snapshot and test bundles have no feed or verification key and never start an updater. Release
-bundles enable automatic checking without Sparkle's permission prompt, but leave automatic
-installation off by default. Both choices remain user-configurable through Sparkle.
-
-The same `bun run setup-secrets` command makes Sparkle generate or reuse the
-app-specific `dev.toybox.desktop` Keychain account, without touching its global default key.
-Setup uploads the exported key as `SPARKLE_ED_PRIVATE_KEY`, configures `SPARKLE_ED_PUBLIC_KEY` as a
-public repository variable, and removes the temporary export. The archive key is independent of
-Apple, but disposable: a new Mac creates a replacement if the old Keychain account is unavailable.
-Sparkle authorizes that replacement when the update satisfies the installed app's Developer ID
-signing requirement and its archive matches the new embedded key. Keep the bundle ID and Apple
-team unchanged. Agents never run this setup with real credentials or read that key.
-
-The user completed the one-time identity and unshipped update-key rotation before v0.1.1.
-The active Sparkle Keychain account is `dev.toybox.desktop`. The Developer ID certificate and
-Apple ID app-specific password are unchanged. The renamed app needs new macOS notification
-and microphone grants, and Computer Use needs approval for `dev.toybox.desktop.test`.
-
-After notarization and stapling, the workflow's `scripts/desktop/release/appcast.ts` helper uses Sparkle's checksum-pinned tools to
-sign the finished archive with Ed25519. It reads the private key on stdin from
-`SPARKLE_ED_PRIVATE_KEY`, or from an explicit `SPARKLE_ED_KEY_FILE` in isolated tests, and never
-from the default Keychain. The archive signature, length, URL,
-machine and human-readable versions, and minimum macOS version are checked before publishing.
-The archive signature is verified with `sign_update`. The feed and release notes are not separately
-signed, and `SUVerifyUpdateBeforeExtraction` / `SURequireSignedFeed` stay absent. This trades the
-extra pre-extraction/feed checks for normal Sparkle key rotation through Apple code signing.
-The matching `## Mac X.Y.Z` changelog entry supplies
-both Sparkle and GitHub Release notes. There is no tag-annotation or commit-message fallback.
-Deltas are intentionally omitted
-for these small apps.
-Both the feed and zip are attached to every release and retained by dry runs.
-
-`CFBundleVersion` is `github.run_number.github.run_attempt`. Release workflows are serialized, and
-the new numeric build must exceed every version in the latest published appcast. Missing or
-malformed prior metadata fails the release instead of allowing a downgrade. The first Sparkle
-release bootstraps from 0.1.0, which has no feed and must be upgraded manually. Local releases can
-set `PREVIOUS_APPCAST` to apply the same monotonicity guard.
-
-Tooling is grouped by platform under `scripts/desktop/` and `scripts/mobile/`. Each contains
-one-time `setup-secrets.ts`, Swift `test.ts`, `bundle/` for building and signing, `dogfood/` for
-running and measuring development builds, and release tooling. Commands with helpers use their
-folder's `index.ts`. Mac distribution uses `desktop/release/index.ts`; the phone's standalone
-TestFlight command is `mobile/release.ts`. The phone's `dogfood/boot.ts` owns simulator preparation,
-`drive.ts` runs scripted taps and captures, and `drives/` contains those scripts.
-Mirrored filenames across platforms are intentional, with no ambiguous duplicates within a platform.
-
-`scripts/demo-server/` serves sample channels for either app's development, screenshots and
-write tests without touching real channels. Its `channels/` helpers supply the sample content
-and push routes. Common commands live in `scripts/shared/`, with helpers in `lib/`.
-[scripts/README.md](../scripts/README.md) lists every package command, its file, purpose and operator.
-Platform folders never import each other. CI calls release-only helpers by path rather than exposing
-unused package commands.
-
-Script tests and their fake-command harness are omitted. CI keeps `bun check` and
-`bun run lint:workflows`. Any change to bundle or release tooling requires both real release
-dry runs to pass. Bun 1.4.4 is pinned in the package metadata and CI, and setup-bun is commit-pinned
-on both runner platforms. Scripts use TypeScript, Bun Shell and native file and XML APIs.
-The sole `.sh` helper uses Bash's silent `read -rs` for the
-user-only credential prompt. Native Swift helpers retain Security-framework identity export and
-AppKit icon rendering. Local builds remain Command Line Tools only.
-
-### iPhone TestFlight
-
-`bun run testflight` is independent of the Mac release. It builds optimized arm64 with
-the selected Xcode 27+ iPhoneOS SDK through SwiftPM, without an Xcode project or Simulator.
-`--version X.Y.Z` / `MOBILE_VERSION` sets the marketing version. `--build-number N` / `BUILD_NUMBER`
-sets the build and is required for validate/upload. Choose an unused number; App Store Connect
-rejects reused numbers, including uploads from other machines. Build-only may use the source
-plist's build. There is no local counter or TestFlight lease; use your own scratch path.
-
-The user supplies an Apple Distribution identity and four explicit, unexpired App Store Connect
-profiles through the `MOBILE_PROVISIONING_PROFILE`, `MOBILE_WIDGET_PROVISIONING_PROFILE`,
-`MOBILE_NOTIFICATION_PROVISIONING_PROFILE` and `MOBILE_SHARE_PROVISIONING_PROFILE` selectors.
-They must share a team/certificate, grant
-the App Group capability, and grant production Push on
-the host. Development, ad-hoc, enterprise and wildcard profiles are rejected. Extensions embed
-their own profiles and sign before the host, whose actual signed entitlements are verified.
-There is no `get-task-allow`, bundled server address, DEBUG driver or proof fixture. First launch
-asks the tester for a server.
-
-The phone selects its server from `--server`, then `TOY_BOX_SERVER_URL`, then saved Settings,
-in that order. Launch overrides are session-only and never overwrite saved Settings. With none
-configured, it shows Connect to Toy Box. There is no bundle fallback.
-
-Every component declares the `arm64` required device capability and has the same version/build,
-`ITSAppUsesNonExemptEncryption=false` and real Xcode,
-SDK, platform and build-machine metadata. The privacy manifests declare host-local UserDefaults
-(`CA92.1`), cache file timestamps (`C617.1`) and elapsed animation timing (`35F9.1`); the three
-extensions declare only the timing API present in their linked shared presentation code.
-App Group state uses files, not shared UserDefaults. No disk-space API is used. See Apple's
-[required-reason policy](https://developer.apple.com/documentation/bundleresources/describing-use-of-required-reason-api).
-
-`APP_STORE_CONNECT_USERNAME` and numeric `APP_STORE_CONNECT_APP_ID` identify the account/app.
-Apple tools use only `@env:NOTARY_APP_PASSWORD`, locally and in CI. The user supplies the
-app-specific password. After setting the account/app identifiers, a local validation from the
-repo root prompts silently and passes only an environment reference to Apple's tool:
-
-```sh
-NOTARY_APP_PASSWORD="$(bash scripts/shared/lib/read-password.sh 'App-specific password: ')" bun run testflight --validate-only --build-number N
-```
-
-Omit `--validate-only` to upload. No password is passed as a shell argument or stored by the
-release tools. Apple's tool performs authentication. Agents never create accounts, profiles or credentials,
-accept agreements, read keys/passwords or run real credential setup.
-
-The IPA contains `Payload/Toy Box.app`. `altool --validate-app` must pass before upload.
-`--validate-only` signs/packages and validates without uploading; `--build-only` creates an
-unsigned App Store-form bundle without profiles or credentials. `altool --upload-package` succeeds
-when its command exits zero. Print its output unchanged, without assuming it is one JSON document.
-Do not pass `--wait` or poll for processing. Upload acceptance and Apple processing are separate:
-finish with "Uploaded. Apple is processing it, and TestFlight shows it when that's done."
-A failed or interrupted command must not trigger another upload before checking App Store Connect.
-Keep the signed IPA and notes even if delivery fails. Upload success does not claim that a tester
-group has access.
-
-After local qualification, `.github/workflows/mobile-release.yml` handles only `mobile-vX.Y.Z` tags,
-independently of the Mac's unchanged `vX.Y.Z` release line. Both require one nonempty matching
-`## Mac X.Y.Z` / `## iPhone X.Y.Z` entry in root `CHANGELOG.md` before release building or credential
-access. `MOBILE_VERSION` must match the phone tag. The mobile workflow serializes its own publishes,
-uses Xcode 27's device SDK without a Simulator and calls the same `testflight` command.
-Manual dispatch on `main` adds `--validate-only`, so it never uploads. CI uses
-`github.run_number.github.run_attempt`; use build `1` for the first local upload so it precedes the
-first CI build `1.1`.
-
-The user runs `bun run setup-secrets:mobile SHA1 APP_STORE_CONNECT_APP_ID [OWNER/REPO]`.
-The shared signing selector validates the four App Store profiles and chosen Apple Distribution
-identity before export. The setup generates a random export encryption password, which is not the
-Apple Account password, and stores it as the `MOBILE_SIGNING_PASSWORD` secret. Six secrets hold the
-encrypted certificate, its password and the four profiles. Public variables hold the certificate
-fingerprint, verified issuer chain and numeric app ID. The existing `NOTARY_APP_PASSWORD` is reused
-for uploads without reading or replacing it during setup.
-Temporary export files are removed even on a failed secret upload.
-
-The mobile job imports its identity and exported verified issuer chain into an isolated
-temporary keychain and uses profile files only under the runner's temporary directory. Cleanup
-restores the original keychain search list and removes signing material, including failures.
-No iPhone GitHub Release is created, so the Mac's latest-release feed remains untouched.
-The iPhone changelog entry is retained as a workflow summary/artifact. Apple's documented per-build
-notes endpoint uses API-key authentication; the installed `altool --beta-app-store-text` exposes
-marketing-version metadata but no verified per-build password path. “What to Test” remains manual
-until that path is proven. No API key is required or read by the release tools.
-
-### Recovery without laptop-held backups
-
-Actions holds the working signing material, so publishing does not use this Mac. If the laptop or
-repository secrets are lost, sign in to the same Apple account/team on another Mac, make new
-Developer ID and Apple Distribution certificates and matching App Store profiles, then rerun
-`setup-secrets` and `setup-secrets:mobile`. They update
-their public fingerprint/issuer-chain variables and encrypted identity exports. No workflow edit
-or private-key backup is required. Apple account access and the app/team identities must be retained.
-
-The Mac setup also recreates the Sparkle key when its Keychain account is unavailable. Sparkle 2.10's normal update
-validator allows that rotation through the installed app's Apple signing requirement, while still
-requiring the new archive signature to match its embedded public key. Current v0.1.8 installs have
-the stricter feed/pre-extraction policy and need a one-time manual installation of this replacement.
-No actual key rotation or credential setup is performed by agents.
-
-The current Developer ID certificate expires February 1, 2027. Renew it and rerun setup before then.
-
-## Protocol (v1)
+## Protocol
 
 | Request | Use |
 | --- | --- |
-| `GET /api/v1/channels` | Catalog `{version, channels, members, lead, working}` for the sidebar. `lead` is the profile every channel's lead shares, under the channel's ID, and is always present. `working` lists running agent IDs (added for this app) |
+| `GET /api/v1/channels` | Catalog `{version, channels, members, lead, working}` for the sidebar. `lead` is the profile every channel's lead shares, under the channel's ID, and is always present. `working` lists running agent IDs |
 | `GET /api/v1/channels/:id` (SSE) | `snapshot`, then live events. With `after`: replay, then `resumed` with full presence. The store holds the replay and publishes it with `resumed` as one change, so a reopened channel never redraws what it missed event by event. A drop mid-replay publishes nothing, and the retry asks again after the published revision. `presence` is sparse and merges. `deleted` is terminal |
 | `GET /api/v1/channels/:id/messages?before=N` | Older page of up to 100 messages `{version, revision, messages}` |
 | `POST /api/v1/channels/:id/messages` | `{id, content, attachments?}` with a client UUID. 201 returns the message. 409 means a duplicate. Never auto-retry |
@@ -402,9 +179,9 @@ not Channels:
 
 | Request | Use |
 | --- | --- |
-| `GET /api/v1/models` | `{version, models, defaultModel}` for model pickers. Its URL, fields, version, status and cache headers are unchanged by the move to Providers, so no decoder migration is needed. A server process started before the move can still return 404 here until it restarts. Treat that as "models unavailable", never as a reason to invent a model |
+| `GET /api/v1/models` | `{version, models, defaultModel}` for model pickers. A server process started before the move to Providers can still return 404 here until it restarts. Treat that as "models unavailable", never as a reason to invent a model |
 
-Management routes (added to Toy Box for this app, documented in its Channels `AGENTS.md`):
+Management routes (documented in Toy Box's Channels `AGENTS.md`):
 
 | Request | Use |
 | --- | --- |
@@ -433,7 +210,7 @@ Attachments are `{name, url}` or inline `{mimeType, base64}`. Avatars are SVG pa
 own profiles set. The server serves the lead's profile in snapshots and the catalog, and the app
 keeps no copy of it.
 
-### Mobile push and topic subscriptions (Release 2)
+### Push and topic subscriptions
 
 The phone icon badge counts channels with an open request, using the same
 `channel.attention == .waiting` predicate as the widget. Each successful app catalog refresh
@@ -443,7 +220,7 @@ for notification authorization reads or request-history loading. The in-app Allo
 choice gates the badge independently of authorization: turning it off immediately clears the
 badge, and catalog refreshes keep it at zero while off.
 
-The shared client and the 3210 demo implement these additions. The shipping server uses the same
+The shared client and the 3210 demo implement these routes. The shipping server uses the same
 contract before device push proof. Writes make one attempt and return no response body. Registration
 PUT returns 201 when created and 204 when updated. Subscription writes and deletes return 204.
 
@@ -560,185 +337,6 @@ on a server change, and shares the Mac's 30-minute freshness and `NeedsYouSnapsh
 Offline-only writes keep the cached observation time, never heartbeat, and write and reload only
 when visible content changes. Live writes rewrite an unchanged snapshot every 15 minutes.
 
-## Parity checklist
-
-### Sidebar (channel list)
-
-- [ ] Channels from the catalog, ordered like the browser and showing the lead and member avatars
-- [ ] Each row shows last activity (`updatedAt`) and the working directory as a folder, with a way
-      to open it, like the browser's location badge and Browse action
-- [ ] Attention, in priority order: waiting for your reply (always shown, even when the channel is
-      open), then all tasks completed (unread), then unread messages. Completion and unread are
-      suppressed while the channel is open
-- [ ] Live activity indicator while any agent is working (open channels use presence)
-
-### Transcript
-
-- [ ] Rows follow `transcriptRows`: user messages stand alone, consecutive agent messages form a run,
-      and matching system messages merge. Each run message carries its addressee, its body without
-      the leading mentions, its request state, whether it repeats the header, and whether it collapses
-- [ ] Day dividers and the blue "New" unread divider, combined into one rule when they coincide. The
-      unread boundary is captured on arrival and stays put while the user reads
-- [ ] Markdown bodies with code, lists, links and tables, with mentions styled as agent references
-- [ ] Attachments: inline images and video, and named files that open externally or in Quick Look
-- [ ] Reactions (done, agree, celebrate, love, laugh) with their reactors
-- [ ] System messages for every kind (tasks completed, member joined or left, renamed, purpose,
-      directory, preview, artifact shared, routine scheduled, edited or deleted), each with its icon,
-      text and tooltip
-- [ ] The request marker on a flagged question until a later user message acknowledges it
-- [ ] Working agents row showing who is working right now
-- [ ] View filter: all messages, or only the user's own plus agent messages that never collapse
-- [ ] Landing on the first unread row or the end, following the user's own post, and paging older
-      history while scrolled to the top
-- [ ] Reading advances `read` as messages become visible (active observation only)
-- [ ] Copy message, plus a reply action that inserts the agent's `@handle` into the draft
-- [ ] Removed agents display as "Deleted agent"
-
-### Composer
-
-- [ ] A multi-line input that grows to about three rows. Return sends and Shift-Return inserts a newline
-- [ ] `@` completion: everyone, lead and members, each with an avatar and role
-- [ ] An audience preview ("To Lead", or the mentioned agents) computed by a port of
-      `resolveChannelAudience`
-- [ ] Image attachments by paste, drag and file picker, sent inline as base64
-- [ ] A per-channel draft that persists across launches
-- [ ] An "Input needed" control while a request is pending: hovering previews the question and
-      clicking reveals it, paging back if needed
-- [ ] Disabled while disconnected, with a visible stale state. A failed send stays on its row in
-      the transcript with Edit and Send Again, the draft is never restored, and it is never retried
-      automatically
-- [ ] Optimistic message that the committed echo replaces, drawn exactly as the echo (bubble, gap and
-      day divider) so confirming changes nothing on screen. Only a send still going after 1 second
-      shows a quiet "Sending"
-- [ ] Send is always the plain arrow, never a spinner or retry arrow. The composer clears the moment
-      the outbox records a send and stays ready. While a send is in flight, Send is disabled, Return
-      does nothing and typed text is never cleared. Only connecting and dictation finishing show a spinner
-
-### Composer tray
-
-- [ ] Shared artifacts, newest first
-- [ ] Tasks with progress
-- [ ] Preview: a URL preview opens in the browser, and a screen preview opens Toy Box
-
-### Overview (inspector)
-
-- [ ] Purpose, directory and preview
-- [ ] Team: the lead first, then members, with avatar, role, presence, status text and the waiting
-      wake time (shown as a countdown)
-- [ ] Artifacts with when each was shared. Markdown opens in an in-app reader; others open in
-      Toy Box or the default app
-- [ ] Tasks: a nested tree with status, owner avatar and diff totals rolled up from descendants
-      (pending tasks hide counts). Each task's own artifact action opens it. Section headings show
-      counts
-- [ ] Routines by title with their schedule, expanding to show the prompt
-
-### Management (via the management routes above)
-
-- [ ] Create, edit and delete a channel
-- [ ] Create a member from an unknown mention, edit a member, and remove a member
-- [ ] Run and delete a routine
-
-## macOS idioms
-
-- `NavigationSplitView` with a source-list sidebar, the transcript in the content column, and the
-  overview as an `.inspector`
-- Toolbar: channel title and purpose subtitle, presence summary, a view-filter menu, the inspector
-  toggle, and Open in Toy Box
-- Menu commands and shortcuts: next and previous channel, next unread, toggle inspector, focus the
-  composer, jump to the request, refresh, and open the channel in a new window
-- A Settings scene for the server URL (default `http://localhost:3000`, the port the `toy-box` CLI
-  serves) and connection test
-- A Dock badge counting channels that need attention, plus user notifications for requests and
-  completions in channels that aren't currently focused
-- Multiple windows, state restoration, and accent color and vibrancy that respect system settings
-
-## Performance budgets
-
-`bun run benchmark` checks these on a release build against `bun run demo:perf`, with 100
-messages loaded and again with every older page loaded. It times the main run loop three ways:
-
-- **Busy**: every pass from waking until the loop is about to sleep, added up.
-- **Longest saturated span**: the longest of those passes. When work arrives faster than it
-  finishes, main stays awake through many frames, so a long span isn't always a stall.
-- **Longest frame gap**: the longest stretch with no chance to draw, from the loop waking or
-  exiting until it next exits or sleeps, which is where Core Animation commits. This is what shows
-  a stall.
-
-| Scenario | Budget |
-| --- | --- |
-| Each live message | 16 ms median busy |
-| 50 messages 20 ms apart | 100 ms longest frame gap. The saturated span and busy time are reported beside it |
-| Each older page | 250 ms busy |
-| Warm switch | 150 ms median longest saturated span. A switch that lands over several frames feels as slow as one long frame, so it isn't budgeted on frame gaps |
-| Steady scrolling up and down | 5 ms/s hitch time, from dropped display frames |
-| First visible row during scrolling | At most 1 point of frame drift, in each direction and at each loaded count |
-| Key window with 4, then 20, working agents | 3% process CPU over 15 s, so a continuous animation that updates views every frame fails it |
-
-Launch and idle report the same figures with no budget.
-
-The key-window CPU measurement requires an active app and a visible, uncovered, non-minimized key
-window. It fails before or during measurement if that state is lost, rather than reporting a low CPU
-result from a window that is not drawing. Activation diagnostics include the native state and the
-window's WindowServer registration.
-
-Scroll also reports actual main-thread CPU ms per 1,000 native points, and paging reports CPU ms
-per older page. These are informational, not new budgets. Compare CPU work when the Mac is
-loaded, since run-loop wall time includes scheduling delays. Judge hitches only on a quiet
-machine, with the same gesture, distance, loaded count and hover state in both builds.
-
-Frame drift is the largest distance the first visible row moves away from that frame's scroll.
-Each display callback schedules one late-run-loop sample, after layout. It compares the same row's
-viewport position across consecutive samples with the wheel deltas delivered between them, not queued input or total native
-scroll travel. On a row handoff it retains the previous first row, or uses the current first row
-if the previous row was recycled. Missing shared first-row geometry fails the measurement rather
-than reporting zero drift. Results include measured frame pairs, frames above 1 point, maximum
-drift and total absolute drift. Both directions stay 1,000 points from the content edges, so end
-clamping and rubber-banding are not mistaken for row drift.
-
-The common driver uses precise **unphased** wheel events through the app-local event queue,
-with a window-scoped local monitor counting delivery. The report names this path. Posted and
-delivered event counts and total deltas must match, including the final zero-delta drain event.
-Event creation, monitor installation or observation failures fail the run. This permission-free
-driver is not the phased responsive-scroll path.
-
-Every scroll run first checks the identical driver and sampler on a plain native table, up and
-down for 15,000 points. The table must apply the full delivered distance, with no missing geometry
-and at most 1 point of frame drift, before any transcript result is reported. A warm-up visits
-1,000 points of the actual transcript. A short return within those already-measured rows must
-also apply the full delivered distance. The transcript then returns to its end for measurement.
-These controls run outside the timed transcript measurements.
-
-`bun run benchmark trackpad` is a separate, opt-in native check using began/changed/ended phases
-through WindowServer to the benchmark's own PID, never to the global input stream. A listen-only,
-own-PID event tap counts delivery. This check requires Accessibility permission and fails explicitly
-without it. The harness never requests or changes that permission. `NSApp.postEvent` does not
-exercise responsive scrolling, and a local monitor does not see every event consumed by that path.
-The check reports native travel after a one-second end drain. AppKit's interpolation can move
-content beyond the raw delivered delta, so this is not a deterministic wheel baseline or a raw
-wheel-relative row-drift gate.
-
-During the transcript replacement, `TOY_BOX_TRANSCRIPT=lazy|document|table bun run benchmark scroll`
-selects the container through `open --env`. The output names the requested transcript. This is
-a temporary benchmark option, not a product preference, and is removed with t259.
-Hosted native tables are sampled relative to that outer scroll view's clip coordinates, including
-the table's offset within the SwiftUI document. Discovery excludes independent nested scroll views
-and never mounts cells to obtain row frames.
-`TOY_BOX_BENCHMARK_SCROLL_DRIFT=0` disables the geometry producer and sampling for paired probe
-overhead checks. It is also benchmark-only and temporary. Normal app launches install no geometry
-provider and add no row callbacks.
-The native-table producer reads existing row rects without mounting cells or forcing layout.
-Scroll fixtures do not reorder rows during a gesture, so native row indices are stable for the
-measurement. A row-count change invalidates the sample instead of comparing different rows.
-`TOY_BOX_BENCHMARK_SCROLL_TRACE=1` runs only the first-page upward gesture, retains signed
-per-frame samples in memory and prints them after CPU measurement. The trace includes the tracked
-row and its two viewport positions, delivered wheel delta, signed residual, native top, document
-height and event counts. Lazy samples also retain the row's callback-reported positions for
-comparison with live native clipping.
-Diagnostic traces also retain display-link samples for comparison with the accepted late-run-loop
-phase. Display-link residuals can include input-application lag and are not an acceptance metric.
-`TOY_BOX_TRANSCRIPT=native-control bun run benchmark scroll` runs only the retained plain-table
-self-check. It is not a product-container performance baseline.
-
 ## Design
 
 ### Direction and reference
@@ -758,14 +356,67 @@ navigation, presentation, keyboard access, local draft storage and offline editi
 New divider, agent coordination, tray and expanded inspector. Its example content is illustrative,
 not a second specification or a proposed change to any live channel.
 
-### Whole-window composition correction
+### Visual system
 
-The visual review was reopened on 2026-10-22. Functional and accessibility corrections do not
-constitute final visual acceptance. Review the actual user-facing build as a whole, not only an
-isolated fixture render. The governing composition is one native channel title, one quiet
-inspector, legible tonal messages, and one floating glass composer carrying the activity line.
-The Liquid Glass composition below supersedes every earlier dock, toolbar-band and inspector
-header rule.
+Use SF Pro through system fonts and semantic weights. No custom typeface, hard-coded all-caps
+section headings, gradients on messages, dashboard cards around every section, or decorative
+drop shadows. Use an 8-point spacing rhythm, with 4-point adjustments inside compact controls.
+
+| Token | Native treatment |
+| --- | --- |
+| Conversation background | `textBackgroundColor`, opaque in both appearances |
+| Agent message surface | Neutral tonal fill over the conversation, approximately 4.5% primary ink in light and 7% in dark. A pending request swaps it for a warm orange wash. Borders only under Increase Contrast |
+| Your message surface | Accent at 9% over the conversation, with normal label text. On the phone's pure black Dark canvas, the wash sits over the agent bubble's 7% neutral lift so the bubble stands off black as clearly. Under Increase Contrast, the same 1-point `primary` edge at 50% as agent bubbles |
+| Navigation and inspector | System sidebar and inspector materials, no manual blur stacking |
+| Floating controls and popovers | Native toolbar, popover and control materials |
+| Text | `labelColor`, `secondaryLabelColor`, `tertiaryLabelColor` by hierarchy |
+| Selection and focus | System accent, source-list selection and focus ring. Respect user accent |
+| Toy Box identity | The lead's avatar exactly as the server supplies it, a navy `#1E3A8A` circle with a gold `#FACC15` outline star, drawn as that color's `.gradient` like every avatar. Channel icons keep Toy Box's channel cyan `#0891b2`, which the lead doesn't use. Recolor neither to the accent |
+| Unread | Semantic system blue, 1-point New rule. Blue does not mean working |
+| Requests | Orange wash on the pending bubble, orange `questionmark.bubble.fill`, primary label text and a Reply button. Never an outline |
+| Completion and additions | The shared completion green (`#196C2E` light, `#70D58A` dark) plus a knocked-out checkmark or explicit `+` sign. Never a white glyph on system green |
+| Error, blocked and removals | Semantic system red plus symbol, label or explicit `-` sign |
+
+Let the system render its Liquid Glass toolbar, sidebar and navigation controls, as described
+under Composition. Do not give the detail column a separate rectangular
+title-bar plate that steps against the sidebar, and do not draw a band or rule under the
+toolbar. The active and inactive window must each read as one window. Custom glass is limited
+to the floating composer, the activity row, Jump to Latest, transient notices and the stale
+banner. Reduce Transparency makes glass and material backgrounds opaque. Increase Contrast strengthens separators and control outlines, not saturation alone.
+Small status, action and diff-count text must reach 4.5:1 against its actual background in both
+appearances. Green additions and red removals need contrast-safe adaptive text colors, not raw
+system green/red that can fail on a light inspector or popover background.
+Raw system orange is not a safe foreground for small text on white. Use a contrast-safe adaptive
+amber text token, or primary text with an orange symbol, for Input Needed, request labels, waiting
+details and unmatched-audience warnings. Non-text status symbols need at least 3:1.
+
+| Content | Size and weight | Layout |
+| --- | --- | --- |
+| Sidebar channel title | 13, medium | One line, tail truncation |
+| Sidebar detail and timestamps | 11, regular | Secondary, tabular digits for time/counts |
+| Message body and composer | 14, regular | Approximately 20 line height. Never compress line height to fit |
+| Message author | 12, semibold | Timestamp and addressee 11, regular |
+| Day divider and system rows | 11, semibold / 11, regular | Secondary. Day labels lead their rule, system rows are centered, values in primary medium |
+| Inspector section heading | 13, semibold | Count follows 6 points later in 13 regular readable secondary. No capsule, no forced uppercase |
+| Inspector body | 13, regular | Approximately 18 line height |
+| Inspector status and detail lines | 11, regular | Secondary, tabular digits for counts and countdowns |
+| Inline code and diff counts | System monospaced, 12 / 11 | Code blocks scroll horizontally |
+
+Honor the system accessibility text size where available and a native View > Text Size control
+(Smaller, Default, Larger). Scale content text, row height and wrapping together. Keep toolbar and
+standard controls at native sizes. At the largest size, no critical text truncates without an
+accessible full value or an expansion action.
+
+### Composition
+
+Functional and accessibility corrections do not constitute final visual acceptance. Review the
+actual user-facing build as a whole, not only an isolated fixture render. The governing
+composition is one native channel title, one quiet inspector, legible tonal messages, and one
+floating glass composer carrying the activity line.
+
+The app requires macOS 27 on Apple Silicon, links against the installed SDK, and `bun run validate`
+fails when the bundle's SDK stamp is below 27. There is no fallback appearance and no availability
+branching in views.
 
 The conversation lane spans the full detail column with 24-point horizontal insets, as in
 Messages. Its width W is the conversation width minus 48, with no maximum. Agent messages pin to
@@ -835,14 +486,6 @@ run gap. Consecutive system events retain their own 8-point breathing room witho
 20-point conversation-run gap. Older-history loads preserve the anchored message with 0.0-point
 displacement at 1280 x 840 and 760 x 560 in both appearances.
 
-### Liquid Glass composition
-
-Builds before 2026-10-22 were linked with an SDK stamp of 15.0, so macOS 27 drew them in
-compatibility mode without Liquid Glass. That, plus the opaque unified toolbar band added during
-the visual pass, is why the app read as dated. The app now requires macOS 27 on Apple Silicon,
-links against the installed SDK, and `bun run validate` fails when the bundle's SDK stamp is below
-27. There is no fallback appearance and no availability branching in views.
-
 **Layers.** Content is one opaque layer made of the sidebar list, the conversation and the
 inspector. Liquid Glass is reserved for the navigation layer above it: toolbar controls, the
 sidebar material, the composer, the activity row, Jump to Latest and transient notices. Never
@@ -857,7 +500,7 @@ conversation and the inspector scroll beneath the toolbar, and a top scroll-edge
 separates content from the controls. Give both the conversation's and the inspector's
 `ScrollView` `.scrollEdgeEffectStyle(.hard, for: .top)`. On macOS 27 the automatic top edge
 resolves to the soft style, which the system doesn't draw at the top of a key window, so messages
-and the inspector's dense 11-point status text ran crisp under the title and the glass controls.
+and the inspector's dense 11-point status text run crisp under the title and the glass controls.
 The hard edge draws the toolbar's 1-point divider at the same height across both columns, even at
 rest, so the toolbar reads as one unified band and rows blur as they pass beneath it.
 
@@ -1045,11 +688,11 @@ separate window for that channel and leaves the current window's channel and sel
 visible conversation actively acknowledges reading. Restoring a window must not send a message or
 silently mark its unseen content as read.
 
-**Phone channel search, user 3501 and Lead 3503.** Use the native bottom-bar search item beside
+**Phone channel search.** Use the native bottom-bar search item beside
 Settings (`gearshape`, the Mac's gear) in the channel-list column, folded and unfolded. While the split view is collapsed, as
 on a folded Duo, `.searchToolbarBehavior(.minimize)` shows it as a Search button that expands into
-the bottom field, because a full field makes UIKit cancel the first pull to refresh after Back
-(t520). The unfolded overlay sidebar keeps the full field, since UIKit places the minimized button
+the bottom field, because a full field makes UIKit cancel the first pull to refresh after Back.
+The unfolded overlay sidebar keeps the full field, since UIKit places the minimized button
 past the sidebar's trailing edge. Search raises the keyboard with its field above it, and Cancel
 restores the bar. No hand-built safe-area text field or duplicate gear in the rail. Keep the large
 Toy Box title and New Channel at the top, with no More menu or Refresh item. Report a native
@@ -1062,7 +705,7 @@ without replacing in-conversation Find. A catalog failure still shows its headin
 Retry and reachable Settings at the bottom. Cached rows alone do not prove a live connection.
 The Mac sidebar remains unchanged.
 
-**Phone channel toolbar, t518.** Channel Actions is a `ToolbarOverflowMenu`, so its ••• is always
+**Phone channel toolbar.** Channel Actions is a `ToolbarOverflowMenu`, so its ••• is always
 the last item. A compact top bar shows Overview, Tasks (only while unfinished), then •••. Regular
 width shows Message View, Tasks, Overview, then •••. Where the system stands bar items in a
 vertical bar (`toolbarVerticalEdge` non-nil, as on the folded Duo), and in regular width, Message
@@ -1072,7 +715,7 @@ leads Channel Actions in a Message View section, and Your Messages adds the subt
 Messages" under the channel name. All Messages shows no subtitle, and open readers keep their own
 titles. iOS 27.0 has no vertical-bar API, so it always takes the compact no-bar path.
 
-**Phone Welcome, t518.** With no working server the phone shows Welcome, not a titled form. Its
+**Phone Welcome.** With no working server the phone shows Welcome, not a titled form. Its
 first Form row, with a clear background and no horizontal insets, holds the large bold heading
 "Welcome to Toy Box 👋" and one secondary sentence. The navigation bar is hidden. The shared Server
 URL card follows: the address and Test Connection, each a native row of the same height, with
@@ -1083,56 +726,104 @@ edge, so Continue floats like the composer, with no band or hairline. At accessi
 bar would cover the card, so Continue becomes the Form's last row after the card instead, with the
 same edges and style. It's disabled until the current address tests successfully.
 
-### Visual system
+**Phone sheet semantics.** Working Now, Select Text, reactors, system-message details, Overview in both presentations,
+and Settings use native `Button(role: .close)`. iOS supplies the X. Place it at
+`.topBarTrailing` with an explicit accessible close label, never `.confirmationAction`, which iOS
+draws as blue prominent glass. No custom circle or fill. Settings changes remain applied on closing.
 
-Use SF Pro through system fonts and semantic weights. No custom typeface, hard-coded all-caps
-section headings, gradients on messages, dashboard cards around every section, or decorative
-drop shadows. Use an 8-point spacing rhythm, with 4-point adjustments inside compact controls.
+New Channel, Edit Channel, Add Agent, Edit Agent and the delete confirmation have no text
+Cancel. They close with the same system `Button(role: .close)` X at `.cancellationAction`, which
+discards the draft exactly as Cancel would, labeled "Cancel". Create, Add and Save are
+`Button(role: .confirm)` at `.confirmationAction`: iOS draws the blue glass checkmark, the same
+prominent treatment as Send. Their accessibility labels stay "Create Channel", "Add Agent" and
+"Save", and while a write is pending the checkmark gives way to the small delayed spinner, with
+the label becoming "Creating…", "Adding…" or "Saving…". The confirm stays disabled until the
+form can save. Never hand-place, restyle or regroup these items. The system places both, so
+where it reports a trailing vertical bar, as on the folded Duo, they join that column the way
+Settings' close does. Where it reports a leading vertical bar, keep the bar horizontal as
+Overview does, so neither covers the form. Mac keeps its text buttons. Swipe dismissal,
+focus/draft restoration and read blocking are unchanged.
 
-| Token | Native treatment |
-| --- | --- |
-| Conversation background | `textBackgroundColor`, opaque in both appearances |
-| Agent message surface | Neutral tonal fill over the conversation, approximately 4.5% primary ink in light and 7% in dark. A pending request swaps it for a warm orange wash. Borders only under Increase Contrast |
-| Your message surface | Accent at 9% over the conversation, with normal label text. On the phone's pure black Dark canvas, the wash sits over the agent bubble's 7% neutral lift so the bubble stands off black as clearly. Under Increase Contrast, the same 1-point `primary` edge at 50% as agent bubbles |
-| Navigation and inspector | System sidebar and inspector materials, no manual blur stacking |
-| Floating controls and popovers | Native toolbar, popover and control materials |
-| Text | `labelColor`, `secondaryLabelColor`, `tertiaryLabelColor` by hierarchy |
-| Selection and focus | System accent, source-list selection and focus ring. Respect user accent |
-| Toy Box identity | The lead's avatar exactly as the server supplies it, a navy `#1E3A8A` circle with a gold `#FACC15` outline star, drawn as that color's `.gradient` like every avatar. Channel icons keep Toy Box's channel cyan `#0891b2`, which no longer belongs to the lead. Recolor neither to the accent |
-| Unread | Semantic system blue, 1-point New rule. Blue does not mean working |
-| Requests | Orange wash on the pending bubble, orange `questionmark.bubble.fill`, primary label text and a Reply button. Never an outline |
-| Completion and additions | The shared completion green (`#196C2E` light, `#70D58A` dark) plus a knocked-out checkmark or explicit `+` sign. Never a white glyph on system green |
-| Error, blocked and removals | Semantic system red plus symbol, label or explicit `-` sign |
+### Menu and keyboard model
 
-Let the system render its Liquid Glass toolbar, sidebar and navigation controls, as described
-in the Liquid Glass composition section. Do not give the detail column a separate rectangular
-title-bar plate that steps against the sidebar, and do not draw a band or rule under the
-toolbar. The active and inactive window must each read as one window. Custom glass is limited
-to the floating composer, the activity row, Jump to Latest, transient notices and the stale
-banner. Reduce Transparency makes glass and material backgrounds opaque. Increase Contrast strengthens separators and control outlines, not saturation alone.
-Small status, action and diff-count text must reach 4.5:1 against its actual background in both
-appearances. Green additions and red removals need contrast-safe adaptive text colors, not raw
-system green/red that can fail on a light inspector or popover background.
-Raw system orange is not a safe foreground for small text on white. Use a contrast-safe adaptive
-amber text token, or primary text with an orange symbol, for Input Needed, request labels, waiting
-details and unmatched-audience warnings. Non-text status symbols need at least 3:1.
+Use native About, Settings (`Cmd-,`), Services, Hide, Quit, Edit, Window and Help menus. Standard
+text-editing shortcuts retain their native meaning. Commands below disable when inapplicable.
+Focus Composer does not discard selection or any existing draft.
+Check for Updates… follows About in the app menu and uses Sparkle's standard window. It is
+disabled whenever the updater's `canCheckForUpdates` is false, including in bundles without a feed.
 
-| Content | Size and weight | Layout |
+| Menu | Command | Shortcut |
 | --- | --- | --- |
-| Sidebar channel title | 13, medium | One line, tail truncation |
-| Sidebar detail and timestamps | 11, regular | Secondary, tabular digits for time/counts |
-| Message body and composer | 14, regular | Approximately 20 line height. Never compress line height to fit |
-| Message author | 12, semibold | Timestamp and addressee 11, regular |
-| Day divider and system rows | 11, semibold / 11, regular | Secondary. Day labels lead their rule, system rows are centered, values in primary medium |
-| Inspector section heading | 13, semibold | Count follows 6 points later in 13 regular readable secondary. No capsule, no forced uppercase |
-| Inspector body | 13, regular | Approximately 18 line height |
-| Inspector status and detail lines | 11, regular | Secondary, tabular digits for counts and countdowns |
-| Inline code and diff counts | System monospaced, 12 / 11 | Code blocks scroll horizontally |
+| App | Quick Send | Configurable global shortcut, `Ctrl-Shift-Space` by default |
+| File | New Channel | `Cmd-N` |
+| File | Open Channel in New Window | `Cmd-Shift-N` |
+| File | Open in Toy Box | `Cmd-Shift-O` |
+| File | Open Folder in Finder (selected channel, only when its folder is openable) | `Cmd-Option-R` |
+| Edit > Find | Find… / Find Next / Find Previous (open channel) | `Cmd-F` / `Cmd-G` / `Shift-Cmd-G` |
+| Edit | Find Channel (reveals a hidden sidebar, then focuses its search) | `Cmd-Option-F` |
+| View | Show/Hide Sidebar | `Ctrl-Cmd-S` |
+| View | Show/Hide Overview | `Cmd-Option-0` |
+| View | All Messages / Your Messages | `Cmd-1` / `Cmd-2` |
+| View | Refresh (the channel list) | `Cmd-R` |
+| View | Text Size: Larger / Smaller / Default | `Cmd-+` / `Cmd--` / `Cmd-0` |
+| Channel | Next / Previous Channel | `Ctrl-Tab` / `Ctrl-Shift-Tab` |
+| Channel | Next Channel Needing Attention | `Cmd-Shift-U` |
+| Channel | Focus Composer | `Cmd-L` |
+| Channel | Jump to Latest / Input Needed | `Cmd-J` / `Cmd-Shift-J` |
 
-Honor the system accessibility text size where available and a native View > Text Size control
-(Smaller, Default, Larger). Scale content text, row height and wrapping together. Keep toolbar and
-standard controls at native sizes. At the largest size, no critical text truncates without an
-accessible full value or an expansion action.
+Space opens a focused image in the image viewer and previews other attachments with Quick Look,
+Return opens a focused artifact, and Right/Left expand or
+collapse a focused task or routine. Sidebar arrows select without stealing first responder to the
+composer. Switching channels by click may focus the composer after connection, but keyboard
+navigation keeps list focus until explicitly moving into the conversation.
+
+### Loading, empty, error and stale states
+
+| State | Presentation and available actions |
+| --- | --- |
+| First catalog load | Three static placeholder rows, no fabricated channel names. After 300 ms the connection footer's dot becomes a mini spinner (see Sidebar). Nothing overlays the list |
+| No channels | Source-list empty state: "Your channels live here" and New Channel. The connection footer already names the server, so the empty state doesn't repeat it |
+| Search has no matches | "No channels match [query]", Clear Search. Do not show the no-channels creation state |
+| Nothing selected | Centered `bubble.left.and.bubble.right` symbol, "Choose a channel", concise navigation hint |
+| First channel snapshot | Static message placeholders and "Connecting", whose spinner appears after 300 ms. On the Mac the label waits with it. Composer shell remains present, Send unavailable |
+| New empty channel | "Your lead is getting started", "Send a message or type @ to add an agent". Keep composer and working status visible |
+| Filter has no messages | "No messages for you yet", Show All Messages. Keep paging older history until exhausted |
+| Reconnecting with cached state | Keep transcript and scroll intact. After about three seconds of trying without connecting, the transcript's floating pill says "Reconnecting to server" over "Messages may be out of date" (see Reconnecting notice), the channel's only outage notice. It has no Retry, because the channel keeps trying and tries again at once when the network comes back or moves, the app becomes active again or the catalog recovers (see Connections). The notice stays until the channel connects. A reconnect that goes live sooner shows nothing. Until then agent status, working presence and every connection notice stay as they were while live. Disable delivery and management actions, not editing. Time away from the app never counts toward the three seconds |
+| Disconnected without any state | `wifi.exclamationmark`, "Can't connect to Toy Box", server host, readable failure, Retry and Settings |
+| Catalog refresh fails | Keep existing rows, mark them stale and show the error block above the connection footer's orange status line (see Sidebar), after about three seconds of failing polls or at once for a refresh the user asked for. Never replace them with "No channels". When it recovers, every channel waiting out a backoff retries at once |
+| Failed send | Inline error above composer and explicit status on optimistic row, preserved text/attachments, no automatic retry |
+| Channel deleted | Stop observation, dismiss its inspector, show "This channel was deleted". Back to Channels and Copy Draft if nonempty. Never silently discard a draft or redirect to another channel |
+| Invalid URL or authorization failure | Show the actual category and server, Settings/Retry as appropriate. No fabricated successful connection |
+| Failed image/artifact/history | Localized error at that surface with Retry. Keep the rest of the channel usable |
+| Unsupported future event | Neutral system row, no stream-wide crash and no raw JSON wall |
+
+Connection status is separate from agent activity. Reconnection does not show a team as still
+working unless current presence establishes that. No repeated full-window spinner after content
+has already loaded. Retry is user-initiated and does not resend messages or replay mutations.
+
+### Motion and accessibility
+
+Use native selection and inspector transitions. Custom hover/focus fades last 120 ms, disclosure
+and tray changes approximately 180 ms. Scrolling to a user-requested target may animate for
+180...240 ms, but initial landing and history anchoring must be immediate. The Team's working
+ellipsis pulses only in the key window, as a render-server animation. Reduce Motion keeps it static
+beside its text. No continuous animation may update SwiftUI views or run main-thread work every
+frame, and a key window with working agents idles under 3% CPU. Requests never animate. No looping
+shimmering skeletons or large empty-state art.
+
+Every icon-only control has a localized label and help. Minimum compact control hit target is
+28 x 28. Keyboard focus is visible without hover. Expose one semantic message group with author,
+time, addressee, body, request state and actions, with attachments and reactions as reachable
+children. VoiceOver order follows chronological messages, then working row, tray and composer.
+Do not announce the whole transcript on every event. Announce a new relevant request or send
+error once, with a polite concise message. Day and New dividers are named separators.
+Status uses symbol and words as well as color. Confirm text contrast in both appearances,
+including avatar ink, selected sidebar rows, tinted user messages and amber request labels.
+
+## Surfaces
+
+Each surface section holds what the surface covers, its Mac design and how the phone differs.
+Parts labelled **Phone** apply only to the iPhone companion.
 
 ### Sidebar
 
@@ -1251,8 +942,8 @@ after the time, aligned on the first baseline. The chevron becomes white when se
 Unfolded rows show no chevron.
 
 The working-avatar stack exists independently of attention, so a working team and pending question
-can coexist. Keep the full-team names in row help/accessibility even though idle members are no
-longer pictured in the activity stack. Closed channels use catalog activity only if the protocol actually supplies it. Never
+can coexist. Keep the full-team names in row help/accessibility even though idle members aren't
+pictured in the activity stack. Closed channels use catalog activity only if the protocol actually supplies it. Never
 invent presence. An open channel keeps its last working agents while it reconnects quietly, and
 drops them once it is stale or deleted.
 
@@ -1272,7 +963,7 @@ Context menu, in groups:
 3. Edit Channel….
 4. Delete Channel…, separated and destructive, never triggered by the unmodified Delete key.
 
-**Catalog activity:** the catalog now includes `working`, the IDs of leads and members whose
+**Catalog activity:** the catalog includes `working`, the IDs of leads and members whose
 sessions are running. This is the same fact the browser reads from workspace session state and
 the stream uses for presence. Sidebar rows for closed channels use it, while an open channel uses
 its live presence. Activity can lag by one catalog refresh. It must clear when observation is lost
@@ -1331,17 +1022,17 @@ points into the lane. Runs have 20 points between them, 8 between entries in a r
 header and body. A header only repeats when `showHeader` says it does. Agent bubbles have 12-point
 corners, 12 horizontal and 10 vertical padding, and no tail. They fit their content up to
 min(lane − 44, 760). The user's message pins trailing, up to min(80% of the lane, 640), both caps
-scaled by Text Size (see the lane rules in Whole-window composition), with a low-intensity accent-tinted
+scaled by Text Size (see the lane rules in Composition), with a low-intensity accent-tinted
 surface and normal label text. Do not use white body text on a saturated brand color.
 
 Agent avatars are circular, with the supplied color and path. Fill the circle with the supplied
 color as SwiftUI's `Color.gradient`, the same soft top-light gradient as the sidebar's channel
-icon, so every avatar reads as slightly raised. This is one change in the shared
+icon, so every avatar reads as slightly raised. This lives in the shared
 `AgentAvatarView`, so an agent looks identical in the team list, transcript, composer, reactions,
 task owners and sidebar stacks, at every size. Add no shadow, rim or highlight: a shadow muddies
 light mode, disappears in dark and smears overlapping stacks. With Increase Contrast, fill flat
 with the exact supplied color. Draw the 24-unit path at 64% of the avatar, stroke 2.25 units at
-every size, round caps and joins. Don't thicken the stroke at small sizes: today's denser marks,
+every size, round caps and joins. Don't thicken the stroke at small sizes: the denser marks,
 with parallel lines 2 to 3 units apart, fill in at 2.75 units. Path ink is the avatar's optional
 `ink` when it is a valid `#RRGGBB` that keeps at least 3:1 against the base color. Otherwise choose
 black or white by measured contrast against the supplied base color, as the pane does, never
@@ -1389,7 +1080,8 @@ only according to the canonical helper. In-body mentions are selectable, semibol
 agent's identity ink, with no background, and keep the accessible agent name. Derive the ink from
 the avatar color. Mix it toward black in light appearance and white in dark, in 5% steps, until
 it reaches 4.5:1 against the composited surface it sits on: the agent fill, the user's
-accent-tinted bubble or the pending orange wash. Under Increase Contrast the target is 7:1.
+accent-tinted bubble or the pending orange wash. Under Increase Contrast the target is 7:1. Keep the seven-color, five-surface contrast regression
+with these targets.
 Everyone and Lead follow the same rule with the accent and the lead's color. Weight carries the
 cue for color-blind readers. Unknown mentions remain literal, not a false agent chip.
 Links have normal native link affordances. Render headings, emphasis, lists, blockquotes, fenced
@@ -1492,7 +1184,7 @@ land only once the store is connected, so a reopened channel lands on that bound
 its cached end. Until then the cached conversation rests at its end, unread. If the
 first unread predates the snapshot and older history exists, show no synthetic New divider or
 catch-up summary. Scrolling up loads the real unread boundary in its original place.
-When a catch-up summary is eligible, land on its card instead (see Mac features beyond the pane).
+When a catch-up summary is eligible, land on its card instead (see Catch-up summaries).
 Older pages load only through reader paging, Find navigation or Reveal.
 Follow incoming messages only while within
 48 points of the end, or immediately after the user's own successful post. If scrolled away, a
@@ -1555,6 +1247,7 @@ Compile Markdown and mention patterns once, not once per row. The transcript rea
 `messages`, `roster`, `agentStatuses`, `presence` and `request` slices, so task, artifact, routine
 and detail events don't re-render it.
 
+Message View shows all messages, or only the user's own plus agent messages that never collapse.
 The Message View menu is a native radio-choice menu: All Messages and Your Messages. Like the web
 pane and Messages, each choice carries an outline SF Symbol, `bubble.left.and.bubble.right` for All
 Messages and `person` for Your Messages, beside the system checkmark. The same labels appear in the
@@ -1612,7 +1305,7 @@ doesn't cross into other messages. Videos and files keep their own actions.
 | Image | Fits the canvas with 24-point side margins, 16 below the toolbar and 16 above the capsule. Never upscale past the image's point size, so a 2x screenshot shows at native size. 6-point continuous corners, the tile's 1-point hairline (10% light, 14% dark, 40% Increase Contrast) and, in light only, a shadow of black 12%, radius 12, y 4 |
 | Toolbar | Back (`chevron.backward`, help "Back to Conversation") leads. Title is the sender, subtitle "Today at 5:23 PM · 2 of 4" (one image omits the position). Trailing: Share (`square.and.arrow.up`) and More (`ellipsis`: Copy Image, Open in Preview). Message View, Channel Actions and Overview hide while viewing |
 | Capsule | Only with two or more images. Centered 16 above the bottom edge, `.glassEffect(.regular.interactive(), in: .capsule)`, 8 padding. Previous and next (`chevron.backward` and `chevron.forward`, 13 semibold, 28 x 28) flank 32-point thumbnails (aspect fill, 6-point corners, hairline, 6 apart, 70% opacity). The current thumbnail is opaque with a 2-point accent ring 2 points outside it. Arrows go tertiary and disabled at the ends, with no wrap. Past nine thumbnails the strip scrolls, keeping the current one in view |
-| Keys and gestures | Left and Right, the capsule, a thumbnail click or a two-finger swipe change images. Escape, Space or Back close. Double-click toggles fit and actual size at the clicked point, except on Live Text. Pinch and `Cmd-=`, `Cmd--`, `Cmd-0` zoom only while viewing, overriding Text Size. Scroll or drag pans a zoomed image, and changing images resets zoom. `Cmd-C` copies selected Live Text, otherwise the image, and dragging it out exports the file. Live Text rules are under Mac features beyond the pane |
+| Keys and gestures | Left and Right, the capsule, a thumbnail click or a two-finger swipe change images. Escape, Space or Back close. Double-click toggles fit and actual size at the clicked point, except on Live Text. Pinch and `Cmd-=`, `Cmd--`, `Cmd-0` zoom only while viewing, overriding Text Size. Scroll or drag pans a zoomed image, and changing images resets zoom. `Cmd-C` copies selected Live Text, otherwise the image, and dragging it out exports the file. Live Text rules are under Image descriptions and Live Text |
 | Motion | Opening zooms the image from its thumbnail's frame to its fitted frame (spring, response 0.35, damping 0.9) while the canvas fades in over 0.2 seconds. Closing reverses into the current image's thumbnail, scrolling the strip to it first. Paging slides 40 points with a crossfade in the direction of travel. The tile steps aside only while the zooming image covers it, so the strip never shows a hole. Without a thumbnail frame (a tile less than half visible on close), the image fades and scales from 94%, and the tile stays in place under the canvas until the viewer is gone. Reduce Motion uses 0.2-second crossfades throughout, with no scale, and the tile never steps aside |
 | Loading and errors | Show the cached thumbnail at the final fitted frame immediately and swap in the full image when decoded. A spinner appears only after 300 ms. Failure shows "Couldn't Load Image" and Retry, centered on the canvas |
 | Accessibility | Modal. Focus moves to the image, labeled "Image 2 of 4 from Lead, [filename]", with Next, Previous, Copy, Share and Close actions. Closing returns focus to the current image's thumbnail. The stage's `.isModal` trait alone removes the conversation and inspector from the tree. Never put `.accessibilityHidden(false)` on them: on macOS 27 an explicit false re-exposes their hidden descendants and moves the bottom bars ahead of the transcript |
@@ -1657,7 +1350,7 @@ focus or activation reveals every reactor name. Do not make a reaction chip look
 the scrollable history. It has 20-point avatars, "Name is working" or "N agents are working", and status details on
 activation. Waiting belongs in the inspector, not this row.
 
-### Suggested replies
+#### Suggested replies
 
 A request may offer two to four suggested replies. ChannelKit reads them through `ChannelMessage.suggestedReplies`, which returns trimmed, non-empty labels of at most 80 UTF-16 units, and only on a `request: true` message. A malformed list reads as no choices, so the request still shows with Reply.
 
@@ -1669,21 +1362,19 @@ A request may offer two to four suggested replies. ChannelKit reads them through
 
 **Phone layout.** The phone uses the Mac layout below, with 8 points between buttons, at the small control size and the footnote font. Reply is the same small untinted bordered button with its arrow as on the Mac, so a request without choices shows only that button, at its natural width on the leading edge. Each button keeps a hit target at least 44 points tall, and long labels wrap inside their own full-width button. A wrap makes the bubble taller, never wider.
 
-**Mac layout.** Choices and Reply flow as small bordered buttons at the system's small size, with 6 points between buttons across and down. Each button is as wide as its label, so the Mac never sets an equal share. A button that does not fit the rest of its line moves to the next line. A label wider than the row wraps inside its own button at full width. Reply is last. In the pending bubble, under the question, it is the small bordered button with its arrow, so it flows like a choice. In the inbox it stays the plain link it is today, below the choices.
+**Mac layout.** Choices and Reply flow as small bordered buttons at the system's small size, with 6 points between buttons across and down. Each button is as wide as its label, so the Mac never sets an equal share. A button that does not fit the rest of its line moves to the next line. A label wider than the row wraps inside its own button at full width. Reply is last. In the pending bubble, under the question, it is the small bordered button with its arrow, so it flows like a choice. In the inbox it stays a plain link, below the choices.
 
 **Control style.** In both transcripts, each choice copies the transcript's Reply exactly: the system's bordered style at the small control size, in the system's default shape, without its arrow. Labels are untinted primary text, never the accent color, so they never set blue on the orange wash. The Mac inbox Reply does not change. No reply uses the prominent style, a custom fill or a shadow. macOS 27 and iOS 27 render these styles, and their look is the reference. They sit in the content layer, so they never use Liquid Glass.
 
-**Mac menu bar inbox.** Each waiting request shows its choices above Reply, under the Mac layout at inbox width. The Open icon stays top right. Requests have no Open Channel row, and notices keep theirs as today. A long choice makes its row taller, and the list scrolls. A choice sends through the same path as the transcript's choices.
+**Mac menu bar inbox.** Each waiting request shows its choices above Reply, under the Mac layout at inbox width. The Open icon stays top right. Requests have no Open Channel row, and notices keep theirs. A long choice makes its row taller, and the list scrolls. A choice sends through the same path as the transcript's choices.
 
 **Mac notification banner.** Reply and the first choice show as actions, and the rest sit under Options. The banner is posted locally from the request the app already holds, so the push payload does not change for Mac. Registering a request's reply categories must not replace the app's other categories, and requests with the same labels share one category. Two visible actions is a working assumption to verify on device.
 
 **Phone widget.** The Needs You widget keeps Reply only, which opens Quick Send. Choices stay in the transcript and on the Lock Screen, and the widget never sends in the background.
 
-**Phone Lock Screen.** The card is a translucent material over the wallpaper, not a solid dark panel, and its action labels take the accent color. The push carries the replies as a top-level `replies` array of two to four labels, beside `handle` and outside `aps`, on request messages that have them. The notification service extension registers a reply category keyed by its labels, with one action per reply, then sets it as the content's `categoryIdentifier`. Requests with the same labels share one category, and each registration keeps the reply categories that a delivered notification still uses, plus the last four that process registered, whose notifications may not have posted yet. The actions appear only when the notification is expanded by long press, above the Reply text field. The collapsed banner shows no buttons. A choice sends its label as written, without the requester's mention, through the same path as the Reply text action. The notification's own payload names the channel, since the shared category carries only labels. If the category cannot register on device, the notification falls back to Reply only, as it does today. Registration and action counts are unverified until the next TestFlight build.
+**Phone Lock Screen.** The card is a translucent material over the wallpaper, not a solid dark panel, and its action labels take the accent color. The push carries the replies as a top-level `replies` array of two to four labels, beside `handle` and outside `aps`, on request messages that have them. The notification service extension registers a reply category keyed by its labels, with one action per reply, then sets it as the content's `categoryIdentifier`. Requests with the same labels share one category, and each registration keeps the reply categories that a delivered notification still uses, plus the last four that process registered, whose notifications may not have posted yet. The actions appear only when the notification is expanded by long press, above the Reply text field. The collapsed banner shows no buttons. A choice sends its label as written, without the requester's mention, through the same path as the Reply text action. The notification's own payload names the channel, since the shared category carries only labels. If the category cannot register on device, the notification falls back to Reply only. Registration and action counts are unverified until the next TestFlight build.
 
-**Release 2.** Dynamic Live Activity choices are out of this release.
-
-### In-channel message search
+#### In-channel message search
 
 Find belongs to the open channel, not the channel catalog. On Mac, Edit > Find > Find… (`Cmd-F`)
 opens and focuses a native find bar at the top of the conversation column, directly below the
@@ -1781,31 +1472,25 @@ when results remain incomplete. Preserve the text field's native editable value.
 Use semantic colors in both appearances, the system focus treatment and native Increase
 Contrast/Reduce Transparency behavior. Reduce Motion uses the reveal path's nonmoving alternative.
 
-### Phone sheet semantics
-
-Working Now, Select Text, reactors, system-message details, Overview in both presentations,
-and Settings use native `Button(role: .close)`. iOS supplies the X. Place it at
-`.topBarTrailing` with an explicit accessible close label, never `.confirmationAction`, which iOS
-draws as blue prominent glass. No custom circle or fill. Settings changes remain applied on closing.
-
-New Channel, Edit Channel, Add Agent, Edit Agent and the delete confirmation have no text
-Cancel. They close with the same system `Button(role: .close)` X at `.cancellationAction`, which
-discards the draft exactly as Cancel did, labeled "Cancel". Create, Add and Save are
-`Button(role: .confirm)` at `.confirmationAction`: iOS draws the blue glass checkmark, the same
-prominent treatment as Send. Their accessibility labels stay "Create Channel", "Add Agent" and
-"Save", and while a write is pending the checkmark gives way to the small delayed spinner, with
-the label becoming "Creating…", "Adding…" or "Saving…". The confirm stays disabled until the
-form can save. Never hand-place, restyle or regroup these items. The system places both, so
-where it reports a trailing vertical bar, as on the folded Duo, they join that column the way
-Settings' close does. Where it reports a leading vertical bar, keep the bar horizontal as
-Overview does, so neither covers the form. Mac keeps its text buttons. Swipe dismissal,
-focus/draft restoration and read blocking are unchanged.
-
 ### Composer and tray
 
+The composer covers:
+
+- An audience preview ("To Lead", or the mentioned agents) computed by a port of
+  `resolveChannelAudience`
+- Image attachments by paste, drag and file picker, sent inline as base64
+- Disabled while disconnected, with a visible stale state. A failed send stays on its row in
+  the transcript with Edit and Send Again, the draft is never restored, and it is never retried
+  automatically
+- Optimistic message that the committed echo replaces, drawn exactly as the echo (bubble, gap and
+  day divider) so confirming changes nothing on screen. Only a send still going after 1 second
+  shows a quiet "Sending"
+- Send is always the plain arrow, never a spinner or retry arrow. The composer clears the moment
+  the outbox records a send and stays ready. While a send is in flight, Send is disabled, Return
+  does nothing and typed text is never cleared. Only connecting and dictation finishing show a spinner
+
 **Phone input refinement.** Native input text and placeholder share 16-point horizontal and
-14-point top insets, applied once. This is a 4-point increase in each direction, not a change
-to the accepted action-row padding. Keep measured one-to-three-line growth. The placeholder
+14-point top insets, applied once. This does not change the accepted action-row padding. Keep measured one-to-three-line growth. The placeholder
 uses muted readable-secondary ink rather than primary draft ink and must reach 4.5:1 over
 actual Light/Dark glass. The static audience preview matches the Mac's capsule shape: 7-point
 horizontal inset and minimum-24 visual height growing with text, in the existing 44-point row.
@@ -1840,7 +1525,7 @@ presentation, not translucent secondary that fades into the sheet's glass.
 The composer floats over the conversation in a bottom `safeAreaBar`, as one glass surface
 spanning the full conversation lane from the avatars' leading edge, 16 points above the window's bottom
 edge. Messages scroll beneath it. Do not add a full-width background, separator or second glass
-panel behind it. The Floating composer table in the Liquid Glass composition section is
+panel behind it. The Floating composer table under Composition is
 authoritative for its shape, material, edge, focus and internal metrics.
 
 The composer and context tray form a single glass rounded rectangle, radius 18. Text is inset 12, starts at one 20-point line and grows through three lines before
@@ -1967,7 +1652,7 @@ size. While any direct-root task is unfinished, Tasks (`checklist`) is a top-bar
 size classes, speaking "Tasks, 1 of 4 done" and opening Overview's Tasks. Artifacts and Preview
 live in Overview.
 
-### Overview inspector and readers
+### Overview
 
 The Overview is an inspector in the Keynote and Xcode sense: a quiet, dense column of facts about
 the selected channel, with each action sitting next to the fact it acts on. It is not a
@@ -1982,9 +1667,9 @@ with a zero-spacing `VStack` and 16-point horizontal insets. Order: About (untit
 Members, Tasks, Artifacts, Routines. Separate sections with a native `Divider()` across the content
 width, with 2 points of vertical padding. No cards, count capsules, section fills or uppercase.
 
-**Phone Overview, user 3484/3506/3572/3575 and design 3510/3600.** Keep the plain native background.
+**Phone Overview.** Keep the plain native background.
 Section distinction comes from larger headings and deliberate space, not grouped cards.
-This supersedes the interim grouped-background recommendation in 3485/3489. Do not change
+Do not change
 accepted Team/Tasks/Routines content or interactions. No colored panels, glass, shadows,
 section fills or nested task cards. Keep count, diff and disclosure in the same minimum-44
 heading button.
@@ -2006,18 +1691,17 @@ and Folder and Preview use the full width below it. All opening information stay
 Retain the Overview accessibility label, native sheet dismissal, nested task navigation
 and the same content in both presentations.
 Overview takes the inspector column only where the conversation keeps the Mac's 420 points beside
-it, which on the Duo is unfolded landscape (user 5143/5146). Folded and unfolded portrait use the
+it, which on the Duo is unfolded landscape. Folded and unfolded portrait use the
 sheet, decided by the scene's width rather than its size class alone. Rotating or folding moves an
 open Overview between the two without closing it, keeping its open page, disclosures and section
 state. The new presentation opens at its top rather than the reader's scroll position: SwiftUI's
-List ignores a restored offset, and a restored top row didn't hold through every Duo rotation and
-fold (t532). The column never writes back to Overview's presence, so the transient close SwiftUI
+List ignores a restored offset, and a restored top row doesn't hold through every Duo rotation and
+fold. The column never writes back to Overview's presence, so the transient close SwiftUI
 reports while columns reflow cannot dismiss it.
-Apply the compact 16-point / regular 20-point outer rail once, without the old compounded
+Apply the compact 16-point / regular 20-point outer rail once, with no compounded
 44-point list margin. Treat purpose, folder and Preview as the headerless first section.
 Use one 24-point section-gap constant from that block's last row to Team and between every
-pair of sections, whether collapsed or expanded. This replaces the earlier 16-point opening
-gap and 12-point collapsed gap. At Large, keep 16 points from purpose to details and 4 from
+pair of sections, whether collapsed or expanded. At Large, keep 16 points from purpose to details and 4 from
 heading to content. Folder and Preview stack with no gap, so their 44-point rows read as a pair.
 Show More/Show Less is quiet footnote-semibold secondary text, matching the transcript's toggle,
 and stays minimum 44 with no extra spacer above it. Omit absent content and its gaps.
@@ -2039,7 +1723,7 @@ falling back to the original path if the component is empty, without expanding o
 
 Phone Team avatars are 28 points at default text size, scaling natively up to a 36-point cap.
 Keep the accepted name/single-status hierarchy, text sizing, row growth and agent actions.
-This changes only the phone Team row, not message, completion, task or Mac avatars.
+This applies only to the phone Team row, not message, completion, task or Mac avatars.
 
 **Section headers: names lead, facts follow.** The name is the primary anchor and its count is
 quiet supporting information, never a badge or part of the name. Mac uses 13 semibold primary
@@ -2229,8 +1913,7 @@ user-triggered and status-driven task disclosure change immediately, without a f
 text size and under Reduce Motion in the root and scoped lists. Following-section text must
 not pass through task rows. Do not stage a second content fade, animate the whole list by its
 visible IDs or add a separate animated height transition. One shared phone motion policy owns
-this shipping fallback. Overview section-header behavior is unchanged. The target 180 ms
-ease-in-out task disclosure remains a separate follow-up. Adjacent row guide segments join
+this shipping fallback. Overview section-header behavior is unchanged. Adjacent row guide segments join
 continuously, retaining 4-point clearance only at the whole child group's ends. Preserve saved disclosure, status
 defaults, measured reading width, scoped subtasks, artifact actions and visible-only timers.
 Mac disclosure is unchanged.
@@ -2266,8 +1949,7 @@ shares these rows.
 **In-progress filter.** Like the pane, Tasks can show only the work that's moving. A filter
 toggle sits in the Tasks header on both apps, right after the count, because it changes the list
 the count describes. The gap after the count matches the gap between the title and the count,
-and the glyph is vertically centered on the count's digits. The user chose this placement from a
-mockup. It's `line.3.horizontal.decrease`, the Message View glyph, in secondary ink while off and
+and the glyph is vertically centered on the count's digits. It's `line.3.horizontal.decrease`, the Message View glyph, in secondary ink while off and
 system blue while on. It's a sibling of the heading button, never inside it, so pressing it never
 collapses the section. It's its own focus stop with toggle semantics: label "Show Only
 In-Progress Tasks", value on or off, and the same text as Mac help. Mac uses an 11-point medium
@@ -2318,8 +2000,7 @@ actions. A parent row is a button whose value is "Expanded" or "Collapsed" and w
 toggles it, so VoiceOver reads "Build the workshop, …, collapsed, button". A leaf row is static
 text. Neither may surface as an unknown element, matching the routine rows.
 
-The task's own artifact is a separate line on both hosts, intentionally replacing Mac's
-artifact-beside-diff arrangement. It is an action, not another statistic. Place it 4 points
+The task's own artifact is a separate line on both hosts. It is an action, not another statistic. Place it 4 points
 after metadata, or 6 below the title when no metadata exists, aligned to the title. Keep
 `doc.text` and full wrapping title 6 points apart in one leading-aligned group. Use a growing
 minimum-24 Mac target with 12-point title and native link ink. Phone uses a minimum-44 target,
@@ -2376,8 +2057,7 @@ Phone artifact rows match Team's compact two-line rhythm: body title and footnot
 4-point title/date gap, 24-point icon lane and the existing 12-point icon/text gap. Team's
 name/status gap stays 2 points. Remove the
 64-point content minimum. Add exactly 6 points of native vertical row inset above and below
-the minimum-44 label, for both short and two-line titles. This replaces the earlier total-height
-target: preserve readable content and the full target rather than squeezing the row to 60.
+the minimum-44 label, for both short and two-line titles. Preserve readable content and the full target rather than squeezing the row to 60.
 Grow for wrapping or larger text.
 Phone artifact rows also offer a trailing swipe labelled "Remove", hidden under VoiceOver. Swiping
 all the way across removes the artifact without tapping the button, like Mail. Team and Routines
@@ -2518,7 +2198,7 @@ leaves all fields and the sheet intact. After a 500, say the change may have bee
 resubmitting against the old baseline, and refresh from the server. Then either show the
 reconciled state or offer a reviewed retry.
 
-**Phone channel forms, user 3490 and Lead 3497.** Neither New Channel nor Edit Channel shows
+**Phone channel forms.** Neither New Channel nor Edit Channel shows
 a Folder/Working directory field. Phone creation omits the directory from its request and
 creates a discussion-only channel. Editing must preserve any existing server directory
 without exposing or writing it. New Channel removes the recruiting-agent introduction.
@@ -2527,7 +2207,7 @@ prompt. Leave Purpose, model/options, validation, focus, cancellation and write 
 unchanged. Neither channel form shows an explanatory introduction. Edit Channel also omits its
 subtitle on the Mac.
 
-**Phone member forms, user 5235 and Lead 5238.** Add Agent matches New Channel. Its Name row
+**Phone member forms.** Add Agent matches New Channel. Its Name row
 has a visible "Name" label with "Required" as the field prompt, and the unlabeled Role field asks
 "What is this agent's role in the channel?". Neither Add Agent nor Edit Agent shows a note above
 the form, so the onboarding and "Member of" lines stay Mac-only. The identity footer still reads
@@ -2604,8 +2284,9 @@ that fails to load the catalog shows its error in the card. Notifications explai
 and completions before asking system permission in response to an explicit enable action.
 Permission denial shows Open System Settings, never repeated permission prompts. General also
 holds Open at Login, Show in menu bar, the Quick Send shortcut recorder, and the two on-device
-toggles specified under Mac features beyond the pane.
-Both apps default to requests on and completions off, without changing saved choices. On iPhone,
+toggles specified under Settings additions.
+Notifications has an "Allow notifications" toggle over "Requests for your response" and
+"Completed tasks". Both apps default to requests on and completions off, without changing saved choices. On iPhone,
 the request and completion switches are hidden while Allow notifications is off. On Mac they stay
 visible and disabled. Turning notifications off preserves both choices.
 Release builds also show Updates, with "Automatically check for updates" and "Automatically
@@ -2613,99 +2294,48 @@ download and install updates" bound to Sparkle's own settings. Automatic install
 while automatic checks are off or the updater disallows it. These controls are hidden without a
 running updater. Only a bundle containing `SUFeedURL` outside snapshot mode starts the standard
 Sparkle updater, so development, validation and test bundles cannot update themselves.
-### Menu and keyboard model
 
-Use native About, Settings (`Cmd-,`), Services, Hide, Quit, Edit, Window and Help menus. Standard
-text-editing shortcuts retain their native meaning. Commands below disable when inapplicable.
-Focus Composer does not discard selection or any existing draft.
-Check for Updates… follows About in the app menu and uses Sparkle's standard window. It is
-disabled whenever the updater's `canCheckForUpdates` is false, including in bundles without a feed.
+**Settings additions.** General gains "Show in menu bar" (see Menu bar extra) and a group of two toggles, both
+on by default. Each toggle's description sits in its row as secondary text under the label, the
+way System Settings describes its toggles, rather than as a section footer:
 
-| Menu | Command | Shortcut |
-| --- | --- | --- |
-| App | Quick Send | Configurable global shortcut, `Ctrl-Shift-Space` by default |
-| File | New Channel | `Cmd-N` |
-| File | Open Channel in New Window | `Cmd-Shift-N` |
-| File | Open in Toy Box | `Cmd-Shift-O` |
-| File | Open Folder in Finder (selected channel, only when its folder is openable) | `Cmd-Option-R` |
-| Edit > Find | Find… / Find Next / Find Previous (open channel) | `Cmd-F` / `Cmd-G` / `Shift-Cmd-G` |
-| Edit | Find Channel (reveals a hidden sidebar, then focuses its search) | `Cmd-Option-F` |
-| View | Show/Hide Sidebar | `Ctrl-Cmd-S` |
-| View | Show/Hide Overview | `Cmd-Option-0` |
-| View | All Messages / Your Messages | `Cmd-1` / `Cmd-2` |
-| View | Refresh (the channel list) | `Cmd-R` |
-| View | Text Size: Larger / Smaller / Default | `Cmd-+` / `Cmd--` / `Cmd-0` |
-| Channel | Next / Previous Channel | `Ctrl-Tab` / `Ctrl-Shift-Tab` |
-| Channel | Next Channel Needing Attention | `Cmd-Shift-U` |
-| Channel | Focus Composer | `Cmd-L` |
-| Channel | Jump to Latest / Input Needed | `Cmd-J` / `Cmd-Shift-J` |
-
-Space opens a focused image in the image viewer and previews other attachments with Quick Look,
-Return opens a focused artifact, and Right/Left expand or
-collapse a focused task or routine. Sidebar arrows select without stealing first responder to the
-composer. Switching channels by click may focus the composer after connection, but keyboard
-navigation keeps list focus until explicitly moving into the conversation.
-
-### Loading, empty, error and stale states
-
-| State | Presentation and available actions |
+| Toggle | Description |
 | --- | --- |
-| First catalog load | Three static placeholder rows, no fabricated channel names. After 300 ms the connection footer's dot becomes a mini spinner (see Sidebar). Nothing overlays the list |
-| No channels | Source-list empty state: "Your channels live here" and New Channel. The connection footer already names the server, so the empty state doesn't repeat it |
-| Search has no matches | "No channels match [query]", Clear Search. Do not show the no-channels creation state |
-| Nothing selected | Centered `bubble.left.and.bubble.right` symbol, "Choose a channel", concise navigation hint |
-| First channel snapshot | Static message placeholders and "Connecting", whose spinner appears after 300 ms. On the Mac the label waits with it. Composer shell remains present, Send unavailable |
-| New empty channel | "Your lead is getting started", "Send a message or type @ to add an agent". Keep composer and working status visible |
-| Filter has no messages | "No messages for you yet", Show All Messages. Keep paging older history until exhausted |
-| Reconnecting with cached state | Keep transcript and scroll intact. After about three seconds of trying without connecting, the transcript's floating pill says "Reconnecting to server" over "Messages may be out of date" (see Reconnecting notice), the channel's only outage notice. It has no Retry, because the channel keeps trying and tries again at once when the network comes back or moves, the app becomes active again or the catalog recovers (see Connections). The notice stays until the channel connects. A reconnect that goes live sooner shows nothing. Until then agent status, working presence and every connection notice stay as they were while live. Disable delivery and management actions, not editing. Time away from the app never counts toward the three seconds |
-| Disconnected without any state | `wifi.exclamationmark`, "Can't connect to Toy Box", server host, readable failure, Retry and Settings |
-| Catalog refresh fails | Keep existing rows, mark them stale and show the error block above the connection footer's orange status line (see Sidebar), after about three seconds of failing polls or at once for a refresh the user asked for. Never replace them with "No channels". When it recovers, every channel waiting out a backoff retries at once |
-| Failed send | Inline error above composer and explicit status on optimistic row, preserved text/attachments, no automatic retry |
-| Channel deleted | Stop observation, dismiss its inspector, show "This channel was deleted". Back to Channels and Copy Draft if nonempty. Never silently discard a draft or redirect to another channel |
-| Invalid URL or authorization failure | Show the actual category and server, Settings/Retry as appropriate. No fabricated successful connection |
-| Failed image/artifact/history | Localized error at that surface with Retry. Keep the rest of the channel usable |
-| Unsupported future event | Neutral system row, no stream-wide crash and no raw JSON wall |
+| Summarize new messages | "When you return to a busy channel, a summary appears above the new messages. Made on this Mac." |
+| Describe images for VoiceOver | "While VoiceOver is running, images get descriptions made on this Mac." |
 
-Connection status is separate from agent activity. Reconnection does not show a team as still
-working unless current presence establishes that. No repeated full-window spinner after content
-has already loaded. Retry is user-initiated and does not resend messages or replay mutations.
+When the service isn't available, both toggles are disabled and keep their values, their
+descriptions hide, and one footer under the group explains why. It reads "This Mac doesn't support
+Apple Intelligence.", "Turn on Apple Intelligence in System Settings to use these." with an Open
+System Settings button trailing on the footer's line, "Apple Intelligence is getting ready. Try
+again later.", or, when the model doesn't support the Mac's language (`unsupportedLanguage`),
+"Apple Intelligence doesn't support your Mac's language yet." with no button. The Settings window
+grows to fit General rather than scrolling.
 
-### Motion, accessibility and attention outside the window
+## Beyond the window
 
-Use native selection and inspector transitions. Custom hover/focus fades last 120 ms, disclosure
-and tray changes approximately 180 ms. Scrolling to a user-requested target may animate for
-180...240 ms, but initial landing and history anchoring must be immediate. The Team's working
-ellipsis pulses only in the key window, as a render-server animation. Reduce Motion keeps it static
-beside its text. No continuous animation may update SwiftUI views or run main-thread work every
-frame, and a key window with working agents idles under 3% CPU. Requests never animate. No looping
-shimmering skeletons or large empty-state art.
+These surfaces live outside the main window, on the Mac, the iPhone or both. Each section says
+which. Each Mac feature here stays quiet until it has something true to say, and disappears rather
+than degrading when the Mac can't support it. On-device work never sends message text or images
+off the Mac.
 
-Every icon-only control has a localized label and help. Minimum compact control hit target is
-28 x 28. Keyboard focus is visible without hover. Expose one semantic message group with author,
-time, addressee, body, request state and actions, with attachments and reactions as reachable
-children. VoiceOver order follows chronological messages, then working row, tray and composer.
-Do not announce the whole transcript on every event. Announce a new relevant request or send
-error once, with a polite concise message. Day and New dividers are named separators.
-Status uses symbol and words as well as color. Confirm text contrast in both appearances,
-including avatar ink, selected sidebar rows, tinted user messages and amber request labels.
+Owners: Shell owns notifications, the menu bar extra and Settings. Intelligence owns the
+model layer, Siri and Shortcuts and Spotlight. Transcript owns the catch-up
+card, descriptions in tiles and the viewer, and Live Text. Designer reviews each one in
+real-window captures in Dark, with VoiceOver and with Reduce Motion, adding Light when a change
+touches colors.
 
-The Dock badge counts channels needing attention once each, not message volume. Notification
-categories are pending requests and unread completions, deduplicated by channel and milestone
+### Notifications
+
+Notification categories are pending requests and unread completions, deduplicated by channel and milestone
 sequence. Ordinary chatter does not notify by default. Suppress notifications for the active key
 channel, but never hide its request marker. Activating a notification opens the right channel and,
 for a request, reveals its message. A reveal newer than the channel's loaded history waits for the
 reconnect to catch up, then lands on it. Messages are never deleted, so no reveal says a message is
 unavailable. A caught-up channel without the target lands as usual with no notice, and logs only in
-DEBUG builds. An offline channel and a failed history page keep their own notices. Respect system notification permission and Focus. Content,
-quick reply and withdrawal are under Mac features beyond the pane.
+DEBUG builds. An offline channel and a failed history page keep their own notices. Respect system notification permission and Focus.
 
-### Mac features beyond the pane (M8)
-
-These features exist only on the Mac. Each one stays quiet until it has something true to say,
-and disappears rather than degrading when the Mac can't support it. On-device work never sends
-message text or images off the Mac.
-
-**Notifications.** A notification says what is being asked, and you can answer it without
+**Mac.** A notification says what is being asked, and you can answer it without
 opening the window.
 
 | Part | Request | Completion |
@@ -2760,7 +2390,15 @@ banners with sound and send completions to Notification Center only, since the s
 shows them. The active key channel still never notifies. Keep the existing per-milestone
 deduplication and the two Settings toggles.
 
-**Menu bar extra.** One template image of the app icon's robot head tells you, from any app,
+**Phone.** The phone's request and completion alerts arrive by push. Their text, badge, service
+extension and routing are under Push and topic subscriptions, and their Lock Screen reply choices
+are under Suggested replies.
+
+### Menu bar extra
+
+The menu bar extra is Mac only.
+
+One template image of the app icon's robot head tells you, from any app,
 whether your team is working or waiting for you. It never animates, because a team can work
 for hours, and it never uses color.
 
@@ -2812,6 +2450,64 @@ and the Dock can never disagree. Render identities with `AgentAvatarView`. Openi
 not refresh the catalog. Its normal cadence (5 seconds active, 15 inactive) is the latency.
 Opening it, reading a quote and expanding Reply never mark a channel read.
 
+### Dock
+
+The Dock request menu and badge are Mac only.
+
+The Dock badge counts channels needing attention once each, not message volume.
+
+The Dock context menu uses native `NSMenuItem` rows, not custom cards or a second inbox. Build
+it on opening from `MenuBarStatus.waiting`, preserving its newest-request-first order and
+canonical request sequence. The menu never fetches history, changes selection or marks read.
+
+| Order | Content |
+| --- | --- |
+| Waiting requests | One item per waiting channel: "[Channel]: [plain-text question]". Collapse whitespace and shorten the title at a word boundary to about 60 characters, including an ellipsis. Keep the complete quote, channel and requester in the item's help. While resolving the quote, use "[Channel]: Needs your reply" |
+| No requests | A disabled "Nothing needs you" row instead of an empty region |
+| Cached offline content | Keep cached request items, preceded by a disabled "May be out of date". Without usable content, show "Connect to Toy Box", not "Nothing needs you" |
+| Commands | One separator, then "Quick Send…" and "New Channel…". These open the existing panel and `ManagementPresenter` flow |
+
+A request opens its exact channel and message through the widget's validated navigation path.
+Invalid or deleted targets show the existing unavailable state, never a different request.
+Catch Me Up is deliberately absent: its current result is a system-hosted Siri card, not an
+in-app destination for this menu. macOS retains its own standard Dock items.
+
+Notifications Settings adds "Bounce Dock icon for new requests", off by default, with
+"Bounce once when a new request arrives while you're using another app." It is independent of
+notification authorization. Use one `.informationalRequest` for a newly observed request while
+Toy Box is inactive, never persistent attention or one bounce per agent. Deduplicate by server,
+channel and request sequence. The first usable catalog after launch or a server switch establishes
+a quiet baseline. Enabling the setting, losing focus, reopening the menu, resolving quote text
+or reconnecting with an already-known request never bounces. Test, snapshot and benchmark
+launches never request real Dock attention.
+
+### Open at Login
+
+Open at Login is Mac only.
+
+General Settings adds "Open at Login", off by default, with the secondary description
+"Keep Toy Box ready in the Dock and menu bar without opening a window." Use the real
+`SMAppService.mainApp` status, not a separately saved Boolean, and refresh it when Settings
+becomes active. Enabling registers the main app and disabling unregisters it. A pending request
+for approval must visibly say "Approval Required", followed by "Allow Toy Box in System Settings
+to open at login." and "Open Login Items…". Keep the toggle off until enabled, with a secondary
+"Cancel Request" action to unregister the pending request.
+Never claim a pending or failed registration is enabled. Unavailable registration and failed
+changes show an actionable inline explanation rather than silently resetting a checkmark.
+
+An explicit `keyAELaunchedAsLogInItem` launch opens no window and restores no visible windows,
+but remains a regular app with its Dock icon, badge, menu bar inbox and normal background
+observation. Do not reuse the accessory-app launch path for background intents. A Dock click,
+notification or explicit Open action opens the normal channel window. No login launch prompts
+for notifications or microphone access. Merely opening Settings never registers anything.
+Only the ordinary production identity may alter login registration. Test, snapshot, benchmark
+and explicit demo-server launches use a disabled control and injected service in tests.
+
+### Quick Send and Share
+
+Quick Send and Send to Toy Box are Mac only. The phone takes shared content through its own share
+extension, under Sharing to a channel on iPhone.
+
 **Quick Send.** The app-menu command, inbox footer and configurable global shortcut present one
 retained, non-activating, key-capable floating `NSPanel`. It uses one regular system-glass surface,
 24-point continuous corners and the system shadow, without a title bar or nested glass composer.
@@ -2861,12 +2557,16 @@ permission, and snapshot and benchmark launches never register or present these 
 the same Quick Send panel, not another editor. They prefill content for review, never send,
 answer a request or mark messages read automatically. Shared text and URLs append after a blank
 line to the selected draft. Images append to its existing attachments. Neither replaces text,
-images or an unresolved send's message UUID.
+images or an unresolved send's message UUID. The Services command accepts an explicitly supplied
+selection of text, URLs, images or file URLs. The document declaration has `LSHandlerRank` None,
+so Toy Box never claims to be a default file handler. Services never read or clear the general
+clipboard.
 
 While no channel is selected or the current send is immutable, incoming content is saved in a
 separate server-scoped staging draft. Append it to the target only when that draft is editable.
 Multiple invocations preserve all incoming content rather than replacing an earlier payload,
-and consumption happens once so reopening the panel cannot duplicate it.
+and consumption happens once so reopening the panel cannot duplicate it. Consumption clears only
+the matching payload ID.
 
 Images use the existing attachment validation. Other in-place regular files become visible plain path
 text only when the server has a loopback host, so agents on this Mac can open them. Those paths
@@ -2875,7 +2575,9 @@ server rejects non-image files with "Only images can be attached" and preserves 
 draft. The Share extension has no editor or networking of its own. It hands the explicitly shared
 content to the host's same prefill path. It copies image bytes before the provider expires, but
 rejects temporary non-image files in this release. Never give agents a path inside a sandbox
-container.
+container. The Share extension's `toybox-desktop://quick-send?pasteboard=<name>` route accepts only
+`dev.toybox.desktop.share.<UUID>` names. The host copies that named pasteboard and clears it,
+including on failure.
 
 For native validation only, `--validate-quick-send trace` logs panel visibility, key state,
 geometry and accessibility role. `hold` additionally suppresses resign-key dismissal, not Escape,
@@ -2884,18 +2586,48 @@ values for a test bundle launched through Launch Services. The command-line valu
 The mode is recorded only in the volatile argument domain, never saved as a preference, and
 cannot be combined with snapshots or benchmarks. Normal launches leave it unset.
 
-**Send to Toy Box.** The Services command accepts an explicitly supplied selection of text,
-URLs, images or file URLs and opens Quick Send with it. Dropping files on the Dock icon uses
-the same intake. The document declaration has `LSHandlerRank` None, so Toy Box never claims to
-be a default file handler. Images attach normally. Other files become visible path text only
-for a loopback server. Remote servers reject them with "Only images can be attached" while
-preserving the existing draft. Nothing sends automatically.
+**Sharing to a channel on iPhone.** `PlugIns/ToyBoxMobileShare.appex` (`dev.toybox.mobile.share`) puts Toy Box in the system share
+sheet for up to ten images or one web link. Anything else, or an image it can't read, shows
+"Can't Share This" with the reason and Close. It reads the server the app last connected to from
+the app group's share history and never connects anywhere else. With none saved, it says "Open
+Toy Box to connect first".
 
-Incoming content appends rather than replacing a draft. Multiple invocations before the editor
-consumes them are combined, and consumption clears only the matching payload ID. The Share
-extension's `toybox-desktop://quick-send?pasteboard=<name>` route accepts only
-`dev.toybox.desktop.share.<UUID>` names. The host copies that named pasteboard and clears it,
-including on failure. Services never read or clear the general clipboard.
+The app saves that server whenever it connects and records each channel the server confirms a
+send to, from the app or the extension. That history keeps the 20 most recent channels for that
+server and mirrors them as `INSendMessageIntent` donations, so the share sheet suggests them with the channel
+mark. Each donation is grouped by its server and channel, and changing servers or the catalog
+dropping a channel deletes its suggestion. A suggestion opens straight to its composer. Anything
+else opens "Choose a Channel": up to three recent channels, then the rest A to Z through
+ChannelKit's `choices(matching:recentIDs:)`, the same order as the Mac's Quick Send. Search, pull to refresh and
+"Can't Load Channels" with Retry use the native list.
+
+The composer shows the channel name with a chevron as the principal toolbar item to choose
+another channel, the images or a link tile with the page title and host, an "Add a note" field
+and the shared `AudiencePill` (ToyBoxUI). A link posts the note, a blank line and the URL, or the
+URL alone. Images go through `ComposerDraft`'s encoding at 2048 pixels and 1.5 MB each, well inside
+the server's limits, because iOS ends a share extension near 120 MB. Ten 24-megapixel photos at
+8000 pixels peaked 247 MB above the extension's baseline, and at 2048 pixels 45 MB. Sending holds
+the request about three times over, so the byte limit keeps ten images' request under 20 MB.
+
+The header stays centered on the sheet in every state. Close and the trailing control are both
+36-point circles: Send (arrow up), progress, Sent (checkmark) or Send Again (`arrow.clockwise`,
+labeled "Send Again"). The channel button keeps 68 points clear of each edge, Close's measured 56
+to 60 points plus 8, so a long name truncates instead of running under them. The header's text
+stops growing at the Large text size, with the Large Content Viewer above it.
+
+The first Send makes one attempt with its own UUID through `ChannelStore.postInBackground`, without
+a channel connection. Sending shows a progress indicator, and Sent shows a checkmark for 0.7 s
+before the sheet closes. While an attempt is in flight or unresolved, the composer is dimmed to
+50% and locked, as is the channel button. A lost connection says "You're offline." over "Nothing
+was sent." and anything else unconfirmed says "Toy Box didn't confirm this." over "Sending again
+can't post it twice." Both keep the attempt, so Send Again reuses its UUID. A refusal shows the server's
+message alone and unlocks, and the next Send is a new attempt. A deleted channel says
+"<name> no longer exists. Choose another channel." and returns to the list. Close is disabled
+while sending. Swiping down with a note asks "Discard Note" or "Keep Editing".
+
+### Catch-up summaries
+
+The morning digest is Mac only. The catch-up summary below is specified for the Mac.
 
 **Catch-up summary.** When you return to a busy channel, a short on-device summary sits above the
 New divider. Each line points at the messages it came from.
@@ -2946,6 +2678,43 @@ reply: [text]" or "Replied: [text]". Arrival is never announced. The card lives 
 landing. Leaving the channel and returning recaptures the boundary. Intelligence owns selection,
 grounding and caching, and Transcript owns the card and landing.
 
+**Morning digest.** One quiet morning notification helps the user return to the teams, rather than adding another
+live activity feed. It is enabled by default and scheduled for 8:00 AM in the Mac's local time.
+Include each channel with messages from others since the last successful digest, looking back
+at most 24 hours. Exclude the user's own messages and empty activity. If no channel qualifies,
+post nothing. Deliver a missed morning at the first opportunity before noon after wake or launch,
+at most once per local calendar day. Respect notification authorization and Focus. Enabling the
+default preference never prompts for permission on launch.
+
+The notification title is "Morning digest", with no subtitle or badge change and no added sound.
+Its body has one plain-text line per qualifying channel, busiest first:
+"Studio: Finished the layout and needs your review." Use the existing on-device catch-up path
+for short, factual summaries. No praise, invented urgency or claim that the user has read
+something. When Apple Intelligence is off, unavailable or fails, use the deterministic line
+"Studio: 12 new messages", with correct singular/plural forms. Do not manufacture a summary or
+make model availability a prerequisite for the digest. System notification truncation is allowed,
+but the authored content retains one line per qualifying channel.
+
+Activating the notification opens its busiest channel through the existing navigation path,
+with a deterministic tie-break when activity counts tie. It offers no Reply action and never
+posts, answers a request or marks a channel read in the background. Snapshot, benchmark and
+validation launches never schedule or post a digest. An explicit test-bundle-only trigger may
+present a demo banner for acceptance without changing the production daily-delivery record.
+
+Under Settings > Notifications, add a separate grouped section below the existing request and
+completion alerts. Its rows are an on-by-default "Morning digest" toggle and a native time-only
+morning picker labeled "Deliver at", initially 8:00 AM and formatted for the user's locale. The footer
+reads "A daily recap of activity from your teams. Made on this Mac. If your Mac is asleep, it
+arrives when you return before noon." Turning the digest off disables its time picker without
+discarding the chosen time. Existing notification authorization remains the master gate:
+denied permission uses the existing Open System Settings explanation, never repeated prompts.
+The new section fits in the native Settings window in both appearances, with no custom card or
+artificial fixed-height spacer.
+
+### Image descriptions and Live Text
+
+Image descriptions and Live Text are specified here for the Mac.
+
 **Image descriptions.** Generated descriptions are for VoiceOver. Sighted readers already see the
 image, so descriptions never appear as captions, help, copied text or exports.
 
@@ -2973,7 +2742,11 @@ its links.
 | Menus | A right-click on selected text shows the system text menu (Copy, Look Up, Translate, Share). Everywhere else is unchanged |
 | Accessibility | Recognized text is exposed as the overlay provides it. The image keeps its label and description value |
 
-**Siri and Shortcuts.** Ask what needs you, open a channel or send a message by voice, from
+### Siri and Shortcuts
+
+Siri and Shortcuts are Mac only. Handoff works on both apps.
+
+Ask what needs you, open a channel or send a message by voice, from
 Spotlight or in a shortcut, without touching the window. Every answer is the team's own words or
 the transcript's summary, and asking never marks anything read.
 
@@ -2999,42 +2772,6 @@ which counts channel events too), Needs Your Reply and Tasks Completed propertie
 the catalog fresh, suggests channels in sidebar order and matches names ignoring case, accents and
 punctuation, exact names first, then prefixes, then substrings. The app refreshes the shortcuts'
 parameters whenever the set of channel names changes, so Siri learns them.
-
-**Spotlight.** Every channel on the server saved in Settings is in Spotlight by name, with the
-first line of its purpose under it and the sidebar's cyan channel icon (a 128 px PNG) beside it.
-Attention is left out, since Spotlight would keep it after it goes stale. Picking a channel runs
-Open Channel. The Channel entity is an `IndexedEntity`, keyed `ChannelEntity/<id>` in the app's
-default index. The first catalog load after launch replaces whatever Spotlight held, and the last
-launch's channels stay until then. After that the app indexes only renames, purpose changes,
-additions and deletions. Switching servers, or having no valid one, removes every channel at once,
-before the new server's catalog arrives. A failed call makes the next catalog change replace
-everything. Launches with `--server`, `TOY_BOX_SERVER_URL`, a snapshot or a benchmark never touch
-the index. When Spotlight asks the app to reindex, it indexes the catalog's channels and removes
-identifiers the catalog no longer has.
-
-A window that shows a channel makes it the window's user activity (`dev.toybox.desktop.channel`)
-with `appEntityIdentifier` set to its Channel entity, through `userActivity(_:element:_:)` so the
-activity follows a switch. AppKit makes the main window's activity current, so Siri and Apple
-Intelligence take "this channel" to mean the one in front, and with no channel shown there's no
-activity. Phone and Mac declare the same activity type and carry only the exact channel identifier
-in `userInfo.channelID`. Handoff is eligible while a channel is shown, except isolated Mac
-snapshot, benchmark and explicit-server launches. Each receiving window resolves the identifier
-in its own current server's catalog, joining a catalog refresh when necessary. It never matches
-by name, switches servers, or imports drafts or credentials. A native `Opening channel…` progress
-state resolves to the channel or one native `Channel unavailable` state with
-`This channel isn't available.` and `Show Channels`. New navigation or a server change discards
-obsolete results. Local drafts survive Handoff and ordinary Back/sidebar navigation.
-The entity isn't `Transferable`, so Siri learns what a channel says only from Catch Me Up's answer.
-
-Debug builds can launch with `TOY_BOX_HANDOFF_CHANNEL=<channel ID>` to invoke the same continuation
-handler as native Handoff. For the phone simulator, pass it through
-`SIMCTL_CHILD_TOY_BOX_HANDOFF_CHANNEL`. For Mac receiver checks, combine that hook with
-`bun run snapshot --state handoff-match` or `--state handoff-unavailable` and the normal snapshot
-arguments. Match becomes ready after the continuation selects the channel. Unavailable waits for
-the receiver's unavailable presentation rather than a live conversation it intentionally never
-opens. Both use the existing snapshot renderer without delaying Handoff lookup. These are
-receiver-state proof hooks, not proof of native cross-device discovery or delivery, which requires
-the signed phone and Mac on real devices.
 
 Catch Me Up without a channel says "You're all caught up." when nothing needs you, catches up on
 the one channel that does, or gives an overview: "You have updates in 4 channels." and then one
@@ -3100,7 +2837,7 @@ delivery says "Your Toy Box server didn't confirm your message to [channel]. Ope
 see if it arrived before you send it again." Other errors: "Toy Box isn't connected to a
 server. Choose one in Settings.", "Can't connect to your Toy Box server. Check that it's running,
 then try again." and "That channel isn't on your Toy Box server anymore." Errors about the server
-always say "your Toy Box server", since "Toy Box" alone now also names the app.
+always say "your Toy Box server", since "Toy Box" alone also names the app.
 
 When Catch Me Up, Send Message or the card's Reply launches the app, the system starts it hidden with activation
 prohibited. That launch presents no window and runs as an accessory app outside the Dock, so the
@@ -3115,77 +2852,45 @@ Xcode installed but never `xcodebuild`. Titles, phrases and parameter names must
 The system only indexes a bundle outside `/tmp` that has launched once, and parameterized phrases
 need a team-signed build, so verify Siri with a Developer ID build in Applications.
 
-**Settings additions.** General gains "Show in menu bar" (above) and a group of two toggles, both
-on by default. Each toggle's description sits in its row as secondary text under the label, the
-way System Settings describes its toggles, rather than as a section footer:
+**Handoff.** A window that shows a channel makes it the window's user activity (`dev.toybox.desktop.channel`)
+with `appEntityIdentifier` set to its Channel entity, through `userActivity(_:element:_:)` so the
+activity follows a switch. AppKit makes the main window's activity current, so Siri and Apple
+Intelligence take "this channel" to mean the one in front, and with no channel shown there's no
+activity. Phone and Mac declare the same activity type and carry only the exact channel identifier
+in `userInfo.channelID`. Handoff is eligible while a channel is shown, except isolated Mac
+snapshot, benchmark and explicit-server launches. Each receiving window resolves the identifier
+in its own current server's catalog, joining a catalog refresh when necessary. It never matches
+by name, switches servers, or imports drafts or credentials. A native `Opening channel…` progress
+state resolves to the channel or one native `Channel unavailable` state with
+`This channel isn't available.` and `Show Channels`. New navigation or a server change discards
+obsolete results. Local drafts survive Handoff and ordinary Back/sidebar navigation.
+The entity isn't `Transferable`, so Siri learns what a channel says only from Catch Me Up's answer.
 
-| Toggle | Description |
-| --- | --- |
-| Summarize new messages | "When you return to a busy channel, a summary appears above the new messages. Made on this Mac." |
-| Describe images for VoiceOver | "While VoiceOver is running, images get descriptions made on this Mac." |
+Debug builds can launch with `TOY_BOX_HANDOFF_CHANNEL=<channel ID>` to invoke the same continuation
+handler as native Handoff. For the phone simulator, pass it through
+`SIMCTL_CHILD_TOY_BOX_HANDOFF_CHANNEL`. For Mac receiver checks, combine that hook with
+`bun run snapshot --state handoff-match` or `--state handoff-unavailable` and the normal snapshot
+arguments. Match becomes ready after the continuation selects the channel. Unavailable waits for
+the receiver's unavailable presentation rather than a live conversation it intentionally never
+opens. Both use the existing snapshot renderer without delaying Handoff lookup. These are
+receiver-state proof hooks, not proof of native cross-device discovery or delivery, which requires
+the signed phone and Mac on real devices.
 
-When the service isn't available, both toggles are disabled and keep their values, their
-descriptions hide, and one footer under the group explains why. It reads "This Mac doesn't support
-Apple Intelligence.", "Turn on Apple Intelligence in System Settings to use these." with an Open
-System Settings button trailing on the footer's line, "Apple Intelligence is getting ready. Try
-again later.", or, when the model doesn't support the Mac's language (`unsupportedLanguage`),
-"Apple Intelligence doesn't support your Mac's language yet." with no button. The Settings window
-grows to fit General rather than scrolling.
+### Spotlight
 
-Owners: Shell owns notifications, the menu bar extra and Settings (t94, t95). Intelligence owns the
-model layer (t96), Siri and Shortcuts (t126) and Spotlight (t166). Transcript owns the catch-up
-card, descriptions in tiles and the viewer, and Live Text (t93, t97). Designer reviews each one in
-real-window captures in Dark, with VoiceOver and with Reduce Motion, adding Light when a change
-touches colors.
+Spotlight is Mac only.
 
-### Open at Login
-
-General Settings adds "Open at Login", off by default, with the secondary description
-"Keep Toy Box ready in the Dock and menu bar without opening a window." Use the real
-`SMAppService.mainApp` status, not a separately saved Boolean, and refresh it when Settings
-becomes active. Enabling registers the main app and disabling unregisters it. A pending request
-for approval must visibly say "Approval Required", followed by "Allow Toy Box in System Settings
-to open at login." and "Open Login Items…". Keep the toggle off until enabled, with a secondary
-"Cancel Request" action to unregister the pending request.
-Never claim a pending or failed registration is enabled. Unavailable registration and failed
-changes show an actionable inline explanation rather than silently resetting a checkmark.
-
-An explicit `keyAELaunchedAsLogInItem` launch opens no window and restores no visible windows,
-but remains a regular app with its Dock icon, badge, menu bar inbox and normal background
-observation. Do not reuse the accessory-app launch path for background intents. A Dock click,
-notification or explicit Open action opens the normal channel window. No login launch prompts
-for notifications or microphone access. Merely opening Settings never registers anything.
-Only the ordinary production identity may alter login registration. Test, snapshot, benchmark
-and explicit demo-server launches use a disabled control and injected service in tests.
-
-### Dock request menu and attention
-
-The Dock context menu uses native `NSMenuItem` rows, not custom cards or a second inbox. Build
-it on opening from `MenuBarStatus.waiting`, preserving its newest-request-first order and
-canonical request sequence. The menu never fetches history, changes selection or marks read.
-
-| Order | Content |
-| --- | --- |
-| Waiting requests | One item per waiting channel: "[Channel]: [plain-text question]". Collapse whitespace and shorten the title at a word boundary to about 60 characters, including an ellipsis. Keep the complete quote, channel and requester in the item's help. While resolving the quote, use "[Channel]: Needs your reply" |
-| No requests | A disabled "Nothing needs you" row instead of an empty region |
-| Cached offline content | Keep cached request items, preceded by a disabled "May be out of date". Without usable content, show "Connect to Toy Box", not "Nothing needs you" |
-| Commands | One separator, then "Quick Send…" and "New Channel…". These open the existing panel and `ManagementPresenter` flow |
-
-A request opens its exact channel and message through the widget's validated navigation path.
-Invalid or deleted targets show the existing unavailable state, never a different request.
-Catch Me Up is deliberately absent: its current result is a system-hosted Siri card, not an
-in-app destination for this menu. macOS retains its own standard Dock items.
-
-Notifications Settings adds "Bounce Dock icon for new requests", off by default, with
-"Bounce once when a new request arrives while you're using another app." It is independent of
-notification authorization. Use one `.informationalRequest` for a newly observed request while
-Toy Box is inactive, never persistent attention or one bounce per agent. Deduplicate by server,
-channel and request sequence. The first usable catalog after launch or a server switch establishes
-a quiet baseline. Enabling the setting, losing focus, reopening the menu, resolving quote text
-or reconnecting with an already-known request never bounces. Test, snapshot and benchmark
-launches never request real Dock attention.
-
-### Requests in Spotlight
+Every channel on the server saved in Settings is in Spotlight by name, with the
+first line of its purpose under it and the sidebar's cyan channel icon (a 128 px PNG) beside it.
+Attention is left out, since Spotlight would keep it after it goes stale. Picking a channel runs
+Open Channel. The Channel entity is an `IndexedEntity`, keyed `ChannelEntity/<id>` in the app's
+default index. The first catalog load after launch replaces whatever Spotlight held, and the last
+launch's channels stay until then. After that the app indexes only renames, purpose changes,
+additions and deletions. Switching servers, or having no valid one, removes every channel at once,
+before the new server's catalog arrives. A failed call makes the next catalog change replace
+everything. Launches with `--server`, `TOY_BOX_SERVER_URL`, a snapshot or a benchmark never touch
+the index. When Spotlight asks the app to reindex, it indexes the catalog's channels and removes
+identifiers the catalog no longer has.
 
 Waiting requests join the existing channel results as their own `IndexedEntity`. Channel results
 retain their current name/purpose presentation and Open Channel behavior. Index requests from
@@ -3210,41 +2915,6 @@ Remove indexed requests when answered, replaced, deleted or after a server switc
 `ChannelSpotlight`'s production and server-override gating for indexing and cleanup. Background
 indexing and reading a Spotlight result never mark read. Deterministic coverage must prove
 identity isolation, withdrawal and a stale result's inability to send to a different request.
-
-### Morning digest
-
-One quiet morning notification helps the user return to the teams, rather than adding another
-live activity feed. It is enabled by default and scheduled for 8:00 AM in the Mac's local time.
-Include each channel with messages from others since the last successful digest, looking back
-at most 24 hours. Exclude the user's own messages and empty activity. If no channel qualifies,
-post nothing. Deliver a missed morning at the first opportunity before noon after wake or launch,
-at most once per local calendar day. Respect notification authorization and Focus. Enabling the
-default preference never prompts for permission on launch.
-
-The notification title is "Morning digest", with no subtitle or badge change and no added sound.
-Its body has one plain-text line per qualifying channel, busiest first:
-"Studio: Finished the layout and needs your review." Use the existing on-device catch-up path
-for short, factual summaries. No praise, invented urgency or claim that the user has read
-something. When Apple Intelligence is off, unavailable or fails, use the deterministic line
-"Studio: 12 new messages", with correct singular/plural forms. Do not manufacture a summary or
-make model availability a prerequisite for the digest. System notification truncation is allowed,
-but the authored content retains one line per qualifying channel.
-
-Activating the notification opens its busiest channel through the existing navigation path,
-with a deterministic tie-break when activity counts tie. It offers no Reply action and never
-posts, answers a request or marks a channel read in the background. Snapshot, benchmark and
-validation launches never schedule or post a digest. An explicit test-bundle-only trigger may
-present a demo banner for acceptance without changing the production daily-delivery record.
-
-Under Settings > Notifications, add a separate grouped section below the existing request and
-completion alerts. Its rows are an on-by-default "Morning digest" toggle and a native time-only
-morning picker labeled "Deliver at", initially 8:00 AM and formatted for the user's locale. The footer
-reads "A daily recap of activity from your teams. Made on this Mac. If your Mac is asleep, it
-arrives when you return before noon." Turning the digest off disables its time picker without
-discarding the chosen time. Existing notification authorization remains the master gate:
-denied permission uses the existing Open System Settings explanation, never repeated prompts.
-The new section fits in the native Settings window in both appearances, with no custom card or
-artificial fixed-height spacer.
 
 ### Needs you widget
 
@@ -3346,7 +3016,9 @@ The widget never sends, marks read or changes a draft. Open and Reply
 use the existing `NeedsYouRequestLink` routes. Native widget backgrounds, tint and
 margins remain system-owned, with no custom largest-text layout.
 
-### Following a channel on iPhone
+### Live Activities
+
+Live Activities exist only on iPhone.
 
 Channel Actions offers "Follow This Channel" after Find and before Open in Toy Box. When following
 can't start, the item is disabled under a native section header that names the reason: "Channel was
@@ -3394,48 +3066,9 @@ is never extended. Channel deletion and server changes remove local content imme
 Ended follows never restart automatically, and their menu action simply becomes available again
 when the channel has live unfinished work.
 
-### Sharing to a channel on iPhone
+### Controls
 
-`PlugIns/ToyBoxMobileShare.appex` (`dev.toybox.mobile.share`) puts Toy Box in the system share
-sheet for up to ten images or one web link. Anything else, or an image it can't read, shows
-"Can't Share This" with the reason and Close. It reads the server the app last connected to from
-the app group's share history and never connects anywhere else. With none saved, it says "Open
-Toy Box to connect first".
-
-The app saves that server whenever it connects and records each channel the server confirms a
-send to, from the app or the extension. That history keeps the 20 most recent channels for that
-server and mirrors them as `INSendMessageIntent` donations, so the share sheet suggests them with the channel
-mark. Each donation is grouped by its server and channel, and changing servers or the catalog
-dropping a channel deletes its suggestion. A suggestion opens straight to its composer. Anything
-else opens "Choose a Channel": up to three recent channels, then the rest A to Z through
-ChannelKit's `choices(matching:recentIDs:)`, the same order as the Mac's Quick Send. Search, pull to refresh and
-"Can't Load Channels" with Retry use the native list.
-
-The composer shows the channel name with a chevron as the principal toolbar item to choose
-another channel, the images or a link tile with the page title and host, an "Add a note" field
-and the shared `AudiencePill` (ToyBoxUI). A link posts the note, a blank line and the URL, or the
-URL alone. Images go through `ComposerDraft`'s encoding at 2048 pixels and 1.5 MB each, well inside
-the server's limits, because iOS ends a share extension near 120 MB. Ten 24-megapixel photos at
-8000 pixels peaked 247 MB above the extension's baseline, and at 2048 pixels 45 MB. Sending holds
-the request about three times over, so the byte limit keeps ten images' request under 20 MB.
-
-The header stays centered on the sheet in every state. Close and the trailing control are both
-36-point circles: Send (arrow up), progress, Sent (checkmark) or Send Again (`arrow.clockwise`,
-labeled "Send Again"). The channel button keeps 68 points clear of each edge, Close's measured 56
-to 60 points plus 8, so a long name truncates instead of running under them. The header's text
-stops growing at the Large text size, with the Large Content Viewer above it.
-
-The first Send makes one attempt with its own UUID through `ChannelStore.postInBackground`, without
-a channel connection. Sending shows a progress indicator, and Sent shows a checkmark for 0.7 s
-before the sheet closes. While an attempt is in flight or unresolved, the composer is dimmed to
-50% and locked, as is the channel button. A lost connection says "You're offline." over "Nothing
-was sent." and anything else unconfirmed says "Toy Box didn't confirm this." over "Sending again
-can't post it twice." Both keep the attempt, so Send Again reuses its UUID. A refusal shows the server's
-message alone and unlocks, and the next Send is a new attempt. A deleted channel says
-"<name> no longer exists. Choose another channel." and returns to the list. Close is disabled
-while sending. Swiping down with a note asks "Discard Note" or "Keep Editing".
-
-### Control Center and menu bar controls
+Controls are Mac only.
 
 The existing widget extension offers two `ControlWidget` buttons, letting macOS host them in
 Control Center and the menu bar. These are momentary actions, not on/off switches. Use system
@@ -3483,7 +3116,96 @@ Change the artwork only in the `.icon`, then run `bun run icon` and commit it wi
 Check 16 and 32 px on light and dark before accepting a change. The 16 px icon must still read as a
 navy tile with a white speech-bubble head.
 
-### Implementation review gates
+## Quality bars
+
+### Performance budgets
+
+`bun run benchmark` checks these on a release build against `bun run demo:perf`, with 100
+messages loaded and again with every older page loaded. It times the main run loop three ways:
+
+- **Busy**: every pass from waking until the loop is about to sleep, added up.
+- **Longest saturated span**: the longest of those passes. When work arrives faster than it
+  finishes, main stays awake through many frames, so a long span isn't always a stall.
+- **Longest frame gap**: the longest stretch with no chance to draw, from the loop waking or
+  exiting until it next exits or sleeps, which is where Core Animation commits. This is what shows
+  a stall.
+
+| Scenario | Budget |
+| --- | --- |
+| Each live message | 16 ms median busy |
+| 50 messages 20 ms apart | 100 ms longest frame gap. The saturated span and busy time are reported beside it |
+| Each older page | 250 ms busy |
+| Warm switch | 150 ms median longest saturated span. A switch that lands over several frames feels as slow as one long frame, so it isn't budgeted on frame gaps |
+| Steady scrolling up and down | 5 ms/s hitch time, from dropped display frames |
+| First visible row during scrolling | At most 1 point of frame drift, in each direction and at each loaded count |
+| Key window with 4, then 20, working agents | 3% process CPU over 15 s, so a continuous animation that updates views every frame fails it |
+
+Launch and idle report the same figures with no budget.
+
+The key-window CPU measurement requires an active app and a visible, uncovered, non-minimized key
+window. It fails before or during measurement if that state is lost, rather than reporting a low CPU
+result from a window that is not drawing. Activation diagnostics include the native state and the
+window's WindowServer registration.
+
+Scroll also reports actual main-thread CPU ms per 1,000 native points, and paging reports CPU ms
+per older page. These are informational, not new budgets. Compare CPU work when the Mac is
+loaded, since run-loop wall time includes scheduling delays. Judge hitches only on a quiet
+machine, with the same gesture, distance, loaded count and hover state in both builds.
+
+Frame drift is the largest distance the first visible row moves away from that frame's scroll.
+Each display callback schedules one late-run-loop sample, after layout. It compares the same row's
+viewport position across consecutive samples with the wheel deltas delivered between them, not queued input or total native
+scroll travel. On a row handoff it retains the previous first row, or uses the current first row
+if the previous row was recycled. Missing shared first-row geometry fails the measurement rather
+than reporting zero drift. Results include measured frame pairs, frames above 1 point, maximum
+drift and total absolute drift. Both directions stay 1,000 points from the content edges, so end
+clamping and rubber-banding are not mistaken for row drift.
+
+The common driver uses precise **unphased** wheel events through the app-local event queue,
+with a window-scoped local monitor counting delivery. The report names this path. Posted and
+delivered event counts and total deltas must match, including the final zero-delta drain event.
+Event creation, monitor installation or observation failures fail the run. This permission-free
+driver is not the phased responsive-scroll path.
+
+Every scroll run first checks the identical driver and sampler on a plain native table, up and
+down for 15,000 points. The table must apply the full delivered distance, with no missing geometry
+and at most 1 point of frame drift, before any transcript result is reported. A warm-up visits
+1,000 points of the actual transcript. A short return within those already-measured rows must
+also apply the full delivered distance. The transcript then returns to its end for measurement.
+These controls run outside the timed transcript measurements.
+
+`bun run benchmark trackpad` is a separate, opt-in native check using began/changed/ended phases
+through WindowServer to the benchmark's own PID, never to the global input stream. A listen-only,
+own-PID event tap counts delivery. This check requires Accessibility permission and fails explicitly
+without it. The harness never requests or changes that permission. `NSApp.postEvent` does not
+exercise responsive scrolling, and a local monitor does not see every event consumed by that path.
+The check reports native travel after a one-second end drain. AppKit's interpolation can move
+content beyond the raw delivered delta, so this is not a deterministic wheel baseline or a raw
+wheel-relative row-drift gate.
+
+During the transcript replacement, `TOY_BOX_TRANSCRIPT=lazy|document|table bun run benchmark scroll`
+selects the container through `open --env`. The output names the requested transcript. This is
+a temporary benchmark option, not a product preference.
+Hosted native tables are sampled relative to that outer scroll view's clip coordinates, including
+the table's offset within the SwiftUI document. Discovery excludes independent nested scroll views
+and never mounts cells to obtain row frames.
+`TOY_BOX_BENCHMARK_SCROLL_DRIFT=0` disables the geometry producer and sampling for paired probe
+overhead checks. It is also benchmark-only and temporary. Normal app launches install no geometry
+provider and add no row callbacks.
+The native-table producer reads existing row rects without mounting cells or forcing layout.
+Scroll fixtures do not reorder rows during a gesture, so native row indices are stable for the
+measurement. A row-count change invalidates the sample instead of comparing different rows.
+`TOY_BOX_BENCHMARK_SCROLL_TRACE=1` runs only the first-page upward gesture, retains signed
+per-frame samples in memory and prints them after CPU measurement. The trace includes the tracked
+row and its two viewport positions, delivered wheel delta, signed residual, native top, document
+height and event counts. Lazy samples also retain the row's callback-reported positions for
+comparison with live native clipping.
+Diagnostic traces also retain display-link samples for comparison with the accepted late-run-loop
+phase. Display-link residuals can include input-application lag and are not an acceptance metric.
+`TOY_BOX_TRANSCRIPT=native-control bun run benchmark scroll` runs only the retained plain-table
+self-check. It is not a product-container performance baseline.
+
+### Native quality gates
 
 Native polish is a release criterion, not a cosmetic phase after functional completion. A
 successful build and nominal SwiftUI controls do not establish first-party quality. Prefer the
@@ -3500,65 +3222,40 @@ real AppKit/SwiftUI behavior over a custom imitation, and preserve it through al
 | Platform appearance | Light, dark, inactive selection, user accent, increased contrast, reduced transparency and reduced motion retain the same hierarchy and meaning. Custom rendering is justified only when native controls cannot meet the behavior |
 | Evidence and closure | Recheck the actual corrected build, not just the intended code change. A screenshot closes only the visual state it shows. Missing interaction or accessibility evidence remains explicitly open |
 
+**Accessibility coverage.** Keep these requirements and their regressions:
+
+- Reaction chips, task disclosures, task artifact actions and attachment Remove have targets of at
+  least 28 x 28.
+- The reaction chip is a plain native Button. Activating it opens the reactors popover anchored to
+  the chip, showing the reaction and reactor names.
+- Each message group carries author, time, addressee and request labels, and the filename-bearing
+  Quick Look button stays reachable and opens its panel. Image actions include filenames.
+- Request and waiting text and adaptive diff counts keep their visual treatments. The non-default
+  filter is distinguishable without color, and task progress and diff values expose exact semantics.
+- The selected mention completion is exposed, and a newly active keyboard choice is announced
+  without moving the insertion point.
+- A system-link text contrast regression covers Aqua, Dark Aqua and both Increased Contrast
+  appearances.
+- Settings and composer errors use primary text with a red symbol. Overview, transcript and
+  sidebar use the same Shared completion palette.
+- Request announcements keep their baseline, deduplication and background and snapshot suppression.
+  Every failed explicit send, including a retry with the same delivery UUID and phase, emits a fresh
+  store-owned failure ID. Composer consumes that ID directly and deduplicates across windows.
+  Journal restoration is quiet, and confirmation or discard clear resolved failures.
+- The missing-profile fallback initial uses primary ink on its cyan field. Rendered regressions keep
+  the 4.5:1 floor for missing and invalid-mark profiles in both appearances. Supplied marks retain
+  contrasting black or white ink.
+- The real-history paging validator checks the same message after fresh-page layout and settling,
+  with a 2-point displacement limit, at 1280 x 840 light, 760 x 760 dark and the 760 x 560 minimum
+  in dark.
+- The Team's typing ellipsis is checked under Reduce Motion. Sidebar activity doesn't animate or use
+  a spinner, and there are no explicit animated transcript scrolls.
+- Source checks don't substitute for a spoken screen-reader or runtime preference-switching check.
+
 Every user-visible feature lands with its README update in the same pass. Designer keeps the
 README grouped around the most compelling user outcomes, rather than appending a release log.
 Feature owners provide the accepted behavior and any limits so it does not advertise a future
 capability as already shipped.
-
-#### Accessibility audit evidence, 2026-10-22
-
-The initial audit covers source semantics, actual light/dark renders at both window sizes, the
-compact sheet's upper and lower sections, and a real accessibility-tree read of demo window
-25059. That tree exposes channel activation, image filenames, section headings and exact
-task/diff values. An earlier window read was unavailable, and the first attempted Tab action
-failed in the tool with "no perception baseline for this pid" before reaching the app.
-Spoken VoiceOver output, actual Tab traversal and OS-level accessibility preference changes
-have not been independently verified by Designer.
-
-| Finding | Owner | Verification and remaining work |
-| --- | --- | --- |
-| Mention ink | Transcript | Reopened 2026-10-22 because mentions didn't stand out. Semibold identity ink, clamped per surface to 4.5:1 (7:1 with Increase Contrast), with no background, supersedes primary ink on a 10% tint. Keep the seven-color, five-surface contrast regression with the new targets. Original light `@moss` was 2.69:1 |
-| Message identity and grouping | Transcript | Closed for the inspected states. Lead's rebuilt-window AX pass confirms author, time, addressee and request labels on per-message groups. The filename-bearing Quick Look button remains reachable and opens its panel |
-| Compact targets | Transcript, Overview, Composer | Source bounds are now at least 28 x 28 for reaction chips, task disclosures, task artifact actions and attachment Remove. Native hosting verifies reaction sizing. Corrected transcript/Overview renders retain the intended glyph scale and layout |
-| Reaction action semantics | Transcript | Native activation verified by Lead after replacing the gesture-backed chip with a plain native Button. The rebuilt dark studio-demo window opens the reactors popover anchored to the chip and shows the reaction and reactor name. Spoken VoiceOver feedback remains unverified |
-| Mention selection feedback | Composer | Source exposes the selected completion and announces a newly active keyboard choice without moving the insertion point. Actual screen-reader selection feedback remains unverified |
-| Native composer keys after the visual pass | Composer | Owner exercised mention opening, Down/Tab acceptance, caret placement, Undo and Escape in the normal scene at 1280 x 840 light and 760 x 560 dark. This does not verify spoken selection feedback or every keyboard-only focus path |
-| System-link text contrast | Transcript | Closed for rendered ink. Native semantic link color measures 5.25:1 on white and 5.89:1 on the dark transcript after ICC conversion. A permanent owner regression also covers Aqua, Dark Aqua and both Increased Contrast appearances |
-| Error and status contrast | Overview, Transcript, Composer, Shell | Closed. Corrected PNGs, converted through their embedded ICC profiles to sRGB, show management error text at 14.94:1 and completed-task symbols at 6.51:1 light / 8.12:1 dark. Settings/composer errors use the same primary-text/red-symbol pattern. Overview, transcript and sidebar use the same Shared completion palette |
-| Transient announcements | Transcript, Composer, Core | Closed in source/tests. Request baseline, deduplication and background/snapshot suppression checks pass. Every failed explicit send, including a retry with the same delivery UUID and phase, now emits a fresh store-owned failure ID. Composer consumes that ID directly and deduplicates across windows. Journal restoration is quiet, and confirmation/discard clear resolved failures |
-| Menu names | Overview, Shell | Lead activated Channel Actions and the title-bearing member/routine menus in the rebuilt window. A native Settings read confirms the notifications toggle, "Requests for your response" and "Completed tasks", with the two subordinate toggles dimmed while notifications are off. That toggle has since been renamed "Allow notifications" in source, and the new label has not had a native read. Spoken VoiceOver traversal remains unverified |
-| Missing-profile avatar | Shell | Closed. The fallback initial uses primary ink on its cyan field. Rendered regressions pass the 4.5:1 floor for missing and invalid-mark profiles in both appearances. Supplied marks retain contrasting black/white ink |
-
-Designer independently passed the selected regressions using `bun run test` with the filters
-`'TranscriptTests|ManagementTests'`, `'ComposerTests|ShellTests'` and
-`'SendAttemptTests|ComposerTests'`.
-This verifies the implemented source/test remedies above, not spoken VoiceOver output or
-every runtime focus path. The last run explicitly includes repeated same-UUID 422/503 failures,
-quiet restoration, resolved-event clearing and cross-window announcement deduplication.
-
-Designer approved the corrected wide-dark task hierarchy, compact-light expanded routine,
-compact-dark Edit Channel and light New Channel with the real catalog. The task title retains
-its full line, the routine details fit, and Purpose no longer touches the model row in those
-renders. The real-history paging validator checks the same message after fresh-page layout
-and settling, with a 2-point displacement limit. Transcript reports all four prepends passing at
-1280 x 840 light, 760 x 760 dark and the actual 760 x 560 minimum in dark. The minimum run reports
-0.0-point displacement on every page, and Designer reviewed its correctly sized render.
-Lead subsequently verified native reaction activation, the pinned Working Now popover and
-routine expansion in the rebuilt dark studio-demo window. Expanded routine details end at the
-inspector's bottom edge. Lead also verified first-unread landing below New and native Jump to
-Latest, which hides at the end and returns after scrolling away. Incoming-message auto-follow
-and final light/dark acceptance of the user-facing build remain open. These owner/Lead interaction checks are distinct from Designer's
-static approvals and do not prove spoken VoiceOver output.
-
-Already reviewed: request/waiting text and adaptive diff counts meet their corrected visual
-treatments, the non-default filter is distinguishable without color, task progress and diff
-values expose exact semantics, and image actions include filenames. The Overview working ring
-read Reduce Motion, pausing its timeline and removing rotation. Its replacement, the Team's
-typing ellipsis, must be rechecked under Reduce Motion. Sidebar activity no longer
-animates or uses a spinner. There
-are no explicit animated transcript scrolls. These source checks do not substitute for a
-spoken screen-reader or runtime preference-switching check. Owner fixes and remaining runtime
-evidence are tracked by channel tasks t21 and t26.
 
 Before calling the UI complete, inspect the running app in Dark at the default text size at
 1280 x 840 and the 760 x 560 minimum. Add Light only when a change touches colors, and larger
