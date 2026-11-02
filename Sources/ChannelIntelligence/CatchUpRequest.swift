@@ -67,7 +67,7 @@ public struct CatchUpRequest: Sendable, Hashable {
         let pending = pendingSequence.flatMap { ChannelWaitingRequest.message(at: $0, in: state) }
         let describer = CatchUpDescriber(agents: state.agents, leadId: state.lead.id)
         let through = max(state.messages.last?.sequence ?? unreadAfter, unreadAfter)
-        key = Key(server: intelligenceServerKey(server), channelId: state.channel.id,
+        key = Key(server: server.intelligenceKey, channelId: state.channel.id,
                   unreadAfter: unreadAfter, through: through, scope: scope)
         unreadFromOthers = fromAgents.count
         selection = CatchUpSelection {
