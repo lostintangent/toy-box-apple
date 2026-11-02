@@ -12,7 +12,7 @@ Design section before changing any view.
 | [docs/spec.md](docs/spec.md) | Changing behavior, protocol, design or release tooling |
 | [docs/development.md](docs/development.md) | Opt-in tests, benchmarks, the simulator, drive scripts, validation builds or bundle contents |
 | [scripts/README.md](scripts/README.md) | Running or changing a command |
-| [docs/test-history.md](docs/test-history.md) | Touching a quarantined or restored test |
+| [docs/quarantined-tests.md](docs/quarantined-tests.md) | Touching a quarantined test |
 | `~/Desktop/toy-box` | Checking the server or web pane. It's a read-only reference, so never modify it |
 
 ## How we work
@@ -168,10 +168,10 @@ every build its own scratch path, so parallel builds never share `.build`.
 - **Quarantine an unexplained failure the same day.** A test that fails on main without an
   identified code cause moves behind an explicit opt-in. Don't leave it in the merge gate while
   rerunning CI or patching timing races in place. Record the failed run, test case and
-  diagnostics in [docs/test-history.md](docs/test-history.md), with an owner and a follow-up
-  task. Quarantine changes gating, not responsibility for the failure.
+  diagnostics in [docs/quarantined-tests.md](docs/quarantined-tests.md), with an owner and a
+  follow-up task. Quarantine changes gating, not responsibility for the failure.
 - **Restore it only with its cause and deterministic coverage.** Never loosen assertions or add
-  retries to turn an unexplained failure green.
+  retries to turn an unexplained failure green. Then delete its entry.
 - **CI protects decisions with deterministic tests** over inputs such as measured frames. Native
   window tests in CI assert settled end states, never per-frame timing. Frame-timing and
   WindowServer-event checks stay opt-in and run locally before changes to their behavior.
@@ -180,6 +180,10 @@ every build its own scratch path, so parallel builds never share `.build`.
 - **Client tests wait with `eventually`,** through Observation and the mock's own request,
   held-response and stop signals, never polling or an elapsed-time assertion. Their suites have a
   one-minute Swift Testing hang limit.
+- **A wait for a signal that might never come needs its own deadline.** Swift Testing's time
+  limit doesn't end it, so one hung wait stalls the whole suite.
+- **Never run synthetic CPU burners on the shared Mac.** They starve every agent's builds and the
+  simulator. Judge load-sensitive failures from CI or ordinary full runs.
 
 | Quarantined test | Opt-in | Owner and condition for restoring it |
 | --- | --- | --- |
