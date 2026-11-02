@@ -293,9 +293,9 @@ final class AppModel {
         guard let catalog, let waitingRequests, catalog.state != nil else {
             return MenuBarStatus(unreachableHost: unreachable)
         }
-        let projection = sidebarProjection
+        let presentation = sidebarPresentation
         return MenuBarStatus(requests: waitingRequests.entries(openChannelIDs: openChannelIDs), catalog.channels.map {
-            .init(channel: projection.channel($0), working: projection.working($0, agents: projection.agents($0)))
+            .init(channel: presentation.channel($0), working: presentation.working($0, agents: presentation.agents($0)))
         }, unreachableHost: unreachable)
     }
 
@@ -316,24 +316,24 @@ final class AppModel {
         dockAttention.update(status: status, serverURL: serverURL, hasCatalog: hasCatalog)
     }
 
-    private var sidebarProjection: ChannelSidebarPresentation {
+    private var sidebarPresentation: ChannelSidebarPresentation {
         .init(catalog: catalog, openChannelIDs: openChannelIDs)
     }
 
     func sidebarChannel(_ channel: Channel) -> Channel {
-        sidebarProjection.channel(channel)
+        sidebarPresentation.channel(channel)
     }
 
     func sidebarAttention(_ channel: Channel) -> Channel.Status? {
-        sidebarProjection.status(channel)
+        sidebarPresentation.status(channel)
     }
 
     func sidebarAgents(_ channel: Channel) -> [ChannelAgent] {
-        sidebarProjection.agents(channel)
+        sidebarPresentation.agents(channel)
     }
 
     func sidebarWorking(_ channel: Channel, agents: [ChannelAgent]) -> [ChannelAgent] {
-        sidebarProjection.working(channel, agents: agents)
+        sidebarPresentation.working(channel, agents: agents)
     }
 
     static func dockBadge(channels: [Channel], openChannelIDs: Set<String>) -> String? {
