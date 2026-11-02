@@ -35,8 +35,8 @@ enum CatchUpAnswer {
     /// Channels that need you, in the order Siri mentions them: waiting for your reply, then
     /// finished work, then unread messages, most recently updated first.
     static func needingAttention(_ channels: [Channel]) -> [Channel] {
-        func rank(_ attention: Channel.Status?) -> Int {
-            switch attention {
+        func rank(_ status: Channel.Status?) -> Int {
+            switch status {
             case .waiting: 0
             case .finished: 1
             case .unread: 2

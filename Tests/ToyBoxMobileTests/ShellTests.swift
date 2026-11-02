@@ -1187,7 +1187,7 @@ struct ShellTests {
         ))
         func fitted(_ size: DynamicTypeSize) -> CGSize {
             let host = UIHostingController(rootView: ChannelSidebarRow(
-                channel: channel, agents: [lead], working: [lead], attention: .waiting,
+                channel: channel, agents: [lead], working: [lead], status: .waiting,
                 now: Date(timeIntervalSince1970: 1_793_000_000)
             ).environment(\.dynamicTypeSize, size))
             host.loadViewIfNeeded()
@@ -1244,9 +1244,9 @@ struct ShellTests {
                 name: "Agent \(index)", role: "Coordinator", avatar: .init(mark: "M4 12H20", color: "#123456")
             ))
         }
-        func height(working: [ChannelAgent], attention: Channel.Status?) -> CGFloat {
+        func height(working: [ChannelAgent], status: Channel.Status?) -> CGFloat {
             let host = UIHostingController(rootView: ChannelSidebarRow(
-                channel: channel, agents: agents, working: working, attention: attention,
+                channel: channel, agents: agents, working: working, status: status,
                 now: Date(timeIntervalSince1970: 1_793_000_000)
             ).environment(\.dynamicTypeSize, .large))
             host.loadViewIfNeeded()
@@ -1257,9 +1257,9 @@ struct ShellTests {
         title.loadViewIfNeeded()
         let titleHeight = title.sizeThatFits(in: CGSize(width: width, height: CGFloat.greatestFiniteMagnitude)).height
         let workingHeight = max(72, titleHeight + 8 + 20 + 24)
-        #expect(height(working: [], attention: nil) == 72)
-        #expect(height(working: agents, attention: nil) == workingHeight)
-        #expect(height(working: agents, attention: .waiting) == workingHeight)
+        #expect(height(working: [], status: nil) == 72)
+        #expect(height(working: agents, status: nil) == workingHeight)
+        #expect(height(working: agents, status: .waiting) == workingHeight)
     }
 
     @Test(arguments: [false, true])

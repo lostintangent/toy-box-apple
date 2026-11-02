@@ -129,7 +129,7 @@ struct ChannelSidebar: View {
         let agents = model.sidebarAgents(channel)
         return ChannelSidebarRow(
             channel: current, agents: agents, working: model.sidebarWorking(channel, agents: agents),
-            attention: model.sidebarStatus(channel),
+            status: model.sidebarStatus(channel),
             folder: folderAvailability(current),
             openFolder: { if let path = current.directory { model.folders.open(path) } },
             onTap: { if !NSEvent.modifierFlags.contains(.command) { selection = channel.id } }

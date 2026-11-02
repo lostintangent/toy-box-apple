@@ -8,7 +8,7 @@ struct ChannelSidebarRow: View {
     let channel: Channel
     let agents: [ChannelAgent]
     let working: [ChannelAgent]
-    let attention: Channel.Status?
+    let status: Channel.Status?
     /// Nil when the channel has no directory.
     let folder: ChannelFolderAvailability?
     var openFolder: () -> Void
@@ -36,7 +36,7 @@ private struct ChannelSidebarRowContent: View {
 
     private var channel: Channel { row.channel }
     private var working: [ChannelAgent] { row.working }
-    private var attention: Channel.Status? { row.attention }
+    private var status: Channel.Status? { row.status }
     private var folder: ChannelFolderAvailability? { row.folder }
     /// The key window's accent selection, where every custom color yields to white.
     private var emphasized: Bool { prominence == .increased }
@@ -100,7 +100,7 @@ private struct ChannelSidebarRowContent: View {
             // The folder token's own 6-point trailing padding makes 12 before the stack.
             Spacer(minLength: showsFolder ? 6 : 12)
             if faces > 0 { AgentAvatarStack(agents: working, size: 16, limit: faces).fixedSize() }
-            if attention != nil { attentionIndicator.frame(width: 16, height: 16).padding(.leading, 6) }
+            if status != nil { attentionIndicator.frame(width: 16, height: 16).padding(.leading, 6) }
         }
     }
 
@@ -129,7 +129,7 @@ private struct ChannelSidebarRowContent: View {
     }
 
     @ViewBuilder private var attentionIndicator: some View {
-        switch attention {
+        switch status {
         case .waiting:
             Image(systemName: Channel.Status.waiting.symbol).font(.system(size: 13))
                 .foregroundStyle(emphasized ? .white : Channel.Status.waiting.color(in: colorScheme))
@@ -157,7 +157,7 @@ private struct ChannelSidebarRowContent: View {
         } else if let purpose = channel.purposePreview {
             parts.append(purpose)
         }
-        switch attention {
+        switch status {
         case .waiting: parts.append("Waiting for your response")
         case .finished: parts.append("All tasks completed")
         case .unread: parts.append("Unread messages")
