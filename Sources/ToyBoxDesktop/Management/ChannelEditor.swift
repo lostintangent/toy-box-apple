@@ -32,13 +32,13 @@ struct ChannelEditor: View {
     private var nextPurpose: String { purpose.trimmingCharacters(in: .whitespacesAndNewlines) }
     private var nextDirectory: String { directory.trimmingCharacters(in: .whitespacesAndNewlines) }
     private var nameViolation: String? {
-        ChannelValidation.channelNameError(nextName)
+        Channel.nameError(nextName)
     }
     private var purposeViolation: String? {
-        ChannelValidation.purposeError(nextPurpose)
+        Channel.purposeError(nextPurpose)
     }
     private var directoryViolation: String? {
-        channel == nil ? ChannelValidation.directoryError(nextDirectory) : nil
+        channel == nil ? Channel.directoryError(nextDirectory) : nil
     }
     // An empty name or a missing lead model only disables the default button. The prompt and the
     // model section's footer already say why.

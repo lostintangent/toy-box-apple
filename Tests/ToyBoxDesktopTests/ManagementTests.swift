@@ -254,7 +254,7 @@ struct ManagementTests {
             Issue.record("Invalid inline names must fail before making a request.")
         } catch let error as ChannelAPIError {
             #expect(error == .invalidMessage(
-                try #require(ChannelValidation.memberNameError(name, agents: store.roster))))
+                try #require(ChannelAgent.nameError(name, agents: store.roster))))
         }
         #expect(fixture.requests.isEmpty)
     }

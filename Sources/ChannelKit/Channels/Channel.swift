@@ -36,4 +36,16 @@ public struct Channel: Codable, Equatable, Identifiable, Sendable {
     public var resolvedPreview: ChannelPreview? {
         preview ?? previewUrl.map { ChannelPreview(kind: "url", url: $0) }
     }
+
+    public static func nameError(_ name: String) -> String? {
+        name.utf16.count > 100 ? "Channel names are limited to 100 characters." : nil
+    }
+
+    public static func purposeError(_ purpose: String) -> String? {
+        purpose.utf16.count > 12_000 ? "Purpose is limited to 12,000 characters." : nil
+    }
+
+    public static func directoryError(_ directory: String) -> String? {
+        directory.utf16.count > 4_096 ? "Working directory paths are limited to 4,096 characters." : nil
+    }
 }

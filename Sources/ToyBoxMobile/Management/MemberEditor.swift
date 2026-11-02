@@ -27,8 +27,8 @@ struct MemberEditor: View {
     private var nextName: String { name.trimmingCharacters(in: .whitespacesAndNewlines) }
     private var nextRole: String { role.trimmingCharacters(in: .whitespacesAndNewlines) }
     private var violation: String? {
-        (nextName.isEmpty ? nil : ChannelValidation.memberNameError(nextName, agents: store.roster, excludingID: member?.id))
-            ?? ChannelValidation.memberRoleError(nextRole, existingRole: member?.role)
+        (nextName.isEmpty ? nil : ChannelAgent.nameError(nextName, agents: store.roster, excludingID: member?.id))
+            ?? ChannelAgent.roleError(nextRole, existingRole: member?.role)
     }
     private var changed: Bool {
         guard let member else { return true }

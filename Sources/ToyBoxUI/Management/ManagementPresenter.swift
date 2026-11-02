@@ -66,7 +66,7 @@ public final class ManagementPresenter {
             try await checkMentionCreation(key: key, store: store, catalog: catalog)
             throw ChannelAPIError.invalidMessage("The team has been refreshed. Review Team before explicitly creating this agent again.")
         }
-        if let message = ChannelValidation.memberNameError(trimmed, agents: state.agents) {
+        if let message = ChannelAgent.nameError(trimmed, agents: state.agents) {
             throw ChannelAPIError.invalidMessage(message)
         }
         guard creatingMentions.insert(key).inserted else {
