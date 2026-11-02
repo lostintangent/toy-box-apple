@@ -292,7 +292,7 @@ final class AppModel {
         if let catalog, catalog.phase.message == nil, let refreshed = catalog.lastRefreshedAt,
            refreshed != badgeRefresh {
             badgeRefresh = refreshed
-            notifications.updateBadge(catalog.channels.filter { $0.status == .waiting }.count)
+            notifications.updateBadge(catalog.channels.filter { $0.attention == .waiting }.count)
             shareHistory?.prune(serverURL: catalog.api.baseURL.absoluteString, keeping: Set(catalog.channels.map(\.id)))
         }
         updateWidget(generation: generation)

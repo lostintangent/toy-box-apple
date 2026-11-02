@@ -317,9 +317,9 @@ so the suite starts a WebKit web content process once instead of once per render
   `SwiftUI.State` once in `ToyBoxUI/Shared`.
 - Command Line Tools lack the SwiftUIMacros plugin, so code that builds for the Mac declares
   environment values with an `EnvironmentKey`, not `@Entry`.
-- Rules live on their nouns as members, such as `channel.status`, `agent.handle` and
+- Rules live on their nouns as members, such as `channel.attention`, `agent.handle` and
   `state.applying(event)`, not as free functions. Name a type for the thing itself, nesting a part
-  under its owner (`Channel.Status`, `ChannelTask.Timing`), and avoid Manager, Helper, Support,
+  under its owner (`Channel.Attention`, `ChannelTask.Timing`), and avoid Manager, Helper, Support,
   Context and Projection.
 - `ChannelKit` owns domain semantics and `ChannelClient` owns transport and stores. Views never
   reimplement reducer, audience, task, attention or transcript-grouping rules. Ask Core for a
@@ -485,7 +485,7 @@ hard-code a color or size that would break them.
 - `ManagementPresenter` (ToyBoxUI, environment, one per window): `present(_:)` opens any management flow.
   Overview implements the flows behind it. Every other surface only calls `present`.
 - `AgentAvatarView`, `AgentAvatarStack`, `ChannelMark`, `ChannelTaskColors`, `ChannelColors`,
-  `Channel.Status`'s `symbol` and `color(in:)`, and `TranscriptSurface` (ToyBoxUI) preserve the
+  `Channel.Attention`'s `symbol` and `color(in:)`, and `TranscriptSurface` (ToyBoxUI) preserve the
   Mac's identity and colors.
   Typography, navigation and layout stay platform-native.
 - `ComposerDraft`, `ComposerImage` and `ChannelConnections` live in ChannelClient.

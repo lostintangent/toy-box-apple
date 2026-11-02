@@ -33,7 +33,7 @@ public enum ChannelColors {
     public static let newRule = Color.blue.opacity(0.7)
 }
 
-extension Channel.Status {
+extension Channel.Attention {
     public var symbol: String {
         switch self {
         case .waiting: "questionmark.bubble.fill"

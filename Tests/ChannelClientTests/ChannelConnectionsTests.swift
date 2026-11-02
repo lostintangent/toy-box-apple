@@ -126,7 +126,7 @@ struct ChannelConnectionsTests {
         #expect(store.unreadAfter == nil, "Until the reconnect, the divider matches the cached rows, all read")
         try await eventually { store.phase.isConnected }
         #expect(store.messages.last?.sequence == 3)
-        #expect(try #require(store.state).channel.status == .unread)
+        #expect(try #require(store.state).channel.attention == .unread)
         #expect(store.unreadAfter == 2, "The New divider sits after the last message read")
     }
 }

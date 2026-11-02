@@ -23,7 +23,7 @@ struct ChannelEntity: IndexedEntity, Identifiable {
     var tasksCompleted: Bool
 
     /// Matches the sidebar's indicator.
-    let status: Channel.Status?
+    let attention: Channel.Attention?
 
     /// The first line of the channel's purpose, which Spotlight shows under its name.
     let purpose: String?
@@ -32,22 +32,22 @@ struct ChannelEntity: IndexedEntity, Identifiable {
     let thumbnail: Data?
 
     init(_ channel: Channel) {
-        self.init(id: channel.id, name: channel.name, status: channel.status,
+        self.init(id: channel.id, name: channel.name, attention: channel.attention,
                   unreadCount: max(0, channel.latestSequence - channel.seenThrough),
                   purpose: channel.purposePreview)
     }
 
     /// A channel as a card remembers it, for its buttons, or as Spotlight indexes it.
-    init(id: String, name: String, status: Channel.Status? = nil, unreadCount: Int = 0,
+    init(id: String, name: String, attention: Channel.Attention? = nil, unreadCount: Int = 0,
          purpose: String? = nil, thumbnail: Data? = nil) {
         self.id = id
-        self.status = status
+        self.attention = attention
         self.purpose = purpose
         self.thumbnail = thumbnail
         self.name = name
         self.unreadCount = unreadCount
-        needsReply = status == .waiting
-        tasksCompleted = status == .finished
+        needsReply = attention == .waiting
+        tasksCompleted = attention == .finished
     }
 
     var displayRepresentation: DisplayRepresentation {
@@ -60,7 +60,7 @@ struct ChannelEntity: IndexedEntity, Identifiable {
     }
 
     private var subtitle: LocalizedStringResource? {
-        switch status {
+        switch attention {
         case .waiting: "Needs your reply"
         case .finished: "All tasks completed"
         case .unread: "Unread messages"
@@ -69,7 +69,7 @@ struct ChannelEntity: IndexedEntity, Identifiable {
     }
 
     /// Spotlight keeps what it indexed, so it gets the name, purpose and icon but never the
-    /// status, which would go stale.
+    /// attention, which would go stale.
     var attributeSet: CSSearchableItemAttributeSet {
         let attributes = defaultAttributeSet
         attributes.title = name

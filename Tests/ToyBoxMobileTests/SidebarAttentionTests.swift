@@ -9,8 +9,8 @@ import UIKit
 struct SidebarAttentionTests {
     @Test(arguments: [ColorScheme.light, .dark], [false, true])
     func unreadAddsOnlyATrailingSevenPointDot(scheme: ColorScheme, selected: Bool) throws {
-        let plain = try render(status: nil, scheme: scheme, selected: selected)
-        let unread = try render(status: .unread, scheme: scheme, selected: selected)
+        let plain = try render(attention: nil, scheme: scheme, selected: selected)
+        let unread = try render(attention: .unread, scheme: scheme, selected: selected)
         #expect(unread.width == plain.width && unread.height == plain.height)
         let before = plain.pixels
         let after = unread.pixels
@@ -26,7 +26,7 @@ struct SidebarAttentionTests {
         #expect(bottom - top + 1 == 21)
         #expect(right == unread.width - 1, "The dot keeps its trailing position.")
 
-        let expected = selected ? Color.white : Channel.Status.unread.color(in: scheme)
+        let expected = selected ? Color.white : Channel.Attention.unread.color(in: scheme)
         let traits = UITraitCollection(userInterfaceStyle: scheme == .dark ? .dark : .light)
         let color = UIColor(expected).resolvedColor(with: traits)
         var red: CGFloat = 0
@@ -40,10 +40,10 @@ struct SidebarAttentionTests {
         }
     }
 
-    @Test(arguments: [Channel.Status.waiting, .finished], [ColorScheme.light, .dark])
-    func otherAttentionStatesDrawOnlyTheirTrailingSymbol(status: Channel.Status, scheme: ColorScheme) throws {
-        let plain = try render(status: nil, scheme: scheme, selected: false)
-        let marked = try render(status: status, scheme: scheme, selected: false)
+    @Test(arguments: [Channel.Attention.waiting, .finished], [ColorScheme.light, .dark])
+    func otherAttentionStatesDrawOnlyTheirTrailingSymbol(attention: Channel.Attention, scheme: ColorScheme) throws {
+        let plain = try render(attention: nil, scheme: scheme, selected: false)
+        let marked = try render(attention: attention, scheme: scheme, selected: false)
         #expect(marked.width == plain.width && marked.height == plain.height)
         let before = plain.pixels
         let after = marked.pixels
@@ -58,11 +58,11 @@ struct SidebarAttentionTests {
     }
 
     #if DEBUG
-    @Test(arguments: [Channel.Status.unread, .waiting, .finished], [ColorScheme.light, .dark])
+    @Test(arguments: [Channel.Attention.unread, .waiting, .finished], [ColorScheme.light, .dark])
     func attentionRemainsSpokenInTheSingleChannelAccessibilityElement(
-        status: Channel.Status, scheme: ColorScheme
+        attention: Channel.Attention, scheme: ColorScheme
     ) throws {
-        let host = UIHostingController(rootView: row(status: status)
+        let host = UIHostingController(rootView: row(attention: attention)
             .environment(\.colorScheme, scheme)
             .dynamicTypeSize(.large))
         let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 360, height: 100))
@@ -74,7 +74,7 @@ struct SidebarAttentionTests {
         #expect(elements.count == 1)
         let channel = try #require(elements.first)
         #expect(channel.label == "Workshop")
-        let spoken = switch status {
+        let spoken = switch attention {
         case .unread: "Unread messages"
         case .waiting: "Waiting for your response"
         case .finished: "All tasks completed"
@@ -83,18 +83,18 @@ struct SidebarAttentionTests {
     }
     #endif
 
-    private func row(status: Channel.Status?) -> some View {
+    private func row(attention: Channel.Attention?) -> some View {
         ChannelSidebarRow(
             channel: Channel(id: "workshop", name: "Workshop", directory: "/Projects/Workshop",
                              model: .init(provider: "test", name: "test"),
                              updatedAt: "2026-10-26T12:00:00Z"),
-            agents: [], working: [], status: status,
+            agents: [], working: [], attention: attention,
             now: Date(timeIntervalSince1970: 1_793_016_000))
     }
 
-    private func render(status: Channel.Status?, scheme: ColorScheme, selected: Bool) throws
+    private func render(attention: Channel.Attention?, scheme: ColorScheme, selected: Bool) throws
         -> (width: Int, height: Int, pixels: [UInt8]) {
-        let renderer = ImageRenderer(content: row(status: status)
+        let renderer = ImageRenderer(content: row(attention: attention)
             .frame(width: 360)
             .background(selected ? Color.blue : (scheme == .dark ? Color.black : Color.white))
             .environment(\.colorScheme, scheme)

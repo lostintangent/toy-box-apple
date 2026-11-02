@@ -432,7 +432,7 @@ keeps no copy of it.
 ### Mobile push and topic subscriptions (Release 2)
 
 The phone icon badge counts channels with an open request, using the same
-`channel.status == .waiting` predicate as the widget. Each successful app catalog refresh
+`channel.attention == .waiting` predicate as the widget. Each successful app catalog refresh
 reconciles the badge, including unchanged polls and zero waiting channels. Cached-only state,
 failed refreshes and unrelated navigation changes do not overwrite it. Badge updates do not wait
 for notification authorization reads or request-history loading. The in-app Allow notifications

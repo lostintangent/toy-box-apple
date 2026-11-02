@@ -35,8 +35,8 @@ enum CatchUpAnswer {
     /// Channels that need you, in the order Siri mentions them: waiting for your reply, then
     /// finished work, then unread messages, most recently updated first.
     static func needingAttention(_ channels: [Channel]) -> [Channel] {
-        func rank(_ status: Channel.Status?) -> Int {
-            switch status {
+        func rank(_ attention: Channel.Attention?) -> Int {
+            switch attention {
             case .waiting: 0
             case .finished: 1
             case .unread: 2
@@ -45,7 +45,7 @@ enum CatchUpAnswer {
         }
         return channels.enumerated()
             .compactMap { offset, channel in
-                channel.status.map { (rank: rank($0), updated: channel.updatedAt, offset: offset, channel: channel) }
+                channel.attention.map { (rank: rank($0), updated: channel.updatedAt, offset: offset, channel: channel) }
             }
             .sorted { lhs, rhs in
                 if lhs.rank != rhs.rank { return lhs.rank < rhs.rank }
@@ -61,7 +61,7 @@ enum CatchUpAnswer {
         guard !needing.isEmpty else { return allCaughtUp }
         var sentences = needing.count > 1 ? ["You have updates in \(needing.count) channels."] : []
         for channel in needing.prefix(overviewLimit) {
-            switch channel.status {
+            switch channel.attention {
             case .waiting:
                 sentences.append("\(channel.name) is waiting for your reply.")
             case .finished:
@@ -137,7 +137,7 @@ enum CatchUpAnswer {
         let spoken = overview(needing, newMessages: newMessages)
         guard !needing.isEmpty else { return Answer(spoken: spoken) }
         let rows = needing.prefix(overviewRowLimit).map { channel in
-            CatchUpCard.Row(channelID: channel.id, name: channel.name, attention: channel.status?.rawValue,
+            CatchUpCard.Row(channelID: channel.id, name: channel.name, attention: channel.attention?.rawValue,
                             detail: detail(channel, newMessages: newMessages[channel.id]))
         }
         let more = needing.count - rows.count
@@ -207,7 +207,7 @@ enum CatchUpAnswer {
     }
 
     private static func detail(_ channel: Channel, newMessages: Int?) -> String {
-        switch channel.status {
+        switch channel.attention {
         case .waiting: "Waiting for your reply"
         case .finished: "Finished all its tasks"
         case .unread, nil:

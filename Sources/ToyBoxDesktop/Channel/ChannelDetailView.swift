@@ -241,7 +241,7 @@ struct ChannelDetailView: View {
         Picker("Channel", selection: Binding(get: { store.id }, set: { if $0 != store.id { onSelect($0) } })) {
             ForEach(model.catalog?.channels ?? []) { channel in
                 Text(model.sidebarChannel(channel).name)
-                    .badge(Self.badge(model.sidebarStatus(channel)))
+                    .badge(Self.badge(model.sidebarAttention(channel)))
                     .tag(channel.id)
             }
         }
@@ -253,8 +253,8 @@ struct ChannelDetailView: View {
             .disabled(!store.phase.isConnected)
     }
 
-    static func badge(_ status: Channel.Status?) -> Text? {
-        switch status {
+    static func badge(_ attention: Channel.Attention?) -> Text? {
+        switch attention {
         case .waiting: Text("Input Needed")
         case .unread: Text("Unread")
         case .finished: Text("Done")

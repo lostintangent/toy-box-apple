@@ -51,19 +51,19 @@ public struct Channel: Codable, Equatable, Identifiable, Sendable {
 }
 
 extension Channel {
-    public enum Status: String, Sendable {
+    public enum Attention: String, Sendable {
         case waiting, finished, unread
     }
 
-    public var status: Status? {
+    public var attention: Attention? {
         if requestSequence != nil { return .waiting }
         if (completedSequence ?? 0) > seenThrough { return .finished }
         return latestSequence > seenThrough ? .unread : nil
     }
 
-    public func sidebarStatus(isOpen: Bool) -> Status? {
-        let status = status
-        return status == .waiting || !isOpen ? status : nil
+    public func sidebarAttention(isOpen: Bool) -> Attention? {
+        let attention = attention
+        return attention == .waiting || !isOpen ? attention : nil
     }
 
     public var unreadAfter: Int? {

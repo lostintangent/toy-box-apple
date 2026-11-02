@@ -29,8 +29,8 @@ struct ChannelSidebarPresentationTests {
         #expect(open.channel(listed).name == "Live name")
         #expect(open.channel(listed).updatedAt == listed.updatedAt)
         #expect(closed.channel(listed) == listed)
-        #expect(open.status(listed) == nil)
-        #expect(closed.status(listed) == .waiting)
+        #expect(open.attention(listed) == nil)
+        #expect(closed.attention(listed) == .waiting)
         #expect(open.agents(listed).map(\.name) == ["Live lead"])
         #expect(closed.agents(listed).map(\.name) == ["Lead"])
         #expect(open.working(listed, agents: open.agents(listed)).map(\.name) == ["Live lead"])
@@ -51,7 +51,7 @@ struct ChannelSidebarPresentationTests {
         #expect(absent.channel(listed) == listed)
         #expect(absent.agents(listed).isEmpty)
         #expect(absent.working(listed, agents: []).isEmpty)
-        #expect(absent.status(listed) == .waiting)
+        #expect(absent.attention(listed) == .waiting)
     }
 
     @Test func livePresenceDoesNotInvalidateTheChannelProjection() throws {
