@@ -212,7 +212,7 @@ struct ConversationView: View {
         guard let lead = store.roster.first else { return [] }
         let rows = rowBuilder.rows(store.messages, lead: lead, members: Array(store.roster.dropFirst()),
                                    unreadAfter: capturedArrival ? arrivalUnreadAfter : store.unreadAfter,
-                                   view: interaction.messageView)
+                                   filter: interaction.messageView)
         return transcriptItems(rows)
     }
 

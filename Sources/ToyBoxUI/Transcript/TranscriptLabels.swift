@@ -12,7 +12,7 @@ extension TranscriptDivider {
 extension ChannelMessage {
     /// What VoiceOver reads for the message row: who sent it and when, then whom it's to, its
     /// request and its delivery.
-    public func accessibilityLabel(author: String, addressee: String? = nil, request: ChannelRequestState? = nil,
+    public func accessibilityLabel(author: String, addressee: String? = nil, request: AgentRunEntry.RequestStatus? = nil,
                                    delivery: String? = nil) -> String {
         [author, (try? Date(timestamp, strategy: .iso8601))?.formatted(date: .abbreviated, time: .shortened) ?? timestamp,
          addressee.map { "To \($0)" },

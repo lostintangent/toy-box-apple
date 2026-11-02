@@ -60,7 +60,7 @@ struct TranscriptTests {
     @Test func yoursViewBuildsRunsAfterFiltering() {
         let coordination = message(2, sender: .agent("ada"), text: "For @lead", minute: 1)
         let rows = TranscriptRowBuilder().rows([message(1), coordination, message(3, minute: 2)],
-                                               lead: lead, members: [ada], view: .yours)
+                                               lead: lead, members: [ada], filter: .yours)
         #expect(rows.count == 1)
         #expect(rows[0].messages.map(\.sequence) == [1, 3])
     }
@@ -128,17 +128,17 @@ struct TranscriptTests {
         }
         let builder = TranscriptRowBuilder()
         func expectFresh(_ messages: [ChannelMessage], members: [ChannelAgent] = [ada, finch],
-                         unreadAfter: Int? = nil, view: TranscriptView = .all,
+                         unreadAfter: Int? = nil, filter: TranscriptFilter = .all,
                          sourceLocation: SourceLocation = #_sourceLocation) {
             let built = builder.rows(messages, lead: lead, members: members, unreadAfter: unreadAfter,
-                                     view: view, calendar: calendar)
+                                     filter: filter, calendar: calendar)
             let fresh = TranscriptRowBuilder().rows(messages, lead: lead, members: members, unreadAfter: unreadAfter,
-                                                    view: view, calendar: calendar)
+                                                    filter: filter, calendar: calendar)
             #expect(built == fresh, sourceLocation: sourceLocation)
         }
 
         for count in 1...history.count { expectFresh(Array(history.prefix(count)), unreadAfter: 30) }
-        for count in 1...history.count { expectFresh(Array(history.prefix(count)), view: .yours) }
+        for count in 1...history.count { expectFresh(Array(history.prefix(count)), filter: .yours) }
         for start in stride(from: 60, through: 0, by: -12) { expectFresh(Array(history[start...]), unreadAfter: 66) }
         expectFresh(history, unreadAfter: 5)
         expectFresh(history, unreadAfter: nil)
@@ -155,7 +155,7 @@ struct TranscriptTests {
         let renamed = ChannelAgent(id: "ada", name: "Ada Byron")
         expectFresh(history, members: [renamed, finch])
         expectFresh(history, members: [renamed])
-        expectFresh(history, members: [renamed], view: .yours)
+        expectFresh(history, members: [renamed], filter: .yours)
     }
 
     @Test func pagingKeepsCurrentMessageValues() {

@@ -115,7 +115,7 @@ struct ChannelDetailView: View {
             .task {
                 interaction.isInspectorPresented = model.launchOptions.isSnapshot
                     ? model.launchOptions.width >= 1000 : inspectorVisible
-                interaction.messageView = model.launchOptions.isSnapshot ? .all : TranscriptView(rawValue: messageView) ?? .all
+                interaction.messageView = model.launchOptions.isSnapshot ? .all : TranscriptFilter(rawValue: messageView) ?? .all
             }
             // Overview and the composer mount once the first content has drawn, or after a second
             // for a channel that's slow to connect.
@@ -316,8 +316,8 @@ struct ChannelDetailView: View {
         ToolbarItem(placement: .primaryAction) {
             Menu {
                 Picker("Message View", selection: Bindable(interaction).messageView) {
-                    Label("All Messages", systemImage: "bubble.left.and.bubble.right").tag(TranscriptView.all)
-                    Label("Your Messages", systemImage: "person").tag(TranscriptView.yours)
+                    Label("All Messages", systemImage: "bubble.left.and.bubble.right").tag(TranscriptFilter.all)
+                    Label("Your Messages", systemImage: "person").tag(TranscriptFilter.yours)
                 }
                 .pickerStyle(.inline)
                 .labelsHidden()

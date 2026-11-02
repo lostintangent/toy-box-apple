@@ -9,7 +9,7 @@ struct CatchUpSessionTests {
     let server = URL(string: "https://summary-\(UUID().uuidString.lowercased()).invalid/prefix")!
 
     private func make(_ state: ChannelState = summarySessionState(), unreadAfter: Int? = 10,
-                      view: TranscriptView = .all, boundaryIsLoaded: Bool = true,
+                      view: TranscriptFilter = .all, boundaryIsLoaded: Bool = true,
                       availability: IntelligenceAvailability = .available, isOn: Bool = true,
                       timeout: Duration = .seconds(15)) -> TranscriptCatchUpSession? {
         TranscriptCatchUpSession.make(server: server, state: state, unreadAfter: unreadAfter, view: view,

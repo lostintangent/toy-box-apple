@@ -54,7 +54,7 @@ struct ConversationTranscript: View {
         guard let lead = store.roster.first else { return [] }
         return rowBuilder.rows(store.messages, lead: lead, members: Array(store.roster.dropFirst()),
                                unreadAfter: capturedArrivalBoundary ? arrivalUnreadAfter : store.unreadAfter,
-                               view: interaction.messageView)
+                               filter: interaction.messageView)
     }
 
     var viewport: TranscriptViewport { geometry.viewport }
