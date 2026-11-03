@@ -16,7 +16,8 @@ rather than the tight spacing used between related list items.
 
 ## Keeping work in view
 
-- Put a request where the reader can find it.
+- Put a request where
+  the reader can find it.
 - Keep shared artifacts beside the conversation.
 - Show who is working without interrupting the message.
 - Let readers return to the newest message easily.

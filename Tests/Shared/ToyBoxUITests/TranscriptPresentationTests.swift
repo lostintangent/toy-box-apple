@@ -119,6 +119,61 @@ struct TranscriptPresentationTests {
         ])
     }
 
+    @Test func wrappedListItemsKeepTheirMarkerAndSeparateAfterABlankLine() {
+        let source = """
+        - Put a request where
+          the reader can find it.
+          **Keep this** part too.
+          - Nested item with
+            its own continuation.
+        2. Numbered item with
+           more text.
+        - [x] Checked task with
+          a trailing note.
+
+        A separate paragraph,
+        still its own block.
+        """
+        let blocks = MarkdownBlock.parse(source)
+        #expect(blocks.map(\.kind) == [
+            .listItem("\u{2022}", "Put a request where\nthe reader can find it.\n**Keep this** part too.", 0),
+            .listItem("\u{2022}", "Nested item with\nits own continuation.", 1),
+            .listItem("2.", "Numbered item with\nmore text.", 0),
+            .listItem("\u{2611}", "Checked task with\na trailing note.", 0),
+            .paragraph("A separate paragraph,\nstill its own block.")
+        ])
+        #expect(blocks.map(\.id) == [0, 1, 2, 3, 4])
+    }
+
+    @Test func wrappedListItemsStopBeforeOtherBlockKinds() {
+        let source = """
+        - First item
+        # Heading
+        - Second item
+        > Quote
+        - Third item
+        ```text
+        code
+        ```
+        - Fourth item
+        ---
+        - Fifth item
+        | Head | Value |
+        | --- | --- |
+        | Cell | Text |
+        - Sixth item
+        """
+        #expect(MarkdownBlock.parse(source).map(\.kind) == [
+            .listItem("\u{2022}", "First item", 0), .heading(1, "Heading"),
+            .listItem("\u{2022}", "Second item", 0), .quote("Quote"),
+            .listItem("\u{2022}", "Third item", 0), .code("text", "code"),
+            .listItem("\u{2022}", "Fourth item", 0), .rule,
+            .listItem("\u{2022}", "Fifth item", 0),
+            .table([["Head", "Value"], ["Cell", "Text"]]),
+            .listItem("\u{2022}", "Sixth item", 0)
+        ])
+    }
+
     @Test func fencedCodeStaysLiteralUntilAMatchingClosingFence() {
         #expect(MarkdownBlock.parse("```swift\nlet x = \"@lead | **not bold**\"\n```\nAfter").map(\.kind) == [
             .code("swift", "let x = \"@lead | **not bold**\""), .paragraph("After")

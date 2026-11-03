@@ -92,7 +92,8 @@ public struct TranscriptMarkdown: View {
                 Text(highlights?.applying(to: AttributedString(marker), fragment: .init(block: block.id))
                      ?? AttributedString(marker)).foregroundStyle(ChannelInk.secondary).textSelection(.disabled)
                     .frame(minWidth: 14, alignment: .trailing)
-                Text(inline(text, fragment: .init(block: block.id, column: 1), highlights: highlights))
+                Text(inline(inlineText(text), fragment: .init(block: block.id, column: 1),
+                            highlights: highlights))
                     .fixedSize(horizontal: false, vertical: true)
             }
             .padding(.leading, CGFloat(depth) * 16)

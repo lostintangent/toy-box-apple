@@ -35,6 +35,23 @@ struct TranscriptMarkdownTests {
     }
 
     @MainActor
+    @Test func wrappedListTextUsesTheSameBreakPolicyAsParagraphs() throws {
+        let source = "- **Choose** one\n  next line  \n  explicit break\n- Another item"
+        let blocks = MarkdownBlock.parse(source)
+        guard case .listItem(_, let text, _) = try #require(blocks.first).kind else {
+            Issue.record("Expected a list item")
+            return
+        }
+        let message = TranscriptMarkdown(content: source, copyCode: { _ in }, mentionInk: { _ in .purple })
+        let document = TranscriptMarkdown(content: source, preservesLineBreaks: false,
+                                          copyCode: { _ in }, mentionInk: { _ in .purple })
+        #expect(text == "**Choose** one\nnext line  \nexplicit break")
+        #expect(message.inlineText(text) == text)
+        #expect(document.inlineText(text) == "**Choose** one next line  \nexplicit break")
+        #expect(document.inlineText(text).utf16.count == text.utf16.count)
+    }
+
+    @MainActor
     @Test(arguments: [1, 2, 3])
     func onlyPrimaryHeadingsHaveANativeRule(level: Int) throws {
         let heading = TranscriptMarkdown(content: "\(String(repeating: "#", count: level)) H",

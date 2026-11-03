@@ -60,6 +60,7 @@ public struct MarkdownBlock: Identifiable, Equatable {
         var blocks: [MarkdownBlock] = []
         var paragraph: [String] = []
         var index = 0
+        var afterBlankLine = false
         func append(_ kind: Kind) { blocks.append(.init(id: blocks.count, kind: kind)) }
         func flush() {
             if !paragraph.isEmpty {
@@ -70,6 +71,8 @@ public struct MarkdownBlock: Identifiable, Equatable {
         while index < lines.count {
             let line = lines[index]
             let trimmed = line.trimmingCharacters(in: .whitespaces)
+            let separatedByBlankLine = afterBlankLine
+            afterBlankLine = trimmed.isEmpty
             if trimmed.isEmpty {
                 flush()
             } else if trimmed.hasPrefix("```") || trimmed.hasPrefix("~~~") {
@@ -123,6 +126,10 @@ public struct MarkdownBlock: Identifiable, Equatable {
                 append(.listItem(task.map { $0.0 == "square" ? "\u{2610}" : "\u{2611}" }
                                  ?? (["-", "+", "*"].contains(marker) ? "\u{2022}" : marker),
                                  task?.1 ?? body, item.1.count / 2))
+            } else if !separatedByBlankLine, paragraph.isEmpty, let last = blocks.indices.last,
+                      case .listItem(let marker, let text, let depth) = blocks[last].kind {
+                let continuation = line.drop(while: { $0 == " " || $0 == "\t" })
+                blocks[last].kind = .listItem(marker, text + "\n" + String(continuation), depth)
             } else {
                 paragraph.append(line)
             }

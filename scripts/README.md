@@ -34,6 +34,6 @@ Script tests are omitted. Bundle or release changes require both real release dr
 For long Markdown reader captures, start an isolated demo with
 `TOY_BOX_DEMO_PORT=3459 TOY_BOX_DEMO_LONG_MARKDOWN=1 bun run demo`.
 The existing **Interaction notes** artifact serves the longer sample, with H1/H2,
-hard-wrapped paragraphs and a list. The existing `fixture-progress` message also gets
+hard-wrapped paragraphs and a wrapped list item. The existing `fixture-progress` message also gets
 H1/H2 and a short list for comparing transcript rendering. Without the switch,
 the shared 3210 fixture is unchanged.
