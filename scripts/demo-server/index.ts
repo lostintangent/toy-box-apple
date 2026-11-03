@@ -66,6 +66,12 @@ if (import.meta.main) {
         if (process.env.TOY_BOX_DEMO_LONG_MARKDOWN !== "1") {
             throw new Error("TOY_BOX_DEMO_LONG_MARKDOWN must be 1.");
         }
+        const snapshot = demo.snapshot();
+        const messages: Snapshot["messages"] = snapshot.messages;
+        const message = messages.find(({ id }) => id === "fixture-progress");
+        if (!message) throw new Error("The demo snapshot has no fixture-progress message.");
+        message.content = (await Bun.file(new URL("./fixtures/progress-message.md", import.meta.url)).text()).trimEnd();
+        demo.replace(snapshot);
         const artifacts: Snapshot["artifacts"] = demo.snapshot().artifacts;
         const artifact = artifacts.find(({ id }) => id === "machine:/demo/Interaction notes.md");
         if (!artifact) throw new Error("The demo snapshot has no Interaction notes artifact.");
