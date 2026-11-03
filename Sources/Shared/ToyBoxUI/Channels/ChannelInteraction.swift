@@ -10,7 +10,6 @@ public final class ChannelInteraction {
     public var messageView: TranscriptFilter = .all
     public var isInspectorPresented: Bool
     public var isArtifactViewerPresented = false
-    public private(set) var overviewTasksRequest: UUID?
     private var requestPreviewCoverage: UUID?
     public var isRequestPreviewPresented: Bool { requestPreviewCoverage != nil }
 
@@ -78,13 +77,6 @@ public final class ChannelInteraction {
     public func jumpToLatest() { jumpToLatestRequest = UUID() }
     public func findInChannel() { findRequest = UUID() }
     public func findNext(_ direction: Int) { findNavigation = (direction, UUID()) }
-    public func showOverviewTasks() {
-        overviewTasksRequest = UUID()
-        isInspectorPresented = true
-    }
-    public func consumeOverviewTasksRequest(_ token: UUID) {
-        if overviewTasksRequest == token { overviewTasksRequest = nil }
-    }
 }
 
 public struct RevealProgress: Equatable, Sendable {

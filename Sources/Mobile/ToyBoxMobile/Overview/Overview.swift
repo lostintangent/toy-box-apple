@@ -107,11 +107,6 @@ final class ChannelOverview {
 
     init(store: ChannelStore) { self.store = store }
 
-    func prepareForTaskReveal() {
-        expandedSections[.tasks] = true
-        navigationPath = []
-    }
-
     func isExpanded(_ section: OverviewSection) -> Bool { expandedSections[section] ?? true }
 
     func task(_ id: String) -> ChannelTask? {

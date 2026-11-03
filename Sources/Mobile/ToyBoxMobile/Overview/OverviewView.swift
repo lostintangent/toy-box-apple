@@ -49,11 +49,6 @@ struct OverviewView: View {
         )) { flow in
             ManagementSheet(flow: flow, presenter: management, host: placement)
         }
-        .onChange(of: interaction.overviewTasksRequest, initial: true) { _, request in
-            if request != nil, placement == presentation.placement {
-                session.prepareForTaskReveal()
-            }
-        }
     }
 
     /// The sheet's system close button. The landscape column has none, because the channel's
@@ -74,31 +69,18 @@ private struct OverviewContent: View {
     let store: ChannelStore
     @Bindable var session: ChannelOverview
     let placement: OverviewPlacement
-    @Environment(Overview.self) private var presentation
-    @Environment(ChannelInteraction.self) private var interaction
 
     var body: some View {
-        ScrollViewReader { proxy in
-            OverviewList {
-                OverviewAboutSection(store: store, session: session)
-                OverviewTeamSection(store: store, session: session, placement: placement)
-                OverviewTasksSection(store: store, session: session)
-                OverviewArtifactsSection(store: store, session: session)
-                OverviewRoutinesSection(store: store, session: session)
-            }
-            .accessibilityIdentifier("overview-form")
-            .onChange(of: store.tasks, initial: true) { _, tasks in session.reconcileTasks(tasks) }
-            .scrollEdgeEffectStyle(.hard, for: .top)
-            .task(id: interaction.overviewTasksRequest) {
-                guard let request = interaction.overviewTasksRequest else { return }
-                await Task.yield()
-                guard placement == presentation.placement, !Task.isCancelled,
-                      interaction.overviewTasksRequest == request else { return }
-                session.prepareForTaskReveal()
-                proxy.scrollTo("overview-tasks", anchor: .top)
-                interaction.consumeOverviewTasksRequest(request)
-            }
+        OverviewList {
+            OverviewAboutSection(store: store, session: session)
+            OverviewTeamSection(store: store, session: session, placement: placement)
+            OverviewTasksSection(store: store, session: session)
+            OverviewArtifactsSection(store: store, session: session)
+            OverviewRoutinesSection(store: store, session: session)
         }
+        .accessibilityIdentifier("overview-form")
+        .onChange(of: store.tasks, initial: true) { _, tasks in session.reconcileTasks(tasks) }
+        .scrollEdgeEffectStyle(.hard, for: .top)
     }
 }
 

@@ -178,10 +178,6 @@ struct OverviewTests {
         #expect(!session.isExpanded(.team))
         #expect(ChannelOverview.task("leaf", in: tasks)?.title == "Leaf")
         #expect(ChannelOverview.task("deleted", in: tasks) == nil)
-        session.expandedSections[.tasks] = false
-        session.prepareForTaskReveal()
-        #expect(session.navigationPath.isEmpty && session.isExpanded(.tasks))
-        #expect(session.taskDisclosure["child"]?.expanded == false)
     }
 
     @Test func detachedWorkingHostNeverAnimatesAndVisibilityChangesReuseItsNativeGlyph() throws {
@@ -1110,57 +1106,6 @@ struct OverviewTests {
         let modified = try #require(tree.elements.first { $0.label == "Share date unavailable" })
         #expect(abs(modified.frame.minY - title.frame.maxY - 4) < 0.5,
                 "Title \(title.frame), modified \(modified.frame)")
-    }
-
-    @Test func taskRevealScrollsToTheNativeSectionInsteadOfOnlyExpandingIt() async throws {
-        let store = ChannelStore(id: "channel", api: try ChannelAPI(serverURL: "https://fixture.example"))
-        let session = ChannelOverview(store: store)
-        session.expandedSections[.tasks] = false
-        let host = UIHostingController(rootView:
-            ScrollViewReader { proxy in
-                OverviewList {
-                    OverviewSectionRows(summary: .team(20), section: .team, session: session,
-                                        isFirstSection: true) {
-                        ForEach(0..<20, id: \.self) { index in
-                            Text("Agent \(index)").frame(height: 44).listRowInsets(.vertical, 0)
-                        }
-                    }
-                    OverviewSectionRows(summary: .tasks([
-                        ChannelTask(id: "task", title: "Build", status: "pending")
-                    ].progress), section: .tasks, session: session) {
-                        Text("Build").frame(height: 44).listRowInsets(.vertical, 0)
-                    }
-                    OverviewSectionRows(summary: .artifacts(20), section: .artifacts, session: session) {
-                        ForEach(0..<20, id: \.self) { index in
-                            Text("Artifact \(index)").frame(height: 44).listRowInsets(.vertical, 0)
-                        }
-                    }
-                }
-                .onAppear { session.prepareForTaskReveal() }
-                .task {
-                    await Task.yield()
-                    session.prepareForTaskReveal()
-                    proxy.scrollTo("overview-tasks", anchor: .top)
-                }
-            }
-            .dynamicTypeSize(.large)
-            .environment(\.horizontalSizeClass, .compact))
-        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 600))
-        window.rootViewController = host
-        window.isHidden = false
-        defer { window.isHidden = true }
-        host.view.layoutIfNeeded()
-        let list = try #require(nativeList(in: host.view))
-        let deadline = ContinuousClock.now.advanced(by: .seconds(2))
-        while list.contentOffset.y < 600, ContinuousClock.now < deadline {
-            try await Task.sleep(for: .milliseconds(5))
-            host.view.layoutIfNeeded()
-        }
-        #expect(session.isExpanded(.tasks))
-        #expect(list.contentOffset.y > 600)
-        let target = try #require(list.layoutAttributesForItem(at: IndexPath(item: 0, section: 1))).frame
-        let top = list.convert(target, to: host.view).minY - host.view.safeAreaInsets.top
-        #expect(abs(top) < 0.5, "Tasks must land at the viewport top, not just exist below it: \(top)")
     }
 
     @Test func inProgressFilterHidesDoneBranchesAndExplainsWhenNothingHoldsWork() async throws {

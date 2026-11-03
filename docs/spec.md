@@ -706,8 +706,8 @@ useful error, Retry and reachable Settings at the bottom. Cached rows alone do n
 connection.
 
 **Phone channel toolbar.** Channel Actions is a `ToolbarOverflowMenu`, so its ••• is always
-the last item. A compact top bar shows Overview, Tasks (only while unfinished), then •••. Regular
-width shows Message View, Tasks, Overview, then •••. Where the system stands bar items in a
+the last item. A compact top bar shows Overview, then •••. Regular width shows Message View,
+Overview, then •••. Tasks has no bar button because Overview already holds them. Where the system stands bar items in a
 vertical bar (`toolbarVerticalEdge` non-nil, as on the folded Duo), and in regular width, Message
 View stays its own filter item. A compact scene with no vertical bar has no room for it: a
 `.bottomBar` item would sit under the composer. There the same All Messages / Your Messages picker
@@ -1653,9 +1653,7 @@ as the inspector. URL Preview opens the configured URL in the default browser. S
 opens that channel in Toy Box, with an explicit label, never a fictitious local live screen.
 
 The tray is Mac only. The iPhone composer has no tray at any screen height, size class or text
-size. While any direct-root task is unfinished, Tasks (`checklist`) is a top-bar button in both
-size classes, speaking "Tasks, 1 of 4 done" and opening Overview's Tasks. Artifacts and Preview
-live in Overview.
+size. Tasks, Artifacts and Preview live in Overview, with no separate channel bar button.
 
 ### Overview
 

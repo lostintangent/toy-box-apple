@@ -137,9 +137,8 @@ struct ChannelScreen: View {
     @ToolbarContentBuilder
     private var conversationToolbar: some ToolbarContent {
         if sizeClass == .compact {
-            ToolbarItemGroup(placement: .primaryAction) {
+            ToolbarItem(placement: .primaryAction) {
                 overviewButton
-                tasksButton
             }
             if !messageViewIsInActions {
                 ToolbarItem(placement: .bottomBar) {
@@ -149,7 +148,6 @@ struct ChannelScreen: View {
         } else {
             ToolbarItemGroup(placement: .primaryAction) {
                 messageView
-                tasksButton
                 overviewButton
             }
         }
@@ -217,19 +215,6 @@ struct ChannelScreen: View {
             interaction.isInspectorPresented.toggle()
         }
         .disabled(store.phase == .deleted)
-    }
-
-    @ViewBuilder
-    private var tasksButton: some View {
-        let progress = store.tasks.progress
-        if progress.done < progress.total {
-            Button("Tasks", systemImage: "checklist") {
-                interaction.showOverviewTasks()
-            }
-            .accessibilityLabel("Tasks, \(progress.done) of \(progress.total) done")
-            .accessibilityIdentifier("channel-tasks")
-            .disabled(store.phase == .deleted)
-        }
     }
 }
 

@@ -1,5 +1,11 @@
 # Changelog
 
+## iPhone 0.1.13
+
+### Bugs/Polish
+
+- The channel bar is simpler, since a channel's tasks are already in Overview.
+
 ## iPhone 0.1.12
 
 ### Features

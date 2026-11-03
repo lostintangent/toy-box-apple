@@ -28,21 +28,6 @@ struct ChannelInteractionTests {
         #expect(interaction.revealRequest == nil)
     }
 
-    @Test func aTasksRequestOpensOverviewAndOnlyItsConsumerCanClearIt() throws {
-        let interaction = ChannelInteraction(isInspectorPresented: false)
-        interaction.showOverviewTasks()
-        let old = try #require(interaction.overviewTasksRequest)
-        #expect(interaction.isInspectorPresented)
-        interaction.showOverviewTasks()
-        let latest = try #require(interaction.overviewTasksRequest)
-        #expect(latest != old)
-        interaction.consumeOverviewTasksRequest(old)
-        #expect(interaction.overviewTasksRequest == latest)
-        interaction.consumeOverviewTasksRequest(latest)
-        #expect(interaction.overviewTasksRequest == nil)
-        #expect(interaction.isInspectorPresented)
-    }
-
     @Test func aRevealReportsOnlyItsOwnOutcome() {
         let interaction = ChannelInteraction()
         let first = interaction.reveal(sequence: 20)
