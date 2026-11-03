@@ -20,6 +20,7 @@
 import http from "node:http";
 import { createHistoryFixture, historyChannelID, writeHistoryPage } from "./channels/history-channel.ts";
 import { createScrollFixture, scrollChannelID, writeScrollImage } from "./channels/scroll.ts";
+import { createCatalogRoute } from "./channels/catalog-stream.ts";
 import { createDemoServer, loadDemoFixture, type DemoServer } from "./channels/demo-server.ts";
 import { type Agent, type Message, type Response, type Snapshot, type Status } from "./channels/types.ts";
 
@@ -46,6 +47,15 @@ const streams = Object.fromEntries(Object.keys(demos).map(id => [id, new Set<Res
 const injected = Object.fromEntries(Object.keys(demos).map(id => [id, 0]));
 const revisions = Object.fromEntries(Object.keys(demos).map(id => [id, 0]));
 const added = Object.fromEntries(Object.keys(demos).map(id => [id, [] as Agent[]]));
+const catalog = createCatalogRoute(() => {
+    const snapshots = Object.values(demos).map(demo => demo.snapshot());
+    const { name, role, avatar } = snapshots[0].lead;
+    return {
+        version: 1, lead: { name, role, avatar }, channels: snapshots.map(snapshot => snapshot.channel),
+        members: snapshots.flatMap(snapshot => snapshot.members),
+    };
+});
+for (const demo of Object.values(demos)) demo.onChange(catalog.publish);
 
 // Plain prose, a list, a mention and a code block, so new rows exercise each kind of formatting.
 const bodies: ((n: number, handle: string) => string)[] = [
@@ -143,12 +153,7 @@ function setWorking(response: Response, url: URL) {
 const server = http.createServer((request, response) => {
     const url = new URL(request.url ?? "/", `http://127.0.0.1:${port}`);
     if (request.method === "GET" && url.pathname === "/api/v1/channels") {
-        const snapshots = Object.values(demos).map(demo => demo.snapshot());
-        const { name, role, avatar } = snapshots[0].lead;
-        json(response, 200, {
-            version: 1, lead: { name, role, avatar }, channels: snapshots.map(snapshot => snapshot.channel),
-            members: snapshots.flatMap(snapshot => snapshot.members),
-        });
+        catalog.serve(request, response);
         return;
     }
     if (url.pathname === "/perf/messages" || url.pathname === "/perf/working") {

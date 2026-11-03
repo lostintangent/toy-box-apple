@@ -1720,8 +1720,11 @@ private final class ShellFixtureProtocol: URLProtocol, @unchecked Sendable {
     override func startLoading() {
         do {
             let url = try #require(request.url)
-            let response = try #require(HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil,
-                                                        headerFields: ["Content-Type": "application/json"]))
+            let isCatalogStream = url.path.hasSuffix("/api/v1/channels")
+                && request.value(forHTTPHeaderField: "Accept") == "text/event-stream"
+            let response = try #require(HTTPURLResponse(
+                url: url, statusCode: 200, httpVersion: nil,
+                headerFields: ["Content-Type": isCatalogStream ? "text/event-stream" : "application/json"]))
             let catalog = ChannelCatalog(
                 lead: .init(name: "Lead", role: "Coordinator", avatar: .init(mark: "M4 12H20", color: "#123456")),
                 channels: ["first", "second"].map {
@@ -1730,9 +1733,16 @@ private final class ShellFixtureProtocol: URLProtocol, @unchecked Sendable {
                 },
                 working: ["first"]
             )
+            let body = try JSONEncoder().encode(catalog)
             client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-            client?.urlProtocol(self, didLoad: try JSONEncoder().encode(catalog))
-            client?.urlProtocolDidFinishLoading(self)
+            if isCatalogStream {
+                // The catalog's stream opens with the catalog and stays open until the app closes it.
+                client?.urlProtocol(self, didLoad: Data(#"data: {"type":"snapshot","catalog":"#.utf8) + body
+                                    + Data("}\n\n".utf8))
+            } else {
+                client?.urlProtocol(self, didLoad: body)
+                client?.urlProtocolDidFinishLoading(self)
+            }
         } catch {
             client?.urlProtocol(self, didFailWithError: error)
         }

@@ -105,6 +105,17 @@ public struct ChannelAPI: Sendable {
     public let baseURL: URL
     let session: URLSession
 
+    /// Streams stay open, so they share a session of their own that allows many connections to a
+    /// server. On `URLSession.shared`, which allows six, six open streams would hold every other
+    /// request until one closed. A session the caller supplies, as tests do, carries both.
+    var streamSession: URLSession { session === URLSession.shared ? Self.streams : session }
+
+    private static let streams: URLSession = {
+        let configuration = URLSessionConfiguration.default
+        configuration.httpMaximumConnectionsPerHost = 64
+        return URLSession(configuration: configuration)
+    }()
+
     public init(baseURL: URL, session: URLSession = .shared) throws {
         guard ["http", "https"].contains(baseURL.scheme?.lowercased() ?? ""),
               baseURL.host != nil, baseURL.user == nil, baseURL.password == nil,
@@ -342,7 +353,7 @@ public struct ChannelAPI: Sendable {
         return (data, response)
     }
 
-    private func requireVersion(_ version: Int) throws {
+    func requireVersion(_ version: Int) throws {
         guard version == 1 else { throw ChannelAPIError.unsupportedVersion(version) }
     }
 }

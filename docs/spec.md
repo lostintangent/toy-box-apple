@@ -59,11 +59,11 @@ Signing, notarization, in-place updates and TestFlight are in [releases.md](rele
   HTTP, SSE, the observer and the catalog. `ToyBoxDesktop` is the app. Tests live in
   `ChannelKitTests` and `ChannelClientTests`.
 - **State:** each open channel has one `@Observable` store, which owns its `ChannelState`, connection
-  phase, unread boundary and paging. The catalog store owns the channel list and refreshes it on
-  launch, on app activation, on demand, and on a timer: about 5 seconds while the app is active, and
-  about 15 seconds in the background so requests still reach the Dock badge and notifications.
-  Neither waits for the main thread to start a request. Polling sends its first catalog request
-  at once, and connecting starts the stream and the outbox read together. Events are read off the
+  phase, unread boundary and paging. The catalog store owns the channel list and holds the
+  server's catalog stream from launch, so each change arrives as it happens, in the background
+  too, where requests still reach the Dock badge and notifications.
+  Neither waits for the main thread to start a request. The catalog opens its stream at once, and
+  connecting starts a channel's stream and the outbox read together. Events are read off the
   main actor and queued for it as each one decodes, after the restored outbox, so a snapshot that
   arrives while the first window is being built applies in the main thread's next turn.
   The first window connects its channel only once it appears. Connecting earlier gains nothing,
@@ -85,10 +85,10 @@ Signing, notarization, in-place updates and TestFlight are in [releases.md](rele
   `messages`, `request`, `requestSequence`, `tasks`, `artifacts`, `artifactShares`, `routines`)
   rather than `state`, which changes on every event. An event then re-renders only the views that
   show what it changed. `roster` leaves out each agent's status, which `agentStatuses` carries, so
-  status updates don't re-render identity. A catalog poll that changes nothing announces only
+  status updates don't re-render identity. A catalog that changes nothing announces only
   `lastRefreshedAt`, and a failure that repeats the current one isn't announced again. Views that
   only ask whether the catalog has loaded read `isLoaded`.
-- **Phone scene:** the iPhone keeps its channel streams and catalog polling while its scene is
+- **Phone scene:** the iPhone keeps its channel streams and catalog stream while its scene is
   merely inactive, as under Control Center, Notification Center or the app switcher, so a brief
   look away never forces a reconnect. It drops them only when the scene enters the background, and
   reconnects as soon as it returns. Marking read, management and treating the open channel as seen
@@ -108,7 +108,7 @@ Signing, notarization, in-place updates and TestFlight are in [releases.md](rele
 
 ### Connections
 
-A channel's stream, the catalog's polls and Settings' Test Connection each report `connecting`,
+A channel's stream, the catalog's stream and Settings' Test Connection each report `connecting`,
 `connected` or `failed`, and a channel can also be `deleted`. Each scope shows one notice: the
 transcript's "Reconnecting to server" for a channel, the sidebar footer for the catalog and Settings
 for Test Connection. A channel with cached state reconnects on its own, so its notice has no verb
@@ -122,10 +122,11 @@ Connection. Three invariants hold:
   stream connects. Three moments try again at once with the backoff reset. The network path
   becoming satisfied or moving to another interface starts a fresh attempt for every held channel
   that isn't connected, since one under way may be stuck on the old path. Coming back to the app,
-  and a catalog request succeeding after one failed, end every held channel's backoff but leave an
+  and a catalog arriving after the catalog failed, end every held channel's backoff but leave an
   attempt under way to finish, so a snapshot still arriving never starts over.
-- **A catalog failure describes poll and refresh health.** Polls report after failing for the
-  grace, and a refresh someone asked for reports at once. Polling continues and the rows stay. The
+- **A catalog failure describes stream and refresh health.** The stream reports after failing for
+  the grace, counted from a drop or from an attempt that never delivered a catalog, and a refresh
+  someone asked for reports at once. Reconnecting continues and the rows stay. The
   error stays typed, because a refused sign-in shows red and the widget rethrows it. Refresh, from
   Cmd-R, the footer, pull to refresh or Quick Send, means only this channel list.
 - **A Test Connection failure is final.** It reports one attempt and doesn't retry.
@@ -147,17 +148,26 @@ couldn't be opened is Handoff's `missing`.
   it waits another round, so a large snapshot on a slow link reads Connecting while it arrives, and
   failure follows the first full grace in which nothing arrived. The server's heartbeat keeps the
   stream open: 35 seconds of silence fails it through the stream request's own timeout.
-- **Catalog:** with no stream to lose, it's `connecting` only before its first outcome, so coming
-  back never turns the footer dot gray. `isLoaded` means a catalog has arrived, the same word
-  `ChannelStore` uses. `refresh()` joins an attempt already in flight. Polls (`startPolling`,
-  `stopPolling`, `setActive`) run every 5 seconds while active and every 15 otherwise, and retry
-  after the policy's initial delay while quiet. While polling, the catalog watches the network
-  path through `NetworkPathSource`, which follows `NWPathMonitor` unless a test injects one. Its
-  first report is only where things stand. A path that comes back or moves polls at once, as
-  `setActive(true)` does, and the held channels try again as the first invariant describes.
+- **Catalog:** a quick reconnect never changes its phase, so it's `connecting` only before its
+  first outcome and coming back never turns the footer dot gray. `isLoaded` means a catalog has
+  arrived, the same word `ChannelStore` uses. `startPolling()` opens the catalog's stream in one
+  task, which reconnects with the channel stream's backoff until `stopPolling()` cancels it. Each
+  attempt opens with the whole catalog, since the stream has no cursor, and later changes apply
+  only on top of it. Each catalog, change and keepalive moves `lastRefreshedAt`. `refresh()` joins
+  an attempt already in flight. Otherwise it reopens the stream and returns with its catalog, or
+  fetches the catalog once where nothing streams, as in the widget and share extensions.
+  `setActive(true)` ends the stream's backoff but leaves a live stream or an attempt under way
+  alone. While streaming, the catalog watches the network path through `NetworkPathSource`, which
+  follows `NWPathMonitor` unless a test injects one. Its first report is only where things stand.
+  A path that comes back or moves reopens a stream that isn't live, and the held channels try
+  again as the first invariant describes.
+- **Sessions:** every stream uses `ChannelAPI.streamSession`, one session for all servers that
+  allows 64 connections per server. One-shot requests keep `URLSession.shared`, so a dozen open
+  channels never hold a request behind them. One shared session would fill its six connections
+  per server with streams and stall every other request.
 - **Footer:** `SidebarFooter` (ToyBoxUI) turns `phase` and `isLoaded` into the dot, heading, help
   verb and VoiceOver value on both apps (see Sidebar). Only a refresh the user asked for lights the
-  Mac's footer spinner, through `AppModel.isRefreshingCatalog`. Polls, Handoff, management and the
+  Mac's footer spinner, through `AppModel.isRefreshingCatalog`. The stream, Handoff, management and the
   widget never do.
 - **Test Connection:** `ServerConnectionProbe.phase` is nil until a test runs, then `connecting`,
   `connected` with the channel count, or `failed`. `isConnecting` drives the button.
@@ -168,7 +178,7 @@ couldn't be opened is Handoff's `missing`.
 
 | Request | Use |
 | --- | --- |
-| `GET /api/v1/channels` | Catalog `{version, channels, members, lead, working}` for the sidebar. `lead` is the profile every channel's lead shares, under the channel's ID, and is always present. `working` lists running agent IDs |
+| `GET /api/v1/channels` | Catalog `{version, channels, members, lead, working}` for the sidebar. `lead` is the profile every channel's lead shares, under the channel's ID, and is always present. `working` lists running agent IDs. With `Accept: text/event-stream` it streams: `snapshot` with the catalog, then `working`, `channel.upserted`, `channel.deleted`, `channel.member.upserted` and `channel.member.deleted`, with a keepalive every 5 seconds. There's no cursor, so every reconnect starts with a fresh `snapshot` |
 | `GET /api/v1/channels/:id` (SSE) | `snapshot`, then live events. With `after`: replay, then `resumed` with full presence. The store holds the replay and publishes it with `resumed` as one change, so a reopened channel never redraws what it missed event by event. A drop mid-replay publishes nothing, and the retry asks again after the published revision. `presence` is sparse and merges. `deleted` is terminal |
 | `GET /api/v1/channels/:id/messages?before=N` | Older page of up to 100 messages `{version, revision, messages}` |
 | `POST /api/v1/channels/:id/messages` | `{id, content, attachments?}` with a client UUID. 201 returns the message. 409 means a duplicate. Never auto-retry |
@@ -214,7 +224,7 @@ keeps no copy of it.
 
 The phone icon badge counts channels with an open request, using the same
 `channel.attention == .waiting` predicate as the widget. Each successful app catalog refresh
-reconciles the badge, including unchanged polls and zero waiting channels. Cached-only state,
+reconciles the badge, including the stream's keepalives and zero waiting channels. Cached-only state,
 failed refreshes and unrelated navigation changes do not overwrite it. Badge updates do not wait
 for notification authorization reads or request-history loading. The in-app Allow notifications
 choice gates the badge independently of authorization: turning it off immediately clears the
@@ -784,7 +794,7 @@ navigation keeps list focus until explicitly moving into the conversation.
 | Filter has no messages | "No messages for you yet", Show All Messages. Keep paging older history until exhausted |
 | Reconnecting with cached state | Keep transcript and scroll intact. After about three seconds of trying without connecting, the transcript's floating pill says "Reconnecting to server" over "Messages may be out of date" (see Reconnecting notice), the channel's only outage notice. It has no Retry, because the channel keeps trying and tries again at once when the network comes back or moves, the app becomes active again or the catalog recovers (see Connections). The notice stays until the channel connects. A reconnect that goes live sooner shows nothing. Until then agent status, working presence and every connection notice stay as they were while live. Disable delivery and management actions, not editing. Time away from the app never counts toward the three seconds |
 | Disconnected without any state | `wifi.exclamationmark`, "Can't connect to Toy Box", server host, readable failure, Retry and Settings |
-| Catalog refresh fails | Keep existing rows, mark them stale and show the error block above the connection footer's orange status line (see Sidebar), after about three seconds of failing polls or at once for a refresh the user asked for. Never replace them with "No channels". When it recovers, every channel waiting out a backoff retries at once |
+| Catalog refresh fails | Keep existing rows, mark them stale and show the error block above the connection footer's orange status line (see Sidebar), after the catalog's stream has failed for about three seconds or at once for a refresh the user asked for. Never replace them with "No channels". When it recovers, every channel waiting out a backoff retries at once |
 | Failed send | Inline error above composer and explicit status on optimistic row, preserved text/attachments, no automatic retry |
 | Channel deleted | Stop observation, dismiss its inspector, show "This channel was deleted". Back to Channels and Copy Draft if nonempty. Never silently discard a draft or redirect to another channel |
 | Invalid URL or authorization failure | Show the actual category and server, Settings/Retry as appropriate. No fabricated successful connection |
@@ -990,8 +1000,8 @@ asked for (Retry, or View > Refresh, which refreshes only the channel list) take
 indeterminate spinner,
 `ProgressView().controlSize(.mini)`, which is 10 points. Center it on the dot's center and don't
 clip it, so it overhangs the 7-point slot by 1.5 points on each side and the host text never moves.
-When the attempt resolves, it crossfades back to the resulting dot. Background polling never shows
-the spinner. A failed poll also stays quiet and retries every half second until polls have failed for
+When the attempt resolves, it crossfades back to the resulting dot. The catalog's stream never shows
+the spinner. A dropped stream also stays quiet and reconnects with backoff until it has failed for
 about three seconds, the same grace a channel gets, so coming back to the app never flashes the
 orange dot or the block. A refresh the user asked for reports its failure at once. Never overlay a spinner or "Loading Channels" on the list. The static placeholder rows
 show the shape and the footer shows the activity.
@@ -2431,7 +2441,7 @@ first and quotes each from the channel's store, otherwise from one history looku
 until the next request. Working must come from the one function the sidebar row uses (live
 presence for an open channel, otherwise the catalog's `working`), so the menu bar, the sidebar
 and the Dock can never disagree. Render identities with `AgentAvatarView`. Opening the inbox does
-not refresh the catalog. Its normal cadence (5 seconds active, 15 inactive) is the latency.
+not refresh the catalog. The catalog's stream already delivers each change as it happens.
 Opening it, reading a quote and expanding Reply never mark a channel read.
 
 ### Dock
@@ -2905,8 +2915,8 @@ identity isolation, withdrawal and a stale result's inability to send to a diffe
 The WidgetKit extension is a glanceable view of the same waiting requests as the menu bar inbox,
 not a second attention model. The host writes a small server-scoped snapshot from `MenuBarStatus`
 to its Team-ID-prefixed app group and requests a timeline reload when that snapshot changes.
-Successful catalog polls feed the snapshot's 15-minute heartbeat even when nothing changed.
-Offline polls never advance its last-success time.
+The catalog stream's keepalives feed the snapshot's 15-minute heartbeat even when nothing changed.
+A stream that isn't delivering never advances its last-success time.
 The Mac widget does not connect to a server, send a reply or mark anything read. Its signed,
 sandboxed extension lives in `Contents/PlugIns`, shares the app's version/build and is omitted
 from isolated test, snapshot and benchmark bundles like the Share extension.

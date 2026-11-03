@@ -8,13 +8,19 @@ struct SSETests {
             + ": heartbeat\n\ndata: third\n\n"
         var decoder = SSEDecoder()
         let frames = try text.utf8.compactMap { try decoder.consume($0) }
-        #expect(frames == ["first\nsecond", "third"])
+        #expect(frames == [.event("first\nsecond"), .keepalive, .event("third")])
+    }
+
+    @Test func aBlockWithNeitherDataNorACommentIsNoFrame() throws {
+        var decoder = SSEDecoder()
+        let frames = try "retry: 1000\n\nid: 4\n\n: keepalive\n\n".utf8.compactMap { try decoder.consume($0) }
+        #expect(frames == [.keepalive])
     }
 
     @Test func bareCarriageReturnsAndEmptyData() throws {
         var decoder = SSEDecoder()
         let frames = try "data:\r\rdata: ✓\r\r".utf8.compactMap { try decoder.consume($0) }
-        #expect(frames == ["", "✓"])
+        #expect(frames == [.event(""), .event("✓")])
     }
 
     @Test func frameSizeIsBounded() {
@@ -35,6 +41,18 @@ struct SSETests {
         let request = api.streamRequest(channelId: "test", after: 0)
         #expect(request.url?.query == "after=0")
         #expect(api.streamRequest(channelId: "test", after: nil).url?.query == nil)
+    }
+
+    /// Six open streams on the shared session would hold every other request to that server.
+    @Test func streamsShareASessionThatAllowsManyConnectionsPerServer() throws {
+        let api = try ChannelAPI(serverURL: "http://localhost:3210")
+        #expect(api.session === URLSession.shared)
+        #expect(api.streamSession !== URLSession.shared)
+        #expect(api.streamSession.configuration.httpMaximumConnectionsPerHost >= 12)
+        #expect(try ChannelAPI(serverURL: "http://localhost:3211").streamSession === api.streamSession)
+        let supplied = URLSession(configuration: .ephemeral)
+        defer { supplied.invalidateAndCancel() }
+        #expect(try ChannelAPI(serverURL: "http://localhost:3210", session: supplied).streamSession === supplied)
     }
 
     @Test func patchDistinguishesOmittedFromNull() throws {

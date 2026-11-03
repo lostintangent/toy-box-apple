@@ -27,14 +27,14 @@ public enum ChannelConnectionPhase: Equatable, Sendable {
     }
 }
 
-/// See Connections in docs/spec.md. A catalog has no stream to lose, so it's
+/// See Connections in docs/spec.md. A quick reconnect never changes the catalog's phase, so it's
 /// `.connecting` only before its first outcome.
 public enum ChannelCatalogPhase: Equatable, Sendable {
     case connecting
-    /// The last refresh succeeded, or polls have failed for less than the grace.
+    /// The last catalog arrived, and the stream has failed for less than the grace since.
     case connected
-    /// A refresh someone asked for failed, or polls failed for the grace. Polling continues. It keeps
-    /// the typed error, since a sign-in failure reports differently and the widget rethrows it.
+    /// A refresh someone asked for failed, or the stream failed for the grace. Retrying continues. It
+    /// keeps the typed error, since a sign-in failure reports differently and the widget rethrows it.
     case failed(any Error)
 
     public var failure: (any Error)? {
@@ -43,8 +43,8 @@ public enum ChannelCatalogPhase: Equatable, Sendable {
     }
     public var message: String? { failure?.localizedDescription }
 
-    /// A failure that repeats the current one is equal to it, so polls that keep failing the same
-    /// way don't notify on each attempt.
+    /// A failure that repeats the current one is equal to it, so attempts that keep failing the same
+    /// way don't notify on each one.
     public static func == (lhs: Self, rhs: Self) -> Bool {
         switch (lhs, rhs) {
         case (.connecting, .connecting), (.connected, .connected): true
@@ -770,23 +770,30 @@ public final class ChannelCatalogStore {
     public private(set) var phase: ChannelCatalogPhase = .connecting
     /// Whether a catalog has arrived. It stays true through failures, so the rows stay.
     public var isLoaded: Bool { state != nil }
+    /// When the catalog was last known current: each catalog, change and keepalive the stream
+    /// delivers moves it. Nil until the first catalog.
     public private(set) var lastRefreshedAt: Date?
-    @ObservationIgnored private var polling: Task<Void, Never>?
-    @ObservationIgnored private var pollingDelay: Task<Void, Never>?
+    @ObservationIgnored private var stream: Task<Void, Never>?
     @ObservationIgnored private var pathWatch: Task<Void, Never>?
     @ObservationIgnored private let networkPath: NetworkPathSource
     @ObservationIgnored private var detailStores: [String: ChannelStore] = [:]
     /// Passed to every channel's store, so one place hears each send the server accepts.
     @ObservationIgnored public var onSendConfirmed: (@MainActor (String) -> Void)?
-    @ObservationIgnored private var activePollingInterval: TimeInterval = 5
     @ObservationIgnored private var catalogGeneration = UUID()
+    @ObservationIgnored private var streamGeneration = UUID()
+    /// The stream delivered a catalog and hasn't failed since. Only then does a keepalive mean the
+    /// catalog is current.
+    @ObservationIgnored private var isLive = false
+    /// The stream loop is waiting out a backoff with no request under way, so a prompt retry can
+    /// start over without cancelling anything.
+    @ObservationIgnored private var isBackingOff = false
     @ObservationIgnored private var reconcilingManagement = false
     @ObservationIgnored private let reconnectPolicy: ReconnectPolicy
-    /// When the polls that are failing without reporting it began. Only polling counts.
+    /// When the stream began failing without reporting it.
     @ObservationIgnored private var failingSince: Date?
     @ObservationIgnored private let now: () -> Date
-    /// Whether someone asked for the attempt in flight, so its failure reports at once. Internal and
-    /// observed, so tests can wait for a requested refresh to join a poll.
+    /// A refresh is waiting for the stream's next catalog or failure, so that failure reports at once.
+    /// Internal and observed, so tests can wait for a refresh to reach the stream.
     private(set) var isRequested = false
     /// A refresh or management check is in flight. When it ends, the refreshes that joined it return.
     /// Internal, so no view spins for background work. Tests wait on it.
@@ -799,7 +806,9 @@ public final class ChannelCatalogStore {
         }
     }
     @ObservationIgnored private var joiners: [CheckedContinuation<Void, Never>] = []
-    public var pollingInterval: TimeInterval { isActive ? activePollingInterval : 15 }
+    /// Whether the catalog's stream is open or retrying, from `startPolling()` until `stopPolling()`.
+    /// Internal and unobserved, so tests can check a stop.
+    var isStreaming: Bool { stream != nil }
 
     /// `now` measures the grace. Tests pass a clock they move instead of waiting, and a network path
     /// they change.
@@ -811,8 +820,7 @@ public final class ChannelCatalogStore {
         self.networkPath = networkPath
     }
     deinit {
-        polling?.cancel()
-        pollingDelay?.cancel()
+        stream?.cancel()
         pathWatch?.cancel()
     }
 
@@ -827,45 +835,31 @@ public final class ChannelCatalogStore {
     /// A channel's store, only if something already asked for it.
     public func existingChannel(id: String) -> ChannelStore? { detailStores[id] }
 
-    /// A refresh someone asked for. It reports a failure at once, since the caller waits on the
-    /// outcome, and joins an attempt already in flight instead of returning early. A poll that fails
-    /// stays quiet and retries promptly until polls have failed for the grace, the way a channel
-    /// stays `.connecting`, so a failed request on coming back to the app shows nothing.
+    /// A refresh someone asked for, which joins one already in flight instead of returning early.
+    /// While the stream is open it reopens the stream and returns with the fresh catalog that opens
+    /// it, or reports the failure at once, since the caller waits on the outcome. Without a stream,
+    /// as in the widget and share extensions, it fetches the catalog once.
     public func refresh() async {
-        await refresh(prefetched: nil, requested: true)
-    }
-
-    private func refresh(prefetched: Task<ChannelCatalog, any Error>?, requested: Bool) async {
-        if isFetching {
-            prefetched?.cancel()
-            guard requested else { return }
+        if isFetching { return await withCheckedContinuation { joiners.append($0) } }
+        if stream != nil {
             isRequested = true
+            isFetching = true
+            openStream()
             return await withCheckedContinuation { joiners.append($0) }
         }
         let token = UUID()
-        let started = now()
         catalogGeneration = token
-        isRequested = requested
         isFetching = true
         defer { if catalogGeneration == token { isFetching = false } }
         do {
-            let catalog = if let prefetched {
-                try await withTaskCancellationHandler { try await prefetched.value }
-                    onCancel: { prefetched.cancel() }
-            } else {
-                try await api.catalog()
-            }
-            guard !Task.isCancelled, catalogGeneration == token else { return }
+            let catalog = try await api.catalog()
+            // Once the stream delivers a catalog, it's at least as current as this one.
+            guard !Task.isCancelled, catalogGeneration == token, !isLive else { return }
             applyCatalog(catalog)
         } catch {
             guard !Task.isCancelled, !(error is CancellationError),
                   (error as? URLError)?.code != .cancelled,
-                  catalogGeneration == token else { return }
-            if !isRequested, phase.failure == nil {
-                let since = failingSince ?? started
-                failingSince = since
-                guard now().timeIntervalSince(since) >= reconnectPolicy.grace else { return }
-            }
+                  catalogGeneration == token, !isLive else { return }
             phase = .failed(error)
         }
     }
@@ -905,8 +899,8 @@ public final class ChannelCatalogStore {
         }
     }
 
-    /// A poll that changes nothing announces only `lastRefreshedAt`, so the sidebar and its rows
-    /// don't re-render every few seconds. `@Observable` skips assigning an equal value.
+    /// A catalog that changes nothing announces only `lastRefreshedAt`, so the sidebar and its rows
+    /// don't re-render on every change elsewhere. `@Observable` skips assigning an equal value.
     /// When the server comes back, held channels waiting out a backoff try again at once.
     private func applyCatalog(_ catalog: ChannelCatalog) {
         let recovered = failingSince != nil || phase.failure != nil
@@ -919,58 +913,134 @@ public final class ChannelCatalogStore {
         for store in detailStores.values { store.retryPromptly() }
     }
 
-    /// Requests the first catalog immediately. A main-actor task would send it only on the main
-    /// thread's first free turn, which at launch comes after the first window is built.
-    public func startPolling(interval: TimeInterval = 5) {
-        guard polling == nil else { return }
-        activePollingInterval = interval
+    /// Opens the catalog's stream at once and keeps it open, reconnecting after a backoff, until
+    /// `stopPolling()`.
+    public func startPolling() {
+        guard stream == nil else { return }
         failingSince = nil
         watchNetworkPath()
-        let api = api
-        let first = Task.detached(priority: Task.currentPriority) { try await api.catalog() }
-        polling = Task { [weak self] in
-            var prefetched: Task<ChannelCatalog, any Error>? = first
-            defer { prefetched?.cancel() }
-            while !Task.isCancelled {
-                await self?.refresh(prefetched: prefetched, requested: false)
-                prefetched = nil
-                guard !Task.isCancelled, let delay = self?.nextPollDelay else { return }
-                let pause = Task {
+        openStream()
+    }
+
+    /// Replaces the stream with a fresh attempt. Its events are read off the main actor and each one
+    /// is queued for it as soon as it decodes, so at launch the first catalog isn't held until the
+    /// main thread's first free turn, which comes after the first window is built.
+    private func openStream() {
+        stream?.cancel()
+        streamGeneration = UUID()
+        let token = streamGeneration
+        isLive = false
+        isBackingOff = false
+        var first: AsyncThrowingStream<SSEItem<ChannelCatalogEvent>, any Error>? = api.observeCatalog()
+        let started = now()
+        stream = Task.detached(priority: Task.currentPriority) { [weak self] in
+            // Reading a stream opens its request, and each stream lives only inside `do`, so leaving
+            // it for any reason closes the request.
+            var next = first.take()
+            var opened = started
+            var attempt = 0
+            while true {
+                do {
+                    guard let items = next.take() else { return }
+                    for try await item in items {
+                        guard await self?.receive(item, token: token) == true else { return }
+                        if case .event(.snapshot) = item { attempt = 0 }
+                    }
+                    throw ChannelAPIError.streamEnded
+                } catch {
+                    guard let delay = await self?.retry(after: error, attempt: attempt, opened: opened, token: token)
+                    else { return }
+                    attempt += 1
                     do { try await Task.sleep(for: .seconds(delay)) }
                     catch { return }
+                    guard let reopened = await self?.reopen(token: token) else { return }
+                    (next, opened) = (reopened.stream, reopened.opened)
                 }
-                self?.pollingDelay = pause
-                await pause.value
-                guard !Task.isCancelled else { return }
-                self?.pollingDelay = nil
             }
         }
     }
 
-    private var nextPollDelay: TimeInterval {
-        failingSince != nil && phase.failure == nil ? reconnectPolicy.initialDelay : pollingInterval
+    /// Applies what the stream read. Returns whether reading continues. A change applies only on top
+    /// of the catalog this stream delivered.
+    private func receive(_ item: SSEItem<ChannelCatalogEvent>, token: UUID) -> Bool {
+        guard !Task.isCancelled, streamGeneration == token else { return false }
+        switch item {
+        case .keepalive:
+            if isLive { lastRefreshedAt = .now }
+        case .event(.snapshot(let catalog)):
+            isLive = true
+            applyCatalog(catalog)
+            settleRequest()
+        case .event(.unknown):
+            break
+        case .event(let event):
+            guard isLive, var catalog = state else { break }
+            catalog.apply(event)
+            applyCatalog(catalog)
+        }
+        return true
     }
 
-    /// Coming back to the app polls at once and ends every held channel's backoff.
+    /// Records a failed attempt and returns the backoff before the next one. The phase stays as it
+    /// is until the stream has failed for the grace, counted from the drop or from an attempt that
+    /// never delivered, so a quick reconnect shows nothing. A refresh waiting on it reports at once.
+    private func retry(after error: any Error, attempt: Int, opened: Date, token: UUID) -> TimeInterval? {
+        guard !Task.isCancelled, streamGeneration == token else { return nil }
+        let since = failingSince ?? (isLive ? now() : opened)
+        failingSince = since
+        isLive = false
+        if isRequested || phase.failure != nil || now().timeIntervalSince(since) >= reconnectPolicy.grace {
+            phase = .failed(error)
+        }
+        settleRequest()
+        isBackingOff = true
+        return reconnectPolicy.delay(attempt: attempt)
+    }
+
+    private func reopen(token: UUID)
+        -> (stream: AsyncThrowingStream<SSEItem<ChannelCatalogEvent>, any Error>, opened: Date)? {
+        guard !Task.isCancelled, streamGeneration == token else { return nil }
+        isBackingOff = false
+        return (api.observeCatalog(), now())
+    }
+
+    /// Returns the refreshes waiting on the stream's next catalog or failure.
+    private func settleRequest() {
+        guard isRequested else { return }
+        isRequested = false
+        if !reconcilingManagement { isFetching = false }
+    }
+
+    /// Ends the stream's backoff early. An attempt already under way keeps going.
+    private func retryPromptly() {
+        guard isBackingOff else { return }
+        openStream()
+    }
+
+    /// Coming back to the app ends the stream's backoff and every held channel's.
     public func setActive(_ active: Bool) {
         guard active != isActive else { return }
         isActive = active
-        pollingDelay?.cancel()
         guard active else { return }
+        retryPromptly()
         for store in detailStores.values { store.retryPromptly() }
     }
 
+    /// Closes the stream and stops retrying. A refresh waiting on it returns.
     public func stopPolling() {
-        polling?.cancel()
-        polling = nil
-        pollingDelay?.cancel()
-        pollingDelay = nil
+        streamGeneration = UUID()
+        stream?.cancel()
+        stream = nil
+        isLive = false
+        isBackingOff = false
         pathWatch?.cancel()
         pathWatch = nil
+        settleRequest()
     }
 
-    /// While polling, a network that comes back or moves to another interface polls at once and
-    /// gives every held channel that isn't connected a fresh attempt instead of its backoff.
+    /// While streaming, a network that comes back or moves to another interface gives the stream and
+    /// every held channel that isn't connected a fresh attempt instead of its backoff, since an
+    /// attempt under way may be stuck on the old path.
     private func watchNetworkPath() {
         let paths = networkPath.paths()
         pathWatch = Task { [weak self] in
@@ -979,7 +1049,7 @@ public final class ChannelCatalogStore {
                 defer { previous = path }
                 guard path.isReturn(from: previous) else { continue }
                 guard let self else { return }
-                pollingDelay?.cancel()
+                if !isLive { openStream() }
                 for store in detailStores.values { store.retryOnNewPath() }
             }
         }

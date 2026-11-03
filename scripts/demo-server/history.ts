@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 import { createHistoryFixture, historyChannelID, historyMessageCount, historyPageSize, writeHistoryPage }
     from "./channels/history-channel.ts";
+import { createCatalogRoute } from "./channels/catalog-stream.ts";
 import { createDemoServer, loadDemoFixture } from "./channels/demo-server.ts";
 import { type Snapshot } from "./channels/types.ts";
 
@@ -12,6 +13,11 @@ const { snapshot, history } = createHistoryFixture(source, { now, origin: `http:
 const channelID = historyChannelID;
 
 const demo = createDemoServer(snapshot, now);
+const catalog = createCatalogRoute(() => {
+    const { lead: { name, role, avatar }, channel, members } = demo.snapshot();
+    return { version: 1, lead: { name, role, avatar }, channels: [channel], members };
+});
+demo.onChange(catalog.publish);
 const handlers = demo.server.listeners("request");
 if (handlers.length !== 1) throw new Error("Expected the demo server's single HTTP handler.");
 const originalHandler = handlers[0];
@@ -19,12 +25,7 @@ demo.server.removeListener("request", originalHandler);
 demo.server.on("request", (request, response) => {
     const url = new URL(request.url ?? "/", `http://127.0.0.1:${port}`);
     if (request.method === "GET" && url.pathname === "/api/v1/channels") {
-        const current = demo.snapshot();
-        const { name, role, avatar } = current.lead;
-        response.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
-        response.end(JSON.stringify({
-            version: 1, lead: { name, role, avatar }, channels: [current.channel], members: current.members,
-        }));
+        catalog.serve(request, response);
         return;
     }
     if (url.pathname === `/api/v1/channels/${channelID}/messages`) {
@@ -46,6 +47,7 @@ demo.server.listen(port, "127.0.0.1", () => {
 });
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
     process.once(signal, () => {
+        catalog.close();
         void demo.close().catch(error => { console.error(error); process.exitCode = 1; });
     });
 }

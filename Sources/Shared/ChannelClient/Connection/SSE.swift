@@ -2,9 +2,18 @@ import ChannelKit
 import Foundation
 import Synchronization
 
+/// A block of an SSE stream, complete once its blank line arrives.
+public enum SSEFrame: Equatable, Sendable {
+    /// An event's data. Its other fields are never read.
+    case event(String)
+    /// A block of only comments, which a server sends to keep an idle stream open.
+    case keepalive
+}
+
 public struct SSEDecoder: Sendable {
     private var line: [UInt8] = []
     private var data: [String] = []
+    private var hasComment = false
     private var skipLF = false
     private var isFirstLine = true
     private var eventSize = 0
@@ -14,8 +23,8 @@ public struct SSEDecoder: Sendable {
         self.maximumEventBytes = maximumEventBytes
     }
 
-    /// Returns an event's data once its blank line arrives. Its other fields are never read.
-    public mutating func consume(_ byte: UInt8) throws -> String? {
+    /// Returns a block once its blank line arrives. A block with neither data nor a comment returns nil.
+    public mutating func consume(_ byte: UInt8) throws -> SSEFrame? {
         if skipLF {
             skipLF = false
             if byte == 10 { return nil }
@@ -31,7 +40,7 @@ public struct SSEDecoder: Sendable {
         return nil
     }
 
-    private mutating func finishLine() throws -> String? {
+    private mutating func finishLine() throws -> SSEFrame? {
         guard var text = String(bytes: line, encoding: .utf8) else {
             throw ChannelAPIError.invalidEvent("UTF-8 SSE")
         }
@@ -43,10 +52,13 @@ public struct SSEDecoder: Sendable {
         if text.isEmpty {
             defer {
                 data.removeAll(keepingCapacity: true)
+                hasComment = false
                 eventSize = 0
             }
-            return data.isEmpty ? nil : data.joined(separator: "\n")
+            if !data.isEmpty { return .event(data.joined(separator: "\n")) }
+            return hasComment ? .keepalive : nil
         }
+        if text.first == ":" { hasComment = true }
         guard text == "data" || text.hasPrefix("data:") else { return nil }
         var value = text.dropFirst(5)
         if value.first == " " { value.removeFirst() }
@@ -73,35 +85,70 @@ public extension ChannelAPI {
     /// reader cancelled first never touches a session its owner may since have invalidated.
     internal func observe(channelId: String, after: Int?, heartbeatTimeout: TimeInterval = 35,
                           arrivals: StreamArrivals?) -> AsyncThrowingStream<ChannelObservationEvent, any Error> {
-        let reader = SSEReader(session: session,
-                               request: streamRequest(channelId: channelId, after: after, timeout: heartbeatTimeout),
-                               arrivals: arrivals)
+        let reader = SSEReader<ChannelObservationEvent>(
+            session: streamSession,
+            request: streamRequest(channelId: channelId, after: after, timeout: heartbeatTimeout),
+            arrivals: arrivals
+        ) { event in
+            try validate(event)
+            return event.type == "deleted"
+        }
+        return AsyncThrowingStream {
+            while let item = try await reader.next() {
+                if case .event(let event) = item { return event }
+            }
+            return nil
+        }
+    }
+
+    /// The catalog stream: a snapshot, then each change, with a keepalive while nothing changes.
+    /// It has no cursor, so every reconnect opens with a fresh snapshot. It opens the way a
+    /// channel's stream does, and fails on the same silence.
+    internal func observeCatalog(heartbeatTimeout: TimeInterval = 35)
+        -> AsyncThrowingStream<SSEItem<ChannelCatalogEvent>, any Error> {
+        var request = URLRequest(url: endpoint(["api", "v1", "channels"]),
+                                 cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: heartbeatTimeout)
+        request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+        let reader = SSEReader<ChannelCatalogEvent>(session: streamSession, request: request, arrivals: nil) { event in
+            if case .snapshot(let catalog) = event { try requireVersion(catalog.version) }
+            return false
+        }
         return AsyncThrowingStream { try await reader.next() }
     }
 }
 
+/// What a stream read: an event, or a keepalive that says the stream is still open.
+enum SSEItem<Event: Sendable>: Sendable {
+    case event(Event)
+    case keepalive
+}
+
 /// One stream's request and decoder. Only the task iterating the stream touches them, one event at a
 /// time, so they need no lock.
-private final class SSEReader: @unchecked Sendable {
+private final class SSEReader<Event: Decodable & Sendable>: @unchecked Sendable {
     private let session: URLSession
     private let request: URLRequest
     private let arrivals: StreamArrivals?
+    /// Throws for an event the stream can't accept, and returns whether the stream ends after it.
+    private let check: @Sendable (Event) throws -> Bool
     private var bytes: URLSession.AsyncBytes.AsyncIterator?
     private var task: URLSessionDataTask?
     private var frames = SSEDecoder()
     private let decoder = JSONDecoder()
     private var isFinished = false
 
-    init(session: URLSession, request: URLRequest, arrivals: StreamArrivals?) {
+    init(session: URLSession, request: URLRequest, arrivals: StreamArrivals?,
+         check: @escaping @Sendable (Event) throws -> Bool) {
         self.session = session
         self.request = request
         self.arrivals = arrivals
+        self.check = check
     }
 
     /// A reader that stops early releases the stream without finishing it.
     deinit { task?.cancel() }
 
-    func next() async throws -> ChannelObservationEvent? {
+    func next() async throws -> SSEItem<Event>? {
         guard !isFinished else { return nil }
         do {
             var iterator: URLSession.AsyncBytes.AsyncIterator
@@ -109,11 +156,17 @@ private final class SSEReader: @unchecked Sendable {
             while let byte = try await iterator.next() {
                 try Task.checkCancellation()
                 arrivals?.received()
-                guard let payload = try frames.consume(byte) else { continue }
-                let event = try decoder.decode(ChannelObservationEvent.self, from: Data(payload.utf8))
-                try validate(event)
-                if event.type == "deleted" { finish() } else { bytes = iterator }
-                return event
+                switch try frames.consume(byte) {
+                case nil:
+                    continue
+                case .keepalive:
+                    bytes = iterator
+                    return .keepalive
+                case .event(let payload):
+                    let event = try decoder.decode(Event.self, from: Data(payload.utf8))
+                    if try check(event) { finish() } else { bytes = iterator }
+                    return .event(event)
+                }
             }
             throw ChannelAPIError.streamEnded
         } catch let error as URLError where error.code == .timedOut {
@@ -190,8 +243,8 @@ public struct ReconnectPolicy: Sendable {
     public var initialDelay: TimeInterval
     public var maximumDelay: TimeInterval
     /// How long a channel tries to connect with nothing arriving before it reports `.failed`, and
-    /// how long catalog polls keep failing before they report. Until then nothing changes, so a
-    /// quick reconnect after coming back to the app shows no notice.
+    /// how long the catalog's stream keeps failing before it reports. Until then nothing changes, so
+    /// a quick reconnect after coming back to the app shows no notice.
     public var grace: TimeInterval
 
     public init(initialDelay: TimeInterval = 0.5, maximumDelay: TimeInterval = 15, grace: TimeInterval = 3) {

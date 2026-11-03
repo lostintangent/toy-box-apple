@@ -8,8 +8,8 @@ import Testing
 private let heldStream = MockResponse(contentType: "text/event-stream", keepOpen: true)
 
 /// Channels with cached state have no Retry, so the network's return, coming back to the app and
-/// the catalog's recovery each try again at once. Every backoff and poll here outlasts the test,
-/// except the one backoff a test lets run out, so only those triggers can retry.
+/// the catalog's recovery each try again at once. Every backoff here outlasts the test, except the
+/// one backoff a test lets run out, so only those triggers can retry.
 @MainActor
 @Suite("Network return", .timeLimit(.minutes(1)))
 struct NetworkReturnTests {
@@ -31,8 +31,9 @@ struct NetworkReturnTests {
         #expect(cellular.isReturn(from: wifi))
     }
 
-    /// With the catalog healthy, only the network's return can retry the channel. With it failing
-    /// too, its recovery must leave the fresh attempt to finish.
+    /// With the catalog live, only the network's return can retry the channel, and the catalog keeps
+    /// its stream. With the catalog failing too, the network's return reopens it, and its recovery
+    /// must leave the channel's fresh attempt to finish.
     @Test(arguments: [false, true])
     func aFailedChannelTriesAtOnceWhenTheNetworkComesBack(catalogFailedToo: Bool) async throws {
         let attempts = Mutex<[String: Int]>([:])
@@ -44,7 +45,7 @@ struct NetworkReturnTests {
             }
             if path == "/api/v1/channels" {
                 guard attempt > 1 || !catalogFailedToo else { return MockResponse(status: 503) }
-                return try .json(ChannelCatalog(lead: testLeadProfile, channels: [testState().channel]))
+                return try .catalogStream(ChannelCatalog(lead: testLeadProfile, channels: [testState().channel]))
             }
             return attempt == 1 ? MockResponse(status: 503) : heldStream
         }
@@ -52,7 +53,7 @@ struct NetworkReturnTests {
         let catalog = ChannelCatalogStore(api: try mock.api(), reconnectPolicy: patient,
                                           networkPath: .init { network.stream })
         network.continuation.yield(wifi)
-        catalog.startPolling(interval: 600)
+        catalog.startPolling()
         let store = catalog.channel(id: "test")
         let idle = catalog.channel(id: "idle")
         store.connect()
@@ -61,19 +62,22 @@ struct NetworkReturnTests {
             catalog.stopPolling()
         }
         try await eventually { store.phase.message == unavailable }
-        try await eventually(observing: mock) { requests(mock, "/api/v1/channels") == 1 && !catalog.isFetching }
+        try await eventually(observing: mock) {
+            requests(mock, "/api/v1/channels") == 1 && (catalogFailedToo || catalog.phase == .connected)
+        }
 
         network.continuation.yield(offline)
         network.continuation.yield(wifi)
-        try await eventually(observing: mock) { requests(mock, "/api/v1/channels") == 2 && !catalog.isFetching }
-        #expect(catalog.phase == .connected, "The network's return polled at once")
-        try await eventually(observing: mock) { mock.pendingResponseCount == 1 }
+        try await eventually(observing: mock) { mock.pendingCount(for: "/api/v1/channels/test") == 1 }
+        try await eventually { catalog.phase == .connected }
         #expect(store.phase.message == unavailable, "The notice stays until the channel connects")
 
         let snapshot = try MockResponse.stream([.init(type: "snapshot", state: testState())]).body
-        #expect(mock.sendPendingBody(snapshot) == 1)
+        #expect(mock.sendPendingBody(snapshot, path: "/api/v1/channels/test") == 1)
         try await eventually { store.phase.isConnected }
         #expect(requests(mock, "/api/v1/channels/test") == 2, "One fresh attempt, left to finish")
+        #expect(requests(mock, "/api/v1/channels") == (catalogFailedToo ? 2 : 1),
+                "Only a catalog that wasn't live reopened")
         #expect(!idle.isTrying, "A channel nobody holds stays quiet")
     }
 
@@ -86,7 +90,7 @@ struct NetworkReturnTests {
                 return counts[path, default: 0]
             }
             switch path {
-            case "/api/v1/channels": return try .json(ChannelCatalog(lead: testLeadProfile))
+            case "/api/v1/channels": return try .catalogStream(ChannelCatalog(lead: testLeadProfile))
             // A restarted live channel would stay connecting, so the check below can't miss it.
             case "/api/v1/channels/test" where attempt == 1:
                 return try .stream([.init(type: "snapshot", state: testState())])
@@ -98,7 +102,7 @@ struct NetworkReturnTests {
                                           reconnectPolicy: .init(initialDelay: 600, maximumDelay: 600),
                                           networkPath: .init { network.stream })
         network.continuation.yield(wifi)
-        catalog.startPolling(interval: 600)
+        catalog.startPolling()
         let live = catalog.channel(id: "test")
         let stuck = catalog.channel(id: "stuck")
         live.connect()
@@ -108,13 +112,14 @@ struct NetworkReturnTests {
             stuck.disconnect()
             catalog.stopPolling()
         }
-        try await eventually { live.phase.isConnected }
+        try await eventually { live.phase.isConnected && catalog.phase == .connected }
         try await eventually(observing: mock) { requests(mock, "/api/v1/channels/stuck") == 1 }
 
         network.continuation.yield(cellular)
         try await eventually(observing: mock) { requests(mock, "/api/v1/channels/stuck") == 2 }
         #expect(live.phase.isConnected, "A connected channel keeps its stream")
         #expect(requests(mock, "/api/v1/channels/test") == 1)
+        #expect(requests(mock, "/api/v1/channels") == 1, "A live catalog keeps its stream")
     }
 
     @Test func comingBackToTheAppEndsABackoffButNotAnAttemptUnderWay() async throws {

@@ -28,7 +28,7 @@ struct CatalogTests {
         return announcements.names.withLock { $0 }
     }
 
-    @Test @MainActor func aPollThatChangesNothingAnnouncesOnlyItsTime() async throws {
+    @Test @MainActor func aCatalogThatChangesNothingAnnouncesOnlyItsTime() async throws {
         let served = ChannelCatalog(lead: testLeadProfile, channels: [testState().channel], working: ["test"])
         let mock = MockTransport { _, _ in try .json(served) }
         let catalog = ChannelCatalogStore(api: try mock.api())
@@ -76,7 +76,7 @@ struct CatalogTests {
         #expect(ChannelCatalogPhase.connecting.failure == nil)
     }
 
-    @Test @MainActor func activityAndExactPollingIntervals() async throws {
+    @Test @MainActor func aRefreshSetsWhoIsWorkingAndKeepsEachChannelsStore() async throws {
         let mock = MockTransport { _, _ in
             try .json(ChannelCatalog(lead: testLeadProfile, channels: [testState().channel],
                                      working: ["test", "member"]))
@@ -84,40 +84,250 @@ struct CatalogTests {
         let catalog = ChannelCatalogStore(api: try mock.api())
         await catalog.refresh()
         #expect(catalog.working == ["test", "member"])
-        #expect(catalog.pollingInterval == 5)
-        catalog.setActive(false)
-        #expect(catalog.pollingInterval == 15)
-        catalog.setActive(true)
-        #expect(catalog.pollingInterval == 5)
         #expect(catalog.channel(id: "test") === catalog.channel(id: "test"))
     }
 
-    @Test(arguments: [true, false], [true, false])
-    @MainActor func changingActivityDoesNotCancelAnInFlightPoll(initiallyActive: Bool, beforeAdoption: Bool) async throws {
-        let expected = ChannelCatalog(lead: testLeadProfile, channels: [testState().channel], working: ["test"])
-        let mock = MockTransport { _, _ in
-            var response = try MockResponse.json(expected)
-            response.keepOpen = true
-            return response
-        }
+    private static let served = ChannelCatalog(lead: testLeadProfile, channels: [testState().channel])
+
+    @Test @MainActor func theStreamOpensWithTheCatalogAndAppliesEachChange() async throws {
+        let mock = MockTransport { _, _ in try .catalogStream(Self.served) }
         let catalog = ChannelCatalogStore(api: try mock.api())
-        catalog.setActive(initiallyActive)
-        catalog.startPolling(interval: 60)
+        catalog.startPolling()
         defer { catalog.stopPolling() }
-        if beforeAdoption {
-            #expect(!catalog.isFetching)
-        } else {
-            try await eventually(observing: mock) { catalog.isFetching && mock.pendingResponseCount == 1 }
-        }
-        catalog.setActive(!initiallyActive)
-        #expect(catalog.pollingInterval == (initiallyActive ? 15 : 60))
-        try await eventually(observing: mock) { mock.pendingResponseCount == 1 }
-        #expect(mock.finishPendingResponses() == 1)
-        try await eventually { catalog.lastRefreshedAt != nil && !catalog.isFetching }
-        #expect(catalog.state == expected)
-        #expect(catalog.working == ["test"])
+        try await eventually { catalog.state == Self.served }
+        #expect(catalog.phase == .connected)
+        let request = try #require(mock.requests.first)
+        #expect(request.url?.path == "/api/v1/channels")
+        #expect(request.value(forHTTPHeaderField: "Accept") == "text/event-stream")
+
+        var newer = testState().channel
+        newer.id = "newer"
+        newer.updatedAt = "2026-10-02T00:00:00Z"
+        let member = ChannelAgent(id: "member", name: "Member", channelId: "newer")
+        let changes = try catalogFrame("channel.upserted", ("channel", newer), ("revision", 2))
+            + catalogFrame("channel.member.upserted", ("member", member))
+            + catalogFrame("working", ("working", ["newer"]))
+        #expect(mock.sendPendingBody(changes) == 1)
+        try await eventually { catalog.working == ["newer"] }
+        #expect(catalog.channels.map(\.id) == ["newer", "test"])
+        #expect(catalog.members == [member])
+
+        #expect(mock.sendPendingBody(try catalogFrame("channel.deleted", ("channelId", "newer"))) == 1)
+        try await eventually { catalog.channels.map(\.id) == ["test"] }
+        #expect(catalog.members.isEmpty)
         #expect(catalog.phase == .connected)
         #expect(mock.requests.count == 1)
+    }
+
+    @Test @MainActor func keepalivesMoveTheRefreshTimeOnlyOnceTheCatalogHasArrived() async throws {
+        let mock = MockTransport { _, count in
+            switch count {
+            case 1: .catalogStream()
+            case 2: .catalogStream(body: Data("retry: 1000\n\n".utf8) + catalogKeepalive, keepOpen: false)
+            default: try .catalogStream(Self.served)
+            }
+        }
+        let catalog = ChannelCatalogStore(api: try mock.api(), reconnectPolicy: .init(initialDelay: 60, grace: 60))
+        catalog.startPolling()
+        defer { catalog.stopPolling() }
+        try await eventually(observing: mock) { mock.pendingResponseCount == 1 }
+        await catalog.refresh()
+        #expect(catalog.lastRefreshedAt == nil, "A keepalive before the catalog says nothing about it")
+        #expect(catalog.phase == .failed(ChannelAPIError.streamEnded))
+
+        await catalog.refresh()
+        #expect(catalog.state == Self.served)
+        let refreshedAt = catalog.lastRefreshedAt
+        try await eventually(observing: mock) { mock.pendingResponseCount == 1 }
+        let announced = await announcements(in: catalog) {
+            #expect(mock.sendPendingBody(catalogKeepalive) == 1)
+            try? await eventually { catalog.lastRefreshedAt != refreshedAt }
+        }
+        #expect(announced == ["lastRefreshedAt"])
+        #expect(mock.requests.count == 3)
+    }
+
+    @Test @MainActor func aStreamThatDropsReconnectsWithoutReportingIt() async throws {
+        let mock = MockTransport { _, _ in try .catalogStream(Self.served) }
+        let catalog = ChannelCatalogStore(api: try mock.api(), reconnectPolicy: .init(initialDelay: 0.01, grace: 60))
+        catalog.startPolling()
+        defer { catalog.stopPolling() }
+        try await eventually(observing: mock) { catalog.phase == .connected && mock.pendingResponseCount == 1 }
+        let refreshedAt = catalog.lastRefreshedAt
+        let announced = await announcements(in: catalog) {
+            #expect(mock.finishPendingResponses() == 1)
+            try? await eventually(observing: mock) {
+                mock.requests.count == 2 && catalog.lastRefreshedAt != refreshedAt
+            }
+        }
+        #expect(announced == ["lastRefreshedAt"], "Only the fresh catalog's time changed")
+        #expect(catalog.phase == .connected)
+    }
+
+    /// The tests move time themselves, so however long a held response takes to release never counts.
+    @Test(arguments: [false, true])
+    @MainActor func aStreamThatStaysDownReportsOnceTheGraceHasPassed(everDelivered: Bool) async throws {
+        let mock = MockTransport { _, count in
+            count == 1 && everDelivered ? try .catalogStream(Self.served) : .catalogStream()
+        }
+        var clock = Date(timeIntervalSince1970: 1_000_000)
+        let catalog = ChannelCatalogStore(api: try mock.api(), reconnectPolicy: .init(initialDelay: 0.01, grace: 3),
+                                          now: { clock })
+        catalog.startPolling()
+        defer { catalog.stopPolling() }
+        if everDelivered {
+            try await eventually(observing: mock) { catalog.isLoaded && mock.pendingResponseCount == 1 }
+            #expect(mock.finishPendingResponses() == 1)
+        }
+        try await eventually(observing: mock) {
+            mock.requests.count == (everDelivered ? 2 : 1) && mock.pendingResponseCount == 1
+        }
+        clock += 4
+        #expect(mock.finishPendingResponses() == 1)
+        try await eventually { catalog.phase.failure != nil }
+        #expect(catalog.phase == .failed(ChannelAPIError.streamEnded))
+        #expect(catalog.state == (everDelivered ? Self.served : nil))
+    }
+
+    @Test @MainActor func aCatalogBetweenFailuresStartsTheGraceOver() async throws {
+        let mock = MockTransport { _, count in count <= 2 ? try .catalogStream(Self.served) : .catalogStream() }
+        var clock = Date(timeIntervalSince1970: 1_000_000)
+        let catalog = ChannelCatalogStore(api: try mock.api(), reconnectPolicy: .init(initialDelay: 0.01, grace: 3),
+                                          now: { clock })
+        catalog.startPolling()
+        defer { catalog.stopPolling() }
+        try await eventually(observing: mock) { catalog.isLoaded && mock.pendingResponseCount == 1 }
+        #expect(mock.finishPendingResponses() == 1)
+        let refreshedAt = catalog.lastRefreshedAt
+        try await eventually(observing: mock) {
+            mock.requests.count == 2 && mock.pendingResponseCount == 1 && catalog.lastRefreshedAt != refreshedAt
+        }
+        clock += 4
+        #expect(mock.finishPendingResponses() == 1)
+        try await eventually(observing: mock) { mock.requests.count == 3 && mock.pendingResponseCount == 1 }
+        clock += 2
+        #expect(mock.finishPendingResponses() == 1)
+        try await eventually(observing: mock) { mock.requests.count == 4 }
+        #expect(catalog.phase == .connected, "Only the time since the last catalog counts")
+    }
+
+    @Test @MainActor func timeAwayDoesNotCountTowardTheGrace() async throws {
+        let mock = MockTransport { _, _ in .catalogStream() }
+        var clock = Date(timeIntervalSince1970: 1_000_000)
+        let catalog = ChannelCatalogStore(api: try mock.api(), reconnectPolicy: .init(initialDelay: 0.01, grace: 3),
+                                          now: { clock })
+        catalog.startPolling()
+        defer { catalog.stopPolling() }
+        try await eventually(observing: mock) { mock.pendingResponseCount == 1 }
+        #expect(mock.finishPendingResponses() == 1)
+        try await eventually(observing: mock) { mock.requests.count == 2 && mock.pendingResponseCount == 1 }
+        // Away, as when the phone is in the background.
+        catalog.stopPolling()
+        try await eventually(observing: mock) { mock.pendingResponseCount == 0 }
+        clock += 4
+
+        catalog.startPolling()
+        try await eventually(observing: mock) { mock.requests.count == 3 && mock.pendingResponseCount == 1 }
+        #expect(mock.finishPendingResponses() == 1)
+        try await eventually(observing: mock) { mock.requests.count == 4 && mock.pendingResponseCount == 1 }
+        #expect(catalog.phase.failure == nil, "This failure starts a new quiet period")
+
+        clock += 4
+        #expect(mock.finishPendingResponses() == 1)
+        try await eventually { catalog.phase.failure != nil }
+    }
+
+    @Test(arguments: [false, true])
+    @MainActor func aRequestedRefreshReportsItsFailureAtOnce(streaming: Bool) async throws {
+        let mock = MockTransport { _, count in
+            streaming && count == 1 ? try .catalogStream(Self.served) : Self.unavailable()
+        }
+        let catalog = ChannelCatalogStore(api: try mock.api(), reconnectPolicy: .init(initialDelay: 60, grace: 60))
+        defer { catalog.stopPolling() }
+        if streaming {
+            catalog.startPolling()
+            try await eventually { catalog.phase == .connected }
+        }
+        await catalog.refresh()
+        // A stream's failure carries only its status.
+        let message = streaming ? HTTPURLResponse.localizedString(forStatusCode: 503) : "Catalog unavailable."
+        #expect(catalog.phase == .failed(ChannelAPIError.http(status: 503, message: message)))
+        #expect(catalog.state == (streaming ? Self.served : nil))
+        #expect(mock.requests.count == (streaming ? 2 : 1))
+        #expect(!catalog.isFetching)
+    }
+
+    @Test @MainActor func aRefreshReopensTheStreamAndReturnsWithItsCatalog() async throws {
+        var renamed = Self.served
+        renamed.channels[0].name = "Renamed"
+        let mock = MockTransport { _, count in count == 1 ? try .catalogStream(Self.served) : .catalogStream() }
+        let catalog = ChannelCatalogStore(api: try mock.api(), reconnectPolicy: .init(initialDelay: 60, grace: 60))
+        catalog.startPolling()
+        defer { catalog.stopPolling() }
+        try await eventually(observing: mock) { catalog.state == Self.served && mock.pendingResponseCount == 1 }
+
+        let first = Task { await catalog.refresh() }
+        try await eventually(observing: mock) {
+            catalog.isRequested && mock.requests.count == 2 && mock.pendingResponseCount == 1
+        }
+        #expect(mock.stops == 1, "The earlier stream closed")
+        // A refresh joins in one main-actor turn, so once this one starts it has joined.
+        let joining = AsyncStream<Void>.makeStream()
+        let second = Task {
+            joining.continuation.yield()
+            await catalog.refresh()
+        }
+        var started = joining.stream.makeAsyncIterator()
+        _ = await started.next()
+        #expect(mock.sendPendingBody(try catalogFrame("snapshot", ("catalog", renamed))) == 1)
+        await first.value
+        await second.value
+        #expect(catalog.state == renamed)
+        #expect(mock.requests.count == 2, "The second refresh joined the first")
+    }
+
+    @Test @MainActor func comingBackToTheAppEndsTheStreamsBackoffButLeavesALiveStream() async throws {
+        let mock = MockTransport { _, count in
+            switch count {
+            case 1: Self.unavailable()
+            case 2: try .catalogStream(Self.served)
+            // A stream that replaced the live one never delivers, so the keepalive below couldn't land.
+            default: .catalogStream()
+            }
+        }
+        let catalog = ChannelCatalogStore(api: try mock.api(),
+                                          reconnectPolicy: .init(initialDelay: 600, maximumDelay: 600, grace: 0))
+        catalog.startPolling()
+        defer { catalog.stopPolling() }
+        try await eventually { catalog.phase.failure != nil }
+        catalog.setActive(false)
+        catalog.setActive(true)
+        try await eventually(observing: mock) { catalog.phase == .connected && mock.pendingResponseCount == 1 }
+
+        catalog.setActive(false)
+        catalog.setActive(true)
+        let refreshedAt = catalog.lastRefreshedAt
+        #expect(mock.sendPendingBody(catalogKeepalive) == 1)
+        try await eventually { catalog.lastRefreshedAt != refreshedAt }
+        #expect(mock.requests.count == 2)
+    }
+
+    @Test @MainActor func stoppingClosesTheStreamAndReturnsAWaitingRefresh() async throws {
+        let mock = MockTransport { _, _ in .catalogStream() }
+        let catalog = ChannelCatalogStore(api: try mock.api())
+        catalog.startPolling()
+        try await eventually(observing: mock) { mock.pendingResponseCount == 1 }
+        let refresh = Task { await catalog.refresh() }
+        try await eventually(observing: mock) {
+            catalog.isRequested && mock.requests.count == 2 && mock.pendingResponseCount == 1
+        }
+        catalog.stopPolling()
+        await refresh.value
+        #expect(!catalog.isStreaming)
+        #expect(!catalog.isFetching)
+        try await eventually(observing: mock) { mock.pendingResponseCount == 0 }
+        #expect(catalog.phase == .connecting)
+        #expect(catalog.lastRefreshedAt == nil)
     }
 
     @Test(arguments: [true, false])
@@ -148,122 +358,8 @@ struct CatalogTests {
         #expect(catalog.phase == (hadFailure ? .failed(expectedFailure) : .connected))
     }
 
-    @Test @MainActor func changingActivityWakesASleepingPoll() async throws {
-        let mock = MockTransport { _, _ in try .json(ChannelCatalog(lead: testLeadProfile)) }
-        let catalog = ChannelCatalogStore(api: try mock.api())
-        catalog.startPolling(interval: 60)
-        defer { catalog.stopPolling() }
-        try await eventually { catalog.lastRefreshedAt != nil && !catalog.isFetching }
-        catalog.setActive(false)
-        try await eventually(observing: mock) { mock.requests.count == 2 && !catalog.isFetching }
-        #expect(catalog.pollingInterval == 15)
-        catalog.setActive(true)
-        try await eventually(observing: mock) { mock.requests.count == 3 && !catalog.isFetching }
-        #expect(catalog.pollingInterval == 60)
-        #expect(catalog.phase == .connected)
-    }
-
     private static func unavailable() -> MockResponse {
         MockResponse(status: 503, body: Data(#"{"error":"Catalog unavailable."}"#.utf8))
-    }
-
-    @Test @MainActor func aFailedPollStaysQuietAndRetriesPromptly() async throws {
-        let served = ChannelCatalog(lead: testLeadProfile, channels: [testState().channel])
-        let mock = MockTransport { _, count in count == 2 ? Self.unavailable() : try .json(served) }
-        let catalog = ChannelCatalogStore(api: try mock.api(),
-                                          reconnectPolicy: .init(initialDelay: 0.01, grace: 60))
-        defer { catalog.stopPolling() }
-        await catalog.refresh()
-        let announced = await announcements(in: catalog) {
-            catalog.startPolling(interval: 60)
-            try? await eventually(observing: mock) { mock.requests.count == 3 && !catalog.isFetching }
-        }
-        #expect(catalog.state == served)
-        #expect(mock.requests.count == 3, "The retry came long before the next poll")
-        #expect(!announced.contains("phase"), "Nothing reported the failed poll")
-    }
-
-    @Test @MainActor func pollsThatKeepFailingReportOnceTheGraceHasPassed() async throws {
-        let mock = MockTransport { _, _ in Self.unavailable() }
-        let catalog = ChannelCatalogStore(api: try mock.api(),
-                                          reconnectPolicy: .init(initialDelay: 0.01, grace: 0.05))
-        catalog.startPolling(interval: 60)
-        defer { catalog.stopPolling() }
-        try await eventually(observing: mock) { catalog.phase.failure != nil }
-        let failure = ChannelAPIError.http(status: 503, message: "Catalog unavailable.")
-        #expect(catalog.phase == .failed(failure))
-    }
-
-    @Test(arguments: [false, true])
-    @MainActor func aRequestedRefreshReportsItsFailureAtOnce(joiningAPoll: Bool) async throws {
-        let mock = MockTransport { _, _ in
-            var response = Self.unavailable()
-            response.keepOpen = joiningAPoll
-            return response
-        }
-        let catalog = ChannelCatalogStore(api: try mock.api(),
-                                          reconnectPolicy: .init(initialDelay: 60, grace: 60))
-        defer { catalog.stopPolling() }
-        if joiningAPoll {
-            catalog.startPolling(interval: 60)
-            try await eventually(observing: mock) { catalog.isFetching && mock.pendingResponseCount == 1 }
-            let requested = Task { await catalog.refresh() }
-            try await eventually { catalog.isRequested }
-            #expect(catalog.phase.failure == nil, "The poll is still in flight")
-            #expect(mock.finishPendingResponses() == 1)
-            await requested.value
-        } else {
-            await catalog.refresh()
-        }
-        #expect(catalog.phase == .failed(ChannelAPIError.http(status: 503, message: "Catalog unavailable.")))
-        #expect(mock.requests.count == 1)
-    }
-
-    @Test(arguments: [false, true])
-    @MainActor func onlyConsecutiveFailingPollsCountTowardTheGrace(recovering: Bool) async throws {
-        let mock = MockTransport { _, count in
-            var response = recovering && count == 2 ? try .json(ChannelCatalog(lead: testLeadProfile))
-                                                    : Self.unavailable()
-            response.keepOpen = true
-            return response
-        }
-        // The test moves time itself, so however long a held response takes to release never counts.
-        var clock = Date(timeIntervalSince1970: 1_000_000)
-        let catalog = ChannelCatalogStore(api: try mock.api(),
-                                          reconnectPolicy: .init(initialDelay: 60, grace: 3), now: { clock })
-        defer { catalog.stopPolling() }
-        func finishPoll() async throws {
-            try await eventually(observing: mock) { catalog.isFetching && mock.pendingResponseCount == 1 }
-            #expect(mock.finishPendingResponses() == 1)
-            try await eventually { !catalog.isFetching }
-        }
-        catalog.startPolling(interval: 60)
-        try await finishPoll()
-        #expect(catalog.phase.failure == nil, "The first failure is within the grace")
-        if recovering {
-            catalog.setActive(false)
-            try await finishPoll()
-            #expect(catalog.lastRefreshedAt != nil)
-        } else {
-            // Away, as when the phone is in the background.
-            catalog.stopPolling()
-        }
-        clock += 4
-        #expect(catalog.phase.failure == nil)
-
-        if recovering { catalog.setActive(true) } else { catalog.startPolling(interval: 60) }
-        try await finishPoll()
-        #expect(catalog.phase.failure == nil, "This failure starts a new quiet period")
-        #expect(mock.requests.count == (recovering ? 3 : 2))
-
-        // Two consecutive failing polls past the grace do report.
-        catalog.stopPolling()
-        catalog.startPolling(interval: 60)
-        try await finishPoll()
-        clock += 4
-        catalog.setActive(!catalog.isActive)
-        try await finishPoll()
-        #expect(catalog.phase.failure != nil)
     }
 
     @Test @MainActor func transportCancellationDoesNotBecomeACatalogFailure() async throws {

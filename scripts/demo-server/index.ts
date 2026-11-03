@@ -1,12 +1,18 @@
 #!/usr/bin/env bun
 import { parseArgs } from "node:util";
+import { createCatalogRoute } from "./channels/catalog-stream.ts";
 import { createDemoServer, type DemoServer } from "./channels/demo-server.ts";
 import { type Snapshot } from "./channels/types.ts";
 import { createDemoPushRoutes } from "./channels/push-routes.ts";
 import { writeHistoryPage } from "./channels/history-channel.ts";
 
-export function installDemoCatalogRoutes(demo: Pick<DemoServer, "server" | "snapshot">) {
+export function installDemoCatalogRoutes(demo: Pick<DemoServer, "server" | "snapshot" | "onChange">) {
     const push = createDemoPushRoutes();
+    const catalog = createCatalogRoute(() => {
+        const { lead: { name, role, avatar }, channel, members } = demo.snapshot();
+        return { version: 1, lead: { name, role, avatar }, channels: [channel], members };
+    });
+    demo.onChange(catalog.publish);
     const handlers = demo.server.listeners("request");
     if (handlers.length !== 1) throw new Error("Expected the demo server's single HTTP handler.");
     const originalHandler = handlers[0];
@@ -28,25 +34,22 @@ export function installDemoCatalogRoutes(demo: Pick<DemoServer, "server" | "snap
             writeHistoryPage(response, url, snapshot.messages, snapshot.revision);
             return;
         }
-        if (request.method === "GET" && ["/api/v1/channels", "/api/v1/models"].includes(url.pathname)) {
-            const { name, role, avatar } = snapshot.lead;
+        if (request.method === "GET" && url.pathname === "/api/v1/channels") {
+            catalog.serve(request, response);
+            return;
+        }
+        if (request.method === "GET" && url.pathname === "/api/v1/models") {
             const model = snapshot.channel.model;
-            const body = url.pathname === "/api/v1/models"
-                ? {
-                    version: 1, provider: model.provider, defaultModel: model,
-                    models: [{ id: model.name, name: model.name, provider: model.provider }],
-                }
-                : {
-                    version: 1, lead: { name, role, avatar },
-                    channels: [snapshot.channel], members: snapshot.members,
-                };
             response.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
-            response.end(JSON.stringify(body));
+            response.end(JSON.stringify({
+                version: 1, provider: model.provider, defaultModel: model,
+                models: [{ id: model.name, name: model.name, provider: model.provider }],
+            }));
             return;
         }
         originalHandler(request, response);
     });
-    return push;
+    return { push, catalog };
 }
 
 if (import.meta.main) {
@@ -59,7 +62,7 @@ if (import.meta.main) {
     const demo = createDemoServer(initial);
     // The demo server makes dates recent. Restore an exported snapshot without that adjustment.
     if (initial) demo.replace(initial);
-    installDemoCatalogRoutes(demo);
+    const { catalog } = installDemoCatalogRoutes(demo);
     demo.server.on("error", error => { console.error(error); process.exitCode = 1; });
     demo.server.listen(port, "127.0.0.1", () => {
         console.log(`Toy Box fixture: http://127.0.0.1:${port} · channel ${demo.snapshot().channel.id}`);
@@ -67,6 +70,7 @@ if (import.meta.main) {
     });
     for (const signal of ["SIGINT", "SIGTERM"] as const) {
         process.once(signal, () => {
+            catalog.close();
             void demo.close().catch(error => { console.error(error); process.exitCode = 1; });
         });
     }

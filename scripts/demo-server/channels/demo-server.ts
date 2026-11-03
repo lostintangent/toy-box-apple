@@ -94,12 +94,14 @@ export function createDemoServer(initial: Snapshot = fixture, now = Date.now()) 
   const send = (client: ServerResponse, event: Snapshot) => {
     client.write(`data: ${JSON.stringify(event)}\n\n`);
   };
+  const changeListeners = new Set<() => void>();
   const publish = (event: Snapshot) => {
     if ('revision' in event) {
       replayHistory.push(structuredClone(event));
       if (replayHistory.length > 500) replayHistory.shift();
     }
     for (const client of clients) send(client, event);
+    for (const listener of changeListeners) listener();
   };
   const server = http.createServer(async (request, response) => {
     const url = new URL(request.url ?? '/', 'http://localhost');
@@ -231,6 +233,8 @@ export function createDemoServer(initial: Snapshot = fixture, now = Date.now()) 
   return {
     server,
     snapshot: () => structuredClone(snapshot),
+    /** Calls `listener` after each change the channel's streams hear. */
+    onChange(listener: () => void) { changeListeners.add(listener); },
     replace(next: Snapshot) {
       snapshot = structuredClone(next);
       replayHistory.length = 0;

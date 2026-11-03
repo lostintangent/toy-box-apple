@@ -20,7 +20,29 @@ struct MockResponse: Sendable {
             .joined()
         return MockResponse(contentType: "text/event-stream", body: Data(data.utf8), keepOpen: keepOpen)
     }
+
+    /// A catalog stream as the server opens one: its reconnect hint, then the catalog.
+    static func catalogStream(_ catalog: ChannelCatalog, keepOpen: Bool = true) throws -> MockResponse {
+        catalogStream(body: Data("retry: 1000\n\n".utf8) + (try catalogFrame("snapshot", ("catalog", catalog))),
+                      keepOpen: keepOpen)
+    }
+
+    /// A catalog stream that sends only `body`.
+    static func catalogStream(body: Data = Data("retry: 1000\n\n".utf8), keepOpen: Bool = true) -> MockResponse {
+        MockResponse(contentType: "text/event-stream", body: body, keepOpen: keepOpen)
+    }
 }
+
+/// One catalog stream event, framed the way the server sends it.
+func catalogFrame(_ type: String, _ fields: (String, any Encodable)...) throws -> Data {
+    var members = [#""type":"\#(type)""#]
+    for (key, value) in fields {
+        members.append(#""\#(key)":"# + String(decoding: try JSONEncoder().encode(value), as: UTF8.self))
+    }
+    return Data(("data: {" + members.joined(separator: ",") + "}\n\n").utf8)
+}
+
+let catalogKeepalive = Data(": keepalive\n\n".utf8)
 
 final class MockTransport: Sendable {
     typealias Handler = @Sendable (URLRequest, Int) throws -> MockResponse

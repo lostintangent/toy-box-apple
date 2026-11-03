@@ -10,6 +10,7 @@
 ### Bugs/Polish
 
 - Overview's team section is now called Team Members.
+- The channel list now updates the moment anything changes, so new requests and replies show up right away.
 
 ## Mac 0.1.19
 
@@ -20,6 +21,7 @@
 ### Bugs/Polish
 
 - Overview's team section is now called Team Members.
+- The channel list now updates the moment anything changes, so new requests and replies show up right away.
 
 ## iPhone 0.1.11
 
