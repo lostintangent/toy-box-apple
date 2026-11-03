@@ -119,6 +119,51 @@ struct TranscriptPresentationTests {
         ])
     }
 
+    @Test func setextUnderlinesKeepTheirWhitespaceAndMarkerBoundaries() {
+        let cases: [(String, [MarkdownBlock.Kind])] = [
+            ("Title\n== \r", [.heading(1, "Title")]),
+            ("Title\n--\r", [.heading(2, "Title")]),
+            ("Title\n=\u{2028}", [.heading(1, "Title")]),
+            ("Title\n-\t-\t-", [.paragraph("Title"), .rule]),
+            ("Title\n== =", [.paragraph("Title\n== =")]),
+        ]
+        for (source, expected) in cases {
+            #expect(MarkdownBlock.parse(source).map(\.kind) == expected, "\(source.debugDescription)")
+        }
+    }
+
+    @Test func thematicBreaksRequireThreeMatchingMarkersWithWhitespaceBetween() {
+        let cases: [(String, [MarkdownBlock.Kind])] = [
+            ("---\r", [.rule]),
+            ("-\t-\t-", [.rule]),
+            ("-\u{00a0}-\u{00a0}-", [.rule]),
+            ("** *", [.rule]),
+            ("___", [.rule]),
+            ("---\u{00a0}", [.rule]),
+            ("__", [.paragraph("__")]),
+            ("--", [.paragraph("--")]),
+            ("-*-", [.paragraph("-*-")]),
+        ]
+        for (source, expected) in cases {
+            #expect(MarkdownBlock.parse(source).map(\.kind) == expected, "\(source.debugDescription)")
+        }
+    }
+
+    @Test func tableRuleCellsAcceptOneOptionalAlignmentColonAtEachEnd() {
+        let cases: [(String, [MarkdownBlock.Kind])] = [
+            ("| H | V |\n| :--- | ---: |\n| x | y |", [.table([["H", "V"], ["x", "y"]])]),
+            ("| H |\n| :---: |", [.table([["H"]])]),
+            ("| H |\n| --- |", [.table([["H"]])]),
+            ("| H |\n| ::--- |", [.paragraph("| H |\n| ::--- |")]),
+            ("| H |\n| ---:: |", [.paragraph("| H |\n| ---:: |")]),
+            ("| H |\n| -- |", [.paragraph("| H |\n| -- |")]),
+            ("| H |\n| --\u{00a0}- |", [.paragraph("| H |\n| --\u{00a0}- |")]),
+        ]
+        for (source, expected) in cases {
+            #expect(MarkdownBlock.parse(source).map(\.kind) == expected, "\(source.debugDescription)")
+        }
+    }
+
     @Test func wrappedListItemsKeepTheirMarkerAndSeparateAfterABlankLine() {
         let source = """
         - Put a request where

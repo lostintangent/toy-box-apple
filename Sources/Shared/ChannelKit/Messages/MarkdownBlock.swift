@@ -2,16 +2,6 @@ import Foundation
 
 nonisolated(unsafe) private let headingPattern = /^(#{1,6})\s+(.+?)\s*#*\s*$/
 nonisolated(unsafe) private let listItemPattern = /^(\s*)([-+*]|\d+[.)])\s+(.+)$/
-private let setextUnderlinePattern = try! NSRegularExpression(pattern: #"^(?:=+|-+)\s*$"#)
-private let thematicBreakPattern = try! NSRegularExpression(
-    pattern: #"^(?:\*\s*){3,}$|^(?:-\s*){3,}$|^(?:_\s*){3,}$"#)
-private let tableRuleCellPattern = try! NSRegularExpression(pattern: #"^:?-{3,}:?$"#)
-
-private extension NSRegularExpression {
-    func matches(_ text: String) -> Bool {
-        firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) != nil
-    }
-}
 
 public struct MarkdownBlock: Identifiable, Equatable {
     public enum Kind: Equatable {
@@ -35,12 +25,13 @@ public struct MarkdownBlock: Identifiable, Equatable {
     /// Links become their text, code keeps its contents, list items keep a bullet and each block
     /// takes one line.
     public static func plainText(_ markdown: String) -> String {
-        parse(markdown).compactMap { block -> String? in
+        func unformatted(_ text: String) -> String { String(parsedInlineMarkdown(text).characters) }
+        return parse(markdown).compactMap { block -> String? in
             switch block.kind {
-            case .paragraph(let text), .heading(_, let text), .quote(let text): inline(text)
-            case .listItem(_, let text, let depth): String(repeating: "  ", count: depth) + "\u{2022} " + inline(text)
+            case .paragraph(let text), .heading(_, let text), .quote(let text): unformatted(text)
+            case .listItem(_, let text, _): "\u{2022} " + unformatted(text)
             case .code(_, let code): code
-            case .table(let rows): rows.map { $0.map(inline).joined(separator: "  ") }.joined(separator: "\n")
+            case .table(let rows): rows.map { $0.map(unformatted).joined(separator: "  ") }.joined(separator: "\n")
             case .rule: nil
             }
         }
@@ -49,10 +40,10 @@ public struct MarkdownBlock: Identifiable, Equatable {
         .joined(separator: "\n")
     }
 
-    private static func inline(_ markdown: String) -> String {
-        let options = AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
-        guard let parsed = try? AttributedString(markdown: markdown, options: options) else { return markdown }
-        return String(parsed.characters)
+    /// Keep the same inline whitespace in plain-text projections, Find offsets and rendered text.
+    public static func parsedInlineMarkdown(_ text: String) -> AttributedString {
+        (try? AttributedString(markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
+            ?? AttributedString(text)
     }
 
     public static func parse(_ source: String) -> [MarkdownBlock] {
@@ -98,13 +89,13 @@ public struct MarkdownBlock: Identifiable, Equatable {
                 }
                 append(.table(rows))
                 continue
-            } else if !paragraph.isEmpty, setextUnderlinePattern.matches(trimmed) {
-                append(.heading(trimmed.hasPrefix("=") ? 1 : 2, paragraph.joined(separator: "\n")))
+            } else if !paragraph.isEmpty, let level = setextLevel(trimmed) {
+                append(.heading(level, paragraph.joined(separator: "\n")))
                 paragraph.removeAll()
             } else if let heading = trimmed.firstMatch(of: headingPattern) {
                 flush()
                 append(.heading(heading.1.count, String(heading.2)))
-            } else if thematicBreakPattern.matches(trimmed) {
+            } else if isThematicBreak(trimmed) {
                 flush()
                 append(.rule)
             } else if trimmed.hasPrefix(">") {
@@ -121,11 +112,10 @@ public struct MarkdownBlock: Identifiable, Equatable {
                 flush()
                 let marker = String(item.2)
                 let body = String(item.3)
-                let task = body.hasPrefix("[ ] ") ? ("square", String(body.dropFirst(4)))
-                    : body.lowercased().hasPrefix("[x] ") ? ("checkmark", String(body.dropFirst(4))) : nil
-                append(.listItem(task.map { $0.0 == "square" ? "\u{2610}" : "\u{2611}" }
-                                 ?? (["-", "+", "*"].contains(marker) ? "\u{2022}" : marker),
-                                 task?.1 ?? body, item.1.count / 2))
+                let taskMarker: String? = body.hasPrefix("[ ] ") ? "\u{2610}"
+                    : body.lowercased().hasPrefix("[x] ") ? "\u{2611}" : nil
+                append(.listItem(taskMarker ?? (["-", "+", "*"].contains(marker) ? "\u{2022}" : marker),
+                                 taskMarker == nil ? body : String(body.dropFirst(4)), item.1.count / 2))
             } else if !separatedByBlankLine, paragraph.isEmpty, let last = blocks.indices.last,
                       case .listItem(let marker, let text, let depth) = blocks[last].kind {
                 let continuation = line.drop(while: { $0 == " " || $0 == "\t" })
@@ -139,9 +129,32 @@ public struct MarkdownBlock: Identifiable, Equatable {
         return blocks
     }
 
+    private static func setextLevel(_ line: String) -> Int? {
+        guard let marker = line.first, marker == "=" || marker == "-",
+              line.drop(while: { $0 == marker }).allSatisfy(\.isWhitespace) else { return nil }
+        return marker == "=" ? 1 : 2
+    }
+
+    private static func isThematicBreak(_ line: String) -> Bool {
+        guard let marker = line.first, marker == "*" || marker == "-" || marker == "_" else { return false }
+        var count = 0
+        for character in line {
+            if character == marker { count += 1 }
+            else if !character.isWhitespace { return false }
+        }
+        return count >= 3
+    }
+
     private static func isTableRule(_ line: String) -> Bool {
         let cells = tableCells(line)
-        return !cells.isEmpty && cells.allSatisfy { tableRuleCellPattern.matches($0) }
+        return !cells.isEmpty && cells.allSatisfy(isTableRuleCell)
+    }
+
+    private static func isTableRuleCell(_ cell: String) -> Bool {
+        var markers = cell[...]
+        if markers.first == ":" { markers.removeFirst() }
+        if markers.last == ":" { markers.removeLast() }
+        return markers.count >= 3 && markers.allSatisfy { $0 == "-" }
     }
 
     private static func closesFence(_ line: String, marker: Character, length: Int) -> Bool {

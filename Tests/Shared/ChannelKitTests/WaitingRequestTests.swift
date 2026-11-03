@@ -102,6 +102,35 @@ struct WaitingRequestTests {
         #expect(ChannelRequestMessage(message: state.messages[0], agents: state.agents).requester == nil)
     }
 
+    @Test func markdownRequestQuotesAndNotificationsKeepTheirDistinctTextContracts() {
+        let message = ChannelMessage(
+            id: "markdown-request", sequence: 12, timestamp: "2026-10-24T08:00:00Z",
+            sender: .agent("lead"),
+            content: .text("""
+                @lead, see [plan](https://example.test) and **ship**.
+
+                1. [x] Done
+                  - Nested **note**
+
+                `code`
+                """),
+            request: true
+        )
+        let request = ChannelRequestMessage(message: message, agents: [.init(id: "lead", name: "Lead")])
+        #expect(request.quote == """
+            @lead, see plan and ship.
+            \u{2022} Done
+            \u{2022} Nested note
+            code
+            """)
+        #expect(ChannelNotification.Content(request: request).body == """
+            see plan and ship.
+            \u{2022} Done
+            \u{2022} Nested note
+            code
+            """)
+    }
+
     @Test func liveDetailsReplaceOnlyDescriptiveFieldsAndTheLiveRequest() {
         let original = Channel(id: "studio", name: "Catalog", purpose: "Old purpose", directory: "/old",
                                model: .init(provider: "old", name: "old"),

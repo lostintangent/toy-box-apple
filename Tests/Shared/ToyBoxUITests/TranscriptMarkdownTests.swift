@@ -151,6 +151,15 @@ struct TranscriptMarkdownTests {
         #expect(highlights.applying(to: body, fragment: .init(block: 99)) == body)
     }
 
+    @Test func findTextKeepsNumberedAndTaskMarkersWithoutNotificationTrimming() {
+        let blocks = MarkdownBlock.parse("1. [x] **Done**\n  - Nested [note](https://example.test)")
+        let projection = TranscriptMarkdownText(blocks)
+        #expect(projection.text == "\u{2611} Done\n\u{2022} Nested note")
+        #expect(projection.offsets[.init(block: 0)] == 0)
+        #expect(projection.offsets[.init(block: 0, column: 1)] == 2)
+        #expect(projection.offsets[.init(block: 1, column: 1)] == 9)
+    }
+
     @Test(arguments: [false, true], [false, true])
     func mentionContrastStopsAtTheFirstQualifyingFivePercentStep(isDark: Bool, increased: Bool) throws {
         let white = TranscriptRGB(red: 1, green: 1, blue: 1)
