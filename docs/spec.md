@@ -688,8 +688,9 @@ separate window for that channel and leaves the current window's channel and sel
 visible conversation actively acknowledges reading. Restoring a window must not send a message or
 silently mark its unseen content as read.
 
-**Phone channel search.** Use the native bottom-bar search item beside
-Settings (`gearshape`, the Mac's gear) in the channel-list column, folded and unfolded. While the split view is collapsed, as
+**Phone channel search.** Use the native bottom-bar search item in the channel-list column,
+folded and unfolded. Search leads the bar, and a flexible space puts Settings (`gearshape`, the
+Mac's gear) at its trailing end. While the split view is collapsed, as
 on a folded Duo, `.searchToolbarBehavior(.minimize)` shows it as a Search button that expands into
 the bottom field, because a full field makes UIKit cancel the first pull to refresh after Back.
 The unfolded overlay sidebar keeps the full field, since UIKit places the minimized button

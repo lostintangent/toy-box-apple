@@ -104,11 +104,11 @@ struct ChannelSidebar: View {
                 Button("New Channel", systemImage: "plus") { management.present(.newChannel) }
                     .disabled(!canCreate)
             }
+            DefaultToolbarItem(kind: .search, placement: .bottomBar)
+            ToolbarSpacer(.flexible, placement: .bottomBar)
             ToolbarItem(placement: .bottomBar) {
                 Button("Settings", systemImage: "gearshape") { showsSettings = true }
             }
-            ToolbarSpacer(.flexible, placement: .bottomBar)
-            DefaultToolbarItem(kind: .search, placement: .bottomBar)
         }
     }
 
