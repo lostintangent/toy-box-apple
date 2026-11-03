@@ -54,7 +54,6 @@ struct OverviewSectionRows<Content: View>: View {
                 .listRowSeparator(.hidden)
             if session.isExpanded(section) { content }
         }
-        .id("overview-\(section)")
         .listSectionMargins(.top, isFirstSection ? 12 : 0)
         .listSectionMargins(.bottom, OverviewListMetrics.sectionGap)
         .listSectionSeparator(.hidden, edges: .all)
@@ -110,7 +109,7 @@ struct OverviewSectionHeader: View {
             .accessibilityLabel(spoken)
             .accessibilityValue(session.isExpanded(section) ? "Expanded" : "Collapsed")
             .accessibilityAddTraits(.isHeader)
-            .accessibilityIdentifier(section == .tasks ? "overview-tasks" : "overview-section-\(section)")
+            .accessibilityIdentifier("overview-section-\(section)")
         }
     }
 
