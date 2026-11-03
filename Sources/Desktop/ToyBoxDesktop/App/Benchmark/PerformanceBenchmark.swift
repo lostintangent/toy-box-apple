@@ -286,6 +286,9 @@ final class PerformanceBenchmark {
         guard let store = store(channelID) else { return }
         _ = await settled()
         header()
+        // history-demo opens on its first unread message, so start where new messages arrive.
+        let initialGap = await scrollToEnd()
+        guard initialGap < 2 else { fail("the transcript stayed \(Int(initialGap)) pt from the latest message") }
         await measureMessages(in: store)
         let loaded = store.messages.count
         while store.hasOlderMessages {
