@@ -12,6 +12,7 @@ struct TranscriptMarkdown: View {
     var bodySize: CGFloat = 14
     var codeSize: CGFloat = 12
     var lineSpacing: CGFloat = 3
+    var preservesLineBreaks = true
     @Environment(\.channelTextScale) private var textScale
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.colorSchemeContrast) private var contrast
@@ -21,7 +22,7 @@ struct TranscriptMarkdown: View {
         ToyBoxUI.TranscriptMarkdown(
             content: content, agents: agents, baseURL: baseURL, selectable: selectable,
             findHighlight: findHighlight, bodySize: bodySize, codeSize: codeSize, lineSpacing: lineSpacing,
-            textScale: textScale,
+            textScale: textScale, preservesLineBreaks: preservesLineBreaks,
             copyCode: TranscriptClipboard.copy,
             mentionInk: TranscriptMentionInk(surface: surface, isDark: colorScheme == .dark,
                                             isContrastIncreased: contrast == .increased).color

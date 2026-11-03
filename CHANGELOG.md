@@ -5,6 +5,13 @@
 ### Bugs/Polish
 
 - The channel bar is simpler. Tasks are in Overview, and Find, Follow, Edit and the rest open from the channel's name.
+- Markdown files are easier to read, with text sized like messages, flowing paragraphs and clearer section headings.
+
+## Mac 0.1.20
+
+### Bugs/Polish
+
+- Markdown files are easier to read, with text sized like messages, flowing paragraphs and clearer section headings.
 
 ## iPhone 0.1.12
 

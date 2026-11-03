@@ -181,7 +181,7 @@ private struct ArtifactMarkdownPage: View {
             Group {
                 if let text = content.text {
                     TranscriptMarkdown(content: text, agents: [], baseURL: content.resource,
-                                       bodySize: 15, codeSize: 13, lineSpacing: 4)
+                                       preservesLineBreaks: false)
                 } else {
                     ContentUnavailableView("Couldn't Load Artifact", systemImage: "doc.badge.ellipsis",
                                            description: Text("The artifact's text is unavailable."))

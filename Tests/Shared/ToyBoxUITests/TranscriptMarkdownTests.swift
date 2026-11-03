@@ -19,7 +19,73 @@ struct TranscriptMarkdownTests {
         #expect(view.bodySize == 17 && view.codeSize == 15 && view.lineSpacing == 4 && view.textScale == 1.2)
         let defaults = TranscriptMarkdown(content: "", copyCode: { _ in }, mentionInk: { _ in .purple })
         #expect(defaults.bodySize == 14 && defaults.codeSize == 12 && defaults.lineSpacing == 3)
-        #expect(defaults.textScale == 1)
+        #expect(defaults.textScale == 1 && defaults.preservesLineBreaks)
+    }
+
+    @MainActor
+    @Test func documentsJoinSoftWrapsWithoutChangingMessagesOrExplicitHardBreaks() {
+        let source = "Wrapped\nsource  \nkeeps this break\\\nand this one\nat the end"
+        let message = TranscriptMarkdown(content: source, copyCode: { _ in }, mentionInk: { _ in .purple })
+        let document = TranscriptMarkdown(content: source, preservesLineBreaks: false,
+                                          copyCode: { _ in }, mentionInk: { _ in .purple })
+        #expect(message.inlineText(source) == source)
+        let joined = document.inlineText(source)
+        #expect(joined == "Wrapped source  \nkeeps this break\\\nand this one at the end")
+        #expect(joined.utf16.count == source.utf16.count)
+    }
+
+    @MainActor
+    @Test(arguments: [1, 2, 3])
+    func onlyPrimaryHeadingsHaveANativeRule(level: Int) throws {
+        let heading = TranscriptMarkdown(content: "\(String(repeating: "#", count: level)) H",
+                                         copyCode: { _ in }, mentionInk: { _ in .purple })
+            .foregroundStyle(.black)
+            .environment(\.colorScheme, .light)
+            .frame(width: 320, alignment: .leading)
+            .background(.white)
+        let image = try ownBitmap(heading)
+        let x = image.width * 3 / 4
+        let hasRule = (0..<image.height).contains { y in
+            let index = (y * image.width + x) * 4
+            return (0..<3).allSatisfy { image.pixels[index + $0] < 252 }
+        }
+        #expect(hasRule == (level <= 2))
+    }
+
+    @MainActor
+    @Test(arguments: [1, 2, 3], [CGFloat(1), 1.2])
+    func onlyPrimaryHeadingsAfterAnotherBlockGetExtraTopSpace(level: Int, scale: CGFloat) {
+        let heading = "\(String(repeating: "#", count: level)) Heading"
+        let body = "Paragraph before the heading."
+        func height(_ source: String) -> CGFloat {
+            fittingHeight(
+                TranscriptMarkdown(content: source, textScale: scale, copyCode: { _ in },
+                                   mentionInk: { _ in .purple }), width: 380)
+        }
+        let ordinaryGap = 10 * scale
+        let extra = level <= 2 ? 8 * scale : 0
+        #expect(abs(height("\(body)\n\n\(heading)") - height(body) - height(heading)
+                    - ordinaryGap - extra) <= 1)
+        #expect(abs(height("\(heading)\n\n\(body)") - height(heading) - height(body)
+                    - ordinaryGap) <= 1)
+        #expect(abs(height("\(body)\n\n- List item") - height(body) - height("- List item")
+                    - ordinaryGap) <= 1)
+    }
+
+    @MainActor
+    @Test(arguments: [CGFloat(1), 1.2])
+    func dividerSpacingStaysBetweenBlocksAndNeverAddsOuterPadding(scale: CGFloat) {
+        let body = "Paragraph"
+        func height(_ source: String) -> CGFloat {
+            fittingHeight(
+                TranscriptMarkdown(content: source, textScale: scale, copyCode: { _ in },
+                                   mentionInk: { _ in .purple }), width: 380)
+        }
+        let gap = 10 * scale + 4
+        #expect(abs(height("---\n\n\(body)") - height("---") - height(body) - gap) <= 1)
+        #expect(abs(height("\(body)\n\n---") - height(body) - height("---") - gap) <= 1)
+        #expect(abs(height("\(body)\n\n---\n\n\(body)")
+                    - height(body) * 2 - height("---") - gap * 2) <= 1)
     }
 
     @Test func nativeInkIsAppliedOnlyToKnownUnlinkedNonCodeMentions() throws {

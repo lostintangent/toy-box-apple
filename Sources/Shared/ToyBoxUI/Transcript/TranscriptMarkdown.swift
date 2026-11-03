@@ -15,12 +15,13 @@ public struct TranscriptMarkdown: View {
     public var codeSize: CGFloat
     public var lineSpacing: CGFloat
     public var textScale: CGFloat
+    public var preservesLineBreaks: Bool
     private let copyCode: (String) -> Void
     private let mentionInk: (ChannelAgent?) -> Color
     public init(content: String, agents: [ChannelAgent] = [], baseURL: URL? = nil,
                 selectable: Bool = true, findHighlight: TranscriptFindHighlight? = nil,
                 bodySize: CGFloat = 14, codeSize: CGFloat = 12, lineSpacing: CGFloat = 3,
-                textScale: CGFloat = 1,
+                textScale: CGFloat = 1, preservesLineBreaks: Bool = true,
                 copyCode: @escaping (String) -> Void, mentionInk: @escaping (ChannelAgent?) -> Color) {
         self.content = content
         self.agents = agents
@@ -31,6 +32,7 @@ public struct TranscriptMarkdown: View {
         self.codeSize = codeSize
         self.lineSpacing = lineSpacing
         self.textScale = textScale
+        self.preservesLineBreaks = preservesLineBreaks
         self.copyCode = copyCode
         self.mentionInk = mentionInk
     }
@@ -46,6 +48,7 @@ public struct TranscriptMarkdown: View {
                 VStack(alignment: .leading, spacing: 10 * textScale) {
                     ForEach(blocks) { block in
                         blockView(block, highlights: highlights)
+                            .padding(.top, interBlockPadding(for: block, in: blocks))
                     }
                 }
             }
@@ -67,14 +70,23 @@ public struct TranscriptMarkdown: View {
     private func blockView(_ block: MarkdownBlock, highlights: TranscriptMarkdownHighlights?) -> some View {
         switch block.kind {
         case .paragraph(let text):
-            Text(inline(text, fragment: .init(block: block.id), highlights: highlights))
+            Text(inline(inlineText(text), fragment: .init(block: block.id), highlights: highlights))
                 .fixedSize(horizontal: false, vertical: true)
         case .heading(let level, let text):
             let size: CGFloat = level == 1 ? 23 : level == 2 ? 19 : 16
-            Text(inline(text, size: size, fragment: .init(block: block.id), highlights: highlights))
+            let heading = Text(inline(inlineText(text), size: size, fragment: .init(block: block.id),
+                                      highlights: highlights))
                 .font(.system(size: size * textScale, weight: .semibold))
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityAddTraits(.isHeader)
+            if level <= 2 {
+                VStack(alignment: .leading, spacing: 8 * textScale) {
+                    heading
+                    Divider().accessibilityHidden(true)
+                }
+            } else {
+                heading
+            }
         case .listItem(let marker, let text, let depth):
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(highlights?.applying(to: AttributedString(marker), fragment: .init(block: block.id))
@@ -87,7 +99,8 @@ public struct TranscriptMarkdown: View {
         case .quote(let text):
             HStack(alignment: .top, spacing: 10) {
                 RoundedRectangle(cornerRadius: 2).fill(.tertiary).frame(width: 3)
-                Text(inline(text, fragment: .init(block: block.id), highlights: highlights)).foregroundStyle(ChannelInk.secondary)
+                Text(inline(inlineText(text), fragment: .init(block: block.id), highlights: highlights))
+                    .foregroundStyle(ChannelInk.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
             .fixedSize(horizontal: false, vertical: true)
@@ -122,8 +135,17 @@ public struct TranscriptMarkdown: View {
             // Preserve the viewport's flexibility without stretching the measured rows.
             .frame(maxHeight: .infinity, alignment: .topLeading)
         case .rule:
-            Divider().padding(.vertical, 4)
+            Divider()
         }
+    }
+
+    private func interBlockPadding(for block: MarkdownBlock, in blocks: [MarkdownBlock]) -> CGFloat {
+        guard block.id > 0 else { return 0 }
+        var padding: CGFloat = 0
+        if case .heading(let level, _) = block.kind, level <= 2 { padding += 8 * textScale }
+        if case .rule = block.kind { padding += 4 }
+        if case .rule = blocks[block.id - 1].kind { padding += 4 }
+        return padding
     }
 
     func table(_ rows: [[String]], block: Int, highlights: TranscriptMarkdownHighlights? = nil) -> some View {
@@ -155,6 +177,19 @@ public struct TranscriptMarkdown: View {
         return text
             .font(.system(size: codeSize * textScale, design: .monospaced))
             .fixedSize(horizontal: true, vertical: true)
+    }
+
+    func inlineText(_ text: String) -> String {
+        guard !preservesLineBreaks, text.contains("\n") else { return text }
+        let lines = text.split(separator: "\n", omittingEmptySubsequences: false)
+        var joined = String(lines[0])
+        for (previous, next) in zip(lines, lines.dropFirst()) {
+            let hardBreak = previous.hasSuffix("  ")
+                || !previous.reversed().prefix(while: { $0 == "\\" }).count.isMultiple(of: 2)
+            joined.append(hardBreak ? "\n" : " ")
+            joined.append(contentsOf: next)
+        }
+        return joined
     }
 
     private func inline(_ text: String, size: CGFloat? = nil, fragment: TranscriptMarkdownText.Fragment,

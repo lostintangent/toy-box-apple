@@ -268,7 +268,7 @@ private struct ArtifactMarkdownDocument: View {
     let reader: ArtifactReader
     let bottomInset: CGFloat
     @Environment(\.horizontalSizeClass) private var sizeClass
-    @ScaledMetric(relativeTo: .body) private var textScale = 1
+    @ScaledMetric(relativeTo: .body) private var bodySize: CGFloat = 17
     @ViewState private var position: ScrollPosition
     @ViewState private var offset: CGFloat = 0
 
@@ -282,8 +282,8 @@ private struct ArtifactMarkdownDocument: View {
     var body: some View {
         ScrollView {
             if let text = content.text {
-                TranscriptMarkdown(content: text, baseURL: content.directory, bodySize: 17,
-                                   codeSize: 15, lineSpacing: 3, textScale: textScale,
+                TranscriptMarkdown(content: text, baseURL: content.directory, lineSpacing: 0,
+                                   textScale: bodySize / 14, preservesLineBreaks: false,
                                    copyCode: { UIPasteboard.general.string = $0 }, mentionInk: { _ in .accentColor })
                     .frame(maxWidth: 720, alignment: .leading)
                     .frame(maxWidth: .infinity, alignment: .center)
