@@ -770,9 +770,14 @@ public final class ChannelCatalogStore {
     public private(set) var phase: ChannelCatalogPhase = .connecting
     /// Whether a catalog has arrived. It stays true through failures, so the rows stay.
     public var isLoaded: Bool { state != nil }
-    /// When the catalog was last known current: each catalog, change and keepalive the stream
-    /// delivers moves it. Nil until the first catalog.
+    /// When the catalog was last known current. Each catalog and change the stream delivers moves it,
+    /// and so does a keepalive once `keepaliveRefreshInterval` has passed. Nil until the first catalog.
     public private(set) var lastRefreshedAt: Date?
+    /// Keepalives change nothing, so they move `lastRefreshedAt` no more often than the old idle poll
+    /// did. Its observers then wake on a quiet server no more than they used to.
+    static let keepaliveRefreshInterval: TimeInterval = 15
+    /// When a keepalive may next move `lastRefreshedAt`, by `now`.
+    @ObservationIgnored private var keepaliveRefreshDue: Date?
     @ObservationIgnored private var stream: Task<Void, Never>?
     @ObservationIgnored private var pathWatch: Task<Void, Never>?
     @ObservationIgnored private let networkPath: NetworkPathSource
@@ -810,8 +815,8 @@ public final class ChannelCatalogStore {
     /// Internal and unobserved, so tests can check a stop.
     var isStreaming: Bool { stream != nil }
 
-    /// `now` measures the grace. Tests pass a clock they move instead of waiting, and a network path
-    /// they change.
+    /// `now` measures the grace and the keepalive interval. Tests pass a clock they move instead of
+    /// waiting, and a network path they change.
     public init(api: ChannelAPI, reconnectPolicy: ReconnectPolicy = .init(), now: @escaping () -> Date = { .now },
                 networkPath: NetworkPathSource = .system) {
         self.api = api
@@ -907,6 +912,7 @@ public final class ChannelCatalogStore {
         state = catalog
         working = Set(catalog.working)
         lastRefreshedAt = .now
+        keepaliveRefreshDue = now().addingTimeInterval(Self.keepaliveRefreshInterval)
         failingSince = nil
         phase = .connected
         guard recovered else { return }
@@ -966,7 +972,9 @@ public final class ChannelCatalogStore {
         guard !Task.isCancelled, streamGeneration == token else { return false }
         switch item {
         case .keepalive:
-            if isLive { lastRefreshedAt = .now }
+            guard isLive, let due = keepaliveRefreshDue, now() >= due else { break }
+            lastRefreshedAt = .now
+            keepaliveRefreshDue = now().addingTimeInterval(Self.keepaliveRefreshInterval)
         case .event(.snapshot(let catalog)):
             isLive = true
             applyCatalog(catalog)

@@ -119,7 +119,7 @@ struct CatalogTests {
         #expect(mock.requests.count == 1)
     }
 
-    @Test @MainActor func keepalivesMoveTheRefreshTimeOnlyOnceTheCatalogHasArrived() async throws {
+    @Test @MainActor func keepalivesMoveTheRefreshTimeOnlyOnceTheCatalogHasArrivedAndAtMostEachInterval() async throws {
         let mock = MockTransport { _, count in
             switch count {
             case 1: .catalogStream()
@@ -127,7 +127,9 @@ struct CatalogTests {
             default: try .catalogStream(Self.served)
             }
         }
-        let catalog = ChannelCatalogStore(api: try mock.api(), reconnectPolicy: .init(initialDelay: 60, grace: 60))
+        var clock = Date(timeIntervalSince1970: 1_000_000)
+        let catalog = ChannelCatalogStore(api: try mock.api(), reconnectPolicy: .init(initialDelay: 60, grace: 0),
+                                          now: { clock })
         catalog.startPolling()
         defer { catalog.stopPolling() }
         try await eventually(observing: mock) { mock.pendingResponseCount == 1 }
@@ -139,11 +141,20 @@ struct CatalogTests {
         #expect(catalog.state == Self.served)
         let refreshedAt = catalog.lastRefreshedAt
         try await eventually(observing: mock) { mock.pendingResponseCount == 1 }
+        clock += ChannelCatalogStore.keepaliveRefreshInterval
         let announced = await announcements(in: catalog) {
             #expect(mock.sendPendingBody(catalogKeepalive) == 1)
             try? await eventually { catalog.lastRefreshedAt != refreshedAt }
         }
         #expect(announced == ["lastRefreshedAt"])
+
+        // The event that can't be read fails the stream after the keepalive, so the failure shows the
+        // keepalive was read.
+        let keptAt = catalog.lastRefreshedAt
+        clock += ChannelCatalogStore.keepaliveRefreshInterval - 1
+        #expect(mock.sendPendingBody(catalogKeepalive + Data("data: not json\n\n".utf8)) == 1)
+        try await eventually { catalog.phase.failure != nil }
+        #expect(catalog.lastRefreshedAt == keptAt, "A keepalive within the interval changes nothing")
         #expect(mock.requests.count == 3)
     }
 
@@ -295,8 +306,10 @@ struct CatalogTests {
             default: .catalogStream()
             }
         }
+        var clock = Date(timeIntervalSince1970: 1_000_000)
         let catalog = ChannelCatalogStore(api: try mock.api(),
-                                          reconnectPolicy: .init(initialDelay: 600, maximumDelay: 600, grace: 0))
+                                          reconnectPolicy: .init(initialDelay: 600, maximumDelay: 600, grace: 0),
+                                          now: { clock })
         catalog.startPolling()
         defer { catalog.stopPolling() }
         try await eventually { catalog.phase.failure != nil }
@@ -307,6 +320,7 @@ struct CatalogTests {
         catalog.setActive(false)
         catalog.setActive(true)
         let refreshedAt = catalog.lastRefreshedAt
+        clock += ChannelCatalogStore.keepaliveRefreshInterval
         #expect(mock.sendPendingBody(catalogKeepalive) == 1)
         try await eventually { catalog.lastRefreshedAt != refreshedAt }
         #expect(mock.requests.count == 2)

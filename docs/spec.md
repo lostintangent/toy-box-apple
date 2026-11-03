@@ -153,7 +153,9 @@ couldn't be opened is Handoff's `missing`.
   arrived, the same word `ChannelStore` uses. `startPolling()` opens the catalog's stream in one
   task, which reconnects with the channel stream's backoff until `stopPolling()` cancels it. Each
   attempt opens with the whole catalog, since the stream has no cursor, and later changes apply
-  only on top of it. Each catalog, change and keepalive moves `lastRefreshedAt`. `refresh()` joins
+  only on top of it. Each catalog and change moves `lastRefreshedAt`. Keepalives move it at most
+  every 15 seconds, the old idle poll's cadence, so its observers wake no more often on a quiet
+  server than they used to. `refresh()` joins
   an attempt already in flight. Otherwise it reopens the stream and returns with its catalog, or
   fetches the catalog once where nothing streams, as in the widget and share extensions.
   `setActive(true)` ends the stream's backoff but leaves a live stream or an attempt under way
@@ -224,7 +226,7 @@ keeps no copy of it.
 
 The phone icon badge counts channels with an open request, using the same
 `channel.attention == .waiting` predicate as the widget. Each successful app catalog refresh
-reconciles the badge, including the stream's keepalives and zero waiting channels. Cached-only state,
+reconciles the badge, including the stream's keepalives every 15 seconds and zero waiting channels. Cached-only state,
 failed refreshes and unrelated navigation changes do not overwrite it. Badge updates do not wait
 for notification authorization reads or request-history loading. The in-app Allow notifications
 choice gates the badge independently of authorization: turning it off immediately clears the
@@ -2915,7 +2917,8 @@ identity isolation, withdrawal and a stale result's inability to send to a diffe
 The WidgetKit extension is a glanceable view of the same waiting requests as the menu bar inbox,
 not a second attention model. The host writes a small server-scoped snapshot from `MenuBarStatus`
 to its Team-ID-prefixed app group and requests a timeline reload when that snapshot changes.
-The catalog stream's keepalives feed the snapshot's 15-minute heartbeat even when nothing changed.
+The catalog stream's keepalives, at most every 15 seconds, feed the snapshot's 15-minute heartbeat
+even when nothing changed.
 A stream that isn't delivering never advances its last-success time.
 The Mac widget does not connect to a server, send a reply or mark anything read. Its signed,
 sandboxed extension lives in `Contents/PlugIns`, shares the app's version/build and is omitted

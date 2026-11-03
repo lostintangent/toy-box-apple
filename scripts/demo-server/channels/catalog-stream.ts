@@ -5,12 +5,14 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 
 type Entity = { id: string; channelId?: string };
 type Catalog = { channels: Entity[]; members: Entity[] };
+// The perf fixture's channels share members, so a member is one agent in one channel.
+const memberKey = (member: Entity) => JSON.stringify([member.channelId, member.id]);
 
 export function createCatalogRoute(read: () => Catalog) {
     const clients = new Set<ServerResponse>();
     const index = ({ channels, members }: Catalog) => ({
         channels: new Map(channels.map(channel => [channel.id, JSON.stringify(channel)])),
-        members: new Map(members.map(member => [member.id, JSON.stringify(member)])),
+        members: new Map(members.map(member => [memberKey(member), JSON.stringify(member)])),
     });
     let sent = index(read());
     const send = (event: unknown) => {
@@ -43,10 +45,12 @@ export function createCatalogRoute(read: () => Catalog) {
                 if (!next.channels.has(channelId)) send({ type: "channel.deleted", channelId });
             }
             for (const member of catalog.members) {
-                if (sent.members.get(member.id) !== next.members.get(member.id)) send({ type: "channel.member.upserted", member });
+                const key = memberKey(member);
+                if (sent.members.get(key) !== next.members.get(key)) send({ type: "channel.member.upserted", member });
             }
-            for (const [agentId, member] of sent.members) {
-                if (!next.members.has(agentId)) send({ type: "channel.member.deleted", channelId: JSON.parse(member).channelId, agentId });
+            for (const [key, member] of sent.members) {
+                const { channelId, id: agentId } = JSON.parse(member) as Entity;
+                if (!next.members.has(key)) send({ type: "channel.member.deleted", channelId, agentId });
             }
             sent = next;
         },
