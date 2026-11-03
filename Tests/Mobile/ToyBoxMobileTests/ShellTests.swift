@@ -261,6 +261,72 @@ struct ShellTests {
         }
     }
 
+    @Test func aCompactChannelWithoutAVerticalBarFiltersFromItsTitleMenuAndHasNoMoreButton() async throws {
+        try await withDefaults { defaults in
+            let model = AppModel(arguments: ["--server", "https://fixture.example"], environment: [:],
+                                 defaults: defaults, session: fixtureSession())
+            defer { model.setScenePhase(.background) }
+            await model.refreshCatalog()
+            let root = RootView(handoff: ChannelHandoffNavigation()).environment(model).environment(\.scenePhase, .inactive)
+            let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+            let host = UIHostingController(rootView: root)
+            window.rootViewController = host
+            window.isHidden = false
+            defer { window.isHidden = true }
+            host.view.frame = window.bounds
+            host.view.layoutIfNeeded()
+            model.selectedChannelID = "first"
+            @MainActor func channelScreen() async -> UIViewController? {
+                for _ in 0..<20 {
+                    host.view.setNeedsLayout()
+                    host.view.layoutIfNeeded()
+                    if let screen = navigationScreens(in: host).first(where: { $0.navigationItem.titleMenuProvider != nil }) {
+                        return screen
+                    }
+                    await Task.yield()
+                }
+                return nil
+            }
+            let screen = try #require(await channelScreen())
+            let item = screen.navigationItem
+            let menu = try #require(item.titleMenuProvider?([]))
+            let actions = menuActions(in: menu)
+            #expect(actions.map(\.title) == ["All Messages", "Your Messages", "Find in Conversation",
+                                             "Follow This Channel", "Open in Toy Box", "Edit Channel", "Delete Channel"],
+                    "\(actions.map(\.title))")
+            // This host keeps bar buttons out of the accessibility tree, so the bar is read from its navigation item.
+            let barItems = (item.leadingItemGroups + item.trailingItemGroups).flatMap(\.barButtonItems)
+                + (item.leftBarButtonItems ?? []) + (item.rightBarButtonItems ?? [])
+            #expect(barItems.map(\.title) == ["Overview"])
+            #expect(item.additionalOverflowItems == nil)
+            #expect(screen.navigationController?.isToolbarHidden == true)
+            #expect(screen.toolbarItems?.isEmpty ?? true)
+            try #require(actions.first { $0.title == "Your Messages" }).performWithSender(nil, target: nil)
+            #expect(model.interaction(for: "first").messageView == .yours)
+            host.view.setNeedsLayout()
+            host.view.layoutIfNeeded()
+            #expect(item.subtitle == "Your Messages")
+        }
+    }
+
+    private func navigationScreens(in controller: UIViewController) -> [UIViewController] {
+        var screens: [UIViewController] = []
+        func visit(_ controller: UIViewController) {
+            if let navigation = controller as? UINavigationController { screens += navigation.viewControllers }
+            controller.children.forEach(visit)
+        }
+        visit(controller)
+        return screens
+    }
+
+    private func menuActions(in menu: UIMenu) -> [UIAction] {
+        menu.children.flatMap { element -> [UIAction] in
+            if let action = element as? UIAction { return [action] }
+            if let menu = element as? UIMenu { return menuActions(in: menu) }
+            return []
+        }
+    }
+
     private func collectionCells(in view: UIView) -> [CGRect] {
         var cells: [CGRect] = []
         func visit(_ view: UIView) {

@@ -4,7 +4,7 @@
 
 ### Bugs/Polish
 
-- The channel bar is simpler, since a channel's tasks are already in Overview.
+- The channel bar is simpler. Tasks are in Overview, and Find, Follow, Edit and the rest open from the channel's name.
 
 ## iPhone 0.1.12
 

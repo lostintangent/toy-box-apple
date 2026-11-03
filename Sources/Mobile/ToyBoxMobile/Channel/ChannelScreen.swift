@@ -38,7 +38,8 @@ struct ChannelScreen: View {
     }
 
     /// With no vertical bar, a compact `.bottomBar` would sit under the composer, so Message View
-    /// moves into Channel Actions and a filtered transcript names itself under the title instead.
+    /// moves into the title menu's Channel Actions and a filtered transcript names itself under the
+    /// title instead.
     private var messageViewIsInActions: Bool { sizeClass == .compact && !usesVerticalToolbar }
 
     var body: some View {
@@ -150,9 +151,6 @@ struct ChannelScreen: View {
                 messageView
                 overviewButton
             }
-        }
-        ToolbarOverflowMenu {
-            channelActions
         }
     }
 
