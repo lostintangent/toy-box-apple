@@ -582,7 +582,7 @@ reserves no space.
 | --- | --- |
 | Position | 8 points above the composer, on the same rail, with leading and trailing edges matching the composer |
 | Working capsule | Leading. Height 28, `.glassEffect(.regular.interactive(), in: .capsule)`. At most three 20-point avatars, inset 4 so they sit concentric with the capsule, 6 points to the label and 12 trailing padding |
-| Label | "Ada is working" or "3 agents are working", 12-point medium in the primary label color. Activation opens the Working Now popover anchored to the capsule |
+| Label | "Ada is working" or "3 agents are working", 12-point medium in the primary label color. Activation opens the Working Now popover anchored to the capsule. It lists the working agents, then a plain rule and the waiting agents in roster order, in the same rows with the shared status text, such as "Waiting for Moss's review". Idle agents stay out, and waiting agents alone never show the capsule |
 | Jump to Latest | Trailing. The same capsule and glass, with `arrow.down` and "Jump to Latest" in 12-point medium and 12-point horizontal padding |
 | Notices | Reveal, send-action and read-position errors stack 8 points above the row in a glass rounded rectangle, radius 14, with primary caption text, 12 horizontal and 8 vertical padding, and borderless Retry or Dismiss |
 | Motion | Appears and leaves with opacity and a 4-point rise over 0.2 seconds, ease-out. Reduce Motion uses opacity only |
@@ -1519,7 +1519,8 @@ Phone conversation dragging dismisses the keyboard interactively. Tapping genuin
 transcript space dismisses it too, without swallowing links, message controls or selection.
 Keep draft, caret and undo. After an explicit dismissal, do not refocus until the user chooses
 the composer or Reply. The working capsule is a minimum-44 button opening Working Now in an
-anchored native popover with compact sheet adaptation: actual working agents, 24-point
+anchored native popover with compact sheet adaptation: actual working agents, then a plain
+rule and the waiting agents in roster order with the same rows and shared status text, 24-point
 avatars, body-17 names, wrapping subheadline-15 status and 12-point row gaps. No navigation or
 management action is implied by these informational rows. Status uses opaque
 readable-secondary ink locally, with at least 4.5:1 contrast against the actual Light/Dark

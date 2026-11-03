@@ -2,12 +2,20 @@
 
 ## iPhone 0.1.13
 
+### Features
+
+- Opening the working capsule now also shows who's waiting and what for, so coming back to a channel tells you where everyone stands.
+
 ### Bugs/Polish
 
 - The channel bar is simpler. Tasks are in Overview, and Find, Follow, Edit and the rest open from the channel's name.
 - Markdown files are easier to read, with text sized like messages, flowing paragraphs and clearer section headings.
 
 ## Mac 0.1.20
+
+### Features
+
+- Opening the working capsule now also shows who's waiting and what for, so coming back to a channel tells you where everyone stands.
 
 ### Bugs/Polish
 

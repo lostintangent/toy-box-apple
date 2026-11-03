@@ -402,6 +402,24 @@ struct TranscriptPresentationTests {
         #expect(ChannelReactionGroup.groups(for: message, agents: agents).map(\.reaction) == ["done"])
     }
 
+    @Test func workingNowListsWorkingAgentsThenWaitingOnesAndLeavesIdleOnesOut() {
+        let roster = ["lead", "ada", "finch", "moss", "wren", "gone"].map { ChannelAgent(id: $0, name: $0.capitalized) }
+        let presence: [String: ChannelAgentPresence] = [
+            "lead": .init(state: "waiting", text: "Moss's review"),
+            "ada": .init(state: "working", text: "Compiling"),
+            "finch": .init(state: "idle"),
+            "moss": .init(state: "waiting"),
+            "wren": .init(state: "working")
+        ]
+        let team = TranscriptWorkingNowAgents(roster: roster, presence: presence)
+        #expect(team.working.map(\.id) == ["ada", "wren"])
+        #expect(team.waiting.map(\.id) == ["lead", "moss"])
+        #expect([team.working, team.waiting].joined().map { TranscriptWorkingNowAgents.status(presence[$0.id]) }
+                == ["Compiling", "Working", "Waiting for Moss's review", "Waiting"])
+        let offline = TranscriptWorkingNowAgents(roster: roster, presence: [:])
+        #expect(offline.working.isEmpty && offline.waiting.isEmpty)
+    }
+
     @MainActor
     @Test func reactionPillShowsThreeFacesThenCountsTheRest() throws {
         #expect(TranscriptReactionPill.overflow(1) == nil)

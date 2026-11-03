@@ -735,34 +735,25 @@ private struct TranscriptFloatingAccessories: View {
     }
 }
 
-/// The agents working now and what each is doing. Rows are information only.
+/// The agents working now and what each is doing, then those waiting under a rule. Rows are
+/// information only.
 private struct TranscriptWorkingNow: View {
     let store: ChannelStore
     @Environment(\.dismiss) private var dismiss
 
-    private var working: [ChannelAgent] {
-        guard !store.phase.isUnavailable else { return [] }
-        return store.roster.filter { store.presence[$0.id]?.state == "working" }
+    private var team: TranscriptWorkingNowAgents {
+        .init(roster: store.roster, presence: store.phase.isUnavailable ? [:] : store.presence)
     }
 
     var body: some View {
         NavigationStack {
             ScrollView {
+                let team = team
                 VStack(alignment: .leading, spacing: 12) {
-                    ForEach(working) { agent in
-                        HStack(alignment: .firstTextBaseline, spacing: 12) {
-                            AgentAvatarView(agent: agent, size: 24)
-                                .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 5 }
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(agent.name).font(.body)
-                                Text(store.presence[agent.id]?.text ?? "Working")
-                                    .font(.subheadline)
-                                    .foregroundStyle(ChannelInk.secondary)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .accessibilityElement(children: .combine)
+                    ForEach(team.working, content: row)
+                    if !team.waiting.isEmpty {
+                        Divider()
+                        ForEach(team.waiting, content: row)
                     }
                 }
                 .padding(16)
@@ -777,6 +768,22 @@ private struct TranscriptWorkingNow: View {
             }
         }
         .frame(minWidth: 320, idealWidth: 360, minHeight: 240, idealHeight: 360)
+    }
+
+    private func row(_ agent: ChannelAgent) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            AgentAvatarView(agent: agent, size: 24)
+                .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 5 }
+            VStack(alignment: .leading, spacing: 2) {
+                Text(agent.name).font(.body)
+                Text(TranscriptWorkingNowAgents.status(store.presence[agent.id]))
+                    .font(.subheadline)
+                    .foregroundStyle(ChannelInk.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
     }
 }
 

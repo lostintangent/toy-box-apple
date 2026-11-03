@@ -609,9 +609,8 @@ struct TranscriptWorkingRow: View {
     @ViewState private var showsDetails = false
     @Environment(\.channelTextScale) private var textScale
 
-    private var working: [ChannelAgent] {
-        agents.filter { presence[$0.id]?.state == "working" }
-    }
+    private var team: TranscriptWorkingNowAgents { .init(roster: agents, presence: presence) }
+    private var working: [ChannelAgent] { team.working }
 
     var body: some View {
         if !working.isEmpty {
@@ -633,16 +632,12 @@ struct TranscriptWorkingRow: View {
                 VStack(alignment: .leading, spacing: 14) {
                     Text("Working Now").font(.headline)
                     ScrollView {
+                        let team = team
                         VStack(alignment: .leading, spacing: 14) {
-                            ForEach(working) { agent in
-                                HStack(alignment: .top, spacing: 10) {
-                                    AgentAvatarView(agent: agent, size: 24)
-                                    VStack(alignment: .leading, spacing: 3) {
-                                        Text(agent.name).fontWeight(.medium)
-                                        Text(presence[agent.id]?.text ?? "Working")
-                                            .foregroundStyle(.secondary).textSelection(.enabled)
-                                    }
-                                }
+                            ForEach(team.working, content: detail)
+                            if !team.waiting.isEmpty {
+                                Divider()
+                                ForEach(team.waiting, content: detail)
                             }
                         }
                     }
@@ -651,6 +646,17 @@ struct TranscriptWorkingRow: View {
                 .font(.system(size: 12 * textScale))
                 .padding(16)
                 .frame(width: 300, alignment: .leading)
+            }
+        }
+    }
+
+    private func detail(_ agent: ChannelAgent) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            AgentAvatarView(agent: agent, size: 24)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(agent.name).fontWeight(.medium)
+                Text(TranscriptWorkingNowAgents.status(presence[agent.id]))
+                    .foregroundStyle(.secondary).textSelection(.enabled)
             }
         }
     }
