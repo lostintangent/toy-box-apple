@@ -30,3 +30,8 @@ Script tests are omitted. Bundle or release changes require both real release dr
 | `bun run release-notes TAG [OUTPUT.md]` | `shared/release-notes.ts` | Extract one platform's release notes from CHANGELOG.md | Release owner, CI |
 | `bun run cron-fixtures` | `shared/cron-fixtures.ts` | Regenerate ChannelKit cron fixtures from the read-only reference | Core contributors, agents |
 | `bun run lint:workflows` | none | Run actionlint, gating ShellCheck warnings and errors, not style | Contributors, agents, CI |
+
+For long Markdown reader captures, start an isolated demo with
+`TOY_BOX_DEMO_PORT=3459 TOY_BOX_DEMO_LONG_MARKDOWN=1 bun run demo`.
+Only the existing **Interaction notes** artifact serves the longer sample, with H1/H2,
+hard-wrapped paragraphs and a list. Without the switch, the shared 3210 fixture is unchanged.

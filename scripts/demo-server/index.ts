@@ -62,6 +62,17 @@ if (import.meta.main) {
     const demo = createDemoServer(initial);
     // The demo server makes dates recent. Restore an exported snapshot without that adjustment.
     if (initial) demo.replace(initial);
+    if (process.env.TOY_BOX_DEMO_LONG_MARKDOWN !== undefined) {
+        if (process.env.TOY_BOX_DEMO_LONG_MARKDOWN !== "1") {
+            throw new Error("TOY_BOX_DEMO_LONG_MARKDOWN must be 1.");
+        }
+        const artifacts: Snapshot["artifacts"] = demo.snapshot().artifacts;
+        const artifact = artifacts.find(({ id }) => id === "machine:/demo/Interaction notes.md");
+        if (!artifact) throw new Error("The demo snapshot has no Interaction notes artifact.");
+        demo.setResource(artifact.url, await Bun.file(
+            new URL("./fixtures/interaction-notes-long.md", import.meta.url)
+        ).text());
+    }
     const { catalog } = installDemoCatalogRoutes(demo);
     demo.server.on("error", error => { console.error(error); process.exitCode = 1; });
     demo.server.listen(port, "127.0.0.1", () => {
