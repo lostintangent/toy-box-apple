@@ -69,8 +69,12 @@ struct ChannelScreen: View {
             .navigationTitle(store.details?.name ?? model.catalog?.channels.first { $0.id == store.id }?.name ?? "")
             .navigationBarTitleDisplayMode(.inline)
             .background {
-                if messageViewIsInActions && interaction.messageView == .yours && !reader.requested {
-                    Color.clear.navigationSubtitle("Your Messages")
+                // A title menu with empty content still draws its chevron, so readers omit the modifier.
+                if !reader.requested {
+                    Color.clear.toolbarTitleMenu { channelActions }
+                    if messageViewIsInActions && interaction.messageView == .yours {
+                        Color.clear.navigationSubtitle("Your Messages")
+                    }
                 }
             }
             .task(id: model.notifications.tipsAvailable) {

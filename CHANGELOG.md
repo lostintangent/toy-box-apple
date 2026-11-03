@@ -5,6 +5,7 @@
 ### Features
 
 - The team list can now be filtered to only the agents who are working, which makes it easier to see who's busy.
+- Tapping a channel's name now opens its actions, so Find, Follow, Edit and the rest stay one tap away even while you're typing.
 
 ### Bugs/Polish
 

@@ -702,6 +702,11 @@ View stays its own filter item. A compact scene with no vertical bar has no room
 leads Channel Actions in a Message View section, and Your Messages adds the subtitle "Your
 Messages" under the channel name. All Messages shows no subtitle, and open readers keep their own
 titles. iOS 27.0 has no vertical-bar API, so it always takes the compact no-bar path.
+The channel name is also a native title menu (`toolbarTitleMenu`) with the same Channel Actions
+content as the •••, built from one source so the two can't drift. With the keyboard up, the folded
+Duo's rail has fewer slots and folds its later items into the •••, so the title keeps the channel's
+actions one tap away. The bar itself doesn't change. Open readers keep their own titles, without
+the menu.
 
 **Phone Welcome.** With no working server the phone shows Welcome, not a titled form. Its
 first Form row, with a clear background and no horizontal insets, holds the large bold heading
