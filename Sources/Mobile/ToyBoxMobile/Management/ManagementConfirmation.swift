@@ -89,7 +89,7 @@ struct ManagementConfirmation: ViewModifier {
     private var deletion: ManagementFlow? { flow?.isDeletion == true ? flow : nil }
     private var copy: (verb: String, noun: String, action: String, outcome: String) { (deletion ?? .newChannel).deletionCopy }
     /// Agents and routines are deleted from their channel's screens, which hold its store.
-    private var store: ChannelStore? { deletion?.channelId.flatMap { app?.catalog?.channel(id: $0) } }
+    private var store: ChannelStore? { deletion?.channelId.flatMap { app?.catalog?.existingChannel(id: $0) } }
     /// The target's name, or nil once it's gone.
     private var target: String? {
         switch deletion {
