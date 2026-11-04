@@ -24,8 +24,6 @@ final class ManagementSession {
         }
     }
     private(set) var pendingSince: ContinuousClock.Instant?
-    var hasRequestedConfirmation = false
-    var isConfirmationPresented = false
     var focus: ManagementField? = .name
     let recovery = ChannelManagementWriteRecovery()
     private(set) var hasLoaded = false
@@ -61,23 +59,14 @@ final class ManagementSession {
 @MainActor @Observable
 final class ManagementSessions {
     @ObservationIgnored private(set) var current: ManagementSession?
-    @ObservationIgnored private var previousEditor: ManagementSession?
+    /// A deletion's session sits beside the editor's, so removing an agent from Edit Agent never replaces it.
+    @ObservationIgnored private var deletion: ManagementSession?
 
     func session(for flow: ManagementFlow, catalog: ChannelCatalogStore) -> ManagementSession {
-        if let current, current.flow == flow, current.catalog === catalog { return current }
-        if let previousEditor, previousEditor.flow == flow, previousEditor.catalog === catalog {
-            current = previousEditor
-            self.previousEditor = nil
-            return previousEditor
-        }
-        if case .removeMember(let channel, let member) = flow,
-           current?.flow == .editMember(channelId: channel, agentId: member) {
-            previousEditor = current
-        } else {
-            previousEditor = nil
-        }
+        if let existing = flow.isDeletion ? deletion : current,
+           existing.flow == flow, existing.catalog === catalog { return existing }
         let session = ManagementSession(flow: flow, catalog: catalog)
-        current = session
+        if flow.isDeletion { deletion = session } else { current = session }
         return session
     }
 
@@ -87,18 +76,12 @@ final class ManagementSessions {
 
     func cancel(_ session: ManagementSession, presenter: ManagementPresenter) {
         guard current === session else { return }
-        if let previousEditor {
-            current = previousEditor
-            self.previousEditor = nil
-            presenter.flow = previousEditor.flow
-        } else {
-            reset()
-            presenter.flow = nil
-        }
+        reset()
+        presenter.flow = nil
     }
 
     func reset() {
         current = nil
-        previousEditor = nil
+        deletion = nil
     }
 }

@@ -735,7 +735,7 @@ and Settings use native `Button(role: .close)`. iOS supplies the X. Place it at
 `.topBarTrailing` with an explicit accessible close label, never `.confirmationAction`, which iOS
 draws as blue prominent glass. No custom circle or fill. Settings changes remain applied on closing.
 
-New Channel, Edit Channel, Add Agent, Edit Agent and the delete confirmation have no text
+New Channel, Edit Channel, Add Agent and Edit Agent have no text
 Cancel. They close with the same system `Button(role: .close)` X at `.cancellationAction`, which
 discards the draft exactly as Cancel would, labeled "Cancel". Create, Add and Save are
 `Button(role: .confirm)` at `.confirmationAction`: iOS draws the blue glass checkmark, the same
@@ -2264,6 +2264,16 @@ sheet. Deletion confirmations name the exact target and consequence:
 deleting a channel removes its agents and private sessions, removing a member retains public
 messages and reactions as Deleted agent, and deleting a routine stops future scheduled runs.
 Cancel is the safe default. There is no fake Undo for irreversible server deletion.
+
+On iPhone, Delete Channel, Remove Agent and Delete Routine ask only in a system alert over the
+screen they came from, never a sheet: the sidebar, the channel's title menu, Team, Routines or
+Edit Agent, where Cancel returns to the unchanged editor. The alert's title names the target,
+its message is the consequence above, and it offers the destructive action and Cancel. The
+action is disabled while disconnected or once the target is gone. It sends one request, removes
+nothing optimistically and adds no pending UI. A rejection or offline failure follows with an
+alert that explains it and offers OK. An uncertain failure checks the server first, then says
+the target is gone, says it's still there and offers the deletion again, or says the check
+failed and offers Check Again. Nothing is sent again before that check.
 
 Settings uses a native scene with General and Notifications sections. General includes Server
 URL, Test Connection, status, and the selected appearance (System by default). Validate HTTP(S),

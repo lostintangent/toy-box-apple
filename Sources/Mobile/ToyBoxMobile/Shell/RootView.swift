@@ -26,6 +26,7 @@ struct RootView: View {
     @ViewBuilder
     private var navigationWithOverview: some View {
         channelNavigation
+        .managementConfirmation(presenter: management, hosting: selectedInteraction?.isInspectorPresented != true)
         .environment(management)
         .environment(overview)
         .environment(managementSessions)
@@ -117,7 +118,7 @@ struct RootView: View {
             NavigationStack { SettingsView() }
         }
         .sheet(item: Binding(
-            get: { selectedInteraction?.isInspectorPresented == true ? nil : management.flow },
+            get: { selectedInteraction?.isInspectorPresented == true || management.flow?.isDeletion == true ? nil : management.flow },
             set: { management.flow = $0 }
         )) { flow in
             ManagementSheet(flow: flow, presenter: management, host: nil)

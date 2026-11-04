@@ -44,11 +44,12 @@ struct OverviewView: View {
             }
         }
         .sheet(item: Binding(
-            get: { placement == presentation.placement ? management.flow : nil },
+            get: { placement == presentation.placement && management.flow?.isDeletion != true ? management.flow : nil },
             set: { if placement == presentation.placement { management.flow = $0 } }
         )) { flow in
             ManagementSheet(flow: flow, presenter: management, host: placement)
         }
+        .managementConfirmation(presenter: management, hosting: placement == presentation.placement)
     }
 
     /// The sheet's system close button. The landscape column has none, because the channel's

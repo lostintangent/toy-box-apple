@@ -82,10 +82,8 @@ struct ManagementSheet: View {
                 unavailable("This agent is no longer in the channel.")
             }
         case .deleteChannel, .removeMember, .deleteRoutine:
-            ManagementConfirmation(flow: flow, channel: channel, store: store, presenter: presenter,
-                                   session: session, host: host)
+            EmptyView() // Deletions ask in ManagementConfirmation's alert, never in this sheet.
         }
-
     }
 
     private func unavailable(_ message: String) -> some View {
@@ -95,20 +93,6 @@ struct ManagementSheet: View {
             Text(message)
         } actions: {
             Button("Close") { presenter.flow = nil }
-        }
-    }
-}
-
-struct ManagementActionLabel: View {
-    let title: String
-    let pendingSince: ContinuousClock.Instant?
-
-    var body: some View {
-        HStack {
-            if let pendingSince {
-                DelayedProgressView(since: pendingSince).controlSize(.small).accessibilityHidden(true)
-            }
-            Text(title)
         }
     }
 }

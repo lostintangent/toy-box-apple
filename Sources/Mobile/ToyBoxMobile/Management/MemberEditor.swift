@@ -13,6 +13,7 @@ struct MemberEditor: View {
     @Environment(ManagementSessions.self) private var sessions
     @Environment(Overview.self) private var presentation
     @FocusState private var focus: ManagementField?
+    @ViewState private var removal: ManagementFlow?
 
     private var api: ChannelAPI { session.api }
     private var member: ChannelAgent? { session.member }
@@ -91,7 +92,7 @@ struct MemberEditor: View {
             if let member {
                 Section {
                     Button("Remove from Channel", systemImage: "person.badge.minus", role: .destructive) {
-                        presenter.present(.removeMember(channelId: channel.id, agentId: member.id))
+                        removal = .removeMember(channelId: channel.id, agentId: member.id)
                     }
                     .disabled(recovery.blocksWrites || !store.phase.isConnected)
                 }
@@ -125,6 +126,7 @@ struct MemberEditor: View {
         .onChange(of: session.focus) { _, field in
             if isCurrentHost { focus = field }
         }
+        .managementConfirmation($removal, presenter: presenter)
     }
 
     static func submitTitle(adding: Bool, saving: Bool) -> String {

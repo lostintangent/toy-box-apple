@@ -3,6 +3,7 @@ import Foundation
 import Observation
 import Testing
 import SwiftUI
+import Synchronization
 import ToyBoxUI
 import UIKit
 @testable import ChannelClient
@@ -1320,7 +1321,7 @@ struct OverviewTests {
         #expect(image.size.height > 44)
     }
 
-    @Test func cancellingRemovalRestoresTheEditorAndOldSessionsCannotCompleteANewFlow() throws {
+    @Test func removingAnAgentKeepsItsEditorAndOldSessionsCannotCompleteANewFlow() throws {
         try withModel { app in
             let catalog = try #require(app.catalog)
             let sessions = ManagementSessions()
@@ -1329,14 +1330,10 @@ struct OverviewTests {
             presenter.present(editing)
             let editor = sessions.session(for: editing, catalog: catalog)
             editor.name = "Unsaved name"
-            editor.role = "Unsaved role"
-            let removing = ManagementFlow.removeMember(channelId: "channel", agentId: "agent")
-            presenter.present(removing)
-            let confirmation = sessions.session(for: removing, catalog: catalog)
-            sessions.cancel(confirmation, presenter: presenter)
-            #expect(presenter.flow == editing)
+            let removal = sessions.session(for: .removeMember(channelId: "channel", agentId: "agent"), catalog: catalog)
+            #expect(removal !== editor && removal.deletionStep == .confirm)
             #expect(sessions.session(for: editing, catalog: catalog) === editor)
-            #expect(editor.name == "Unsaved name" && editor.role == "Unsaved role")
+            #expect(sessions.isCurrent(editor, app: app, presenter: presenter) && editor.name == "Unsaved name")
             sessions.reset()
             let replacement = sessions.session(for: editing, catalog: catalog)
             #expect(replacement !== editor)
@@ -1345,6 +1342,34 @@ struct OverviewTests {
             try app.configure(serverURL: "https://other.example", persist: false)
             try app.configure(serverURL: "https://fixture.example", persist: false)
             #expect(!sessions.isCurrent(replacement, app: app, presenter: presenter))
+        }
+    }
+
+    @Test(arguments: ["remains", "gone", "unreachable"])
+    func anUncertainDeleteChecksTheServerBeforeOfferingAnother(server: String) async throws {
+        let host = "delete-\(UUID().uuidString).invalid"
+        UncertainDeletionProtocol.outcomes.withLock { $0[host] = server }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [UncertainDeletionProtocol.self]
+        let api = try ChannelAPI(serverURL: "https://\(host)", session: URLSession(configuration: configuration))
+        let catalog = ChannelCatalogStore(api: api)
+        let session = ManagementSession(flow: .deleteRoutine(channelId: "channel", routineId: "routine"),
+                                        catalog: catalog)
+        func requests() -> [String] { UncertainDeletionProtocol.requests.withLock { $0[host] ?? [] } }
+
+        #expect(session.deletionStep == .confirm)
+        #expect(await !session.delete())
+        // The 500 may have deleted it, so the server is checked before anything else is offered.
+        let checked = ["DELETE /api/v1/channels/channel/routines/routine", "GET /api/v1/channels"]
+            + (server == "unreachable" ? [] : ["GET /api/v1/channels/channel"])
+        #expect(requests() == checked)
+        switch (server, session.deletionStep) {
+        case ("remains", .remains?), ("gone", .gone?), ("unreachable", .checkFailed?): break
+        default: Issue.record("\(server) shows \(String(describing: session.deletionStep))")
+        }
+        if server != "remains" {
+            #expect(await !session.delete())
+            #expect(requests() == checked)
         }
     }
 
@@ -1924,6 +1949,49 @@ struct ChannelFollowTests {
         #expect(activity.endings.isEmpty)
         #expect(activity.attributes.startedAt == fixture.originalDate)
     }
+}
+
+/// Fails a routine's delete with a 500, then answers the check by the host's outcome.
+private final class UncertainDeletionProtocol: URLProtocol, @unchecked Sendable {
+    static let outcomes = Mutex<[String: String]>([:])
+    static let requests = Mutex<[String: [String]]>([:])
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        do {
+            let url = try #require(request.url)
+            let method = request.httpMethod ?? "GET"
+            let outcome = Self.outcomes.withLock { $0[url.host ?? ""] }
+            Self.requests.withLock { $0[url.host ?? "", default: []].append("\(method) \(url.path)") }
+            let lead = ChannelLeadProfile(name: "Lead", role: "Coordinator", avatar: .init(mark: "M4 12H20", color: "#123456"))
+            let channel = Channel(id: "channel", name: "Team", model: .init(provider: "test", name: "test"),
+                                  updatedAt: "2026-10-26T00:00:00Z")
+            let routine = ChannelRoutine(id: "routine", title: "Daily", schedule: "0 9 * * *", prompt: "Review.")
+            let state = ChannelState(revision: 1, channel: channel, lead: .lead(id: "channel", profile: lead),
+                                     routines: outcome == "remains" ? [routine] : [])
+            let (status, type, body): (Int, String, Data) = switch (method, url.path) {
+            case ("DELETE", _): (500, "application/json", Data(#"{"error":"Internal error."}"#.utf8))
+            case (_, "/api/v1/channels") where outcome == "unreachable":
+                (503, "application/json", Data(#"{"error":"Unavailable."}"#.utf8))
+            case (_, "/api/v1/channels"):
+                (200, "application/json", try JSONEncoder().encode(ChannelCatalog(lead: lead, channels: [channel])))
+            default:
+                (200, "text/event-stream", Data(#"data: {"type":"snapshot","state":"#.utf8)
+                    + (try JSONEncoder().encode(state)) + Data("}\n\n".utf8))
+            }
+            let response = try #require(HTTPURLResponse(url: url, statusCode: status, httpVersion: nil,
+                                                        headerFields: ["Content-Type": type]))
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: body)
+            client?.urlProtocolDidFinishLoading(self)
+        } catch {
+            client?.urlProtocol(self, didFailWithError: error)
+        }
+    }
+
+    override func stopLoading() {}
 }
 
 private final class FollowUnreachableProtocol: URLProtocol, @unchecked Sendable {

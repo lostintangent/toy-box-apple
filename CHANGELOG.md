@@ -1,5 +1,11 @@
 # Changelog
 
+## iPhone 0.1.14
+
+### Bugs/Polish
+
+- Deleting a channel, agent or routine now asks once in a simple alert, right where you are, instead of opening a sheet first.
+
 ## iPhone 0.1.13
 
 ### Features
