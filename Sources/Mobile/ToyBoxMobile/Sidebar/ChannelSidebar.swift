@@ -8,13 +8,11 @@ struct ChannelSidebar: View {
     @Environment(AppModel.self) private var model
     @Environment(ManagementPresenter.self) private var management
     @Environment(\.horizontalSizeClass) private var sizeClass
-    @Binding var showsSettings: Bool
     var searchFocused: FocusState<Bool>.Binding
     /// The split view shows one column at a time, as on a folded Duo.
     let isCollapsed: Bool
     @ViewState private var query = ""
     @ViewState private var pull = PullGesture()
-    @ViewState private var showsScreens = false
 
     private var trimmedQuery: String { query.trimmingCharacters(in: .whitespacesAndNewlines) }
 
@@ -83,7 +81,7 @@ struct ChannelSidebar: View {
                 error: model.configurationError ?? model.catalog?.phase.message,
                 canRetry: model.catalog != nil && model.isActive,
                 retry: { Task { await model.refreshCatalog() } },
-                openSettings: { showsSettings = true },
+                openSettings: { model.cover = .settings },
                 showsSettingsButton: sizeClass != .compact
             )
         }
@@ -110,7 +108,7 @@ struct ChannelSidebar: View {
                 // A toolbar ignores SwiftUI's rendering mode, and the symbol's own mode shades its screen.
                 let outline = UIImage(systemName: "display",
                                       withConfiguration: UIImage.SymbolConfiguration.preferringMonochrome())
-                Button { showsScreens = true } label: {
+                Button { model.cover = .screens } label: {
                     Label { Text("Screens") } icon: { Image(uiImage: outline ?? UIImage()) }
                 }
                 .disabled(model.api == nil)
@@ -118,11 +116,8 @@ struct ChannelSidebar: View {
             DefaultToolbarItem(kind: .search, placement: .bottomBar)
             ToolbarSpacer(.flexible, placement: .bottomBar)
             ToolbarItem(placement: .bottomBar) {
-                Button("Settings", systemImage: "gearshape") { showsSettings = true }
+                Button("Settings", systemImage: "gearshape") { model.cover = .settings }
             }
-        }
-        .sheet(isPresented: $showsScreens) {
-            if let api = model.api { ScreenSheet(api: api) }
         }
     }
 
@@ -142,7 +137,7 @@ struct ChannelSidebar: View {
             } description: {
                 Text("Choose your Toy Box server in Settings.")
             } actions: {
-                Button("Settings") { showsSettings = true }
+                Button("Settings") { model.cover = .settings }
                     .frame(minHeight: 44)
             }
         } else if model.catalog?.phase == .connected, channels.isEmpty {

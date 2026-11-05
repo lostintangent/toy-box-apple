@@ -13,6 +13,7 @@ struct RootView: View {
     @ViewState private var managementSessions = ManagementSessions()
     @ViewState private var columnVisibility = NavigationSplitViewVisibility.automatic
     @ViewState private var preferredCompactColumn = NavigationSplitViewColumn.sidebar
+    @ViewState private var isScreenUp = false
     @FocusState private var isSearchFocused: Bool
     @ViewState private var handoff: ChannelHandoffNavigation
     #if DEBUG
@@ -48,12 +49,15 @@ struct RootView: View {
             overviewContent(at: .sheet)
                 .focusedSceneValue(\.channelCommands, commandActions)
                 .onAppear { overview.compactSheetDidAppear() }
+                .modifier(ScreenCoverPresentation(model: model, overview: overview, host: .overviewSheet, isUp: $isScreenUp))
                 .presentationDetents([.large])
                 .presentationBackgroundInteraction(.disabled)
         }
         .onGeometryChange(for: OverviewPlacement.self) { [sizeClass] in
             OverviewPlacement(sceneWidth: $0.size.width, sizeClass: sizeClass)
         } action: { overview.move(to: $0) }
+        // Overview moves only once the screen has fully gone, so its sheet never meets a closing cover.
+        .onChange(of: model.cover?.screenID != nil || isScreenUp, initial: true) { _, held in overview.isHeld = held }
     }
 
     var body: some View {
@@ -114,9 +118,8 @@ struct RootView: View {
             }
         }
         #endif
-        .sheet(isPresented: $model.isSettingsPresented) {
-            NavigationStack { SettingsView() }
-        }
+        .modifier(AppCoverPresentation(model: model))
+        .modifier(ScreenCoverPresentation(model: model, overview: overview, host: .root, isUp: $isScreenUp))
         .sheet(item: Binding(
             get: { selectedInteraction?.isInspectorPresented == true || management.flow?.isDeletion == true ? nil : management.flow },
             set: { management.flow = $0 }
@@ -145,7 +148,7 @@ struct RootView: View {
             Text(failure.message)
         }
         .alert("Couldn't Enable Notifications", isPresented: Binding(
-            get: { model.notifications.error != nil && !model.isSettingsPresented },
+            get: { model.notifications.error != nil && !model.isCovered },
             set: { if !$0 { model.notifications.clearError() } }
         )) {
             Button("OK") { model.notifications.clearError() }
@@ -166,8 +169,7 @@ struct RootView: View {
     private var channelNavigation: some View {
         @Bindable var model = model
         return NavigationSplitView(columnVisibility: $columnVisibility, preferredCompactColumn: $preferredCompactColumn) {
-            ChannelSidebar(showsSettings: $model.isSettingsPresented, searchFocused: $isSearchFocused,
-                           isCollapsed: sizeClass == .compact)
+            ChannelSidebar(searchFocused: $isSearchFocused, isCollapsed: sizeClass == .compact)
                 .navigationSplitViewColumnWidth(min: 240, ideal: 256, max: 320)
         } detail: {
             if let store = model.selectedStore {
@@ -225,7 +227,7 @@ struct RootView: View {
     }
 
     private var commandActions: WindowCommandActions? {
-        guard handoff.phase == .idle, model.isActive, model.catalog != nil, !model.isSettingsPresented, management.flow == nil,
+        guard handoff.phase == .idle, model.isActive, model.catalog != nil, !model.isCovered, management.flow == nil,
               model.navigationNotice == nil, model.browserFailure == nil else { return nil }
         let store = model.selectedStore.flatMap {
             $0.id == model.visibleChannelID && $0.phase != .deleted ? $0 : nil
@@ -283,5 +285,50 @@ struct RootView: View {
         }
         model.selectedChannelID = id
         preferredCompactColumn = .detail
+    }
+}
+
+/// Presents Settings and Screens as sheets from the root, so a scene change keeps them.
+private struct AppCoverPresentation: ViewModifier {
+    let model: AppModel
+
+    func body(content: Content) -> some View {
+        content.sheet(item: Binding(
+            get: { model.cover?.screenID == nil ? model.cover : nil },
+            set: { if $0 == nil, model.cover?.screenID == nil { model.cover = nil } }
+        )) { cover in
+            if cover == .settings {
+                NavigationStack { SettingsView() }
+            } else if let api = model.api {
+                ScreenSheet(api: api)
+            }
+        }
+    }
+}
+
+/// About's screen, presented over the Overview sheet while it's a sheet, so it closes back to About,
+/// and from the root beside the column. Overview holds its placement while the screen is open, so
+/// the screen keeps one presenter through a rotation.
+private struct ScreenCoverPresentation: ViewModifier {
+    enum Host { case root, overviewSheet }
+
+    let model: AppModel
+    let overview: Overview
+    let host: Host
+    @Binding var isUp: Bool
+
+    private var isHost: Bool { overview.placement == (host == .root ? .inspector : .sheet) }
+
+    func body(content: Content) -> some View {
+        content.fullScreenCover(item: Binding(
+            get: { isHost && model.cover?.screenID != nil ? model.cover : nil },
+            set: { if $0 == nil, isHost, model.cover?.screenID != nil { model.cover = nil } }
+        )) { cover in
+            if let id = cover.screenID, let api = model.api {
+                ScreenViewer(api: api, screenID: id)
+                    .onAppear { isUp = true }
+                    .onDisappear { isUp = false }
+            }
+        }
     }
 }

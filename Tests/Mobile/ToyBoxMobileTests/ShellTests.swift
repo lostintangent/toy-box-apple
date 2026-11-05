@@ -658,7 +658,7 @@ struct ShellTests {
             #expect(badges.counts == [2])
             #expect(!notifications.hasLoadedAuthorization)
 
-            model.isSettingsPresented = true
+            model.cover = .settings
             try serve(channels, status: 503)
             await catalog.refresh()
             #expect(catalog.phase.message != nil)
@@ -677,7 +677,7 @@ struct ShellTests {
             #expect(badges.counts == [2, 2, 0])
 
             try model.configure(serverURL: "https://other.example")
-            model.isSettingsPresented = false
+            model.cover = nil
             try model.configure(serverURL: "https://\(host)")
             try serve([channels[0]])
             await model.catalog?.refresh()
@@ -1171,6 +1171,34 @@ struct ShellTests {
             model.reconcileSelection()
             #expect(model.selectedChannelID == nil)
         }
+    }
+
+    @Test func aNotificationWidgetOrHandoffOpenClosesWhateverCoversTheApp() async throws {
+        try await withDefaults { defaults in
+            let model = AppModel(arguments: ["--server", "https://fixture.example"], environment: [:],
+                                 defaults: defaults, session: fixtureSession())
+            model.cover = .screens
+            let request = NeedsYouRequestLink(serverURL: model.serverURL, channelID: "first", sequence: 42)
+            await model.openExternalURL(try #require(request.url))
+            #expect(model.cover == nil)
+            #expect(model.selectedChannelID == "first")
+            model.cover = .screen("window-1")
+            await model.openChannel(id: "second", sequence: 7, expectedServer: model.serverURL)
+            #expect(model.cover == nil)
+            #expect(model.selectedChannelID == "second")
+            model.cover = .settings
+            _ = model.beginHandoffNavigation()
+            #expect(model.cover == nil)
+        }
+    }
+
+    @Test func aScreenHoldsOverviewInPlaceUntilItCloses() {
+        let overview = Overview()
+        overview.isHeld = true
+        overview.move(to: .inspector)
+        #expect(overview.placement == .sheet)
+        overview.isHeld = false
+        #expect(overview.placement == .inspector)
     }
 
     @Test func aWidgetRequestNeverSwitchesToItsForeignServer() async throws {
