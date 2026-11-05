@@ -1,6 +1,16 @@
 # Changelog
 
+## Mac 0.1.21
+
+### Features
+
+- When a channel's preview is a window or display on the Mac running Toy Box, you can now watch it live in the app, and browse everything that Mac can show.
+
 ## iPhone 0.1.14
+
+### Features
+
+- When a channel's preview is a window or display on the Mac running Toy Box, you can now watch it live in the app, and browse everything that Mac can show.
 
 ### Bugs/Polish
 
