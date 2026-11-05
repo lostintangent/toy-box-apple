@@ -57,12 +57,13 @@ const catalog = createCatalogRoute(() => {
 });
 for (const demo of Object.values(demos)) demo.onChange(catalog.publish);
 
-// Plain prose, a list, a mention and a code block, so new rows exercise each kind of formatting.
+// Plain prose, a list and a code block, so new rows exercise each kind of formatting. Each one
+// addresses an agent, as real agent messages nearly always do, so rows collapse like theirs.
 const bodies: ((n: number, handle: string) => string)[] = [
-    (n) => `Update ${n}: the transcript keeps up while several agents report at once.`,
-    (n) => `Pass ${n}\n\n- Checked the **message flow** end to end\n- Kept read receipts monotonic\n- Left the request open for the user`,
+    (n, handle) => `@${handle} update ${n}: the transcript keeps up while several agents report at once.`,
+    (n, handle) => `@${handle} pass ${n}\n\n- Checked the **message flow** end to end\n- Kept read receipts monotonic\n- Left the request open for the user`,
     (n, handle) => `@${handle} pass ${n} is ready for review. The shelf now sits beside the team desks, and the entrance stays clear for visitors.`,
-    (n) => `Pass ${n} result:\n\n\`\`\`swift\nlet total = messages.reduce(0) { $0 + $1.count }\n\`\`\`\n\nThe count matches the server.`,
+    (n, handle) => `@${handle} pass ${n} result:\n\n\`\`\`swift\nlet total = messages.reduce(0) { $0 + $1.count }\n\`\`\`\n\nThe count matches the server.`,
 ];
 
 function json(response: Response, status: number, value: unknown) {
