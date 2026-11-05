@@ -327,7 +327,11 @@ private struct ScreenCoverPresentation: ViewModifier {
             if let id = cover.screenID, let api = model.api {
                 ScreenViewer(api: api, screenID: id)
                     .onAppear { isUp = true }
-                    .onDisappear { isUp = false }
+                    // A sheet that goes under the screen, like a deleted channel's, takes it along.
+                    .onDisappear {
+                        isUp = false
+                        if model.cover?.screenID == id { model.cover = nil }
+                    }
             }
         }
     }
