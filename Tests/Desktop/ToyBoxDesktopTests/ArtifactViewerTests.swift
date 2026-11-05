@@ -732,6 +732,41 @@ struct ArtifactViewerTests {
 }
 
 @MainActor
+@Suite("Artifact viewer title")
+struct ArtifactViewerTitleTests {
+    typealias Fit = ArtifactViewerTitle.Fit
+    typealias Span = ChannelTitleFit.Span
+
+    @Test func aLongTitleYieldsBeforeShareAndMoreInTheNarrowestWindow() {
+        // Back's 36 points start 4 past the 220-point sidebar. Share and More's capsule starts at
+        // 631, and the title ends 24 points, plus its item's inset, before it.
+        let room = Fit.room(detail: Span(minX: 220, maxX: 760), windowWidth: 760)
+        #expect(room == 339)
+        let long = Fit.idealWidth(title: "Quarterly launch readiness review and retrospective planning",
+                                  subtitle: "Markdown · 2 of 3")
+        #expect(ChannelTitleFit.maxWidth(idealWidth: long, room: room) == 339)
+        #expect(ChannelTitleFit.maxWidth(idealWidth: Fit.idealWidth(title: "Interaction notes", subtitle: "Markdown · 2 of 3"),
+                                         room: room) == nil)
+    }
+
+    @Test func aLongPositionWidensTheTitleLikeALongName() {
+        let subtitle = "Markdown · 12 of 240"
+        #expect(Fit.idealWidth(title: "Notes", subtitle: subtitle) == Fit.idealWidth(title: "", subtitle: subtitle))
+        #expect(Fit.idealWidth(title: "Notes", subtitle: subtitle) > Fit.idealWidth(title: "Notes", subtitle: ""))
+    }
+
+    @Test func anOpenOverviewStopsTheTitleShortOfItsColumn() {
+        // Share and More start 80 points inside the detail column's edge, not the window's.
+        #expect(Fit.room(detail: Span(minX: 220, maxX: 900), windowWidth: 1280) == 528)
+    }
+
+    @Test func aCollapsedSidebarStartsBackAfterTheSidebarButton() {
+        let room = Fit.room(detail: Span(minX: 0, maxX: 760), windowWidth: 760)
+        #expect(room == 631 - 28 - (ChannelTitleFit.collapsedLeading + 40))
+    }
+}
+
+@MainActor
 private final class ArtifactSandboxResponseProbe: NSObject, WKURLSchemeHandler {
     func webView(_ webView: WKWebView, start urlSchemeTask: any WKURLSchemeTask) {
         guard let url = urlSchemeTask.request.url else {
