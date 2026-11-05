@@ -21,7 +21,7 @@ final class ArtifactOpener {
     @ObservationIgnored weak var window: NSWindow? {
         didSet { titleFit.window = window }
     }
-    let titleFit = ArtifactViewerTitle.Fit()
+    let titleFit = ViewerTitleFit()
     @ObservationIgnored weak var nativeImageView: ArtifactImageScrollView?
     @ObservationIgnored var webView: WKWebView?
     @ObservationIgnored weak var webRenderer: ArtifactWebRenderer?

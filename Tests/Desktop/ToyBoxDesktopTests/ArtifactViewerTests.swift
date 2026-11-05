@@ -732,19 +732,20 @@ struct ArtifactViewerTests {
 }
 
 @MainActor
-@Suite("Artifact viewer title")
-struct ArtifactViewerTitleTests {
-    typealias Fit = ArtifactViewerTitle.Fit
+@Suite("Viewer title")
+struct ViewerTitleFitTests {
+    typealias Fit = ViewerTitleFit
     typealias Span = ChannelTitleFit.Span
 
-    @Test func aLongTitleYieldsBeforeShareAndMoreInTheNarrowestWindow() {
-        // Back's 36 points start 4 past the 220-point sidebar. Share and More's capsule starts at
-        // 631, and the title ends 24 points, plus its item's inset, before it.
+    @Test func aLongTitleYieldsBeforeReloadAndShareInTheNarrowestWindow() {
+        // Back's capsule and the gap after it take 44.5 points, 4 past the 220-point sidebar.
+        // Reload and Share's capsule starts at 631, and the title ends 24 points, plus its item's
+        // inset, before it.
         let room = Fit.room(detail: Span(minX: 220, maxX: 760), windowWidth: 760)
-        #expect(room == 339)
+        #expect(room == 330.5)
         let long = Fit.idealWidth(title: "Quarterly launch readiness review and retrospective planning",
                                   subtitle: "Markdown · 2 of 3")
-        #expect(ChannelTitleFit.maxWidth(idealWidth: long, room: room) == 339)
+        #expect(ChannelTitleFit.maxWidth(idealWidth: long, room: room) == 330)
         #expect(ChannelTitleFit.maxWidth(idealWidth: Fit.idealWidth(title: "Interaction notes", subtitle: "Markdown · 2 of 3"),
                                          room: room) == nil)
     }
@@ -756,13 +757,13 @@ struct ArtifactViewerTitleTests {
     }
 
     @Test func anOpenOverviewStopsTheTitleShortOfItsColumn() {
-        // Share and More start 80 points inside the detail column's edge, not the window's.
-        #expect(Fit.room(detail: Span(minX: 220, maxX: 900), windowWidth: 1280) == 528)
+        // Reload and Share start 80 points inside the detail column's edge, not the window's.
+        #expect(Fit.room(detail: Span(minX: 220, maxX: 900), windowWidth: 1280) == 519.5)
     }
 
     @Test func aCollapsedSidebarStartsBackAfterTheSidebarButton() {
         let room = Fit.room(detail: Span(minX: 0, maxX: 760), windowWidth: 760)
-        #expect(room == 631 - 28 - (ChannelTitleFit.collapsedLeading + 40))
+        #expect(room == 631 - 28 - (ChannelTitleFit.collapsedLeading + 48.5))
     }
 }
 
