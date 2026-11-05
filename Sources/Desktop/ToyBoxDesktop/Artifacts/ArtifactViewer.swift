@@ -574,8 +574,8 @@ extension ArtifactViewerTitle {
         /// their capsule.
         static let back: CGFloat = 36
         /// How far Share and More's 73-point capsule starts before the detail column's trailing
-        /// edge, where it sits while Overview is open.
-        static let detailControls: CGFloat = 81
+        /// edge, where it sits while Overview is open. Measured with the column open.
+        static let detailControls: CGFloat = 80
         /// How far Share and More's capsule starts before the window's trailing edge while
         /// Overview is closed, with Overview's toggle after it. Measured in the narrowest window.
         static let trailingControls: CGFloat = 129

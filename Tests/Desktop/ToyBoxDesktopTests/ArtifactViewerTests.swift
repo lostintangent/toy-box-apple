@@ -756,8 +756,8 @@ struct ArtifactViewerTitleTests {
     }
 
     @Test func anOpenOverviewStopsTheTitleShortOfItsColumn() {
-        // Share and More sit 81 points inside the detail column's edge, not the window's.
-        #expect(Fit.room(detail: Span(minX: 220, maxX: 900), windowWidth: 1280) == 527)
+        // Share and More start 80 points inside the detail column's edge, not the window's.
+        #expect(Fit.room(detail: Span(minX: 220, maxX: 900), windowWidth: 1280) == 528)
     }
 
     @Test func aCollapsedSidebarStartsBackAfterTheSidebarButton() {
