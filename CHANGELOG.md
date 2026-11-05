@@ -8,6 +8,10 @@
 
 ## iPhone 0.1.16
 
+### Features
+
+- Siri can now answer questions about the channel or Markdown file you have open, so you can ask what's left to do or what the team decided without reading back through the conversation.
+
 ### Bugs/Polish
 
 - Screens now zoom in as far as image attachments do, so pinching in to read small text no longer springs back.

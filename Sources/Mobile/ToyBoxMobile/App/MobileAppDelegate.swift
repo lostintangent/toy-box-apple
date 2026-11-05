@@ -7,6 +7,7 @@ final class MobileAppDelegate: NSObject, UIApplicationDelegate {
     func application(_ application: UIApplication,
                      didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         model.notifications.installDelegate()
+        ChannelIntents.register(model)
         return true
     }
 

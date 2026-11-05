@@ -27,6 +27,14 @@ struct ChannelScreen: View {
         )
     }
 
+    /// The conversation, or the artifact open over it once it has a page. An image over it, or an
+    /// artifact that's gone, shows Siri nothing.
+    private var screenEntity: ScreenEntity? {
+        guard reader.isVisible else { return .channel(store.id) }
+        guard artifacts.isPresented, !artifacts.isUnavailable, let artifact = artifacts.artifact else { return nil }
+        return .artifact(channelID: store.id, artifactID: artifact.id)
+    }
+
     private var showsPermissionTip: Bool {
         permissionTipIsAvailable && model.notifications.canOfferPermissionTip
             && model.visibleChannelID == store.id
@@ -86,6 +94,8 @@ struct ChannelScreen: View {
             }
             .onAppear { model.visibleChannelID = store.id }
             .onChange(of: store.id) { _, id in model.visibleChannelID = id }
+            .onChange(of: screenEntity, initial: true) { _, entity in model.screenEntity = entity }
+            .channelActivity(store.id, showing: screenEntity)
             .onChange(of: store.artifacts, initial: true) { _, current in
                 artifacts.configure(api: store.api, channelID: store.id, artifacts: current)
             }
@@ -109,6 +119,7 @@ struct ChannelScreen: View {
             .onDisappear {
                 interaction.isArtifactViewerPresented = false
                 if model.visibleChannelID == store.id { model.visibleChannelID = nil }
+                if model.screenEntity?.channelID == store.id { model.screenEntity = nil }
             }
             .toolbar {
                 if !reader.requested { conversationToolbar }

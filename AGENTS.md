@@ -111,7 +111,7 @@ Core for a domain or store change instead of working around it in a view.
 | `Sources/Desktop/ToyBoxDesktop/Composer` (composer and tray), `Tests/Desktop/ToyBoxDesktopTests/ComposerTests.swift` | Composer |
 | `Sources/Desktop/ToyBoxDesktop/Overview`, `Artifacts`, `Management`, `Screens` | Overview |
 | `Sources/Shared/ChannelIntelligence/`, `Tests/Shared/ChannelIntelligenceTests/` | Intelligence |
-| `Sources/Mobile/ToyBoxMobile/App`, `Shell`, `Sidebar`, `Channel`, `Notifications`, `Settings`, `Shared` | Shell |
+| `Sources/Mobile/ToyBoxMobile/App`, `Shell`, `Sidebar`, `Channel`, `Notifications`, `Intents`, `Settings`, `Shared` | Shell |
 | `Sources/Mobile/ToyBoxMobile/Transcript` | Transcript |
 | `Sources/Mobile/ToyBoxMobile/Composer` (composer and tray) | Composer |
 | `Sources/Mobile/ToyBoxMobile/Overview`, `Artifacts`, `LiveActivities`, `Management`, `Screens` | Overview |

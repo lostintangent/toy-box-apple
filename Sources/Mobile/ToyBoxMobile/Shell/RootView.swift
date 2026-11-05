@@ -177,11 +177,6 @@ struct RootView: View {
                     .environment(model.interaction(for: store.id))
                     .environment(model.artifactSession(for: store))
                     .environment(model.gallery(for: store))
-                    .userActivity(ChannelHandoff.activityType, element: store.id) { id, activity in
-                        activity.userInfo = ChannelHandoff(channelID: id).userInfo
-                        activity.requiredUserInfoKeys = [ChannelHandoff.channelIDKey]
-                        activity.isEligibleForHandoff = true
-                    }
             } else {
                 ContentUnavailableView("Choose a channel", systemImage: "bubble.left.and.bubble.right",
                                        description: Text("Open a channel from the list to join the conversation."))

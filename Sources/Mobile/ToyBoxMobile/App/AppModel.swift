@@ -19,6 +19,8 @@ final class AppModel {
     private(set) var selectedStore: ChannelStore?
     private(set) var isResolvingNavigation = false
     var visibleChannelID: String?
+    /// What the visible channel screen shows, which Siri may read while it's in front.
+    var screenEntity: ScreenEntity?
     var cover: Cover?
     var navigationNotice: String?
     var browserFailure: BrowserFailure?
@@ -38,7 +40,7 @@ final class AppModel {
     }
 
     @ObservationIgnored private let connections = ChannelConnections()
-    @ObservationIgnored private var isForeground = false
+    @ObservationIgnored private(set) var isForeground = false
     @ObservationIgnored private var holdsSelectedConnection = false
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let session: URLSession
@@ -110,6 +112,23 @@ final class AppModel {
     /// The channel beneath a cover isn't visible, so it isn't read, notified as open or commanded.
     var isCovered: Bool { cover != nil }
 
+    /// The channel or artifact Siri may read: what the channel screen shows, while the scene is in
+    /// front and nothing covers it. Siri's own overlay makes the scene inactive, so this needs the
+    /// foreground rather than the active scene.
+    var onScreen: ChannelIntents.OnScreen? {
+        guard isForeground, !isCovered, let screenEntity, let store = selectedStore,
+              store.id == visibleChannelID, screenEntity.channelID == store.id, store.phase != .deleted
+        else { return nil }
+        switch screenEntity {
+        case .channel:
+            return .channel(store)
+        case .artifact(_, let artifactID):
+            guard let entry = artifactSessions[store.id], entry.store === store,
+                  entry.session.artifact?.id == artifactID else { return nil }
+            return .artifact(entry.session, in: store)
+        }
+    }
+
     var sidebarFooter: SidebarFooter { SidebarFooter(phase: catalog?.phase, isLoaded: catalog?.isLoaded == true) }
 
     var canManageChannels: Bool { isActive && catalog?.phase == .connected }
@@ -147,6 +166,7 @@ final class AppModel {
         holdsSelectedConnection = false
         selectedChannelID = nil
         visibleChannelID = nil
+        screenEntity = nil
         for id in Set(artifactSessions.keys).union(galleries.keys) { closeReaders(for: id) }
         interactions = [:]
         composerSessions = [:]

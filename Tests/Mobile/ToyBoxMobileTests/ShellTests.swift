@@ -1,3 +1,4 @@
+import AppIntents
 import ChannelIntelligence
 import ChannelKit
 import Foundation
@@ -1777,6 +1778,205 @@ struct ShellTests {
         let copied = try await copiedData(from: provider, type: .jpeg)
         #expect(copied == bytes)
         #expect(draft.images.count == 1)
+    }
+
+    @Test func siriReadsTheChannelOnScreenAndOnlyNamesOthers() async throws {
+        let channel = Channel(
+            id: "launch", name: "Launch", purpose: "Ship **the** app", model: .init(provider: "test", name: "test"),
+            tasks: [ChannelTask(id: "plan", title: "Plan", status: "in_progress",
+                                children: [ChannelTask(id: "draft", title: "Draft", status: "done")])],
+            updatedAt: "2026-11-05T12:00:00Z")
+        let request = ChannelMessage(id: "m4", sequence: 4, timestamp: "2026-11-05T12:03:00Z", sender: .agent("lead"),
+                                     content: .text("Ship it?"), request: true)
+        let store = try siriStore(channel, messages: [
+            ChannelMessage(id: "m1", sequence: 1, timestamp: "2026-11-05T12:00:00Z", sender: .user,
+                           content: .text("Can you **check** the build?")),
+            ChannelMessage(id: "m3", sequence: 3, timestamp: "2026-11-05T12:02:00Z", sender: .agent("core"),
+                           content: .text("Done, see `report.md`"),
+                           attachments: [ChannelAttachment(name: "report.md", mimeType: "text/markdown")]),
+            request,
+        ], request: request)
+        let other = Channel(id: "other", name: "Other", model: .init(provider: "test", name: "test"),
+                            updatedAt: "2026-11-05T12:00:00Z")
+        let query = ChannelQuery(intents: ChannelIntents(onScreen: { .channel(store) }, catalog: { [channel, other] }))
+
+        let expected = """
+            Channel: Launch
+            Purpose: Ship the app
+
+            Tasks:
+            - Plan (in progress)
+              - Draft (done)
+
+            Messages, oldest first:
+            You: Can you check the build?
+
+            Core: Done, see report.md (attached report.md)
+
+            Lead (waiting for your reply): Ship it?
+            """
+        let entities = try await query.entities(for: ["launch", "other", "missing"])
+        #expect(entities.map(\.id) == ["launch", "other"])
+        #expect(entities.map(\.name) == ["Launch", "Other"])
+        #expect(entities.map(\.content) == [expected, ""])
+        let exported = try await #require(entities.first).exported(as: .utf8PlainText)
+        #expect(String(decoding: exported, as: UTF8.self) == expected)
+
+        let offScreen = ChannelQuery(intents: ChannelIntents(onScreen: { nil }, catalog: { [channel, other] }))
+        #expect(try await offScreen.entities(for: ["launch"]).map(\.content) == [""])
+    }
+
+    @Test func siriGetsTheNewestMessagesThatFitWithTheWaitingRequest() throws {
+        let words = Array(repeating: "word", count: 400).joined(separator: " ")
+        let request = ChannelMessage(id: "m1", sequence: 1, timestamp: "2026-11-05T12:00:00Z", sender: .agent("lead"),
+                                     content: .text("Which release?"), request: true)
+        let messages = [request] + (2...60).map {
+            ChannelMessage(id: "m\($0)", sequence: $0, timestamp: "2026-11-05T12:00:00Z", sender: .user,
+                           content: .text("Message \($0) \(words)"))
+        }
+        let store = try siriStore(
+            Channel(id: "launch", name: "Launch", model: .init(provider: "test", name: "test"),
+                    updatedAt: "2026-11-05T12:00:00Z"),
+            messages: messages, request: request)
+        let content = ChannelEntity.content(of: store, name: "Launch")
+        let lines = content.components(separatedBy: "\n\n")
+        #expect(content.count <= ChannelEntity.contentLimit)
+        #expect(lines.contains("Messages, oldest first:\nLead (waiting for your reply): Which release?"))
+        #expect(lines.last?.hasPrefix("You: Message 60 word") == true)
+        #expect(!content.contains("Message 2 word"))
+        #expect(lines.filter { $0.hasPrefix("You: ") }.allSatisfy {
+            $0.count <= "You: ".count + ChannelEntity.messageLimit && $0.hasSuffix("\u{2026}")
+        })
+    }
+
+    @Test func siriReadsTheOpenMarkdownArtifactAndOnlyNamesOtherKinds() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("shell-siri-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try Data("# Plan\n\nShip **it** today.".utf8).write(to: directory.appendingPathComponent("plan.md"))
+        try Data("<html><script>track()</script><p>Page</p></html>".utf8)
+            .write(to: directory.appendingPathComponent("page.html"))
+        let session = ChannelArtifactSession(decodeImage: { _, _, _ in throw ChannelAttachmentError.invalidImage },
+                                             download: { artifact, _ in directory.appendingPathComponent(artifact.file.path) })
+        defer { session.close() }
+        let plan = ChannelArtifact(file: .init(kind: "machine", path: "plan.md"), title: "Plan",
+                                   url: "/api/serve/launch/plan.md")
+        let page = ChannelArtifact(file: .init(kind: "machine", path: "page.html"), title: "Page",
+                                   url: "/api/serve/launch/page.html")
+        let store = ChannelStore(id: "launch", api: try ChannelAPI(serverURL: "https://fixture.example"), sendJournal: nil)
+        session.configure(api: store.api, channelID: "launch", artifacts: [plan, page])
+        let channel = Channel(id: "launch", name: "Launch", model: .init(provider: "test", name: "test"),
+                              updatedAt: "2026-11-05T12:00:00Z")
+        let intents = ChannelIntents(onScreen: { .artifact(session, in: store) }, catalog: { [channel] })
+        let artifacts = ArtifactQuery(intents: intents)
+        let planID = ArtifactEntity.id(channelID: "launch", artifactID: plan.id)
+        let pageID = ArtifactEntity.id(channelID: "launch", artifactID: page.id)
+        #expect(try await artifacts.entities(for: [planID]).isEmpty)
+
+        session.open(plan)
+        await session.loadTask?.value
+        let shown = try await artifacts.entities(for: [planID, pageID])
+        #expect(shown.map(\.id) == [planID])
+        #expect(shown.map(\.title) == ["Plan"])
+        #expect(shown.map(\.kind) == ["Markdown"])
+        #expect(shown.map(\.content) == ["Plan\nShip it today."])
+        // The conversation is behind the artifact, so the channel gives Siri only its name.
+        #expect(try await ChannelQuery(intents: intents).entities(for: ["launch"]).map(\.content) == [""])
+
+        #expect(session.select(page.id))
+        await session.loadTask?.value
+        #expect(session.content?.text != nil)
+        let html = try await artifacts.entities(for: [planID, pageID])
+        #expect(html.map(\.id) == [pageID])
+        #expect(html.map(\.kind) == ["HTML"])
+        #expect(html.map(\.content) == [""])
+
+        session.close()
+        #expect(try await artifacts.entities(for: [pageID]).isEmpty)
+    }
+
+    @Test func siriSeesTheChannelScreenOnlyWhileItsInFrontAndUncovered() async throws {
+        try await withDefaults { defaults in
+            let model = AppModel(arguments: ["--server", "https://fixture.example"], environment: [:],
+                                 defaults: defaults, session: fixtureSession())
+            defer { model.setScenePhase(.background) }
+            await model.refreshCatalog()
+            model.selectedChannelID = "first"
+            let store = try #require(model.selectedStore)
+            model.visibleChannelID = "first"
+            model.screenEntity = .channel("first")
+            @MainActor func shownChannel() -> ChannelStore? { if case .channel(let shown) = model.onScreen { shown } else { nil } }
+            #expect(model.onScreen == nil)
+
+            // Siri's overlay leaves the scene inactive, and the screen behind it is still what Siri reads.
+            model.setScenePhase(.inactive)
+            #expect(shownChannel() === store)
+            model.cover = .settings
+            #expect(model.onScreen == nil)
+            model.cover = nil
+            model.visibleChannelID = "second"
+            #expect(model.onScreen == nil)
+            model.visibleChannelID = "first"
+            model.screenEntity = .channel("second")
+            #expect(model.onScreen == nil)
+
+            let artifact = ChannelArtifact(file: .init(kind: "machine", path: "plan.md"), title: "Plan")
+            model.screenEntity = .artifact(channelID: "first", artifactID: artifact.id)
+            #expect(model.onScreen == nil)
+            let session = model.artifactSession(for: store)
+            defer { session.close() }
+            session.open(artifact)
+            guard case .artifact(let shown, let owner) = model.onScreen else {
+                Issue.record("The open artifact isn't on screen.")
+                return
+            }
+            #expect(shown === session)
+            #expect(owner === store)
+
+            model.setScenePhase(.background)
+            #expect(model.onScreen == nil)
+        }
+    }
+
+    @Test func theChannelScreenNamesItsConversationToSiri() async {
+        await withDefaults { defaults in
+            let model = AppModel(arguments: ["--server", "https://fixture.example"], environment: [:],
+                                 defaults: defaults, session: fixtureSession())
+            defer { model.setScenePhase(.background) }
+            await model.refreshCatalog()
+            model.selectedChannelID = "first"
+            let root = RootView(handoff: ChannelHandoffNavigation()).environment(model).environment(\.scenePhase, .inactive)
+            let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 466, height: 678))
+            let host = UIHostingController(rootView: root)
+            window.rootViewController = host
+            window.isHidden = false
+            defer { window.isHidden = true }
+            host.view.frame = window.bounds
+            let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+            repeat {
+                host.view.layoutIfNeeded()
+                await Task.yield()
+            } while model.screenEntity == nil && ContinuousClock.now < deadline
+            #expect(model.screenEntity == .channel("first"))
+
+            model.selectedChannelID = nil
+            repeat {
+                host.view.layoutIfNeeded()
+                await Task.yield()
+            } while model.screenEntity != nil && ContinuousClock.now < deadline.advanced(by: .seconds(2))
+            #expect(model.screenEntity == nil)
+        }
+    }
+
+    private func siriStore(_ channel: Channel, messages: [ChannelMessage], request: ChannelMessage?) throws -> ChannelStore {
+        let store = ChannelStore(id: channel.id, api: try ChannelAPI(serverURL: "https://fixture.example"), sendJournal: nil)
+        _ = try store.apply(.init(type: "snapshot", state: ChannelState(
+            revision: 1, channel: channel,
+            lead: .lead(id: "lead", profile: .init(name: "Lead", role: "Coordinator",
+                                                  avatar: .init(mark: "M4 12H20", color: "#123456"))),
+            members: [ChannelAgent(id: "core", name: "Core")],
+            messages: messages, request: request)))
+        return store
     }
 
     private func draftImage() -> UIImage {
