@@ -49,17 +49,7 @@ final class ChannelIntents {
     func artifacts(for identifiers: [String]) -> [ArtifactEntity] {
         guard case .artifact(let session, let store) = onScreen(), let artifact = session.artifact,
               !session.isUnavailable else { return [] }
-        let entity = ArtifactEntity(artifact, in: store.id, content: session.content)
+        let entity = ArtifactEntity(artifact, in: store.id, content: session.readableText)
         return identifiers.contains(entity.id) ? [entity] : []
-    }
-}
-
-extension String {
-    /// At most `limit` characters, cut at a word with an ellipsis when it's longer.
-    func clipped(to limit: Int) -> String {
-        guard count > limit else { return self }
-        let prefix = self.prefix(limit - 1)
-        let cut = prefix.lastIndex(where: \.isWhitespace).map { prefix[..<$0] } ?? prefix
-        return cut.trimmingCharacters(in: .whitespacesAndNewlines) + "\u{2026}"
     }
 }

@@ -24,13 +24,11 @@ struct ArtifactEntity: AppEntity, Identifiable {
     @Property(title: "Content")
     var content: String
 
-    init(_ artifact: ChannelArtifact, in channelID: String, content loaded: ArtifactContent?) {
+    init(_ artifact: ChannelArtifact, in channelID: String, content: String) {
         id = Self.id(channelID: channelID, artifactID: artifact.id)
-        let kind = ArtifactContentKind(artifact)
         title = artifact.title
-        self.kind = kind.label(for: artifact)
-        let text = kind == .markdown && loaded?.artifact.id == artifact.id ? loaded?.text ?? "" : ""
-        content = MarkdownBlock.plainText(text).clipped(to: ChannelEntity.contentLimit)
+        kind = ArtifactContentKind(artifact).label(for: artifact)
+        self.content = content
     }
 
     static func id(channelID: String, artifactID: String) -> String { "\(channelID)/\(artifactID)" }

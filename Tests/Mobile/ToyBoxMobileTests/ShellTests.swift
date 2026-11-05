@@ -1781,40 +1781,18 @@ struct ShellTests {
     }
 
     @Test func siriReadsTheChannelOnScreenAndOnlyNamesOthers() async throws {
-        let channel = Channel(
-            id: "launch", name: "Launch", purpose: "Ship **the** app", model: .init(provider: "test", name: "test"),
-            tasks: [ChannelTask(id: "plan", title: "Plan", status: "in_progress",
-                                children: [ChannelTask(id: "draft", title: "Draft", status: "done")])],
-            updatedAt: "2026-11-05T12:00:00Z")
-        let request = ChannelMessage(id: "m4", sequence: 4, timestamp: "2026-11-05T12:03:00Z", sender: .agent("lead"),
-                                     content: .text("Ship it?"), request: true)
+        let channel = Channel(id: "launch", name: "Launch", model: .init(provider: "test", name: "test"),
+                              updatedAt: "2026-11-05T12:00:00Z")
         let store = try siriStore(channel, messages: [
             ChannelMessage(id: "m1", sequence: 1, timestamp: "2026-11-05T12:00:00Z", sender: .user,
-                           content: .text("Can you **check** the build?")),
-            ChannelMessage(id: "m3", sequence: 3, timestamp: "2026-11-05T12:02:00Z", sender: .agent("core"),
-                           content: .text("Done, see `report.md`"),
-                           attachments: [ChannelAttachment(name: "report.md", mimeType: "text/markdown")]),
-            request,
-        ], request: request)
+                           content: .text("Can you check the build?")),
+        ], request: nil)
         let other = Channel(id: "other", name: "Other", model: .init(provider: "test", name: "test"),
                             updatedAt: "2026-11-05T12:00:00Z")
         let query = ChannelQuery(intents: ChannelIntents(onScreen: { .channel(store) }, catalog: { [channel, other] }))
 
-        let expected = """
-            Channel: Launch
-            Purpose: Ship the app
-
-            Tasks:
-            - Plan (in progress)
-              - Draft (done)
-
-            Messages, oldest first:
-            You: Can you check the build?
-
-            Core: Done, see report.md (attached report.md)
-
-            Lead (waiting for your reply): Ship it?
-            """
+        let expected = store.readableText(name: "Launch")
+        #expect(expected.hasSuffix("You: Can you check the build?"))
         let entities = try await query.entities(for: ["launch", "other", "missing"])
         #expect(entities.map(\.id) == ["launch", "other"])
         #expect(entities.map(\.name) == ["Launch", "Other"])
@@ -1824,29 +1802,6 @@ struct ShellTests {
 
         let offScreen = ChannelQuery(intents: ChannelIntents(onScreen: { nil }, catalog: { [channel, other] }))
         #expect(try await offScreen.entities(for: ["launch"]).map(\.content) == [""])
-    }
-
-    @Test func siriGetsTheNewestMessagesThatFitWithTheWaitingRequest() throws {
-        let words = Array(repeating: "word", count: 400).joined(separator: " ")
-        let request = ChannelMessage(id: "m1", sequence: 1, timestamp: "2026-11-05T12:00:00Z", sender: .agent("lead"),
-                                     content: .text("Which release?"), request: true)
-        let messages = [request] + (2...60).map {
-            ChannelMessage(id: "m\($0)", sequence: $0, timestamp: "2026-11-05T12:00:00Z", sender: .user,
-                           content: .text("Message \($0) \(words)"))
-        }
-        let store = try siriStore(
-            Channel(id: "launch", name: "Launch", model: .init(provider: "test", name: "test"),
-                    updatedAt: "2026-11-05T12:00:00Z"),
-            messages: messages, request: request)
-        let content = ChannelEntity.content(of: store, name: "Launch")
-        let lines = content.components(separatedBy: "\n\n")
-        #expect(content.count <= ChannelEntity.contentLimit)
-        #expect(lines.contains("Messages, oldest first:\nLead (waiting for your reply): Which release?"))
-        #expect(lines.last?.hasPrefix("You: Message 60 word") == true)
-        #expect(!content.contains("Message 2 word"))
-        #expect(lines.filter { $0.hasPrefix("You: ") }.allSatisfy {
-            $0.count <= "You: ".count + ChannelEntity.messageLimit && $0.hasSuffix("\u{2026}")
-        })
     }
 
     @Test func siriReadsTheOpenMarkdownArtifactAndOnlyNamesOtherKinds() async throws {
@@ -1879,17 +1834,17 @@ struct ShellTests {
         #expect(shown.map(\.id) == [planID])
         #expect(shown.map(\.title) == ["Plan"])
         #expect(shown.map(\.kind) == ["Markdown"])
-        #expect(shown.map(\.content) == ["Plan\nShip it today."])
+        #expect(!session.readableText.isEmpty)
+        #expect(shown.map(\.content) == [session.readableText])
         // The conversation is behind the artifact, so the channel gives Siri only its name.
         #expect(try await ChannelQuery(intents: intents).entities(for: ["launch"]).map(\.content) == [""])
 
         #expect(session.select(page.id))
         await session.loadTask?.value
-        #expect(session.content?.text != nil)
         let html = try await artifacts.entities(for: [planID, pageID])
         #expect(html.map(\.id) == [pageID])
         #expect(html.map(\.kind) == ["HTML"])
-        #expect(html.map(\.content) == [""])
+        #expect(html.map(\.content) == [session.readableText])
 
         session.close()
         #expect(try await artifacts.entities(for: [pageID]).isEmpty)

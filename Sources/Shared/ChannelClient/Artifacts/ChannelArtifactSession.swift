@@ -39,6 +39,14 @@ public final class ChannelArtifactSession {
     public var isUnavailable: Bool { artifact != nil && pages?.selected == nil }
     public var resource: URL? { artifact?.url.flatMap { api?.resourceURL($0) } }
     public var kind: ArtifactContentKind { artifact.map(ArtifactContentKind.init) ?? .file }
+    /// The open Markdown artifact's text with its formatting flattened, for Siri. Other kinds give
+    /// nothing: HTML is the raw page, scripts and all, and images and files have no text.
+    public var readableText: String {
+        guard let artifact, !isUnavailable, kind == .markdown, let content,
+              content.artifact.id == artifact.id else { return "" }
+        return MarkdownBlock.plainText(content.text ?? "").clipped(to: ChannelStore.readableTextLimit)
+    }
+
     public var subtitle: String {
         guard let artifact else { return "" }
         let type = kind.label(for: artifact)
