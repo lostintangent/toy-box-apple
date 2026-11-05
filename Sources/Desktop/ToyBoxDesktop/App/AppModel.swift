@@ -46,6 +46,8 @@ final class AppModel {
     @ObservationIgnored private var launchChannelID: String?
     @ObservationIgnored private var windows: [UUID: String] = [:]
     @ObservationIgnored private var keyWindowID: UUID?
+    /// What each channel window shows Siri.
+    @ObservationIgnored private var screens: [UUID: ChannelIntents.Screen] = [:]
     @ObservationIgnored private var dockBadgeLabel: String?
     @ObservationIgnored private var catalogGeneration = UUID()
     @ObservationIgnored private var applicationObservers: [NSObjectProtocol] = []
@@ -188,9 +190,27 @@ final class AppModel {
     }
 
     func removeWindow(_ id: UUID) {
+        screens[id] = nil
         guard windows.removeValue(forKey: id) != nil || keyWindowID == id else { return }
         if keyWindowID == id { keyWindowID = nil }
         windowsDidChange()
+    }
+
+    /// Records what a window shows Siri, or that it shows nothing Siri may read.
+    func updateScreen(_ id: UUID, _ screen: ChannelIntents.Screen?) {
+        screens[id] = screen
+    }
+
+    /// The channel or artifact Siri may read: what the frontmost of the app's windows shows, while
+    /// you can see it. The app needn't be active, since Siri's own panel may take that from it, as
+    /// its overlay does on the phone. A sheet keeps its window's conversation in view, but any other
+    /// window in front, like Settings, shows Siri nothing.
+    var onScreen: ChannelIntents.OnScreen? {
+        let app = NSApplication.shared
+        guard !app.isHidden,
+              let front = app.orderedWindows.first(where: { $0.isVisible && $0.sheetParent == nil }) else { return nil }
+        guard !front.isMiniaturized, front.occlusionState.contains(.visible) else { return nil }
+        return ChannelIntents.Screen.onScreen(in: front, screens: screens.values, catalog: catalog)
     }
 
     private func windowsDidChange() {

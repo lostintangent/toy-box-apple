@@ -2,6 +2,10 @@
 
 ## Mac 0.1.23
 
+### Features
+
+- Siri can now answer questions about the channel or Markdown file in front of you, so you can ask what's left to do or what the team decided without reading back through the conversation.
+
 ### Bugs/Polish
 
 - New messages arrive more smoothly while the pointer rests over the conversation.

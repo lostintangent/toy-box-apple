@@ -1,6 +1,7 @@
 import AppIntents
 import ChannelKit
 import CoreSpotlight
+import CoreTransferable
 import Foundation
 
 /// A channel on the app's Toy Box server, as Siri, Shortcuts and Spotlight see it.
@@ -22,6 +23,11 @@ struct ChannelEntity: IndexedEntity, Identifiable {
     @Property(title: "Tasks Completed")
     var tasksCompleted: Bool
 
+    /// The name, purpose, tasks and newest loaded messages as plain text, only for the channel in
+    /// the frontmost window. It's empty everywhere else, and Spotlight never gets it.
+    @Property(title: "Content")
+    var content: String
+
     /// Matches the sidebar's indicator.
     let attention: Channel.Attention?
 
@@ -32,20 +38,25 @@ struct ChannelEntity: IndexedEntity, Identifiable {
     let thumbnail: Data?
 
     init(_ channel: Channel) {
+        self.init(channel, content: "")
+    }
+
+    init(_ channel: Channel, content: String) {
         self.init(id: channel.id, name: channel.name, attention: channel.attention,
                   unreadCount: max(0, channel.latestSequence - channel.seenThrough),
-                  purpose: channel.purposePreview)
+                  purpose: channel.purposePreview, content: content)
     }
 
     /// A channel as a card remembers it, for its buttons, or as Spotlight indexes it.
     init(id: String, name: String, attention: Channel.Attention? = nil, unreadCount: Int = 0,
-         purpose: String? = nil, thumbnail: Data? = nil) {
+         purpose: String? = nil, thumbnail: Data? = nil, content: String = "") {
         self.id = id
         self.attention = attention
         self.purpose = purpose
         self.thumbnail = thumbnail
         self.name = name
         self.unreadCount = unreadCount
+        self.content = content
         needsReply = attention == .waiting
         tasksCompleted = attention == .finished
     }
@@ -69,7 +80,7 @@ struct ChannelEntity: IndexedEntity, Identifiable {
     }
 
     /// Spotlight keeps what it indexed, so it gets the name, purpose and icon but never the
-    /// attention, which would go stale.
+    /// attention, which would go stale, or the content, which is only for what's on screen.
     var attributeSet: CSSearchableItemAttributeSet {
         let attributes = defaultAttributeSet
         attributes.title = name
@@ -79,13 +90,19 @@ struct ChannelEntity: IndexedEntity, Identifiable {
     }
 }
 
-/// Channels in the server's order, which is the sidebar's, found by name.
+extension ChannelEntity: Transferable {
+    static var transferRepresentation: some TransferRepresentation {
+        ProxyRepresentation { $0.content }
+    }
+}
+
+/// Channels in the server's order, which is the sidebar's, found by name. Only the channel in the
+/// frontmost window comes back with its text.
 struct ChannelQuery: EntityStringQuery, EnumerableEntityQuery {
     @AppDependency var context: ChannelIntents
 
     func entities(for identifiers: [String]) async throws -> [ChannelEntity] {
-        let channels = try await context.entities()
-        return identifiers.compactMap { id in channels.first { $0.id == id } }
+        try await context.entities(for: identifiers)
     }
 
     func entities(matching string: String) async throws -> [ChannelEntity] {

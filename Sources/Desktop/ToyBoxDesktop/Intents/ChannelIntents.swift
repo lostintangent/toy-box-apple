@@ -19,6 +19,40 @@ final class ChannelIntents {
         var open: @MainActor (String) -> Void
         var requests: @MainActor () async throws -> [WaitingRequestEntry] = { [] }
         var revealRequest: @MainActor (String, Int) -> Void = { _, _ in }
+        /// The channel or artifact in the frontmost window, which is all Siri may read.
+        var onScreen: @MainActor () -> OnScreen? = { nil }
+    }
+
+    /// The channel or artifact a window shows, with the stores behind it.
+    enum OnScreen {
+        case channel(ChannelStore)
+        case artifact(ChannelArtifactSession, in: ChannelStore)
+    }
+
+    /// What a channel window shows Siri, which the app keeps for each window.
+    @MainActor
+    struct Screen {
+        weak var window: NSWindow?
+        let entity: ScreenEntity
+        let artifacts: ChannelArtifactSession
+
+        /// What Siri may read in a window: what it shows when it's a channel window, from the
+        /// current server's store for that channel, while the viewer still shows the artifact.
+        static func onScreen(in window: NSWindow, screens: some Sequence<Screen>,
+                             catalog: ChannelCatalogStore?) -> OnScreen? {
+            guard let screen = screens.first(where: { $0.window === window }),
+                  let store = catalog?.existingChannel(id: screen.entity.channelID),
+                  store.phase != .deleted else { return nil }
+            switch screen.entity {
+            case .channel:
+                return .channel(store)
+            case .artifact(_, let artifactID):
+                let artifacts = screen.artifacts
+                guard artifacts.channelID == store.id, artifacts.artifact?.id == artifactID,
+                      !artifacts.isUnavailable else { return nil }
+                return .artifact(artifacts, in: store)
+            }
+        }
     }
 
     private let host: Host
@@ -78,7 +112,35 @@ final class ChannelIntents {
     }
 
     func entities() async throws -> [ChannelEntity] {
-        try await catalog().channels.map(ChannelEntity.init)
+        let channels = try await catalog().channels
+        let shown = shownChannel()
+        return channels.map { channel in
+            ChannelEntity(channel, content: shown?.id == channel.id ? shown?.content ?? "" : "")
+        }
+    }
+
+    /// Siri asks for the channel on screen, which answers from its live store without a round trip.
+    /// Any other channel keeps only what the sidebar shows, since a stale activity may still name
+    /// it after you move on.
+    func entities(for identifiers: [String]) async throws -> [ChannelEntity] {
+        if let shown = shownChannel(), identifiers == [shown.id] { return [shown] }
+        let channels = try await entities()
+        return identifiers.compactMap { id in channels.first { $0.id == id } }
+    }
+
+    /// The channel on screen with its text, once its store has loaded.
+    private func shownChannel() -> ChannelEntity? {
+        guard case .channel(let store) = host.onScreen(), let channel = store.state?.channel else { return nil }
+        return ChannelEntity(channel, content: store.readableText(name: channel.name))
+    }
+
+    /// The artifact on screen. One that has left the screen resolves to nothing, since only its
+    /// viewer knows it.
+    func artifacts(for identifiers: [String]) -> [ArtifactEntity] {
+        guard case .artifact(let session, let store) = host.onScreen(), let artifact = session.artifact,
+              !session.isUnavailable else { return [] }
+        let entity = ArtifactEntity(artifact, in: store.id, content: session.readableText)
+        return identifiers.contains(entity.id) ? [entity] : []
     }
 
     func channel(_ id: String) async throws -> Channel {
@@ -315,7 +377,8 @@ extension ChannelIntents {
                     return (model.serverURL, catalog.isLoaded, model.menuBarStatus.waiting)
                 }
             },
-            revealRequest: { model.activate(channelID: $0, sequence: $1) }
+            revealRequest: { model.activate(channelID: $0, sequence: $1) },
+            onScreen: { model.onScreen }
         ), summarizes: { IntelligenceSettings.isOn(IntelligenceSettings.summarizesNewMessages) })
     }
 

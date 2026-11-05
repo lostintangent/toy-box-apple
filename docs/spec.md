@@ -2776,7 +2776,7 @@ its links.
 
 ### Siri and Shortcuts
 
-The intents and phrases below are Mac only. On the iPhone, Siri can read the channel or artifact
+The intents and phrases below are Mac only. On both apps, Siri can read the channel or artifact
 on screen, as **On-screen content** describes. Handoff works on both apps.
 
 Ask what needs you, open a channel or send a message by voice, from
@@ -2801,7 +2801,8 @@ The app name is "Toy Box". The shortcut tile is navy, like the icon. Tile symbol
 The Channel entity is identified by channel ID and displays the name, with `number` as its image
 (the whole icon in Spotlight) and the sidebar's attention as its subtitle: "Needs your reply", "All
 tasks completed" or "Unread messages". It has Name, Unread Count (`latestSequence - seenThrough`,
-which counts channel events too), Needs Your Reply and Tasks Completed properties. Its query reads
+which counts channel events too), Needs Your Reply, Tasks Completed and Content properties, with
+Content as **On-screen content** describes. Its query reads
 the catalog fresh, suggests channels in sidebar order and matches names ignoring case, accents and
 punctuation, exact names first, then prefixes, then substrings. The app refreshes the shortcuts'
 parameters whenever the set of channel names changes, so Siri learns them.
@@ -2887,10 +2888,11 @@ The system only indexes a bundle outside `/tmp` that has launched once, and para
 need a team-signed build.
 
 **Handoff.** A window that shows a channel makes it the window's user activity (`dev.toybox.desktop.channel`)
-with `appEntityIdentifier` set to its Channel entity, through `userActivity(_:element:_:)` so the
-activity follows a switch. AppKit makes the main window's activity current, so Siri and Apple
-Intelligence take "this channel" to mean the one in front, and with no channel shown there's no
-activity. Phone and Mac declare the same activity type and carry only the exact channel identifier
+with `appEntityIdentifier` naming its Channel entity, or its Artifact entity while an artifact is
+open over the conversation, and none while an image is. It's set through
+`userActivity(_:element:_:)`, so the activity follows a switch or what the window shows. AppKit
+makes the main window's activity current, so Siri and Apple Intelligence take "this channel" to
+mean the one in front, and with no channel shown there's no activity. Phone and Mac declare the same activity type and carry only the exact channel identifier
 in `userInfo.channelID`. Handoff is eligible while a channel is shown, except isolated Mac
 snapshot, benchmark and explicit-server launches. Each receiving window resolves the identifier
 in its own current server's catalog, joining a catalog refresh when necessary. It never matches
@@ -2898,27 +2900,35 @@ by name, switches servers, or imports drafts or credentials. A native `Opening c
 state resolves to the channel or one native `Channel unavailable` state with
 `This channel isn't available.` and `Show Channels`. New navigation or a server change discards
 obsolete results. Local drafts survive Handoff and ordinary Back/sidebar navigation.
-The Mac's entity isn't `Transferable`, so there Siri learns what a channel says only from Catch Me
-Up's answer. On the iPhone, the channel screen sets the same activity, with `appEntityIdentifier`
-naming its Channel entity, or its Artifact entity while an artifact's page is open over the
-conversation, and none while an image is.
+On the iPhone, the channel screen sets the same activity, naming the same entities.
 
-**On-screen content.** The iPhone declares a Channel entity and an Artifact entity, each with a
-query, and no intents or phrases. The screen's user activity names what's on screen, and Siri
-resolves it through the queries, which give text only for what the foreground scene shows: its
-channel or open artifact, nothing under Settings or Screens, and nothing in the background. Siri's
-overlay leaves the scene inactive, so the text follows the foreground rather than the active scene.
-Any other channel resolves with only its name, and any other artifact resolves to nothing. Neither
-entity is indexed, and the activity isn't eligible for Spotlight.
+**On-screen content.** Both apps declare a Channel entity and an Artifact entity. The user
+activity names what's on screen, and Siri resolves it through the entities' queries, which give
+text only for what you can see:
 
-The Channel entity has Name and Content, and exports Content as plain text. Content is "Channel:
+- **iPhone.** The foreground scene's channel or open artifact, nothing under Settings or Screens,
+  and nothing in the background. Siri's overlay leaves the scene inactive, so the text follows the
+  foreground rather than the active scene. Its entities have queries but no intents or phrases.
+- **Mac.** The channel or artifact in the frontmost of the app's windows, while that window is
+  visible and not minimized and the app isn't hidden. The app needn't be active, since Siri's panel
+  may take that from it. Overview and management sheets leave the conversation in view, but an
+  open image shows nothing, and so does any other window in front, like Settings. Panels such as
+  Quick Send never count as in front. Siri reads the window's live store, so the channel on
+  screen resolves without asking the server.
+
+Any other channel resolves with only its name, and any other artifact resolves to nothing. Content
+never reaches Spotlight: the phone's entities aren't indexed, the Mac's Channel entity gives
+Spotlight only its name, purpose and icon, and the activity isn't eligible for Spotlight.
+
+Both apps build Content in ChannelClient, so Siri reads the same text on each, and export it as
+plain text. The Channel entity's Content is "Channel:
 [name]" and its purpose, its tasks as an indented list with each status, then "Messages, oldest
 first:" and the newest loaded messages as "You: …" or "[agent]: …". Markdown is flattened,
 attachments are named, system events are left out and the waiting request is always included as
 "[agent] (waiting for your reply): …". Content stops at 8,000 characters, about 2,000 tokens or
 half the on-device model's window, so Siri keeps room for its instructions, the question and the
-answer. Each message stops at 1,000 characters and the tasks at 2,000. The Artifact entity has
-Title, Kind and Content, which is a Markdown page's flattened text under the same limit. It's
+answer. Each message stops at 1,000 characters and the tasks at 2,000. On the phone the Channel
+entity has only Name besides. The Artifact entity has Title, Kind and Content, which is a Markdown page's flattened text under the same limit. It's
 empty for HTML, which is the raw page with its scripts, and for images and files.
 
 Debug builds can launch with `TOY_BOX_HANDOFF_CHANNEL=<channel ID>` to invoke the same continuation

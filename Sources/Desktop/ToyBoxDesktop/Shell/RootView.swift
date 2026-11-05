@@ -59,6 +59,15 @@ struct RootView: View {
         guard handoff.phase == .idle, let selectedId else { return nil }
         return model.catalog?.channel(id: selectedId)
     }
+    /// What the window shows Siri: its conversation, or the artifact open over it. An image open
+    /// over it, or an artifact that's gone, names nothing. Overview and management sheets leave
+    /// the conversation in view.
+    private var screenEntity: ScreenEntity? {
+        guard let selectedId, handoff.phase == .idle, imageViewer.session == nil else { return nil }
+        guard artifactOpener.isPresented else { return .channel(selectedId) }
+        guard !artifactOpener.isUnavailable, let artifact = artifactOpener.artifact else { return nil }
+        return .artifact(channelID: selectedId, artifactID: artifact.id)
+    }
     private var isColumnPresented: Bool { !isNarrow && interaction.isInspectorPresented && selectedStore != nil }
     private var overviewColumn: Binding<Bool> {
         let column = column
@@ -136,6 +145,7 @@ struct RootView: View {
         .background(WindowObserver(onAttach: { window in
             placement.window = window
             artifactOpener.window = window
+            reportScreen()
             model.snapshot?.attach(window: window, model: model)
             model.resizeBenchmark?.attach(window: window, model: model)
             model.performanceBenchmark?.attach(window: window, model: model) { selectedId = $0 }
@@ -184,6 +194,7 @@ struct RootView: View {
             handoff.cancel()
             model.removeWindow(windowID)
         }
+        .onChange(of: screenEntity, initial: true) { reportScreen() }
         .onChange(of: selectedId) { _, id in
             if id != nil { handoff.cancel() }
             imageViewer.close(animated: false)
@@ -300,12 +311,19 @@ struct RootView: View {
                 // A switch keeps the detail and its toolbar, which hand per-channel state to
                 // the new store. Only another server starts over.
                 .id(model.serverURL)
-                .channelActivity(selectedId, handoff: model.launchOptions.allowsUserIntegrations())
+                .channelActivity(selectedId, showing: screenEntity,
+                                 handoff: model.launchOptions.allowsUserIntegrations())
         } else {
             ContentUnavailableView("Choose a Channel", systemImage: "bubble.left.and.bubble.right",
                                    description: Text("Your teams and their shared work appear here."))
                 .modifier(DetailMinimumWidth())
         }
+    }
+
+    private func reportScreen() {
+        model.updateScreen(windowID, screenEntity.map {
+            ChannelIntents.Screen(window: artifactOpener.window, entity: $0, artifacts: artifactOpener.session)
+        })
     }
 
     private func setOverviewVisible(_ visible: Bool) {
