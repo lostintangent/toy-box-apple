@@ -8,9 +8,9 @@ public struct Screen: Codable, Hashable, Identifiable, Sendable {
     /// The app that owns a window. Displays have none.
     public var application: String?
 
+    /// Matches title and application as one string, as the web does, so a query can span both.
     public func matches(_ query: String) -> Bool {
-        query.isEmpty || title.localizedStandardContains(query)
-            || application?.localizedStandardContains(query) == true
+        query.isEmpty || [title, application].compactMap(\.self).joined(separator: " ").localizedStandardContains(query)
     }
 }
 

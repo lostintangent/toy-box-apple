@@ -69,6 +69,10 @@ public struct ScreenBrowser: View {
         let api: ChannelAPI
         let screen: Screen
         let open: (Screen) -> Void
+        @Environment(\.displayScale) private var displayScale
+        /// Rounded up to 64-point steps, so resizing the window decodes again only at each step.
+        @ViewState private var width = 0.0
+        @ViewState private var jpeg: Data?
         @ViewState private var thumbnail: CGImage?
 
         var body: some View {
@@ -92,12 +96,18 @@ public struct ScreenBrowser: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .task(id: screen.id) {
-                guard let data = try? await api.screenThumbnail(id: screen.id) else { return }
-                // The host's thumbnails are at most 960 pixels wide.
-                thumbnail = await Task.detached(priority: .userInitiated) {
-                    ChannelImageDecoder.thumbnail(data: data, maxPixelSize: 960)
+            .onGeometryChange(for: Double.self) { ($0.size.width / 64).rounded(.up) * 64 } action: { width = $0 }
+            // A fitted thumbnail is never wider than its card, so it decodes at the card's pixels.
+            .task(id: width * displayScale) {
+                let pixels = Int(width * displayScale)
+                guard pixels > 0 else { return }
+                if jpeg == nil { jpeg = try? await api.screenThumbnail(id: screen.id) }
+                guard let jpeg else { return }
+                let image = await Task.detached(priority: .userInitiated) {
+                    ChannelImageDecoder.thumbnail(data: jpeg, maxPixelSize: pixels)
                 }.value
+                // A decode for an earlier width can finish after this one.
+                if !Task.isCancelled { thumbnail = image }
             }
         }
     }

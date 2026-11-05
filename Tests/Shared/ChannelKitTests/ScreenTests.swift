@@ -62,13 +62,15 @@ struct ScreenTests {
         #expect(picture.image == nil)
     }
 
-    @Test func screensMatchTheirTitleOrApplication() {
+    @Test func screensMatchTheirTitleAndApplicationAsOneString() {
         let window = Screen(id: "window:1", title: "Pull Requests", application: "Safari")
         #expect(window.matches(""))
         #expect(window.matches("pull"))
         #expect(window.matches("safari"))
+        #expect(window.matches("requests saf"))
         #expect(!window.matches("Xcode"))
         #expect(!Screen(id: "display:1", title: "Built-in Display").matches("Safari"))
+        #expect(!Screen(id: "display:1", title: "Built-in Display").matches("Display "))
     }
 
     private func packet(_ json: String, jpeg: Data) -> Data {
