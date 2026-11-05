@@ -176,7 +176,9 @@ struct PerformanceBenchmarkTests {
         #expect(!delivery.matchesNativeTravel(-120))
     }
 
-    @Test(arguments: [Int32(-40), 0, 40])
+    // AppKit's first event creation registers HIToolbox types without a lock, so parallel cases
+    // creating events off the main actor can corrupt the heap.
+    @MainActor @Test(arguments: [Int32(-40), 0, 40])
     func commonWheelEventsArePreciseAndUnphased(_ delta: Int32) throws {
         let event = try #require(BenchmarkWheelEvent.make(
             delta: delta, location: CGPoint(x: 200, y: 300), windowNumber: 0))
@@ -190,7 +192,7 @@ struct PerformanceBenchmarkTests {
         #expect(event.locationInWindow == CGPoint(x: 200, y: 300))
     }
 
-    @Test(arguments: [
+    @MainActor @Test(arguments: [
         (CGScrollPhase.began, NSEvent.Phase.began),
         (.changed, .changed),
         (.ended, .ended),
