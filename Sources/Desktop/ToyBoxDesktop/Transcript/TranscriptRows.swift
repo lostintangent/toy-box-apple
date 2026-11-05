@@ -447,9 +447,11 @@ private struct TranscriptHoverActions: View {
 /// Where the pointer was when a transcript's content last moved. Like AppKit's tracking areas, a row
 /// that slides under a still pointer, as when the transcript follows a new message, waits for the
 /// pointer to move before it shows its actions, so arrivals don't re-render the row beneath it.
-/// Its text turns selectable once the content holds still, so a drag that starts right after a
-/// scroll, without moving the pointer, still selects. Each transcript keeps its own, so scrolling
-/// one window never holds back another's.
+/// After the reader's own scroll, its text turns selectable once the content holds still, so a drag
+/// that starts right after a trackpad scroll, without moving the pointer, still selects. Text the
+/// transcript carries there itself, as when it follows a new message, waits for the pointer to move,
+/// since mounting it would cost every arrival a second build. Each transcript keeps its own, so
+/// scrolling one window never holds back another's.
 @MainActor
 final class TranscriptPointer {
     /// How long content holds still before a message it carried under a still pointer counts as reached.
@@ -460,10 +462,14 @@ final class TranscriptPointer {
     private var contentMovedAt: TimeInterval = 0
     private var resting: (id: String, reached: () -> Void)?
     private var settlePending = false
+    private var readerMovedContent = true
 
-    func contentDidMove() {
+    /// `byReader` is false when the transcript moved its content itself, as when it follows a new message.
+    func contentDidMove(byReader: Bool = true) {
         locationWhenContentMoved = location()
         contentMovedAt = uptime()
+        readerMovedContent = byReader
+        if !byReader { resting = nil }
     }
 
     var hasMovedSinceContentMoved: Bool { location() != locationWhenContentMoved }
@@ -471,9 +477,10 @@ final class TranscriptPointer {
     /// The message the content carried under a still pointer, until the content holds still.
     var restingID: String? { resting?.id }
 
-    /// Notes the message the content carried under a still pointer, which hears `reached` once the
-    /// content holds still unless the pointer leaves it first.
+    /// Notes the message the reader's scroll carried under a still pointer, which hears `reached` once
+    /// the content holds still unless the pointer leaves it first.
     func rest(on id: String, reached: @escaping () -> Void) {
+        guard readerMovedContent else { return }
         resting = (id, reached)
         if !settlePending { scheduleSettle(after: settleDelay) }
     }

@@ -148,6 +148,26 @@ struct TranscriptTests {
         #expect(message.pointer.restingID == nil)
     }
 
+    /// Following a new message carries a row under a still pointer on every arrival, and mounting its
+    /// selectable text there cost each arrival a second build, so only the reader's scroll arms it.
+    @MainActor
+    @Test func onlyTheReadersScrollArmsSelectionUnderAStillPointer() {
+        let pointer = TranscriptPointer()
+        pointer.location = { CGPoint(x: 10, y: 10) }
+
+        pointer.contentDidMove(byReader: false)
+        pointer.rest(on: "arrival") {}
+        #expect(pointer.restingID == nil)
+
+        pointer.contentDidMove(byReader: true)
+        pointer.rest(on: "scrolled") {}
+        #expect(pointer.restingID == "scrolled")
+
+        pointer.contentDidMove(byReader: false)
+        #expect(pointer.restingID == nil)
+        #expect(!pointer.hasMovedSinceContentMoved)
+    }
+
     @MainActor
     @Test func mentionInkKeepsItsIdentityHueAtTextContrastOnEverySurface() throws {
         let colors = ["#7fa171", "#ffffff", "#000000", "#ffff00", "#00ffff", "#ff0000", "#123"]

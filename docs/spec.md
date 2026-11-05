@@ -1134,7 +1134,10 @@ your reply" or "Replied" wraps like the name, so at the largest text sizes the h
 the bubble past its column.
 Reply and Copy Message appear on hover or keyboard focus and in the context menu. As with AppKit's
 tracking areas, a message that slides under a still pointer, as when the transcript follows a new
-message or scrolls, shows them once the pointer moves. Reply prepends the agent's mention once,
+message or scrolls, shows them once the pointer moves. After the reader's own scroll settles, the
+message under the still pointer is selectable at once, so a drag can start without moving first.
+One the transcript carries there itself, as when following a new message, waits for the pointer
+to move. Reply prepends the agent's mention once,
 preserves the draft, focuses the composer and leaves the caret after the mention. Deleted agents
 cannot be replied to. Your own
 messages expose Copy Message as an accessibility action, as well as in their context menu. Keep

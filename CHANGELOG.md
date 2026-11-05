@@ -1,5 +1,11 @@
 # Changelog
 
+## Mac 0.1.23
+
+### Bugs/Polish
+
+- New messages arrive more smoothly while the pointer rests over the conversation.
+
 ## iPhone 0.1.16
 
 ### Bugs/Polish

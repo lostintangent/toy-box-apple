@@ -256,7 +256,7 @@ struct ConversationTranscript: View {
             geometry.viewport = new
             followReaderWhilePaging()
             publishVisibleSequence()
-            pointer.contentDidMove()
+            pointer.contentDidMove(byReader: isUserScrolling || !isAtBottom || !update.isAtBottom)
             if isAtBottom != update.isAtBottom { isAtBottom = update.isAtBottom }
             let jump = pendingJump
             if update.landsJump { pendingJump = nil }
