@@ -16,6 +16,10 @@ import QuartzCore
 /// shows a stall. It's the longest stretch with no chance to draw, from the run loop waking or
 /// exiting until it next exits or sleeps, which is where Core Animation commits.
 ///
+/// Hover under a resting pointer changes what a scenario costs, so the window moves away from the
+/// pointer before any scenario but `launch`. The benchmark moves only its own window, never the
+/// pointer.
+///
 /// - `launch`: when the channel's first frame appears after the process starts. No budget.
 /// - `switch`: selects another catalog channel and back, four times each way. The first visit to the
 ///   other channel is cold, and the rest are warm. A warm switch's budget is on its longest
@@ -24,8 +28,9 @@ import QuartzCore
 ///   that was still connected, then measures idle while the channel it left lingers and again once
 ///   it disconnects.
 /// - `messages`: streams messages one at a time, for what each costs, then 50 of them 20 ms apart,
-///   for the longest frame gap. It measures both at the first page of history and again with every
-///   older page loaded.
+///   for the longest frame gap. It measures both with the pointer away, then again with the
+///   transcript moved under the still pointer, where a person reading often rests it. It does all
+///   of that at the first page of history and again with every older page loaded.
 /// - `paging`: scrolls the transcript to its top until every older page has loaded, and times each
 ///   from the scroll that crosses the transcript's paging edge until the page settles.
 /// - `scroll`: precise, unphased wheel input up the transcript and back down, 15,000 pt each way at
@@ -108,6 +113,8 @@ final class PerformanceBenchmark {
             exit(EXIT_FAILURE)
         }
         task = Task {
+            // Moving the window would add to what launch times, before anything loads under the pointer.
+            if scenario != .launch { placeAwayFromPointer() }
             switch scenario {
             case .launch: if let launch { await self.launch(launch) }
             case .switching: await switching()
@@ -290,6 +297,7 @@ final class PerformanceBenchmark {
         let initialGap = await scrollToEnd()
         guard initialGap < 2 else { fail("the transcript stayed \(Int(initialGap)) pt from the latest message") }
         await measureMessages(in: store)
+        await measureMessagesUnderPointer(in: store)
         let loaded = store.messages.count
         while store.hasOlderMessages {
             await store.loadOlder()
@@ -303,11 +311,45 @@ final class PerformanceBenchmark {
         let gap = await scrollToEnd()
         guard gap < 2 else { fail("the transcript stayed \(Int(gap)) pt from the latest message") }
         await measureMessages(in: store)
+        await measureMessagesUnderPointer(in: store)
+    }
+
+    /// Measures messages again with the transcript moved under the still pointer, so rows slide
+    /// under it as they do while a person reads, then puts the window back.
+    private func measureMessagesUnderPointer(in store: ChannelStore) async {
+        guard let window, let scroll = transcriptScrollView() else { fail("there's no transcript scroll view") }
+        let away = window.frame.origin
+        let pointer = NSEvent.mouseLocation
+        let bounds = scroll.convert(scroll.bounds, to: nil)
+        let insets = scroll.contentInsets
+        let transcript = CGRect(x: bounds.minX + insets.left, y: bounds.minY + insets.bottom,
+                                width: bounds.width - insets.left - insets.right,
+                                height: bounds.height - insets.top - insets.bottom)
+        guard let screen = NSScreen.screens.first(where: { $0.frame.insetBy(dx: -1, dy: -1).contains(pointer) }),
+              let origin = BenchmarkWindowPlacement.origin(centering: transcript, under: pointer,
+                                                           size: window.frame.size, in: screen.visibleFrame) else {
+            fail("the pointer rests too near the edge of its screen for the transcript to sit under it. "
+                 + "Park it nearer the middle and run it again.")
+        }
+        window.setFrameOrigin(origin)
+        _ = await settled()
+        guard pointerIsOver(scroll) else {
+            fail("something covers the pointer, so the transcript can't sit under it. Uncover it and run it again.")
+        }
+        await measureMessages(in: store)
+        window.setFrameOrigin(away)
+        _ = await settled()
     }
 
     private func measureMessages(in store: ChannelStore) async {
         guard let meter else { return }
+        guard let scroll = transcriptScrollView() else { fail("there's no transcript scroll view") }
         let loaded = store.messages.count
+        let pointer = NSEvent.mouseLocation
+        let over = pointerIsOver(scroll)
+        let place = over ? " with the pointer over the transcript" : ""
+        info("Pointer at \(loaded) loaded", over ? "over the transcript, so hover runs as it does for a person"
+             : "outside the transcript, so hover doesn't run")
         var costs: [Double] = []
         // The first two warm up anything a new row builds once.
         for index in 0..<12 {
@@ -320,8 +362,9 @@ final class PerformanceBenchmark {
             if index >= 2 { costs.append(meter.busy * 1000) }
         }
         let sorted = costs.sorted()
-        check("Each message at \(loaded) loaded", "\(format(median(sorted))) median busy, \(format(sorted.last ?? 0)) "
-              + "worst, over \(sorted.count) messages", value: median(sorted), budget: Budget.message)
+        check("Each message at \(loaded) loaded\(place)", "\(format(median(sorted))) median busy, "
+              + "\(format(sorted.last ?? 0)) worst, over \(sorted.count) messages",
+              value: median(sorted), budget: Budget.message)
         try? await Task.sleep(for: .seconds(1))
         _ = await settled()
         let before = store.messages.count
@@ -329,10 +372,14 @@ final class PerformanceBenchmark {
         let last = await stream(Self.burstCount, every: Self.burstInterval)
         await arrival(of: last, in: store, timeout: 120)
         _ = await settled()
-        check("\(Self.burstCount) messages \(Self.burstInterval) ms apart at \(before) loaded",
+        check("\(Self.burstCount) messages \(Self.burstInterval) ms apart at \(before) loaded\(place)",
               "\(format(meter.longestGap * 1000)) longest frame gap, \(format(meter.longestSpan * 1000)) longest "
               + "saturated span, \(format(meter.busy * 1000)) busy",
               value: meter.longestGap * 1000, budget: Budget.burstFrameGap)
+        // A pointer that moves runs different hover work, so these results hold only if it stayed put.
+        guard pointerIsOver(scroll) == over, !over || NSEvent.mouseLocation == pointer else {
+            fail("the pointer moved during the messages benchmark. Leave it still and run it again.")
+        }
     }
 
     /// Scrolls the transcript's own scroll view to its top, so the view's paging runs as it does
@@ -582,6 +629,18 @@ final class PerformanceBenchmark {
                 return
             }
         }
+    }
+
+    /// Moves the window to the corner of its screen farthest from the parked pointer when it would
+    /// otherwise open under it. A screen too small to avoid it keeps the window where it opened, and
+    /// the results say where the pointer was.
+    private func placeAwayFromPointer() {
+        guard let window, let screen = window.screen ?? NSScreen.main else { return }
+        let pointer = NSEvent.mouseLocation
+        guard BenchmarkWindowPlacement.covers(window.frame, pointer),
+              let origin = BenchmarkWindowPlacement.origin(awayFrom: pointer, size: window.frame.size,
+                                                           in: screen.visibleFrame) else { return }
+        window.setFrameOrigin(origin)
     }
 
     /// Whether the person's pointer rests over the transcript, where hover tracks the rows that
@@ -960,6 +1019,41 @@ struct BenchmarkKeyWindowState: Equatable, Sendable, CustomStringConvertible {
         .init(active: NSApp.isActive, hidden: NSApp.isHidden, key: window.isKeyWindow,
               visible: window.isVisible, miniaturized: window.isMiniaturized,
               exposed: window.occlusionState.contains(.visible))
+    }
+}
+
+/// Where the benchmark window goes relative to the person's parked pointer, in screen coordinates.
+enum BenchmarkWindowPlacement {
+    /// How far past a frame the pointer must rest to be clear of it, beyond the window's resize edge.
+    static let margin: CGFloat = 16
+
+    static func covers(_ frame: CGRect, _ pointer: CGPoint) -> Bool {
+        frame.insetBy(dx: -margin, dy: -margin).contains(pointer)
+    }
+
+    /// The origin, at a corner of `visible`, that keeps a window of `size` farthest from the
+    /// pointer, or nil when every corner covers it.
+    static func origin(awayFrom pointer: CGPoint, size: CGSize, in visible: CGRect) -> CGPoint? {
+        guard size.width <= visible.width, size.height <= visible.height else { return nil }
+        let corners = [visible.minX, visible.maxX - size.width].flatMap { x in
+            [visible.minY, visible.maxY - size.height].map { CGPoint(x: x, y: $0) }
+        }
+        func distance(_ origin: CGPoint) -> CGFloat {
+            hypot(origin.x + size.width / 2 - pointer.x, origin.y + size.height / 2 - pointer.y)
+        }
+        return corners.filter { !covers(CGRect(origin: $0, size: size), pointer) }
+            .max { distance($0) < distance($1) }
+    }
+
+    /// The origin that centers `target`, in window coordinates, under the pointer while a window of
+    /// `size` stays inside `visible`, or nil when the pointer can't rest inside `target` there.
+    static func origin(centering target: CGRect, under pointer: CGPoint, size: CGSize,
+                       in visible: CGRect) -> CGPoint? {
+        guard size.width <= visible.width, size.height <= visible.height else { return nil }
+        let origin = CGPoint(x: min(max(pointer.x - target.midX, visible.minX), visible.maxX - size.width),
+                             y: min(max(pointer.y - target.midY, visible.minY), visible.maxY - size.height))
+        let placed = target.offsetBy(dx: origin.x, dy: origin.y)
+        return placed.insetBy(dx: margin, dy: margin).contains(pointer) ? origin : nil
     }
 }
 

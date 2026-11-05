@@ -471,6 +471,33 @@ struct ShellTests {
         #expect(try LaunchOptions.parse(["--channel", "studio-demo"]).benchmark == nil)
     }
 
+    /// The window goes to the corner farthest from the parked pointer, or stays put without room.
+    @Test func benchmarkWindowOpensAwayFromThePointer() {
+        let size = CGSize(width: 1280, height: 840)
+        let screen = CGRect(x: 0, y: 0, width: 2880, height: 1575)
+        let origin = BenchmarkWindowPlacement.origin(awayFrom: CGPoint(x: 1308, y: 1173), size: size, in: screen)
+        #expect(origin == CGPoint(x: 1600, y: 0))
+        // The resize edge counts as covering a pointer just outside the frame.
+        #expect(BenchmarkWindowPlacement.covers(CGRect(origin: .zero, size: size), CGPoint(x: 1290, y: 400)))
+        let small = CGRect(x: 0, y: 0, width: 1440, height: 875)
+        #expect(BenchmarkWindowPlacement.origin(awayFrom: CGPoint(x: 720, y: 440), size: size, in: small) == nil)
+    }
+
+    /// The transcript centers under the pointer, slides from a screen edge while still under it,
+    /// and gives up when the pointer is too near an edge or under the menu bar.
+    @Test func benchmarkTranscriptCentersUnderThePointer() {
+        let size = CGSize(width: 1280, height: 840)
+        let screen = CGRect(x: 0, y: 0, width: 2880, height: 1575)
+        let transcript = CGRect(x: 260, y: 120, width: 1000, height: 600)
+        func origin(_ x: CGFloat, _ y: CGFloat) -> CGPoint? {
+            BenchmarkWindowPlacement.origin(centering: transcript, under: CGPoint(x: x, y: y), size: size, in: screen)
+        }
+        #expect(origin(1440, 800) == CGPoint(x: 680, y: 380))
+        #expect(origin(300, 800) == CGPoint(x: 0, y: 380))
+        #expect(origin(100, 800) == nil)
+        #expect(origin(1440, 1600) == nil)
+    }
+
     /// A round drags out to the widest size and back, one size per display frame.
     @MainActor @Test func resizeBenchmarkRoundsReturnToTheirStart() {
         let width = ResizeBenchmark.sizes(axis: .width)
