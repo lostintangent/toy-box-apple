@@ -43,6 +43,8 @@ public struct ScreenBrowser: View {
             }
         }
         .searchable(text: $query, prompt: "Search windows")
+        // The search field floats above the keyboard and covers the last results until it goes away.
+        .scrollDismissesKeyboard(.immediately)
         .task { await load() }
         .refreshable { await load() }
     }

@@ -269,7 +269,9 @@ struct MobileAutomationTree {
                 }
             }
             if let view = object as? UIView {
-                for child in view.subviews { visit(child, containers: descendants) }
+                // Like VoiceOver, skip what a visible modal view covers, such as the content under a sheet.
+                let covering = view.subviews.lastIndex { $0.accessibilityViewIsModal && !$0.isHidden && $0.alpha > 0 }
+                for child in view.subviews[(covering ?? 0)...] { visit(child, containers: descendants) }
             }
         }
         for window in self.windows { visit(window, containers: []) }
