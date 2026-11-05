@@ -2,12 +2,15 @@ import ChannelClient
 import ChannelKit
 import SwiftUI
 
-/// Picks a display or window to watch, by how each looks right now. Each appearance fetches the
-/// list once, with one thumbnail per screen, and nothing polls.
+/// Picks a display or window to watch, by how each looks right now. Each appearance or refresh
+/// fetches the list once, with one thumbnail per screen, and nothing polls.
 public struct ScreenBrowser: View {
     private let api: ChannelAPI
     private let open: (Screen) -> Void
     @ViewState private var screens: Result<ScreenList, any Error>?
+    /// Counts finished loads, so a refresh fetches every thumbnail again even for the same screens.
+    @ViewState private var generation = 0
+    @ViewState private var isLoading = false
     @ViewState private var query = ""
 
     public init(api: ChannelAPI, open: @escaping (Screen) -> Void) {
@@ -47,10 +50,23 @@ public struct ScreenBrowser: View {
         .scrollDismissesKeyboard(.immediately)
         .task { await load() }
         .refreshable { await load() }
+        #if os(macOS)
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button("Refresh", systemImage: "arrow.clockwise") { Task { await load() } }
+                    .help("Refresh (Command-R)")
+                    .keyboardShortcut("r")
+                    .disabled(isLoading)
+            }
+        }
+        #endif
     }
 
     private func load() async {
+        isLoading = true
         do { screens = .success(try await api.screens()) } catch { screens = .failure(error) }
+        generation += 1
+        isLoading = false
     }
 
     private func section(_ title: String, _ screens: [Screen], minimumWidth: CGFloat) -> some View {
@@ -61,21 +77,29 @@ public struct ScreenBrowser: View {
             }
             LazyVGrid(columns: [GridItem(.adaptive(minimum: minimumWidth), spacing: 12, alignment: .top)],
                       spacing: 16) {
-                ForEach(screens) { Card(api: api, screen: $0, open: open) }
+                ForEach(screens) { Card(api: api, screen: $0, generation: generation, open: open) }
             }
         }
     }
 
-    /// A screen as it looked when the browser opened, over a placeholder until its thumbnail loads.
+    /// A screen as it looked at the browser's last load, over a placeholder until its first thumbnail
+    /// loads. A refresh keeps the old thumbnail until the new one is decoded.
     private struct Card: View {
         let api: ChannelAPI
         let screen: Screen
+        let generation: Int
         let open: (Screen) -> Void
         @Environment(\.displayScale) private var displayScale
         /// Rounded up to 64-point steps, so resizing the window decodes again only at each step.
         @ViewState private var width = 0.0
-        @ViewState private var jpeg: Data?
+        /// Kept with the load that fetched it, so a resize only decodes again.
+        @ViewState private var jpeg: (generation: Int, data: Data)?
         @ViewState private var thumbnail: CGImage?
+
+        private struct Request: Equatable {
+            let pixels: Int
+            let generation: Int
+        }
 
         var body: some View {
             Button { open(screen) } label: {
@@ -100,15 +124,18 @@ public struct ScreenBrowser: View {
             .buttonStyle(.plain)
             .onGeometryChange(for: Double.self) { ($0.size.width / 64).rounded(.up) * 64 } action: { width = $0 }
             // A fitted thumbnail is never wider than its card, so it decodes at the card's pixels.
-            .task(id: width * displayScale) {
+            .task(id: Request(pixels: Int(width * displayScale), generation: generation)) {
                 let pixels = Int(width * displayScale)
                 guard pixels > 0 else { return }
-                if jpeg == nil { jpeg = try? await api.screenThumbnail(id: screen.id) }
-                guard let jpeg else { return }
+                if jpeg?.generation != generation {
+                    guard let data = try? await api.screenThumbnail(id: screen.id), !Task.isCancelled else { return }
+                    jpeg = (generation, data)
+                }
+                guard let data = jpeg?.data else { return }
                 let image = await Task.detached(priority: .userInitiated) {
-                    ChannelImageDecoder.thumbnail(data: jpeg, maxPixelSize: pixels)
+                    ChannelImageDecoder.thumbnail(data: data, maxPixelSize: pixels)
                 }.value
-                // A decode for an earlier width can finish after this one.
+                // A decode for an earlier width or load can finish after this one.
                 if !Task.isCancelled { thumbnail = image }
             }
         }
