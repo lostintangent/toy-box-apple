@@ -3,7 +3,7 @@ import ChannelKit
 import SwiftUI
 import ToyBoxUI
 
-/// The host's screens over the sidebar. Choosing one watches it full screen, and closing the viewer
+/// The host's screens over the app. Choosing one watches it full screen, and closing the viewer
 /// returns to the list.
 struct ScreenSheet: View {
     let api: ChannelAPI

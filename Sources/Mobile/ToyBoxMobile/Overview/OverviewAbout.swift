@@ -7,8 +7,8 @@ import UIKit
 struct OverviewAboutSection: View {
     let store: ChannelStore
     @Bindable var session: ChannelOverview
+    @Environment(AppModel.self) private var app: AppModel?
     @Environment(\.openURL) private var openURL
-    @ViewState private var showsScreen = false
 
     /// Whether the headerless opening has a purpose, folder or preview to show. Without one it is
     /// omitted, and Team opens the list.
@@ -64,13 +64,13 @@ struct OverviewAboutSection: View {
     @ViewBuilder
     private func previewRow(_ preview: ChannelPreview) -> some View {
         if preview.kind == "screen", let screenID = preview.screenId {
+            // The app presents the viewer and holds Overview in place under it, so a rotation keeps it open.
             Button {
-                showsScreen = true
+                app?.cover = .screen(screenID)
             } label: {
                 previewTitle("Screen Preview", systemImage: "display")
                     .frame(minHeight: 44, alignment: .leading)
             }
-            .fullScreenCover(isPresented: $showsScreen) { ScreenViewer(api: store.api, screenID: screenID) }
         } else if preview.kind == "url", let address = preview.url.flatMap(store.api.resourceURL) {
             Button {
                 session.previewError = nil

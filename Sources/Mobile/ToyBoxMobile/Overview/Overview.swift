@@ -55,8 +55,16 @@ final class Overview {
         }, set: { _ in })
     }
 
+    /// A screen over Overview holds it where it is, so a rotation can't hand the screen to another
+    /// presenter. Overview takes the scene's latest placement when the screen closes.
+    @ObservationIgnored var isHeld = false {
+        didSet { if oldValue, !isHeld { move(to: scenePlacement) } }
+    }
+    @ObservationIgnored private var scenePlacement = OverviewPlacement.sheet
+
     func move(to placement: OverviewPlacement) {
-        guard self.placement != placement else { return }
+        scenePlacement = placement
+        guard !isHeld, self.placement != placement else { return }
         self.placement = placement
     }
 

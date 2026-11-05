@@ -41,7 +41,7 @@ struct ComposerSurface: View {
     private var canRestoreReaderFocus: Bool {
         scenePhase == .active && model.isActive && model.selectedStore === store
             && model.visibleChannelID == store.id && store.phase != .deleted
-            && !model.isSettingsPresented && management.flow == nil && !showPhotos && !showFiles
+            && !model.isCovered && management.flow == nil && !showPhotos && !showFiles
             && !(sizeClass == .compact && interaction.isInspectorPresented)
     }
     private var canPresentRequestPreview: Bool {

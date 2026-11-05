@@ -19,7 +19,7 @@ final class AppModel {
     private(set) var selectedStore: ChannelStore?
     private(set) var isResolvingNavigation = false
     var visibleChannelID: String?
-    var isSettingsPresented = false
+    var cover: Cover?
     var navigationNotice: String?
     var browserFailure: BrowserFailure?
     var selectedChannelID: String? {
@@ -106,6 +106,9 @@ final class AppModel {
     }
 
     var api: ChannelAPI? { catalog?.api }
+
+    /// The channel beneath a cover isn't visible, so it isn't read, notified as open or commanded.
+    var isCovered: Bool { cover != nil }
 
     var sidebarFooter: SidebarFooter { SidebarFooter(phase: catalog?.phase, isLoaded: catalog?.isLoaded == true) }
 
@@ -273,7 +276,7 @@ final class AppModel {
         guard generation == integrationsGeneration else { return }
         let context = withObservationTracking {
             let channels = catalog?.channels.map(sidebarPresentation.channel) ?? []
-            let active = isActive && !isSettingsPresented
+            let active = isActive && !isCovered
                 && selectedStore.map({ interaction(for: $0.id).isArtifactViewerPresented != true }) != false
                 ? visibleChannelID : nil
             return (channels: channels, active: active,
@@ -321,7 +324,7 @@ final class AppModel {
     func beginHandoffNavigation() -> UUID {
         cancelNavigation()
         restoredSelection = true
-        isSettingsPresented = false
+        cover = nil
         navigationNotice = nil
         browserFailure = nil
         selectedChannelID = nil
@@ -338,6 +341,7 @@ final class AppModel {
     func openChannel(id: String, sequence: Int? = nil, focusComposer: Bool = false,
                      expectedServer: String) async {
         cancelNavigation()
+        cover = nil
         guard expectedServer == serverURL, let catalog else {
             navigationNotice = "This channel isn't available."
             return
@@ -368,6 +372,7 @@ final class AppModel {
 
     func openExternalURL(_ url: URL) async {
         cancelNavigation()
+        cover = nil
         if url == NeedsYouSnapshot.mainURL {
             restoredSelection = true
             selectedChannelID = nil
@@ -468,6 +473,19 @@ final class AppModel {
         var selections = rememberedSelections
         selections[serverIdentity] = selectedChannelID
         defaults.set(selections, forKey: "lastChannelByServer")
+    }
+}
+
+extension AppModel {
+    /// What the app presents over every channel. Only one at a time, and opening a channel from a
+    /// notification, the widget or Handoff closes it.
+    enum Cover: Hashable, Identifiable {
+        case settings, screens
+        /// One screen watched full screen, like a channel's screen preview.
+        case screen(String)
+
+        var id: Self { self }
+        var screenID: String? { if case .screen(let id) = self { id } else { nil } }
     }
 }
 

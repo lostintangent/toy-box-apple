@@ -49,7 +49,7 @@ struct SettingsView: View {
         .navigationTitle("Settings")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button(role: .close) { model.isSettingsPresented = false }
+                Button(role: .close) { model.cover = nil }
                     .accessibilityLabel("Close Settings")
                     .disabled(isSwitching)
             }
