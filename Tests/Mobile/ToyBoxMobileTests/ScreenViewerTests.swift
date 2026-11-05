@@ -1,0 +1,98 @@
+import ChannelKit
+import CoreGraphics
+import Foundation
+import Testing
+import UIKit
+@testable import ToyBoxMobile
+
+@MainActor
+struct ScreenViewerTests {
+    @Test func aSettledPinchHoldsThroughSharperFramesAndAsksForThem() throws {
+        let (window, canvas, reports) = try fixture()
+        let pixels = canvas.traitCollection.displayScale
+        #expect(reports.last == CGSize(width: 400 * pixels, height: 800 * pixels))
+        #expect(canvas.pictureView.frame == CGRect(x: 0, y: 0, width: 400, height: 250))
+        #expect(canvas.contentInset.top == 275)
+
+        canvas.setZoomScale(2.5, animated: false)
+        canvas.contentOffset = CGPoint(x: 310, y: -50)
+        let pinchCount = reports.count
+        canvas.setNeedsLayout()
+        canvas.layoutIfNeeded()
+        #expect(reports.count == pinchCount, "A pinch under way never asks for frames")
+        canvas.scrollViewDidEndZooming(canvas, with: canvas.pictureView, atScale: 2.5)
+        #expect(reports.last == CGSize(width: 400 * pixels * 2.5, height: 800 * pixels * 2.5))
+
+        let settled = (canvas.zoomScale, canvas.contentOffset, canvas.pictureView.frame)
+        canvas.show(try picture(width: 2400, height: 1500, region: #"{"x":600,"y":300,"width":300,"height":150}"#))
+        canvas.setNeedsLayout()
+        canvas.layoutIfNeeded()
+        #expect(canvas.zoomScale == settled.0)
+        #expect(canvas.contentOffset == settled.1)
+        #expect(canvas.pictureView.frame == settled.2)
+        #expect(canvas.contentSize == CGSize(width: 1000, height: 625))
+
+        canvas.isActive = false
+        #expect(reports.last == .some(nil))
+        canvas.isActive = true
+        #expect(reports.last == CGSize(width: 400 * pixels * 2.5, height: 800 * pixels * 2.5))
+
+        canvas.show(Screen.Picture())
+        canvas.layoutIfNeeded()
+        #expect(canvas.zoomScale == settled.0, "A reconnect keeps the zoom for the next frame")
+        #expect(canvas.contentOffset == settled.1)
+        withExtendedLifetime(window) {}
+    }
+
+    @Test func rotatingFitsTheScreenAgain() throws {
+        let (window, canvas, reports) = try fixture()
+        canvas.setZoomScale(3, animated: false)
+        canvas.scrollViewDidEndZooming(canvas, with: canvas.pictureView, atScale: 3)
+
+        window.frame = CGRect(x: 0, y: 0, width: 800, height: 400)
+        canvas.frame = window.bounds
+        canvas.layoutIfNeeded()
+        let pixels = canvas.traitCollection.displayScale
+        #expect(canvas.zoomScale == 1)
+        #expect(canvas.pictureView.frame == CGRect(x: 0, y: 0, width: 640, height: 400))
+        #expect(canvas.contentInset.left == 80)
+        #expect(canvas.contentOffset == CGPoint(x: -80, y: 0))
+        #expect(reports.last == CGSize(width: 800 * pixels, height: 400 * pixels))
+    }
+
+    private func fixture() throws -> (UIWindow, ScreenCanvas, Reports) {
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 400, height: 800))
+        window.isHidden = false
+        let canvas = ScreenCanvas(frame: window.bounds)
+        let reports = Reports()
+        canvas.report = { reports.sizes.append($0) }
+        window.addSubview(canvas)
+        canvas.setNeedsLayout()
+        canvas.layoutIfNeeded()
+        canvas.show(try picture(width: 800, height: 500))
+        canvas.layoutIfNeeded()
+        return (window, canvas, reports)
+    }
+
+    /// A picture of a blank frame, with a changed region over it when given one as JSON.
+    private func picture(width: Int, height: Int, region: String? = nil) throws -> Screen.Picture {
+        let image = try #require(CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+                                           space: CGColorSpaceCreateDeviceRGB(),
+                                           bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)?.makeImage())
+        let frame = { (region: String?) throws -> Screen.Frame in
+            let region = region.map { #","region":"# + $0 } ?? ""
+            let json = #"{"sequence":1,"width":\#(width),"height":\#(height),"radius":20\#(region)}"#
+            return try JSONDecoder().decode(Screen.Frame.self, from: Data(json.utf8))
+        }
+        var picture = Screen.Picture()
+        try picture.apply(frame(nil), image: image)
+        if let region { try picture.apply(frame(region), image: image) }
+        return picture
+    }
+
+    @MainActor private final class Reports {
+        var sizes: [CGSize?] = []
+        var count: Int { sizes.count }
+        var last: CGSize?? { sizes.last }
+    }
+}

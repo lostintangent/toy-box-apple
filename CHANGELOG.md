@@ -16,6 +16,7 @@
 ### Bugs/Polish
 
 - Pulling to refresh the Screens list now also refreshes every thumbnail, so each one shows how its screen looks right now.
+- Zooming and panning a screen now stays smooth every time, and the screen holds your zoom and place as it updates.
 
 ## Mac 0.1.21
 

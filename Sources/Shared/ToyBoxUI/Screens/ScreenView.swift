@@ -3,17 +3,15 @@ import ChannelKit
 import SwiftUI
 
 /// A screen fitted to its space, live while the view is active. The host captures only the pixels
-/// it can show, zoom included.
+/// it can show.
 public struct ScreenView: View {
     private let connection: ScreenConnection
-    private let zoom: CGFloat
     private let isActive: Bool
     @Environment(\.displayScale) private var displayScale
     @ViewState private var space = CGSize.zero
 
-    public init(connection: ScreenConnection, zoom: CGFloat = 1, isActive: Bool = true) {
+    public init(connection: ScreenConnection, isActive: Bool = true) {
         self.connection = connection
-        self.zoom = zoom
         self.isActive = isActive
     }
 
@@ -31,9 +29,8 @@ public struct ScreenView: View {
 
     /// The pixels the view can show while it's active, or nil while it can't show any.
     private var pixels: CGSize? {
-        let scale = displayScale * zoom
-        guard isActive, space.width * scale >= 1, space.height * scale >= 1 else { return nil }
-        return CGSize(width: space.width * scale, height: space.height * scale)
+        guard isActive, space.width * displayScale >= 1, space.height * displayScale >= 1 else { return nil }
+        return CGSize(width: space.width * displayScale, height: space.height * displayScale)
     }
 
     /// The latest full frame with its changed region over it, clipped to a window's corners.
@@ -60,11 +57,16 @@ public struct ScreenView: View {
         }
     }
 
-    /// What the view shows until its screen is live, or once it no longer is.
-    private struct Status: View {
-        let connection: ScreenConnection
+    /// What the view shows until its screen is live, or once it no longer is. The iPhone viewer lays
+    /// it over its own zooming canvas.
+    public struct Status: View {
+        private let connection: ScreenConnection
 
-        var body: some View {
+        public init(connection: ScreenConnection) {
+            self.connection = connection
+        }
+
+        public var body: some View {
             let state = connection.state
             let title = state.title ?? "screen"
             Group {
