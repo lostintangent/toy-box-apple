@@ -194,10 +194,13 @@ servers for any script that writes. Never skip or retry actions.
 | `{"posture":"unfolded","timeout":60}` | Waits for the measured scene, not hinge movement |
 | `{"menuAction":"Edit Channel"}` | Visible-menu action dispatch, not a tap. See below |
 | `{"scroll":"down","on":"scrollable-list"}` | One public accessibility scroll on that exact unique identifier, `up`, `down`, `left` or `right`. Missing targets wait within the step deadline. Ambiguous or unhandled actions fail without retries or direct content-offset changes. Some SwiftUI Forms decline this, so it isn't finger scrolling |
-| `{"drag":"up","on":"conversation-transcript"}` | Moves the unique UIScrollView's content offset across 80% of its visible size over 24 frames, clamped to content, between delegate begin and end-dragging callbacks. Geometry and scroll phases drive older paging, but there's no pan gesture, deceleration or rubber-banding |
+| `{"drag":"up","on":"conversation-transcript"}` | Moves the unique UIScrollView's content offset across 80% of its visible size over 24 frames, clamped to content, between delegate begin and end-dragging callbacks. Geometry and scroll phases drive older paging, but there's no pan gesture, deceleration, rubber-banding or drag dismissal of the keyboard |
 
 - **Timeouts** are in seconds, 12 by default and 60 at most. Cancellation or a deadline stops drag
   offsets but balances started end callbacks, never reporting completion.
+- **Modal views.** Like VoiceOver, the tree skips the siblings beneath a visible
+  `accessibilityViewIsModal` view, so a sheet hides the screen it covers and its own controls
+  stay unambiguous.
 - **Captures.** The host acknowledges a capture only with a settled app accessibility and layout
   snapshot and both `<name>.png` and `<name>.json` under `SCRATCH_PATH/mobile-drive/`, holding its
   step, state, labels and viewport. A later `status.json` can't erase it. The host bounds each

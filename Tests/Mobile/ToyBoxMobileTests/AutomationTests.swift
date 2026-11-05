@@ -513,6 +513,42 @@ struct AutomationTests {
         #expect(replies == 1)
     }
 
+    @Test func aVisibleModalViewHidesOnlyTheSiblingsBeneathIt() {
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 440, height: 956))
+        window.isHidden = false
+        defer { window.isHidden = true }
+        func element(_ label: String, in parent: UIView) -> UIView {
+            let view = UIView()
+            view.isAccessibilityElement = true
+            view.accessibilityLabel = label
+            parent.addSubview(view)
+            return view
+        }
+        let content = UIView()
+        let channelSearch = element("Search", in: content)
+        let sheet = UIView()
+        sheet.accessibilityViewIsModal = true
+        let dimming = UIView()
+        dimming.accessibilityViewIsModal = true
+        let card = UIView()
+        let screenSearch = element("Search", in: card)
+        _ = element("Done", in: card)
+        sheet.addSubview(dimming)
+        sheet.addSubview(card)
+        window.addSubview(content)
+        window.addSubview(sheet)
+
+        let presented = MobileAutomationTree(windows: [window])
+        #expect(presented.matching("Search").map(\.object) == [screenSearch])
+        #expect(presented.contains("Done"))
+
+        sheet.alpha = 0
+        #expect(MobileAutomationTree(windows: [window]).matching("Search").map(\.object) == [channelSearch])
+        sheet.alpha = 1
+        sheet.isHidden = true
+        #expect(MobileAutomationTree(windows: [window]).matching("Search").map(\.object) == [channelSearch])
+    }
+
     @Test func nativeControlsDispatchOneSupportedActionWhenAccessibilityActivationIsUnavailable() {
         let button = UIButton()
         var presses = 0
