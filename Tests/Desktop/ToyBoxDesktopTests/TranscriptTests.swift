@@ -39,6 +39,30 @@ struct TranscriptTests {
         #expect(abs(collapsed("Short", expanded: false) - height(Text("Short"))) < 1)
     }
 
+    /// Every addressed agent message carries Show More, so an AppKit button there costs every arrival.
+    @MainActor
+    @Test func showMoreIsNoAppKitControl() throws {
+        let lead = ChannelAgent.lead(id: "lead")
+        let moss = ChannelAgent(id: "moss", name: "Moss")
+        let long = "@moss " + Array(repeating: "A line that wraps across the bubble.", count: 30).joined(separator: "\n")
+        let message = ChannelMessage(id: "m1", sequence: 1, timestamp: "2026-10-25T12:00:00Z",
+                                     sender: .agent("lead"), content: .text(long))
+        let rows = TranscriptRowBuilder().rows([message], lead: lead, members: [moss],
+                                               calendar: Calendar(identifier: .gregorian))
+        guard case .agent(_, let entries) = rows[0].content else { Issue.record("no agent row"); return }
+        #expect(entries[0].collapsible)
+        let api = try ChannelAPI(serverURL: "https://show-more.invalid")
+        for expanded in [false, true] {
+            let host = NSHostingView(rootView: TranscriptAgentMessage(
+                entry: entries[0], agent: lead, agents: [lead, moss], api: api, interaction: ChannelInteraction(),
+                statusReactions: [], expanded: expanded, onSetExpanded: { _, _ in }).frame(width: 500))
+            host.frame = NSRect(x: 0, y: 0, width: 500, height: 800)
+            host.layoutSubtreeIfNeeded()
+            func all(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(all) }
+            #expect(!all(host).contains { $0 is NSButton }, "expanded: \(expanded)")
+        }
+    }
+
     @MainActor
     @Test func onlyACodeBlockTooWideToFitBuildsAScrollViewAndCopyCodeIsNoAppKitControl() {
         func platformViews(_ markdown: String) -> [NSView] {

@@ -294,7 +294,7 @@ struct TranscriptAgentMessage: View, @MainActor Equatable {
                             markdown
                         } toggle: {
                             Button(expanded ? "Show Less" : "Show More") { onSetExpanded(entry.id, !expanded) }
-                                .buttonStyle(.borderless)
+                                .buttonStyle(.plain)
                                 .foregroundStyle(.secondary)
                                 .font(.system(size: 12 * textScale))
                         }
