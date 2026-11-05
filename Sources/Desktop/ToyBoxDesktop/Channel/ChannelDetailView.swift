@@ -6,11 +6,15 @@ import ToyBoxUI
 struct ChannelDetailView: View {
     let store: ChannelStore
     let placement: InspectorPlacement
+    let titleFit: ChannelTitleFit
     /// Narrow windows show Overview as a sheet. The person's choice to show the column is kept,
     /// so a window that narrows only sets the column aside.
     let isNarrow: Bool
     let windowHeight: CGFloat
     @Binding var isOverviewSheetPresented: Bool
+    /// A window draws its channel's first content before Overview and the composer build, which
+    /// keeps their first build off the launch's critical path. Once mounted, they stay.
+    @Binding var mountsSurroundings: Bool
     /// Asks the composer to take focus once it appears.
     var focusesComposer = false
     var onBack: () -> Void
@@ -26,19 +30,9 @@ struct ChannelDetailView: View {
     @SceneStorage("inspectorVisible") private var inspectorVisible = true
     @SceneStorage("messageView") private var messageView = "all"
 
-    private var isColumnPresented: Bool { !isNarrow && interaction.isInspectorPresented }
-    /// AppKit reports column changes through a binding that can predate the latest layout, so the
-    /// binding reads the latest presentation rather than a captured one. Only a divider drag
-    /// changes the person's choice. The placement turns AppKit's own collapses into a new
-    /// revision, which presents the column again.
-    @ViewState private var column = ColumnPresentation()
-    /// Switching channels keeps this view, its toolbar and its inspector column, and only moves
-    /// the connection and the per-channel content to the new store.
+    /// Switching channels keeps this view and its toolbar, and only moves the connection and the
+    /// per-channel content to the new store.
     @ViewState private var connection = ChannelConnection()
-    @ViewState private var titleFit = ChannelTitleFit()
-    /// A window draws its channel's first content before Overview and the composer build, which
-    /// keeps their first build off the launch's critical path. Once mounted, they stay.
-    @ViewState private var mountsSurroundings = false
     private var showsSurroundings: Bool { mountsSurroundings || model.launchOptions.isSnapshot }
     /// The transcript, an error or the deleted state is on screen.
     private var hasFirstContent: Bool {
@@ -47,19 +41,6 @@ struct ChannelDetailView: View {
         case .connecting, .connected: store.isLoaded
         }
     }
-    private var wideInspector: Binding<Bool> {
-        let column = column
-        let placement = placement
-        let interaction = interaction
-        column.isPresented = isColumnPresented
-        column.revision = placement.revision
-        return Binding(get: { column.isPresented },
-                       set: { value in
-                           if let choice = placement.columnChanged(to: value, presented: column.isPresented) {
-                               interaction.isInspectorPresented = choice
-                           }
-                       })
-    }
     private var narrowInspector: Binding<Bool> {
         Binding(get: { isNarrow && isOverviewSheetPresented && store.isLoaded && store.phase != .deleted },
                 set: { isOverviewSheetPresented = $0 })
@@ -67,12 +48,16 @@ struct ChannelDetailView: View {
 
     /// The image the viewer shows over this channel, which takes over the toolbar until it closes.
     private var viewing: ImageViewer.Presentation? { viewer.presentation }
-    private var isViewing: Bool { viewing != nil || artifacts.isPresented }
 
     var body: some View {
         conversation
+            // An open artifact hides the conversation without removing it, so its scroll position,
+            // draft and paging survive. It's out of sight, VoiceOver, the pointer and the key view
+            // loop, and Find stays with the viewer.
+            .opacity(artifacts.isPresented ? 0 : 1)
             .accessibilityHidden(artifacts.isPresented)
             .allowsHitTesting(!artifacts.isPresented)
+            .disabled(artifacts.isPresented)
             .onGeometryChange(for: ChannelTitleFit.Span.self) { geometry in
                 let frame = geometry.frame(in: .global)
                 return ChannelTitleFit.Span(minX: frame.minX, maxX: frame.maxX)
@@ -80,36 +65,21 @@ struct ChannelDetailView: View {
             .settledLayout()
             .modifier(DetailMinimumWidth())
             .background(Color(nsColor: .textBackgroundColor))
-            .inspector(isPresented: wideInspector) {
-                Group {
-                    if showsSurroundings { OverviewInspector(store: store) } else { Color.clear }
-                }
-                .accessibilityHidden(artifacts.isPresented)
-                .allowsHitTesting(!artifacts.isPresented)
-                .settledLayout()
-                // A sidebar toggle briefly proposes the ideal again. Keep the last measured
-                // width, without observing every frame of a divider drag.
-                .inspectorColumnWidth(min: 280, ideal: min(400, max(280, placement.inspectorWidth)), max: 400)
-            }
-            // The detail column and its inspector reach the window's trailing edge.
-            .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).maxX } action: {
-                titleFit.update(windowWidth: $0)
-            }
             // The image gallery manages its own toolbar clearance. Artifact pages inherit the
-            // toolbar safe area so their scroll containers receive its inset.
-            // The open viewer is modal, which takes the conversation and Overview out of the
-            // accessibility tree.
+            // toolbar safe area so their scroll containers receive its inset. Overview stays
+            // beside either viewer.
             .overlay { ImageViewerCanvas() }
             .overlay { ArtifactViewerCanvas(store: store) }
             .sheet(isPresented: narrowInspector) {
                 overviewSheet.frame(minWidth: 360, idealWidth: 360, maxWidth: 360, minHeight: 420,
                                     idealHeight: min(640, windowHeight - 100), maxHeight: max(420, windowHeight - 100))
             }
-            // The viewer shows the sender and position as the system title and subtitle, as
-            // Photos does. Otherwise the title menu stands in for the title.
+            // The image viewer shows the sender and position as the system title and subtitle, as
+            // Photos does. An artifact's title sits in its Back button's glass, and otherwise the
+            // title menu stands in for the title. The window keeps whichever title is showing.
             .navigationTitle(artifacts.artifact?.title ?? viewing?.sender ?? title)
             .navigationSubtitle(artifacts.isPresented ? artifacts.subtitle : viewing?.subtitle ?? "")
-            .toolbar(removing: isViewing ? nil : .title)
+            .toolbar(removing: viewing != nil && !artifacts.isPresented ? nil : .title)
             .toolbar { toolbar }
             .onChange(of: title, initial: true) { titleFit.update(title: title) }
             .task {
@@ -135,7 +105,6 @@ struct ChannelDetailView: View {
             .onChange(of: interaction.isInspectorPresented) { _, value in
                 if !model.launchOptions.isSnapshot { inspectorVisible = value }
             }
-            .onChange(of: isColumnPresented) { placement.presentationChanged() }
             .onChange(of: interaction.messageView) { _, value in
                 if !model.launchOptions.isSnapshot { messageView = value.rawValue }
             }
@@ -248,9 +217,16 @@ struct ChannelDetailView: View {
         .pickerStyle(.inline)
         .labelsHidden()
         Divider()
-        Button("New Channel…") { management.present(.newChannel) }
-        Button("Edit Channel…") { management.present(.editChannel(channelId: store.id)) }
+        Button("New Channel…", systemImage: "plus") { management.present(.newChannel) }
+        Divider()
+        Button("Edit Channel…", systemImage: "pencil") { management.present(.editChannel(channelId: store.id)) }
             .disabled(!store.phase.isConnected)
+        Button("Open in Toy Box", systemImage: "arrow.up.forward.app") { model.openInToyBox(channelID: store.id) }
+        Divider()
+        Button("Delete Channel…", systemImage: "trash", role: .destructive) {
+            management.present(.deleteChannel(channelId: store.id))
+        }
+        .disabled(!store.phase.isConnected)
     }
 
     static func badge(_ attention: Channel.Attention?) -> Text? {
@@ -302,17 +278,14 @@ struct ChannelDetailView: View {
 
     @ToolbarContentBuilder private var conversationToolbar: some ToolbarContent {
         ToolbarItem(placement: .navigation) {
-            ChannelTitleMenu(title: title, showsChevron: model.snapshot?.requestedState == "title-hover",
-                             fit: titleFit) {
+            ChannelTitleMenu(title: title, fit: titleFit) {
                 titleMenu
             }
         }
-        .sharedBackgroundVisibility(.hidden)
         .visibilityPriority(.high)
         ToolbarSpacer(.flexible)
         // The title truncates first, so every control fits down to the narrowest window. Should the
-        // toolbar still run out of room, Channel Actions overflows before Message View, and the
-        // title and Overview stay. Adjacent items share one glass capsule.
+        // toolbar still run out of room, Message View overflows, and the title and Overview stay.
         ToolbarItem(placement: .primaryAction) {
             Menu {
                 Picker("Message View", selection: Bindable(interaction).messageView) {
@@ -332,33 +305,7 @@ struct ChannelDetailView: View {
             .accessibilityValue(interaction.messageView == .all ? "All Messages" : "Your Messages")
             .disabled(!store.isLoaded)
         }
-        ToolbarItem(placement: .primaryAction) {
-            Menu {
-                Button("Open in Toy Box", systemImage: "arrow.up.forward.app") { model.openInToyBox(channelID: store.id) }
-                Button("Edit Channel…", systemImage: "pencil") { management.present(.editChannel(channelId: store.id)) }
-                    .disabled(!store.phase.isConnected)
-                Divider()
-                Button("Delete Channel…", systemImage: "trash", role: .destructive) {
-                    management.present(.deleteChannel(channelId: store.id))
-                }
-                .disabled(!store.phase.isConnected)
-            } label: {
-                Label("Channel Actions", systemImage: "ellipsis")
-            }
-            .menuIndicator(.hidden)
-            .accessibilityLabel("Channel Actions")
-            .help("Channel Actions")
-        }
         .visibilityPriority(.low)
-        ToolbarSpacer(.fixed, placement: .primaryAction)
-        ToolbarItem(placement: .primaryAction) {
-            Button("Overview", systemImage: "sidebar.trailing") {
-                if isNarrow { isOverviewSheetPresented.toggle() } else { interaction.isInspectorPresented.toggle() }
-            }
-                .help("Show or Hide Overview (Option-Command-0)")
-                .disabled(store.phase == .deleted)
-        }
-        .visibilityPriority(.high)
     }
 
     private var catalogChannel: Channel? { model.catalog?.channels.first { $0.id == store.id } }
@@ -413,11 +360,6 @@ struct ConversationRail: ViewModifier {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, Self.inset)
     }
-}
-
-private final class ColumnPresentation {
-    var isPresented = false
-    var revision = 0
 }
 
 /// The one channel a detail keeps connected, which moves with the selection.

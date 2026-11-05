@@ -87,13 +87,6 @@ struct ChannelSidebar: View {
         .navigationTitle("Channels")
         .searchable(text: $query, placement: .sidebar, prompt: "Search Channels")
         .searchFocused($searchFocused)
-        .toolbar {
-            ToolbarItem {
-                Button("New Channel", systemImage: "plus") { management.present(.newChannel) }
-                    .help("New Channel (Command-N)")
-                    .disabled(model.api == nil)
-            }
-        }
         .onChange(of: selection) { _, id in listSelection = id }
         .onChange(of: searchFocusRequest) { _, _ in searchFocused = true }
         .task(id: model.snapshot?.requestedState) { await prepareRetrySnapshot() }

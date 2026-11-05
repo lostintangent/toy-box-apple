@@ -67,9 +67,6 @@ private struct OverviewInspectorContent: View {
                         .font(.system(size: 13 * textScale))
                         .id(Self.topID)
                     }
-                    // The automatic top edge draws nothing at the top on macOS 27, so rows would run
-                    // under the glass controls. A hard edge continues the conversation's divider.
-                    .scrollEdgeEffectStyle(.hard, for: .top)
                     .onChange(of: store.id) { proxy.scrollTo(Self.topID, anchor: .top) }
                     .task(id: snapshot?.requestedState) {
                         guard let snapshot, let name = snapshot.requestedState,

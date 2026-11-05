@@ -233,8 +233,7 @@ struct ConversationTranscript: View {
                 .modifier(ConversationRail())
                 .opacity(hidesOpening ? 0 : 1)
         }
-        .scrollEdgeEffectStyle(.soft, for: .bottom)
-        .scrollEdgeEffectStyle(.hard, for: .top)
+        .scrollEdgeEffectStyle(.soft, for: .vertical)
         .coordinateSpace(name: "transcript-viewport")
         .defaultScrollAnchor(opening.seededRowID == nil ? .bottom : .top, for: .initialOffset)
         .scrollPosition(id: Binding {
