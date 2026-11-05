@@ -490,16 +490,16 @@ struct ArtifactViewerToolbar: ToolbarContent {
     let interaction: ChannelInteraction
 
     var body: some ToolbarContent {
-        ToolbarItem(placement: .navigation) {
-            Button("Back to Conversation", systemImage: "chevron.backward") { opener.close() }
-                .help("Back to Conversation")
-                .keyboardShortcut(.cancelAction)
-        }
-        ToolbarItem(placement: .navigation) {
-            ArtifactViewerTitle(artifact: opener.artifact, subtitle: opener.subtitle, fit: opener.titleFit)
+        ViewerLeadingToolbar(title: opener.artifact?.title ?? "", subtitle: opener.subtitle,
+                             help: opener.artifact.map { "\($0.title)\n\($0.file.path)" } ?? "",
+                             fit: opener.titleFit, back: { opener.close() }) {
+            titleMenu
         }
         ToolbarSpacer(.flexible)
         ToolbarItemGroup(placement: .primaryAction) {
+            Button("Reload", systemImage: "arrow.clockwise") { opener.reload() }
+                .help("Reload")
+                .disabled(opener.isUnavailable)
             if let resource = opener.resource {
                 ShareLink(item: resource) { Label("Share", systemImage: "square.and.arrow.up") }
                     .help("Share")
@@ -507,123 +507,25 @@ struct ArtifactViewerToolbar: ToolbarContent {
                 Button("Share", systemImage: "square.and.arrow.up") {}
                     .disabled(true)
             }
-            Menu {
-                Button("Open in Toy Box", systemImage: "arrow.up.forward.app") { opener.openInToyBox(app: app) }
-                Button("Reload", systemImage: "arrow.clockwise") { opener.reload() }
-                    .disabled(opener.isUnavailable)
-                Button("Copy Link", systemImage: "link") { opener.copyLink() }.disabled(opener.resource == nil)
-                Divider()
-                Button("Quick Look", systemImage: "eye") { opener.previewFile = opener.content?.file }
-                    .disabled(opener.content == nil)
-                Button("Open in Default Application", systemImage: "arrow.up.forward.app") { opener.openFile() }
-                    .disabled(opener.content == nil)
-                if let artifact = opener.artifact, let share = store.artifactShares[artifact.file.id] {
-                    Divider()
-                    Button("Show in Transcript", systemImage: "bubble.left") {
-                        opener.close()
-                        interaction.reveal(sequence: share.sequence)
-                    }
-                }
-            } label: {
-                Label("More", systemImage: "ellipsis")
-            }
-            .menuIndicator(.hidden)
-            .help("More")
         }
     }
-}
 
-/// The open artifact's title and position, sharing the Back button's glass the way the
-/// conversation's title does, in place of the window's system title.
-struct ArtifactViewerTitle: View {
-    static let titleSize: CGFloat = 13
-    static let subtitleSize: CGFloat = 11
-    static let inset: CGFloat = 10
-
-    let artifact: ChannelArtifact?
-    let subtitle: String
-    let fit: Fit
-    @Environment(\.appearsActive) private var appearsActive
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text(artifact?.title ?? "")
-                .font(.system(size: Self.titleSize, weight: .semibold))
-                .foregroundStyle(appearsActive ? .primary : .tertiary)
-            Text(subtitle)
-                .font(.system(size: Self.subtitleSize))
-                .foregroundStyle(appearsActive ? .secondary : .tertiary)
-        }
-        .lineLimit(1)
-        .truncationMode(.tail)
-        .padding(.horizontal, Self.inset)
-        .frame(maxWidth: fit.maxWidth, alignment: .leading)
-        .help(artifact.map { "\($0.title)\n\($0.file.path)" } ?? "")
-        .accessibilityElement(children: .combine)
-    }
-}
-
-extension ArtifactViewerTitle {
-    /// Keeps the title between Back and the trailing actions, truncating it before NSToolbar
-    /// sends Share and More into the overflow menu. NSToolbar gives a SwiftUI item its ideal width
-    /// and never compresses it. The toolbar's own measurements come from the conversation's
-    /// `ChannelTitleFit`, so the two titles yield the same way.
-    @MainActor @Observable
-    final class Fit {
-        /// From where Back's item starts to where the title's item starts, which is Back's share of
-        /// their capsule.
-        static let back: CGFloat = 36
-        /// How far Share and More's 73-point capsule starts before the detail column's trailing
-        /// edge, where it sits while Overview is open. Measured with the column open.
-        static let detailControls: CGFloat = 80
-        /// How far Share and More's capsule starts before the window's trailing edge while
-        /// Overview is closed, with Overview's toggle after it. Measured in the narrowest window.
-        static let trailingControls: CGFloat = 129
-
-        /// The widest the title can be, or nil while its title and position fit.
-        private(set) var maxWidth: CGFloat?
-        @ObservationIgnored weak var window: NSWindow?
-        @ObservationIgnored private var idealWidth: CGFloat = 0
-        @ObservationIgnored private var detail: ChannelTitleFit.Span?
-
-        func update(title: String, subtitle: String) {
-            idealWidth = Self.idealWidth(title: title, subtitle: subtitle)
-            refresh()
-        }
-
-        func update(detail: ChannelTitleFit.Span) {
-            guard detail != self.detail else { return }
-            self.detail = detail
-            refresh()
-        }
-
-        /// The title's width with nothing in its way: the longer of its two lines between its insets.
-        static func idealWidth(title: String, subtitle: String) -> CGFloat {
-            func width(_ text: String, _ font: NSFont) -> CGFloat {
-                ceil((text as NSString).size(withAttributes: [.font: font]).width)
+    @ViewBuilder private var titleMenu: some View {
+        Button("Open in Toy Box", systemImage: "arrow.up.forward.app") { opener.openInToyBox(app: app) }
+        Button("Reload", systemImage: "arrow.clockwise") { opener.reload() }
+            .disabled(opener.isUnavailable)
+        Button("Copy Link", systemImage: "link") { opener.copyLink() }.disabled(opener.resource == nil)
+        Divider()
+        Button("Quick Look", systemImage: "eye") { opener.previewFile = opener.content?.file }
+            .disabled(opener.content == nil)
+        Button("Open in Default Application", systemImage: "arrow.up.forward.app") { opener.openFile() }
+            .disabled(opener.content == nil)
+        if let artifact = opener.artifact, let share = store.artifactShares[artifact.file.id] {
+            Divider()
+            Button("Show in Transcript", systemImage: "bubble.left") {
+                opener.close()
+                interaction.reveal(sequence: share.sequence)
             }
-            return ArtifactViewerTitle.inset * 2
-                + max(width(title, .systemFont(ofSize: ArtifactViewerTitle.titleSize, weight: .semibold)),
-                      width(subtitle, .systemFont(ofSize: ArtifactViewerTitle.subtitleSize)))
-        }
-
-        /// The width the title can take in a detail column and window this wide.
-        static func room(detail: ChannelTitleFit.Span, windowWidth: CGFloat) -> CGFloat {
-            let back = max(detail.minX + ChannelTitleFit.itemInset, ChannelTitleFit.collapsedLeading)
-            let leading = back + Self.back + ChannelTitleFit.itemInset
-            let controls = min(detail.maxX - detailControls, windowWidth - trailingControls)
-            return controls - ChannelTitleFit.flexibleSpace - ChannelTitleFit.itemInset - leading
-        }
-
-        /// The window is read when the detail or title changes. A resize that leaves the detail
-        /// unchanged is absorbed by an open Overview, which already bounds the title.
-        private func refresh() {
-            // Before its first layout the column reports a placeholder size.
-            guard let detail, let windowWidth = window?.frame.width,
-                  windowWidth >= WindowObserver.minimumSize.width else { return }
-            let width = ChannelTitleFit.maxWidth(idealWidth: idealWidth,
-                                                 room: Self.room(detail: detail, windowWidth: windowWidth))
-            if width != maxWidth { maxWidth = width }
         }
     }
 }
