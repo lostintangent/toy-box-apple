@@ -20,6 +20,7 @@
 ### Bugs/Polish
 
 - Deleting a channel, agent or routine now asks once in a simple alert, right where you are, instead of opening a sheet first.
+- Opening a channel from a notification or the widget now closes Settings first, so the channel is right there.
 
 ## iPhone 0.1.13
 
