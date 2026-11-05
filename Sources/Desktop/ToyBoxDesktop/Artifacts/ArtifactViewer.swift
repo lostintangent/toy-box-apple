@@ -197,8 +197,7 @@ private struct ArtifactMarkdownPage: View {
         .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y + $0.contentInsets.top } action: { _, offset in
             opener.scrollOffsets[content.artifact.id] = offset
         }
-        .scrollEdgeEffectStyle(.hard, for: .top)
-        .scrollEdgeEffectStyle(.soft, for: .bottom)
+        .scrollEdgeEffectStyle(.soft, for: [.top, .bottom])
     }
 }
 
@@ -223,7 +222,7 @@ private struct ArtifactWebPage: View {
                                     bottomInset: bottomInset)
                         .ignoresSafeArea(edges: .vertical)
                 }
-                .scrollEdgeEffectStyle(.hard, for: .top)
+                .scrollEdgeEffectStyle(.soft, for: .top)
             } else {
                 ContentUnavailableView("Couldn't Load Artifact", systemImage: "doc.badge.ellipsis",
                                        description: Text("The artifact's text is unavailable."))
