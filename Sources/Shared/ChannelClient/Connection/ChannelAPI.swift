@@ -138,8 +138,9 @@ public struct ChannelAPI: Sendable {
         host == "localhost" || host.hasSuffix(".localhost") || host == "::1" || host.hasPrefix("127.")
     }
 
-    public func endpoint(_ components: [String], query: [URLQueryItem] = []) -> URL {
+    public func endpoint(_ components: [String], query: [URLQueryItem] = [], scheme: String? = nil) -> URL {
         var parts = URLComponents(url: baseURL, resolvingAgainstBaseURL: false)!
+        parts.scheme = scheme ?? parts.scheme
         let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~")
         let suffix = components.map { $0.addingPercentEncoding(withAllowedCharacters: allowed)! }
             .joined(separator: "/")
@@ -201,9 +202,8 @@ public struct ChannelAPI: Sendable {
     public func screenSocket(id: String, size: CGSize) -> URLSessionWebSocketTask {
         let query = [("service", "screens"), ("screen", id), ("width", String(Int(size.width.rounded()))),
                      ("height", String(Int(size.height.rounded())))].map { URLQueryItem(name: $0, value: $1) }
-        var url = URLComponents(url: endpoint(["socket"], query: query), resolvingAgainstBaseURL: false)!
-        url.scheme = baseURL.scheme?.lowercased() == "https" ? "wss" : "ws"
-        let socket = streamSession.webSocketTask(with: url.url!)
+        let scheme = baseURL.scheme?.lowercased() == "https" ? "wss" : "ws"
+        let socket = streamSession.webSocketTask(with: endpoint(["socket"], query: query, scheme: scheme))
         socket.maximumMessageSize = 16 << 20
         return socket
     }

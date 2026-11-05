@@ -20,7 +20,7 @@ public struct ScreenView: View {
     public var body: some View {
         // The picture is empty until the first frame, so the view's lifetime hangs off its space.
         Color.clear
-            .overlay { Picture(picture: connection.state.picture, space: space) }
+            .overlay { Picture(connection: connection, space: space) }
             .onGeometryChange(for: CGSize.self) { $0.size } action: { space = $0 }
             .task(id: pixels) { connection.viewerSize = pixels }
             .onDisappear { connection.viewerSize = nil }
@@ -38,10 +38,11 @@ public struct ScreenView: View {
 
     /// The latest full frame with its changed region over it, clipped to a window's corners.
     private struct Picture: View {
-        let picture: Screen.Picture
+        let connection: ScreenConnection
         let space: CGSize
 
         var body: some View {
+            let picture = connection.picture
             if let image = picture.image, picture.size.width > 0, picture.size.height > 0 {
                 let scale = min(space.width / picture.size.width, space.height / picture.size.height)
                 ZStack(alignment: .topLeading) {

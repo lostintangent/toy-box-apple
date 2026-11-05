@@ -6,7 +6,7 @@ import Observation
 
 /// One viewer's live view of a screen. The socket is open only while the viewer is on screen, and it
 /// reconnects until the screen ends. Frames decode off the main actor in order, and each is
-/// acknowledged once it's published.
+/// acknowledged once it's published. Its tasks hold it weakly, so deinit closes only the socket.
 @MainActor @Observable
 public final class ScreenConnection {
     /// Connecting until the first frame is drawn, then live, unless the server says otherwise.
@@ -17,22 +17,18 @@ public final class ScreenConnection {
         public private(set) var status: Screen.Status?
         public private(set) var title: String?
         public private(set) var reason: String?
-        public internal(set) var picture = Screen.Picture()
+        var hasPicture = false
         /// A lost socket reconnects after 250 ms, doubling up to 4 s until the server answers.
         private(set) var retryDelay = firstRetry
 
         static let firstRetry = Duration.milliseconds(250)
         static let lastRetry = Duration.seconds(4)
 
-        init(title: String? = nil) {
-            self.title = title
-        }
-
         public var phase: Phase {
             switch status {
             case .paused: .paused
             case .ended: .ended
-            case .live, nil: picture.image == nil ? .connecting : .live
+            case .live, nil: hasPicture ? .live : .connecting
             }
         }
 
@@ -44,7 +40,7 @@ public final class ScreenConnection {
         /// Clears what a lost socket showed, and returns how long to wait before reconnecting. A
         /// screen that ended said so before its socket closed, so it stays closed.
         mutating func lose() -> Duration? {
-            picture = Screen.Picture()
+            hasPicture = false
             guard status != .ended else { return nil }
             status = nil
             defer { retryDelay = min(retryDelay * 2, Self.lastRetry) }
@@ -54,6 +50,8 @@ public final class ScreenConnection {
 
     public let screenID: String
     public private(set) var state = State()
+    /// Apart from `state`, which only a socket's first frame changes, so a frame redraws only this.
+    public private(set) var picture = Screen.Picture()
 
     /// The viewer's size in pixels while it's on screen, which opens the socket, and nil once it hides,
     /// which closes it. A change in between is sent once it settles.
@@ -75,11 +73,7 @@ public final class ScreenConnection {
         self.screenID = screenID
     }
 
-    deinit {
-        work?.cancel()
-        settling?.cancel()
-        socket?.cancel(with: .goingAway, reason: nil)
-    }
+    deinit { socket?.cancel(with: .goingAway, reason: nil) }
 
     /// Connects again, which reopens a screen that ended.
     public func retry() {
@@ -126,10 +120,15 @@ public final class ScreenConnection {
         case .data(let packet):
             let (frame, image) = try await Task.detached(priority: .userInitiated) { try Self.decode(packet) }.value
             guard self.socket === socket else { return }
-            try state.picture.apply(frame, image: image)
+            try show(frame, image: image)
             try await socket.send(.string(#"{"type":"ack","sequence":\#(frame.sequence)}"#))
         @unknown default: break
         }
+    }
+
+    func show(_ frame: Screen.Frame, image: CGImage?) throws {
+        try picture.apply(frame, image: image)
+        if !state.hasPicture { state.hasPicture = true }
     }
 
     private nonisolated static func decode(_ packet: Data) throws -> (Screen.Frame, CGImage?) {
@@ -147,8 +146,8 @@ public final class ScreenConnection {
     private func lose(_ socket: URLSessionWebSocketTask) {
         guard self.socket === socket else { return }
         socket.cancel(with: .goingAway, reason: nil)
-        self.socket = nil
-        guard let delay = state.lose() else { return work = nil }
+        (self.socket, picture) = (nil, Screen.Picture())
+        guard let delay = state.lose() else { return }
         work = Task { [weak self] in
             try? await Task.sleep(for: delay)
             guard !Task.isCancelled else { return }
@@ -162,6 +161,6 @@ public final class ScreenConnection {
         settling?.cancel()
         socket?.cancel(with: .goingAway, reason: nil)
         (work, settling, socket) = (nil, nil, nil)
-        state = State(title: state.title)
+        (state, picture) = (State(title: state.title), Screen.Picture())
     }
 }
