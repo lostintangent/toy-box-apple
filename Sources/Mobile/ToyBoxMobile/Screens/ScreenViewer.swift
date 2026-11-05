@@ -4,7 +4,7 @@ import SwiftUI
 import ToyBoxUI
 import UIKit
 
-/// A screen over the whole app, pinch-zoomable to 4× and live while the app is active. Zoom and pan
+/// A screen over the whole app, pinch-zoomable to 8× and live while the app is active. Zoom and pan
 /// stay in UIKit, like Photos, and the status sits over them, so a frame never touches the zoom.
 struct ScreenViewer: View {
     @ViewState private var connection: ScreenConnection
@@ -54,7 +54,7 @@ struct ScreenViewer: View {
     }
 }
 
-/// A screen's latest frame, fitted and centered at 1×, that pinches to 4× and pans like a photo. Only
+/// A screen's latest frame, fitted and centered at 1×, that pinches to 8×, as images do, and pans like a photo. Only
 /// a settled zoom or a new viewer size is reported, and a new frame keeps the zoom and position.
 final class ScreenCanvas: UIScrollView, UIScrollViewDelegate {
     /// The full frame at its fitted size, with the changed region over it. It's the view that zooms.
@@ -77,7 +77,8 @@ final class ScreenCanvas: UIScrollView, UIScrollViewDelegate {
         showsHorizontalScrollIndicator = false
         showsVerticalScrollIndicator = false
         bouncesZoom = true
-        maximumZoomScale = 4
+        maximumZoomScale = 8
+        accessibilityIdentifier = "screen-canvas"
         pictureView.layer.cornerCurve = .continuous
         pictureView.layer.masksToBounds = true
         pictureView.addSubview(regionView)

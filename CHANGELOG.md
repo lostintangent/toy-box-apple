@@ -1,5 +1,11 @@
 # Changelog
 
+## iPhone 0.1.16
+
+### Bugs/Polish
+
+- Screens now zoom in as far as image attachments do, so pinching in to read small text no longer springs back.
+
 ## Mac 0.1.22
 
 ### Features

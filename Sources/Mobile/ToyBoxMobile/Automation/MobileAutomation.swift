@@ -34,6 +34,7 @@ struct MobileAutomationStep: Decodable, Equatable {
         case customAction(String, on: String)
         case scroll(ScrollDirection, on: String)
         case drag(ScrollDirection, on: String)
+        case zoom(Double, on: String)
         case posture(MobileAutomationPosture)
         case menuAction(String)
     }
@@ -51,13 +52,14 @@ struct MobileAutomationStep: Decodable, Equatable {
     init(from decoder: any Decoder) throws {
         let values = try decoder.container(keyedBy: Key.self)
         let names = Set(values.allKeys.map(\.stringValue))
-        let actions = names.intersection(["tap", "type", "wait", "screenshot", "back", "fold", "action", "scroll", "drag", "posture", "menuAction"])
+        let actions = names.intersection(["tap", "type", "wait", "screenshot", "back", "fold", "action", "scroll", "drag", "zoom",
+                                          "posture", "menuAction"])
         guard actions.count == 1, names.isSubset(of: actions.union(["display", "timeout", "ifPresent", "on", "absent"])),
               let name = actions.first, let key = Key(stringValue: name),
               (!names.contains("display") || name == "screenshot"),
               (!names.contains("ifPresent") || name == "back"),
               (!names.contains("absent") || name == "wait"),
-              (!names.contains("on") || ["action", "scroll", "drag"].contains(name)) else {
+              (!names.contains("on") || ["action", "scroll", "drag", "zoom"].contains(name)) else {
             throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath,
                                                     debugDescription: "Each step needs exactly one supported action."))
         }
@@ -104,6 +106,18 @@ struct MobileAutomationStep: Decodable, Equatable {
                 throw DecodingError.dataCorruptedError(forKey: key, in: values, debugDescription: "back must be true.")
             }
             action = .back(ifPresent: try values.decodeIfPresent(Bool.self, forKey: Key(stringValue: "ifPresent")!) ?? false)
+        case "zoom":
+            let scale = try values.decode(Double.self, forKey: key)
+            guard scale.isFinite, scale > 0 else {
+                throw DecodingError.dataCorruptedError(forKey: key, in: values,
+                                                      debugDescription: "zoom must be a scale greater than 0.")
+            }
+            let target = try values.decode(String.self, forKey: Key(stringValue: "on")!)
+            guard !target.isEmpty else {
+                throw DecodingError.dataCorruptedError(forKey: key, in: values,
+                                                      debugDescription: "Zooming needs a nonempty on target.")
+            }
+            action = .zoom(scale, on: target)
         case "posture":
             action = .posture(try values.decode(MobileAutomationPosture.self, forKey: key))
         default:
@@ -136,14 +150,15 @@ enum MobileAutomation {
 @MainActor
 struct MobileAutomationTree {
     enum ScrollFailure: Error, CustomStringConvertible {
-        case ambiguous(String), unhandled(String), notScrollView(String), timedOut
+        case ambiguous(String), unhandled(String), notScrollView(String), notZoomable(String), timedOut
 
         var description: String {
             switch self {
             case .ambiguous(let target): "Ambiguous accessibility scroll identifier: \(target)."
             case .unhandled(let target): "Accessibility scrolling was not handled by \(target)."
-            case .notScrollView(let target): "Dragging needs a UIScrollView, not \(target)."
-            case .timedOut: "Dragging exceeded the step deadline."
+            case .notScrollView(let target): "Dragging and zooming need a UIScrollView, not \(target)."
+            case .notZoomable(let target): "\(target) has no view for zooming."
+            case .timedOut: "Dragging or zooming exceeded the step deadline."
             }
         }
     }
@@ -429,6 +444,40 @@ struct MobileAutomationTree {
         try checkDeadline()
     }
 
+    /// Moves the zoom scale frame by frame to `scale`, clamped to the view's limits, keeping the
+    /// visible center in place, between the delegate's begin- and end-zooming callbacks. Zoom and
+    /// scroll callbacks follow a pinch at the center, without the pinch gesture or its bounce.
+    static func zoom(_ view: UIScrollView, to scale: CGFloat, frames: Int = 24, pause: Duration = .milliseconds(16),
+                     deadline: ContinuousClock.Instant, clock: MobileAutomationClock = .live) async throws {
+        func checkDeadline() throws {
+            try Task.checkCancellation()
+            guard clock.now() < deadline else { throw ScrollFailure.timedOut }
+        }
+        try checkDeadline()
+        guard let content = view.delegate?.viewForZooming?(in: view) else {
+            throw ScrollFailure.notZoomable("\(view.accessibilityIdentifier ?? "") (\(type(of: view)))")
+        }
+        let start = view.zoomScale
+        let target = min(view.maximumZoomScale, max(view.minimumZoomScale, scale))
+        let anchor = content.convert(CGPoint(x: view.bounds.midX, y: view.bounds.midY), from: view)
+        view.delegate?.scrollViewWillBeginZooming?(view, with: content)
+        defer { view.delegate?.scrollViewDidEndZooming?(view, with: content, atScale: view.zoomScale) }
+        for frame in 1...frames {
+            try checkDeadline()
+            view.setZoomScale(start + (target - start) * CGFloat(frame) / CGFloat(frames), animated: false)
+            let point = view.convert(anchor, from: content)
+            let inset = view.adjustedContentInset
+            let minimum = CGPoint(x: -inset.left, y: -inset.top)
+            let maximum = CGPoint(x: max(minimum.x, view.contentSize.width + inset.right - view.bounds.width),
+                                  y: max(minimum.y, view.contentSize.height + inset.bottom - view.bounds.height))
+            let offset = view.contentOffset
+            view.contentOffset = CGPoint(x: min(maximum.x, max(minimum.x, offset.x + point.x - view.bounds.midX)),
+                                         y: min(maximum.y, max(minimum.y, offset.y + point.y - view.bounds.midY)))
+            try await clock.sleep(min(deadline, clock.now().advanced(by: pause)))
+        }
+        try checkDeadline()
+    }
+
     var firstResponder: UIResponder? {
         func find(_ view: UIView) -> UIResponder? {
             if view.isFirstResponder { return view }
@@ -550,6 +599,9 @@ final class MobileAutomationRun {
         case .drag(let direction, let target):
             let view = try await wait(timeout: step.timeout) { try currentTree().scrollView(target) }
             try await MobileAutomationTree.drag(view, direction, deadline: deadline, clock: clock)
+        case .zoom(let scale, let target):
+            let view = try await wait(timeout: step.timeout) { try currentTree().scrollView(target) }
+            try await MobileAutomationTree.zoom(view, to: scale, deadline: deadline, clock: clock)
         case .back(let ifPresent):
             let tree = try await wait(timeout: step.timeout) {
                 let tree = currentTree()

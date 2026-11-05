@@ -54,6 +54,19 @@ struct AutomationTests {
         }
     }
 
+    private final class ZoomRecorder: NSObject, UIScrollViewDelegate {
+        let content = UIView(frame: CGRect(x: 0, y: 0, width: 400, height: 250))
+        var events: [String] = []
+        func viewForZooming(in scrollView: UIScrollView) -> UIView? { content }
+        func scrollViewWillBeginZooming(_ scrollView: UIScrollView, with view: UIView?) { events.append("begin") }
+        func scrollViewDidZoom(_ scrollView: UIScrollView) {
+            if events.last != "zoom" { events.append("zoom") }
+        }
+        func scrollViewDidEndZooming(_ scrollView: UIScrollView, with view: UIView?, atScale scale: CGFloat) {
+            events.append("end \(scale)")
+        }
+    }
+
     private final class PresentedController: UIViewController {
         var activePresentation: UIViewController?
         override var presentedViewController: UIViewController? { activePresentation }
@@ -109,14 +122,14 @@ struct AutomationTests {
              {"action":"Reply","on":"message-12"},{"back":true,"ifPresent":true},
              {"wait":"@Lead","absent":true},{"scroll":"down","on":"overview-form"},
              {"drag":"up","on":"conversation-transcript"},{"posture":"folded"},{"posture":"unfolded","timeout":60},
-             {"menuAction":"Edit Channel"}]
+             {"menuAction":"Edit Channel"},{"zoom":2.5,"on":"screen-canvas"}]
             """.utf8))
         #expect(steps.map(\.action) == [.tap("Studio demo"), .type("Hello"), .wait("Needs you", absent: false),
                                        .screenshot("reply", "3"), .back(ifPresent: false), .fold(false),
                                        .customAction("Reply", on: "message-12"), .back(ifPresent: true),
                                        .wait("@Lead", absent: true), .scroll(.down, on: "overview-form"),
                                        .drag(.up, on: "conversation-transcript"), .posture(.folded), .posture(.unfolded),
-                                       .menuAction("Edit Channel")])
+                                       .menuAction("Edit Channel"), .zoom(2.5, on: "screen-canvas")])
         #expect(steps[0].timeout == 12 && steps[2].timeout == 20)
         for invalid in [#"{"tap":"x","wait":"x"}"#, #"{"type":""}"#, #"{"back":false}"#,
                         #"{"fold":1}"#, #"{"tap":"x","display":"1"}"#,
@@ -132,7 +145,9 @@ struct AutomationTests {
                         #"{"posture":"folded","on":"form"}"#, #"{"drag":"up"}"#,
                         #"{"drag":"forward","on":"list"}"#, #"{"drag":"up","on":"list","scroll":"up"}"#,
                         #"{"menuAction":""}"#, #"{"menuAction":"Edit","on":"menu"}"#,
-                        #"{"menuAction":"Edit","tap":"Edit"}"#] {
+                        #"{"menuAction":"Edit","tap":"Edit"}"#, #"{"zoom":2}"#, #"{"zoom":2,"on":""}"#,
+                        #"{"zoom":0,"on":"canvas"}"#, #"{"zoom":"2","on":"canvas"}"#,
+                        #"{"zoom":2,"on":"canvas","display":"1"}"#] {
             #expect(throws: DecodingError.self) {
                 try JSONDecoder().decode(MobileAutomationStep.self, from: Data(invalid.utf8))
             }
@@ -229,6 +244,35 @@ struct AutomationTests {
         await #expect(throws: CancellationError.self) { try await attempt.value }
         #expect(list.contentOffset == CGPoint(x: 0, y: 1_040))
         #expect(recorder.events == ["begin", "scroll", "willEnd", "end"])
+    }
+
+    @Test func zoomingScalesInFramesAroundTheVisibleCenterBetweenZoomCallbacksWithinTheLimits() async throws {
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 400, height: 800))
+        window.isHidden = false
+        defer { window.isHidden = true }
+        let view = UIScrollView(frame: window.bounds)
+        view.contentInsetAdjustmentBehavior = .never
+        view.maximumZoomScale = 4
+        let recorder = ZoomRecorder()
+        view.delegate = recorder
+        view.addSubview(recorder.content)
+        view.contentSize = recorder.content.frame.size
+        window.addSubview(view)
+        let center = { recorder.content.convert(CGPoint(x: view.bounds.midX, y: view.bounds.midY), from: view) }
+        let anchor = center()
+        try await MobileAutomationTree.zoom(view, to: 2, frames: 4, pause: .zero, deadline: .now.advanced(by: .seconds(3_600)))
+        #expect(view.zoomScale == 2)
+        #expect(recorder.events == ["begin", "zoom", "end 2.0"])
+        #expect(abs(center().x - anchor.x) < 0.5)
+        try await MobileAutomationTree.zoom(view, to: 20, frames: 4, pause: .zero, deadline: .now.advanced(by: .seconds(3_600)))
+        #expect(view.zoomScale == 4)
+        #expect(recorder.events.last == "end 4.0")
+        let unzoomable = DragRecorder()
+        view.delegate = unzoomable
+        await #expect(throws: MobileAutomationTree.ScrollFailure.self) {
+            try await MobileAutomationTree.zoom(view, to: 2, pause: .zero, deadline: .now.advanced(by: .seconds(3_600)))
+        }
+        #expect(recorder.content.transform.a == 4 && unzoomable.events.isEmpty)
     }
 
     @Test func menuDispatchExcludesDisabledHiddenOffscreenAndUnopenedSubmenuItems() throws {

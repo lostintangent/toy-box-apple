@@ -8,6 +8,7 @@ export type MobileDriveStep = Timed & (
     | { back: true; ifPresent?: boolean } | { fold: boolean } | { action: string; on: string }
     | { scroll: "up" | "down" | "left" | "right"; on: string }
     | { drag: "up" | "down" | "left" | "right"; on: string }
+    | { zoom: number; on: string }
     | { posture: "folded" | "unfolded" }
     | { menuAction: string }
 );
@@ -24,12 +25,13 @@ export function parseMobileDrive(value: unknown): MobileDriveStep[] {
     return value.map((step: unknown, index) => {
         const fail = (message: string): never => { throw new Error(`Drive step ${index + 1}: ${message}`); };
         if (!record(step)) return fail("expected an action object.");
-        const actions = ["tap", "type", "wait", "screenshot", "back", "fold", "action", "scroll", "drag", "posture", "menuAction"]
+        const actions = ["tap", "type", "wait", "screenshot", "back", "fold", "action", "scroll", "drag", "zoom", "posture",
+            "menuAction"]
             .filter(key => key in step);
         if (actions.length !== 1) return fail("expected one supported action.");
         const action = actions[0]!;
         const allowed = new Set([action, "timeout", ...(action === "screenshot" ? ["display"] : []),
-            ...(action === "back" ? ["ifPresent"] : []), ...(["action", "scroll", "drag"].includes(action) ? ["on"] : []),
+            ...(action === "back" ? ["ifPresent"] : []), ...(["action", "scroll", "drag", "zoom"].includes(action) ? ["on"] : []),
             ...(action === "wait" ? ["absent"] : [])]);
         if (Object.keys(step).some(key => !allowed.has(key))) return fail("unknown action option.");
         const timeout = step.timeout;
@@ -44,6 +46,13 @@ export function parseMobileDrive(value: unknown): MobileDriveStep[] {
         if (action === "fold") {
             if (typeof step.fold !== "boolean") return fail("fold must be a boolean.");
             return { fold: step.fold, ...timed };
+        }
+        if (action === "zoom") {
+            if (typeof step.zoom !== "number" || !Number.isFinite(step.zoom) || step.zoom <= 0) {
+                return fail("zoom must be a scale greater than 0.");
+            }
+            if (typeof step.on !== "string" || !step.on.length) return fail("zoom needs a nonempty on identifier.");
+            return { zoom: step.zoom, on: step.on, ...timed };
         }
         if (action === "posture") {
             if (step.posture !== "folded" && step.posture !== "unfolded") return fail("posture must be folded or unfolded.");
