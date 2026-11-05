@@ -83,7 +83,7 @@ public struct ChannelSystemContent: Codable, Equatable, Sendable {
     }
 
     public static let unavailablePreview = "Preview link unavailable"
-    public static let openScreen = "Open screen in Toy Box"
+    public static let screenPreview = "Screen preview"
 
     public static func value(_ text: String) -> String {
         let line = text.split(whereSeparator: \.isWhitespace).joined(separator: " ")
@@ -137,7 +137,7 @@ public struct ChannelSystemContent: Codable, Equatable, Sendable {
             return directory.map { phrase + " " + $0 } ?? phrase
         case "preview_changed":
             if let preview = self.preview ?? previewUrl.map({ ChannelPreview(kind: "url", url: $0) }) {
-                return preview.kind == "screen" ? phrase + " " + Self.openScreen : event(preview.url)
+                return preview.kind == "screen" ? phrase + " " + Self.screenPreview : event(preview.url)
             }
             return phrase
         case "artifact_shared":

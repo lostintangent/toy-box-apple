@@ -80,7 +80,8 @@ struct ChannelSidebar: View {
                 busy: busy, serverURL: model.serverURL,
                 error: model.configurationError ?? model.catalog?.phase.message,
                 retry: model.configurationError == nil && model.catalog != nil ? { model.refreshCatalog() } : nil,
-                openSettings: { openSettings() }
+                openSettings: { openSettings() },
+                openScreen: model.api == nil ? nil : { openWindow(id: "screens") }
             )
         }
         .navigationTitle("Channels")

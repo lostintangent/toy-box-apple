@@ -118,9 +118,8 @@ struct TranscriptRowContent: View, @MainActor Equatable {
                     && (messages.first?.system?.type == "member_joined" || messages.first?.system?.type == "member_left")
                 let individualMessages = ChannelArtifactGroup.Verb(systemType: messages.first?.system?.type) != nil
                     || expandsMembership
-                TranscriptSystemMessages(messages: messages, channelID: channel.id,
-                                         historyStart: channel.historyStart, agents: channel.agents,
-                                         api: channel.api, findHighlights: findHighlights,
+                TranscriptSystemMessages(messages: messages, historyStart: channel.historyStart,
+                                         agents: channel.agents, api: channel.api, findHighlights: findHighlights,
                                          expandsMembership: expandsMembership)
                     .background(messages.contains { $0.sequence == highlightedSequence }
                                 ? ChannelColors.sourceHighlight : .clear,

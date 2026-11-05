@@ -114,8 +114,13 @@
     </g>
   </g>
   <g id="sidebar-connection">
-    <circle cx="57.5" cy="847" r="3.5" fill="#48a67c"/>
-    <text x="67" y="851" fill="#7a8794" font-size="11">localhost:3100</text>
+    <circle cx="53.5" cy="847" r="3.5" fill="#48a67c"/>
+    <text x="63" y="851" fill="#7a8794" font-size="11">localhost:3100</text>
+  </g>
+  <g id="sidebar-open-screen">
+    <circle cx="256" cy="847" r="14" fill="#ffffff" fill-opacity=".75" stroke="#dfe4ea"/>
+    <rect x="248.5" y="840" width="15" height="10" rx="2" stroke="#52606d" stroke-width="1.5"/>
+    <path d="M253 854H259" stroke="#52606d" stroke-width="1.5" stroke-linecap="round"/>
   </g>
   <g id="day-divider">
     <text x="640" y="132" fill="#8a949f" font-size="11" font-weight="600" text-anchor="middle">Today</text>

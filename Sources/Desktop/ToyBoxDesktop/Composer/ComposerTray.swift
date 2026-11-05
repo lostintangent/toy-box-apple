@@ -9,8 +9,8 @@ import ToyBoxUI
 struct ComposerTray: View {
     let store: ChannelStore
     @Environment(ArtifactOpener.self) private var artifactOpener
-    @Environment(AppModel.self) private var model
     @Environment(\.openURL) private var openURL
+    @Environment(\.openWindow) private var openWindow
     @Environment(\.windowSnapshot) private var snapshot
     /// The channel whose popover is open. A popover belongs to the channel it opened in, so the
     /// next channel's first frame shows it closed, and a switch closes it for good.
@@ -181,14 +181,12 @@ struct ComposerTray: View {
                 Label("Preview", systemImage: "arrow.up.right.square").lineLimit(1)
             }
             .help("Open preview in your browser: \(url.absoluteString)")
-        } else if preview.kind == "screen" {
-            Button {
-                if let url = model.channelURL(channelID: store.id) { openURL(url) }
-            } label: {
+        } else if preview.kind == "screen", let screenID = preview.screenId {
+            Button { openWindow(id: "screens", value: screenID) } label: {
                 Label("Screen", systemImage: "display").lineLimit(1)
             }
-            .help("Open screen preview in Toy Box")
-            .accessibilityLabel("Open screen preview in Toy Box")
+            .help("Open screen preview")
+            .accessibilityLabel("Open screen preview")
         }
     }
 }

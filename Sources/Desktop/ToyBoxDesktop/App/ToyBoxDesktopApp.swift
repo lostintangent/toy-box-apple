@@ -57,12 +57,27 @@ struct ToyBoxDesktopApp: App {
         .defaultSize(width: CGFloat(model.launchOptions.width), height: CGFloat(model.launchOptions.height))
         // Wait for the open-application event before deciding whether to open a first window.
         .defaultLaunchBehavior(.suppressed)
-        .restorationBehavior(model.launchOptions.isSnapshot || appDelegate.launchedAtLogin ? .disabled : .automatic)
+        .restorationBehavior(restorationBehavior)
         .windowStyle(.automatic)
         .commands { ChannelCommands(model: model) }
         .onChange(of: scenePhase, initial: true) { _, phase in
             updateStartupWindow(phase: phase)
         }
+
+        // The list, then the screen chosen from it. The window keeps its screen, so it restores there,
+        // and opening a screen a window already shows brings that window forward.
+        WindowGroup("Screens", id: "screens", for: String.self) { $screenID in
+            if let api = model.api {
+                NavigationStack(path: Binding(get: { screenID.map { [$0] } ?? [] }, set: { screenID = $0.last })) {
+                    ScreenBrowser(api: api) { screenID = $0.id }
+                        .navigationTitle("Screens")
+                        .navigationDestination(for: String.self) { ScreenViewer(api: api, screenID: $0) }
+                }
+                .preferredColorScheme(colorScheme)
+            }
+        }
+        .defaultSize(width: 960, height: 600)
+        .restorationBehavior(restorationBehavior)
 
         Settings {
             SettingsView()
@@ -82,6 +97,12 @@ struct ToyBoxDesktopApp: App {
             model.menuBar.visibility = visibility
         }
     }
+
+    private var restorationBehavior: SceneRestorationBehavior {
+        model.launchOptions.isSnapshot || appDelegate.launchedAtLogin ? .disabled : .automatic
+    }
+
+    private var colorScheme: ColorScheme? { (model.launchOptions.appearance ?? appearance).colorScheme }
 
     private var menuBarInserted: Binding<Bool> {
         Binding(get: { model.showsMenuBarExtra && model.menuBar.isInserted }, set: { _ in })
@@ -118,7 +139,7 @@ struct ToyBoxDesktopApp: App {
             .environment(model)
             .environment(\.channelTextScale, model.launchOptions.isSnapshot ? 1 : textScale)
             .environment(\.windowSnapshot, model.snapshot)
-            .preferredColorScheme((model.launchOptions.appearance ?? appearance).colorScheme)
+            .preferredColorScheme(colorScheme)
     }
 }
 

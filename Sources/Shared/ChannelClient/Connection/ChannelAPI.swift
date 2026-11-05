@@ -184,6 +184,30 @@ public struct ChannelAPI: Sendable {
         return catalog
     }
 
+    public func screens() async throws -> ScreenList {
+        let list: ScreenList = try await get(["api", "v1", "screens"])
+        try requireVersion(list.version)
+        return list
+    }
+
+    /// A screen's JPEG thumbnail.
+    public func screenThumbnail(id: String) async throws -> Data {
+        try await data(for: URLRequest(url: endpoint(["api", "v1", "screens", id, "thumbnail"]),
+                                       cachePolicy: .reloadIgnoringLocalCacheData))
+    }
+
+    /// A socket that streams a screen's frames, sized to fit its viewer's pixels. A full frame of a
+    /// large display can pass URLSession's 1 MiB message limit.
+    public func screenSocket(id: String, size: CGSize) -> URLSessionWebSocketTask {
+        let query = [("service", "screens"), ("screen", id), ("width", String(Int(size.width.rounded()))),
+                     ("height", String(Int(size.height.rounded())))].map { URLQueryItem(name: $0, value: $1) }
+        var url = URLComponents(url: endpoint(["socket"], query: query), resolvingAgainstBaseURL: false)!
+        url.scheme = baseURL.scheme?.lowercased() == "https" ? "wss" : "ws"
+        let socket = streamSession.webSocketTask(with: url.url!)
+        socket.maximumMessageSize = 16 << 20
+        return socket
+    }
+
     @discardableResult
     public func register(registrationID: String, _ input: PushRegistration) async throws -> Bool {
         let (_, response) = try await response(for: commandRequest("PUT", ["api", "v1", "push", registrationID], body: input))

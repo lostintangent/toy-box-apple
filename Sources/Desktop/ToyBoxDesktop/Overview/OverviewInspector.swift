@@ -230,7 +230,7 @@ private struct OverviewAbout: View {
                             channelURL: { [app, id = store.id] in app.channelURL(channelID: id) })
                     }
                     if let preview {
-                        OverviewPreviewRow(preview: preview, api: store.api, channelId: store.id, visit: visit)
+                        OverviewPreviewRow(preview: preview, api: store.api, visit: visit)
                     }
                 }
                 .padding(.top, 10)
@@ -439,10 +439,9 @@ struct OverviewFolderRow: View {
 }
 
 struct OverviewPreviewRow: View {
-    @Environment(AppModel.self) private var app
+    @Environment(\.openWindow) private var openWindow
     let preview: ChannelPreview
     let api: ChannelAPI
-    let channelId: String
     /// The channel visit the row belongs to, so an error stays with the channel it happened in.
     let visit: String
     @ViewState private var errors = OverviewItemState<String?>(nil)
@@ -453,7 +452,7 @@ struct OverviewPreviewRow: View {
     }
 
     private var target: URL? {
-        preview.kind == "url" ? preview.url.flatMap(api.resourceURL) : app.channelURL(channelID: channelId)
+        preview.kind == "url" ? preview.url.flatMap(api.resourceURL) : nil
     }
 
     private var title: String {
@@ -474,7 +473,7 @@ struct OverviewPreviewRow: View {
                     .buttonStyle(.link)
                     .help(preview.kind == "url"
                           ? (target?.absoluteString ?? preview.url ?? "Preview")
-                          : "Opens the channel in Toy Box, which shows this window preview.")
+                          : "Opens this window preview")
                     .accessibilityLabel("Preview, \(title)")
                     Spacer(minLength: 0)
                 }
@@ -484,6 +483,9 @@ struct OverviewPreviewRow: View {
     }
 
     private func open() {
+        if preview.kind == "screen", let screenID = preview.screenId {
+            return openWindow(id: "screens", value: screenID)
+        }
         guard let target else { error = "The preview URL is unavailable."; return }
         error = NSWorkspace.shared.open(target) ? nil : "The preview could not be opened."
     }

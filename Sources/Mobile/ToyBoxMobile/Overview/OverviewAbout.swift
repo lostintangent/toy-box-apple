@@ -8,6 +8,7 @@ struct OverviewAboutSection: View {
     let store: ChannelStore
     @Bindable var session: ChannelOverview
     @Environment(\.openURL) private var openURL
+    @ViewState private var showsScreen = false
 
     /// Whether the headerless opening has a purpose, folder or preview to show. Without one it is
     /// omitted, and Team opens the list.
@@ -62,7 +63,15 @@ struct OverviewAboutSection: View {
 
     @ViewBuilder
     private func previewRow(_ preview: ChannelPreview) -> some View {
-        if let address = previewAddress(preview) {
+        if preview.kind == "screen", let screenID = preview.screenId, !screenID.isEmpty {
+            Button {
+                showsScreen = true
+            } label: {
+                previewTitle("Screen Preview", systemImage: "display")
+                    .frame(minHeight: 44, alignment: .leading)
+            }
+            .fullScreenCover(isPresented: $showsScreen) { ScreenViewer(api: store.api, screenID: screenID) }
+        } else if let address = previewAddress(preview) {
             Button {
                 session.previewError = nil
                 openURL(address) { accepted in
@@ -70,20 +79,11 @@ struct OverviewAboutSection: View {
                 }
             } label: {
                 VStack(alignment: .leading, spacing: 4) {
-                    // Only the title is link ink, since it is About's one real link. A hierarchical
-                    // style here would resolve to the button's tint, so the icon names a concrete color.
-                    Label {
-                        Text(preview.kind == "screen" ? "Screen Preview" : "Open Preview")
-                    } icon: {
-                        Image(systemName: preview.kind == "screen" ? "display" : "globe")
-                            .foregroundStyle(Color.primary)
-                    }
-                    if preview.kind != "screen" {
-                        Text(address.absoluteString)
-                            .font(.footnote)
-                            .foregroundStyle(ChannelInk.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
+                    previewTitle("Open Preview", systemImage: "globe")
+                    Text(address.absoluteString)
+                        .font(.footnote)
+                        .foregroundStyle(ChannelInk.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 .frame(minHeight: 44, alignment: .leading)
             }
@@ -99,13 +99,19 @@ struct OverviewAboutSection: View {
         }
     }
 
-    private func previewAddress(_ preview: ChannelPreview) -> URL? {
-        switch preview.kind {
-        case "url": preview.url.flatMap(store.api.resourceURL)
-        case "screen":
-            preview.screenId?.isEmpty == false ? store.api.channelURL(channelID: store.id) : nil
-        default: nil
+    /// Only the title is link ink, since it is About's one real link. A hierarchical style here
+    /// would resolve to the button's tint, so the icon names a concrete color.
+    private func previewTitle(_ title: String, systemImage: String) -> some View {
+        Label {
+            Text(title)
+        } icon: {
+            Image(systemName: systemImage)
+                .foregroundStyle(Color.primary)
         }
+    }
+
+    private func previewAddress(_ preview: ChannelPreview) -> URL? {
+        preview.kind == "url" ? preview.url.flatMap(store.api.resourceURL) : nil
     }
 }
 

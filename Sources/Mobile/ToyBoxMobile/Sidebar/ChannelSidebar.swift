@@ -14,6 +14,7 @@ struct ChannelSidebar: View {
     let isCollapsed: Bool
     @ViewState private var query = ""
     @ViewState private var pull = PullGesture()
+    @ViewState private var showsScreens = false
 
     private var trimmedQuery: String { query.trimmingCharacters(in: .whitespacesAndNewlines) }
 
@@ -104,11 +105,24 @@ struct ChannelSidebar: View {
                 Button("New Channel", systemImage: "plus") { management.present(.newChannel) }
                     .disabled(!canCreate)
             }
+            ToolbarSpacer(.fixed, placement: .primaryAction)
+            ToolbarItem(placement: .primaryAction) {
+                // A toolbar ignores SwiftUI's rendering mode, and the symbol's own mode shades its screen.
+                let outline = UIImage(systemName: "display",
+                                      withConfiguration: UIImage.SymbolConfiguration.preferringMonochrome())
+                Button { showsScreens = true } label: {
+                    Label { Text("Screens") } icon: { Image(uiImage: outline ?? UIImage()) }
+                }
+                .disabled(model.api == nil)
+            }
             DefaultToolbarItem(kind: .search, placement: .bottomBar)
             ToolbarSpacer(.flexible, placement: .bottomBar)
             ToolbarItem(placement: .bottomBar) {
                 Button("Settings", systemImage: "gearshape") { showsSettings = true }
             }
+        }
+        .sheet(isPresented: $showsScreens) {
+            if let api = model.api { ScreenSheet(api: api) }
         }
     }
 

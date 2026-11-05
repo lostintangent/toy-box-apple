@@ -186,6 +186,14 @@ couldn't be opened is Handoff's `missing`.
 | `POST /api/v1/channels/:id/messages` | `{id, content, attachments?}` with a client UUID. 201 returns the message. 409 means a duplicate. Never auto-retry |
 | `POST /api/v1/channels/:id/read` | `{sequence}` monotonic read, which acknowledges completion but never a request |
 
+Screens are owned by Toy Box's Screens feature (`src/features/screens/AGENTS.md`):
+
+| Request | Use |
+| --- | --- |
+| `GET /api/v1/screens` | `{version, displays, windows}`, each `{id, title, application?}`. The host's live state, fetched only when the list opens |
+| `GET /api/v1/screens/:id/thumbnail` | One JPEG thumbnail, never cached |
+| `/socket?service=screens&screen=:id&width=:px&height=:px` (WebSocket) | One live screen, sized to the viewer's pixels. Text `state` messages carry `{title?, status: live/paused/ended, reason?}`, and any other type is ignored. Binary packets are two big-endian `UInt32` lengths, the frame `{sequence, width, height, radius?, region?}` as JSON, then its JPEG. A region draws over the latest full frame, never over another region, and its empty JPEG restores the full frame. The viewer sends `{type: "ack", sequence}` once a frame is drawn and `{type: "resize", size: {width, height}}` once a new size settles. Messages may reach 16 MiB |
+
 The model catalog is owned by Toy Box's Providers feature (`src/features/providers/AGENTS.md`),
 not Channels:
 
@@ -696,8 +704,9 @@ the bottom field, because a full field makes UIKit cancel the first pull to refr
 The unfolded overlay sidebar keeps the full field, since UIKit places the minimized button
 past the sidebar's trailing edge. Search raises the keyboard with its field above it, and Cancel
 restores the bar. No hand-built safe-area text field or duplicate gear in the rail. Keep the large
-Toy Box title and New Channel at the top, with no More menu or Refresh item. A native placement
-limitation in the unfolded column never justifies substituting custom controls.
+Toy Box title at the top, with New Channel and then Screens (an outline `display`) in separate
+glass groups, and no More menu or Refresh item. A native placement limitation in the unfolded column
+never justifies substituting custom controls.
 The phone list has no healthy or connecting connection dot, server label or busy footer spinner.
 Settings owns server identity and connection details. The list has pull to refresh, and search
 uses the shared name/purpose/directory filtering. Pull to refresh holds its spinner until the
@@ -762,6 +771,7 @@ disabled whenever the updater's `canCheckForUpdates` is false, including in bund
 | App | Quick Send | Configurable global shortcut, `Ctrl-Shift-Space` by default |
 | File | New Channel | `Cmd-N` |
 | File | Open Channel in New Window | `Cmd-Shift-N` |
+| File | Open Screen… | `Cmd-O` |
 | File | Open in Toy Box | `Cmd-Shift-O` |
 | File | Open Folder in Finder (selected channel, only when its folder is openable) | `Cmd-Option-R` |
 | Edit > Find | Find… / Find Next / Find Previous (open channel) | `Cmd-F` / `Cmd-G` / `Shift-Cmd-G` |
@@ -979,10 +989,10 @@ wireframe's `sidebar-connection` group draws it. Attach it with `.safeAreaBar(ed
 the sidebar list so rows scroll beneath it under the system scroll edge effect. Give it no
 background, divider or material of its own. The status line is a 7-point dot (the unread dot's
 size), 6 points, then the server's host and port in 11 regular, secondary, one line, middle
-truncation. Omit the port when it is the scheme's default. The line is 22 high with 6 points of
-top padding. The dot's leading edge aligns with the channel icons, 24 points from the sidebar's
-leading edge, and its center sits 24 points above the sidebar's bottom edge, so it clears the
-corner as evenly as the rows clear the side.
+truncation. Omit the port when it is the scheme's default. The line is 22 high, and its row is as
+tall as the large glass Open Screen button at its end, with 10 points above and below so the row
+centers in the bar. The dot's leading edge sits 20 points from the sidebar's leading edge, 4
+before the channel icons, and its center sits 24 points above the sidebar's bottom edge.
 
 | Catalog state | Dot | Above the status line |
 | --- | --- | --- |
@@ -991,7 +1001,7 @@ corner as evenly as the rows clear the side.
 | Refresh failing, rows kept | `.orange` | The error block: "Channels may be out of date", the readable failure, then Retry and Settings. Recovery retries every failed channel at once |
 | Never loaded, invalid URL or authorization failure | `.red` | The same block, headed "Can't connect to Toy Box" |
 
-The error block moves into the same bar, 10 points above the status line and on the same 24-point
+The error block moves into the same bar, 10 points above the status line and on the same 20-point
 leading edge, so a problem and the server it concerns read as one footer. The status line never
 repeats the block's words. Differentiate Without Color holds because every state other than
 connected shows either the loading placeholders or the block's heading directly above the dot.
@@ -1019,6 +1029,11 @@ VoiceOver reads one button labeled "Server" with the value "localhost:3100, conn
 connecting, reconnecting, can't connect). Dot colors crossfade over 0.2 seconds, instantly with
 Reduce Motion. Never pulse the dot. The footer reflects the catalog connection only. An open
 channel's own stream keeps its floating "Reconnecting to server" pill over the transcript.
+
+The status line's row ends in Open Screen, a large glass circle with the outline `display`
+symbol, as far from the trailing edge as the capsule is from the leading one. It
+runs File > Open Screen… (see Screens), with the help "Open Screen (Command-O)", and is disabled
+without a server. It leaves with the sidebar when the sidebar is hidden, and the command stays.
 
 ### Transcript
 
@@ -1650,7 +1665,7 @@ are absent. When space is insufficient, collapse artifact names before hiding Ta
 and use a native overflow menu rather than a horizontally scrolling toolbar. Artifacts and Tasks
 open anchored native popovers, preferred 360 wide, max 420 high. Task rows are the same projection
 as the inspector. URL Preview opens the configured URL in the default browser. Screen Preview
-opens that channel in Toy Box, with an explicit label, never a fictitious local live screen.
+opens the screen's live window (see Screens).
 
 The tray is Mac only. The iPhone composer has no tray at any screen height, size class or text
 size. Tasks, Artifacts and Preview live in Overview, with no separate channel bar button.
@@ -1784,8 +1799,8 @@ rows, each 22 high: an 18-point secondary SF Symbol column, a 6-point gap and a 
   Path and Open in Toy Box. Never claim a remote path was opened. Omit the row when the channel
   has no directory.
 - Preview: `play.rectangle` and the typed URL's host and path in link ink, opening the default
-  browser. A screen preview reads "Window preview" and opens the channel in Toy Box. Omit the
-  row when there is no preview.
+  browser. A screen preview reads "Window preview" and opens its live screen. Omit the row when
+  there is no preview.
 
 **Team Members.** The section is titled Team Members on both apps. The lead first, then members
 alphabetically. Never reorder by presence, because stable positions are what make the list
@@ -2177,6 +2192,19 @@ messages read. Do not restore a viewer on app relaunch. One viewer per channel w
 at a time; opening an attachment image replaces an artifact viewer and vice versa, without a
 stack of hidden viewers. Overview owns the artifact presentation, loaders and renderers.
 The image gallery is Transcript's surface.
+
+### Screens
+
+A channel's preview can be a window or display on the Mac running Toy Box. The apps watch it live,
+the same picture a browser pane shows, and never control it.
+
+| Part | Specification |
+| --- | --- |
+| Opening | Mac: File > Open Screen… (`Cmd-O`), or Open Screen at the end of the sidebar's connection footer, opens a new Screens window on the list, disabled without a server. iPhone: Screens (`display`) after New Channel in the sidebar's top bar opens a sheet. A channel's screen preview opens its screen directly from the tray's Preview, Overview's Preview row and the transcript's "Preview updated Screen preview" line |
+| List | Shared by both apps. Displays, then windows in an adaptive grid of 16:10 thumbnails, each titled with its application beneath. Search filters windows by title or application. Loading, failure with Try Again and "No windows found" are explicit. Pull to refresh refetches. Nothing polls |
+| Viewer | Mac: the chosen screen replaces the list in its Screens window, and Back returns to the list. The window keeps its screen across relaunch, a restored screen that is gone shows Ended, and opening a screen a window already shows brings that window forward. iPhone: a full-screen cover with Close, pinch to zoom up to 4× and pan, and rotation back to fit. Closing returns to the list |
+| Picture | Fitted to the viewer with the window's rounded corners. Frames are sized to the viewer's pixels, sent once a live resize or pinch settles. Connecting shows until the first frame is drawn. Paused and Ended show the server's reason, and Ended offers Try Again |
+| Lifecycle | One socket per visible viewer and none otherwise. A Mac window closes its socket on Back and while occluded or minimized, and the iPhone viewer while the app is inactive. A lost socket clears the picture and reconnects after 250 ms, doubling to 4 s until the server answers. An ended screen stays closed until Try Again |
 
 ### Management and Settings
 
@@ -3293,4 +3321,3 @@ remain read-only during this review.
 ## Exclusions
 
 - Private agent sessions and tool logs. These never enter the channel, matching the pane.
-- Live screen-preview canvas. The app opens the screen in Toy Box instead of streaming it.

@@ -77,6 +77,9 @@ struct ChannelCommands: Commands {
             Button("Open Channel in New Window") { actions?.openNewWindow() }
                 .keyboardShortcut("n", modifiers: [.command, .shift])
                 .disabled(actions?.hasChannel != true)
+            Button("Open Screen…") { openWindow(id: "screens") }
+                .keyboardShortcut("o")
+                .disabled(model.api == nil)
             Button("Open in Toy Box") { actions?.openInToyBox() }
                 .keyboardShortcut("o", modifiers: [.command, .shift])
                 .disabled(actions?.hasChannel != true)

@@ -3,8 +3,9 @@ import SwiftUI
 import ToyBoxUI
 
 /// The bottom of the sidebar: the error block when there is one, then a status dot and the server,
-/// which opens Settings. It has no background of its own, so rows scroll beneath it under the
-/// system scroll edge effect. It is also the sidebar's only progress indicator.
+/// which opens Settings, and a trailing Open Screen. It has no background of its own, so rows
+/// scroll beneath it under the system scroll edge effect. It is also the sidebar's only progress
+/// indicator.
 struct SidebarConnectionFooter: View {
     let footer: SidebarFooter
     /// The first load or a Retry the person pressed is in flight. Background polling never is.
@@ -13,13 +14,15 @@ struct SidebarConnectionFooter: View {
     let error: String?
     let retry: (() -> Void)?
     let openSettings: () -> Void
+    /// File > Open Screen…, or nil without a server.
+    let openScreen: (() -> Void)?
     /// An attempt that resolves sooner than this never shows the spinner.
     var spinnerDelay: Duration = .milliseconds(300)
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ViewState private var showsSpinner = false
 
-    /// The channel icons' leading edge in the sidebar, which the dot and block share.
-    static let leading: CGFloat = 24
+    /// The leading edge the dot and the error block share, 4 points before the channel icons.
+    static let leading: CGFloat = 20
     /// The status line's capsule reaches this far past the dot on each side.
     static let capsuleOutset: CGFloat = 6
 
@@ -29,17 +32,27 @@ struct SidebarConnectionFooter: View {
                 errorBlock(heading: heading, error: error)
                     .padding(.horizontal, Self.leading)
             }
-            Button(action: openSettings) {
-                SidebarStatusLine(footer: footer, spinning: showsSpinner, serverURL: serverURL)
+            HStack {
+                Button(action: openSettings) {
+                    SidebarStatusLine(footer: footer, spinning: showsSpinner, serverURL: serverURL)
+                }
+                .buttonStyle(TokenCapsuleButtonStyle(emphasized: false))
+                .help("\(footer.verb) \(serverURL)\nChange the server in Settings.")
+                .accessibilityLabel("Server")
+                .accessibilityValue("\(SidebarFooter.server(serverURL)), \(footer.accessibilityValue)")
+                Spacer(minLength: 0)
+                Button("Open Screen", systemImage: "display") { openScreen?() }
+                    .labelStyle(.iconOnly)
+                    .symbolRenderingMode(.monochrome)
+                    .buttonStyle(.glass)
+                    .buttonBorderShape(.circle)
+                    .controlSize(.large)
+                    .help("Open Screen (Command-O)")
+                    .disabled(openScreen == nil)
             }
-            .buttonStyle(TokenCapsuleButtonStyle(emphasized: false))
-            .help("\(footer.verb) \(serverURL)\nChange the server in Settings.")
-            .accessibilityLabel("Server")
-            .accessibilityValue("\(SidebarFooter.server(serverURL)), \(footer.accessibilityValue)")
             .padding(.horizontal, Self.leading - Self.capsuleOutset)
         }
-        .padding(.top, 6)
-        .padding(.bottom, 13)
+        .padding(.vertical, 10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .task(id: busy) {
             if busy {

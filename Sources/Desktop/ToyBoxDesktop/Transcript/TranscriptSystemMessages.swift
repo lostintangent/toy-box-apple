@@ -7,16 +7,15 @@ import ToyBoxUI
 /// sentence led by its inline symbol, with values in primary ink and links in native link ink.
 struct TranscriptSystemMessages: View {
     let messages: [ChannelMessage]
-    let channelID: String
     let historyStart: Int
     let agents: [ChannelAgent]
     let api: ChannelAPI
     var findHighlights: [Int: TranscriptFindHighlight] = [:]
     var expandsMembership = false
-    @Environment(AppModel.self) private var app: AppModel?
     @Environment(ArtifactOpener.self) private var artifactOpener
     @Environment(\.channelTextScale) private var textScale
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.openWindow) private var openWindow
 
     private var contents: [ChannelSystemContent] { messages.compactMap(\.system) }
     private var first: ChannelSystemContent? { contents.first }
@@ -45,9 +44,8 @@ struct TranscriptSystemMessages: View {
             if messages.count > 1 && expandsMembership {
                 VStack(spacing: 4) {
                     ForEach(messages) { message in
-                        TranscriptSystemMessages(messages: [message], channelID: channelID,
-                                                 historyStart: historyStart, agents: agents, api: api,
-                                                 findHighlights: findHighlights)
+                        TranscriptSystemMessages(messages: [message], historyStart: historyStart,
+                                                 agents: agents, api: api, findHighlights: findHighlights)
                             .transcriptMessageFrame(id: message.id, sequence: message.sequence,
                                                     historyStart: historyStart)
                             .id(message.id)
@@ -83,10 +81,10 @@ struct TranscriptSystemMessages: View {
                         sentence(ChannelSystemContent.unavailablePreview).help(preview.url ?? "Missing URL")
                     }
                 } else if preview.kind == "screen" {
-                    if let url = app?.channelURL(channelID: channelID) {
-                        let screen = ChannelSystemContent.openScreen
+                    if let screenID = preview.screenId {
+                        let screen = ChannelSystemContent.screenPreview
                         valueLine(phrase, findText: "\(phrase) \(screen)") {
-                            Link(destination: url) {
+                            Button { openWindow(id: "screens", value: screenID) } label: {
                                 TranscriptSystemLinkLabel(title: screen, findHighlight: findHighlight,
                                                           findText: "\(phrase) \(screen)",
                                                           findOffset: "\(phrase) ".utf16.count)

@@ -1,0 +1,91 @@
+import ChannelClient
+import ChannelKit
+import SwiftUI
+
+/// A screen fitted to its space, live while the view is active. The host captures only the pixels
+/// it can show, zoom included.
+public struct ScreenView: View {
+    private let connection: ScreenConnection
+    private let zoom: CGFloat
+    private let isActive: Bool
+    @Environment(\.displayScale) private var displayScale
+    @ViewState private var space = CGSize.zero
+
+    public init(connection: ScreenConnection, zoom: CGFloat = 1, isActive: Bool = true) {
+        self.connection = connection
+        self.zoom = zoom
+        self.isActive = isActive
+    }
+
+    public var body: some View {
+        // The picture is empty until the first frame, so the view's lifetime hangs off its space.
+        Color.clear
+            .overlay { Picture(picture: connection.state.picture, space: space) }
+            .onGeometryChange(for: CGSize.self) { $0.size } action: { space = $0 }
+            .task(id: pixels) { connection.viewerSize = pixels }
+            .onDisappear { connection.viewerSize = nil }
+            .overlay { Status(connection: connection) }
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("Screen: \(connection.state.title ?? connection.screenID)")
+    }
+
+    /// The pixels the view can show while it's active, or nil while it can't show any.
+    private var pixels: CGSize? {
+        let scale = displayScale * zoom
+        guard isActive, space.width * scale >= 1, space.height * scale >= 1 else { return nil }
+        return CGSize(width: space.width * scale, height: space.height * scale)
+    }
+
+    /// The latest full frame with its changed region over it, clipped to a window's corners.
+    private struct Picture: View {
+        let picture: Screen.Picture
+        let space: CGSize
+
+        var body: some View {
+            if let image = picture.image, picture.size.width > 0, picture.size.height > 0 {
+                let scale = min(space.width / picture.size.width, space.height / picture.size.height)
+                ZStack(alignment: .topLeading) {
+                    Image(decorative: image, scale: 1).resizable()
+                    if let region = picture.region {
+                        Image(decorative: region.image, scale: 1).resizable()
+                            .frame(width: CGFloat(region.bounds.width) * scale,
+                                   height: CGFloat(region.bounds.height) * scale)
+                            .offset(x: CGFloat(region.bounds.x) * scale, y: CGFloat(region.bounds.y) * scale)
+                    }
+                }
+                .frame(width: picture.size.width * scale, height: picture.size.height * scale)
+                .clipShape(RoundedRectangle(cornerRadius: picture.radius * scale, style: .continuous))
+            }
+        }
+    }
+
+    /// What the view shows until its screen is live, or once it no longer is.
+    private struct Status: View {
+        let connection: ScreenConnection
+
+        var body: some View {
+            let state = connection.state
+            let title = state.title ?? "screen"
+            Group {
+                switch state.phase {
+                case .live: EmptyView()
+                case .connecting:
+                    DelayedProgressView("Connecting to \(title)…")
+                case .paused:
+                    ContentUnavailableView("Screen paused", systemImage: "pause.rectangle",
+                                           description: Text(state.reason ?? "The host has suspended capture."))
+                case .ended:
+                    ContentUnavailableView {
+                        Label("Unable to show \(title)", systemImage: "rectangle.slash")
+                    } description: {
+                        Text(state.reason ?? "This screen is no longer available.")
+                    } actions: {
+                        Button("Try Again", action: connection.retry)
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(state.phase == .paused ? AnyShapeStyle(.regularMaterial) : AnyShapeStyle(.clear))
+        }
+    }
+}
