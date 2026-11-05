@@ -3,7 +3,7 @@ import { command, main, root } from "../../shared/lib/index.ts";
 import { configureShareExtension, shareExtension } from "./share-extension.ts";
 import { configureWidgetExtension, widgetExtension } from "./widget-extension.ts";
 
-export async function signApp(app: string, options = ["--force", "--timestamp=none", "--sign", "-"]) {
+export async function signApp(app: string, options = ["--force", "--timestamp=none", "--sign", "-"], entitlements?: string) {
     const widget = widgetExtension(app);
     const hasWidget = await Bun.file(join(widget, "Contents/Info.plist")).exists();
     const productionWidget = hasWidget && options[options.indexOf("--sign") + 1] !== "-";
@@ -29,8 +29,8 @@ export async function signApp(app: string, options = ["--force", "--timestamp=no
         await command(["codesign", ...options, component]);
         await command(["codesign", "--verify", "--strict", component]);
     }
-    await command(["codesign", ...options, "--entitlements",
-        join(root, productionWidget ? "Resources/Desktop/WidgetHost.entitlements" : "Resources/Desktop/Release.entitlements"), app]);
+    await command(["codesign", ...options, "--entitlements", entitlements
+        ?? join(root, productionWidget ? "Resources/Desktop/WidgetHost.entitlements" : "Resources/Desktop/Release.entitlements"), app]);
     await command(["codesign", "--verify", "--strict", app]);
 }
 

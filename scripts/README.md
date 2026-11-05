@@ -16,6 +16,7 @@ Script tests are omitted. Bundle or release changes require both real release dr
 | `bun run test` | `desktop/test.ts` | Run Mac Swift tests, reject missing summaries and sample hung tests before failing | Contributors, agents, CI |
 | `bun run build` | `desktop/bundle/index.ts` | Build, bundle, ad-hoc sign and open the Mac app. `--no-open` builds only | Contributors, agents, CI |
 | `bun run validate` | `desktop/dogfood/validate.ts` | Build and launch an optimized, isolated Toy Box Test app on the demo | Agents |
+| `bun run development` | `desktop/dogfood/development.ts` | Build, development-sign and open Toy Box Dev beside the installed app, for Siri's developer preview | User, contributors |
 | `bun run snapshot` | `desktop/dogfood/snapshot.ts` | Render a window state to a PNG without taking focus | Agents |
 | `bun run benchmark` | `desktop/dogfood/benchmark.ts` | Check performance budgets against an isolated performance demo | Contributors, agents |
 | `bun run release vX.Y.Z` | `desktop/release/index.ts` | Sign, notarize, staple and zip the Mac app | Release owner, CI |

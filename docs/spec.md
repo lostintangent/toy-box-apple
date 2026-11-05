@@ -3331,7 +3331,8 @@ has its own check:
   device.
 - The phone Lock Screen's reply category registration and action counts are confirmed on a
   TestFlight build.
-- Siri is checked with a Developer ID build in Applications.
+- Siri is checked with `bun run development`'s Toy Box Dev, since Siri's developer preview answers
+  only development-signed builds.
 - The Needs you widget is checked in Small, Medium and Large, in Light, Dark, full-color and the
   system's accented appearance, with long names, long quotes, empty and stale states. Off-screen
   Clear-equivalent or accented renders establish content layout only, not the system's actual

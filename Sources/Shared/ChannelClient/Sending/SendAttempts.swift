@@ -48,7 +48,7 @@ public enum ChannelSendResult: Equatable, Sendable {
 
 public actor ChannelSendJournal {
     public static let shared = ChannelSendJournal(
-        directory: URL.applicationSupportDirectory.appending(path: "ToyBoxDesktop/Outbox", directoryHint: .isDirectory)
+        directory: .savedWriting().appending(path: "Outbox", directoryHint: .isDirectory)
     )
 
     private let directory: URL

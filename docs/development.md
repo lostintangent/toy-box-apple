@@ -150,6 +150,28 @@ open -n -g "/tmp/tbm-<you>/Toy Box.app" --args --server http://127.0.0.1:3210 -A
 `-ApplePersistenceIgnoreState YES` even with the restored-zero-window fallback, so test instances
 neither restore nor overwrite the shared saved window state.
 
+### Development-signed build
+
+Siri's developer preview answers only development-signed builds, so Siri is checked with
+`bun run development`. It builds an optimized Toy Box Dev (`dev.toybox.desktop.dev`), signs it
+with the Apple Development certificate and a macOS development profile, installs it as
+`~/Applications/Toy Box Dev.app`, quits a copy that's already running and opens it. Arguments
+after the command pass to the app.
+
+- It runs beside the installed app without touching its data. Its own bundle ID gives it its own
+  settings, so pick a server in Settings. Like the test copy, it has no widget, Share, Services,
+  URL scheme or document handlers, and the Spotlight, Open at Login, Dock menu and morning digest
+  integrations stay with `dev.toybox.desktop`. It has no update feed.
+- Isolated copies save drafts and the outbox under Application Support in a folder named for their
+  bundle ID, through `ToyBoxDataFolder` in Info.plist, rather than in the `ToyBoxDesktop` folder
+  that the installed app and `bun run build` share.
+- The **user** creates the profile: an explicit App ID `dev.toybox.desktop.dev` with no
+  capabilities, then a macOS App Development profile with the current Apple Development certificate
+  and this Mac, downloaded through Xcode's Settings, Accounts, Download Manual Profiles. The
+  command finds it there or in `~/Library/MobileDevice/Provisioning Profiles`, and prints these
+  steps with this Mac's Device ID when none matches.
+- It signs with the user's key, so the first run may ask to allow `codesign` to use it.
+
 ## The iPhone simulator
 
 `SCRATCH_PATH=/tmp/tbm-<you> bun run simulator` builds, bundles, installs and launches
@@ -301,8 +323,8 @@ servers for any script that writes. Never skip or retry actions.
   extracts the package metadata, merges it into the host and extension, then signs. Controls open
   host routes and never send from the extension.
 - `ToyBoxDesktopShare.appex` builds through SwiftPM and `_NSExtensionMain`, without Xcode or a
-  storyboard, and never auto-sends or connects to a server. Test, validation and benchmark clones
-  and snapshots omit Share, Services, URL schemes and document handlers, so check
+  storyboard, and never auto-sends or connects to a server. Test, validation, benchmark and
+  development clones and snapshots omit Share, Services, URL schemes and document handlers, so check
   `pluginkit -m -v -i dev.toybox.desktop.share` on a normal bundle, not an isolated clone.
 - `scripts/desktop/bundle/sign.ts` signs Sparkle's components inside out before the app, never
   with `--deep`. Keep Sparkle's license in the bundle.

@@ -9,6 +9,7 @@
     "test:mobile": "bun scripts/mobile/test.ts",
     "test": "bun scripts/desktop/test.ts",
     "validate": "bun scripts/desktop/dogfood/validate.ts",
+    "development": "bun scripts/desktop/dogfood/development.ts",
     "snapshot": "bun scripts/desktop/dogfood/snapshot.ts",
     "benchmark": "bun scripts/desktop/dogfood/benchmark.ts",
     "icon": "bun scripts/shared/icon.ts",

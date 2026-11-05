@@ -1,22 +1,10 @@
-import { mkdir, mkdtemp, realpath, rename, rm } from "node:fs/promises";
-import { basename, dirname, isAbsolute, join, resolve } from "node:path";
-import { bundleIdentity, command, isMissing, main, plist, required, root, text } from "../../shared/lib/index.ts";
+import { basename, dirname, join, resolve } from "node:path";
+import { bundleIdentity, command, main, plist, required, root, text } from "../../shared/lib/index.ts";
 import { signApp } from "../bundle/sign.ts";
 import { validateShareExtension } from "../bundle/share-extension.ts";
 import { isolateIntegrations } from "./isolate.ts";
+import { installCopy, launch, registerOnly } from "./install.ts";
 import { validateWidgetExtension } from "../bundle/widget-extension.ts";
-
-const lsregister = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister";
-
-function registeredCopies(dump: string, identifier: string) {
-    const paths = new Set<string>();
-    for (const record of dump.split(/^-{2,}$/m)) {
-        if (record.match(/^identifier:[ \t]+(.+)$/m)?.[1].trim() !== identifier) continue;
-        const path = record.match(/^path:[ \t]+(.+?)(?:[ \t]+\(0x[\da-f]+\))?[ \t]*$/im)?.[1];
-        if (path && isAbsolute(path)) paths.add(path);
-    }
-    return [...paths];
-}
 
 // Computer Use resolves the test ID through LaunchServices, which never resolves a copy under
 // /tmp and otherwise picks among every registered copy. So every worktree installs into the main
@@ -25,38 +13,6 @@ async function testAppPath(name: string) {
     const common = await text(["git", "rev-parse", "--path-format=absolute", "--git-common-dir"], { allowFailure: true });
     const checkout = basename(common) === ".git" ? dirname(common) : root;
     return join(checkout, ".build/agents", `${name}.app`);
-}
-
-async function registerOnly(app: string, identifier: string) {
-    const kept = await realpath(app);
-    for (const path of registeredCopies(await text([lsregister, "-dump"]), identifier)) {
-        if (path === kept) continue;
-        const result = await command([lsregister, "-u", path], { quiet: true, allowFailure: true });
-        if (result.exitCode) console.warn(`Could not unregister ${path}, so Computer Use may resolve ${identifier} to it.`);
-    }
-    await command([lsregister, "-f", app]);
-}
-
-async function installBundle(staged: string, destination: string) {
-    const old = await mkdtemp(join(dirname(destination), ".old."));
-    let moved = false;
-    try { await rename(destination, join(old, "previous.app")); moved = true; }
-    catch (error) { if (!isMissing(error)) throw error; }
-    try {
-        await rename(staged, destination);
-    } catch (error) {
-        if (moved) await rename(join(old, "previous.app"), destination);
-        await rm(old, { recursive: true, force: true });
-        throw error;
-    }
-    await rm(old, { recursive: true, force: true });
-}
-
-export async function pidsFor(binary: string) {
-    const escaped = binary.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const result = await command(["pgrep", "-f", `^${escaped}`], { quiet: true, allowFailure: true });
-    if (result.exitCode > 1) throw new Error(result.stderr.toString() || "Could not inspect app processes.");
-    return result.stdout.toString().trim().split(/\s+/).filter(Boolean).map(Number);
 }
 
 if (import.meta.main) await main(async () => {
@@ -76,31 +32,16 @@ if (import.meta.main) await main(async () => {
     }
     await validateShareExtension(join(scratch, "Toy Box.app"));
     await validateWidgetExtension(join(scratch, "Toy Box.app"));
-    await mkdir(dirname(testApp), { recursive: true });
-    const stage = await mkdtemp(join(dirname(testApp), ".stage."));
-    try {
-        const staged = join(stage, "Toy Box.app");
-        await command(["ditto", join(scratch, "Toy Box.app"), staged]);
+    await installCopy(join(scratch, "Toy Box.app"), testApp, async staged => {
         await plist(join(staged, "Contents/Info.plist"), [
             `Set :CFBundleIdentifier ${testID}`, `Set :CFBundleName ${testName}`,
             `Set :CFBundleDisplayName ${testName}`,
         ]);
         await isolateIntegrations(staged);
         await signApp(staged);
-        await installBundle(staged, testApp);
-    } finally { await rm(stage, { recursive: true, force: true }); }
+    });
     await registerOnly(testApp, testID);
-    const binary = await realpath(join(testApp, "Contents/MacOS/ToyBoxDesktop"));
-    const before = new Set(await pidsFor(binary));
-    await command(["open", "-n", "-g", testApp, "--args", "--server", server,
-        "-ApplePersistenceIgnoreState", "YES", ...process.argv.slice(2)]);
-    for (let attempt = 0; attempt < 50; attempt++) {
-        const pid = (await pidsFor(binary)).find(pid => !before.has(pid));
-        if (pid !== undefined) {
-            console.log(`Launched pid ${pid} against ${server} as ${testID}. Find its window with list_apps, and kill ${pid} when done.`);
-            return;
-        }
-        await Bun.sleep(100);
-    }
-    throw new Error("The app did not launch.");
+    const pid = await launch(testApp, ["--server", server, "-ApplePersistenceIgnoreState", "YES",
+        ...process.argv.slice(2)], ["-g"]);
+    console.log(`Launched pid ${pid} against ${server} as ${testID}. Find its window with list_apps, and kill ${pid} when done.`);
 });

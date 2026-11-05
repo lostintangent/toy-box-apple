@@ -2,7 +2,7 @@ import { mkdir, realpath, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { bundleIdentity, command, machineLock, main, plist, required, root, temporary } from "../../shared/lib/index.ts";
-import { pidsFor } from "./validate.ts";
+import { pidsFor } from "./install.ts";
 import { isolateIntegrations } from "./isolate.ts";
 
 async function reachable(url: string, successful = false) {
@@ -81,9 +81,9 @@ if (import.meta.main) await main(async () => {
                 }
                 await rm(app, { recursive: true, force: true });
                 await command(["ditto", join(build, "Toy Box.app"), app]);
-                await isolateIntegrations(app);
                 await plist(join(app, "Contents/Info.plist"), [`Set :CFBundleIdentifier ${identity}`,
                     `Set :CFBundleName ${name}`, `Set :CFBundleDisplayName ${name}`]);
+                await isolateIntegrations(app);
                 await command(["codesign", "--force", "--sign", "-", app], { quiet: true });
                 let over = 0, failed = 0;
                 if (values.summaries) console.log("Catch-up summaries are on");

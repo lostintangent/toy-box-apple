@@ -444,4 +444,20 @@ struct SendAttemptTests {
         #expect(store.sendAttempts.isEmpty)
         #expect(mock.requests.allSatisfy { $0.httpMethod == "GET" })
     }
+
+    @Test func aSideBySideCopyKeepsItsDraftsAndOutboxInTheFolderItsInfoPlistNames() throws {
+        func bundle(_ info: [String: String]) throws -> Bundle {
+            let url = FileManager.default.temporaryDirectory.appendingPathComponent("tbm-bundle-\(UUID()).bundle")
+            try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+            try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0)
+                .write(to: url.appending(path: "Info.plist"))
+            return try #require(Bundle(url: url))
+        }
+        let installed = try bundle(["CFBundleIdentifier": "dev.toybox.desktop"])
+        let development = try bundle(["CFBundleIdentifier": "dev.toybox.desktop.dev", "ToyBoxDataFolder": "dev.toybox.desktop.dev"])
+        defer { for copy in [installed, development] { try? FileManager.default.removeItem(at: copy.bundleURL) } }
+        #expect(URL.savedWriting(in: installed) == .applicationSupportDirectory.appending(path: "ToyBoxDesktop", directoryHint: .isDirectory))
+        #expect(URL.savedWriting(in: development)
+            == .applicationSupportDirectory.appending(path: "dev.toybox.desktop.dev", directoryHint: .isDirectory))
+    }
 }

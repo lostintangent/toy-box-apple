@@ -117,8 +117,7 @@ public final class ComposerDraft {
                               rasterizeImage: (@Sendable (Data, Int) async -> CGImage?)? = nil) -> ComposerDraft {
         let key = storageKey(serverURL: serverURL, channelID: channelID, scope: scope)
         if let draft = drafts[key] { return draft }
-        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        let fileURL = support.appendingPathComponent("ToyBoxDesktop/Drafts", isDirectory: true)
+        let fileURL = URL.savedWriting().appendingPathComponent("Drafts", isDirectory: true)
             .appendingPathComponent("\(key).json")
         let draft = ComposerDraft(fileURL: fileURL, imageIsReadable: imageIsReadable, rasterizeImage: rasterizeImage)
         drafts[key] = draft
