@@ -33,6 +33,8 @@ struct ChannelDetailView: View {
     /// Switching channels keeps this view and its toolbar, and only moves the connection and the
     /// per-channel content to the new store.
     @ViewState private var connection = ChannelConnection()
+    /// Truncates the open image's title before NSToolbar overflows Copy and Share.
+    @ViewState private var imageTitleFit = ViewerTitleFit()
     private var showsSurroundings: Bool { mountsSurroundings || model.launchOptions.isSnapshot }
     /// The transcript, an error or the deleted state is on screen.
     private var hasFirstContent: Bool {
@@ -61,7 +63,10 @@ struct ChannelDetailView: View {
             .onGeometryChange(for: ChannelTitleFit.Span.self) { geometry in
                 let frame = geometry.frame(in: .global)
                 return ChannelTitleFit.Span(minX: frame.minX, maxX: frame.maxX)
-            } action: { titleFit.update(detail: $0) }
+            } action: {
+                titleFit.update(detail: $0)
+                imageTitleFit.update(detail: $0)
+            }
             .settledLayout()
             .modifier(DetailMinimumWidth())
             .background(Color(nsColor: .textBackgroundColor))
@@ -74,14 +79,18 @@ struct ChannelDetailView: View {
                 overviewSheet.frame(minWidth: 360, idealWidth: 360, maxWidth: 360, minHeight: 420,
                                     idealHeight: min(640, windowHeight - 100), maxHeight: max(420, windowHeight - 100))
             }
-            // The image viewer shows the sender and position as the system title and subtitle, as
-            // Photos does. An artifact's title sits in its Back button's glass, and otherwise the
-            // title menu stands in for the title. The window keeps whichever title is showing.
+            // Each viewer's title menu, or the channel's, stands in for the system title. The
+            // window keeps whichever title is showing for the Window menu.
             .navigationTitle(artifacts.artifact?.title ?? viewing?.sender ?? title)
             .navigationSubtitle(artifacts.isPresented ? artifacts.subtitle : viewing?.subtitle ?? "")
-            .toolbar(removing: viewing != nil && !artifacts.isPresented ? nil : .title)
+            .toolbar(removing: .title)
             .toolbar { toolbar }
             .onChange(of: title, initial: true) { titleFit.update(title: title) }
+            .onChange(of: viewing, initial: true) { _, viewing in
+                guard let viewing else { return }
+                imageTitleFit.window = placement.window
+                imageTitleFit.update(title: viewing.sender, subtitle: viewing.subtitle)
+            }
             .task {
                 interaction.isInspectorPresented = model.launchOptions.isSnapshot
                     ? model.launchOptions.width >= 1000 : inspectorVisible
@@ -248,13 +257,22 @@ struct ChannelDetailView: View {
         }
     }
 
+    /// Like the artifact viewer's: Back, then the title as a menu of every image action, with Copy
+    /// and Share also as buttons.
     @ToolbarContentBuilder private var viewerToolbar: some ToolbarContent {
-        ToolbarItem(placement: .navigation) {
-            Button("Back", systemImage: "chevron.backward") { viewer.close() }
-                .help("Back to Conversation")
-                .keyboardShortcut(.cancelAction)
+        ViewerLeadingToolbar(title: viewing?.sender ?? "", subtitle: viewing?.subtitle ?? "",
+                             help: viewing.map { "\($0.sender)\n\($0.filename)" } ?? "",
+                             fit: imageTitleFit, back: { viewer.close() }) {
+            Button("Copy Image", systemImage: "doc.on.doc") { viewer.copyImage() }
+                .disabled(!viewer.canCopy)
+            Button("Open in Preview", systemImage: "arrow.up.forward.app") { viewer.openInPreview() }
+                .disabled(viewer.shareURL == nil)
         }
+        ToolbarSpacer(.flexible)
         ToolbarItemGroup(placement: .primaryAction) {
+            Button("Copy", systemImage: "doc.on.doc") { viewer.copyImage() }
+                .help("Copy Image")
+                .disabled(!viewer.canCopy)
             if let url = viewer.shareURL {
                 ShareLink(item: url) { Label("Share", systemImage: "square.and.arrow.up") }
                     .help("Share")
@@ -263,16 +281,6 @@ struct ChannelDetailView: View {
                     .help("Share")
                     .disabled(true)
             }
-            Menu {
-                Button("Copy Image", systemImage: "doc.on.doc") { viewer.copyImage() }
-                    .disabled(!viewer.canCopy)
-                Button("Open in Preview", systemImage: "arrow.up.forward.app") { viewer.openInPreview() }
-                    .disabled(viewer.shareURL == nil)
-            } label: {
-                Label("More", systemImage: "ellipsis")
-            }
-            .menuIndicator(.hidden)
-            .help("More")
         }
     }
 
