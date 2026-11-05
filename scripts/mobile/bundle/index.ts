@@ -2,6 +2,7 @@ import { copyFile, lstat, mkdir, readlink, rm, symlink, unlink, writeFile } from
 import { join } from "node:path";
 import { command, plist, root, scratchPath, text } from "../../shared/lib/index.ts";
 import { embedMobileAppIcon } from "../../shared/lib/app-icon.ts";
+import { extractMobileAppIntents } from "./app-intents.ts";
 
 export const mobileEnvironment = {
     ...process.env,
@@ -101,7 +102,7 @@ export async function buildMobile(device = false, tests = false) {
     await command([...args, ...(tests ? ["--build-tests"] : [])],
         { env: environment });
     const bin = await text([...args, "--show-bin-path"], { env: environment });
-    return { bin, scratch, version };
+    return { bin, scratch, version, sdk, configuration };
 }
 
 export function checkMobileBuildVersion(output: string, device: boolean, minimumOS: string, sdkVersion: string) {
@@ -140,7 +141,7 @@ export function checkMobileExtensionEntryPoint(commands: string, symbols: string
 }
 
 export async function bundleMobile(device = false) {
-    const { bin, scratch, version } = await buildMobile(device);
+    const { bin, scratch, version, sdk, configuration } = await buildMobile(device);
     const app = join(scratch, "Toy Box.app");
     await rm(app, { recursive: true, force: true });
     await mkdir(app, { recursive: true });
@@ -159,6 +160,7 @@ export async function bundleMobile(device = false) {
         "-replace", "-output", binary, binary], { env: mobileEnvironment });
     checkMobileBuildVersion(await text(["xcrun", "vtool", "-show-build", binary], { env: mobileEnvironment }),
         device, minimumOS, version);
+    await extractMobileAppIntents(app, scratch, device, configuration, sdk, minimumOS, mobileEnvironment);
     for (const extension of mobileExtensions) {
         const bundle = join(app, "PlugIns", `${extension.executable}.appex`);
         await rm(bundle, { recursive: true, force: true });

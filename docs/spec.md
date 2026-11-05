@@ -2878,9 +2878,10 @@ no extra window opens. Activation or a shown window, from a reopen, Open Channel
 extra or a notification, makes it an ordinary app. Every other launch, Dock click and reopen is
 an ordinary app launch.
 
-`bun run build` generates `Contents/Resources/Metadata.appintents` by running Xcode's
-`appintentsmetadataprocessor` directly over the const values SwiftPM already emits, so it needs
-Xcode installed but never `xcodebuild`. Titles, phrases and parameter names must stay literals.
+`bun run build` generates `Contents/Resources/Metadata.appintents`, and a phone bundle whose
+`ToyBoxMobile` declares App Intents generates `Toy Box.app/Metadata.appintents`, by running
+Xcode's `appintentsmetadataprocessor` directly over the const values SwiftPM already emits, so both
+need Xcode installed but never `xcodebuild`. Titles, phrases and parameter names must stay literals.
 The system only indexes a bundle outside `/tmp` that has launched once, and parameterized phrases
 need a team-signed build.
 

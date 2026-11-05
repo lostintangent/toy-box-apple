@@ -191,7 +191,8 @@ Omit `--validate-only` to upload. No password is passed as a shell argument or s
 release tools. Apple's tool performs authentication. Agents never create accounts, profiles or credentials,
 accept agreements, read keys/passwords or run real credential setup.
 
-The IPA contains `Payload/Toy Box.app`. `altool --validate-app` must pass before upload.
+The IPA contains `Payload/Toy Box.app`, whose `Metadata.appintents` lets Siri see the phone's
+App Intents when it declares any. `altool --validate-app` must pass before upload.
 `--validate-only` signs/packages and validates without uploading; `--build-only` creates an
 unsigned App Store-form bundle without profiles or credentials. `altool --upload-package` succeeds
 when its command exits zero. Print its output unchanged, without assuming it is one JSON document.

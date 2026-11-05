@@ -271,6 +271,9 @@ servers for any script that writes. Never skip or retry actions.
 - Before signing, the build stamps and verifies the selected iOS SDK in `LC_BUILD_VERSION`,
   keeping the plist's deployment minimum and the device or Simulator platform. `DTSDKName` alone
   isn't enough. Every executable's real SDK stamp is verified.
+- Before signing, it extracts the `ToyBoxMobile` module's App Intents metadata into
+  `Metadata.appintents` with Xcode's `appintentsmetadataprocessor`, as `bun run build` does on the
+  Mac. A module with no App Intents gets no metadata, and the bundle continues without it.
 - It compiles `Resources/Shared/AppIcon.icon` with the selected platform's `actool`, embedding
   layered appearances, PNG fallbacks and generated metadata. There's no separate phone artwork or
   iOS asset catalog.
