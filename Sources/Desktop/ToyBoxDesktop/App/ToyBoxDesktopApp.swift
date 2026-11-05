@@ -68,11 +68,12 @@ struct ToyBoxDesktopApp: App {
         // and opening a screen a window already shows brings that window forward.
         WindowGroup("Screens", id: "screens", for: String.self) { $screenID in
             if let api = model.api {
-                NavigationStack(path: Binding(get: { screenID.map { [$0] } ?? [] }, set: { screenID = $0.last })) {
+                NavigationStack {
                     ScreenBrowser(api: api) { screenID = $0.id }
                         .navigationTitle("Screens")
-                        .navigationDestination(for: String.self) { ScreenViewer(api: api, screenID: $0) }
+                        .navigationDestination(item: $screenID) { ScreenViewer(api: api, screenID: $0) }
                 }
+                .id(model.serverURL)
                 .preferredColorScheme(colorScheme)
             }
         }
