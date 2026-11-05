@@ -63,7 +63,7 @@ struct OverviewAboutSection: View {
 
     @ViewBuilder
     private func previewRow(_ preview: ChannelPreview) -> some View {
-        if preview.kind == "screen", let screenID = preview.screenId, !screenID.isEmpty {
+        if preview.kind == "screen", let screenID = preview.screenId {
             Button {
                 showsScreen = true
             } label: {
@@ -71,7 +71,7 @@ struct OverviewAboutSection: View {
                     .frame(minHeight: 44, alignment: .leading)
             }
             .fullScreenCover(isPresented: $showsScreen) { ScreenViewer(api: store.api, screenID: screenID) }
-        } else if let address = previewAddress(preview) {
+        } else if preview.kind == "url", let address = preview.url.flatMap(store.api.resourceURL) {
             Button {
                 session.previewError = nil
                 openURL(address) { accepted in
@@ -108,10 +108,6 @@ struct OverviewAboutSection: View {
             Image(systemName: systemImage)
                 .foregroundStyle(Color.primary)
         }
-    }
-
-    private func previewAddress(_ preview: ChannelPreview) -> URL? {
-        preview.kind == "url" ? preview.url.flatMap(store.api.resourceURL) : nil
     }
 }
 
