@@ -278,10 +278,11 @@ struct CatalogTests {
         try await eventually(observing: mock) { catalog.state == Self.served && mock.pendingResponseCount == 1 }
 
         let first = Task { await catalog.refresh() }
+        // URLSession stops the earlier stream and starts the new one in either order, so the one held
+        // response is the new stream only once the earlier one's stop is recorded too.
         try await eventually(observing: mock) {
-            catalog.isRequested && mock.requests.count == 2 && mock.pendingResponseCount == 1
+            catalog.isRequested && mock.requests.count == 2 && mock.stops == 1 && mock.pendingResponseCount == 1
         }
-        #expect(mock.stops == 1, "The earlier stream closed")
         // A refresh joins in one main-actor turn, so once this one starts it has joined.
         let joining = AsyncStream<Void>.makeStream()
         let second = Task {
