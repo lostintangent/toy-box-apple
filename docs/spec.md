@@ -3150,9 +3150,9 @@ navy tile with a white speech-bubble head.
 `bun run benchmark` checks these on a release build against `bun run demo:perf`, with 100
 messages loaded and again with every older page loaded. Both live-message passes first follow the
 latest message, so each new message is drawn and followed. Hover under a resting pointer adds to
-what a message costs, so the window opens away from the pointer, and the live-message passes run
-again with the transcript under the still pointer, against the same budgets. It times the main run
-loop three ways:
+what a message or a scroll costs, so the window opens away from the pointer, and the live-message
+and scrolling passes run again with the transcript under the still pointer, against the same
+budgets. It times the main run loop three ways:
 
 - **Busy**: every pass from waking until the loop is about to sleep, added up.
 - **Longest saturated span**: the longest of those passes. When work arrives faster than it

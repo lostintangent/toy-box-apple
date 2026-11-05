@@ -93,8 +93,9 @@ builds the release `dev.toybox.desktop.benchmark` app, runs each scenario on a f
 Performance budgets define busy time, saturated spans and frame gaps.
 
 - Leave the window uncovered, and leave the pointer still, away from the edges of its screen. The
-  window opens away from the pointer, and `messages` also measures with the transcript moved under
-  it, where a person reading often rests it. Its results say which case each line is.
+  window opens away from the pointer, and `messages` and `scroll` also measure with the transcript
+  moved under it, where a person reading or scrolling rests it. Their results say which case each
+  line is.
 - `key` runs only when named. It takes focus for about 45 seconds and measures key-window CPU with
   4, then 20, working agents to expose continuous animation. Warn the user first.
 - Catch-up summaries stay off unless you pass `--summaries`.

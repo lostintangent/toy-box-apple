@@ -39,9 +39,11 @@ import QuartzCore
 ///   first verifies the full applied distance and per-frame sampling in both directions. A short
 ///   already-visited transcript stretch then verifies that the same input reaches that container.
 ///   A frame the display link skips is a dropped frame. The budget is on hitch time, the dropped
-///   frames' milliseconds per second of scrolling. Hover runs only while the pointer is over the
-///   transcript, which the results say. Late-run-loop samples compare the first visible row's
-///   movement with wheel deltas delivered since the preceding sample, with a 1-point drift budget.
+///   frames' milliseconds per second of scrolling. It scrolls with the pointer away, then again with
+///   the transcript moved under the still pointer, where a person's wheel or trackpad always
+///   scrolls it, so hover runs as it does for them. Late-run-loop samples compare the first
+///   visible row's movement with wheel deltas delivered since the preceding sample, with a 1-point
+///   drift budget.
 /// - `trackpad`: an opt-in phased native check. It reports delivery and native travel after AppKit's
 ///   interpolation, not wheel-baseline performance or raw wheel-relative row drift.
 /// - `idle`: a minute of wakeups and busy time once the channel settles. No budget.
@@ -297,7 +299,7 @@ final class PerformanceBenchmark {
         let initialGap = await scrollToEnd()
         guard initialGap < 2 else { fail("the transcript stayed \(Int(initialGap)) pt from the latest message") }
         await measureMessages(in: store)
-        await measureMessagesUnderPointer(in: store)
+        await underPointer { await measureMessages(in: store) }
         let loaded = store.messages.count
         while store.hasOlderMessages {
             await store.loadOlder()
@@ -311,12 +313,12 @@ final class PerformanceBenchmark {
         let gap = await scrollToEnd()
         guard gap < 2 else { fail("the transcript stayed \(Int(gap)) pt from the latest message") }
         await measureMessages(in: store)
-        await measureMessagesUnderPointer(in: store)
+        await underPointer { await measureMessages(in: store) }
     }
 
-    /// Measures messages again with the transcript moved under the still pointer, so rows slide
-    /// under it as they do while a person reads, then puts the window back.
-    private func measureMessagesUnderPointer(in store: ChannelStore) async {
+    /// Measures again with the transcript moved under the still pointer, so rows slide under it as
+    /// they do while a person reads or scrolls, then puts the window back.
+    private func underPointer(_ measure: () async -> Void) async {
         guard let window, let scroll = transcriptScrollView() else { fail("there's no transcript scroll view") }
         let away = window.frame.origin
         let pointer = NSEvent.mouseLocation
@@ -336,20 +338,39 @@ final class PerformanceBenchmark {
         guard pointerIsOver(scroll) else {
             fail("something covers the pointer, so the transcript can't sit under it. Uncover it and run it again.")
         }
-        await measureMessages(in: store)
+        await measure()
         window.setFrameOrigin(away)
         _ = await settled()
+    }
+
+    /// Where the pointer rested as a measurement began. Hover follows it, so a measurement holds
+    /// only if it stayed there.
+    private struct PointerRest {
+        let location: CGPoint
+        let over: Bool
+
+        var label: String { over ? " with the pointer over the transcript" : "" }
+    }
+
+    private func notePointer(over scroll: NSScrollView, at loaded: Int) -> PointerRest {
+        let rest = PointerRest(location: NSEvent.mouseLocation, over: pointerIsOver(scroll))
+        info("Pointer at \(loaded) loaded", rest.over ? "over the transcript, so hover runs as it does for a person"
+             : "outside the transcript, so hover doesn't run")
+        return rest
+    }
+
+    private func requireStill(_ rest: PointerRest, over scroll: NSScrollView) {
+        guard pointerIsOver(scroll) == rest.over, !rest.over || NSEvent.mouseLocation == rest.location else {
+            fail("the pointer moved during the \(scenario.rawValue) benchmark. Leave it still and run it again.")
+        }
     }
 
     private func measureMessages(in store: ChannelStore) async {
         guard let meter else { return }
         guard let scroll = transcriptScrollView() else { fail("there's no transcript scroll view") }
         let loaded = store.messages.count
-        let pointer = NSEvent.mouseLocation
-        let over = pointerIsOver(scroll)
-        let place = over ? " with the pointer over the transcript" : ""
-        info("Pointer at \(loaded) loaded", over ? "over the transcript, so hover runs as it does for a person"
-             : "outside the transcript, so hover doesn't run")
+        let pointer = notePointer(over: scroll, at: loaded)
+        let place = pointer.label
         var costs: [Double] = []
         // The first two warm up anything a new row builds once.
         for index in 0..<12 {
@@ -376,10 +397,7 @@ final class PerformanceBenchmark {
               "\(format(meter.longestGap * 1000)) longest frame gap, \(format(meter.longestSpan * 1000)) longest "
               + "saturated span, \(format(meter.busy * 1000)) busy",
               value: meter.longestGap * 1000, budget: Budget.burstFrameGap)
-        // A pointer that moves runs different hover work, so these results hold only if it stayed put.
-        guard pointerIsOver(scroll) == over, !over || NSEvent.mouseLocation == pointer else {
-            fail("the pointer moved during the messages benchmark. Leave it still and run it again.")
-        }
+        requireStill(pointer, over: scroll)
     }
 
     /// Scrolls the transcript's own scroll view to its top, so the view's paging runs as it does
@@ -435,6 +453,7 @@ final class PerformanceBenchmark {
         await verifyTranscriptInput()
         await measureScrolling(in: store)
         if BenchmarkScrollGeometry.traceEnabled { return }
+        await measureScrollingUnderPointer(in: store)
         let loaded = store.messages.count
         while store.hasOlderMessages {
             await store.loadOlder()
@@ -446,6 +465,15 @@ final class PerformanceBenchmark {
         let gap = await scrollToEnd()
         guard gap < 2 else { fail("the transcript stayed \(Int(gap)) pt from the latest message") }
         await measureScrolling(in: store)
+        await measureScrollingUnderPointer(in: store)
+    }
+
+    /// Scrolls again from the latest message with the transcript under the still pointer, where a
+    /// person's wheel or trackpad always scrolls it.
+    private func measureScrollingUnderPointer(in store: ChannelStore) async {
+        let gap = await scrollToEnd()
+        guard gap < 2 else { fail("the transcript stayed \(Int(gap)) pt from the latest message") }
+        await underPointer { await measureScrolling(in: store) }
     }
 
     private func verifyWheelDriver() async {
@@ -561,9 +589,8 @@ final class PerformanceBenchmark {
             fail("\(channelID) is \(Int(offsetFromTop(scroll))) pt tall, too short to scroll. "
                  + "Measure scroll on scroll-demo from bun run demo:perf.")
         }
-        info("Pointer at \(loaded) loaded", pointerIsOver(scroll)
-             ? "over the transcript, so hover runs as it does for a person"
-             : "outside the transcript, so hover doesn't run")
+        let pointer = notePointer(over: scroll, at: loaded)
+        let place = "at \(loaded) loaded\(pointer.label)"
         var distance = reach
         for up in [true, false] {
             try? await Task.sleep(for: .milliseconds(300))
@@ -585,13 +612,14 @@ final class PerformanceBenchmark {
                     let encoder = JSONEncoder()
                     for frame in frames.trace {
                         let data = try encoder.encode(frame)
-                        info("Scroll trace \(up ? "up" : "down") at \(loaded) loaded",
+                        info("Scroll trace \(up ? "up" : "down") \(place)",
                              String(decoding: data, as: UTF8.self))
                     }
                 } catch { fail("couldn't encode the signed scroll trace: \(error.localizedDescription)") }
             }
             requireDelivery(frames.delivery)
-            info("Wheel delivery \(up ? "up" : "down") at \(loaded) loaded",
+            requireStill(pointer, over: scroll)
+            info("Wheel delivery \(up ? "up" : "down") \(place)",
                  "\(frames.delivery.deliveredEvents)/\(frames.delivery.postedEvents) events, "
                  + "\(frames.delivery.deliveredDelta)/\(frames.delivery.postedDelta) pt")
             let moved = abs(offsetFromTop(scroll) - start)
@@ -599,7 +627,7 @@ final class PerformanceBenchmark {
                 fail("the transcript moved \(Int(moved)) pt for \(Int(gesture.scrolled)) pt of wheel events")
             }
             let hitches = Double(frames.dropped) * frames.duration * 1000 / max(frames.seconds, 0.001)
-            check("Scrolling \(up ? "up" : "down") \(Int(gesture.scrolled)) pt at \(loaded) loaded",
+            check("Scrolling \(up ? "up" : "down") \(Int(gesture.scrolled)) pt \(place)",
                   "\(frames.dropped) of \(frames.count) frames dropped, \(format(frames.longest * 1000)) longest frame, "
                   + String(format: "%.1f ms/s hitch time, main thread %.0f%% busy, "
                            + "%.1f ms main-thread CPU, %.1f pt native travel, %.1f CPU ms/1,000 pt",
@@ -612,7 +640,7 @@ final class PerformanceBenchmark {
                 fail("scroll drift measured \(frames.drift.measuredFrames) frame pairs, "
                      + "with \(frames.drift.unmeasuredFrames) unmeasurable frame pairs")
             }
-            check("Row drift \(up ? "up" : "down") at \(loaded) loaded",
+            check("Row drift \(up ? "up" : "down") \(place)",
                   "\(frames.drift.measuredFrames) frame pairs, \(frames.drift.exceedingFrames) over 1 pt, "
                   + String(format: "%.3f pt maximum, %.3f pt total absolute drift",
                            frames.drift.maximum, frames.drift.total),
@@ -622,7 +650,7 @@ final class PerformanceBenchmark {
                       frames.displayLinkDrift.unmeasuredFrames == 0 else {
                     fail("the diagnostic display-link sampler had incomplete geometry coverage")
                 }
-                info("Diagnostic display-link drift \(up ? "up" : "down") at \(loaded) loaded",
+                info("Diagnostic display-link drift \(up ? "up" : "down") \(place)",
                      "\(frames.displayLinkDrift.measuredFrames) frame pairs, "
                      + "\(frames.displayLinkDrift.exceedingFrames) over 1 pt, "
                      + String(format: "%.3f pt maximum, not an acceptance metric", frames.displayLinkDrift.maximum))
