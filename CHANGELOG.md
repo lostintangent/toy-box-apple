@@ -1,5 +1,22 @@
 # Changelog
 
+## Mac 0.1.22
+
+### Features
+
+- The Screens window has a Refresh button, so you can pick up new windows and fresh thumbnails without reopening it.
+
+### Bugs/Polish
+
+- An open file or image now keeps every action in a menu on its name, with its most useful action, Reload or Copy, right beside Share.
+- Turning on Message View now just tints its button, so it stays easy to spot without changing shape.
+
+## iPhone 0.1.15
+
+### Bugs/Polish
+
+- Pulling to refresh the Screens list now also refreshes every thumbnail, so each one shows how its screen looks right now.
+
 ## Mac 0.1.21
 
 ### Features
