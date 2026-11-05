@@ -6,6 +6,11 @@
 
 - When a channel's preview is a window or display on the Mac running Toy Box, you can now watch it live in the app, and browse everything that Mac can show.
 
+### Bugs/Polish
+
+- The window's toolbar is simpler and lets the conversation run to the top. The channel's actions now open from its name, and Overview runs the full height of the window.
+- An open file shows its name beside Back, with nothing between the toolbar and the file.
+
 ## iPhone 0.1.14
 
 ### Features
