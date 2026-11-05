@@ -506,20 +506,15 @@ glass element. Custom `glassEffect` appears only on the surfaces this section na
 **Toolbar.** Use the system's default window toolbar style, with no explicit
 `.windowToolbarStyle(.unified)`, and set no `toolbarBackground`, `toolbarBackgroundVisibility`
 or column title plate anywhere. Never draw our own rule or band under the toolbar. The
-conversation and the inspector scroll beneath the toolbar, and a top scroll-edge effect
-separates content from the controls. Give both the conversation's and the inspector's
-`ScrollView` `.scrollEdgeEffectStyle(.hard, for: .top)`. On macOS 27 the automatic top edge
-resolves to the soft style, which the system doesn't draw at the top of a key window, so messages
-and the inspector's dense 11-point status text run crisp under the title and the glass controls.
-The hard edge draws the toolbar's 1-point divider at the same height across both columns, even at
-rest, so the toolbar reads as one unified band and rows blur as they pass beneath it.
+conversation and Overview scroll beneath the toolbar under the system's soft top scroll edge,
+`.scrollEdgeEffectStyle(.soft, for: .vertical)` on the conversation and the automatic edge on
+Overview, so the toolbar's glass controls float over the content with no band or divider.
 
-The detail toolbar shows the channel name in the system title position. Its trailing items form
-two `.primaryAction` groups. Message View and Channel Actions share one glass group, then
-`ToolbarSpacer(.fixed, placement: .primaryAction)`, then Overview (`sidebar.trailing`) alone.
-When the inspector is open, the Overview button sits over the inspector column, as in Xcode and
-Pages. The only custom toolbar tint is the active
-Message View filter symbol.
+The detail toolbar leads with the channel title, a glass button in the navigation slot, then a
+flexible space and Message View. Overview runs the full window height beside the split view, in
+an `.inspector` outside `NavigationSplitView`, with only its toggle (`sidebar.trailing`) over its
+top. A closed Overview's toggle sits after Message View. The only custom toolbar tint is the
+active Message View filter symbol.
 
 **Sidebar.** The `NavigationSplitView` sidebar runs the full window height with the traffic
 lights over its top, and the system decides its shape. It runs flush to the window's leading,
@@ -666,29 +661,30 @@ sidebar.
 With the sidebar hidden, the lane and composer widen with the window. Messages keep their
 readable caps and stay pinned to their edges.
 
-The sidebar toolbar holds the sidebar toggle, title "Channels" and New Channel (`plus`).
+The sidebar toolbar holds the sidebar toggle at its leading end and New Channel (`plus`) at its
+trailing end. A collapsed sidebar leaves room for only the toggle after the traffic lights, so
+New Channel steps out while the sidebar is collapsed or sliding open, and the title menu still
+offers it.
 The detail toolbar shows only the channel name, without a decorative hash prefix or purpose
 subtitle. The name is a title menu, the pattern Pages, Keynote and Numbers use for a document
 title, so channels stay one click away with the sidebar collapsed. `toolbarTitleMenu` only draws
 for document-based windows, so the title is a native toolbar `Menu` in the navigation slot,
-styled as the system title: 15 semibold, dimmed in inactive windows, and a chevron that fades in
-on hover. Keep `.navigationTitle` for Mission Control and the Window menu. The title text sits
-where the system title did, 20 points from the detail column's leading edge with the sidebar
-visible, and at the system title's spacing after the leading toolbar items with it collapsed. It
-lists every channel in sidebar order with the current one checked, then a divider, New Channel… and
-Edit Channel…. Choosing a channel behaves like selecting it in the sidebar. Items mirror the
-sidebar's attention state with the system menu-item badge (Input Needed, Unread or Done). If the
-title menu can't carry badges, omit them rather than appending text to channel names.
-Trailing controls are Message View (`line.3.horizontal.decrease`),
-Channel Actions (`ellipsis`), and Overview
-(`sidebar.trailing`). Put Open in Toy Box in Channel Actions and the menu bar, not another
-permanent toolbar button. A long name truncates at the tail like the system title, so every
-control fits down to the 760-point minimum window. NSToolbar never compresses a SwiftUI item, so
-the title takes its width from the detail column. It ends 12 points short of an open inspector
-rather than running over it, and leaves the 20 points NSToolbar needs before the trailing capsule,
-plus 4 of margin. While it's truncated, its help shows the full name instead of Switch Channel,
-like an expansion tooltip, and the menu still names the channel in full. Should the toolbar run out of room
-anyway, Channel Actions overflows first, then Message View, and the title and Overview stay. Keep
+a glass button with the name in 15 semibold, dimmed in inactive windows, and no chevron. The
+window shows no system title beside it. Keep `.navigationTitle` for Mission Control and the
+Window menu. It lists every channel in sidebar order with the current one checked, then New
+Channel…, then Edit Channel… and Open in Toy Box, then Delete Channel…, each group after a
+divider. There's no separate Channel Actions button. Choosing a channel behaves like selecting it
+in the sidebar. Items mirror the sidebar's attention state with the system menu-item badge (Input
+Needed, Unread or Done). If the title menu can't carry badges, omit them rather than appending
+text to channel names.
+Trailing controls are Message View (`line.3.horizontal.decrease`) and Overview
+(`sidebar.trailing`). Put Open in Toy Box in the title menu and the menu bar, not another
+permanent toolbar button. A long name truncates at the tail, so every control fits down to the
+760-point minimum window. NSToolbar never compresses a SwiftUI item, so the title takes its width
+from the detail column and stops short of an open Overview and the trailing controls. While it's
+truncated, its help shows the full name instead of Switch Channel, like an expansion tooltip, and
+the menu still names the channel in full. Should the toolbar run out of room anyway, Message View
+overflows first, and the title and Overview stay. Keep
 working status in the floating activity row, not duplicated beside the window title.
 
 Opening a channel selects it in the current window. Command-click or Open in New Window creates a
@@ -3290,7 +3286,7 @@ has its own check:
   invocation is proven with real APNs on a device.
 - Simulator checks prove real Follow start against the demo. Live Activity content updates and
   automatic endings require server APNs delivery and are proven on device.
-- Shell checks the title menu's hover chevron and menu in the real glass toolbar.
+- Shell checks the title menu's glass button and menu in the real glass toolbar.
 - Deterministic regressions protect the phone image gallery's pager capsule and toolbar geometry.
 - The Mac notification banner's two visible actions, Reply and the first choice, are confirmed on
   device.

@@ -1719,29 +1719,29 @@ struct ChannelTitleFitTests {
     let long = "Quarterly launch readiness review and retrospective planning"
 
     @Test func theIdealWidthMatchesTheTitleMenusLayout() {
-        // The 12-point inset, 438 points of semibold text, 4 points of spacing and the 11-point chevron.
-        #expect(abs(ChannelTitleFit.idealWidth(of: long) - 465) <= 2)
+        // A 12-point inset on each side of 438 points of semibold text.
+        #expect(abs(ChannelTitleFit.idealWidth(of: long) - 462) <= 2)
         #expect(ChannelTitleFit.idealWidth(of: "Studio demo") < 130)
     }
 
     @Test func theNarrowestWindowKeepsEveryControl() {
         // The title starts 8 points past the 248-point sidebar and ends 24 points, plus the item's
-        // inset, before the trailing capsule at 634.
+        // inset, before the trailing controls at 667.
         let room = ChannelTitleFit.room(detail: Span(minX: 248, maxX: 760), windowWidth: 760)
-        #expect(room == 350)
-        #expect(ChannelTitleFit.maxWidth(idealWidth: 465, room: room) == 350)
+        #expect(room == 383)
+        #expect(ChannelTitleFit.maxWidth(idealWidth: 465, room: room) == 383)
     }
 
     @Test func aCollapsedSidebarStartsTheTitleAfterTheSidebarButton() {
-        #expect(ChannelTitleFit.room(detail: Span(minX: 0, maxX: 760), windowWidth: 760) == 426)
+        #expect(ChannelTitleFit.room(detail: Span(minX: 0, maxX: 760), windowWidth: 760) == 499)
         // The sidebar's collapse animation passes through widths narrower than the buttons it covers.
-        #expect(ChannelTitleFit.room(detail: Span(minX: 120, maxX: 760), windowWidth: 760) == 426)
+        #expect(ChannelTitleFit.room(detail: Span(minX: 120, maxX: 760), windowWidth: 760) == 499)
     }
 
-    @Test func anOpenInspectorStopsTheTitleShortOfIt() {
+    @Test func anOpenOverviewStopsTheTitleShortOfIt() {
         let room = ChannelTitleFit.room(detail: Span(minX: 248, maxX: 688), windowWidth: 1000)
-        #expect(room == 420)
-        #expect(ChannelTitleFit.room(detail: Span(minX: 248, maxX: 968), windowWidth: 1280) == 700)
+        #expect(room == 360)
+        #expect(ChannelTitleFit.room(detail: Span(minX: 248, maxX: 968), windowWidth: 1280) == 640)
     }
 
     @Test func aTitleThatFitsHasNoCap() {
@@ -1759,7 +1759,7 @@ struct ChannelTitleFitTests {
         #expect(fit.maxWidth == nil)
         fit.update(detail: Span(minX: 248, maxX: 760))
         fit.update(windowWidth: 760)
-        #expect(fit.maxWidth == 350)
+        #expect(fit.maxWidth == 383)
         fit.update(title: "Studio demo")
         #expect(fit.maxWidth == nil)
     }
