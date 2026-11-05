@@ -1271,8 +1271,8 @@ menu lists the two choices directly with an inline picker and no header, while t
 menu keeps its Message View submenu among its other sections. The phone's menu also lists them
 directly. A non-default
 filter gives its toolbar button an active tint and label/help. On both apps that's the accent
-glyph: a standalone phone Message View item tints its glyph while Your Messages is on and keeps
-its neutral glass. A toolbar `Menu` takes no prominent glass fill, even with `.menuStyle(.button)`
+glyph: the same outline `line.3.horizontal.decrease` turns accent while Your Messages is on, never
+a filled or circled variant, and a standalone phone Message View item keeps its neutral glass. A toolbar `Menu` takes no prominent glass fill, even with `.menuStyle(.button)`
 and `.glassProminent`, and a Button with a popover would trade the one-tap menu for a cosmetic
 fill. Its accessibility value is "Your Messages". Where Message View sits in the phone's title menu, the "Your Messages" subtitle
 carries the state and the title stays untinted. It does not change the composer

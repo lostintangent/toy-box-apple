@@ -295,8 +295,7 @@ struct ChannelDetailView: View {
                 .pickerStyle(.inline)
                 .labelsHidden()
             } label: {
-                Label("Message View", systemImage: interaction.messageView == .all
-                      ? "line.3.horizontal.decrease" : "line.3.horizontal.decrease.circle.fill")
+                Label("Message View", systemImage: "line.3.horizontal.decrease")
                     .foregroundStyle(interaction.messageView == .all ? Color.secondary : Color.accentColor)
             }
             .menuIndicator(.hidden)
