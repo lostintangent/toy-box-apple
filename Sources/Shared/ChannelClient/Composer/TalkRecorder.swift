@@ -1,16 +1,13 @@
-import ChannelClient
 import ChannelKit
 import Foundation
 import Observation
-import SwiftUI
-import UIKit
 
 /// Swipe to talk: one spoken note from the channel list to that channel's Lead, without opening
-/// the channel. One recorder serves the whole list, and one row uses it at a time. See Talk to the
-/// Lead in docs/spec.md.
+/// the channel. One recorder serves the whole list, and one row uses it at a time. It holds the
+/// note's rules, and the app draws it and supplies its motion. See Talk to the Lead in docs/spec.md.
 @MainActor @Observable
-final class TalkRecorder: DictationTextTarget {
-    enum Phase: Equatable {
+package final class TalkRecorder: DictationTextTarget {
+    package enum Phase: Equatable {
         /// Listening, paused or getting ready, with the row grown into the recorder.
         case recording
         case sending
@@ -26,38 +23,46 @@ final class TalkRecorder: DictationTextTarget {
 
     /// The held row's frame in the window, and how far before its trailing edge the row's text
     /// ends, which is the time's trailing edge unless the time leads its own line.
-    struct Cell: Equatable {
-        var frame: CGRect
-        var textInset: CGFloat = 0
+    package struct Cell: Equatable {
+        package var frame: CGRect
+        package var textInset: CGFloat = 0
+
+        package init(frame: CGRect, textInset: CGFloat = 0) {
+            self.frame = frame
+            self.textInset = textInset
+        }
     }
 
-    enum TimeFace: Hashable {
+    package enum TimeFace: Hashable {
         case counter, offline, failed(ChannelSendPhase), noteTime
     }
 
-    let dictation: ComposerDictation
-    private(set) var channelID: String?
-    private(set) var channelName = ""
-    private(set) var phase: Phase?
+    /// The card's beats, which the app animates with the spec's springs.
+    package enum Motion { case open, sent, land, settle }
+
+    package let dictation: ComposerDictation
+    package private(set) var channelID: String?
+    package private(set) var channelName = ""
+    package private(set) var phase: Phase?
     /// Earlier listening sessions in this note, since a pause ends the dictation session.
-    private(set) var committed = ""
-    private(set) var transcript = DictationTranscript()
+    package private(set) var committed = ""
+    package private(set) var transcript = DictationTranscript()
     /// The voice level, newest first, sampled about 12 times a second while listening.
-    private(set) var levels: [Double] = []
+    package private(set) var levels: [Double] = []
     /// True once a send has gone 300 ms without confirming.
-    private(set) var showsProgress = false
-    private(set) var listeningSince: Date?
+    package private(set) var showsProgress = false
+    package private(set) var listeningSince: Date?
     /// The held row in the window, which the card opens on and returns to.
-    var cell: Cell?
+    package var cell: Cell?
     /// True once the card has grown from the row. The card's growth, every slot's swap and the
     /// list's dim follow it, so they run in the card's own spring, since the swipe action's
     /// transaction doesn't animate.
-    var isGrown = false
+    package var isGrown = false
     /// When the server committed the note, which the row shows as its time until it settles.
-    private(set) var sentAt: Date?
+    package private(set) var sentAt: Date?
     /// The list's order when the note began, held until the row settles so the sent note's
     /// activity can't move its row mid-beat.
-    private(set) var order: [String]?
+    package private(set) var order: [String]?
     @ObservationIgnored private var listened: TimeInterval = 0
     @ObservationIgnored private var store: ChannelStore?
     @ObservationIgnored private weak var catalog: ChannelCatalogStore?
@@ -67,25 +72,33 @@ final class TalkRecorder: DictationTextTarget {
     @ObservationIgnored private var settling: Task<Void, Never>?
     @ObservationIgnored private let draft: @MainActor (ChannelStore) -> ComposerDraft
     @ObservationIgnored private let announce: @MainActor (String) -> Void
+    @ObservationIgnored private let animate: @MainActor (Motion, () -> Void) -> Void
+    @ObservationIgnored private let pause: @MainActor (Duration) async -> Void
 
-    static let sampleCount = 64
+    package static let sampleCount = 64
 
-    init(system: DictationSystem = .live,
-         draft: @escaping @MainActor (ChannelStore) -> ComposerDraft = {
-             .shared(serverURL: $0.api.baseURL, channelID: $0.id, imageIsReadable: ComposerSession.imageIsReadable)
-         },
-         announce: @escaping @MainActor (String) -> Void = { UIAccessibility.post(notification: .announcement, argument: $0) }) {
+    /// - Parameters:
+    ///   - draft: The channel's composer draft, which keeps the words of a note left mid-way.
+    ///   - announce: Speaks a VoiceOver announcement.
+    ///   - animate: Applies one beat's change in that beat's motion.
+    ///   - pause: Waits while a beat's motion plays, before the next beat.
+    package init(system: DictationSystem, draft: @escaping @MainActor (ChannelStore) -> ComposerDraft,
+                 announce: @escaping @MainActor (String) -> Void,
+                 animate: @escaping @MainActor (Motion, () -> Void) -> Void = { $1() },
+                 pause: @escaping @MainActor (Duration) async -> Void = { try? await Task.sleep(for: $0) }) {
         dictation = ComposerDictation(system: system)
         self.draft = draft
         self.announce = announce
+        self.animate = animate
+        self.pause = pause
         dictation.target = self
     }
 
     /// Talk shows only where dictation supports the person's language.
-    var isAvailable: Bool { dictation.availability != .checking && dictation.availability != .unsupported }
+    package var isAvailable: Bool { dictation.availability != .checking && dictation.availability != .unsupported }
 
     /// True while the recorder holds the list, which dims every other row.
-    var isOpen: Bool {
+    package var isOpen: Bool {
         switch phase {
         case .recording, .sending, .failed: true
         case .sent, .landed, .settling, nil: false
@@ -93,7 +106,7 @@ final class TalkRecorder: DictationTextTarget {
     }
 
     /// What the row's time slot shows in place of the time, until the row settles.
-    var timeFace: TimeFace? {
+    package var timeFace: TimeFace? {
         switch phase {
         case .recording, .sending: isOffline ? .offline : .counter
         case .failed(let failure): .failed(failure)
@@ -103,31 +116,42 @@ final class TalkRecorder: DictationTextTarget {
     }
 
     /// The chevron and attention mark stay hidden until the card has landed.
-    var hidesTrailingColumn: Bool {
+    package var hidesTrailingColumn: Bool {
         switch phase {
         case .recording, .sending, .failed, .sent: true
         case .landed, .settling, nil: false
         }
     }
 
-    var isListening: Bool { phase == .recording && dictation.phase == .listening }
+    /// The channel row's accessibility value while the recorder is on it.
+    package func rowValue(details: String) -> String {
+        switch phase {
+        case .recording: canResume ? "Paused" : isOffline ? "Recording, offline" : "Recording"
+        case .sending: "Sending"
+        case .failed(let failure): failure.label
+        case .sent, .landed: "Sent to Lead. " + details
+        case .settling, nil: details
+        }
+    }
+
+    package var isListening: Bool { phase == .recording && dictation.phase == .listening }
 
     /// Words the transcriber has finalized, which are all Send ever posts.
-    var finalizedWords: String { DictationTranscript.join(committed, transcript.finalized) }
+    package var finalizedWords: String { DictationTranscript.join(committed, transcript.finalized) }
 
     /// The current guess after the finalized words, shown in secondary ink until it settles.
-    var tentativeWords: String {
+    package var tentativeWords: String {
         let finalized = finalizedWords
         return String(DictationTranscript.join(finalized, transcript.tentative).dropFirst(finalized.count))
     }
 
-    var isOffline: Bool {
+    package var isOffline: Bool {
         guard let catalog else { return false }
         if case .failed = catalog.phase { return true }
         return false
     }
 
-    var canSend: Bool {
+    package var canSend: Bool {
         switch phase {
         case .recording:
             dictation.phase != .finishing && !isOffline
@@ -138,14 +162,14 @@ final class TalkRecorder: DictationTextTarget {
     }
 
     /// The mic offers Resume once listening stops, after silence, a failure or with access off.
-    var canResume: Bool { phase == .recording && dictation.phase == .idle }
+    package var canResume: Bool { phase == .recording && dictation.phase == .idle }
 
-    func elapsed(at date: Date) -> TimeInterval {
+    package func elapsed(at date: Date) -> TimeInterval {
         listened + (listeningSince.map { max(date.timeIntervalSince($0), 0) } ?? 0)
     }
 
     /// Channels in the order they had when the note began, with any new ones after them.
-    func ordered(_ channels: [Channel]) -> [Channel] {
+    package func ordered(_ channels: [Channel]) -> [Channel] {
         guard let order else { return channels }
         let rank = Dictionary(order.enumerated().map { ($1, $0) }, uniquingKeysWith: { first, _ in first })
         return channels.enumerated()
@@ -155,16 +179,16 @@ final class TalkRecorder: DictationTextTarget {
     }
 
     /// Checks the language only, so Talk can show without touching the microphone.
-    func activate() { dictation.activate() }
+    package func activate() { dictation.activate() }
 
-    func deactivate() {
+    package func deactivate() {
         leave()
         dictation.deactivate()
     }
 
     /// Opens the recorder on the channel's row and starts listening.
-    func start(_ store: ChannelStore, name: String, contextualNames: [String] = [],
-               catalog: ChannelCatalogStore? = nil, order: [String] = []) {
+    package func start(_ store: ChannelStore, name: String, contextualNames: [String] = [],
+                       catalog: ChannelCatalogStore? = nil, order: [String] = []) {
         guard isAvailable, !isOpen else { return }
         // Talking again on a row that still wears the check keeps its card, so the check swaps
         // straight to the mic.
@@ -179,7 +203,7 @@ final class TalkRecorder: DictationTextTarget {
         listened = 0
         listeningSince = nil
         dictation.contextualStrings = ["Lead"] + contextualNames
-        withAnimation(Self.motion(.open)) {
+        animate(.open) {
             channelID = store.id
             channelName = name
             phase = .recording
@@ -189,13 +213,13 @@ final class TalkRecorder: DictationTextTarget {
     }
 
     /// The mic's Resume.
-    func resume() {
+    package func resume() {
         guard canResume else { return }
         dictation.toggleRecheckingInput()
     }
 
     /// Sends the finalized words as a new message to the Lead, or repeats a failed attempt.
-    func send() async {
+    package func send() async {
         guard canSend, let store else { return }
         if case .failed = phase { return await deliver(to: store) }
         phase = .sending
@@ -237,7 +261,7 @@ final class TalkRecorder: DictationTextTarget {
             sentAt = if case .committed(let message) = result {
                 (try? Date(message.timestamp, strategy: .iso8601)) ?? .now
             } else { .now }
-            withAnimation(Self.motion(.sent)) { phase = .sent }
+            animate(.sent) { phase = .sent }
             announce("Sent to Lead in \(channelName)")
             settleAfterSent()
         } catch {
@@ -254,21 +278,21 @@ final class TalkRecorder: DictationTextTarget {
     private func settleAfterSent() {
         settling?.cancel()
         settling = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(0.35))
+            await self?.pause(.seconds(0.35))
             guard let self, !Task.isCancelled, phase == .sent else { return }
-            withAnimation(Self.motion(.land)) { phase = .landed }
-            try? await Task.sleep(for: .seconds(2))
+            animate(.land) { phase = .landed }
+            await pause(.seconds(2))
             guard !Task.isCancelled, phase == .landed else { return }
-            settle(Self.motion(.settle))
+            settle(.settle)
         }
     }
 
     /// Eases the row back, then ends the note once the row has settled.
-    private func settle(_ animation: Animation) {
-        withAnimation(animation) { phase = .settling }
+    private func settle(_ motion: Motion) {
+        animate(motion) { phase = .settling }
         settling?.cancel()
         settling = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(0.45))
+            await self?.pause(.seconds(0.45))
             guard let self, !Task.isCancelled, phase == .settling else { return }
             close()
         }
@@ -277,14 +301,14 @@ final class TalkRecorder: DictationTextTarget {
     /// Discards a note nothing has sent, and closes the row with the open spring in reverse. After a
     /// failure, the note stays in the channel's outbox, where the conversation offers Send Again like
     /// any failed send.
-    func cancel() {
+    package func cancel() {
         switch phase {
         case .recording, .failed:
             following?.cancel()
             sampling?.cancel()
             listeningSince = nil
             dictation.leaveDraft()
-            settle(Self.motion(.open))
+            settle(.open)
         case .sending, .sent, .landed, .settling, nil:
             break
         }
@@ -292,7 +316,7 @@ final class TalkRecorder: DictationTextTarget {
 
     /// Ends the note when something takes the person away from the list. Words still being
     /// recorded become the channel's draft, after any draft already there.
-    func leave() {
+    package func leave() {
         guard phase != nil else { return }
         if phase == .recording {
             dictation.commitNow()
@@ -360,32 +384,18 @@ final class TalkRecorder: DictationTextTarget {
 
     // MARK: DictationTextTarget
 
-    var isInKeyWindow: Bool { phase == .recording }
+    package var isInKeyWindow: Bool { phase == .recording }
 
-    func beginDictation() -> Bool { phase == .recording }
+    package func beginDictation() -> Bool { phase == .recording }
 
-    func showDictation(_ transcript: DictationTranscript) {
+    package func showDictation(_ transcript: DictationTranscript) {
         guard phase == .recording || phase == .sending else { return }
         self.transcript = transcript
     }
 
-    func endDictation(_ finalized: String) {
+    package func endDictation(_ finalized: String) {
         guard phase == .recording || phase == .sending else { return }
         committed = DictationTranscript.join(committed, finalized)
         transcript = .init()
-    }
-
-    // MARK: Motion
-
-    enum Motion { case open, sent, land, settle }
-
-    /// The spec's springs, or short eases without bounce under Reduce Motion.
-    static func motion(_ motion: Motion) -> Animation {
-        if UIAccessibility.isReduceMotionEnabled { return .easeInOut(duration: 0.2) }
-        return switch motion {
-        case .open: .spring(duration: 0.4, bounce: 0.12)
-        case .sent: .smooth(duration: 0.35)
-        case .land, .settle: .easeOut(duration: 0.4)
-        }
     }
 }

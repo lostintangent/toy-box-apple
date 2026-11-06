@@ -9,19 +9,6 @@ import UIKit
 // grows over the dimmed rows. The cell itself never changes height. See Talk to the Lead in
 // docs/spec.md.
 
-extension TalkRecorder {
-    /// The channel row's accessibility value while the recorder is on it.
-    func rowValue(details: String) -> String {
-        switch phase {
-        case .recording: canResume ? "Paused" : isOffline ? "Recording, offline" : "Recording"
-        case .sending: "Sending"
-        case .failed(let failure): failure.label
-        case .sent, .landed: "Sent to Lead. " + details
-        case .settling, nil: details
-        }
-    }
-}
-
 extension View {
     /// The row's mark, which becomes the recorder's mic and then the done check.
     func talkMark(_ recorder: TalkRecorder?, emphasized: Bool) -> some View {
