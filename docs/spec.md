@@ -715,7 +715,8 @@ Mac's gear) at its trailing end. While the split view is collapsed, as
 on a folded Duo, `.searchToolbarBehavior(.minimize)` shows it as a Search button that expands into
 the bottom field, because a full field makes UIKit cancel the first pull to refresh after Back.
 The unfolded overlay sidebar keeps the full field, since UIKit places the minimized button
-past the sidebar's trailing edge. Search raises the keyboard with its field above it, and Cancel
+past the sidebar's trailing edge. Its prompt is "Search", which fits the unfolded sidebar without
+truncating. Search raises the keyboard with its field above it, and Cancel
 restores the bar. No hand-built safe-area text field or duplicate gear in the rail. Keep the large
 Toy Box title at the top, with New Channel and then Screens (an outline `display`) in separate
 glass groups, and no More menu or Refresh item. A native placement limitation in the unfolded column

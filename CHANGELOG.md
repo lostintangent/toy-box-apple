@@ -5,6 +5,7 @@
 ### Bugs/Polish
 
 - A zoomed screen now stays where you pinch and pan it, and pinching stops at the zoom limit instead of springing back.
+- With an iPhone Duo unfolded, the channel list's search field now reads Search in full instead of being cut off.
 
 ## iPhone 0.1.17
 

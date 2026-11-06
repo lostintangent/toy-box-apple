@@ -15,6 +15,6 @@
   { "screenshot": "unfolded", "display": 3 },
   { "posture": "folded", "timeout": 60 },
   { "back": true },
-  { "wait": "Search Channels" },
+  { "wait": "New Channel" },
   { "screenshot": "channels", "display": 1 }
 ]
