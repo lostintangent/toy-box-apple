@@ -49,6 +49,10 @@ final class TalkRecorder: DictationTextTarget {
     private(set) var listeningSince: Date?
     /// The held row in the window, which the card opens on and returns to.
     var cell: Cell?
+    /// True once the card has grown from the row. The card's growth, every slot's swap and the
+    /// list's dim follow it, so they run in the card's own spring, since the swipe action's
+    /// transaction doesn't animate.
+    var isGrown = false
     /// When the server committed the note, which the row shows as its time until it settles.
     private(set) var sentAt: Date?
     /// The list's order when the note began, held until the row settles so the sent note's
@@ -304,7 +308,10 @@ final class TalkRecorder: DictationTextTarget {
     private func close(keepingCell: Bool = false) {
         phase = nil
         channelID = nil
-        if !keepingCell { cell = nil }
+        if !keepingCell {
+            cell = nil
+            isGrown = false
+        }
         sentAt = nil
         order = nil
         following?.cancel()

@@ -107,7 +107,6 @@ private struct TalkCard<Row: View>: View {
     @ViewBuilder let row: Row
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @AccessibilityFocusState private var headingFocused: Bool
-    @ViewState private var grown = false
     @ViewState private var note = TalkNote.Size()
     /// The height of five lines of the words' own text, as laid out.
     @ViewState private var fiveLines: CGFloat?
@@ -118,7 +117,7 @@ private struct TalkCard<Row: View>: View {
     private static var margin: CGFloat { 12 }
 
     var body: some View {
-        let open = grown && recorder.isOpen
+        let open = recorder.isGrown && recorder.isOpen
         let room = bounds.insetBy(dx: 0, dy: Self.inset)
         let left = max(bounds.minX, cell.minX - Self.margin)
         let right = min(bounds.maxX, cell.maxX - textInset + Self.margin)
@@ -167,14 +166,14 @@ private struct TalkCard<Row: View>: View {
         }
         .background { TalkSurface(recorder: recorder, lifted: open, onGlass: onGlass) }
         .offset(x: left, y: open ? top : cell.minY)
-        .environment(\.talkGrown, grown)
+        .environment(\.talkGrown, recorder.isGrown)
         .environment(\.talkTrailingInset, cell.maxX - contentEnd)
         .allowsHitTesting(recorder.isOpen)
         .accessibilityElement(children: .contain)
         .accessibilityAddTraits(recorder.isOpen ? .isModal : [])
         // Grows once the note has measured, in one transaction with every slot's swap.
         .onChange(of: note.height > 0) { _, measured in
-            if measured, !grown { withAnimation(TalkRecorder.motion(.open)) { grown = true } }
+            if measured, !recorder.isGrown { withAnimation(TalkRecorder.motion(.open)) { recorder.isGrown = true } }
         }
         .onChange(of: recorder.phase == .sent) { _, sent in
             if sent { headingFocused = true }
@@ -682,32 +681,36 @@ private struct TalkSurface: View {
         let based = !landed && recorder.phase != .settling
         // Glass can't be matched, so there the row steps once to the card's own color.
         let filled = (grown || onGlass) && based
-        // The wash fades as the sent card lands, or once Cancel's card is back on the row.
-        let unfill: Animation = landed ? .easeOut(duration: 0.4) : .easeOut(duration: 0.25).delay(0.15)
+        // The card lands about 0.2 seconds into its shrink, so the edge and shadow, and Cancel's
+        // fill, fade from there. The sent card's wash fades once it has landed.
+        let lands = Animation.easeOut(duration: 0.2).delay(0.2)
+        let unfill: Animation = landed ? .easeOut(duration: 0.4) : lands
+        let lift: Animation = lifted ? .easeInOut(duration: 0.2) : lands
+        // Each fade is scoped to its opacity or shadow, so the surface's size always moves with the
+        // card's own transaction.
         ZStack {
             // Folded, the base matches the list's own background, so it's solid from the first
             // frame and the dimmed rows never show through. Only the wash fades in.
             shape.fill(Color(uiColor: .systemBackground))
-                .opacity(based ? 1 : 0)
-                .animation(based ? nil : unfill, value: based)
+                .animation(based ? nil : unfill) { $0.opacity(based ? 1 : 0) }
             ZStack {
                 ForEach(Array(surface.fills(isDark: isDark, canvasIsBlack: true).enumerated()), id: \.offset) {
                     shape.fill($0.element)
                 }
             }
-            .opacity(filled ? 1 : 0)
-            .animation(filled ? (onGlass ? nil : .easeInOut(duration: 0.2)) : unfill, value: filled)
+            .animation(filled ? (onGlass ? nil : .easeInOut(duration: 0.2)) : unfill) { $0.opacity(filled ? 1 : 0) }
         }
-        .shadow(color: .black.opacity(lifted ? (isDark ? 0.3 : 0.12) : 0), radius: 24, y: 8)
+        .animation(lift) { $0.shadow(color: .black.opacity(lifted ? (isDark ? 0.3 : 0.12) : 0), radius: 24, y: 8) }
         .overlay {
-            if contrast == .increased, let edge = surface.increasedContrastEdge {
-                shape.strokeBorder(edge, lineWidth: 1).opacity(lifted ? 1 : 0)
-            } else {
-                shape.strokeBorder(Color.accentColor.opacity(0.3), lineWidth: 0.5).opacity(lifted ? 1 : 0)
+            Group {
+                if contrast == .increased, let edge = surface.increasedContrastEdge {
+                    shape.strokeBorder(edge, lineWidth: 1)
+                } else {
+                    shape.strokeBorder(Color.accentColor.opacity(0.3), lineWidth: 0.5)
+                }
             }
+            .animation(lift) { $0.opacity(lifted ? 1 : 0) }
         }
-        // Fades in as the card grows, and out as it lands.
-        .animation(lifted ? .easeInOut(duration: 0.2) : .easeOut(duration: 0.2).delay(0.15), value: lifted)
     }
 }
 
@@ -722,7 +725,8 @@ private struct TalkRow: ViewModifier {
         let isHeld = recorder.channelID == channelID
         // The card draws this row while it's up, so the cell's own content hides beneath it.
         let isCovered = isHeld && recorder.cell != nil
-        let isDimmed = recorder.isOpen && !isHeld
+        // Dims with the card's growth, since rows don't animate in the swipe action's transaction.
+        let isDimmed = recorder.isOpen && recorder.isGrown && !isHeld
         let offersTalk = offered && recorder.isAvailable && !recorder.isOpen
         content
             .opacity(isCovered ? 0 : isDimmed ? 0.4 : 1)
