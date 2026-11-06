@@ -274,6 +274,13 @@ public struct ChannelAPI: Sendable {
         return result.seenThrough
     }
 
+    /// Bookmarks or unbookmarks a message. Both are idempotent, so either succeeds when the message is
+    /// already that way, and only a missing or system message is rejected, with 422.
+    public func bookmark(channelId: String, sequence: Int, bookmarked: Bool) async throws {
+        guard sequence > 0 else { throw ChannelAPIError.invalidMessage("Bookmarks require a positive sequence.") }
+        try await noContent(bookmarked ? "PUT" : "DELETE", channelPath(channelId) + ["bookmarks", String(sequence)])
+    }
+
     public func createChannel(_ input: CreateChannelInput) async throws -> Channel {
         let result: ChannelResponse = try await command("POST", ["api", "v1", "channels"], body: input)
         try requireVersion(result.version)

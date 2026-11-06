@@ -40,10 +40,13 @@ replace saved Settings.
 
 | Server | Port | Use it for |
 | --- | --- | --- |
-| `bun run demo` | 3210 | `studio-demo`, the isolated fixture server with the required catalog lead profile. Write tests and the shared screenshot baseline |
-| `bun run demo:history` | 3211 | `history-demo`: 480 messages, canonical 100-message older pages and isolated read receipts. Paging and key-window read checks, without disturbing 3210 |
+| `bun run demo` | 3210 | `studio-demo`, the isolated fixture server with the required catalog lead profile. Write tests and the shared screenshot baseline. Messages 9 and 15 start bookmarked |
+| `bun run demo:history` | 3211 | `history-demo`: 480 messages, canonical 100-message older pages and isolated read receipts. Paging and key-window read checks, without disturbing 3210. Message 250, two pages back, and 466 start bookmarked |
 | `bun run demo:perf` | 3292 | The benchmark fixture, started fresh by `bun run benchmark`. `TOY_BOX_PERF_PORT` changes it |
 | Live Toy Box | 3100 | Reading only. Posting or mutating needs the Lead's approval of a specific scratch channel. Leave its process running |
+
+`TOY_BOX_DEMO_BOOKMARKS=empty` starts either demo with no bookmarks, and `unsupported` serves a
+server that predates them, with no `bookmarks` in its snapshot and no bookmark routes.
 
 ## Tests
 
@@ -54,7 +57,7 @@ and the setting shown.
 
 | Suite | Setting and filter | Notes |
 | --- | --- | --- |
-| Demo integration | `TOY_BOX_DEMO_URL=http://127.0.0.1:3210` | Against `bun run demo` |
+| Demo integration | `TOY_BOX_DEMO_URL=http://127.0.0.1:3210` | Against `bun run demo`, or a fresh one on its own `TOY_BOX_DEMO_PORT` |
 | History integration | `TOY_BOX_HISTORY_DEMO_URL=http://127.0.0.1:3211`, `--filter HistoryFixtureTests` | Against a freshly started history demo |
 | Real dictation | `TOY_BOX_REAL_DICTATION_TESTS=1`, `--filter ComposerTests/theRealTranscriberHearsARecordingThroughTheAudioSourceProtocol` | Needs the on-device English dictation model and synthesized audio, not microphone access. The normal suite never queries speech-model assets |
 | Transcript timing | `TOY_BOX_TEST_TRANSCRIPT_TIMING=1`, `--filter 'Transcript\|ImageViewer'` | Native Transcript frame-timing and VisionKit selection-layer checks. Run locally before changes to landing, paging, following arrivals or native image text selection |

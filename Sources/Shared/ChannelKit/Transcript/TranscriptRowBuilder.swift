@@ -1,5 +1,7 @@
 import Foundation
 
+/// Which messages the transcript shows: all of them, or only the user's own, the agent messages for
+/// them and those they bookmarked, which leaves out coordination between agents and system changes.
 public enum TranscriptFilter: String, CaseIterable, Sendable {
     case all, yours
 }
@@ -16,6 +18,8 @@ public final class TranscriptRowBuilder {
     private struct Settings: Equatable {
         var unreadAfter: Int?
         var filter: TranscriptFilter
+        /// Only Yours reads bookmarks, so toggling one in All keeps every row.
+        var bookmarks: Set<Int>
         var latestUserSequence: Int
     }
 
@@ -70,7 +74,7 @@ public final class TranscriptRowBuilder {
     }
 
     public func rows(_ messages: [ChannelMessage], lead: ChannelAgent, members: [ChannelAgent],
-                     unreadAfter: Int? = nil, filter: TranscriptFilter = .all,
+                     unreadAfter: Int? = nil, filter: TranscriptFilter = .all, bookmarks: [Int] = [],
                      calendar: Calendar = .current) -> [TranscriptRow] {
         let agents = [lead] + members
         let roster = Roster(ids: agents.map(\.id), names: agents.map(\.name))
@@ -83,6 +87,7 @@ public final class TranscriptRowBuilder {
             self.settings = nil
         }
         let settings = Settings(unreadAfter: unreadAfter, filter: filter,
+                                bookmarks: filter == .yours ? Set(bookmarks) : [],
                                 latestUserSequence: messages.lazy.filter { $0.sender.type == "user" }
                                     .map(\.sequence).max() ?? 0)
         // Arrays that share storage compare in constant time, which repeated reads in one update hit.
@@ -127,7 +132,8 @@ public final class TranscriptRowBuilder {
             let message = messages[index]
             let info = derive(message, lead: lead, agents: agents, calendar: calendar)
             let runEntry = info.agent.map { entry(message, $0) }
-            if settings.filter == .yours && (message.isSystem || runEntry?.collapsible == true) { continue }
+            if settings.filter == .yours && (message.isSystem || (runEntry?.collapsible == true
+                && !settings.bookmarks.contains(message.sequence))) { continue }
             let previousInfo = previous.flatMap { derived[$0.id] }
             let differentDay: Bool
             if let day = info.day, let previousDay = previousInfo?.day { differentDay = day != previousDay }

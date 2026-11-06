@@ -21,7 +21,8 @@ struct DemoIntegrationTests {
     @Test(.enabled(if: demoURL != nil))
     func catalogSnapshotPostConflictReadAndResume() async throws {
         let api = try ChannelAPI(serverURL: #require(Self.demoURL))
-        guard api.baseURL.port == 3210, ["localhost", "127.0.0.1"].contains(api.baseURL.host) else {
+        // Any loopback demo, including one on its own TOY_BOX_DEMO_PORT, but never the live server.
+        guard api.baseURL.port != 3100, ["localhost", "127.0.0.1"].contains(api.baseURL.host) else {
             throw ChannelAPIError.invalidServerURL
         }
         let catalog = try await api.catalog()
@@ -53,5 +54,18 @@ struct DemoIntegrationTests {
         let resume = try #require(try await resumed.next())
         #expect(resume.type == "resumed")
         #expect(resume.presence?.count == 9)
+
+        #expect(snapshot.bookmarks == [9, 15])
+        try await api.bookmark(channelId: channel.id, sequence: 12, bookmarked: true)
+        try await api.bookmark(channelId: channel.id, sequence: 12, bookmarked: true)
+        try await api.bookmark(channelId: channel.id, sequence: 12, bookmarked: false)
+        await #expect(throws: ChannelAPIError.http(status: 422, message: "Bookmark a user or agent message in this Channel.")) {
+            try await api.bookmark(channelId: channel.id, sequence: 1, bookmarked: true)
+        }
+        var bookmarks: [[Int]?] = []
+        while bookmarks.count < 2, let event = try await iterator.next() {
+            if event.type == "bookmarks" { bookmarks.append(event.bookmarks) }
+        }
+        #expect(bookmarks == [[9, 12, 15], [9, 15]])
     }
 }

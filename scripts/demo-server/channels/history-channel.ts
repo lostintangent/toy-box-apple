@@ -1,6 +1,7 @@
 // The history-demo channel that the history and performance fixture servers serve: the fixture
 // snapshot stretched to 480 messages, with the latest 100 in the snapshot and the rest in
 // canonical 100-message older pages.
+import { demoBookmarks } from "./demo-server.ts";
 import { remapChannel, type Message, type Response, type Snapshot } from "./types.ts";
 
 export const historyChannelID = "history-demo";
@@ -39,6 +40,10 @@ export function createHistoryFixture(source: Snapshot, { now, origin }: { now: n
     snapshot.revision = historyMessageCount;
     snapshot.messages = history.slice(-historyPageSize);
     snapshot.request = request;
+    // 250 is an agent message two pages back, and 466 is in the snapshot.
+    const bookmarks = demoBookmarks([250, 466]);
+    if (bookmarks) snapshot.bookmarks = bookmarks;
+    else delete snapshot.bookmarks;
     if (snapshot.lead.status?.wakeAt) snapshot.lead.status.wakeAt = new Date(now + 10 * 60_000).toISOString();
     return { snapshot, history };
 }

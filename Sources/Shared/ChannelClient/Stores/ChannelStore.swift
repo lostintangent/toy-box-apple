@@ -97,6 +97,9 @@ public final class ChannelStore {
     /// Who shared each artifact and when, by file ID, from the loaded messages.
     public private(set) var artifactShares: [String: ChannelArtifact.Share] = [:]
     public private(set) var routines: [ChannelRoutine] = []
+    /// The sequences of the messages the user bookmarked, oldest first, including any change still on
+    /// its way to the server. Nil when the server predates bookmarks, so views hide them.
+    public private(set) var bookmarks: [Int]?
 
     /// Whether a snapshot has arrived, without observing anything that changes after it.
     public var isLoaded: Bool { details != nil }
@@ -108,6 +111,8 @@ public final class ChannelStore {
     public private(set) var isSending = false
     public private(set) var historyError: String?
     public private(set) var readError: String?
+    /// Why the latest bookmark change failed and was undone, until the next change or a dismissal.
+    public private(set) var bookmarkError: String?
     public private(set) var sendAttempts: [ChannelSendAttempt] = []
     public private(set) var lastSendFailure: ChannelSendFailure?
     public private(set) var attemptPersistenceError: String?
@@ -141,6 +146,9 @@ public final class ChannelStore {
     @ObservationIgnored private var readWrite: Task<Void, Never>?
     @ObservationIgnored private var pendingRead = 0
     @ObservationIgnored private var acknowledgedRead = 0
+    /// Bookmark changes `state` doesn't show yet, by sequence. A written one waits for its echo.
+    @ObservationIgnored private var bookmarkChanges: [Int: BookmarkChange] = [:]
+    @ObservationIgnored private var bookmarkWrites: Task<Void, Never>?
     @ObservationIgnored private let reconnectPolicy: ReconnectPolicy
     @ObservationIgnored private let sendJournal: ChannelSendJournal?
     @ObservationIgnored private var attemptsRestored = false
@@ -690,6 +698,65 @@ public final class ChannelStore {
         }
     }
 
+    /// Shows the change at once, then writes it. The stream's echo confirms it, and a failed write
+    /// undoes it and reports `bookmarkError`. Bookmarking is idempotent, so a write makes one attempt
+    /// and changing it again is the retry. Writes run in order, skipping any a later change to the
+    /// same message replaced, so the server ends where the user's last change left it.
+    public func setBookmarked(_ bookmarked: Bool, sequence: Int) async {
+        guard state?.bookmarks != nil else { return }
+        guard phase.isConnected else {
+            bookmarkError = ChannelAPIError.disconnected.localizedDescription
+            return
+        }
+        bookmarkError = nil
+        let change = BookmarkChange(bookmarked: bookmarked)
+        bookmarkChanges[sequence] = change
+        syncBookmarks()
+        let previous = bookmarkWrites
+        let write = Task { [weak self] in
+            await previous?.value
+            await self?.writeBookmark(sequence: sequence, change: change.id)
+        }
+        bookmarkWrites = write
+        await write.value
+    }
+
+    public func dismissBookmarkError() {
+        bookmarkError = nil
+    }
+
+    private func writeBookmark(sequence: Int, change changeID: UUID) async {
+        guard let change = bookmarkChanges[sequence], change.id == changeID else { return }
+        do {
+            try await api.bookmark(channelId: id, sequence: sequence, bookmarked: change.bookmarked)
+            guard bookmarkChanges[sequence]?.id == changeID else { return }
+            // The echo can arrive before the response does.
+            if state?.bookmarks?.contains(sequence) == change.bookmarked { bookmarkChanges[sequence] = nil }
+            else { bookmarkChanges[sequence]?.isWritten = true }
+        } catch {
+            guard bookmarkChanges[sequence]?.id == changeID else { return }
+            bookmarkChanges[sequence] = nil
+            bookmarkError = error.localizedDescription
+        }
+        syncBookmarks()
+    }
+
+    /// A newer bookmark list includes every write the server answered before sending it.
+    private func settleWrittenBookmarks() {
+        bookmarkChanges = bookmarkChanges.filter { !$0.value.isWritten }
+    }
+
+    private func syncBookmarks() {
+        guard var shown = state?.bookmarks else {
+            bookmarks = nil
+            return
+        }
+        for (sequence, change) in bookmarkChanges where shown.contains(sequence) != change.bookmarked {
+            if change.bookmarked { shown.append(sequence) } else { shown.removeAll { $0 == sequence } }
+        }
+        bookmarks = shown.sorted()
+    }
+
     func apply(_ event: ChannelObservationEvent) throws -> Bool {
         if event.type == "deleted" {
             heldReplay = nil
@@ -700,6 +767,7 @@ public final class ChannelStore {
         }
         if event.type == "snapshot", let snapshot = event.state {
             heldReplay = nil
+            settleWrittenBookmarks()
             state = snapshot
             historyGeneration = UUID()
             acknowledgedRead = snapshot.channel.seenThrough
@@ -716,6 +784,9 @@ public final class ChannelStore {
             var events = heldReplay ?? []
             events.append(event)
             heldReplay = nil
+            if events.contains(where: { $0.type == "bookmarks" && ($0.revision ?? 0) > previous.revision }) {
+                settleWrittenBookmarks()
+            }
             state = events.reduce(previous) { $0.applying($1) }
             for event in events {
                 if let message = event.message, event.revision != nil { reconcileSend(id: message.id) }
@@ -756,6 +827,13 @@ public final class ChannelStore {
         tasks = state.channel.tasks
         artifacts = state.artifacts
         routines = state.routines
+        syncBookmarks()
+    }
+
+    private struct BookmarkChange {
+        let bookmarked: Bool
+        let id = UUID()
+        var isWritten = false
     }
 }
 

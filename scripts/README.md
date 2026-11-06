@@ -24,7 +24,7 @@ Script tests are omitted. Bundle or release changes require both real release dr
 | `bun run test:mobile` | `mobile/test.ts` | Run iOS Simulator tests | Contributors, agents, CI |
 | `bun run simulator` | `mobile/dogfood/index.ts` | Build, install and launch on the shared Duo, with hold, drive and screenshot options. `--build-only` bundles without booting | Contributors, agents, CI |
 | `bun run testflight --build-number N` | `mobile/release.ts` | Sign, validate and upload to TestFlight. `--validate-only` never uploads, `--build-only` needs no credentials | Release owner, CI |
-| `bun run demo` | `demo-server/index.ts` | Serve studio-demo and push routes on 3210 for write tests and screenshots. `TOY_BOX_DEMO_REPLIES` set to 0, 2, 4 or `short` changes the request's choices (`short` serves `Yes` and `Not yet`, which fit in one row beside Reply) | Contributors, agents |
+| `bun run demo` | `demo-server/index.ts` | Serve studio-demo and push routes on 3210 for write tests and screenshots. `TOY_BOX_DEMO_REPLIES` set to 0, 2, 4 or `short` changes the request's choices (`short` serves `Yes` and `Not yet`, which fit in one row beside Reply). `TOY_BOX_DEMO_BOOKMARKS` set to `empty` or `unsupported` starts without bookmarks or serves a server that predates them | Contributors, agents |
 | `bun run demo:history` | `demo-server/history.ts` | Serve 480 messages on 3211 for paging and read checks | Contributors, agents |
 | `bun run demo:perf` | `demo-server/perf.ts` | Serve the performance fixture on 3292 | Benchmark command |
 | `bun run icon` | `shared/icon.ts` | Regenerate committed icon outputs with Icon Composer | Icon author |

@@ -35,7 +35,7 @@ const { snapshot: scrollSnapshot, history: scrollHistory } = createScrollFixture
 const histories: Record<string, Message[]> = { [historyChannelID]: history, [scrollChannelID]: scrollHistory };
 
 const demos: Record<string, DemoServer> = {
-    "studio-demo": createDemoServer(source, now), [historyChannelID]: createDemoServer(historySnapshot, now),
+    "studio-demo": createDemoServer(source, now), [historyChannelID]: createDemoServer(historySnapshot, now, history),
     [scrollChannelID]: createDemoServer(scrollSnapshot, now),
 };
 const handlers = Object.fromEntries(Object.entries(demos).map(([id, demo]) => {

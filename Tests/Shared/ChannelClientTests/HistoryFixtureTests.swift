@@ -3,7 +3,8 @@ import Foundation
 import Testing
 @testable import ChannelClient
 
-@Suite(.timeLimit(.minutes(1)))
+/// Both tests change the fixture, so they take turns.
+@Suite(.serialized, .timeLimit(.minutes(1)))
 struct HistoryFixtureTests {
     private struct Failure: Decodable { var error: String }
 
@@ -70,5 +71,33 @@ struct HistoryFixtureTests {
         #expect(store.unreadAfter == 450)
         #expect(store.state?.channel.requestSequence == 480)
         #expect(store.state?.request?.sequence == 480)
+    }
+
+    /// Opening a bookmark two pages back loads it, and changing it round-trips through the stream.
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["TOY_BOX_HISTORY_DEMO_URL"] != nil))
+    @MainActor func bookmarksPageBackAndRoundTrip() async throws {
+        let api = try ChannelAPI(serverURL: #require(ProcessInfo.processInfo.environment["TOY_BOX_HISTORY_DEMO_URL"]))
+        guard ["127.0.0.1", "localhost"].contains(api.baseURL.host ?? ""), api.baseURL.port == 3211 else {
+            throw ChannelAPIError.invalidServerURL
+        }
+        let store = ChannelStore(id: "history-demo", api: api, sendJournal: nil)
+        store.connect()
+        defer { store.disconnect() }
+        try await eventually { store.phase.isConnected }
+        #expect(store.bookmarks == [250, 466])
+        #expect(await store.loadHistory(through: 250) == nil)
+        #expect(store.state?.messages.contains { $0.sequence == 250 } == true)
+        #expect(store.state?.messages.first?.sequence == 181)
+        let revision = try #require(store.state?.revision)
+        // Waits only for the change itself, which the stream echoes even after earlier runs.
+        await store.setBookmarked(false, sequence: 250)
+        try await eventually { store.state?.bookmarks?.contains(250) == false }
+        #expect(store.bookmarks == [466])
+        await store.setBookmarked(true, sequence: 250)
+        try await eventually { store.state?.bookmarks?.contains(250) == true }
+        #expect(store.state?.revision == revision + 2)
+        await store.setBookmarked(true, sequence: 1)
+        #expect(store.bookmarkError == "Bookmark a user or agent message in this Channel. (HTTP 422)")
+        #expect(store.bookmarks == [250, 466])
     }
 }

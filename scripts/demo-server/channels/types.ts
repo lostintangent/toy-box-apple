@@ -14,6 +14,7 @@ export type Message = {
 export type Snapshot = Omit<typeof fixture, "lead" | "members" | "messages" | "request" | "channel" | "presence"> & {
     lead: Agent; members: Agent[]; messages: Message[]; request: Message | null;
     presence: Record<string, Status>;
+    bookmarks?: number[];
     channel: Omit<typeof fixture.channel, "requestSequence" | "completedSequence"> & {
         requestSequence: number | null; completedSequence: number | null;
     };

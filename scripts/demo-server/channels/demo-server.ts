@@ -31,8 +31,19 @@ function demoReplies(): string[] | undefined {
   throw new Error(`TOY_BOX_DEMO_REPLIES must be 0, 2, 4, or short, not "${count}"`);
 }
 
+// TOY_BOX_DEMO_BOOKMARKS=empty starts with no bookmarks, and "unsupported" serves a server that
+// predates them, with no bookmarks in its snapshot and no bookmark routes.
+export function demoBookmarks(seeded: number[]): number[] | undefined {
+  const value = process.env.TOY_BOX_DEMO_BOOKMARKS;
+  if (value === undefined) return seeded;
+  if (value === 'empty') return [];
+  if (value === 'unsupported') return undefined;
+  throw new Error(`TOY_BOX_DEMO_BOOKMARKS must be empty or unsupported, not "${value}"`);
+}
+
 // The fixture stays byte-identical to the reference export, so the demo adds the replies its
-// library request would carry.
+// library request would carry, and bookmarks the lead's handoff to two agents, which only a
+// bookmark keeps in the Yours view, and the request.
 export function loadDemoFixture(): FixtureSnapshot {
   const snapshot: FixtureSnapshot = JSON.parse(fs.readFileSync(fixturePath, 'utf8'));
   const replies = demoReplies();
@@ -41,12 +52,15 @@ export function loadDemoFixture(): FixtureSnapshot {
     if (replies) message.replies = replies;
     else delete message.replies;
   }
+  const bookmarks = demoBookmarks([9, 15]);
+  if (bookmarks) snapshot.bookmarks = bookmarks;
   return snapshot;
 }
 
 const fixture = loadDemoFixture();
 
-export function createDemoServer(initial: Snapshot = fixture, now = Date.now()) {
+/** `olderMessages` reaches messages the snapshot no longer holds, so they can be bookmarked too. */
+export function createDemoServer(initial: Snapshot = fixture, now = Date.now(), olderMessages: Snapshot[] = []) {
   let snapshot = structuredClone(initial);
   // Keep the exported fixture immutable, but make its history recent on each demo launch.
   const dates: { value: Record<string, string>; key: string; time: number }[] = [];
@@ -217,6 +231,30 @@ export function createDemoServer(initial: Snapshot = fixture, now = Date.now()) 
       snapshot.revision++;
       Object.assign(snapshot.channel, { latestSequence: sequence, updatedAt: timestamp });
       publish({ type: 'message', revision: snapshot.revision, message });
+      response.writeHead(204);
+      response.end();
+      return;
+    }
+    const bookmarkPath = `${channelPath}/bookmarks/`;
+    if ((request.method === 'PUT' || request.method === 'DELETE') && pathname.startsWith(bookmarkPath)
+        && Array.isArray(snapshot.bookmarks)) {
+      const segment = pathname.slice(bookmarkPath.length);
+      const sequence = Number(segment);
+      if (!/^[1-9]\d*$/.test(segment) || !Number.isSafeInteger(sequence)) {
+        json(response, 400, { error: 'Invalid Channel request.' }); return;
+      }
+      const bookmarked = request.method === 'PUT';
+      const current: number[] = snapshot.bookmarks;
+      if (current.includes(sequence) !== bookmarked) {
+        const message = [...olderMessages, ...snapshot.messages].find((candidate) => candidate.sequence === sequence);
+        if (bookmarked && (!message || message.sender.type === 'system')) {
+          json(response, 422, { error: 'Bookmark a user or agent message in this Channel.' }); return;
+        }
+        snapshot.bookmarks = bookmarked ? [...current, sequence].sort((left, right) => left - right)
+          : current.filter((bookmark) => bookmark !== sequence);
+        snapshot.revision++;
+        publish({ type: 'bookmarks', bookmarks: snapshot.bookmarks, revision: snapshot.revision });
+      }
       response.writeHead(204);
       response.end();
       return;

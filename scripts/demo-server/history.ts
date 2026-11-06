@@ -12,7 +12,7 @@ const now = Date.now();
 const { snapshot, history } = createHistoryFixture(source, { now, origin: `http://127.0.0.1:${port}` });
 const channelID = historyChannelID;
 
-const demo = createDemoServer(snapshot, now);
+const demo = createDemoServer(snapshot, now, history);
 const catalog = createCatalogRoute(() => {
     const { lead: { name, role, avatar }, channel, members } = demo.snapshot();
     return { version: 1, lead: { name, role, avatar }, channels: [channel], members };

@@ -82,7 +82,8 @@ Signing, notarization, in-place updates and TestFlight are in [releases.md](rele
   has no transcript, so it never marks read, and notifications come from the catalog, so it posts
   none.
   Views read the store's observed slices (`details`, `roster`, `agentStatuses`, `presence`,
-  `messages`, `request`, `requestSequence`, `tasks`, `artifacts`, `artifactShares`, `routines`)
+  `messages`, `request`, `requestSequence`, `tasks`, `artifacts`, `artifactShares`, `routines`,
+  `bookmarks`)
   rather than `state`, which changes on every event. An event then re-renders only the views that
   show what it changed. `roster` leaves out each agent's status, which `agentStatuses` carries, so
   status updates don't re-render identity. A catalog that changes nothing announces only
@@ -185,6 +186,16 @@ couldn't be opened is Handoff's `missing`.
 | `GET /api/v1/channels/:id/messages?before=N` | Older page of up to 100 messages `{version, revision, messages}` |
 | `POST /api/v1/channels/:id/messages` | `{id, content, attachments?}` with a client UUID. 201 returns the message. 409 means a duplicate. Never auto-retry |
 | `POST /api/v1/channels/:id/read` | `{sequence}` monotonic read, which acknowledges completion but never a request |
+| `PUT /api/v1/channels/:id/bookmarks/:sequence` | Bookmark a user or agent message (204). A message that's already bookmarked is also 204, and a system or missing message is 422 |
+| `DELETE /api/v1/channels/:id/bookmarks/:sequence` | Remove a bookmark (204), including one that isn't there |
+
+Bookmarks belong to the user, and every client of the server shares them. A snapshot carries
+`bookmarks`, the bookmarked sequences in ascending order, and the `bookmarks` event replaces the
+whole list. A resume keeps the last list. Servers that predate bookmarks leave the field out, so
+`ChannelState.bookmarks` is nil and both apps hide bookmarking. `ChannelStore.setBookmarked`
+shows the change at once and makes one attempt. The stream's echo confirms it, and a failure
+undoes it and sets `bookmarkError`. Changing it again is the retry, which is safe because both
+routes are idempotent. Writes go out in order, so a quick second toggle can't overtake the first.
 
 Screens are owned by Toy Box's Screens feature (`src/features/screens/AGENTS.md`):
 
@@ -1265,7 +1276,8 @@ Compile Markdown and mention patterns once, not once per row. The transcript rea
 `messages`, `roster`, `agentStatuses`, `presence` and `request` slices, so task, artifact, routine
 and detail events don't re-render it.
 
-Message View shows all messages, or only the user's own plus agent messages that never collapse.
+Message View shows all messages, or only the user's own, agent messages that never collapse and
+the messages the user bookmarked.
 The Message View menu is a native radio-choice menu: All Messages and Your Messages. Like the web
 pane and Messages, each choice carries an outline SF Symbol, `bubble.left.and.bubble.right` for All
 Messages and `person` for Your Messages, beside the system checkmark. The same labels appear in the

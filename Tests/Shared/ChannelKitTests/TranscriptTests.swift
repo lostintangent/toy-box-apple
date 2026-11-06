@@ -65,6 +65,19 @@ struct TranscriptTests {
         #expect(rows[0].messages.map(\.sequence) == [1, 3])
     }
 
+    @Test func yoursViewKeepsABookmarkedMessageEvenBetweenAgents() {
+        let messages = [message(1, sender: .user, text: "Stairs next?"),
+                        message(2, sender: .agent("ada"), text: "Stairs built.", minute: 1)]
+        let builder = TranscriptRowBuilder()
+        func yours(_ bookmarks: [Int]) -> [[Int]] {
+            builder.rows(messages, lead: lead, members: [ada], filter: .yours, bookmarks: bookmarks)
+                .map { $0.messages.map(\.sequence) }
+        }
+        #expect(yours([]) == [[1]])
+        #expect(yours([2]) == [[1], [2]])
+        #expect(yours([]) == [[1]])
+    }
+
     @Test func systemGroupingUsesActorAndKind() {
         func system(_ sequence: Int, _ kind: String, actor: ChannelMessageSender? = nil) -> ChannelMessage {
             var value = message(sequence, sender: .system)

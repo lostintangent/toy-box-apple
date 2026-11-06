@@ -16,6 +16,7 @@ public struct ChannelObservationEvent: Codable, Equatable, Sendable {
     public var seenThrough: Int?
     public var member: ChannelAgent?
     public var status: ChannelAgent.Status?
+    public var bookmarks: [Int]?
 
     public init(type: String, revision: Int? = nil, state: ChannelState? = nil,
                 presence: [String: ChannelAgentPresence]? = nil, channelId: String? = nil,
@@ -23,7 +24,7 @@ public struct ChannelObservationEvent: Codable, Equatable, Sendable {
                 reaction: String? = nil, tasks: [ChannelTask]? = nil,
                 model: ModelConfiguration? = nil, updatedAt: String? = nil,
                 seenThrough: Int? = nil, member: ChannelAgent? = nil,
-                status: ChannelAgent.Status? = nil) {
+                status: ChannelAgent.Status? = nil, bookmarks: [Int]? = nil) {
         self.type = type
         self.revision = revision
         self.state = state
@@ -39,6 +40,7 @@ public struct ChannelObservationEvent: Codable, Equatable, Sendable {
         self.seenThrough = seenThrough
         self.member = member
         self.status = status
+        self.bookmarks = bookmarks
     }
 }
 
@@ -70,6 +72,8 @@ extension ChannelState {
             if let date = event.updatedAt { next.channel.updatedAt = date }
         case "read":
             if let sequence = event.seenThrough { next.channel.seenThrough = sequence }
+        case "bookmarks":
+            if let bookmarks = event.bookmarks { next.bookmarks = bookmarks }
         case "status":
             if event.agentId == next.lead.id { next.lead.status = event.status }
             else if let index = next.members.firstIndex(where: { $0.id == event.agentId }) {

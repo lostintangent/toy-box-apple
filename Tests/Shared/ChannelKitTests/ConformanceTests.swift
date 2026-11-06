@@ -38,6 +38,7 @@ struct ConformanceTests {
         #expect(state.artifacts.count == 2)
         #expect(state.routines.count == 1)
         #expect(state.channel.resolvedPreview?.url == "/demo-preview")
+        #expect(state.bookmarks == nil)
         for agent in state.agents {
             if let avatar = agent.avatar { #expect(throws: Never.self) { try SVGPath.parse(avatar.mark) } }
         }
@@ -45,12 +46,19 @@ struct ConformanceTests {
 
     @Test func canonicalTransitionConformance() throws {
         let trace = try JSONDecoder().decode(Trace.self, from: fixture("channel-transitions"))
-        #expect(trace.steps.count == 25)
+        #expect(trace.steps.count == 28)
         var current = trace.initial
         for step in trace.steps {
             current = current.applying(step.event)
             #expect(current == step.expected, Comment(rawValue: step.name))
         }
+    }
+
+    @Test func emptyBookmarksDifferFromAServerWithoutThem() throws {
+        var snapshot = try #require(try JSONSerialization.jsonObject(with: fixture("channel-snapshot")) as? [String: Any])
+        snapshot["bookmarks"] = [Int]()
+        let state = try JSONDecoder().decode(ChannelState.self, from: JSONSerialization.data(withJSONObject: snapshot))
+        #expect(state.bookmarks == [])
     }
 
     @Test func taskTimingDecodesRecursivelyAndRemainsOptional() throws {
