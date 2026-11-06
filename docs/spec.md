@@ -1153,7 +1153,8 @@ exposes Reply as an action. On the phone, a header too wide for one line stacks,
 your reply" or "Replied" wraps like the name, so at the largest text sizes the header never widens
 the bubble past its column.
 Reply, Copy Message and Bookmark appear on hover or keyboard focus, in the toolbar Bookmarks
-describes, and in the context menu. As with AppKit's
+describes, and in the context menu. Every message takes keyboard focus, the user's own included,
+so Full Keyboard Access reaches its toolbar. As with AppKit's
 tracking areas, a message that slides under a still pointer, as when the transcript follows a new
 message or scrolls, shows them once the pointer moves. After the reader's own scroll settles, the
 message under the still pointer is selectable at once, so a drag can start without moving first.
@@ -1556,6 +1557,14 @@ bookmarked message shows a 24-point circle of regular glass holding a 12-point b
 own. It sits where the Mac's chip does, 16 points above the bubble and 8 in from its edge, under
 the same header rule. The mark is display-only, with no hit testing, because a 24-point target
 invites mis-taps. Long-press or the list removes a bookmark.
+
+**Follow-up messages.** An agent's follow-up message has no header and sits 8 points under the
+message above, closer than the chip or mark reaches. When one is bookmarked, the gap above it
+grows to 20 points on both apps, the run spacing, so the chip or mark clears the message above by
+4, the way Messages makes room for a tapback. The gap changes together with the chip or mark, over
+the chip's 120 ms on the Mac or at once under Reduce Motion, and never on its own. The hover
+toolbar on a follow-up that isn't bookmarked may overlap the message above, since it shows only
+while hovered.
 
 **Accessibility.** On both apps the message's label adds "Bookmarked", and Bookmark or Remove
 Bookmark is one of its actions. Using that action announces "Bookmarked" or "Bookmark removed"
