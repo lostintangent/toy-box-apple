@@ -26,13 +26,18 @@ public enum ChannelActivityTime {
         }
     }
 
-    public static func accessibilityLabel(for date: Date, now: Date, calendar: Calendar = .current) -> String {
+    /// The time as VoiceOver speaks it, such as "today at 4:55 PM", for labels that name it.
+    public static func spokenLabel(for date: Date, now: Date, calendar: Calendar = .current) -> String {
         let time = date.formatted(date: .omitted, time: .shortened)
         switch day(of: date, now: now, calendar: calendar) {
-        case .today: return "Last activity today at \(time)"
-        case .yesterday: return "Last activity yesterday at \(time)"
-        case .weekday: return "Last activity \(date.formatted(.dateTime.weekday(.wide))) at \(time)"
-        case .older: return "Last activity \(date.formatted(date: .long, time: .omitted))"
+        case .today: return "today at \(time)"
+        case .yesterday: return "yesterday at \(time)"
+        case .weekday: return "\(date.formatted(.dateTime.weekday(.wide))) at \(time)"
+        case .older: return date.formatted(date: .long, time: .omitted)
         }
+    }
+
+    public static func accessibilityLabel(for date: Date, now: Date, calendar: Calendar = .current) -> String {
+        "Last activity \(spokenLabel(for: date, now: now, calendar: calendar))"
     }
 }

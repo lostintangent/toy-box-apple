@@ -97,7 +97,8 @@ struct HistoryFixtureTests {
         try await eventually { store.state?.bookmarks?.contains(250) == true }
         #expect(store.state?.revision == revision + 2)
         await store.setBookmarked(true, sequence: 1)
-        #expect(store.bookmarkError == "Bookmark a user or agent message in this Channel. (HTTP 422)")
+        #expect(store.bookmarkFailure?.error == "Bookmark a user or agent message in this Channel. (HTTP 422)")
+        #expect(store.bookmarkFailure?.isRemoval == false)
         #expect(store.bookmarks == [250, 466])
     }
 }

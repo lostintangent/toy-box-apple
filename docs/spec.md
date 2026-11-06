@@ -83,7 +83,7 @@ Signing, notarization, in-place updates and TestFlight are in [releases.md](rele
   none.
   Views read the store's observed slices (`details`, `roster`, `agentStatuses`, `presence`,
   `messages`, `request`, `requestSequence`, `tasks`, `artifacts`, `artifactShares`, `routines`,
-  `bookmarks`)
+  `bookmarks`, `bookmarkList`)
   rather than `state`, which changes on every event. An event then re-renders only the views that
   show what it changed. `roster` leaves out each agent's status, which `agentStatuses` carries, so
   status updates don't re-render identity. A catalog that changes nothing announces only
@@ -194,8 +194,14 @@ Bookmarks belong to the user, and every client of the server shares them. A snap
 whole list. A resume keeps the last list. Servers that predate bookmarks leave the field out, so
 `ChannelState.bookmarks` is nil and both apps hide bookmarking. `ChannelStore.setBookmarked`
 shows the change at once and makes one attempt. The stream's echo confirms it, and a failure
-undoes it and sets `bookmarkError`. Changing it again is the retry, which is safe because both
-routes are idempotent. Writes go out in order, so a quick second toggle can't overtake the first.
+undoes it and sets `bookmarkFailure`, which says whether it was a removal. Changing it again is
+the retry, which is safe because both routes are idempotent. Writes go out in order, so a quick
+second toggle can't overtake the first.
+`ChannelStore.bookmarkList` is the list both apps show, newest first, and the tray counts it
+toward its visibility. Each `ChannelBookmark` carries its message once that page of history
+loads, and until then the row draws a placeholder. `preview(agents:)` is its first line of plain
+text, or the attachment count, without an agent's leading mentions, since the transcript shows
+those as routing. Opening the list calls `loadHistory(through:)` with its last entry, the oldest.
 
 Screens are owned by Toy Box's Screens feature (`src/features/screens/AGENTS.md`):
 

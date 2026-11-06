@@ -84,5 +84,7 @@ struct PresentationTests {
         #expect(ChannelActivityTime.label(for: yesterday, now: now, calendar: calendar) == "Yesterday")
         #expect(ChannelActivityTime.accessibilityLabel(for: now, now: now, calendar: calendar)
                 .hasPrefix("Last activity today at "))
+        #expect(ChannelActivityTime.spokenLabel(for: yesterday, now: now, calendar: calendar)
+                .hasPrefix("yesterday at "))
     }
 }

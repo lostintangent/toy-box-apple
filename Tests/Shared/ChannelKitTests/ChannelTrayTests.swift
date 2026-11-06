@@ -43,5 +43,7 @@ struct ChannelTrayTests {
                 }
             }
         }
+        #expect(ChannelTray(artifacts: [], tasks: [], preview: nil, bookmarkCount: 1).isVisible)
+        #expect(!ChannelTray(artifacts: [], tasks: [], preview: nil, bookmarkCount: 0).isVisible)
     }
 }

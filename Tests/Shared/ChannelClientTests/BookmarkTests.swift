@@ -11,9 +11,10 @@ struct BookmarkTests {
         let mock = MockTransport { _, _ in MockResponse(status: 204) }
         let store = try connectedStore(mock, bookmarks: nil)
         #expect(store.bookmarks == nil)
+        #expect(store.bookmarkList.isEmpty)
         await store.setBookmarked(true, sequence: 2)
         #expect(store.bookmarks == nil)
-        #expect(store.bookmarkError == nil)
+        #expect(store.bookmarkFailure == nil)
         #expect(mock.requests.isEmpty)
     }
 
@@ -42,7 +43,7 @@ struct BookmarkTests {
         // Another device clears them, and nothing local holds either one.
         _ = try store.apply(.init(type: "bookmarks", revision: 13, bookmarks: []))
         #expect(store.bookmarks == [])
-        #expect(store.bookmarkError == nil)
+        #expect(store.bookmarkFailure == nil)
         #expect(mock.requests.map { "\($0.httpMethod ?? "") \($0.url?.path ?? "")" } == [
             "PUT /api/v1/channels/test/bookmarks/2", "PUT /api/v1/channels/test/bookmarks/3",
         ])
@@ -55,10 +56,12 @@ struct BookmarkTests {
         let store = try connectedStore(mock, bookmarks: [2])
         await store.setBookmarked(false, sequence: 2)
         #expect(store.bookmarks == [2])
-        #expect(store.bookmarkError == "Bookmark a user or agent message in this Channel. (HTTP 422)")
+        let failure = try #require(store.bookmarkFailure)
+        #expect(failure.sequence == 2 && failure.isRemoval)
+        #expect(failure.error == "Bookmark a user or agent message in this Channel. (HTTP 422)")
         #expect(mock.requests.count == 1)
-        store.dismissBookmarkError()
-        #expect(store.bookmarkError == nil)
+        store.dismissBookmarkFailure()
+        #expect(store.bookmarkFailure == nil)
     }
 
     /// A quick second toggle waits for the first write, so the server can't apply them out of order.
@@ -79,7 +82,27 @@ struct BookmarkTests {
         await off.value
         #expect(log.withLock { $0 } == ["PUT", "finished PUT", "DELETE"])
         #expect(store.bookmarks == [])
-        #expect(store.bookmarkError == nil)
+        #expect(store.bookmarkFailure == nil)
+    }
+
+    /// The list follows each change at once, and an entry fills in when its page of history loads.
+    @Test func theListShowsChangesAtOnceAndFillsInAsHistoryLoads() async throws {
+        let mock = MockTransport { request, _ in
+            guard request.url?.path.hasSuffix("/messages") == true else { return MockResponse(status: 204) }
+            return try .json(ChannelHistoryPage(version: 1, revision: 10, messages: (1...4).map { testMessage($0) }))
+        }
+        let store = ChannelStore(id: "test", api: try mock.api(), sendJournal: nil)
+        var state = testState(revision: 10, messages: [testMessage(5), testMessage(6, text: "Newest")])
+        state.bookmarks = [2, 6]
+        _ = try store.apply(.init(type: "snapshot", state: state))
+        #expect(store.bookmarkList == [.init(sequence: 6, message: store.messages[1]), .init(sequence: 2, message: nil)])
+
+        await store.setBookmarked(true, sequence: 5)
+        #expect(store.bookmarkList.map(\.id) == [6, 5, 2])
+        let oldest = try #require(store.bookmarkList.last)
+        #expect(await store.loadHistory(through: oldest.sequence) == nil)
+        #expect(store.bookmarkList.map(\.message?.sequence) == [6, 5, 2])
+        #expect(store.bookmarkList.map { $0.preview(agents: store.roster) } == ["Newest", "Progress", "Progress"])
     }
 
     /// A store connected to a channel with messages 1 to 3, as if its stream had just opened.
