@@ -1,5 +1,11 @@
 # Changelog
 
+## iPhone 0.1.19
+
+### Bugs/Polish
+
+- On an unfolded phone, Overview opens at its narrowest width, leaving more room for the conversation.
+
 ## Mac 0.1.24
 
 ### Features

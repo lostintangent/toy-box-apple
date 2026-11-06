@@ -1998,7 +1998,8 @@ and Folder and Preview use the full width below it. All opening information stay
 Both presentations have the Overview accessibility label, native sheet dismissal, nested task
 navigation and the same content.
 Overview takes the inspector column only where the conversation keeps the Mac's 420 points beside
-it, which on the Duo is unfolded landscape. Folded and unfolded portrait use the
+it, which on the Duo is unfolded landscape. The column opens at its 280-point minimum and widens to
+360. Folded and unfolded portrait use the
 sheet, decided by the scene's width rather than its size class alone. Rotating or folding moves an
 open Overview between the two without closing it, keeping its open page, disclosures and section
 state. The new presentation opens at its top rather than the reader's scroll position: SwiftUI's

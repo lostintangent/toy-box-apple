@@ -7,13 +7,16 @@ import ToyBoxUI
 enum OverviewPlacement: Equatable {
     case sheet, inspector
 
-    static let columnWidth: CGFloat = 296
+    /// The column opens at its narrowest, where readers kept shrinking it, and widens up to 360.
+    static let columnWidth: CGFloat = 280
 
-    /// The column takes room only where the conversation keeps the Mac's 420 points beside it, which
-    /// on the Duo is unfolded landscape. Unfolded portrait also reports a regular size class, so the
-    /// scene's width decides.
+    /// The column takes room only on scenes at least 716 points wide, so the conversation keeps more
+    /// than the Mac's 420 points beside it as it opens. On the Duo that's unfolded landscape. Unfolded
+    /// portrait also reports a regular size class, so the scene's width decides.
+    static let inspectorSceneWidth: CGFloat = 716
+
     init(sceneWidth: CGFloat, sizeClass: UserInterfaceSizeClass?) {
-        self = sizeClass == .regular && sceneWidth >= Self.columnWidth + 420 ? .inspector : .sheet
+        self = sizeClass == .regular && sceneWidth >= Self.inspectorSceneWidth ? .inspector : .sheet
     }
 
     /// Folded landscape stands the sheet's bar items in a leading vertical bar, which would move the
