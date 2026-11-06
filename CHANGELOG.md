@@ -4,7 +4,7 @@
 
 ### Features
 
-- Bookmark any message so important decisions and requests stand out when you scroll back through the conversation.
+- Bookmark any message and jump back to it later from the bookmarks button above the composer, so important decisions and requests are easy to find again.
 
 ### Bugs/Polish
 
