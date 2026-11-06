@@ -100,6 +100,9 @@ public final class ChannelStore {
     /// The sequences of the messages the user bookmarked, oldest first, including any change still on
     /// its way to the server. Nil when the server predates bookmarks, so views hide them.
     public private(set) var bookmarks: [Int]?
+    /// The bookmarks list, newest first, each with its message once that page of history loads.
+    /// Opening the list loads through its last entry, the oldest, with `loadHistory(through:)`.
+    public private(set) var bookmarkList: [ChannelBookmark] = []
 
     /// Whether a snapshot has arrived, without observing anything that changes after it.
     public var isLoaded: Bool { details != nil }
@@ -111,8 +114,8 @@ public final class ChannelStore {
     public private(set) var isSending = false
     public private(set) var historyError: String?
     public private(set) var readError: String?
-    /// Why the latest bookmark change failed and was undone, until the next change or a dismissal.
-    public private(set) var bookmarkError: String?
+    /// The latest bookmark change that failed and was undone, until the next change or a dismissal.
+    public private(set) var bookmarkFailure: BookmarkFailure?
     public private(set) var sendAttempts: [ChannelSendAttempt] = []
     public private(set) var lastSendFailure: ChannelSendFailure?
     public private(set) var attemptPersistenceError: String?
@@ -699,16 +702,17 @@ public final class ChannelStore {
     }
 
     /// Shows the change at once, then writes it. The stream's echo confirms it, and a failed write
-    /// undoes it and reports `bookmarkError`. Bookmarking is idempotent, so a write makes one attempt
+    /// undoes it and reports `bookmarkFailure`. Bookmarking is idempotent, so a write makes one attempt
     /// and changing it again is the retry. Writes run in order, skipping any a later change to the
     /// same message replaced, so the server ends where the user's last change left it.
     public func setBookmarked(_ bookmarked: Bool, sequence: Int) async {
         guard state?.bookmarks != nil else { return }
         guard phase.isConnected else {
-            bookmarkError = ChannelAPIError.disconnected.localizedDescription
+            bookmarkFailure = .init(sequence: sequence, isRemoval: !bookmarked,
+                                    error: ChannelAPIError.disconnected.localizedDescription)
             return
         }
-        bookmarkError = nil
+        bookmarkFailure = nil
         let change = BookmarkChange(bookmarked: bookmarked)
         bookmarkChanges[sequence] = change
         syncBookmarks()
@@ -721,8 +725,8 @@ public final class ChannelStore {
         await write.value
     }
 
-    public func dismissBookmarkError() {
-        bookmarkError = nil
+    public func dismissBookmarkFailure() {
+        bookmarkFailure = nil
     }
 
     private func writeBookmark(sequence: Int, change changeID: UUID) async {
@@ -736,7 +740,7 @@ public final class ChannelStore {
         } catch {
             guard bookmarkChanges[sequence]?.id == changeID else { return }
             bookmarkChanges[sequence] = nil
-            bookmarkError = error.localizedDescription
+            bookmarkFailure = .init(sequence: sequence, isRemoval: !change.bookmarked, error: error.localizedDescription)
         }
         syncBookmarks()
     }
@@ -749,12 +753,14 @@ public final class ChannelStore {
     private func syncBookmarks() {
         guard var shown = state?.bookmarks else {
             bookmarks = nil
+            bookmarkList = []
             return
         }
         for (sequence, change) in bookmarkChanges where shown.contains(sequence) != change.bookmarked {
             if change.bookmarked { shown.append(sequence) } else { shown.removeAll { $0 == sequence } }
         }
         bookmarks = shown.sorted()
+        bookmarkList = ChannelBookmark.list(shown, in: messages)
     }
 
     func apply(_ event: ChannelObservationEvent) throws -> Bool {
@@ -828,6 +834,14 @@ public final class ChannelStore {
         artifacts = state.artifacts
         routines = state.routines
         syncBookmarks()
+    }
+
+    /// Which change failed, so an alert can say whether it was adding or removing the bookmark.
+    public struct BookmarkFailure: Equatable, Identifiable, Sendable {
+        public let id = UUID()
+        public let sequence: Int
+        public let isRemoval: Bool
+        public let error: String
     }
 
     private struct BookmarkChange {
