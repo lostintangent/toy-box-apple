@@ -9,6 +9,7 @@ public struct AgentAvatarStack: View {
     public var size: CGFloat
     public var limit: Int
     public var showsOverflow: Bool
+    @Environment(\.backgroundProminence) private var prominence
 
     public init(agents: [ChannelAgent], size: CGFloat = 16, limit: Int = 3, showsOverflow: Bool = true) {
         self.agents = agents
@@ -45,7 +46,7 @@ public struct AgentAvatarStack: View {
                     .font(.system(size: 9, weight: .medium)).monospacedDigit()
                     .padding(.leading, 7)
                     #if os(iOS)
-                    .foregroundStyle(ChannelInk.secondary)
+                    .foregroundStyle(ChannelInk.secondary(for: prominence))
                     #else
                     .foregroundStyle(.secondary)
                     #endif

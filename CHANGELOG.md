@@ -1,5 +1,11 @@
 # Changelog
 
+## iPhone 0.1.17
+
+### Bugs/Polish
+
+- With an iPhone Duo unfolded, the channel list now highlights the channel you have open, so you can always see where you are.
+
 ## Mac 0.1.23
 
 ### Features

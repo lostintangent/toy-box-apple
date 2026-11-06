@@ -967,7 +967,10 @@ At standard text sizes, keep the time on the name line for quiet and working row
 vertically centered in a quiet row. Accessibility sizes use the stacked heading. Folded rows
 hide the system navigation indicator and draw a small tertiary `chevron.forward` immediately
 after the time, aligned on the first baseline. The chevron becomes white when selected.
-Unfolded rows show no chevron.
+Unfolded rows show no chevron, and the sidebar marks the open channel with the list's native
+selection, like iPad Mail, never a custom or cleared row background. Under an accent fill
+(`backgroundProminence == .increased`) the opaque secondary grays become `.secondary`, and the
+mark, chevron and attention turn white as on the Mac.
 
 The working-avatar stack exists independently of attention, so a working team and pending question
 can coexist. Keep the full-team names in row help/accessibility even though idle members aren't

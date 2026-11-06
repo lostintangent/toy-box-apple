@@ -16,6 +16,12 @@ public enum ChannelInk {
         Color.secondary
         #endif
     }()
+
+    /// A tinted selection raises prominence, where the system's hierarchical secondary stays legible
+    /// and the opaque gray wouldn't.
+    public static func secondary(for prominence: BackgroundProminence) -> AnyShapeStyle {
+        prominence == .increased ? AnyShapeStyle(.secondary) : AnyShapeStyle(secondary)
+    }
 }
 
 package enum ChannelOverviewInk {

@@ -61,7 +61,7 @@ struct ChannelSidebarRow: View {
             if let date = try? Date(channel.updatedAt, strategy: .iso8601) {
                 Text(ChannelActivityTime.label(for: date, now: now))
                     .font(.caption)
-                    .foregroundStyle(ChannelInk.secondary)
+                    .foregroundStyle(ChannelInk.secondary(for: prominence))
             }
             if sizeClass == .compact {
                 Image(systemName: "chevron.forward")
@@ -102,7 +102,7 @@ struct ChannelSidebarRow: View {
                 Text(ChannelFolderName.name(of: path))
             }
                 .font(.footnote)
-                .foregroundStyle(ChannelInk.secondary)
+                .foregroundStyle(ChannelInk.secondary(for: prominence))
                 .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
                 .truncationMode(.middle)
                 .fixedSize(horizontal: !yields, vertical: false)
@@ -110,7 +110,7 @@ struct ChannelSidebarRow: View {
         } else if let purpose = channel.purposePreview {
             Text(purpose)
                 .font(.footnote)
-                .foregroundStyle(ChannelInk.secondary)
+                .foregroundStyle(ChannelInk.secondary(for: prominence))
                 .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
                 .frame(minWidth: 0, idealWidth: yields ? nil : 60, maxWidth: .infinity, alignment: .leading)
                 .layoutPriority(1)

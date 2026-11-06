@@ -56,7 +56,6 @@ struct ChannelSidebar: View {
                             }
                             .disabled(!model.canManageChannels)
                         }
-                        .listRowBackground(Color.clear)
                     }
                 }
             }
