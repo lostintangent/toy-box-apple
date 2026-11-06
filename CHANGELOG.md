@@ -11,6 +11,7 @@
 ### Features
 
 - Siri can now answer questions about the channel or Markdown file in front of you, so you can ask what's left to do or what the team decided without reading back through the conversation.
+- Bookmark any message and jump back to it later from the bookmarks list above the composer, so important decisions and requests are easy to find again.
 
 ### Bugs/Polish
 
