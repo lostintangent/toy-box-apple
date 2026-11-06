@@ -908,6 +908,87 @@ struct ComposerTests {
         #expect(ComposerTray.isVisible(artifacts: [], tasks: [], preview: .init(kind: "screen", screenId: "main")))
     }
 
+    @Test func bookmarksHighlightStartsAtEitherEndStopsThereAndMovesOnWhenItsRowGoes() {
+        let rows = [30, 20, 10]
+        var highlight = ComposerBookmarksPopover.Highlight()
+        highlight.move(by: 1, in: rows)
+        #expect(highlight.sequence == 30)
+        highlight.move(by: -1, in: rows)
+        #expect(highlight.sequence == 30)
+        highlight = .init()
+        highlight.move(by: -1, in: rows)
+        #expect(highlight.sequence == 10)
+        highlight.move(by: 1, in: rows)
+        #expect(highlight.sequence == 10)
+        highlight.move(by: 1, in: [])
+        #expect(highlight.sequence == 10)
+
+        highlight = .init(sequence: 20)
+        highlight.remove(30, from: rows)
+        #expect(highlight.sequence == 20)
+        highlight.remove(20, from: rows)
+        #expect(highlight.sequence == 10)
+        highlight.remove(10, from: [30, 10])
+        #expect(highlight.sequence == 30)
+        highlight.remove(30, from: [30])
+        #expect(highlight.sequence == nil)
+    }
+
+    @Test func bookmarksListTakesFocusAndOpensOrRemovesTheHighlightedRowFromTheKeyboard() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [NoContentProtocol.self]
+        let api = try ChannelAPI(serverURL: "http://bookmarks.test", session: URLSession(configuration: configuration))
+        let store = ChannelStore(id: "test", api: api, sendJournal: nil)
+        let channel = Channel(id: "test", name: "Test", model: .init(provider: "test", name: "test"),
+                              updatedAt: "2026-10-24T00:00:00Z")
+        let messages = (1...3).map { sequence in
+            ChannelMessage(id: "message-\(sequence)", sequence: sequence, timestamp: "2026-10-24T00:0\(sequence):00Z",
+                           sender: .user, content: .text("Message \(sequence)"))
+        }
+        _ = try store.apply(.init(type: "snapshot", state: .init(revision: 1, channel: channel, lead: .lead(id: "lead"),
+                                                                 messages: messages, bookmarks: [1, 2, 3])))
+        let revealed = Mutex<[Int]>([])
+        let host = NSHostingView(rootView: ComposerBookmarksPopover(store: store) { sequence in
+            revealed.withLock { $0.append(sequence) }
+        })
+        let window = BookmarksKeyWindow(contentRect: NSRect(x: -10_000, y: -10_000, width: 360, height: 420),
+                                        styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        window.orderFrontRegardless()
+        defer { window.close() }
+        func press(_ characters: String, code: UInt16, modifiers: NSEvent.ModifierFlags = []) throws {
+            window.sendEvent(try key(characters, code: code, in: window, modifiers: modifiers))
+        }
+        func down() throws { try press("\u{F701}", code: 125, modifiers: [.numericPad, .function]) }
+        func up() throws { try press("\u{F700}", code: 126, modifiers: [.numericPad, .function]) }
+
+        // Laying out mounts the list, which takes focus as it appears, so no click comes first.
+        host.layoutSubtreeIfNeeded()
+        try press("\r", code: 36)
+        try press("\u{F728}", code: 117)
+        #expect(revealed.withLock { $0 }.isEmpty)
+        #expect(store.bookmarks == [1, 2, 3])
+
+        try down()
+        try press("\r", code: 36)
+        try up()
+        try press(" ", code: 49)
+        #expect(revealed.withLock { $0 } == [3, 3])
+
+        try down()
+        try press("\u{7F}", code: 51)
+        try await waitForUpdate(of: host, "Delete removes the highlighted bookmark") { store.bookmarks == [1, 3] }
+        try press("\r", code: 36)
+        try up()
+        try up()
+        try press("\u{F728}", code: 117)
+        try await waitForUpdate(of: host, "Forward Delete removes the highlighted bookmark") { store.bookmarks == [1] }
+        try press("\r", code: 36)
+        #expect(revealed.withLock { $0 } == [3, 3, 1, 1])
+        #expect(store.bookmarkFailure == nil)
+    }
+
     @Test(arguments: [NSScroller.Style.legacy, .overlay])
     func imageStripKeepsOneHeightWhenItsImagesOverflowAndStillScrolls(scrollerStyle: NSScroller.Style) throws {
         let draft = ComposerDraft()
@@ -1707,6 +1788,25 @@ struct ComposerTests {
         do { try FileManager.default.removeItem(at: url) }
         catch { Issue.record("Composer test cleanup failed: \(error.localizedDescription)") }
     }
+}
+
+/// A window that counts as key, so typed keys reach the focused view while it stays out of sight.
+private final class BookmarksKeyWindow: NSWindow {
+    override var isKeyWindow: Bool { true }
+    override var canBecomeKey: Bool { true }
+}
+
+/// A server that accepts every write with 204 No Content.
+private final class NoContentProtocol: URLProtocol, @unchecked Sendable {
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        guard let url = request.url,
+              let response = HTTPURLResponse(url: url, statusCode: 204, httpVersion: nil, headerFields: nil) else { return }
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+    override func stopLoading() {}
 }
 
 /// A server that accepts every request and never answers, so a channel stays connecting.

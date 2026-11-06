@@ -3,12 +3,13 @@ import ChannelKit
 import SwiftUI
 import ToyBoxUI
 
-/// Artifacts, tasks and the preview above the composer input, with its own hairline. It reads only
+/// Bookmarks, artifacts, tasks and the preview above the composer input, with its own hairline. It reads only
 /// those slices of the store, so the input doesn't redraw when they change. A switch updates it in
 /// place, since rebuilding it cost about 9 ms of every warm switch.
 struct ComposerTray: View {
     let store: ChannelStore
     @Environment(ArtifactOpener.self) private var artifactOpener
+    @Environment(ChannelInteraction.self) private var interaction
     @Environment(\.openURL) private var openURL
     @Environment(\.openWindow) private var openWindow
     @Environment(\.windowSnapshot) private var snapshot
@@ -16,12 +17,20 @@ struct ComposerTray: View {
     /// next channel's first frame shows it closed, and a switch closes it for good.
     @ViewState private var artifactsChannel: ObjectIdentifier?
     @ViewState private var tasksChannel: ObjectIdentifier?
+    @ViewState private var bookmarksChannel: ObjectIdentifier?
 
     private var tray: ChannelTray {
-        ChannelTray(artifacts: store.artifacts, tasks: store.tasks, preview: store.details?.resolvedPreview)
+        ChannelTray(artifacts: store.artifacts, tasks: store.tasks, preview: store.details?.resolvedPreview,
+                    bookmarkCount: store.bookmarkList.count)
     }
     private var showArtifacts: Binding<Bool> { presented($artifactsChannel) }
     private var showTasks: Binding<Bool> { presented($tasksChannel) }
+    private var showBookmarks: Binding<Bool> { presented($bookmarksChannel) }
+    /// The pill's count, nil when it's hidden. An open list keeps its pill, so removing the last
+    /// bookmark shows "No Bookmarks" instead of closing the list under the pointer.
+    private func bookmarkCount(in tray: ChannelTray) -> Int? {
+        tray.bookmarkCount > 0 || showBookmarks.wrappedValue ? tray.bookmarkCount : nil
+    }
 
     private func presented(_ channel: Binding<ObjectIdentifier?>) -> Binding<Bool> {
         let id = ObjectIdentifier(store)
@@ -38,9 +47,10 @@ struct ComposerTray: View {
 
     var body: some View {
         let tray = self.tray
+        let bookmarkCount = self.bookmarkCount(in: tray)
         VStack(spacing: 0) {
-            if tray.isVisible {
-                row(tray)
+            if tray.isVisible || bookmarkCount != nil {
+                row(tray, bookmarkCount: bookmarkCount)
                 ComposerHairline()
             }
         }
@@ -48,13 +58,15 @@ struct ComposerTray: View {
         .onChange(of: ObjectIdentifier(store)) {
             artifactsChannel = nil
             tasksChannel = nil
+            bookmarksChannel = nil
         }
     }
 
-    private func row(_ tray: ChannelTray) -> some View {
+    private func row(_ tray: ChannelTray, bookmarkCount: Int?) -> some View {
         let artifacts = tray.artifacts
         let progress = tray.taskProgress
         return HStack(spacing: 8) {
+            if let bookmarkCount { bookmarksButton(count: bookmarkCount) }
             if let newest = artifacts.first {
                 ViewThatFits(in: .horizontal) {
                     Button { artifactOpener.open(newest) } label: {
@@ -109,6 +121,13 @@ struct ComposerTray: View {
                 }
                 showTasks.wrappedValue = true
                 snapshot?.markStateReady("composer-tasks")
+            case "composer-bookmarks":
+                guard tray.bookmarkCount > 0 else {
+                    snapshot?.failState("composer-bookmarks", message: "This channel has no bookmarks.")
+                    return
+                }
+                showBookmarks.wrappedValue = true
+                snapshot?.markStateReady("composer-bookmarks")
             case "composer-artifacts":
                 guard artifacts.count > 1 else {
                     snapshot?.failState("composer-artifacts", message: "This channel has no additional artifacts.")
@@ -123,6 +142,29 @@ struct ComposerTray: View {
 
     static func isVisible(artifacts: [ChannelArtifact], tasks: [ChannelTask], preview: ChannelPreview?) -> Bool {
         ChannelTray(artifacts: artifacts, tasks: tasks, preview: preview).isVisible
+    }
+
+    private func bookmarksButton(count: Int) -> some View {
+        Button { showBookmarks.wrappedValue.toggle() } label: {
+            Label {
+                Text("\(count)").monospacedDigit()
+            } icon: {
+                Image(systemName: "bookmark.fill").foregroundStyle(.blue)
+            }
+            .lineLimit(1)
+            .frame(minHeight: 28)
+            .fixedSize(horizontal: true, vertical: false)
+        }
+        .popover(isPresented: showBookmarks, arrowEdge: .top) {
+            ComposerBookmarksPopover(store: store) { sequence in
+                showBookmarks.wrappedValue = false
+                interaction.reveal(sequence: sequence)
+            }
+            .trayPopoverContent()
+        }
+        .help("Bookmarks")
+        .accessibilityLabel("Bookmarks")
+        .accessibilityValue("\(count)")
     }
 
     private var artifactOverflow: some View {
