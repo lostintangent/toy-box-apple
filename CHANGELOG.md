@@ -5,6 +5,7 @@
 ### Bugs/Polish
 
 - On an unfolded phone, Overview opens at its narrowest width, leaving more room for the conversation.
+- While you talk to a channel from the list, the lines around its row stay out of the way, and they come back as soon as you're done.
 
 ## Mac 0.1.24
 
