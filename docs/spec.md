@@ -1525,13 +1525,13 @@ bookmarked, and `bookmark.slash` means Remove Bookmark in menus and swipe action
 divider's blue, and only the bookmarked state uses it. Every way to bookmark or remove one is
 disabled while the channel isn't connected, like Send, and existing marks stay.
 
-**Mac hover toolbar.** Every message shares one hover toolbar, 24 points tall: 24 x 20 buttons
-with 13-point symbols, 2 points apart inside 2 points of padding, on `.regularMaterial` in an
-8-point continuous rounded rectangle with the 0.5-point separator hairline. A 12-point separator
+**Mac hover toolbar.** Every message shares one hover toolbar, 28 points tall: 24 x 24 buttons
+with 11-point symbols, 2 points apart inside 2 points of padding, on `.regularMaterial` in an
+8-point continuous rounded rectangle with the 0.5-point separator hairline. A 16-point separator
 rule with 3 points on each side sets Bookmark apart. Agent messages read Reply, Copy, rule,
 Bookmark at the bubble's top trailing corner, 8 points in from its edge, and a deleted agent's
 drop Reply. The user's own messages mirror it at the top leading corner: Bookmark, rule, Copy.
-The toolbar's top sits 16 points above the bubble, so it ends 8 points into the bubble's 10-point
+The toolbar's top sits 20 points above the bubble, so it ends 8 points into the bubble's 10-point
 top padding and never covers the first line. It never covers the header either. Where it would
 overlap the header's text, as on a short bubble, it slides outward to start 8 points past that
 text, or to end 8 points before it on the user's side, even beyond the bubble.

@@ -532,7 +532,7 @@ private struct TranscriptHoverActions<Header: View>: View {
 
     /// 3 points each side, with the stack's spacing.
     private var divider: some View {
-        Divider().frame(height: 12).padding(.horizontal, 1).transition(.opacity)
+        Divider().frame(height: 16).padding(.horizontal, 1).transition(.opacity)
     }
 }
 
@@ -561,9 +561,9 @@ private struct TranscriptToolbarButton: View {
     var body: some View {
         let isLit = isEnabled && (isHovered || configuration.isPressed)
         configuration.label
-            .font(.system(size: 13))
+            .font(.system(size: 11))
             .foregroundStyle(isLit ? .primary : .secondary)
-            .frame(width: 24, height: 20)
+            .frame(width: 24, height: 24)
             .background {
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
                     .fill(.primary.opacity(isLit ? fill : 0))
