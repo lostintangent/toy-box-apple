@@ -1580,8 +1580,10 @@ list reports through the same alert.
 secondary label, with help and label "Bookmarks" and the count as its value. Bookmarks alone make
 the tray visible, and the button never collapses. It opens a `.popover(arrowEdge: .top)` like the
 artifacts list, with the same native glass. On the phone, a 44-point circle of
-`.regular.interactive()` glass with a blue `bookmark.fill` at body size leads the floating
-activity row, 8 points before the working capsule, in every form of the row. It's labeled
+`.regular.interactive()` glass with a blue `bookmark.fill` at body size sits at the trailing
+edge of the floating activity row, where Jump to Latest sits. The row shows one trailing button at
+a time, so the working capsule has room for its sentence: Jump to Latest once the reader has scrolled
+up, and Bookmarks otherwise, crossfading between them. It's labeled
 "Bookmarks" with the count as its value and offers the large-content viewer. It opens the list
 exactly as the capsule opens Working Now: `.popover` with `.presentationDetents([.medium,
 .large])`, a sheet on the folded phone and an anchored popover when the Duo is unfolded. Either

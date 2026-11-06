@@ -102,7 +102,7 @@ private struct TranscriptBookmarkRow: View {
                 avatar
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        Text(name).font(.body.weight(.semibold)).lineLimit(1)
+                        Text(name).font(.body.weight(.semibold)).foregroundStyle(.primary).lineLimit(1)
                         Spacer(minLength: 0)
                         if let date {
                             Text(ChannelActivityTime.label(for: date, now: .now))
@@ -120,7 +120,6 @@ private struct TranscriptBookmarkRow: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(.rect)
         }
-        .buttonStyle(.plain)
         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
             if canRemove {
                 Button("Remove", systemImage: "bookmark.slash", action: onRemove).tint(TranscriptBookmark.ink)

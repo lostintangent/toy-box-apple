@@ -649,7 +649,8 @@ private struct TranscriptSendAttempt: View {
 /// The transcript's inset from the column's edges.
 func transcriptEdgeInset(_ sizeClass: UserInterfaceSizeClass?) -> CGFloat { sizeClass == .regular ? 20 : 16 }
 
-/// Bookmarks, the working summary and Jump to Latest, floating in glass just above the composer.
+/// The working summary and one trailing button, floating in glass just above the composer. The
+/// trailing button is Jump to Latest once the reader has scrolled up, and Bookmarks otherwise.
 private struct TranscriptFloatingAccessories: View {
     let store: ChannelStore
     let showsJumpToLatest: Bool
@@ -673,26 +674,21 @@ private struct TranscriptFloatingAccessories: View {
         ViewThatFits(in: .horizontal) {
             ForEach(WorkingForm.allCases, id: \.self) { form in
                 HStack(spacing: 8) {
-                    bookmarks
                     status(working, form: form).fixedSize()
                     Spacer(minLength: 0)
-                    jump.fixedSize()
+                    trailingButton.fixedSize()
                 }
             }
             VStack(alignment: .trailing, spacing: 8) {
-                jump
-                HStack(spacing: 8) {
-                    bookmarks
-                    status(working, form: .sentence)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                trailingButton
+                status(working, form: .sentence).frame(maxWidth: .infinity, alignment: .leading)
             }
         }
         // Aligned with the messages' edges.
         .padding(.horizontal, transcriptEdgeInset(sizeClass))
         .padding(.bottom, 8)
         .animation(.easeOut(duration: 0.2), value: working.map(\.id))
-        .animation(.easeOut(duration: 0.2), value: showsBookmarkButton)
+        .animation(.easeOut(duration: 0.2), value: trailing)
         // The popover's anchor leaves with the last working agent, so it can't stay presented.
         .onChange(of: working.isEmpty) { _, isEmpty in if isEmpty { showsWorkingNow = false } }
     }
@@ -728,50 +724,60 @@ private struct TranscriptFloatingAccessories: View {
         }
     }
 
-    /// Stays while its list is open, even after the last bookmark goes, so the list keeps its anchor.
-    private var showsBookmarkButton: Bool {
-        store.bookmarks != nil && (!store.bookmarkList.isEmpty || showsBookmarks)
+    private enum Trailing { case jumpToLatest, bookmarks }
+
+    /// Bookmarks stays while its list is open, even after the last bookmark goes or the reader scrolls
+    /// up, so the list keeps its anchor.
+    private var trailing: Trailing? {
+        if showsBookmarks { return .bookmarks }
+        if showsJumpToLatest { return .jumpToLatest }
+        if store.bookmarks != nil, !store.bookmarkList.isEmpty { return .bookmarks }
+        return nil
     }
 
-    @ViewBuilder private var bookmarks: some View {
-        if showsBookmarkButton {
-            Button { showsBookmarks.toggle() } label: {
-                Image(systemName: "bookmark.fill")
-                    .font(.body)
-                    .foregroundStyle(TranscriptBookmark.ink)
-                    .frame(width: 44, height: 44)
-                    .contentShape(.circle)
-            }
-            .buttonStyle(.plain)
-            .glassEffect(.regular.interactive(), in: .circle)
-            .accessibilityLabel("Bookmarks")
-            .accessibilityValue("\(store.bookmarkList.count)")
-            .accessibilityShowsLargeContentViewer {
-                Label("Bookmarks", systemImage: "bookmark.fill")
-            }
-            .popover(isPresented: $showsBookmarks) {
-                TranscriptBookmarks(store: store) { sequence in
-                    showsBookmarks = false
-                    _ = interaction.reveal(sequence: sequence)
-                }
-                .presentationDetents([.medium, .large])
-            }
-            .transition(rises)
+    @ViewBuilder private var trailingButton: some View {
+        switch trailing {
+        case .jumpToLatest: jump
+        case .bookmarks: bookmarks
+        case nil: EmptyView()
         }
     }
 
-    @ViewBuilder private var jump: some View {
-        if showsJumpToLatest {
-            Button(action: jumpToLatest) {
-                Label("Jump to Latest", systemImage: "arrow.down")
-                    .font(.footnote.weight(.semibold))
-                    .padding(.horizontal, 14)
-                    .frame(minHeight: 44)
-            }
-            .buttonStyle(.plain)
-            .glassEffect(.regular.interactive(), in: .capsule)
-            .transition(rises)
+    private var bookmarks: some View {
+        Button { showsBookmarks.toggle() } label: {
+            Image(systemName: "bookmark.fill")
+                .font(.body)
+                .foregroundStyle(TranscriptBookmark.ink)
+                .frame(width: 44, height: 44)
+                .contentShape(.circle)
         }
+        .buttonStyle(.plain)
+        .glassEffect(.regular.interactive(), in: .circle)
+        .accessibilityLabel("Bookmarks")
+        .accessibilityValue("\(store.bookmarkList.count)")
+        .accessibilityShowsLargeContentViewer {
+            Label("Bookmarks", systemImage: "bookmark.fill")
+        }
+        .popover(isPresented: $showsBookmarks) {
+            TranscriptBookmarks(store: store) { sequence in
+                showsBookmarks = false
+                _ = interaction.reveal(sequence: sequence)
+            }
+            .presentationDetents([.medium, .large])
+        }
+        .transition(rises)
+    }
+
+    private var jump: some View {
+        Button(action: jumpToLatest) {
+            Label("Jump to Latest", systemImage: "arrow.down")
+                .font(.footnote.weight(.semibold))
+                .padding(.horizontal, 14)
+                .frame(minHeight: 44)
+        }
+        .buttonStyle(.plain)
+        .glassEffect(.regular.interactive(), in: .capsule)
+        .transition(rises)
     }
 
     private func summary(_ agents: [ChannelAgent]) -> String {
