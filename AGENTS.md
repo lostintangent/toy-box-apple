@@ -134,6 +134,10 @@ surface.
   `state.applying(event)`, not free functions. Name a type for the thing itself, nesting a part
   under its owner (`Channel.Attention`, `ChannelTask.Timing`), and avoid Manager, Helper, Support,
   Context and Projection.
+- **Keep a feature's rules out of the app targets.** Put them in a UI-free ChannelClient model
+  with its animation, waits and announcements passed in, like `TalkRecorder`, and prove them with
+  Mac tests. `simulator --build-only` checks the phone compiles, and the simulator is only for
+  what you need to see.
 - **Adapt to the phone's scene.** Mobile views use SwiftUI's safe areas, layout margins, size
   classes and adaptive navigation. Never hard-code a safe-area inset, device size or Duo fold
   width. Mockup canvas measurements are not implementation constants.
