@@ -67,16 +67,14 @@ final class TalkRecorder: DictationTextTarget {
     static let sampleCount = 64
 
     init(system: DictationSystem = .live,
-         draft: @escaping @MainActor (ChannelStore) -> ComposerDraft = TalkRecorder.sharedDraft,
+         draft: @escaping @MainActor (ChannelStore) -> ComposerDraft = {
+             .shared(serverURL: $0.api.baseURL, channelID: $0.id, imageIsReadable: ComposerSession.imageIsReadable)
+         },
          announce: @escaping @MainActor (String) -> Void = { UIAccessibility.post(notification: .announcement, argument: $0) }) {
         dictation = ComposerDictation(system: system)
         self.draft = draft
         self.announce = announce
         dictation.target = self
-    }
-
-    static func sharedDraft(for store: ChannelStore) -> ComposerDraft {
-        .shared(serverURL: store.api.baseURL, channelID: store.id, imageIsReadable: ComposerSession.imageIsReadable)
     }
 
     /// Talk shows only where dictation supports the person's language.
@@ -291,20 +289,16 @@ final class TalkRecorder: DictationTextTarget {
     /// Ends the note when something takes the person away from the list. Words still being
     /// recorded become the channel's draft, after any draft already there.
     func leave() {
-        switch phase {
-        case .recording:
+        guard phase != nil else { return }
+        if phase == .recording {
             dictation.commitNow()
             let words = finalizedWords.trimmingCharacters(in: .whitespacesAndNewlines)
             if let store, !words.isEmpty {
                 let draft = draft(store)
                 draft.text = ComposerDraft.joined(draft.text, words)
             }
-            close()
-        case .sending, .failed, .sent, .landed, .settling:
-            close()
-        case nil:
-            break
         }
+        close()
     }
 
     private func close(keepingCell: Bool = false) {
