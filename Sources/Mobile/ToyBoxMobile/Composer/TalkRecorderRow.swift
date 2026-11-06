@@ -715,8 +715,7 @@ private struct TalkRow: ViewModifier {
         // Dims with the card's growth, since rows don't animate in the swipe action's transaction.
         let isDimmed = recorder.isOpen && recorder.isGrown && !isHeld
         let offersTalk = offered && recorder.isAvailable && !recorder.isOpen
-        // The line above the held row is the bottom line of the row before it.
-        let hidesLine = isHeld || recorder.channelAbove == channelID
+        let hidesLine = recorder.hidesLine(under: channelID)
         content
             .opacity(isCovered ? 0 : isDimmed ? 0.4 : 1)
             .animation(.easeInOut(duration: 0.25), value: isDimmed)
@@ -753,16 +752,8 @@ private struct TalkRow: ViewModifier {
     }
 }
 
-extension TalkRecorder {
-    /// The channel whose row sits just above the held one, in the order the recorder holds.
-    fileprivate var channelAbove: String? {
-        guard let channelID, let order, let index = order.firstIndex(of: channelID), index > 0 else { return nil }
-        return order[index - 1]
-    }
-}
-
 /// UIKit's list reads each row's separators only when it lays out, and nothing lays it out as the
-/// card hands its row back, so a changed `listRowSeparator` waits for some unrelated update. This
+/// card starts shrinking, so a changed `listRowSeparator` waits for some unrelated update. This
 /// lays the row's list out again whenever its line changes.
 private struct TalkRowLine: UIViewRepresentable {
     let isHidden: Bool

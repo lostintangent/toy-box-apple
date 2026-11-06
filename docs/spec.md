@@ -1093,8 +1093,9 @@ time leads its own line, that trailing edge is the end of the row's text. The co
 waveform, the words and Send all end on it, so the card has one trailing margin. The row's
 trailing column, the chevron and any attention mark beside line 2, stays empty while the card is
 up. The card clips everything it draws to its own shape, so nothing ever sits on or past its edge.
-The list's lines above and below the row hide while the recorder holds it, and both return the
-moment the card settles.
+While the card is open, the list's lines above and below the row and the one under the next row
+hide, so the card never crosses a line. All three return as the card starts shrinking, on Send and
+on Cancel, so they're already in place beneath it as it pulls away.
 
 **The glass sidebar.** Unfolded, the sidebar is Liquid Glass, so no opaque base can match a row
 the way the list's background does folded. There the card's whole surface, base and wash, is

@@ -34,15 +34,17 @@ struct TalkRecorderTests {
         let store = ChannelStore(id: "test", api: try mock.api(), sendJournal: nil)
         draft.text = "My own draft"
         var announcements: [String] = []
-        let recorder = try await start(on: store, order: ["a", "b", "test"]) { announcements.append($0) }
+        let recorder = try await start(on: store, order: ["a", "test", "b"]) { announcements.append($0) }
         defer { recorder.deactivate() }
         let cell = TalkRecorder.Cell(frame: CGRect(x: 20, y: 120, width: 356, height: 72), textInset: 13)
         recorder.cell = cell
         recorder.isGrown = true
         #expect(recorder.isOpen && recorder.hidesTrailingColumn)
         #expect(recorder.timeFace == .counter)
-        #expect(recorder.ordered(channels).map(\.id) == ["a", "b", "test", "new", "newer"],
+        #expect(recorder.ordered(channels).map(\.id) == ["a", "test", "b", "new", "newer"],
                 "Activity can't move rows beneath the card, and new channels follow in server order")
+        #expect(lines(hiddenBy: recorder) == ["a", "test", "b"],
+                "The lines above and below the held row and under the next row hide, so the card never crosses one")
 
         recognizer.send("Put the library", isFinal: true)
         recognizer.send("beside", isFinal: false)
@@ -54,6 +56,8 @@ struct TalkRecorderTests {
         #expect(posts.withLock { $0.map(\.content) } == ["Put the library beside the desks"],
                 "Plain words reach the Lead with no mention or request answer")
         #expect(recorder.phase == .sent && !recorder.isOpen && recorder.hidesTrailingColumn)
+        #expect(beats.motions.last == .sent && lines(hiddenBy: recorder).isEmpty,
+                "The lines return as the card starts shrinking, not once it closes")
         #expect(recorder.timeFace == .noteTime)
         #expect(recorder.sentAt == (try? Date("2026-10-27T00:00:00Z", strategy: .iso8601)),
                 "The row shows the server's time for the note")
@@ -64,10 +68,11 @@ struct TalkRecorderTests {
         try await beats.end(.seconds(0.35))
         try await eventually { recorder.phase == .landed }
         #expect(!recorder.hidesTrailingColumn)
-        recorder.start(store, name: "Studio", order: ["a", "b", "test"])
+        recorder.start(store, name: "Studio", order: ["a", "test", "b"])
         #expect(recorder.phase == .recording)
         #expect(recorder.cell == cell && recorder.isGrown, "The card stays up, so the check swaps straight to the mic")
         #expect(recorder.finalizedWords.isEmpty && recorder.sentAt == nil)
+        #expect(lines(hiddenBy: recorder) == ["a", "test", "b"])
         try await eventually { beats.waiting.isEmpty }
 
         try await eventually { recorder.isListening }
@@ -80,7 +85,7 @@ struct TalkRecorderTests {
         try await beats.end(.seconds(2))
         try await eventually { recorder.phase == .settling }
         #expect(recorder.timeFace == nil && recorder.rowValue(details: "Now") == "Now")
-        #expect(recorder.ordered(channels).map(\.id) == ["a", "b", "test", "new", "newer"])
+        #expect(recorder.ordered(channels).map(\.id) == ["a", "test", "b", "new", "newer"])
         try await beats.end(.seconds(0.45))
         try await eventually { recorder.phase == nil }
         #expect(recorder.cell == nil && !recorder.isGrown)
@@ -100,7 +105,7 @@ struct TalkRecorderTests {
         }
         let store = ChannelStore(id: "test", api: try mock.api(), sendJournal: nil)
         var announcements: [String] = []
-        let recorder = try await start(on: store) { announcements.append($0) }
+        let recorder = try await start(on: store, order: ["test", "a"]) { announcements.append($0) }
         defer { recorder.deactivate() }
         recognizer.send("Keep a reading nook", isFinal: true)
         await recorder.send()
@@ -108,6 +113,7 @@ struct TalkRecorderTests {
         #expect(recorder.phase == .failed(failure))
         #expect(recorder.isOpen && recorder.canSend && recorder.timeFace == .failed(failure))
         #expect(recorder.rowValue(details: "Now") == failure.label)
+        #expect(lines(hiddenBy: recorder) == ["test", "a"], "The first row has no line above to hide")
 
         await recorder.send()
         #expect(recorder.phase == .failed(failure))
@@ -117,6 +123,7 @@ struct TalkRecorderTests {
 
         recorder.cancel()
         #expect(recorder.phase == .settling && !recorder.isOpen)
+        #expect(lines(hiddenBy: recorder).isEmpty, "Cancel brings the lines back as the card starts shrinking")
         try await beats.end(.seconds(0.45))
         try await eventually { recorder.phase == nil }
         #expect(beats.motions == [.open, .open])
@@ -145,6 +152,11 @@ struct TalkRecorderTests {
         #expect(draft.text == kept)
         #expect(mock.requests.isEmpty)
         #expect(store.sendAttempts.isEmpty)
+    }
+
+    /// The channels whose row hides the line under it.
+    private func lines(hiddenBy recorder: TalkRecorder) -> Set<String> {
+        Set(channels.map(\.id).filter(recorder.hidesLine(under:)))
     }
 
     /// Opens the recorder on the store's row, as the swipe does, once it's listening.

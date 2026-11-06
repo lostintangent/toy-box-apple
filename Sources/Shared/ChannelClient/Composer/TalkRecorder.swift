@@ -115,6 +115,17 @@ package final class TalkRecorder: DictationTextTarget {
         }
     }
 
+    /// True while the card is open over this row's bottom line: the row above the held one, whose
+    /// line is the held row's top, the held row and the row below it, so the card never crosses a
+    /// line. The lines return in the shrink's own transaction, on Send and on Cancel.
+    package func hidesLine(under channelID: String) -> Bool {
+        guard isOpen, let held = self.channelID else { return false }
+        if channelID == held { return true }
+        guard let order, let heldIndex = order.firstIndex(of: held),
+              let index = order.firstIndex(of: channelID) else { return false }
+        return abs(index - heldIndex) == 1
+    }
+
     /// The chevron and attention mark stay hidden until the card has landed.
     package var hidesTrailingColumn: Bool {
         switch phase {

@@ -1,5 +1,11 @@
 # Changelog
 
+## iPhone 0.1.20
+
+### Bugs/Polish
+
+- Talking to a channel from the list looks smoother, since the lines between rows stay clear of the recorder and are already back as it closes.
+
 ## iPhone 0.1.19
 
 ### Bugs/Polish
