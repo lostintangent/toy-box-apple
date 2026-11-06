@@ -1,5 +1,11 @@
 # Changelog
 
+## Mac 0.1.24
+
+### Bugs/Polish
+
+- The toolbar that appears when you hover over a message is lighter and roomier, so it's easier to read and click.
+
 ## iPhone 0.1.18
 
 ### Bugs/Polish
