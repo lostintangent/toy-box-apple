@@ -5,7 +5,8 @@ import ToyBoxUI
 import UIKit
 
 /// A screen over the whole app, pinch-zoomable to 8× and live while the app is active. Zoom and pan
-/// stay in UIKit, like Photos, and the status sits over them, so a frame never touches the zoom.
+/// stay in UIKit, like Photos, and the status sits over them, so a frame never touches the zoom. The
+/// bar never minimizes, since a pan would then resize the canvas and fit the screen again.
 struct ScreenViewer: View {
     @ViewState private var connection: ScreenConnection
     @Environment(\.scenePhase) private var scenePhase
@@ -27,6 +28,7 @@ struct ScreenViewer: View {
                 .accessibilityLabel("Screen: \(connection.state.title ?? connection.screenID)")
                 .navigationTitle(connection.state.title ?? "Screen")
                 .navigationBarTitleDisplayMode(.inline)
+                .toolbarMinimizationBehavior(.never, for: .navigationBar)
                 .toolbar {
                     ToolbarItem(placement: .topBarTrailing) {
                         Button(role: .close) { dismiss() }
@@ -54,8 +56,9 @@ struct ScreenViewer: View {
     }
 }
 
-/// A screen's latest frame, fitted and centered at 1×, that pinches to 8×, as images do, and pans like a photo. Only
-/// a settled zoom or a new viewer size is reported, and a new frame keeps the zoom and position.
+/// A screen's latest frame, fitted and centered at 1×, that pinches to 8× and pans like a photo. A pinch stops at
+/// 1× and 8× rather than springing back, so the screen stays where it's left. Only a settled zoom or a new viewer
+/// size is reported, and a new frame keeps the zoom and position.
 final class ScreenCanvas: UIScrollView, UIScrollViewDelegate {
     /// The full frame at its fitted size, with the changed region over it. It's the view that zooms.
     let pictureView = UIView()
@@ -76,7 +79,7 @@ final class ScreenCanvas: UIScrollView, UIScrollViewDelegate {
         contentInsetAdjustmentBehavior = .never
         showsHorizontalScrollIndicator = false
         showsVerticalScrollIndicator = false
-        bouncesZoom = true
+        bouncesZoom = false
         maximumZoomScale = 8
         accessibilityIdentifier = "screen-canvas"
         pictureView.layer.cornerCurve = .continuous

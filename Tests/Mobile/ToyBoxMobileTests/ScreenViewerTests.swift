@@ -14,28 +14,29 @@ struct ScreenViewerTests {
         #expect(canvas.pictureView.frame == CGRect(x: 0, y: 0, width: 400, height: 250))
         #expect(canvas.contentInset.top == 275)
 
-        canvas.setZoomScale(2.5, animated: false)
-        canvas.contentOffset = CGPoint(x: 310, y: -50)
+        canvas.setZoomScale(4, animated: false)
+        canvas.contentOffset = CGPoint(x: 600, y: 100)
         let pinchCount = reports.count
         canvas.setNeedsLayout()
         canvas.layoutIfNeeded()
         #expect(reports.count == pinchCount, "A pinch under way never asks for frames")
-        canvas.scrollViewDidEndZooming(canvas, with: canvas.pictureView, atScale: 2.5)
-        #expect(reports.last == CGSize(width: 400 * pixels * 2.5, height: 800 * pixels * 2.5))
+        canvas.scrollViewDidEndZooming(canvas, with: canvas.pictureView, atScale: 4)
+        #expect(reports.last == CGSize(width: 400 * pixels * 4, height: 800 * pixels * 4))
 
-        let settled = (canvas.zoomScale, canvas.contentOffset, canvas.pictureView.frame)
-        canvas.show(try picture(width: 2400, height: 1500, region: #"{"x":600,"y":300,"width":300,"height":150}"#))
+        let settled = (canvas.zoomScale, canvas.contentOffset)
+        // The server rounds a sharper frame's pixels, so its shape can be a step off the last one's.
+        canvas.show(try picture(width: 1600, height: 1002, region: #"{"x":600,"y":300,"width":300,"height":150}"#))
         canvas.setNeedsLayout()
         canvas.layoutIfNeeded()
         #expect(canvas.zoomScale == settled.0)
         #expect(canvas.contentOffset == settled.1)
-        #expect(canvas.pictureView.frame == settled.2)
-        #expect(canvas.contentSize == CGSize(width: 1000, height: 625))
+        #expect(canvas.pictureView.frame == CGRect(x: 0, y: 0, width: 1600, height: 1002))
+        #expect(canvas.contentSize == CGSize(width: 1600, height: 1002))
 
         canvas.isActive = false
         #expect(reports.last == .some(nil))
         canvas.isActive = true
-        #expect(reports.last == CGSize(width: 400 * pixels * 2.5, height: 800 * pixels * 2.5))
+        #expect(reports.last == CGSize(width: 400 * pixels * 4, height: 800 * pixels * 4))
 
         canvas.show(Screen.Picture())
         canvas.layoutIfNeeded()

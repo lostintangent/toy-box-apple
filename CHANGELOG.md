@@ -1,5 +1,11 @@
 # Changelog
 
+## iPhone 0.1.18
+
+### Bugs/Polish
+
+- A zoomed screen now stays where you pinch and pan it, and pinching stops at the zoom limit instead of springing back.
+
 ## iPhone 0.1.17
 
 ### Features
