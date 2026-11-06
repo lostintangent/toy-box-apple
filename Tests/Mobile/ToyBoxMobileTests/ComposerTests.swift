@@ -1190,21 +1190,9 @@ struct ComposerTests {
             lead: .lead(id: "test", profile: .init(name: "Lead", role: "Coordinator",
                                                   avatar: .init(mark: "M4 12H20", color: "#123456")))
         )))
-        var system = DictationSystem(
-            supportedLocale: { probe.localeChecks += 1; return Locale(identifier: "en-US") },
-            hasMicrophone: { probe.deviceChecks += 1; return true },
-            microphoneAccess: { probe.accessChecks += 1; return .granted },
-            requestMicrophoneAccess: { Issue.record("Tests must not request microphone access"); return false },
-            speechRecognitionDenied: { false },
-            installAssets: { _, _ in probe.assetChecks += 1 },
-            makeSource: { probe.sources += 1; return MobileInertAudioSource() },
-            makeRecognizer: { _, _, _ in recognizer },
-            announce: { _ in },
-            openSettings: { _ in Issue.record("Tests must not open Settings") }
-        )
-        system.refreshNotifications = []
         let draft = ComposerDraft(imageIsReadable: { _ in false })
-        let session = ComposerSession(store: store, draft: draft, dictationSystem: system)
+        let session = ComposerSession(store: store, draft: draft,
+                                      dictationSystem: dictationSystem(recognizer, probe: probe))
         let input = NativeComposerInput(
             text: Binding(get: { draft.text }, set: { draft.text = $0 }), editor: session.editor,
             onSend: {}, onCompletionKey: { _ in false }, onPasteImages: { _ in },
@@ -1220,6 +1208,153 @@ struct ComposerTests {
         let target = MobileDictationTarget(input: view, coordinator: coordinator)
         session.dictation.target = target
         return (session, target)
+    }
+
+    private func dictationSystem(
+        _ recognizer: MobileTestRecognizer, probe: MobileDictationProbe = .init()
+    ) -> DictationSystem {
+        var system = DictationSystem(
+            supportedLocale: { probe.localeChecks += 1; return Locale(identifier: "en-US") },
+            hasMicrophone: { probe.deviceChecks += 1; return true },
+            microphoneAccess: { probe.accessChecks += 1; return .granted },
+            requestMicrophoneAccess: { Issue.record("Tests must not request microphone access"); return false },
+            speechRecognitionDenied: { false },
+            installAssets: { _, _ in probe.assetChecks += 1 },
+            makeSource: { probe.sources += 1; return MobileInertAudioSource() },
+            makeRecognizer: { _, _, _ in recognizer },
+            announce: { _ in },
+            openSettings: { _ in Issue.record("Tests must not open Settings") }
+        )
+        system.refreshNotifications = []
+        return system
+    }
+
+    private func talkRecorder(
+        _ recognizer: MobileTestRecognizer, store: ChannelStore, draft: ComposerDraft,
+        announce: @escaping @MainActor (String) -> Void = { _ in }
+    ) async -> TalkRecorder {
+        let recorder = TalkRecorder(system: dictationSystem(recognizer), draft: { _ in draft }, announce: announce)
+        await recorder.dictation.refreshLanguageSupport()
+        recorder.start(store, name: "Studio")
+        await recognizer.waitUntilListening()
+        return recorder
+    }
+
+    @Test func talkSendsOnlyFinishedWordsToTheLeadOnceAndLeavesTheDraftAlone() async throws {
+        let fixture = try replyFixture(.sent)
+        defer { fixture.close() }
+        let recognizer = MobileTestRecognizer()
+        let draft = ComposerDraft(imageIsReadable: { _ in false })
+        draft.text = "My own draft"
+        var announcements: [String] = []
+        let recorder = await talkRecorder(recognizer, store: fixture.store, draft: draft) { announcements.append($0) }
+        defer { recorder.deactivate() }
+        recognizer.send("Put the library", isFinal: true)
+        recognizer.send("beside", isFinal: false)
+        #expect(recorder.finalizedWords == "Put the library")
+        #expect(recorder.tentativeWords == " beside")
+        #expect(recorder.canSend)
+        recognizer.finalWords = [("beside the desks", true)]
+        await recorder.send()
+        #expect(fixture.posts.map(\.content) == ["Put the library beside the desks"],
+                "Plain words reach the Lead with no mention or request answer")
+        #expect(recorder.phase == .sent)
+        #expect(!recorder.isOpen)
+        #expect(announcements == ["Sent to Lead in Studio"])
+        #expect(draft.text == "My own draft")
+        #expect(!recorder.canSend)
+    }
+
+    @Test func talkingAgainFromTheDoneCheckKeepsTheCardAndStartsANewNote() async throws {
+        let fixture = try replyFixture(.sent)
+        defer { fixture.close() }
+        let recognizer = MobileTestRecognizer()
+        let recorder = await talkRecorder(recognizer, store: fixture.store,
+                                          draft: ComposerDraft(imageIsReadable: { _ in false }))
+        defer { recorder.deactivate() }
+        let cell = TalkRecorder.Cell(frame: CGRect(x: 20, y: 120, width: 356, height: 72), textInset: 13)
+        recorder.cell = cell
+        recognizer.send("Keep a reading nook", isFinal: true)
+        await recorder.send()
+        #expect(recorder.timeFace == .noteTime)
+        #expect(recorder.sentAt == (try? Date("2026-10-27T00:00:00Z", strategy: .iso8601)),
+                "The row shows the server's time for the note")
+        recorder.start(fixture.store, name: "Studio")
+        #expect(recorder.phase == .recording)
+        #expect(recorder.cell == cell, "The card stays up, so the check swaps straight to the mic")
+        #expect(recorder.sentAt == nil)
+        #expect(recorder.finalizedWords.isEmpty)
+    }
+
+    @Test(arguments: [ReplyResponse.rejected, .unconfirmed])
+    func aFailedTalkNoteStaysOpenAndSendAgainRepeatsTheSameAttempt(response: ReplyResponse) async throws {
+        let fixture = try replyFixture(response)
+        defer { fixture.close() }
+        let recognizer = MobileTestRecognizer()
+        let draft = ComposerDraft(imageIsReadable: { _ in false })
+        let recorder = await talkRecorder(recognizer, store: fixture.store, draft: draft)
+        defer { recorder.deactivate() }
+        recognizer.send("Keep a reading nook", isFinal: true)
+        await recorder.send()
+        let failure: ChannelSendPhase = response == .rejected ? .notSent : .deliveryNotConfirmed
+        #expect(recorder.phase == .failed(failure))
+        #expect(recorder.isOpen)
+        #expect(recorder.canSend)
+        await recorder.send()
+        #expect(recorder.phase == .failed(failure))
+        let posts = fixture.posts
+        #expect(posts.count == 2)
+        #expect(Set(posts.map(\.id)).count == 1, "Send Again reuses the note's UUID")
+        recorder.cancel()
+        #expect(recorder.phase == .settling, "Cancel closes the row before the recorder lets it go")
+        #expect(!recorder.isOpen)
+        #expect(draft.text.isEmpty, "The failed note stays in the outbox, not the draft")
+        #expect(fixture.store.sendAttempts.map(\.id) == [posts[0].id])
+    }
+
+    @Test func theListKeepsItsOrderUntilTheTalkNoteLetsItsRowGo() async throws {
+        let fixture = try replyFixture(.sent)
+        defer { fixture.close() }
+        let recognizer = MobileTestRecognizer()
+        let recorder = TalkRecorder(system: dictationSystem(recognizer),
+                                    draft: { _ in ComposerDraft(imageIsReadable: { _ in false }) },
+                                    announce: { _ in })
+        defer { recorder.deactivate() }
+        await recorder.dictation.refreshLanguageSupport()
+        let live = ["new", "test", "b", "newer", "a"].map {
+            Channel(id: $0, name: $0, model: .init(provider: "test", name: "test"), updatedAt: "")
+        }
+        #expect(recorder.ordered(live).map(\.id) == ["new", "test", "b", "newer", "a"])
+        recorder.start(fixture.store, name: "Studio", order: ["a", "b", "test"])
+        await recognizer.waitUntilListening()
+        #expect(recorder.ordered(live).map(\.id) == ["a", "b", "test", "new", "newer"],
+                "Activity can't move rows beneath the card, and new channels follow in server order")
+        recorder.leave()
+        #expect(recorder.ordered(live).map(\.id) == ["new", "test", "b", "newer", "a"])
+    }
+
+    @Test(arguments: [false, true])
+    func endingATalkNoteNeverPostsAndOnlyLeavingKeepsItsWords(leaves: Bool) async throws {
+        let fixture = try replyFixture(.sent)
+        defer { fixture.close() }
+        let recognizer = MobileTestRecognizer()
+        let draft = ComposerDraft(imageIsReadable: { _ in false })
+        draft.text = "An earlier draft"
+        let recorder = await talkRecorder(recognizer, store: fixture.store, draft: draft)
+        defer { recorder.deactivate() }
+        recognizer.send("Put the library", isFinal: true)
+        recognizer.send("by the desks", isFinal: false)
+        if leaves { recorder.leave() } else { recorder.cancel() }
+        #expect(recorder.phase == (leaves ? nil : .settling))
+        #expect(!recorder.isOpen)
+        #expect(recognizer.isCancelled)
+        #expect(!recorder.dictation.isSessionActive)
+        let kept = leaves ? "An earlier draft\n\nPut the library by the desks" : "An earlier draft"
+        #expect(draft.text == kept)
+        recognizer.send("Late words", isFinal: true)
+        #expect(draft.text == kept)
+        #expect(fixture.posts.isEmpty)
+        #expect(fixture.store.sendAttempts.isEmpty)
     }
 
     @Test func aFailedRequestRevealRetainsItsQuestionThroughRetryUntilSettledSuccess() {

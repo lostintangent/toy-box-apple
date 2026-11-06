@@ -11,6 +11,8 @@ struct ChannelSidebarRow: View {
     /// Only a collapsed split view draws the chevron. The scene decides, because UIKit gives the
     /// expanded sidebar column a compact width of its own.
     var isCollapsed = false
+    /// The swipe-to-talk recorder, only while it's on this row.
+    var talk: TalkRecorder? = nil
     @Environment(\.backgroundProminence) private var prominence
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -18,24 +20,30 @@ struct ChannelSidebarRow: View {
     var body: some View {
         HStack(spacing: 12) {
             ChannelMark(size: 28, emphasized: prominence == .increased)
+                .talkMark(talk, emphasized: prominence == .increased)
             VStack(alignment: .leading, spacing: 8) {
                 heading
-                if dynamicTypeSize.isAccessibilitySize {
-                    detail(yields: true)
-                    if !working.isEmpty {
-                        AgentAvatarStack(agents: working, size: 20, limit: 3)
+                Group {
+                    if dynamicTypeSize.isAccessibilitySize {
+                        VStack(alignment: .leading, spacing: 8) {
+                            detail(yields: true)
+                            if !working.isEmpty {
+                                AgentAvatarStack(agents: working, size: 20, limit: 3)
+                            }
+                            attentionLabel.talkFades(talk)
+                        }
+                    } else {
+                        secondLine
                     }
-                    attentionLabel
-                } else {
-                    secondLine
                 }
+                .talkLine(talk)
             }
         }
         .padding(.vertical, 12)
         .frame(minHeight: 72)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(channel.name)
-        .accessibilityValue(accessibilityDetails)
+        .accessibilityValue(talk?.rowValue(details: accessibilityDetails) ?? accessibilityDetails)
     }
 
     @ViewBuilder private var heading: some View {
@@ -60,15 +68,19 @@ struct ChannelSidebarRow: View {
 
     private var activity: some View {
         HStack(alignment: .firstTextBaseline, spacing: 4) {
-            if let date = try? Date(channel.updatedAt, strategy: .iso8601) {
-                Text(ChannelActivityTime.label(for: date, now: now))
-                    .font(.caption)
-                    .foregroundStyle(ChannelInk.secondary(for: prominence))
+            ZStack {
+                if let date = try? Date(channel.updatedAt, strategy: .iso8601) {
+                    Text(ChannelActivityTime.label(for: date, now: now))
+                        .font(.caption)
+                        .foregroundStyle(ChannelInk.secondary(for: prominence))
+                }
             }
+            .talkTime(talk)
             if isCollapsed {
                 Image(systemName: "chevron.forward")
                     .font(.caption2.weight(.semibold))
                     .foregroundStyle(Color(uiColor: prominence == .increased ? .white : .tertiaryLabel))
+                    .talkFades(talk)
                     .accessibilityHidden(true)
             }
         }
@@ -93,7 +105,7 @@ struct ChannelSidebarRow: View {
                 AgentAvatarStack(agents: working, size: 20, limit: faceLimit)
                     .fixedSize()
             }
-            attentionLabel.fixedSize()
+            attentionLabel.talkFades(talk).fixedSize()
         }
     }
 

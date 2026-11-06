@@ -3,7 +3,7 @@ import SwiftUI
 import ToyBoxUI
 
 struct ComposerDictateButton: View {
-    @Bindable var dictation: ComposerDictation
+    let dictation: ComposerDictation
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -17,24 +17,7 @@ struct ComposerDictateButton: View {
             .accessibilityLabel(accessibilityLabel)
             .accessibilityValue(accessibilityValue)
             .accessibilityShowsLargeContentViewer()
-            .sheet(isPresented: $dictation.showsAccessExplanation) {
-                if let access = dictation.accessOff {
-                    NavigationStack {
-                        Form {
-                            Text(access.explanation)
-                            Button("Open Settings") { dictation.openSettings() }
-                        }
-                        .navigationTitle(access.title)
-                        .navigationBarTitleDisplayMode(.inline)
-                        .toolbar {
-                            ToolbarItem(placement: .cancellationAction) {
-                                Button("Not Now") { dictation.showsAccessExplanation = false }
-                            }
-                        }
-                    }
-                    .presentationDetents([.medium, .large])
-                }
-            }
+            .dictationAccessSheet(dictation)
         }
     }
 
@@ -79,6 +62,31 @@ struct ComposerDictateButton: View {
         case .listening: "Listening"
         case .finishing: "Finishing"
         case .idle, .preparing: dictation.accessOff == nil ? "" : "Access is off"
+        }
+    }
+}
+
+extension View {
+    /// Explains how to turn dictation's access back on, wherever a tap found it off.
+    func dictationAccessSheet(_ dictation: ComposerDictation) -> some View {
+        @Bindable var dictation = dictation
+        return sheet(isPresented: $dictation.showsAccessExplanation) {
+            if let access = dictation.accessOff {
+                NavigationStack {
+                    Form {
+                        Text(access.explanation)
+                        Button("Open Settings") { dictation.openSettings() }
+                    }
+                    .navigationTitle(access.title)
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Not Now") { dictation.showsAccessExplanation = false }
+                        }
+                    }
+                }
+                .presentationDetents([.medium, .large])
+            }
         }
     }
 }
