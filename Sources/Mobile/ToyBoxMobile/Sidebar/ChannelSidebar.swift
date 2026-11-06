@@ -188,6 +188,7 @@ struct ChannelSidebar: View {
         Button("Open in Toy Box", systemImage: "arrow.up.forward.square") {
             model.openInToyBox(channelID: channel.id)
         }
+        .disabled(model.channelURL(channelID: channel.id) == nil)
         if let path = channel.directory, !path.isEmpty {
             Button("Copy Folder Path", systemImage: "doc.on.doc") { UIPasteboard.general.string = path }
         }

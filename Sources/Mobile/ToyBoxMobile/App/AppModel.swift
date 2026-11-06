@@ -23,7 +23,6 @@ final class AppModel {
     var screenEntity: ScreenEntity?
     var cover: Cover?
     var navigationNotice: String?
-    var browserFailure: BrowserFailure?
     var selectedChannelID: String? {
         didSet {
             guard oldValue != selectedChannelID else { return }
@@ -178,7 +177,6 @@ final class AppModel {
         notifications.configure(api: api)
         configurationError = nil
         navigationNotice = nil
-        browserFailure = nil
         restoredSelection = false
         resumeCatalogBaseline = nil
         if persist { defaults.set(self.serverURL, forKey: "serverURL") }
@@ -346,7 +344,6 @@ final class AppModel {
         restoredSelection = true
         cover = nil
         navigationNotice = nil
-        browserFailure = nil
         selectedChannelID = nil
         return navigationGeneration
     }
@@ -421,21 +418,12 @@ final class AppModel {
     }
 
     func openInToyBox(channelID: String) {
-        guard let api, let url = api.channelURL(channelID: channelID) else {
-            browserFailure = BrowserFailure(
-                url: nil, message: "A link to this channel couldn't be created. Check the server address in Settings."
-            )
-            return
-        }
-        Task {
-            let opened = await UIApplication.shared.open(url)
-            guard self.api?.baseURL == api.baseURL else { return }
-            if !opened {
-                browserFailure = BrowserFailure(
-                    url: url, message: "The browser couldn't open this channel. You can copy its link and try again."
-                )
-            }
-        }
+        guard let url = channelURL(channelID: channelID) else { return }
+        UIApplication.shared.open(url)
+    }
+
+    func channelURL(channelID: String) -> URL? {
+        api?.channelURL(channelID: channelID)
     }
 
     func interaction(for channelID: String) -> ChannelInteraction {
@@ -507,11 +495,6 @@ extension AppModel {
         var id: Self { self }
         var screenID: String? { if case .screen(let id) = self { id } else { nil } }
     }
-}
-
-struct BrowserFailure {
-    let url: URL?
-    let message: String
 }
 
 enum ServerSwitchFailure: LocalizedError {

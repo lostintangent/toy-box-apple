@@ -207,7 +207,7 @@ struct ChannelScreen: View {
         Button("Open in Toy Box", systemImage: "arrow.up.forward.square") {
             model.openInToyBox(channelID: store.id)
         }
-        .disabled(store.phase == .deleted)
+        .disabled(store.phase == .deleted || model.channelURL(channelID: store.id) == nil)
         Divider()
         Button("Edit Channel", systemImage: "pencil") {
             management.present(.editChannel(channelId: store.id))

@@ -1258,18 +1258,16 @@ struct ShellTests {
         }
     }
 
-    @Test func firstLaunchAndUnavailableBrowserLinksStayExplicit() async throws {
+    @Test func firstLaunchHasNoServerOrChannelLinks() async throws {
         try await withDefaults { defaults in
             let model = AppModel(arguments: [], environment: [:], defaults: defaults)
             #expect(model.serverURL.isEmpty)
             #expect(model.catalog == nil)
             #expect(model.configurationError == nil)
             #expect(defaults.string(forKey: "serverURL") == nil)
-            model.openInToyBox(channelID: "first")
-            #expect(model.browserFailure?.url == nil)
-            #expect(model.browserFailure?.message.isEmpty == false)
+            #expect(model.channelURL(channelID: "first") == nil)
             try model.configure(serverURL: "https://fixture.example")
-            #expect(model.browserFailure == nil)
+            #expect(model.channelURL(channelID: "first") != nil)
         }
     }
 

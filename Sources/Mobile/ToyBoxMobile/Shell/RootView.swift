@@ -136,17 +136,6 @@ struct RootView: View {
         } message: {
             Text(model.navigationNotice ?? "")
         }
-        .alert("Can't Open Toy Box", isPresented: Binding(
-            get: { model.browserFailure != nil },
-            set: { if !$0 { model.browserFailure = nil } }
-        ), presenting: model.browserFailure) { failure in
-            if let url = failure.url {
-                Button("Copy Link") { UIPasteboard.general.url = url }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: { failure in
-            Text(failure.message)
-        }
         .alert("Couldn't Enable Notifications", isPresented: Binding(
             get: { model.notifications.error != nil && !model.isCovered },
             set: { if !$0 { model.notifications.clearError() } }
@@ -223,7 +212,7 @@ struct RootView: View {
 
     private var commandActions: WindowCommandActions? {
         guard handoff.phase == .idle, model.isActive, model.catalog != nil, !model.isCovered, management.flow == nil,
-              model.navigationNotice == nil, model.browserFailure == nil else { return nil }
+              model.navigationNotice == nil else { return nil }
         let store = model.selectedStore.flatMap {
             $0.id == model.visibleChannelID && $0.phase != .deleted ? $0 : nil
         }
@@ -247,7 +236,9 @@ struct RootView: View {
             findInChannel: conversation.map { interaction in { interaction.findInChannel() } },
             findNext: conversation.map { interaction in { interaction.findNext($0) } },
             newChannel: model.canCreateChannel ? { management.present(.newChannel) } : nil,
-            openInToyBox: store.map { store in { model.openInToyBox(channelID: store.id) } },
+            openInToyBox: store.flatMap { store in
+                model.channelURL(channelID: store.id) == nil ? nil : { model.openInToyBox(channelID: store.id) }
+            },
             toggleSidebar: sizeClass == .regular ? {
                 columnVisibility = columnVisibility == .detailOnly ? .all : .detailOnly
             } : nil,
