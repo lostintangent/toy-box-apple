@@ -1052,6 +1052,154 @@ symbol, as far from the trailing edge as the capsule is from the leading one. It
 runs File > Open Screen… (see Screens), with the help "Open Screen (Command-O)", and is disabled
 without a server. It leaves with the sidebar when the sidebar is hidden, and the command stays.
 
+#### Talk to the Lead
+
+Phone only. Swiping a channel row right records a spoken note and sends it to that channel's
+Lead without opening the channel. It is always a new message to the Lead. It never answers a
+request, never changes attention and has nothing to do with Needs You. Every note goes to the
+Lead, so the recorder shows no avatar or recipient.
+
+**Swipe.** `.swipeActions(edge: .leading, allowsFullSwipe: true)` holds one button, Talk, with
+`mic.fill` and `.tint(.accentColor)`. Delete keeps the trailing edge. A short swipe reveals Talk,
+and tapping it starts listening. A full swipe starts listening at once, with the system's
+full-swipe haptic. Talk is absent when dictation doesn't support the user's language. While a
+recorder is open, no other row offers swipe actions. Unfolded, the sidebar's rows work the same
+way, including the open channel's row, where the note also appears in the conversation, and the
+card stays within the sidebar's column.
+
+**The recorder floats from the row.** Nothing already in the row moves. The mark stays pinned
+where it sat in the row, and the name keeps its baseline. Content only swaps in place or grows
+below, so the row seems to come alive rather than be replaced. The channel's cell never changes
+height. The recorder is a card overlaid on the list and anchored to the cell's frame with
+SwiftUI geometry, an anchor preference or `onGeometryChange`, so it follows the row through
+rotation and posture changes. It opens on the row's frame and draws the row's own content at the
+same positions while the cell's content hides, so the handoff is invisible. It then grows
+downward over the dimmed rows. Every change, the card's size included, runs in one transaction
+with `.spring(duration: 0.4, bounce: 0.12)`, which starts the moment the swipe action fires so
+it overlaps the system closing the swipe. Never drive a size frame by frame or insert a second
+row for the note.
+
+**Room.** The card grows downward when its tallest size, with five lines of words, fits above
+the bottom of the list's visible area, inside the safe area and any bottom bar. Otherwise its
+top rises by just the shortfall in the same opening spring, carrying the heading with it, so a
+row near the bottom reads as lifting. That's the only time the heading moves, and from then on
+the card grows only downward. If even that doesn't fit, as at accessibility text sizes or in
+landscape, the card fills the visible list and its words show fewer lines. Closing returns the
+top to the row in the same transaction that shrinks the card.
+
+**Edges.** The card's sides sit 12 points outside the row's text, before the mark and past the
+time's trailing edge, and never beyond the list's visible area. At accessibility sizes, where the
+time leads its own line, that trailing edge is the end of the row's text. The counter, the
+waveform, the words and Send all end on it, so the card has one trailing margin. The row's
+trailing column, the chevron and any attention mark beside line 2, stays empty while the card is
+up. The card clips everything it draws to its own shape, so nothing ever sits on or past its edge.
+
+**The glass sidebar.** Unfolded, the sidebar is Liquid Glass, so no opaque base can match a row
+the way the list's background does folded. There the card's whole surface, base and wash, is
+solid from the first frame, and only the edge and shadow fade in. The row steps once to the
+card's color as the swipe closes and never dips darker on the way. The card keeps the user's
+own-message fill, a little darker and bluer than the glass, like the user's bubbles in the
+conversation beside it, and its edge and shadow lift it. The open channel's row wears the glass
+selection, a gray band with the row's standard ink. When the note is for that channel, the band
+hides on the card's first frame, so none of it shows around the card, and returns as the Sent
+wash fades or as Cancel's card lands. When the note is for another channel, the open channel's
+row keeps its band while its content dims with the rest of the list, so where you are never
+changes and the band never blinks off and on. It still ignores taps.
+
+| Part | Row | Recorder | Transition |
+| --- | --- | --- | --- |
+| Surface | None | An opaque card: `systemBackground`, then the phone's 7% neutral lift and accent at 9%, so the dimmed rows never show through. 20-point continuous corners, with the sides under Edges. A 0.5-point edge of accent at 30%, or the Increased Contrast edge when that's on, and a shadow of black at 30% in Dark or 12% in Light, 24-point radius, 8 points down | Starts on the row's frame. Folded, the `systemBackground` base is solid from the first frame, since it matches the list's background under the row, and the lift, accent, edge and shadow fade in over 0.2 seconds as the card grows with the spring. On the glass sidebar, the base and wash are both solid from the first frame and only the edge and shadow fade in |
+| Mark | 28-point channel circle with `number` | 28-point circle of accent at 15% with an accent `mic.fill`. Never a solid fill, because Send is the only filled control | The fill animates and the symbol swaps with `.contentTransition(.symbolEffect(.replace))` |
+| Time and chevron | Last activity, then the folded `chevron.forward` | The elapsed time, "0:06", in caption, secondary and tabular, on the time's exact baseline and trailing edge. The chevron's space stays empty, so nothing on the top line shifts | The time leaves with a 2-point blur and fade over 0.15 seconds, then the counter fades in over 0.15 seconds, so the two never show together. Every later swap in this slot, to Offline, Not sent or back to the time, works the same way. The chevron and attention mark fade out with the time. The counter ticks with `.contentTransition(.numericText())` |
+| Line 2 | Folder or purpose, working stack, attention | The waveform, 24 high | Line 2 fades out with a 2-point blur over 0.15 seconds as the bars rise from 20% of their height |
+| Words | None | Body text 8 points below the waveform, up to five lines, then the oldest line scrolls under a 12-point top fade. "Listening…" in secondary until the first word. Tentative words are secondary and settle to primary as they finalize | Each new line grows the card with `.smooth(duration: 0.25)`. Up to five lines, the lines already shown hold still and the new one appears beneath them, while the controls and the card's bottom edge move down together in that one transaction. Only from the sixth line does the text move, as the oldest line slides up under the fade |
+| Controls | None | A trailing pair 10 points below the words: Cancel, a 32-point circle of primary at 12% with `xmark`, then 12 points, then Send, the composer's 32-point accent circle with a white `arrow.up`. Both have 44-point hit targets. Send keeps the quaternary fill until there's a finalized word | Fade in and scale from 90%, 0.06 seconds behind the spring |
+
+**Alive while you talk.** Your voice drives the recorder through the dictation level, smoothed
+and updated about 12 times a second. Each update applies with `.linear(duration: 0.08)`, and
+nothing updates SwiftUI every frame.
+- A halo of accent at 25% around the mic scales from 1.0 at silence to 1.4 at full voice. It's
+  the pulse, so it never loops on its own and rests when you pause.
+- A soft radial glow of accent behind the mic, inside the surface, rises from 0 to 30% opacity
+  with the same level.
+- The waveform is a `Canvas` of 3-point bars with 3-point gaps, 3 to 22 points tall. Each sample
+  enters at the leading edge beside the mic, and older bars step toward the trailing edge,
+  fading from accent to accent at 25%. Your voice reads as flowing out of the mic down the row.
+
+**The rest of the list.** While the recorder is open, every other row fades to 40% opacity over
+0.25 seconds and ignores taps and swipes. The list doesn't scroll and keeps its order, even when
+the sent note's activity would move the channel to the top. The order catches up with the List's
+ordinary move after the settle. The toolbar stays live, and anything that leaves the list ends
+the note as a draft (below).
+
+**Listening.** The recorder reuses the composer's dictation: the same transcriber and
+contextual names, the access sheet, the first-use download and the failure notices, which
+appear in place of the words. After 30 seconds without new words, listening stops. The halo
+and waveform rest, the timer stops, and the mic becomes a button labeled Resume. While the
+server is unavailable, listening continues, the timer slot reads "Offline" and Send stays
+disabled.
+
+**Send.** Tapping Send runs these steps in order:
+1. Listening stops and the waveform eases flat over 0.2 seconds. Only finalized words are sent,
+   so Send waits for the final result. Cancel disables.
+2. The note goes out as one outbox attempt with its own UUID. If it hasn't confirmed after
+   300 ms, Send shows the composer's spinner.
+3. On confirmation, the recorder closes into the Sent beat in one `.smooth(duration: 0.35)`
+   transaction:
+   - The words, waveform and controls fade out over 0.15 seconds while the card shrinks back to
+     the cell's frame, its top returning to the row if it rose. The rows it covered reappear
+     as it shrinks.
+   - Line 2's folder or purpose crossfades back in over the second half. Its attention mark
+     waits for the wash to fade.
+   - The rest of the list returns to full opacity over 0.25 seconds.
+   - The mic becomes the done check through `.replace`: `checkmark.circle.fill`, monochrome and
+     semibold, in `ChannelTaskColors.changes(in:).added`, the mark a completed task wears. Its
+     circle fills the mark's 28 points, and its check is knocked out, so the surface beneath
+     shows through. Nothing rings or pulses around it. `.sensoryFeedback(.success)` plays as it
+     arrives.
+   - The counter gives way to the note's own time, the channel's new last activity in the row's
+     ordinary format, through the slot's swap. No word says Sent, because the check does.
+   - The card's shadow and edge fade out as it lands, and its fill stays as a wash.
+4. As the card lands, its wash fades over 0.4 seconds with `.easeOut`, and the chevron and
+   attention mark fade back. The row now looks ordinary except that it wears the check in
+   place of its mark.
+5. Two seconds after the card lands, the check swaps back to the channel mark through the same
+   `.replace`. That's the settle. The card hands back to the cell, which already looks the same,
+   and the row is an ordinary row with no preview of the note. Swiping the row again before the
+   settle starts a new note, and the check swaps straight to the mic.
+
+On the open channel's row, the selection band returns as the wash fades. The check stays green
+on it, since the glass selection keeps the row's standard ink.
+
+**Failure.** On a definite rejection, the recorder stays open with its words and the timer slot
+reads "Not sent". On a timeout or lost response it reads "Delivery not confirmed". Both use
+secondary ink, like a failed send in the conversation, never red. Send becomes Send Again, the
+same accent circle with `arrow.clockwise`, on the same UUID. Cancel closes the card and leaves
+the note in the channel's outbox, where the conversation offers Send Again on that UUID like any
+failed send, so a note that may have landed can't post twice. Leaving does the same. Nothing
+retries on its own.
+
+**Cancel and leaving.** Cancel discards the note without confirmation, since nothing was sent.
+The card shrinks back to the row with the open spring in reverse as the mic swaps back to the
+mark, then its fill, edge and shadow fade as it lands. Leaving mid-note keeps the words. Opening
+a channel, Search or Settings, backgrounding or locking stops listening and saves the finalized
+words as that channel's draft, after any existing draft on a new line. The card then closes
+without the Sent beat.
+
+**Reduce Motion.** The card changes size, and rises when it must, with a 0.2-second ease and no
+bounce, and every swap is a 0.2-second crossfade. The halo's opacity follows the level instead
+of its scale. Bars stay in place and only their heights follow the level. The done check arrives
+and leaves with the same crossfade and keeps its 2-second hold. Haptics stay.
+
+**VoiceOver.** Talk is the row's custom action, "Talk to Lead". The card is a modal container,
+so focus stays inside it while it's open and returns to the channel's row when it closes.
+Opening moves focus to the words and announces "Listening". The words are one element whose
+value updates without announcing each word. Send reads "Send to Lead" and Cancel reads "Cancel".
+The Magic Tap sends and the escape gesture cancels. A send announces "Sent to Lead in
+[channel]", so the check is hidden from VoiceOver, and a failure announces once, like any send
+error. At accessibility text sizes the recorder keeps the stacked heading, and its words and
+controls grow with the text.
+
 ### Transcript
 
 Use the canonical row projection unchanged. Avatar column is 32, gap is 12, and body begins 44
