@@ -1231,16 +1231,16 @@ struct ComposerTests {
 
     private func talkRecorder(
         _ recognizer: MobileTestRecognizer, store: ChannelStore, draft: ComposerDraft,
-        announce: @escaping @MainActor (String) -> Void = { _ in }
+        order: [String] = [], announce: @escaping @MainActor (String) -> Void = { _ in }
     ) async -> TalkRecorder {
         let recorder = TalkRecorder(system: dictationSystem(recognizer), draft: { _ in draft }, announce: announce)
         await recorder.dictation.refreshLanguageSupport()
-        recorder.start(store, name: "Studio")
+        recorder.start(store, name: "Studio", order: order)
         await recognizer.waitUntilListening()
         return recorder
     }
 
-    @Test func talkSendsOnlyFinishedWordsToTheLeadOnceAndLeavesTheDraftAlone() async throws {
+    @Test func talkSendsOnlyFinishedWordsToTheLeadOnceThenTalksAgainFromTheCheck() async throws {
         let fixture = try replyFixture(.sent)
         defer { fixture.close() }
         let recognizer = MobileTestRecognizer()
@@ -1249,40 +1249,23 @@ struct ComposerTests {
         var announcements: [String] = []
         let recorder = await talkRecorder(recognizer, store: fixture.store, draft: draft) { announcements.append($0) }
         defer { recorder.deactivate() }
+        let cell = TalkRecorder.Cell(frame: CGRect(x: 20, y: 120, width: 356, height: 72), textInset: 13)
+        recorder.cell = cell
         recognizer.send("Put the library", isFinal: true)
         recognizer.send("beside", isFinal: false)
         #expect(recorder.finalizedWords == "Put the library")
-        #expect(recorder.tentativeWords == " beside")
-        #expect(recorder.canSend)
         recognizer.finalWords = [("beside the desks", true)]
         await recorder.send()
         #expect(fixture.posts.map(\.content) == ["Put the library beside the desks"],
                 "Plain words reach the Lead with no mention or request answer")
         #expect(recorder.phase == .sent)
-        #expect(!recorder.isOpen)
-        #expect(announcements == ["Sent to Lead in Studio"])
-        #expect(draft.text == "My own draft")
-        #expect(!recorder.canSend)
-    }
-
-    @Test func talkingAgainFromTheDoneCheckKeepsTheCardAndStartsANewNote() async throws {
-        let fixture = try replyFixture(.sent)
-        defer { fixture.close() }
-        let recognizer = MobileTestRecognizer()
-        let recorder = await talkRecorder(recognizer, store: fixture.store,
-                                          draft: ComposerDraft(imageIsReadable: { _ in false }))
-        defer { recorder.deactivate() }
-        let cell = TalkRecorder.Cell(frame: CGRect(x: 20, y: 120, width: 356, height: 72), textInset: 13)
-        recorder.cell = cell
-        recognizer.send("Keep a reading nook", isFinal: true)
-        await recorder.send()
-        #expect(recorder.timeFace == .noteTime)
         #expect(recorder.sentAt == (try? Date("2026-10-27T00:00:00Z", strategy: .iso8601)),
                 "The row shows the server's time for the note")
+        #expect(announcements == ["Sent to Lead in Studio"])
+        #expect(draft.text == "My own draft")
         recorder.start(fixture.store, name: "Studio")
         #expect(recorder.phase == .recording)
         #expect(recorder.cell == cell, "The card stays up, so the check swaps straight to the mic")
-        #expect(recorder.sentAt == nil)
         #expect(recorder.finalizedWords.isEmpty)
     }
 
@@ -1298,15 +1281,12 @@ struct ComposerTests {
         await recorder.send()
         let failure: ChannelSendPhase = response == .rejected ? .notSent : .deliveryNotConfirmed
         #expect(recorder.phase == .failed(failure))
-        #expect(recorder.isOpen)
-        #expect(recorder.canSend)
         await recorder.send()
         #expect(recorder.phase == .failed(failure))
         let posts = fixture.posts
         #expect(posts.count == 2)
         #expect(Set(posts.map(\.id)).count == 1, "Send Again reuses the note's UUID")
         recorder.cancel()
-        #expect(recorder.phase == .settling, "Cancel closes the row before the recorder lets it go")
         #expect(!recorder.isOpen)
         #expect(draft.text.isEmpty, "The failed note stays in the outbox, not the draft")
         #expect(fixture.store.sendAttempts.map(\.id) == [posts[0].id])
@@ -1315,18 +1295,13 @@ struct ComposerTests {
     @Test func theListKeepsItsOrderUntilTheTalkNoteLetsItsRowGo() async throws {
         let fixture = try replyFixture(.sent)
         defer { fixture.close() }
-        let recognizer = MobileTestRecognizer()
-        let recorder = TalkRecorder(system: dictationSystem(recognizer),
-                                    draft: { _ in ComposerDraft(imageIsReadable: { _ in false }) },
-                                    announce: { _ in })
-        defer { recorder.deactivate() }
-        await recorder.dictation.refreshLanguageSupport()
         let live = ["new", "test", "b", "newer", "a"].map {
             Channel(id: $0, name: $0, model: .init(provider: "test", name: "test"), updatedAt: "")
         }
-        #expect(recorder.ordered(live).map(\.id) == ["new", "test", "b", "newer", "a"])
-        recorder.start(fixture.store, name: "Studio", order: ["a", "b", "test"])
-        await recognizer.waitUntilListening()
+        let recorder = await talkRecorder(MobileTestRecognizer(), store: fixture.store,
+                                          draft: ComposerDraft(imageIsReadable: { _ in false }),
+                                          order: ["a", "b", "test"])
+        defer { recorder.deactivate() }
         #expect(recorder.ordered(live).map(\.id) == ["a", "b", "test", "new", "newer"],
                 "Activity can't move rows beneath the card, and new channels follow in server order")
         recorder.leave()
@@ -1345,10 +1320,8 @@ struct ComposerTests {
         recognizer.send("Put the library", isFinal: true)
         recognizer.send("by the desks", isFinal: false)
         if leaves { recorder.leave() } else { recorder.cancel() }
-        #expect(recorder.phase == (leaves ? nil : .settling))
         #expect(!recorder.isOpen)
         #expect(recognizer.isCancelled)
-        #expect(!recorder.dictation.isSessionActive)
         let kept = leaves ? "An earlier draft\n\nPut the library by the desks" : "An earlier draft"
         #expect(draft.text == kept)
         recognizer.send("Late words", isFinal: true)

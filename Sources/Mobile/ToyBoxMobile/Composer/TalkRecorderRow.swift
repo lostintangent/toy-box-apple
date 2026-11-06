@@ -10,9 +10,6 @@ import UIKit
 // docs/spec.md.
 
 extension TalkRecorder {
-    /// Whether the recorder holds this channel's row, from the swipe until the row settles.
-    func holds(_ channelID: String) -> Bool { phase != nil && self.channelID == channelID }
-
     /// The channel row's accessibility value while the recorder is on it.
     func rowValue(details: String) -> String {
         switch phase {
@@ -154,7 +151,8 @@ private struct TalkCard<Row: View>: View {
         .frame(width: max(right - left, 0), alignment: .leading)
         // Sized by layout rather than a measurement, so the card's edge always moves in the same
         // transaction as the controls.
-        .modifier(TalkCardFrame(limit: open ? room.maxY - top : cell.height))
+        .frame(maxHeight: max(open ? room.maxY - top : cell.height, 0), alignment: .top)
+        .fixedSize(horizontal: false, vertical: true)
         // Reveals the note as the card grows, and clips everything the card draws to its shape.
         .clipShape(TalkCardShape(overflow: overflow))
         .background {
@@ -180,28 +178,6 @@ private struct TalkCard<Row: View>: View {
         }
         .onChange(of: recorder.phase == .sent) { _, sent in
             if sent { headingFocused = true }
-        }
-    }
-}
-
-/// Sizes the card to what it draws, but never taller than `limit`.
-private struct TalkCardFrame: ViewModifier {
-    let limit: CGFloat
-
-    func body(content: Content) -> some View {
-        Fit(limit: max(limit, 0)) { content }
-    }
-
-    private struct Fit: Layout {
-        let limit: CGFloat
-
-        func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-            let size = subviews.first?.sizeThatFits(proposal) ?? .zero
-            return CGSize(width: size.width, height: min(size.height, limit))
-        }
-
-        func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-            subviews.first?.place(at: bounds.origin, proposal: proposal)
         }
     }
 }
@@ -243,7 +219,7 @@ private struct TalkMarkSlot: ViewModifier {
         // The recorder's mark starts with the channel's own face, so the swap itself is invisible
         // and the glyph can morph into the mic.
         ZStack {
-            if let recorder, recorder.phase != nil {
+            if let recorder {
                 TalkMark(recorder: recorder, emphasized: emphasized).transition(.identity)
             } else {
                 content.transition(.identity)
@@ -307,8 +283,6 @@ private struct TalkMark: View {
             }
             .animation(.linear(duration: 0.08), value: level)
             .sensoryFeedback(.success, trigger: face == .check) { _, sent in sent }
-            .accessibilityLabel("Resume")
-            .accessibilityHidden(!recorder.canResume)
     }
 
     private var glyph: some View {
@@ -381,7 +355,6 @@ private struct TalkTimeSlot: ViewModifier {
             content
                 .modifier(TalkFaceExit(gone: replaced))
                 .animation(replaced ? TalkTime.exit : TalkTime.entry, value: replaced)
-                .accessibilityHidden(replaced)
             if let recorder, let face {
                 TalkTime(recorder: recorder, face: face)
                     .id(face)
@@ -440,7 +413,6 @@ private struct TalkTime: View {
                 .monospacedDigit()
                 .contentTransition(.numericText())
                 .animation(.default, value: seconds)
-                .accessibilityLabel("Recording, \(Duration.seconds(seconds).formatted(.units(allowed: [.minutes, .seconds], width: .wide)))")
         }
     }
 }
@@ -453,11 +425,9 @@ private struct TalkLineSlot: ViewModifier {
     func body(content: Content) -> some View {
         let shows = grown && recorder?.isOpen == true
         content
-            .opacity(shows ? 0 : 1)
-            .blur(radius: shows ? 2 : 0)
+            .modifier(TalkFaceExit(gone: shows))
             // Line 2 leaves quickly, and returns over the second half of Sent's collapse.
             .animation(shows ? .easeOut(duration: 0.15) : .easeIn(duration: 0.175).delay(0.175), value: shows)
-            .accessibilityHidden(shows)
             .frame(minHeight: shows ? 18 : nil)
             // The waveform overflows line 2's slot instead of resizing it, so the mark stays put. It
             // ends where Send's circle does.
@@ -490,9 +460,10 @@ private struct TalkWaveform: View {
     var body: some View {
         let listening = recorder.isListening
         TalkBars(levels: reduceMotion ? steadyLevels : recorder.levels, amplitude: listening ? 1 : 0)
+            .fill(LinearGradient(colors: [.accentColor, .accentColor.opacity(0.25)],
+                                 startPoint: .leading, endPoint: .trailing))
             .animation(.easeOut(duration: 0.2), value: listening)
             .frame(height: 24)
-            .accessibilityHidden(true)
     }
 
     /// Under Reduce Motion, the bars stay in place and only their heights follow the level.
@@ -504,19 +475,8 @@ private struct TalkWaveform: View {
     }
 }
 
-/// 3-point bars with 3-point gaps, 3 to 22 points tall, fading from accent toward the trailing edge.
-private struct TalkBars: View {
-    let levels: [Double]
-    let amplitude: Double
-
-    var body: some View {
-        TalkBarShape(levels: levels, amplitude: amplitude)
-            .fill(LinearGradient(colors: [.accentColor, .accentColor.opacity(0.25)],
-                                 startPoint: .leading, endPoint: .trailing))
-    }
-}
-
-private struct TalkBarShape: Shape {
+/// 3-point bars with 3-point gaps, 3 to 22 points tall.
+private struct TalkBars: Shape {
     var levels: [Double]
     var amplitude: Double
 
@@ -748,7 +708,6 @@ private struct TalkSurface: View {
         }
         // Fades in as the card grows, and out as it lands.
         .animation(lifted ? .easeInOut(duration: 0.2) : .easeOut(duration: 0.2).delay(0.15), value: lifted)
-        .accessibilityHidden(true)
     }
 }
 
@@ -760,15 +719,14 @@ private struct TalkRow: ViewModifier {
     @AccessibilityFocusState private var focused: Bool
 
     func body(content: Content) -> some View {
-        let isHeld = recorder.holds(channelID)
+        let isHeld = recorder.channelID == channelID
         // The card draws this row while it's up, so the cell's own content hides beneath it.
         let isCovered = isHeld && recorder.cell != nil
-        let isDimmed = recorder.isOpen && recorder.channelID != channelID
+        let isDimmed = recorder.isOpen && !isHeld
         let offersTalk = offered && recorder.isAvailable && !recorder.isOpen
         content
             .opacity(isCovered ? 0 : isDimmed ? 0.4 : 1)
             .animation(.easeInOut(duration: 0.25), value: isDimmed)
-            .allowsHitTesting(!isDimmed)
             // Only the held row hides its selection, which returns as the Sent wash fades or as
             // Cancel's card lands. The open channel's row keeps its band while it dims.
             .selectionDisabled(isHeld && (recorder.isOpen || recorder.phase == .sent))
@@ -817,11 +775,9 @@ private struct TalkList<Row: View>: ViewModifier {
                 GeometryReader { proxy in
                     // The dimmed rows ignore taps, so the open channel's row can keep its selection.
                     if recorder.isOpen {
-                        Color.clear
-                            .contentShape(Rectangle())
-                            .accessibilityHidden(true)
+                        Color.clear.contentShape(Rectangle())
                     }
-                    if let channelID = recorder.channelID, recorder.phase != nil, let cell = recorder.cell {
+                    if let channelID = recorder.channelID, let cell = recorder.cell {
                         let origin = proxy.frame(in: .global).origin
                         TalkCard(recorder: recorder, cell: cell.frame.offsetBy(dx: -origin.x, dy: -origin.y),
                                  textInset: cell.textInset, bounds: CGRect(origin: .zero, size: proxy.size),
