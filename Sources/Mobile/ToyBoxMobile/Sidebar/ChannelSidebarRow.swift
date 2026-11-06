@@ -8,10 +8,12 @@ struct ChannelSidebarRow: View {
     let working: [ChannelAgent]
     let attention: Channel.Attention?
     let now: Date
+    /// Only a collapsed split view draws the chevron. The scene decides, because UIKit gives the
+    /// expanded sidebar column a compact width of its own.
+    var isCollapsed = false
     @Environment(\.backgroundProminence) private var prominence
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    @Environment(\.horizontalSizeClass) private var sizeClass
 
     var body: some View {
         HStack(spacing: 12) {
@@ -63,7 +65,7 @@ struct ChannelSidebarRow: View {
                     .font(.caption)
                     .foregroundStyle(ChannelInk.secondary(for: prominence))
             }
-            if sizeClass == .compact {
+            if isCollapsed {
                 Image(systemName: "chevron.forward")
                     .font(.caption2.weight(.semibold))
                     .foregroundStyle(Color(uiColor: prominence == .increased ? .white : .tertiaryLabel))
