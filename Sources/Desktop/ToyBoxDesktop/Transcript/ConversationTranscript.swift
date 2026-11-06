@@ -54,7 +54,7 @@ struct ConversationTranscript: View {
         guard let lead = store.roster.first else { return [] }
         return rowBuilder.rows(store.messages, lead: lead, members: Array(store.roster.dropFirst()),
                                unreadAfter: capturedArrivalBoundary ? arrivalUnreadAfter : store.unreadAfter,
-                               filter: interaction.messageView)
+                               filter: interaction.messageView, bookmarks: store.bookmarks ?? [])
     }
 
     var viewport: TranscriptViewport { geometry.viewport }
@@ -91,6 +91,7 @@ struct ConversationTranscript: View {
     var body: some View {
         resolveOpening()
         return content
+            .transcriptBookmarkAlert(store)
             .onChange(of: showsViewerMessage) { shown, showing in
                 // A deleted message or channel closes the viewer at once. A pending send isn't in the
                 // history yet, so only a message that leaves the history closes it.
@@ -304,6 +305,7 @@ struct ConversationTranscript: View {
                                            historyStart: store.messages.first?.sequence ?? 0, api: store.api)
         let statusReactions = statusReactions
         let findHighlights = find.highlights
+        let bookmarks = store.bookmarks.map(Set.init)
         let catchUp = interaction.messageView == .all ? catchUp : nil
         let requestChoices = TranscriptRequestChoices(request: store.request, attempts: store.sendAttempts,
                                                       isConnected: store.phase.isConnected)
@@ -324,7 +326,8 @@ struct ConversationTranscript: View {
                                      highlightedSequence: highlightedSequence, catchUp: catchUp, store: store,
                                      requestChoices: requestChoices,
                                      expandedMessageIds: expandedMessageIds,
-                                     findHighlights: findHighlights,
+                                     findHighlights: findHighlights, bookmarks: bookmarks,
+                                     isConnected: store.phase.isConnected,
                                      onSetExpanded: { id, expands in
                                          // The message changes height below its own top, even when
                                          // that top is above the viewport.

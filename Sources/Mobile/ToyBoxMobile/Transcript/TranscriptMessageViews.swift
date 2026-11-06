@@ -25,6 +25,8 @@ struct TranscriptItemView: View, @MainActor Equatable {
     var catchUp: (session: TranscriptCatchUpSession, store: ChannelStore)?
     /// The pending request's suggested replies, when it's this item.
     var choices: TranscriptRequestChoices?
+    /// The message's bookmark, nil for system rows and servers that predate bookmarks.
+    var bookmark: TranscriptBookmark?
     var onChoose: (String) -> Void = { _ in }
     var setExpanded: (Bool) -> Void = { _ in }
     @AppStorage(IntelligenceSettings.summarizesNewMessages) private var summarizes = true
@@ -34,7 +36,7 @@ struct TranscriptItemView: View, @MainActor Equatable {
         lhs.item == rhs.item && lhs.channel == rhs.channel && lhs.statusReactions == rhs.statusReactions
             && lhs.isHighlighted == rhs.isHighlighted && lhs.isExpanded == rhs.isExpanded
             && lhs.findHighlight == rhs.findHighlight && lhs.catchUp?.session === rhs.catchUp?.session
-            && lhs.choices == rhs.choices
+            && lhs.choices == rhs.choices && lhs.bookmark == rhs.bookmark
     }
 
     var body: some View {
@@ -64,13 +66,13 @@ struct TranscriptItemView: View, @MainActor Equatable {
         case .user(let message):
             TranscriptUserMessage(message: message, channel: channel,
                                   statusReactions: statusReactions[message.sequence] ?? [],
-                                  findHighlight: findHighlight)
+                                  findHighlight: findHighlight, bookmark: bookmark)
         case .agent(let agentId, let entry, _):
             TranscriptAgentMessage(entry: entry, agent: ChannelAgent(id: agentId, in: channel.agents),
                                    channel: channel,
                                    statusReactions: statusReactions[entry.message.sequence] ?? [],
                                    isExpanded: isExpanded, findHighlight: findHighlight,
-                                   choices: choices, onChoose: onChoose,
+                                   choices: choices, bookmark: bookmark, onChoose: onChoose,
                                    setExpanded: setExpanded)
         case .system(let messages):
             TranscriptSystemMessages(messages: messages, agents: channel.agents, findHighlight: findHighlight)
@@ -119,6 +121,7 @@ struct TranscriptUserMessage: View {
     /// Unsent attempts all have sequence 0, so they pass their own `send-<attempt id>`.
     var identifier: String?
     var findHighlight: TranscriptFindHighlight?
+    var bookmark: TranscriptBookmark?
     @Environment(\.horizontalSizeClass) private var sizeClass
     /// Scales the Mac's reading caps with Dynamic Type.
     @ScaledMetric(relativeTo: .body) private var textScale: CGFloat = 1
@@ -128,13 +131,7 @@ struct TranscriptUserMessage: View {
         TranscriptUserLane(maxWidth: TranscriptUserLane.maximumWidth * textScale,
                            fraction: sizeClass == .regular ? 0.8 : 0.88) {
             VStack(alignment: .trailing, spacing: 4) {
-                HStack(spacing: 6) {
-                    Text("You").fontWeight(.semibold)
-                    TranscriptTimestamp(timestamp: message.timestamp)
-                    if let deliveryLabel { Text(deliveryLabel).foregroundStyle(TranscriptInk.secondary) }
-                }
-                .font(.footnote)
-                .accessibilityHidden(true)
+                header.accessibilityHidden(true)
                 if !message.text.isEmpty {
                     TranscriptBody(text: message.text, agents: channel.agents, baseURL: channel.api.baseURL,
                                    surface: .user, findHighlight: findHighlight)
@@ -143,8 +140,9 @@ struct TranscriptUserMessage: View {
                         .transcriptBubble(.user, cornerStyle: .continuous, canvasIsBlack: true)
                         .contentShape(.contextMenuPreview, .rect(cornerRadius: 12, style: .continuous))
                         .contextMenu {
-                            TranscriptMessageMenu(text: message.text, selectsText: $selectsText)
+                            TranscriptMessageMenu(text: message.text, selectsText: $selectsText, bookmark: bookmark)
                         }
+                        .overlay { TranscriptBookmarkMark(bookmark: bookmark, edge: .leading) { header } }
                 }
                 if let attachments = message.attachments, !attachments.isEmpty {
                     TranscriptAttachments(attachments: attachments, api: channel.api, alignment: .trailing,
@@ -157,8 +155,21 @@ struct TranscriptUserMessage: View {
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier(identifier ?? "message-\(message.sequence)")
         .accessibilityLabel(message.accessibilityLabel(author: "You", delivery: deliveryLabel))
-        .accessibilityAction(named: "Copy Message") { UIPasteboard.general.string = message.text }
+        .accessibilityValue(bookmark?.isBookmarked == true ? "Bookmarked" : "")
+        .accessibilityActions {
+            Button("Copy Message") { UIPasteboard.general.string = message.text }
+            if let bookmark { Button(bookmark.actionTitle) { bookmark.toggleAnnouncing() } }
+        }
         .sheet(isPresented: $selectsText) { TranscriptSelectTextSheet(text: message.text) }
+    }
+
+    private var header: some View {
+        HStack(spacing: 6) {
+            Text("You").fontWeight(.semibold)
+            TranscriptTimestamp(timestamp: message.timestamp)
+            if let deliveryLabel { Text(deliveryLabel).foregroundStyle(TranscriptInk.secondary) }
+        }
+        .font(.footnote)
     }
 }
 
@@ -170,6 +181,7 @@ struct TranscriptAgentMessage: View {
     var isExpanded = false
     var findHighlight: TranscriptFindHighlight?
     var choices: TranscriptRequestChoices?
+    var bookmark: TranscriptBookmark?
     var onChoose: (String) -> Void = { _ in }
     var setExpanded: (Bool) -> Void = { _ in }
     @Environment(ChannelInteraction.self) private var interaction
@@ -236,7 +248,13 @@ struct TranscriptAgentMessage: View {
                                     interaction.reply(to: agent)
                                 }
                             }
-                            TranscriptMessageMenu(text: entry.message.text, selectsText: $selectsText)
+                            TranscriptMessageMenu(text: entry.message.text, selectsText: $selectsText,
+                                                  bookmark: bookmark)
+                        }
+                        .overlay {
+                            TranscriptBookmarkMark(bookmark: bookmark, edge: .trailing) {
+                                if entry.showHeader { header }
+                            }
                         }
                 }
                 if let attachments = entry.message.attachments, !attachments.isEmpty {
@@ -253,11 +271,13 @@ struct TranscriptAgentMessage: View {
         .accessibilityIdentifier("message-\(entry.message.sequence)")
         .accessibilityLabel(entry.message.accessibilityLabel(
             author: agent.name, addressee: entry.addressee, request: entry.request))
+        .accessibilityValue(bookmark?.isBookmarked == true ? "Bookmarked" : "")
         .accessibilityActions {
             if agent.deleted != true {
                 Button("Reply") { interaction.reply(to: agent) }
             }
             Button("Copy Message") { UIPasteboard.general.string = entry.message.text }
+            if let bookmark { Button(bookmark.actionTitle) { bookmark.toggleAnnouncing() } }
         }
         .sheet(isPresented: $selectsText) { TranscriptSelectTextSheet(text: entry.message.text) }
     }
@@ -293,14 +313,46 @@ struct TranscriptAgentMessage: View {
     }
 }
 
-/// Copy Message and Select Text, shared by every bubble's long-press menu.
+/// Copy Message and Select Text, shared by every bubble's long-press menu, then Bookmark in its own
+/// last section.
 private struct TranscriptMessageMenu: View {
     let text: String
     @Binding var selectsText: Bool
+    let bookmark: TranscriptBookmark?
 
     var body: some View {
         Button("Copy Message", systemImage: "doc.on.doc") { UIPasteboard.general.string = text }
         Button("Select Text", systemImage: "selection.pin.in.out") { selectsText = true }
+        if let bookmark {
+            Section {
+                Button(bookmark.actionTitle, systemImage: bookmark.actionSymbol) { bookmark.toggle() }
+                    .disabled(!bookmark.isEnabled)
+            }
+        }
+    }
+}
+
+/// A bookmarked bubble's mark: blue on a small glass circle at its outer top corner, trailing for
+/// agents and leading for your own, clear of the header. It's only a sign, so it takes no touches,
+/// and VoiceOver hears "Bookmarked" on the message instead.
+private struct TranscriptBookmarkMark<Header: View>: View {
+    let bookmark: TranscriptBookmark?
+    let edge: HorizontalEdge
+    @ViewBuilder let header: Header
+
+    var body: some View {
+        if bookmark?.isBookmarked == true {
+            TranscriptBubbleCorner(edge: edge) {
+                Image(systemName: "bookmark.fill")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(TranscriptBookmark.ink)
+                    .frame(width: 24, height: 24)
+                    .glassEffect(.regular, in: .circle)
+                header.hidden()
+            }
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+        }
     }
 }
 

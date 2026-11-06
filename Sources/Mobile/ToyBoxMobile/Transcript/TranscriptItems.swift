@@ -29,6 +29,11 @@ struct TranscriptItem: Equatable, Identifiable {
 
     /// The newest sequence this item shows, which seeing it marks read.
     var sequence: Int { messages.map(\.sequence).max() ?? 0 }
+
+    /// Whether the item is one message that can be bookmarked, which system rows never are.
+    var bookmarkable: Bool {
+        if case .system = content { false } else { true }
+    }
 }
 
 func transcriptItems(_ rows: [TranscriptRow]) -> [TranscriptItem] {

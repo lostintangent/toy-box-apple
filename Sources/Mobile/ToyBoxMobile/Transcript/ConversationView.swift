@@ -212,7 +212,7 @@ struct ConversationView: View {
         guard let lead = store.roster.first else { return [] }
         let rows = rowBuilder.rows(store.messages, lead: lead, members: Array(store.roster.dropFirst()),
                                    unreadAfter: capturedArrival ? arrivalUnreadAfter : store.unreadAfter,
-                                   filter: interaction.messageView)
+                                   filter: interaction.messageView, bookmarks: store.bookmarks ?? [])
         return transcriptItems(rows)
     }
 
@@ -223,6 +223,8 @@ struct ConversationView: View {
         let card = interaction.messageView == .all ? catchUp.map { (session: $0, store: store) } : nil
         let requestChoices = TranscriptRequestChoices(request: store.request, attempts: store.sendAttempts,
                                                       isConnected: store.phase.isConnected)
+        let bookmarks = store.bookmarks.map(Set.init)
+        let isConnected = store.phase.isConnected
         let findMatches = find.isPresented
             ? Dictionary(uniqueKeysWithValues: find.matches.map { ($0.sequence, $0.sequence == find.selectedSequence) })
             : [:]
@@ -242,6 +244,10 @@ struct ConversationView: View {
                                        catchUp: item.divider?.unread == true ? card : nil,
                                        choices: item.messages.contains { $0.sequence == requestChoices?.sequence }
                                            ? requestChoices : nil,
+                                       bookmark: item.bookmarkable
+                                           ? TranscriptBookmark(sequence: item.sequence, bookmarks: bookmarks,
+                                                                isConnected: isConnected, store: store)
+                                           : nil,
                                        onChoose: { interaction.sendSuggestedReply($0, store: store) }) { expands in
                         // Keep the tapped message's top where it is, or bring it back when it collapses.
                         place(scroll.update(.toggledExpansion(item.id, expanded: expands)))
@@ -282,6 +288,7 @@ struct ConversationView: View {
         }
         .scrollDismissesKeyboard(.interactively)
         .accessibilityIdentifier("conversation-transcript")
+        .transcriptBookmarkAlert(store)
         .scrollPosition($position)
         // The conversation owns the generation, so a card that leaves the lazy stack never cancels it.
         .task(id: catchUp?.generation) { await catchUp?.run(using: intelligence) }

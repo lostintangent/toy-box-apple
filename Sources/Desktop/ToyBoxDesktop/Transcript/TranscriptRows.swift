@@ -36,6 +36,10 @@ struct TranscriptRowContent: View, @MainActor Equatable {
     let requestChoices: TranscriptRequestChoices?
     /// This row's expanded messages.
     let expandedMessageIds: Set<String>
+    /// This row's bookmarked sequences, or nil when the server predates bookmarks.
+    let bookmarks: Set<Int>?
+    /// Whether bookmarks can change, only compared when they show.
+    let isConnected: Bool
     let onSetExpanded: (String, Bool) -> Void
     @Environment(ChannelInteraction.self) private var interaction
 
@@ -43,7 +47,7 @@ struct TranscriptRowContent: View, @MainActor Equatable {
          highlightedSequence: Int?, catchUp: TranscriptCatchUp?, store: ChannelStore,
          requestChoices: TranscriptRequestChoices? = nil,
          expandedMessageIds: Set<String>, findHighlights: [Int: TranscriptFindHighlight] = [:],
-         onSetExpanded: @escaping (String, Bool) -> Void) {
+         bookmarks: Set<Int>? = nil, isConnected: Bool = true, onSetExpanded: @escaping (String, Bool) -> Void) {
         let messages = row.messages
         self.row = row
         self.channel = channel
@@ -60,6 +64,10 @@ struct TranscriptRowContent: View, @MainActor Equatable {
         self.expandedMessageIds = expandedMessageIds.isEmpty ? [] : expandedMessageIds.filter { id in
             messages.contains { $0.id == id }
         }
+        self.bookmarks = bookmarks.map { bookmarks in
+            bookmarks.isEmpty ? [] : Set(messages.lazy.map(\.sequence).filter(bookmarks.contains))
+        }
+        self.isConnected = self.bookmarks == nil || isConnected
         self.onSetExpanded = onSetExpanded
     }
 
@@ -68,6 +76,11 @@ struct TranscriptRowContent: View, @MainActor Equatable {
             && lhs.highlightedSequence == rhs.highlightedSequence && lhs.catchUp === rhs.catchUp
             && lhs.store === rhs.store && lhs.expandedMessageIds == rhs.expandedMessageIds
             && lhs.findHighlights == rhs.findHighlights && lhs.requestChoices == rhs.requestChoices
+            && lhs.bookmarks == rhs.bookmarks
+    }
+
+    private func bookmark(_ sequence: Int) -> TranscriptBookmark? {
+        TranscriptBookmark(sequence: sequence, bookmarks: bookmarks, isConnected: isConnected, store: store)
     }
 
     var body: some View {
@@ -81,7 +94,8 @@ struct TranscriptRowContent: View, @MainActor Equatable {
             case .user(let message):
                 TranscriptUserMessage(message: message, agents: channel.agents, api: channel.api,
                                       statusReactions: statusReactions[message.sequence] ?? [],
-                                      findHighlight: findHighlights[message.sequence])
+                                      findHighlight: findHighlights[message.sequence],
+                                      bookmark: bookmark(message.sequence))
                     .background(highlightedSequence == message.sequence
                                 ? ChannelColors.sourceHighlight : .clear,
                                 in: RoundedRectangle(cornerRadius: 12))
@@ -100,6 +114,7 @@ struct TranscriptRowContent: View, @MainActor Equatable {
                                                    expanded: expandedMessageIds.contains(entry.id),
                                                    findHighlight: findHighlights[entry.message.sequence],
                                                    choices: requestChoices,
+                                                   bookmark: bookmark(entry.message.sequence),
                                                    onSetExpanded: onSetExpanded,
                                                    onChoose: { interaction.sendSuggestedReply($0, store: store) })
                                 .equatable()
@@ -205,20 +220,16 @@ struct TranscriptUserMessage: View {
     var deliveryLabel: String?
     var statusReactions: [ChannelReaction] = []
     var findHighlight: TranscriptFindHighlight?
+    var bookmark: TranscriptBookmark?
     @Environment(\.channelTextScale) private var textScale
     @Environment(\.transcriptPointer) private var pointer
+    @ViewState private var isHovered = false
     @ViewState private var selectsText = false
 
     var body: some View {
         TranscriptUserLane(maxWidth: TranscriptUserLane.maximumWidth * textScale) {
             VStack(alignment: .trailing, spacing: 6) {
-                HStack(spacing: 8) {
-                    Text("You").fontWeight(.semibold)
-                    TranscriptTimestamp(timestamp: message.timestamp)
-                    if let deliveryLabel { Text(deliveryLabel).foregroundStyle(.secondary) }
-                }
-                .font(.system(size: 11 * textScale))
-                .accessibilityHidden(true)
+                header.accessibilityHidden(true)
                 if !message.text.isEmpty {
                     TranscriptMarkdown(content: message.text, agents: agents, baseURL: api.baseURL,
                                        selectable: selectsText, findHighlight: findHighlight)
@@ -226,6 +237,10 @@ struct TranscriptUserMessage: View {
                         .padding(.horizontal, 12)
                         .padding(.vertical, 10)
                         .transcriptBubble(.user)
+                        .overlay {
+                            TranscriptHoverActions(isHovered: $isHovered, edge: .leading, text: message.text,
+                                                   bookmark: bookmark, header: header)
+                        }
                 }
                 if let attachments = message.attachments, !attachments.isEmpty {
                     TranscriptAttachments(attachments: attachments, api: api, alignment: .trailing,
@@ -235,25 +250,41 @@ struct TranscriptUserMessage: View {
             }
         }
         .onContinuousHover { phase in
-            guard !selectsText else { return }
             switch phase {
             case .active:
-                if let pointer, !pointer.hasMovedSinceContentMoved {
+                guard !isHovered else { break }
+                if pointer?.hasMovedSinceContentMoved ?? true {
+                    isHovered = true
+                    if !selectsText { selectsText = true }
+                } else if !selectsText {
                     let selects = $selectsText
-                    pointer.rest(on: message.id) { selects.wrappedValue = true }
-                } else {
-                    selectsText = true
+                    pointer?.rest(on: message.id) { selects.wrappedValue = true }
                 }
             case .ended:
                 pointer?.leave(message.id)
+                if isHovered { isHovered = false }
             }
         }
         .contextMenu {
             Button("Copy Message", systemImage: "doc.on.doc") { TranscriptClipboard.copy(message.text) }
+            TranscriptBookmarkMenuItem(bookmark: bookmark)
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(message.accessibilityLabel(author: "You", delivery: deliveryLabel))
-        .accessibilityAction(named: "Copy Message") { TranscriptClipboard.copy(message.text) }
+        .accessibilityValue(bookmark?.isBookmarked == true ? "Bookmarked" : "")
+        .accessibilityActions {
+            Button("Copy Message") { TranscriptClipboard.copy(message.text) }
+            if let bookmark { Button(bookmark.actionTitle) { bookmark.toggleAnnouncing() } }
+        }
+    }
+
+    private var header: some View {
+        HStack(spacing: 8) {
+            Text("You").fontWeight(.semibold)
+            TranscriptTimestamp(timestamp: message.timestamp)
+            if let deliveryLabel { Text(deliveryLabel).foregroundStyle(.secondary) }
+        }
+        .font(.system(size: 11 * textScale))
     }
 }
 
@@ -267,6 +298,7 @@ struct TranscriptAgentMessage: View, @MainActor Equatable {
     let expanded: Bool
     var findHighlight: TranscriptFindHighlight?
     var choices: TranscriptRequestChoices?
+    var bookmark: TranscriptBookmark?
     var onSetExpanded: (String, Bool) -> Void
     var onChoose: (String) -> Void = { _ in }
     @Environment(\.channelTextScale) private var textScale
@@ -282,6 +314,7 @@ struct TranscriptAgentMessage: View, @MainActor Equatable {
             && lhs.api.baseURL == rhs.api.baseURL && lhs.interaction === rhs.interaction
             && lhs.statusReactions == rhs.statusReactions && lhs.expanded == rhs.expanded
             && lhs.findHighlight == rhs.findHighlight && lhs.choices == rhs.choices
+            && lhs.bookmark == rhs.bookmark
     }
 
     var body: some View {
@@ -315,8 +348,11 @@ struct TranscriptAgentMessage: View, @MainActor Equatable {
                 .padding(.vertical, 10)
                 .transcriptBubble(surface)
                 .overlay {
-                    TranscriptHoverActions(isHovered: $isHovered, isFocused: isFocused, agent: agent,
-                                           text: entry.message.text, interaction: interaction)
+                    TranscriptHoverActions(isHovered: $isHovered, isFocused: isFocused, edge: .trailing,
+                                           reply: agent.deleted == true ? nil : TranscriptHoverActions.Reply(
+                                               help: "Reply to \(agent.name)") { interaction.reply(to: agent) },
+                                           text: entry.message.text, bookmark: bookmark,
+                                           header: entry.showHeader ? header : nil)
                 }
                 .transcriptWidthCap(TranscriptWidthCap.agentSurface * textScale)
             }
@@ -348,11 +384,13 @@ struct TranscriptAgentMessage: View, @MainActor Equatable {
         .accessibilityElement(children: .contain)
         .accessibilityLabel(entry.message.accessibilityLabel(
             author: agent.name, addressee: entry.addressee, request: entry.request))
+        .accessibilityValue(bookmark?.isBookmarked == true ? "Bookmarked" : "")
         .accessibilityActions {
             if agent.deleted != true {
                 Button("Reply") { interaction.reply(to: agent) }
             }
             Button("Copy Message") { TranscriptClipboard.copy(entry.message.text) }
+            if let bookmark { Button(bookmark.actionTitle) { bookmark.toggleAnnouncing() } }
         }
         .contextMenu {
             if agent.deleted != true {
@@ -363,6 +401,7 @@ struct TranscriptAgentMessage: View, @MainActor Equatable {
             Button("Copy Message", systemImage: "doc.on.doc") {
                 TranscriptClipboard.copy(entry.message.text)
             }
+            TranscriptBookmarkMenuItem(bookmark: bookmark)
         }
     }
 
@@ -409,37 +448,137 @@ struct TranscriptAgentMessage: View, @MainActor Equatable {
     private var surface: TranscriptSurface { isPending ? .pendingAgent : .agent }
 }
 
-/// A message's Reply and Copy actions while it's hovered or focused. It reads the hover itself, so
-/// the pointer crossing rows re-renders these buttons instead of each message.
-private struct TranscriptHoverActions: View {
+/// A message's actions while it's hovered or focused, in a toolbar over its bubble's top corner on
+/// `edge`. The bookmark sits on that outer end, so a bookmarked message keeps just its bookmark there
+/// at rest and the toolbar grows back out around it. It reads the hover itself, so the pointer
+/// crossing rows re-renders these buttons instead of each message.
+private struct TranscriptHoverActions<Header: View>: View {
+    struct Reply {
+        let help: String
+        let action: () -> Void
+    }
+
     @Binding var isHovered: Bool
-    let isFocused: Bool
-    let agent: ChannelAgent
+    var isFocused = false
+    let edge: HorizontalEdge
+    var reply: Reply?
     let text: String
-    let interaction: ChannelInteraction
+    let bookmark: TranscriptBookmark?
+    /// A hidden copy of the message's header, which the toolbar slides past instead of covering.
+    let header: Header?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        if isHovered || isFocused {
-            TranscriptHoverActionsLayout {
-                HStack(spacing: 8) {
-                    if agent.deleted != true {
-                        Button("Reply", systemImage: "arrowshape.turn.up.left") {
-                            interaction.reply(to: agent)
+        let isActive = isHovered || isFocused
+        let isBookmarked = bookmark?.isBookmarked == true
+        if isActive || isBookmarked {
+            TranscriptBubbleCorner(edge: edge) {
+                HStack(spacing: 2) {
+                    if edge == .leading { bookmarkButton(divided: isActive) }
+                    if isActive {
+                        Group {
+                            if let reply {
+                                Button("Reply", systemImage: "arrowshape.turn.up.left", action: reply.action)
+                                    .help(reply.help)
+                            }
+                            Button("Copy Message", systemImage: "doc.on.doc") { TranscriptClipboard.copy(text) }
+                                .help("Copy Message")
                         }
-                        .help("Reply to \(agent.name)")
+                        .transition(.opacity)
                     }
-                    Button("Copy Message", systemImage: "doc.on.doc") {
-                        TranscriptClipboard.copy(text)
-                    }
-                    .help("Copy message")
+                    if edge == .trailing { bookmarkButton(divided: isActive) }
                 }
                 .labelStyle(.iconOnly)
-                .buttonStyle(.borderless)
-                .padding(6)
-                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 7))
-                .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(.separator, lineWidth: 0.5))
+                .buttonStyle(TranscriptToolbarButtonStyle())
+                .padding(2)
+                .background(.regularMaterial, in: .rect(cornerRadius: 8, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(.separator, lineWidth: 0.5))
                 .fixedSize()
+                // The label carries the at-rest chip's state.
+                .accessibilityHidden(!isActive)
+                if let header { header.hidden().accessibilityHidden(true) }
             }
+            // Only the chip grows, since a toolbar that isn't bookmarked comes and goes with the hover.
+            .animation(isBookmarked && !reduceMotion ? .easeOut(duration: 0.12) : nil, value: isActive)
+        }
+    }
+
+    @ViewBuilder
+    private func bookmarkButton(divided: Bool) -> some View {
+        if let bookmark {
+            if divided && edge == .trailing { divider }
+            Button {
+                bookmark.toggle()
+            } label: {
+                if bookmark.isBookmarked {
+                    Label(bookmark.actionTitle, systemImage: "bookmark.fill").foregroundStyle(TranscriptBookmark.ink)
+                } else {
+                    Label(bookmark.actionTitle, systemImage: "bookmark")
+                }
+            }
+            .help(bookmark.actionTitle)
+            .disabled(!bookmark.isEnabled)
+            if divided && edge == .leading { divider }
+        }
+    }
+
+    /// 3 points each side, with the stack's spacing.
+    private var divider: some View {
+        Divider().frame(height: 12).padding(.horizontal, 1).transition(.opacity)
+    }
+}
+
+extension TranscriptHoverActions where Header == Never {
+    init(isHovered: Binding<Bool>, isFocused: Bool = false, edge: HorizontalEdge, reply: Reply? = nil,
+         text: String, bookmark: TranscriptBookmark?) {
+        self.init(isHovered: isHovered, isFocused: isFocused, edge: edge, reply: reply, text: text,
+                  bookmark: bookmark, header: nil)
+    }
+}
+
+/// A hover toolbar button, like an accessory bar's: a secondary symbol that turns primary over a
+/// rounded fill concentric with the toolbar, darker while pressed.
+private struct TranscriptToolbarButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        TranscriptToolbarButton(configuration: configuration)
+    }
+}
+
+private struct TranscriptToolbarButton: View {
+    let configuration: ButtonStyleConfiguration
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.isEnabled) private var isEnabled
+    @ViewState private var isHovered = false
+
+    var body: some View {
+        let isLit = isEnabled && (isHovered || configuration.isPressed)
+        configuration.label
+            .font(.system(size: 13))
+            .foregroundStyle(isLit ? .primary : .secondary)
+            .frame(width: 24, height: 20)
+            .background {
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(.primary.opacity(isLit ? fill : 0))
+            }
+            .contentShape(Rectangle())
+            .animation(.easeOut(duration: 0.12), value: isLit)
+            .onHover { isHovered = $0 }
+    }
+
+    private var fill: Double {
+        (colorScheme == .dark ? 0.12 : 0.08) + (configuration.isPressed ? 0.05 : 0)
+    }
+}
+
+/// Bookmark or Remove Bookmark, last in a message's context menu.
+private struct TranscriptBookmarkMenuItem: View {
+    let bookmark: TranscriptBookmark?
+
+    var body: some View {
+        if let bookmark {
+            Divider()
+            Button(bookmark.actionTitle, systemImage: bookmark.actionSymbol) { bookmark.toggle() }
+                .disabled(!bookmark.isEnabled)
         }
     }
 }
@@ -516,21 +655,6 @@ extension EnvironmentValues {
     var transcriptPointer: TranscriptPointer? {
         get { self[TranscriptPointerKey.self] }
         set { self[TranscriptPointerKey.self] = newValue }
-    }
-}
-
-/// Floats hover actions over a bubble's top trailing corner, but never past its leading edge, so
-/// they stay over the bubble that fits a short message instead of covering the avatar.
-struct TranscriptHoverActionsLayout: Layout {
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        proposal.replacingUnspecifiedDimensions()
-    }
-
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        guard let actions = subviews.first else { return }
-        let size = actions.sizeThatFits(.unspecified)
-        let x = max(bounds.minX, bounds.maxX - 8 - size.width)
-        actions.place(at: CGPoint(x: x, y: bounds.minY - 12), proposal: ProposedViewSize(size))
     }
 }
 

@@ -1262,15 +1262,17 @@ struct TranscriptTests {
     }
 
     @MainActor
-    @Test func hoverActionsStayOverAShortBubble() async throws {
-        func actionsMinX(bubbleWidth: CGFloat) async throws -> CGFloat {
+    @Test func hoverActionsStayOverAShortBubbleClearOfItsFirstLineAndHeader() async throws {
+        func actionsMinX(bubbleWidth: CGFloat, edge: HorizontalEdge = .trailing,
+                         headerWidth: CGFloat? = nil) async throws -> CGFloat {
             let capture = TranscriptLayoutCapture()
             let view = NSHostingView(rootView:
                 Color.clear.frame(width: bubbleWidth, height: 40)
                     .overlay {
-                        TranscriptHoverActionsLayout {
+                        TranscriptBubbleCorner(edge: edge) {
                             Color.clear.frame(width: 60, height: 24)
                                 .transcriptMessageFrame(id: "actions", sequence: 1, historyStart: 1)
+                            if let headerWidth { Color.clear.frame(width: headerWidth, height: 14) }
                         }
                     }
                     .padding(20)
@@ -1279,11 +1281,20 @@ struct TranscriptTests {
             view.frame = NSRect(x: 0, y: 0, width: bubbleWidth + 40, height: 80)
             try await transcriptUntil(in: view) { capture.frames["actions"] != nil }
             let actions = try #require(capture.frames["actions"]?.rect)
-            #expect(abs(actions.minY - 8) < 0.5)
+            // They end 8 points into the bubble's 10-point top padding.
+            #expect(abs(actions.maxY - 28) < 0.5)
             return actions.minX - 20
         }
         #expect(abs(try await actionsMinX(bubbleWidth: 300) - 232) < 0.5)
         #expect(abs(try await actionsMinX(bubbleWidth: 40)) < 0.5)
+        // Your messages mirror them to the leading corner, never past the bubble's trailing edge.
+        #expect(abs(try await actionsMinX(bubbleWidth: 300, edge: .leading) - 8) < 0.5)
+        #expect(abs(try await actionsMinX(bubbleWidth: 40, edge: .leading) + 20) < 0.5)
+        // A header wider than the room beside them pushes them 8 points past its text.
+        #expect(abs(try await actionsMinX(bubbleWidth: 300, headerWidth: 120) - 232) < 0.5)
+        #expect(abs(try await actionsMinX(bubbleWidth: 100, headerWidth: 120) - 128) < 0.5)
+        #expect(abs(try await actionsMinX(bubbleWidth: 300, edge: .leading, headerWidth: 120) - 8) < 0.5)
+        #expect(abs(try await actionsMinX(bubbleWidth: 100, edge: .leading, headerWidth: 120) + 88) < 0.5)
     }
 
     private func encodedImage(width: Int, height: Int, type: UTType, orientation: Int = 1) throws -> String {
