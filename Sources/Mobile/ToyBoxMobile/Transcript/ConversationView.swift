@@ -190,6 +190,7 @@ struct ConversationView: View {
     @ViewState private var capturedArrival = false
     @ViewState private var showsJumpToLatest = false
     @ViewState private var showsWorkingNow = false
+    @ViewState private var showsBookmarks = false
     @ViewState private var highlightedSequence: Int?
     /// A reveal requested before landing, such as a request alert's, opens on its message. The
     /// rows stay hidden while it pages, so the reader never sees New first.
@@ -324,7 +325,7 @@ struct ConversationView: View {
                     .findSwapTransition()
             } else {
                 TranscriptFloatingAccessories(store: store, showsJumpToLatest: showsJumpToLatest,
-                                              showsWorkingNow: $showsWorkingNow) {
+                                              showsWorkingNow: $showsWorkingNow, showsBookmarks: $showsBookmarks) {
                     jumpToLatest()
                 }
                 .findSwapTransition()
@@ -498,7 +499,7 @@ struct ConversationView: View {
         model.isActive && model.visibleChannelID == store.id && !model.isCovered
             && management.flow == nil && !interaction.isArtifactViewerPresented
             && !overviewPresentation.isCompactSheetPresented
-            && !(sizeClass == .compact && (interaction.isInspectorPresented || showsWorkingNow))
+            && !(sizeClass == .compact && (interaction.isInspectorPresented || showsWorkingNow || showsBookmarks))
             && !interaction.isRequestPreviewPresented
     }
 
@@ -648,12 +649,14 @@ private struct TranscriptSendAttempt: View {
 /// The transcript's inset from the column's edges.
 func transcriptEdgeInset(_ sizeClass: UserInterfaceSizeClass?) -> CGFloat { sizeClass == .regular ? 20 : 16 }
 
-/// The working summary and Jump to Latest, floating in glass just above the composer.
+/// Bookmarks, the working summary and Jump to Latest, floating in glass just above the composer.
 private struct TranscriptFloatingAccessories: View {
     let store: ChannelStore
     let showsJumpToLatest: Bool
     @Binding var showsWorkingNow: Bool
+    @Binding var showsBookmarks: Bool
     let jumpToLatest: () -> Void
+    @Environment(ChannelInteraction.self) private var interaction
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private var rises: AnyTransition { reduceMotion ? .opacity : .opacity.combined(with: .offset(y: 4)) }
@@ -670,6 +673,7 @@ private struct TranscriptFloatingAccessories: View {
         ViewThatFits(in: .horizontal) {
             ForEach(WorkingForm.allCases, id: \.self) { form in
                 HStack(spacing: 8) {
+                    bookmarks
                     status(working, form: form).fixedSize()
                     Spacer(minLength: 0)
                     jump.fixedSize()
@@ -677,13 +681,18 @@ private struct TranscriptFloatingAccessories: View {
             }
             VStack(alignment: .trailing, spacing: 8) {
                 jump
-                status(working, form: .sentence).frame(maxWidth: .infinity, alignment: .leading)
+                HStack(spacing: 8) {
+                    bookmarks
+                    status(working, form: .sentence)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
         // Aligned with the messages' edges.
         .padding(.horizontal, transcriptEdgeInset(sizeClass))
         .padding(.bottom, 8)
         .animation(.easeOut(duration: 0.2), value: working.map(\.id))
+        .animation(.easeOut(duration: 0.2), value: showsBookmarkButton)
         // The popover's anchor leaves with the last working agent, so it can't stay presented.
         .onChange(of: working.isEmpty) { _, isEmpty in if isEmpty { showsWorkingNow = false } }
     }
@@ -714,6 +723,38 @@ private struct TranscriptFloatingAccessories: View {
             .popover(isPresented: $showsWorkingNow) {
                 TranscriptWorkingNow(store: store)
                     .presentationDetents([.medium, .large])
+            }
+            .transition(rises)
+        }
+    }
+
+    /// Stays while its list is open, even after the last bookmark goes, so the list keeps its anchor.
+    private var showsBookmarkButton: Bool {
+        store.bookmarks != nil && (!store.bookmarkList.isEmpty || showsBookmarks)
+    }
+
+    @ViewBuilder private var bookmarks: some View {
+        if showsBookmarkButton {
+            Button { showsBookmarks.toggle() } label: {
+                Image(systemName: "bookmark.fill")
+                    .font(.body)
+                    .foregroundStyle(TranscriptBookmark.ink)
+                    .frame(width: 44, height: 44)
+                    .contentShape(.circle)
+            }
+            .buttonStyle(.plain)
+            .glassEffect(.regular.interactive(), in: .circle)
+            .accessibilityLabel("Bookmarks")
+            .accessibilityValue("\(store.bookmarkList.count)")
+            .accessibilityShowsLargeContentViewer {
+                Label("Bookmarks", systemImage: "bookmark.fill")
+            }
+            .popover(isPresented: $showsBookmarks) {
+                TranscriptBookmarks(store: store) { sequence in
+                    showsBookmarks = false
+                    _ = interaction.reveal(sequence: sequence)
+                }
+                .presentationDetents([.medium, .large])
             }
             .transition(rises)
         }
