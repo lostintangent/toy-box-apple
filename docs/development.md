@@ -249,6 +249,10 @@ servers for any script that writes. Never skip or retry actions.
   dismissal and settled layout within the same deadline, then performs the retained leaf through
   public `UIMenuLeaf`. Missing, dismissed, ambiguous or changed-scene menus fail explicitly. This
   proves neither finger selection, menu accessibility nor hardware-key delivery.
+- **Dictation.** The Simulator has no speech model, so
+  `SIMCTL_CHILD_TOYBOX_DICTATION_SCRIPT="<words>"` makes DEBUG dictation speak those words about
+  three a second with a voice-like level, finalizing at each punctuation mark, then fall silent.
+  It proves the recorder's layout and send path, not speech recognition.
 
 ### Duo posture
 

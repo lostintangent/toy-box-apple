@@ -39,9 +39,69 @@ extension DictationSystem {
         system.refreshNotifications += [
             UIApplication.didBecomeActiveNotification, AVAudioSession.routeChangeNotification,
         ]
+#if DEBUG
+        if let script = ProcessInfo.processInfo.environment["TOYBOX_DICTATION_SCRIPT"] {
+            var scripted = DictationSystem.scripted()
+            scripted.makeRecognizer = { _, _, _ in SpokenScriptRecognizer(script: script) }
+            scripted.announce = system.announce
+            return scripted
+        }
+#endif
         return system
     }
 }
+
+#if DEBUG
+/// Lets drive scripts dictate on the Simulator, which has no speech model. It speaks the script
+/// about three words a second with a voice-like level, finalizing at each punctuation mark, then
+/// falls silent so the silence timeout can pause it.
+@MainActor private final class SpokenScriptRecognizer: DictationRecognizing {
+    private let words: [Substring]
+    private var task: Task<Void, Never>?
+    private var tentative = ""
+    private var onResult: (@MainActor (String, Bool) -> Void)?
+
+    init(script: String) { words = script.split(separator: " ") }
+
+    func start(onListening: @escaping @MainActor () -> Void,
+               onResult: @escaping @MainActor (String, Bool) -> Void,
+               onLevel: @escaping @MainActor @Sendable (Double) -> Void,
+               onInterruption: @escaping @MainActor @Sendable () -> Void,
+               onFailure: @escaping @MainActor (any Error) -> Void) async throws {
+        self.onResult = onResult
+        onListening()
+        task = Task { [words] in
+            var tick = 0.0
+            for word in words {
+                tentative = DictationTranscript.join(tentative, String(word))
+                onResult(tentative, false)
+                for _ in 0..<4 {
+                    tick += 1
+                    onLevel(0.3 + 0.6 * abs(sin(tick * 0.55)) * (0.65 + 0.35 * sin(tick * 0.17)))
+                    try? await Task.sleep(for: .milliseconds(80))
+                }
+                if Task.isCancelled { return }
+                if let last = word.last, ".,?!".contains(last) {
+                    onResult(tentative, true)
+                    tentative = ""
+                }
+            }
+            while !Task.isCancelled {
+                onLevel(0)
+                try? await Task.sleep(for: .milliseconds(80))
+            }
+        }
+    }
+
+    func finish() async throws {
+        task?.cancel()
+        if !tentative.isEmpty { onResult?(tentative, true) }
+        tentative = ""
+    }
+
+    func cancel() { task?.cancel() }
+}
+#endif
 
 extension DictationAccess {
     var title: String {

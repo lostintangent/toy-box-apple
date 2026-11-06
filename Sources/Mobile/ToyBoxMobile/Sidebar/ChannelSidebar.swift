@@ -13,11 +13,12 @@ struct ChannelSidebar: View {
     let isCollapsed: Bool
     @ViewState private var query = ""
     @ViewState private var pull = PullGesture()
+    @ViewState private var talk = TalkRecorder()
 
     private var trimmedQuery: String { query.trimmingCharacters(in: .whitespacesAndNewlines) }
 
     private var channels: [Channel] {
-        (model.catalog?.channels ?? []).filter { $0.matches(trimmedQuery) }
+        talk.ordered((model.catalog?.channels ?? []).filter { $0.matches(trimmedQuery) })
     }
 
     private var initialLoading: Bool { model.catalog?.phase == .connecting }
@@ -44,17 +45,23 @@ struct ChannelSidebar: View {
                         .navigationLinkIndicatorVisibility(.hidden)
                         .listRowInsets(.vertical, 0)
                         .contextMenu {
-                            contextMenu(channel)
+                            // UIKit lifts menus itself, so a dimmed row offers none while a note is open.
+                            if !talk.isOpen { contextMenu(channel) }
                         } preview: {
                             ChannelSidebarPreview(channel: presentation.channel(channel), agents: presentation.agents(channel))
                         }
                         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                            Button(role: .destructive) {
-                                management.present(.deleteChannel(channelId: channel.id))
-                            } label: {
-                                Label("Delete", systemImage: "trash")
+                            if !talk.isOpen {
+                                Button(role: .destructive) {
+                                    management.present(.deleteChannel(channelId: channel.id))
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
+                                .disabled(!model.canManageChannels)
                             }
-                            .disabled(!model.canManageChannels)
+                        }
+                        .talkRow(channel.id, recorder: talk, offered: !searchFocused.wrappedValue) {
+                            talk(to: channel)
                         }
                     }
                 }
@@ -63,6 +70,13 @@ struct ChannelSidebar: View {
         }
         .onScrollPhaseChange { _, phase in
             pull.isTouching = phase == .tracking || phase == .interacting
+        }
+        .talkList(talk, channelIDs: channels.map(\.id), onGlass: !isCollapsed, endsWhenChanging: [
+            model.selectedChannelID, model.cover, management.flow?.id, searchFocused.wrappedValue,
+        ]) { channelID in
+            if let channel = channels.first(where: { $0.id == channelID }) {
+                row(channel, now: now)
+            }
         }
     }
 
@@ -125,8 +139,16 @@ struct ChannelSidebar: View {
         return ChannelSidebarRow(
             channel: presentation.channel(channel), agents: agents,
             working: presentation.working(channel, agents: agents),
-            attention: presentation.attention(channel), now: now, isCollapsed: isCollapsed
+            attention: presentation.attention(channel), now: now, isCollapsed: isCollapsed,
+            talk: talk.channelID == channel.id ? talk : nil
         )
+    }
+
+    private func talk(to channel: Channel) {
+        guard let catalog = model.catalog else { return }
+        talk.start(catalog.channel(id: channel.id), name: channel.name,
+                   contextualNames: presentation.agents(channel).map(\.name), catalog: catalog,
+                   order: channels.map(\.id))
     }
 
     @ViewBuilder private var emptyState: some View {

@@ -2,6 +2,10 @@
 
 ## iPhone 0.1.18
 
+### Features
+
+- Swipe a channel right in the list to talk to its Lead without opening it, and your words are sent as a note while you stay where you are.
+
 ### Bugs/Polish
 
 - A zoomed screen now stays where you pinch and pan it, and pinching stops at the zoom limit instead of springing back.

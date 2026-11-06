@@ -100,7 +100,7 @@ final class ComposerSession {
         if !failures.isEmpty { draft.error = failures.joined(separator: "\n") }
     }
 
-    private static func imageIsReadable(_ data: Data) -> Bool { UIImage(data: data) != nil }
+    static func imageIsReadable(_ data: Data) -> Bool { UIImage(data: data) != nil }
 
     enum NotificationReplyOutcome: Equatable {
         case sent
