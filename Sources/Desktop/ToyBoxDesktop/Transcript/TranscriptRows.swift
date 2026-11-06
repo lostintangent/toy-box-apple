@@ -225,6 +225,7 @@ struct TranscriptUserMessage: View {
     @Environment(\.transcriptPointer) private var pointer
     @ViewState private var isHovered = false
     @ViewState private var selectsText = false
+    @FocusState private var isFocused: Bool
 
     var body: some View {
         TranscriptUserLane(maxWidth: TranscriptUserLane.maximumWidth * textScale) {
@@ -238,8 +239,8 @@ struct TranscriptUserMessage: View {
                         .padding(.vertical, 10)
                         .transcriptBubble(.user)
                         .overlay {
-                            TranscriptHoverActions(isHovered: $isHovered, edge: .leading, text: message.text,
-                                                   bookmark: bookmark, header: header)
+                            TranscriptHoverActions(isHovered: $isHovered, isFocused: isFocused, edge: .leading,
+                                                   text: message.text, bookmark: bookmark, header: header)
                         }
                 }
                 if let attachments = message.attachments, !attachments.isEmpty {
@@ -265,6 +266,9 @@ struct TranscriptUserMessage: View {
                 if isHovered { isHovered = false }
             }
         }
+        .focusable()
+        .focused($isFocused)
+        .focusEffectDisabled()
         .contextMenu {
             Button("Copy Message", systemImage: "doc.on.doc") { TranscriptClipboard.copy(message.text) }
             TranscriptBookmarkMenuItem(bookmark: bookmark)
@@ -307,7 +311,7 @@ struct TranscriptAgentMessage: View, @MainActor Equatable {
     /// Stays on once the pointer has reached the message, so a selection outlasts the pointer leaving.
     @ViewState private var selectsText = false
     @FocusState private var isFocused: Bool
-
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.entry == rhs.entry && lhs.agent == rhs.agent && lhs.agents == rhs.agents
@@ -402,6 +406,10 @@ struct TranscriptAgentMessage: View, @MainActor Equatable {
                 TranscriptClipboard.copy(entry.message.text)
             }
             TranscriptBookmarkMenuItem(bookmark: bookmark)
+        }
+        // Grows with the chip, over its 120 ms, without animating anything else in the message.
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.12)) {
+            $0.padding(.top, entry.showHeader ? 0 : bookmark?.followUpInset ?? 0)
         }
     }
 

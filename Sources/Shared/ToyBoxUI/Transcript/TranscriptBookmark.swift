@@ -36,6 +36,9 @@ public struct TranscriptBookmark: Equatable {
     /// What toggling does, for menus, help and accessibility actions.
     public var actionTitle: String { isBookmarked ? "Remove Bookmark" : "Bookmark" }
     public var actionSymbol: String { isBookmarked ? "bookmark.slash" : "bookmark" }
+    /// The extra room above a bookmarked follow-up, which has no header, so its chip or mark clears
+    /// the message above the way Messages makes room for a tapback. With the entry gap it's a run's.
+    public var followUpInset: CGFloat { isBookmarked ? TranscriptSpacing.run - TranscriptSpacing.entry : 0 }
     /// The system blue of the New divider's label, which only the bookmarked state wears.
     public static let ink = Color.blue
 

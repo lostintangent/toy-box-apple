@@ -280,6 +280,7 @@ struct TranscriptAgentMessage: View {
             if let bookmark { Button(bookmark.actionTitle) { bookmark.toggleAnnouncing() } }
         }
         .sheet(isPresented: $selectsText) { TranscriptSelectTextSheet(text: entry.message.text) }
+        .padding(.top, entry.showHeader ? 0 : bookmark?.followUpInset ?? 0)
     }
 
     private var header: some View {
