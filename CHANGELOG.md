@@ -2,6 +2,10 @@
 
 ## iPhone 0.1.17
 
+### Features
+
+- Bookmark any message so important decisions and requests stand out when you scroll back through the conversation.
+
 ### Bugs/Polish
 
 - With an iPhone Duo unfolded, the channel list now highlights the channel you have open, so you can always see where you are.
