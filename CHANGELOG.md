@@ -2,6 +2,10 @@
 
 ## Mac 0.1.24
 
+### Features
+
+- When the window is wide, the tray above the composer shows the three newest artifacts instead of one, so recent work is a click away. The tray also has a little more room around it.
+
 ### Bugs/Polish
 
 - The toolbar that appears when you hover over a message is lighter and roomier, so it's easier to read and click.

@@ -492,7 +492,7 @@ only once the channel is stale or deleted. Place Jump to Latest at the
 trailing edge of the same floating row when needed. Neither control may become a synthetic
 message or read target.
 
-The context tray belongs inside the composer as a 28-point header, separated from text entry by
+The context tray belongs inside the composer as a 34-point header, separated from text entry by
 one internal hairline. Its controls share a baseline, rather than giving Tasks an extra
 underlined progress track. Task rows in the tray popover and the inspector share one layout with
 no disclosure gutter. Sibling status icons align on one x with their section heading, each
@@ -581,11 +581,11 @@ background. The composer is one glass surface.
 | Drop target | 2-point accent stroke on the same shape while an image drag is over the composer |
 | Focus | No ring around the composer. Like Messages and Notes, the primary text view shows focus with its caret |
 | Text | Transparent NSTextView and scroll view. 14-point body, inset 12, one 20-point line minimum, three lines before scrolling |
-| Tray | 28-point header at the top, then a 1-point `separatorColor` hairline inset 12 on both sides |
+| Tray | 34-point header at the top: a 28-point row of controls with 3 points above and below, then a 1-point `separatorColor` hairline inset 12 on both sides |
 | Controls | 28-point row, 8-point horizontal and bottom padding, 8 points between controls |
 | Send | The one filled control, a 28-point accent circle with a white `arrow.up`. Disabled uses a `quaternary` fill and a secondary symbol |
 | Dictate | Borderless `mic` 8 points before Send, styled like Attach Image. Listening tints a 28-point circle with accent at 15% under an accent `waveform`, never a second solid fill. States are under Composer and tray |
-| Height | About 80 points without the tray and about 109 with it, growing with text and thumbnails |
+| Height | About 80 points without the tray and about 115 with it, growing with text and thumbnails |
 
 Composer errors, the connection explanation and the 12,000-character limit render inside the
 glass surface as a caption notice row at its top, with 12-point horizontal and 8-point top
@@ -1835,7 +1835,7 @@ authoritative for its shape, material, edge, focus and internal metrics.
 
 The composer and context tray form a single glass rounded rectangle, radius 18. Text is inset 12, starts at one 20-point line and grows through three lines before
 scrolling internally. The controls row is 28 high, with 8 points between controls. Baseline height
-is approximately 80, or 109 with the tray, and grows to three text lines before attachment
+is approximately 80, or 115 with the tray, and grows to three text lines before attachment
 thumbnails. Attach Image
 (`photo.badge.plus`, 28-point hit target) is leading, then audience, then Input Needed. Dictate
 (`mic`) is trailing, 8 points before Send. Send is a
@@ -1942,9 +1942,12 @@ Again, never an automatic retry. Keep the original UUID when verifying or explic
 that attempted send so a 409 cannot deliver it twice. Do not clear a newer draft when an older
 send eventually succeeds.
 
-The tray is a compact 28-point header inside the floating composer. Lead with Bookmarks when the
-channel has any (see Bookmarks), then the newest shared
-artifact as a borderless document action, then `+N` for remaining artifacts. Trailing controls are
+The tray is a compact 34-point header inside the floating composer: a 28-point row of controls
+with 3 points above and below. Lead with Bookmarks when the channel has any (see Bookmarks), then
+the newest shared artifacts as borderless document actions, then `+N` for the rest. With at least
+672 points left for artifacts, the three newest show, otherwise only the newest. Each is at most
+230 wide and truncates in the middle. Artifacts sit 16 apart so each icon reads with its own
+title, and `+N` follows by 8. Trailing controls are
 Tasks with direct-root `done/total`, and Preview when set. Tasks speaks as the label "Tasks" with
 the value "1 of 4 done", never the visible slash. Keep every action on the same baseline,
 without a separate progress underline. Zero-content controls

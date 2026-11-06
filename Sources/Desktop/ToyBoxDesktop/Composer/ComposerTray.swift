@@ -69,22 +69,33 @@ struct ComposerTray: View {
             if let bookmarkCount { bookmarksButton(count: bookmarkCount) }
             if let newest = artifacts.first {
                 ViewThatFits(in: .horizontal) {
-                    Button { artifactOpener.open(newest) } label: {
-                        Label(newest.title, systemImage: "doc.text")
-                            .lineLimit(1).truncationMode(.middle)
+                    // With 672 points of room, the three newest show, sharing it as they truncate.
+                    if artifacts.count > 1 {
+                        HStack(spacing: 8) {
+                            HStack(spacing: 16) {
+                                // A capped frame grows to its cap, so each keeps its own width
+                                // until the row runs short.
+                                ForEach(artifacts.prefix(3)) { artifact in
+                                    ViewThatFits(in: .horizontal) {
+                                        artifactButton(artifact).fixedSize(horizontal: true, vertical: false)
+                                        artifactButton(artifact)
+                                    }
+                                }
+                            }
+                            artifactCount(hiding: artifacts.count - 3)
+                        }
+                        .frame(minWidth: 672, idealWidth: 672, alignment: .leading)
                     }
-                    .frame(maxWidth: 230, alignment: .leading)
-                    .fixedSize(horizontal: true, vertical: false)
-                    artifactOverflow
+                    HStack(spacing: 8) {
+                        artifactButton(newest).fixedSize(horizontal: true, vertical: false)
+                        artifactCount(hiding: artifacts.count - 1)
+                    }
+                    HStack(spacing: 8) {
+                        artifactOverflow
+                        artifactCount(hiding: artifacts.count - 1)
+                    }
                 }
                 .layoutPriority(-1)
-                if artifacts.count > 1 {
-                    Button { showArtifacts.wrappedValue.toggle() } label: {
-                        Text("+\(artifacts.count - 1)").frame(minWidth: 28, minHeight: 28)
-                    }
-                    .accessibilityLabel("Show all \(artifacts.count) artifacts")
-                    .popover(isPresented: showArtifacts, arrowEdge: .top) { artifactList }
-                }
             }
             Spacer(minLength: 0)
             if tray.hasTasks {
@@ -112,6 +123,7 @@ struct ComposerTray: View {
         .foregroundStyle(.secondary)
         .frame(height: 28)
         .padding(.horizontal, 12)
+        .padding(.vertical, 3)
         .task(id: snapshot?.requestedState) {
             switch snapshot?.requestedState {
             case "composer-tasks":
@@ -165,6 +177,25 @@ struct ComposerTray: View {
         .help("Bookmarks")
         .accessibilityLabel("Bookmarks")
         .accessibilityValue("\(count)")
+    }
+
+    private func artifactButton(_ artifact: ChannelArtifact) -> some View {
+        Button { artifactOpener.open(artifact) } label: {
+            Label(artifact.title, systemImage: "doc.text")
+                .lineLimit(1).truncationMode(.middle)
+        }
+        .frame(maxWidth: 230, alignment: .leading)
+    }
+
+    /// `+N` for the artifacts the tray doesn't show, which lists them all.
+    @ViewBuilder private func artifactCount(hiding hidden: Int) -> some View {
+        if hidden > 0 {
+            Button { showArtifacts.wrappedValue.toggle() } label: {
+                Text("+\(hidden)").frame(minWidth: 28, minHeight: 28)
+            }
+            .accessibilityLabel("Show all \(tray.artifacts.count) artifacts")
+            .popover(isPresented: showArtifacts, arrowEdge: .top) { artifactList }
+        }
     }
 
     private var artifactOverflow: some View {
